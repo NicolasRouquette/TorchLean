@@ -96,9 +96,6 @@ For local development against a checkout, use a path dependency instead:
 require TorchLean from "../TorchLean"
 ```
 
-Reservoir is not required for Git or path dependencies. It is only for package
-discovery and versioned `require` lines once the repository is indexed.
-
 ## Repository Map
 
 - `NN/API`: public facade for model, tensor, data, and training workflows.
