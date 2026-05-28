@@ -115,10 +115,10 @@ structure Node where
   /-- Parent node ids (dependencies) in the tape. -/
   parents : List Nat := []
   /--
-  Forward scratch buffers retained only because this node's backward closure may need them.
+  Forward workspace buffers retained only because this node's backward closure may need them.
 
   The eager runtime releases these buffers explicitly after backprop consumes the tape. This keeps
-  long CUDA training loops from waiting on Lean external-object finalizers for large temporary
+  long CUDA training loops from waiting on Lean external-object finalizers for large intermediate
   allocations.
   -/
   cleanup : List Buffer := []
@@ -282,9 +282,9 @@ This checks:
 - the contribution shape matches the parent's value shape,
 then accumulates via `AnyBuffer.add`.
 
-When the parent does not require gradients, we still explicitly release the native contribution
-buffer. The small branch below makes the returned flag observable to Lean, which prevents the FFI
-release call from being optimized away as an unused pure value.
+When the parent does not require gradients, the contribution is not stored anywhere. We still have
+to release its device buffer. The release is threaded through the existing zero slot with
+`releaseThen`, so the cleanup is part of the returned gradient array instead of a dead pure call.
 -/
 def addGradAll (t : Tape) (grads : Array AnyBuffer) (id : Nat) (g : AnyBuffer) :
     Result (Array AnyBuffer) := do
@@ -292,11 +292,15 @@ def addGradAll (t : Tape) (grads : Array AnyBuffer) (id : Nat) (g : AnyBuffer) :
     | some n => pure n
     | none => throw "autograd: invalid parent id during backward"
   if node.requires_grad = false then
-    let released := Buffer.release g.buf
-    if released == 0 || released != 0 then
-      pure grads
+    let existing ← match grads[id]? with
+      | some e => pure e
+      | none => throw "autograd: internal error (gradient array out of bounds)"
+    if hid : id < grads.size then
+      let existing' : AnyBuffer :=
+        { existing with buf := Buffer.releaseThen g.buf existing.buf }
+      pure (grads.set id existing' (h := hid))
     else
-      pure grads
+      throw "autograd: internal error (gradient array out of bounds)"
   else if decide (g.s = node.value.s) then
     let g' : AnyBuffer := { s := node.value.s, buf := g.buf }
     let expected := Shape.size node.value.s
@@ -405,11 +409,9 @@ def backwardDenseAll (t : Tape) (outId : Nat) (seed : AnyBuffer) : Result (Array
       grads := grads.push z
     if hout : outId < grads.size then
       let previousSeedSlot := grads[outId]
-      let released := Buffer.release previousSeedSlot.buf
-      if released == 0 || released != 0 then
-        grads := grads.set outId seed' (h := hout)
-      else
-        throw "autograd: internal error (buffer release impossible branch)"
+      let seed' : AnyBuffer :=
+        { seed' with buf := Buffer.releaseThen previousSeedSlot.buf seed'.buf }
+      grads := grads.set outId seed' (h := hout)
     else
       throw "autograd: invalid output id"
     backwardDenseFrom (t := t) grads

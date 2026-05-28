@@ -49,7 +49,7 @@ Build a minimal epsilon-predictor conv net:
 `conv -> relu -> conv -> relu -> conv -> relu -> conv`.
 
 This stays compact enough for the eager CUDA example while giving the CIFAR trainer more denoising
-capacity than a bare two-layer smoke-test network.
+capacity than a bare two-layer network.
 -/
 def epsConvNet (cfg : EpsConvNetConfig)
     (h_batch : cfg.batch ≠ 0 := by decide)
@@ -100,7 +100,7 @@ Architecture:
 
 Each residual block has shape `hiddenC×H×W -> hiddenC×H×W` and computes
 `x + conv(relu(conv(x)))`.  This compact residual denoiser omits U-Net downsampling, upsampling,
-and multi-scale skip concatenation. It is still a useful tutorial-scale architecture because
+and multi-scale skip concatenation. It is still a useful compact architecture because
 residual paths make the denoising problem much easier than a plain conv chain while staying within
 the eager CUDA memory envelope used by examples.
 -/
@@ -245,7 +245,7 @@ Given `x_t`, predicted epsilon, and adjacent schedule values, this estimates `x�
 the previous timestep.
 
 We clamp the intermediate `x₀` estimate to the training image range `[-1,1]`.  This is the standard
-"clipped denoised" stabilizer used by many DDPM/DDIM samplers: without it, a small tutorial model can
+"clipped denoised" stabilizer used by many DDPM/DDIM samplers: without it, a compact model can
 drive one color channel far outside the data range and the final PPM exporter merely clips the
 damage into saturated color blobs.
 -/
@@ -270,8 +270,8 @@ def ddimPrev {batch c h w : Nat}
 /--
 Write the first image in an RGB NCHW batch as an ASCII PPM.
 
-This dependency-free writer is for example artifacts and quick visual checks, not high-throughput
-image export.
+This dependency-free writer is for example artifacts and visual checks, not high-throughput image
+export.
 -/
 def writeFirstRgbNchwPpm {batch c h w : Nat}
     (path : System.FilePath) (x : Spec.Tensor Float (NN.Tensor.Shape.NCHW batch c h w)) : IO Unit := do

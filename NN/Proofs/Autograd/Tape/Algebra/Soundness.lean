@@ -330,7 +330,7 @@ theorem dotList_single {Γ : List Shape} {s : Shape}
             | succ j =>
                 have h0 : dot (α := α) dx0 (fill (0 : α) s0) = 0 :=
                   TensorAlgebra.dot_fill_zero_right (α := α) (s := s0) (a := dx0)
-                let iHead : Fin (s0 :: Γtail).length := ⟨j + 1, isLt⟩
+                let iHead : Fin (s0 :: Γtail).length := ⟨Nat.succ j, isLt⟩
                 let iTail : Fin Γtail.length := ⟨j, Nat.lt_of_succ_lt_succ isLt⟩
                 let hTail : Γtail.get iTail = s := by
                   simpa using h
@@ -344,12 +344,10 @@ theorem dotList_single {Γ : List Shape} {s : Shape}
                   have hcons :
                       TList.get (α := α) (ss := s0 :: Γtail) (TList.cons dx0 dxRest) iHead =
                         TList.get (α := α) (ss := Γtail) dxRest iTail := by
-                    -- `get_cons_succ` is stated with `Nat.succ j`; rewrite to `j + 1`.
-                    simpa [Nat.succ_eq_add_one, TList.get, iHead, iTail] using
-                      (get_cons_succ (α := α) (s := s0) (ss := Γtail) dx0 dxRest j isLt)
+                    exact get_cons_succ (α := α) (s := s0) (ss := Γtail) dx0 dxRest j isLt
                   -- After rewriting `h`, the two casts become the same.
                   cases h
-                  simpa [Tensor.castShape, iHead, iTail] using hcons
+                  rw [hcons]
                 calc
                   TList.dotList (α := α) (TList.cons dx0 dxRest) (single ⟨iHead, h⟩ v)
                       = dot (α := α) dx0 (fill (0 : α) s0) +

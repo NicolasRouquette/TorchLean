@@ -20,7 +20,7 @@ public import NN.Runtime.Autograd.Torch.Core
 public import NN.Runtime.Autograd.TorchLean.NN
 
 /-!
-# minGPT-Style Addition Demo
+# minGPT-Style Addition Example
 
 This file is a TorchLean-native version of the spirit of Karpathy's `minGPT/projects/adder`
 experiment.  The original minGPT adder trains a compact GPT to complete digit strings of the form
@@ -31,13 +31,13 @@ For example, in the one-digit setting `8 + 7 = 15` is represented as the digit s
 `8 7 5 1`.  At inference time the model sees `8 7` and greedily generates the two result digits
 `5 1`, which we reverse back to `15`.
 
-This is intentionally not a text chatbot.  It is a controlled "does the CUDA GPT training loop
-actually learn an algorithmic task?" walkthrough:
+This is not a text chatbot. It is a controlled algorithmic sequence task for the CUDA GPT training
+loop:
 
 * synthetic data is generated in Lean,
 * the model is a GPT-style causal Transformer built from TorchLean layers,
 * training is CUDA-only by default,
-* optimizer choices are deliberately close to minGPT (`adamw`, `adam`, or `sgd`),
+* optimizer choices follow the minGPT-style setup (`adamw`, `adam`, or `sgd`),
 * evaluation greedily completes every one-digit addition problem.
 
 Performance note: this uses the eager CUDA runtime, not a persistent CUDA graph.
@@ -62,13 +62,15 @@ namespace NN.Examples.Models.Sequence.GptAdder
 
 /-- Runner subcommand name. -/
 def exeName : String := "torchlean gpt_adder"
+
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/gpt_adder_trainlog.json"
 
 /--
 Number of input digits per operand.
 
-We start with the one-digit curriculum because it is small enough to train quickly in the
-eager CUDA runtime while still including carry examples such as `8 + 7 = 15`.
+We start with the one-digit curriculum because it trains directly in the eager CUDA runtime while
+still including carry examples such as `8 + 7 = 15`.
 -/
 def ndigit : Nat := 1
 
@@ -78,7 +80,7 @@ def vocab : Nat := 10
 /--
 Full one-digit table batch size.
 
-This is intentionally `100`, not `1`: very small scalar workloads underutilize GPUs. In all-pairs mode one
+This is `100`, not `1`: scalar-sized GPU workloads underutilize the device. In all-pairs mode one
 optimizer step sees every one-digit addition problem, and evaluation completes the whole table with
 two batched greedy forward passes.
 -/
@@ -141,6 +143,7 @@ def paramCountShapes : List Shape → Nat
 local instance : NeZero seqLen := ⟨by decide⟩
 local instance : NeZero dModel := ⟨by decide⟩
 
+/-- GPT configuration shared by the typed shapes and model constructor. -/
 def cfg : nn.models.CausalOneHotConfig :=
   { batch := batch
     seqLen := seqLen
@@ -151,9 +154,11 @@ def cfg : nn.models.CausalOneHotConfig :=
     layers := layers
     seedStride := 100 }
 
+/-- Input shape: batched one-hot digit sequences. -/
 abbrev σ : Shape :=
   nn.models.causalOneHotShape cfg
 
+/-- Output shape: one digit-logit row per input position. -/
 abbrev τ : Shape :=
   σ
 
@@ -256,7 +261,7 @@ def trainPairAt (trainSplit : Bool) (i : Nat) : Nat × Nat :=
   else
     pairAt i
 
-/-- Parse `a+b` into a probe pair; returns `none` for non-one-digit prompts. -/
+/-- Parse `a+b` into a one-digit operand pair; returns `none` for malformed prompts. -/
 def parseProbe? (s : String) : Option (Nat × Nat) :=
   let parts := s.trimAscii.toString.splitOn "+"
   match parts with
@@ -267,7 +272,7 @@ def parseProbe? (s : String) : Option (Nat × Nat) :=
       | _, _ => none
   | _ => none
 
-/-- Comma-separated list of one-digit `a+b` probes. -/
+/-- Comma-separated list of one-digit `a+b` checks. -/
 def parseProbeList (s : String) : Except String (List (Nat × Nat)) := do
   let raw := s.splitOn "," |>.filter (fun p => p.trimAscii.toString != "")
   let mut out : List (Nat × Nat) := []
@@ -375,9 +380,13 @@ def evalAllSlow
       correct := correct + 1
   pure correct
 
+/-- Exact-match counts for train/test/all one-digit addition rows. -/
 structure EvalScore where
+  /-- Correct rows in the training split. -/
   trainCorrect : Nat
+  /-- Correct rows in the held-out split. -/
   testCorrect : Nat
+  /-- Correct rows across all one-digit additions. -/
   allCorrect : Nat
 deriving Repr
 
@@ -416,6 +425,7 @@ def evalBatched
           testCorrect := testCorrect + 1
   pure { trainCorrect := trainCorrect, testCorrect := testCorrect, allCorrect := allCorrect }
 
+/-- Batched exact-match score over all one-digit additions. -/
 def evalAllBatched
     (opts : Runtime.Autograd.Torch.Options)
     (model : nn.Sequential σ τ)
@@ -423,7 +433,7 @@ def evalAllBatched
     IO Nat := do
   pure (← evalBatched opts model m).allCorrect
 
-/-- Print one addition probe in the same digit convention used for training. -/
+/-- Print one addition check in the same digit convention used for training. -/
 def printProbe
     (opts : Runtime.Autograd.Torch.Options)
     (model : nn.Sequential σ τ)
@@ -431,7 +441,7 @@ def printProbe
     (a b : Nat) : IO Unit := do
   let revDigits ← generateResultDigits opts model m a b
   let pred := decodeResult revDigits
-  IO.println s!"  probe {a}+{b}: reversed-digits={revDigits}, pred={pred}, target={a + b}"
+  IO.println s!"  check {a}+{b}: reversed-digits={revDigits}, pred={pred}, target={a + b}"
 
 /-- Optimizer choice for this addition run. -/
 inductive OptimKind where
@@ -440,6 +450,7 @@ inductive OptimKind where
   | adamw
 deriving DecidableEq, Repr
 
+/-- Parse an optimizer name accepted by `--optim`. -/
 def OptimKind.parse (s : String) : Except String OptimKind :=
   if s == "sgd" then
     pure .sgd
@@ -450,6 +461,7 @@ def OptimKind.parse (s : String) : Except String OptimKind :=
   else
     throw s!"bad --optim {s}; expected sgd, adam, or adamw"
 
+/-- Human-readable optimizer name for logs. -/
 def OptimKind.name : OptimKind → String
   | .sgd => "SGD"
   | .adam => "Adam"
@@ -472,15 +484,15 @@ structure TrainOptions where
   optim : OptimKind
   /-- Learning rate. -/
   lr : Float
-  /-- Probe operand `a`. -/
+  /-- Operand `a` used by the highlighted addition check. -/
   a : Nat
-  /-- Probe operand `b`. -/
+  /-- Operand `b` used by the highlighted addition check. -/
   b : Nat
-  /-- Extra comma-separated prompt probes, e.g. `0+0,4+5,9+9`. -/
+  /-- Extra comma-separated addition checks, e.g. `0+0,4+5,9+9`. -/
   probes : List (Nat × Nat)
   /-- Train on an 80/20 train/test split instead of all 100 one-digit additions. -/
   trainSplit : Bool
-  /-- Train only the probe pair, useful for verifying the CUDA GPT can overfit one addition. -/
+  /-- Train only the selected pair, useful for checking that the CUDA GPT can overfit one addition. -/
   overfitProbe : Bool
   /-- Keep the trained CUDA model alive and read `a+b` prompts from stdin. -/
   interactive : Bool
@@ -582,7 +594,7 @@ def trainAdderFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : TrainOp
     IO.println s!"  initial loss={Tensor.toScalar loss0}"
     IO.println s!"  minGPT encoding example 8+7 -> {renderExample 8 7} (sum digits reversed)"
     if trainOpts.overfitProbe then
-      IO.println s!"  curriculum=overfit-probe pair={trainOpts.a}+{trainOpts.b}"
+      IO.println s!"  curriculum=overfit-pair pair={trainOpts.a}+{trainOpts.b}"
     else if trainOpts.trainSplit then
       IO.println s!"  curriculum=train/test split ({trainCount} train / {testCount} test; train rows repeat to fill batch={batch})"
     else
@@ -592,9 +604,9 @@ def trainAdderFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : TrainOp
     The one-digit adder dataset is static, so build the supervised batch once.
 
     This matters for runtime measurements: constructing a `Tensor.dim` tree in Lean every optimizer
-    step can dominate very small GPU experiments and obscure the cost of the CUDA kernels. Real data
-    loaders should still stream/minibatch, but this finite full-table task intentionally trains
-    against the same batch each step.
+    step can dominate scalar-sized GPU experiments and obscure the cost of the CUDA kernels. Real
+    data loaders should still stream/minibatch; this finite full-table task trains against the same
+    batch each step because the dataset is exactly the one-digit addition table.
     -/
     let trainSample : sample.Supervised Float σ τ :=
       if trainOpts.overfitProbe then
@@ -640,7 +652,7 @@ def trainAdderFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : TrainOp
         Common.check exeName s!"non-finite training loss at step {done}" (lossVal == lossVal)
         if trainOpts.overfitProbe then
           let pred ← predictSum opts model m trainOpts.a trainOpts.b
-          IO.println s!"  step={done} loss={lossVal} probePred={pred} target={trainOpts.a + trainOpts.b}"
+          IO.println s!"  step={done} loss={lossVal} pairPred={pred} target={trainOpts.a + trainOpts.b}"
         else if trainOpts.trainSplit then
           let score ← evalBatched opts model m
           IO.println s!"  step={done} loss={lossVal} train={score.trainCorrect}/{trainCount} test={score.testCorrect}/{testCount} all={score.allCorrect}/100"
@@ -665,12 +677,13 @@ def trainAdderFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : TrainOp
         s!"device={if opts.useGpu then "cuda" else "cpu"}"]
     printProbe opts model m trainOpts.a trainOpts.b
     if !trainOpts.probes.isEmpty then
-      IO.println "  extra probes:"
+      IO.println "  extra checks:"
       for (a, b) in trainOpts.probes do
         printProbe opts model m a b
     if trainOpts.interactive then
       interactiveLoop opts model m
 
+/-- CLI entrypoint for the CUDA GPT adder command. -/
 def main (args : List String) : IO UInt32 := do
   match forceCudaArgs args with
   | .error e =>

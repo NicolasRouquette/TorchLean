@@ -23,7 +23,7 @@ This module is the **API-facing** wrapper around the lower-level format implemen
 
 ## What Is Supported
 
-Today we keep the checkpoint format intentionally small and explicit:
+The checkpoint format is compact and explicit:
 
 - **Scalar backend:** `Float` (Lean `Float`).
 - **Encoding:** exact bitwise round-trip via `Float.toBits` (`UInt64`) stored in JSON.

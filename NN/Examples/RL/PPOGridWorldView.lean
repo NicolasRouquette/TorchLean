@@ -9,6 +9,8 @@ module
 public import NN.Spec.RL.Envs.GridWorld
 public import NN.Entrypoint.Widgets
 public import NN.Runtime.RL.Artifacts.DefaultPaths
+public meta import NN.Runtime.RL.Artifacts.GridWorld.Policy
+public meta import NN.Runtime.RL.Artifacts.GridWorld.Path
 
 /-!
 # PPO GridWorld Artifacts

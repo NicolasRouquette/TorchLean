@@ -5,16 +5,16 @@ Inspired by Li, Peng, Severini, and Shafto, "The Network Structure of Mathlib" (
 ## Summary
 
 - Modules: `873`
-- Import edges: `3216`
-- Internal import edges: `2668`
-- Public imports: `2883`
-- Private imports: `333`
+- Import edges: `3221`
+- Internal import edges: `2669`
+- Public imports: `2886`
+- Private imports: `335`
 - Critical-path length over internal imports: `33`
 - Findings: `0` (`0` errors, `0` warnings)
 - Lean files: `873`
-- Lean source lines: `274302`
-- Declaration headers: `10856`
-- Theorem/lemma headers: `1969`
+- Lean source lines: `276295`
+- Declaration headers: `10946`
+- Theorem/lemma headers: `1970`
 
 ## Top Fan-In Modules
 

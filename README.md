@@ -32,7 +32,7 @@ uses Lean's builtin `Float` runtime path. The CUDA command uses the native GPU
 runtime path and is meant as a quick smoke test, not a trusted proof boundary.
 
 TorchLean is pinned by `lean-toolchain` and currently builds with
-`leanprover/lean4:v4.29.0`.
+`leanprover/lean4:v4.30.0`.
 
 ## First Things To Try
 

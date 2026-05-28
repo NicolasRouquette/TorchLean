@@ -290,7 +290,7 @@ This is the runtime-safe part of a GaLore-style optimizer: every parameter gets 
 projector/lift pair, and the update applies `p ← p - lr * lift(project(g))`.
 
 Full GaLore also needs a rank-changing projector and a refresh schedule. Those pieces require
-matrix-specific state and SVD/randomized-SVD infrastructure, so they are intentionally not hidden
+matrix-specific state and SVD/randomized-SVD infrastructure, so they are not hidden
 inside this generic constructor.
 -/
 def projectedSGD {α : Type} [Context α] (lr : α)

@@ -13,11 +13,11 @@ import Mathlib.Algebra.Order.Algebra
 /-!
 # Torch Utils
 
-Small helpers for writing PyTorch-style training loops on top of `Runtime.Autograd.Torch`.
+Helpers for writing PyTorch-style training loops on top of `Runtime.Autograd.Torch`.
 
-This file focuses on demo/training ergonomics:
+This file focuses on training-loop ergonomics:
 - extract scalar values,
-- build small `TList`s,
+- build short `TList`s,
 - run simple SGD loops for `Torch.ScalarTrainer`.
 
 Stateful optimizer loops live in `Runtime.Autograd.TorchLean`, because those depend on
@@ -41,7 +41,7 @@ open Proofs.Autograd.Algebra
 namespace Init
 
 /--
-Deterministic initialization schemes for small demos (stored as `Float` constants).
+Deterministic initialization schemes stored as `Float` constants.
 
 PyTorch comparison:
 - `.zeros` / `.ones` correspond to `torch.nn.init.zeros_` / `torch.nn.init.ones_`
@@ -67,8 +67,8 @@ namespace Internal
 /--
 Next state of a simple 32-bit linear congruential generator (LCG).
 
-This exists to make demos deterministic and reproducible; it is not statistically strong and it is
-not cryptographically secure.
+This exists to make examples deterministic and reproducible; it is not statistically strong and it
+is not cryptographically secure.
 -/
 def lcgNext (s : Nat) : Nat :=
   -- classic LCG parameters (same as many stdlib examples)
@@ -88,7 +88,7 @@ Deterministic `U[0,1)` sampler derived from a seed and scalar index.
 Implementation note: this is the LCG iterated `idx+1` times, then normalized to `[0,1)`.
 -/
 def rand01 (seed idx : Nat) : Float :=
-  -- cheap, deterministic “random”: apply the LCG `idx+1` times
+  -- Deterministic sampler: apply the LCG `idx+1` times.
   let rec go : Nat → Nat → Nat
     | 0, s => lcgNext s
     | Nat.succ n, s => go n (lcgNext s)
@@ -120,7 +120,8 @@ open Internal
 /--
 Create a `Tensor Float s` by sampling a `Scheme` deterministically.
 
-This is intended for **small demo models**. It is not optimized.
+This pure initializer is convenient for model definitions and reproducible examples. Runtime
+initialization paths can provide more specialized allocation strategies for very large tensors.
 
 PyTorch comparison: this mimics using `torch.nn.init.*` routines on freshly allocated parameters,
 but here we work with *pure* `Tensor Float s` values (no mutation) and use a deterministic
@@ -187,7 +188,7 @@ def affine2 (w1 w2 b : Float) (x1 x2 : Float) : Float :=
 
 end Samples
 
-/-! ## Small conveniences for scalar training demos -/
+/-! ## Conveniences for scalar training loops -/
 
 /--
 Extract the scalar value from a scalar-shaped tensor.
@@ -206,7 +207,7 @@ def tlist1 {α : Type} {s₁ : Shape} (x₁ : Tensor α s₁) : TList α [s₁] 
 /--
 Build a `TList` from a comma-separated list of terms.
 
-This is meant for small demo/training code, where `tlist1`/`tlist2`/… becomes tedious.
+This is meant for training code where `tlist1`/`tlist2`/… becomes tedious.
 
 Example:
 

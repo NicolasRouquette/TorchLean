@@ -35,19 +35,25 @@ open NN.API
 
 namespace NN.Examples.Models.Sequence.Mamba
 
+/-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean mamba"
+
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/mamba_trainlog.json"
 
 /--
 Training/generation context length in byte tokens.
 
-Mamba scales more gently with sequence length than attention, so the tutorial uses a 64-byte
+Mamba scales more gently with sequence length than attention, so this example uses a 64-byte
 window. That is long enough to carry speaker tags and short phrases from Tiny Shakespeare while
-remaining fast in eager CUDA.
+remaining practical in eager CUDA.
 -/
 def seqLen : Nat := 64
+
+/-- Byte tokenizer used by this sequence model. -/
 def tokenizer : text.Tokenizer := text.Tokenizer.byte
 
+/-- Mamba text-model configuration shared by shapes and the constructor. -/
 def cfg : nn.models.MambaTextConfig :=
   { vocab := tokenizer.vocabSize
     -- A wider `128/12` variant learns too, but eager CUDA tape memory can dominate post-training
@@ -56,38 +62,55 @@ def cfg : nn.models.MambaTextConfig :=
     ssmStateDim := 8
     convWidth := 3 }
 
+/-- Input shape: one sequence of one-hot byte tokens. -/
 abbrev σ : Shape := nn.models.mambaTokenMat cfg seqLen
+
+/-- Output shape: one vocabulary-logit row per input position. -/
 abbrev τ : Shape := nn.models.mambaLogitMat cfg seqLen
 
+/-- Public Mamba language-model constructor specialized to the example config. -/
 def mkModel : nn.M (nn.Sequential σ τ) :=
   nn.models.mambaTextLm cfg seqLen
 
+/-- Parsed training and generation options for the Mamba command. -/
 structure TrainOptions where
+  /-- Common model-training flags: steps, log path, CUDA memory watch, and learning rate. -/
   base : Common.ModelTrainFlags
+  /-- Number of corpus windows used by the cyclic training set. -/
   windows : Nat
+  /-- Prompt used for before/after reports and generation. -/
   prompt : String
+  /-- Number of byte tokens generated after training. -/
   generate : Nat
+  /-- Sampling temperature for generation. -/
   temperature : Float
+  /-- Top-k cutoff for generation; `1` gives greedy decoding. -/
   topK : Nat
+  /-- Seed for reproducible top-k sampling. -/
   seed : Nat
 deriving Repr
 
 namespace TrainOptions
 
+/-- Number of optimizer steps. -/
 def steps (train : TrainOptions) : Nat :=
   train.base.train.steps
 
+/-- Adam learning rate. -/
 def lr (train : TrainOptions) : Float :=
   train.base.lr
 
+/-- Training-log destination. -/
 def log (train : TrainOptions) : _root_.Runtime.Training.LogDestination :=
   train.base.train.log
 
+/-- Concrete JSON log path when the destination is file-backed. -/
 def logPath (train : TrainOptions) : System.FilePath :=
   train.base.train.logPath
 
 end TrainOptions
 
+/-- Parse Mamba-specific flags after the shared runtime flags. -/
 def parseTrainOptions (args : List String) : Except String (TrainOptions × List String) := do
   let (base, args) ← Common.parseModelTrainFlags exeName args defaultLogJson 200 0.002
   let (windows?, args) ← CLI.takeNatFlagOnce args "windows"
@@ -110,13 +133,16 @@ def parseTrainOptions (args : List String) : Except String (TrainOptions × List
           topK := topK?.getD 16
           seed := seed?.getD 0 }, args)
 
+/-- Identity cast kept at the tensor boundary where shared text helpers return `Float`. -/
 def castTensor {s : Shape} (t : Tensor Float s) : Tensor Float s :=
   t
 
+/-- Convert a token window into the one-hot next-token sample consumed by the Mamba model. -/
 def sampleFromTokenIds (ids : List Nat) : API.sample.Supervised Float σ τ :=
   let (xF, yF) := text.causalLmXYOneHotMatFloat (seqLen := seqLen) (vocab := cfg.vocab) ids
   API.sample.mk (castTensor xF) (castTensor yF)
 
+/-- Build a finite cyclic training set from corpus text, biased toward the prompt when present. -/
 def samplesFromCorpus (input prompt : String) (windows : Nat) :
     Array (API.sample.Supervised Float σ τ) :=
   let toks := tokenizer.encode input
@@ -134,19 +160,23 @@ def samplesFromCorpus (input prompt : String) (windows : Nat) :
     let ids := text.tokenWindow tokenizer (seqLen + 1) input (offset := off) (padId := 32)
     sampleFromTokenIds ids)
 
+/-- Fallback sample used when a caller passes an empty training-window array. -/
 def firstSample (samples : Array (API.sample.Supervised Float σ τ)) :
     API.sample.Supervised Float σ τ :=
   samples.getD 0 (sampleFromTokenIds (List.replicate (seqLen + 1) 32))
 
-def printPredictionProbe (label prompt : String) (logits : Tensor Float τ) : IO Unit := do
+/-- Print the current argmax prediction beside the prompt and shifted target text. -/
+def printPredictionReport (label prompt : String) (logits : Tensor Float τ) : IO Unit := do
   IO.println s!"  {label} pred={text.escapeForDisplay (text.decodeArgmaxLogits tokenizer logits)}"
   IO.println s!"  prompt={text.escapeForDisplay (text.decodeWindow tokenizer seqLen prompt (padId := 32))}"
   IO.println s!"  target={text.escapeForDisplay (text.decodeWindow tokenizer seqLen prompt (offset := 1) (padId := 32))}"
 
+/-- Convert a prompt window into the typed one-hot input tensor used during generation. -/
 def inputTensorFromIds (ids : List Nat) : Tensor Float σ :=
   let (xF, _) := text.causalLmXYOneHotMatFloat (seqLen := seqLen) (vocab := cfg.vocab) ids
   xF
 
+/-- Extract the vocabulary score vector at one sequence position. -/
 def logitsArrayAt (logits : Tensor Float τ) (pos : Nat) : Array Float :=
   let pos : Fin seqLen :=
     ⟨Nat.min pos (seqLen - 1),
@@ -159,15 +189,18 @@ def logitsArrayAt (logits : Tensor Float τ) (pos : Nat) : Array Float :=
             match cols j with
             | Tensor.scalar x => x)
 
+/-- Greedy token at one sequence position. -/
 def greedyTokenAt (logits : Tensor Float τ) (pos : Nat) : Nat :=
   let scores := logitsArrayAt logits pos
   (text.topKIndices scores 1).head?.getD 32
 
+/-- Top-k sampled token at one sequence position. -/
 def sampleFromLogitsAt (logits : Tensor Float τ) (pos : Nat)
     (temperature : Float) (topK seed counter : Nat) : Nat := Id.run do
   let scores := logitsArrayAt logits pos
   text.sampleTopKIndex scores temperature topK seed counter
 
+/-- Autoregressively extend a prompt using the trained Mamba parameters. -/
 partial def generateSampled
     (opts : Runtime.Autograd.Torch.Options) (model : nn.Sequential σ τ)
     (params : TorchLean.ParamList Float (nn.paramShapes model))
@@ -190,13 +223,13 @@ partial def generateSampled
   let ids ← loop (tokenizer.encode prompt) steps
   pure (tokenizer.decode ids)
 
+/-- Mean loss over a bounded deterministic prefix of the training windows. -/
 def meanLossOnSamples
     (model : nn.Sequential σ τ)
     (m : TorchLean.Module.ScalarModule Float (nn.paramShapes model) [σ, τ])
     (samples : Array (API.sample.Supervised Float σ τ)) : IO Float := do
-  -- Keep reporting cheap and memory-bounded. The trainer can cycle over hundreds of windows, but a
-  -- full eager-CUDA scalar forward over every window is not needed just to print a representative
-  -- curve point.
+  -- Keep reporting memory-bounded. The trainer can cycle over many windows, but a fixed evaluation
+  -- prefix gives a deterministic before/after curve point.
   let evalCount := Nat.min samples.size 32
   let mut total := 0.0
   for i in [0:evalCount] do
@@ -205,18 +238,19 @@ def meanLossOnSamples
     total := total + Tensor.toScalar loss
   pure (total / Float.ofNat (Nat.max 1 evalCount))
 
+/-- Train the Mamba language model and print before/after prediction and generation reports. -/
 def trainOnText (opts : Runtime.Autograd.Torch.Options) (input : String) (train : TrainOptions) :
     IO (Float × Float) := do
   nn.withModel mkModel fun model => do
     let samples := samplesFromCorpus input train.prompt train.windows
-    let probeSample := sampleFromTokenIds (text.tokenWindow tokenizer (seqLen + 1) train.prompt
+    let reportSample := sampleFromTokenIds (text.tokenWindow tokenizer (seqLen + 1) train.prompt
       (padId := 32))
     let modDef := nn.crossEntropyOneHotScalarModuleDef model (reduction := .mean)
     let m ← TorchLean.Module.instantiateWithOptions (α := Float) modDef id opts
 
     let logits0 ← nn.eval1NoGrad (α := Float) opts model m.trainer.params
-      (NN.API.sample.x probeSample)
-    printPredictionProbe "before" train.prompt logits0
+      (NN.API.sample.x reportSample)
+    printPredictionReport "before" train.prompt logits0
     let L0 ← meanLossOnSamples model m samples
 
     let opt := TorchLean.Optim.adam (α := Float)
@@ -227,14 +261,18 @@ def trainOnText (opts : Runtime.Autograd.Torch.Options) (input : String) (train 
       (epsilon := 1e-8)
     let optH ← TorchLean.Optim.handle (α := Float) m opt
     if train.steps > 0 then
+      let cudaMemWatch :=
+        Common.effectiveCudaMemWatch opts train.steps train.base.cudaMemWatch
+      let mut memWatch? ← Common.reportCudaMemWatch opts cudaMemWatch train.steps 0 none
       for step in [0:train.steps] do
         let sample := samples.getD (step % Nat.max 1 samples.size) (firstSample samples)
         optH.step sample
+        memWatch? ← Common.reportCudaMemWatch opts cudaMemWatch train.steps (step + 1) memWatch?
 
     let L1 ← meanLossOnSamples model m samples
     let logits1 ← nn.eval1NoGrad (α := Float) opts model m.trainer.params
-      (NN.API.sample.x probeSample)
-    printPredictionProbe "after " train.prompt logits1
+      (NN.API.sample.x reportSample)
+    printPredictionReport "after " train.prompt logits1
     let generated ← generateSampled opts model m.trainer.params train.prompt train.generate
       train.temperature train.topK train.seed
     IO.println s!"  generated={text.escapeForDisplay generated}"
@@ -243,6 +281,7 @@ def trainOnText (opts : Runtime.Autograd.Torch.Options) (input : String) (train 
     IO.println s!"  sampling=top_k({train.topK}), temperature={train.temperature}, seed={train.seed}"
     pure (L0, L1)
 
+/-- CLI entrypoint for the Mamba text command. -/
 def main (args : List String) : IO UInt32 := do
   TorchLean.Module.run exeName args
     (.float (fun opts rest => do
@@ -255,6 +294,7 @@ def main (args : List String) : IO UInt32 := do
         train.steps L0 L1
         #[s!"data={path}", s!"device={if opts.useGpu then "cuda" else "cpu"}",
           s!"windows={train.windows}", s!"lr={train.lr}",
+          s!"cuda_mem_watch={Common.effectiveCudaMemWatch opts train.steps train.base.cudaMemWatch}",
           s!"prompt={text.escapeForDisplay train.prompt}", s!"generate={train.generate}",
           s!"temperature={train.temperature}", s!"top_k={train.topK}", s!"sample_seed={train.seed}"]
     ))

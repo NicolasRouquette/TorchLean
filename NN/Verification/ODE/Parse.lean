@@ -172,8 +172,7 @@ mutual
   Internal: parse an `expr` (addition/subtraction chain), with an explicit fuel budget.
 
   This is a plain `def` (not `private`) because the module is in a `public` section for
-  export/doc tooling, and Lean 4.29 disallows referring to `private` declarations from
-  public ones.
+  export/doc tooling, and public declarations should not depend on private helper definitions.
   -/
   def parseExprFuel (fuel : Nat) (st : State) : Except String (Expr × State) := do
     match fuel with

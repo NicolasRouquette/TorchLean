@@ -103,7 +103,7 @@ def writeCsv (path : System.FilePath) (header : List String) (rows : List (List 
 Write a one-dimensional prediction probe CSV.
 
 Rows are `i,x,input,target,prediction`, where `x = i/(n-1)` for `n > 1`.
-This is intentionally simple and meant for plotting examples such as 1D operator learning.
+This writes the compact prediction table used by plotting examples such as 1D operator learning.
 -/
 def writePredictionCsv1D {n : Nat}
     (path : System.FilePath)
@@ -143,8 +143,8 @@ Build a cycling index function for a *nonempty* list.
 
 `cycleList xs h i` returns `xs[i % xs.length]`.
 
-This is useful in small in-memory demos where you want a fixed-step “PyTorch-like” loop without
-repeated `Option` handling.
+This is useful for in-memory datasets where a fixed-step “PyTorch-like” loop should avoid repeated
+`Option` handling.
 -/
 def cycleList {a : Type} (xs : List a) (h : xs ≠ []) : Nat → a :=
   fun i =>
@@ -155,7 +155,7 @@ def cycleList {a : Type} (xs : List a) (h : xs ≠ []) : Nat → a :=
 /--
 Like `cycleList`, but fail with a message if the list is empty.
 
-This is designed to keep tutorial code tidy: check emptiness once, then index without `Option`.
+This keeps fixed-step dataset code explicit: check emptiness once, then index without `Option`.
 -/
 def cycleListOrError {a : Type} (xs : List a) (err : String := "empty list") : Except String (Nat →
   a) :=
@@ -168,7 +168,8 @@ Build a cycling index function for a *nonempty* dataset.
 
 `cycleDataset ds h i` returns `ds[i % ds.size]`.
 
-This is the dataset analogue of `cycleList`. It avoids per-step `Option` handling in small demos.
+This is the dataset analogue of `cycleList`. It avoids per-step `Option` handling in fixed-step
+training loops.
 -/
 def cycleDataset {a : Type} (ds : _root_.Runtime.Autograd.Train.Dataset a) (h : ds.data.size ≠ 0) :
   Nat → a :=
@@ -472,13 +473,13 @@ Load an N-D tensor from a `.npy` file, allowing the file to contain more rows on
 This is the dataset-loader analogue of taking `tensor[:n]` in PyTorch. The rank and trailing
 dimensions must still match exactly; only the leading dimension may be larger than requested.
 
-We use this for dataset sources rather than the stricter `fromNpyTensorND` because a real exported
-dataset usually has a fixed full size, while tutorials often ask for a small prefix during smoke
-tests or quick CUDA checks.  For example, a CIFAR file may have shape `(50000, 3, 32, 32)` while a
-demo command asks for `n = 80`; the resulting TorchLean tensor has type-level shape
+We use this for dataset sources rather than the stricter `fromNpyTensorND` because an exported
+dataset usually has a fixed full size, while local runs often request a bounded prefix. For example,
+a CIFAR file may have shape `(50000, 3, 32, 32)` while an example command asks for `n = 80`; the
+resulting TorchLean tensor has type-level shape
 `(80, 3, 32, 32)`.
 
-This is intentionally still a checked loader, not an implicit reshape:
+This is still a checked loader, not an implicit reshape:
 
 - rank must agree;
 - all trailing dimensions must agree;
@@ -656,7 +657,7 @@ def fromCsvLabeled {α : Type} [API.Semantics.Scalar α] [API.Runtime.Scalar α]
 /-!
 ## Unified file-source layer
 
-The lower-level helpers above intentionally stay close to file formats (`fromNpyTensorND`,
+The lower-level helpers above stay close to file formats (`fromNpyTensorND`,
 `fromCsvRows`, `fromNpySupervised`, ...).  The definitions below give examples and applications a
 single scheme:
 
@@ -771,7 +772,7 @@ Load a Float tensor, allowing NPY files to contain more rows than requested on d
 
 `TensorSource.loadFloatAs` is exact: the file shape must equal `dims`.  This prefix variant is for
 dataset-style sources where `dims` starts with the number of rows requested by the current run.  CSV
-sources remain exact because CSV has no cheap binary prefix contract; NPY sources use
+sources remain exact because CSV has no binary prefix contract; NPY sources use
 `fromNpyTensorNDPrefixDim0`.
 -/
 def loadFloatPrefixDim0As (format : TensorFormat) (path : System.FilePath)
@@ -873,8 +874,8 @@ For CSV label vectors, store labels as a single-column table with `dims = [n, 1]
 def load {α : Type} [API.Semantics.Scalar α] [API.Runtime.Scalar α] (src : LabeledSource) :
     IO (Except String (Dataset (API.TorchLean.TList α [NN.Tensor.shapeOfDims src.xDims,
       NN.Tensor.Shape.Vec src.classes]))) := do
-  -- Labels use the same prefix-row convention as supervised tensors.  This lets one full exported
-  -- label vector back many different smoke tests without making separate small copies on disk.
+  -- Labels use the same prefix-row convention as supervised tensors. This lets one full exported
+  -- label vector back different bounded runs without making separate copies on disk.
   let xRes ← TensorSource.loadFloatPrefixDim0As src.x.format src.x.path (src.n :: src.xDims)
     src.x.csvOptions
   let yRes ← TensorSource.loadFloatPrefixDim0As src.y.format src.y.path [src.n] src.y.csvOptions

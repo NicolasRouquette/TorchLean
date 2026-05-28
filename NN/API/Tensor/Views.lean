@@ -12,9 +12,9 @@ public import NN.Spec.Core.TensorReductionShape
 /-!
 # Tensor Views (API)
 
-Small, shape-preserving tensor views that show up across examples and subsystems.
+Shape-preserving tensor views that show up across examples and subsystems.
 
-These helpers are deliberately model-agnostic:
+These helpers are model-agnostic:
 - they are not tied to a particular layer architecture, and
 - they avoid pulling in large "example config" modules just to access a view.
 -/
@@ -31,9 +31,9 @@ namespace tensor
 /-!
 ## Flattened Prefix View
 
-For quick experiments, it's often useful to treat an arbitrary `source` shape as a flattened
-feature vector and keep only the first `takeDim` coordinates. This keeps runnable demos fast
-without baking dataset-specific flattening logic into every example.
+For bounded examples, it is often useful to treat an arbitrary `source` shape as a flattened feature
+vector and keep only the first `takeDim` coordinates. This keeps runnable examples fast without
+baking dataset-specific flattening logic into every model file.
 -/
 
 /--

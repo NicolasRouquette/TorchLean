@@ -2,7 +2,7 @@
 
 `NN.API.Data` is TorchLean's public data API.
 
-The data boundary is intentionally small:
+The data boundary is focused:
 
 - `.npy` for numeric tensors;
 - numeric CSV for small tabular data;

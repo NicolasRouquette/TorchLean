@@ -8,7 +8,7 @@ import Lake
 open Lake DSL
 open System
 
-/-- Whether native CUDA archives should be built instead of portable CPU stubs. -/
+/-- Whether Lake should compile the native CUDA sources instead of the portable C stubs. -/
 private def cudaEnabled : Bool :=
   match get_config? cuda with
   | some v => v == "true" || v == "1"
@@ -30,7 +30,7 @@ private def cudaHome : String :=
   | some p => cleanCudaHome p
   | none => "/usr/local/cuda"
 
-/-- Extra native link flags for TorchLean's optional CUDA backend. -/
+/-- Native link flags selected by the `cuda` Lake option. -/
 private def nativeLinkArgs : Array String :=
   if cudaEnabled then
     #[
@@ -79,22 +79,31 @@ lean_lib NN where
     .submodules `NN.Verification
   ]
 
-private structure CudaArchive where
+/-!
+## Native backend libraries
+
+TorchLean has a small amount of native code behind Lean `extern` declarations. Each component has
+the same build shape: compile the CUDA implementation when the package is built with
+`-K cuda=true`; otherwise compile the matching C stub so the Lean package still builds on machines
+without a CUDA toolkit.
+-/
+
+private structure NativeBackendLib where
   stem : String
   cudaSrc : String
   stubSrc : String
 
-/-- Shared include paths for TorchLean native CUDA/stub sources. -/
-private def cudaIncludeArgs (pkg : Package) : Array String :=
+/-- Include paths shared by the CUDA implementations and the portable C stubs. -/
+private def nativeIncludeArgs (pkg : Package) : Array String :=
   #[
     "-I", (pkg.dir / "csrc/cuda/common").toString,
     "-I", (pkg.dir / "csrc/cuda/conv_pool").toString
   ]
 
-/-- Build a CUDA-backed archive when `-K cuda=true`, otherwise build its CPU stub. -/
-private def buildCudaArchive (pkg : Package) (spec : CudaArchive) := do
+/-- Build one native backend library for the current Lake configuration. -/
+private def buildNativeBackendLib (pkg : Package) (spec : NativeBackendLib) := do
   let lean ← getLeanInstall
-  let includeArgs := cudaIncludeArgs pkg
+  let includeArgs := nativeIncludeArgs pkg
   let libFile := pkg.buildDir / nameToStaticLib spec.stem
   if cudaEnabled then
     let srcJob ← inputFile (pkg.dir / spec.cudaSrc) false
@@ -114,33 +123,33 @@ private def buildCudaArchive (pkg : Package) (spec : CudaArchive) := do
       #[] "cc"
     buildStaticLib libFile #[oJob]
 
-/-- Static archive for `torchlean_dgemm_cuda`: CUDA+cuBLAS when `-K cuda=true`, else CPU stub. -/
+/-- Native backend for `torchlean_dgemm_cuda`: CUDA+cuBLAS when `-K cuda=true`, else C stub. -/
 extern_lib torchlean_dgemm_cuda (pkg) :=
-  buildCudaArchive pkg {
+  buildNativeBackendLib pkg {
     stem := "torchlean_dgemm_cuda"
     cudaSrc := "csrc/cuda/blas/torchlean_dgemm_cuda.cu"
     stubSrc := "csrc/cuda/blas/torchlean_dgemm_cuda_stub.c"
   }
 
-/-- Static archive for `torchlean_cuda_kernels`: CUDA kernels when `-K cuda=true`, else CPU stub. -/
+/-- Native backend for `torchlean_cuda_kernels`: CUDA kernels when `-K cuda=true`, else C stub. -/
 extern_lib torchlean_cuda_kernels (pkg) :=
-  buildCudaArchive pkg {
+  buildNativeBackendLib pkg {
     stem := "torchlean_cuda_kernels"
     cudaSrc := "csrc/cuda/kernels/torchlean_cuda_kernels.cu"
     stubSrc := "csrc/cuda/kernels/torchlean_cuda_kernels_stub.c"
   }
 
-/-- Static archive for `torchlean_cuda_conv_pool`: CUDA conv/pool when `-K cuda=true`, else CPU stub. -/
+/-- Native backend for `torchlean_cuda_conv_pool`: CUDA conv/pool when `-K cuda=true`, else C stub. -/
 extern_lib torchlean_cuda_conv_pool (pkg) :=
-  buildCudaArchive pkg {
+  buildNativeBackendLib pkg {
     stem := "torchlean_cuda_conv_pool"
     cudaSrc := "csrc/cuda/conv_pool/torchlean_cuda_conv_pool.cu"
     stubSrc := "csrc/cuda/conv_pool/torchlean_cuda_conv_pool_stub.c"
   }
 
-/-- Static archive for `torchlean_cuda_tensor`: CUDA buffer runtime when `-K cuda=true`, else CPU stub. -/
+/-- Native backend for `torchlean_cuda_tensor`: CUDA buffer runtime when `-K cuda=true`, else C stub. -/
 extern_lib torchlean_cuda_tensor (pkg) :=
-  buildCudaArchive pkg {
+  buildNativeBackendLib pkg {
     stem := "torchlean_cuda_tensor"
     cudaSrc := "csrc/cuda/tensor/torchlean_cuda_tensor.cu"
     stubSrc := "csrc/cuda/tensor/torchlean_cuda_tensor_stub.c"
@@ -175,10 +184,10 @@ lean_exe torchlean where
 
 -- API documentation (HTML) via `lake build NN:docs`.
 require «doc-gen4» from git
-  "https://github.com/leanprover/doc-gen4" @ "v4.29.0"
+  "https://github.com/leanprover/doc-gen4" @ "v4.30.0"
 
 -- Comparator: a sandboxed judge for untrusted Lean proof submissions.
--- We pin versions compatible with TorchLean's Lean toolchain (v4.29.0).
+-- We pin versions compatible with TorchLean's Lean toolchain.
 require lean4export from git
   "https://github.com/leanprover/lean4export" @ "ca36c44858e2d7ba40996203d2f08a69113d1211"
 
@@ -187,4 +196,4 @@ require Comparator from git
 
 -- Keep `mathlib` last so Mathlib’s dependency versions win, which is required for cache tooling.
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.29.0"
+  "https://github.com/leanprover-community/mathlib4" @ "v4.30.0"

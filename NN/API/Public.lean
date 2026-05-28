@@ -37,7 +37,7 @@ Most user code should be able to `import NN` and then work with:
 - `API.Data`   (datasets/loaders + CSV/NPY readers)
 - `API.autograd` (grad/vjp/jacobian helpers)
 - `API.rand` (deterministic RNG helpers)
-- `API.text` (tokenizers and small text-model helpers)
+- `API.text` (tokenizers and text-model helpers)
 - `API.ssl` (self-supervised sample/objective helpers)
 
 Most of the executable runtime machinery lives under `API.TorchLean.*`; this module collects the
@@ -85,7 +85,8 @@ abbrev LayerDef := TorchLean.NN.LayerDef
 /-!
 Re-export common `Seq` helpers under `API.nn.*` so examples can stay on the public facade.
 
-This intentionally mirrors the TorchLean names to keep the mapping obvious.
+The names mirror the TorchLean runtime layer so users can move between the high-level and lower-level
+APIs without learning a second vocabulary.
 -/
 export TorchLean.NN.Seq
   (paramShapes paramRequiresGrad initParams updateBuffers
@@ -235,7 +236,7 @@ def lstm (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
 /--
 Embedding table initialization configuration (one-hot / token-distribution inputs).
 
-This is the TorchLean-friendly analogue of `torch.nn.Embedding` in the common demo setting where
+This is the TorchLean-friendly analogue of `torch.nn.Embedding` in the common setting where
 token ids are represented as one-hot vectors (or soft token distributions), so lookup is a matrix
 multiplication rather than integer indexing.
 -/
@@ -535,7 +536,7 @@ def dropout {s : Spec.Shape} (p : Float) (seed : Nat := 0) : Sequential s s :=
 /--
 Convenience block: `Flatten -> Linear`.
 
-This is common for "image to classifier head" demos.
+This is common for "image to classifier head" models.
 -/
 def flattenLinear {s : Spec.Shape} (outDim : Nat) (seedW seedB : Nat := 0) :
     Sequential s (NN.Tensor.Shape.Vec outDim) :=
@@ -558,7 +559,7 @@ export TorchLean.F
   (square checkpoint
    detach stopGrad
    addB mulB
-   embedding mean
+   embedding embeddingRowsNat embeddingBatchSeqNat mean
    dropoutSeeded)
 
 end functional
@@ -1190,8 +1191,7 @@ These are small, *named-field* building blocks intended for public examples:
 - keep composition explicit (still `seq!` stacking),
 - provide canonical blocks users expect from PyTorch codebases.
 
-They are intentionally conservative: the goal is readability and stable typing, not maximum
-  coverage.
+They are conservative by design: the goal is readability and stable typing, not maximum coverage.
 -/
 
 /--
@@ -2295,6 +2295,7 @@ export TorchLean.Loss
   (mse
    nllOneHot crossEntropyOneHot
    nllIndex nllNat crossEntropyIndex crossEntropyNat
+   rowTargetFlatIndices nllRowsNat crossEntropyRowsNat
    bceWithLogits bce)
 
 end loss
@@ -2311,13 +2312,13 @@ namespace train
 /-!
 High-level training helpers.
 
-This namespace is designed for executable demos: it wires together
+This namespace is the public training surface: it wires together
 - a model (`nn.Sequential`)
 - a loss (regression or classification)
 - an optimizer config (`API.optim`)
 - optional LR schedules
 
-The API exposes a small set of default building blocks, so tutorials can share the same training
+The API exposes a small set of default building blocks, so model commands can share the same training
 path while still making the model, loss, optimizer, and logging choices explicit.
 
 ### PyTorch Mapping
@@ -2383,8 +2384,8 @@ export _root_.Runtime.Training.TrainLog (writeJson readJson)
 /--
 A runner bundled with the task that created it.
 
-This is an ergonomic wrapper around `Runner α task`: it remembers the dependent `task`, so tutorial
-code can call `tr.predict x`, `tr.fit cfg samples`, etc. without repeatedly writing
+This is an ergonomic wrapper around `Runner α task`: it remembers the dependent `task`, so user code
+can call `tr.predict x`, `tr.fit cfg samples`, etc. without repeatedly writing
 `(task := task)`.
 -/
 structure TaskRunner (σ τ : Spec.Shape) (α : Type)
@@ -2534,7 +2535,7 @@ def accuracyOneHotBatched
       total := total + 1
   pure (correct, total)
 
-/-- Mean loss over an entire dataset (useful for quick before/after reports). -/
+/-- Mean loss over an entire dataset, used by before/after training reports. -/
 def meanLossDataset {σ τ : Spec.Shape} {task : Task σ τ}
     {α : Type} [Semantics.Scalar α] [DecidableEq Spec.Shape] [ToString α]
     [Add α] [Div α] [Zero α] [Coe Nat α]
@@ -2669,6 +2670,51 @@ def logLossEvery {α : Type} [ToString α] (every : Nat := 1) : Callbacks α :=
       IO.println s!"step {ev.epoch}:{ev.step}: loss={ev.loss}")
 
 /--
+Step-indexed source of already-collated module inputs.
+
+`Data.batchLoader` is the right interface when the data is a finite supervised dataset.  Other
+training jobs draw batches from a rule or an external source: replay buffers, collocation samplers,
+synthetic scale inputs, or file-backed sequence windows.  `StepBatchStream` is the lower-level
+interface for those cases.
+
+The stream is still fully typed: each produced sample is a `TList` matching the module's
+`inputShapes`.  The training loop below is model-agnostic and only assumes that the module can run
+`forward` and `stepWith` on those samples.
+-/
+structure StepBatchStream (α : Type) (inputShapes : List Spec.Shape) where
+  /-- Produce the input sample used at logical optimizer step `step`. -/
+  sample : Nat → IO (TorchLean.TList α inputShapes)
+
+namespace StepBatchStream
+
+/-- Constant stream, useful for fixed-batch overfit runs and compatibility with fixed-sample code. -/
+def fixed {α : Type} {inputShapes : List Spec.Shape}
+    (x : TorchLean.TList α inputShapes) : StepBatchStream α inputShapes :=
+  { sample := fun _ => pure x }
+
+/-- Build a stream from a pure step-indexed sample function. -/
+def ofFn {α : Type} {inputShapes : List Spec.Shape}
+    (f : Nat → TorchLean.TList α inputShapes) : StepBatchStream α inputShapes :=
+  { sample := fun step => pure (f step) }
+
+/--
+Cycle through a nonempty list of samples.
+
+This keeps list-based examples compatible with the step-stream trainer.  The explicit nonempty
+proof keeps empty datasets from turning into silent modulo-by-zero behavior.
+-/
+def cycle {α : Type} {inputShapes : List Spec.Shape}
+    (xs : List (TorchLean.TList α inputShapes)) (h : xs ≠ []) :
+    StepBatchStream α inputShapes :=
+  match xs with
+  | [] => False.elim (h rfl)
+  | x :: rest =>
+      let ys := x :: rest
+      { sample := fun step => pure (ys.getD (step % ys.length) x) }
+
+end StepBatchStream
+
+/--
 Run an action with the runner temporarily switched to `value` mode.
 
 This is useful for "evaluate on a validation set during training" in callback-based loops.
@@ -2686,8 +2732,8 @@ def withMode {σ τ : Spec.Shape} {task : Task σ τ}
 /--
 Mean loss for an already-instantiated scalar module over a typed minibatch loader.
 
-This is the general streaming evaluation path used by the runtime examples.  It is deliberately
-not CIFAR-specific: any supervised task whose loss module consumes
+This is the general streaming evaluation path used by the runtime examples. It is not
+CIFAR-specific: any supervised task whose loss module consumes
 `[dim n σ, dim n τ]` can use the same loader.  The loader stores ordinary per-example samples
 `(x : σ, y : τ)`; this helper asks `Data.epoch` for raw minibatches and calls
 `Data.collateSupervised` to build one shape-typed batch at a time.
@@ -2730,7 +2776,7 @@ Mean loss over a typed minibatch loader through a `train.Runner`.
 This is the runner-facing wrapper around `meanLossModuleLoader`.  Use it when the example is built
 around `train.run`, task modes, and the proof-facing trainer abstraction.  Use
 `meanLossModuleLoader` directly when the example has already instantiated a runtime
-`TorchLean.Module.ScalarModule`, which is the common fast path for CUDA demos.
+`TorchLean.Module.ScalarModule`, which is the common fast path for CUDA examples.
 -/
 def meanLossBatchLoader {σ τ : Spec.Shape} {n : Nat} {task : Task (.dim n σ) (.dim n τ)}
     {α : Type} [Semantics.Scalar α] [DecidableEq Spec.Shape] [ToString α]
@@ -2776,8 +2822,8 @@ This is the shared "real epoch loop" for model examples that instantiate a modul
 5. run `forward/backward/optimizer.step` through `TorchLean.Module.stepWith`.
 
 The function is polymorphic in the input shape `σ`, target shape `τ`, batch size `n`, scalar type
-`α`, parameter shapes, and optimizer.  It is not an image-specific helper.  CNN, ResNet, ViT, MLP,
-sequence, operator-learning, and future model demos should all be able to use this path whenever
+`α`, parameter shapes, and optimizer. It is not an image-specific helper. CNN, ResNet, ViT, MLP,
+sequence, operator-learning, and future model examples should all be able to use this path whenever
 their supervised loss module has input shapes `[dim n σ, dim n τ]`.
 -/
 def fitModuleLoaderWith {σ τ : Spec.Shape} {n : Nat} {paramShapes : List Spec.Shape}
@@ -2872,15 +2918,108 @@ def fitModuleLoaderStepsWith {σ τ : Spec.Shape} {n : Nat} {paramShapes : List 
   pure (report, dl)
 
 /--
+Train a scalar module from a step-indexed batch stream.
+
+This is the shared loop for workloads whose batches are produced step by step rather than by one
+finite `Data.batchLoader` epoch:
+
+- RL algorithms can sample replay or rollout batches,
+- PDE examples can resample collocation points,
+- generated workloads can stream synthetic inputs without storing a dataset.
+
+The function is generic in `inputShapes`. It does not know whether the sample is
+`[x, y]`, `[state, action, target]`, or `[]`; it only asks the stream for the next typed input list
+and then runs the same `forward/backward/optimizer.step` machinery as the loader-based trainer.
+-/
+def fitModuleStreamStepsWith {inputShapes : List Spec.Shape} {paramShapes : List Spec.Shape}
+    {α : Type} [Semantics.Scalar α] [DecidableEq Spec.Shape] [ToString α]
+    (module : TorchLean.Module.ScalarModule α paramShapes inputShapes)
+    (optimizer : TorchLean.Optim.Optimizer α paramShapes)
+    (steps : Nat)
+    (stream : StepBatchStream α inputShapes)
+    (callbacks : Callbacks α := Callbacks.empty) :
+    IO (FitReport α) := do
+  let sample0 ← stream.sample 0
+  let beforeTensor ← TorchLean.Module.forward module sample0
+  let before := Spec.Tensor.toScalar beforeTensor
+  callbacks.onTrainStart
+
+  let mut optState ← TorchLean.Module.initOptim module optimizer
+
+  for step in [0:steps] do
+    let sample ← stream.sample step
+    let lossTensor ← TorchLean.Module.forward module sample
+    let loss := Spec.Tensor.toScalar lossTensor
+    callbacks.onStep { epoch := 0, step := step, loss := loss }
+    optState ← TorchLean.Module.stepWith module optimizer optState sample
+
+  callbacks.onEpochEnd { epoch := 0, steps := steps }
+  let sampleAfter ← stream.sample steps
+  let afterTensor ← TorchLean.Module.forward module sampleAfter
+  let after := Spec.Tensor.toScalar afterTensor
+  let report := { before := before, after := after }
+  callbacks.onTrainEnd report
+  pure report
+
+/--
+Report-oriented wrapper for `fitModuleStreamStepsWith`.
+
+Callers use this exactly like the loader wrappers: pass the module, optimizer, runtime options, step
+count, and stream, and get standard before/after reporting plus CUDA memory watching.
+-/
+def fitModuleStreamStepsReport {inputShapes : List Spec.Shape} {paramShapes : List Spec.Shape}
+    {α : Type} [Semantics.Scalar α] [DecidableEq Spec.Shape] [ToString α]
+    (module : TorchLean.Module.ScalarModule α paramShapes inputShapes)
+    (optimizer : TorchLean.Optim.Optimizer α paramShapes)
+    (opts : _root_.Runtime.Autograd.Torch.Options)
+    (steps : Nat)
+    (stream : StepBatchStream α inputShapes)
+    (cudaMemWatch : Nat := 0)
+    (extraCallbacks : Callbacks α := Callbacks.empty) :
+    IO (FitReport α) := do
+  let watchEvery := Common.effectiveCudaMemWatch opts steps cudaMemWatch
+  let memHooks ← cudaMemWatchCallbacks (α := α) opts watchEvery steps
+  let hooks : Callbacks α :=
+    memHooks
+    ++ extraCallbacks
+    ++ onTrainEnd (α := α) (fun report =>
+      IO.println s!"  steps={steps} loss0={report.before} loss1={report.after}")
+  fitModuleStreamStepsWith module optimizer steps stream hooks
+
+/--
+Float stream trainer that records a per-step loss curve.
+
+Generated and file-backed batches do not always have one finite loader to summarize.  This wrapper
+keeps their training curves in the same JSON format as the supervised examples.
+-/
+def fitModuleStreamStepsCurveFloat {inputShapes : List Spec.Shape} {paramShapes : List Spec.Shape}
+    (module : TorchLean.Module.ScalarModule Float paramShapes inputShapes)
+    (optimizer : TorchLean.Optim.Optimizer Float paramShapes)
+    (opts : _root_.Runtime.Autograd.Torch.Options)
+    (steps : Nat)
+    (stream : StepBatchStream Float inputShapes)
+    (cudaMemWatch : Nat := 0)
+    (extraCallbacks : Callbacks Float := Callbacks.empty) :
+    IO (FitReport Float × _root_.Runtime.Training.Curve) := do
+  let curveRef ← IO.mkRef ({} : _root_.Runtime.Training.Curve)
+  let curveHooks : Callbacks Float :=
+    onStep (α := Float) (fun ev =>
+      curveRef.modify (fun c => c.push ev.step ev.loss))
+  let report ← fitModuleStreamStepsReport module optimizer opts steps stream cudaMemWatch
+    (extraCallbacks ++ curveHooks)
+  let curve ← curveRef.get
+  pure (report, curve)
+
+/--
 Train from a runner-backed loader with explicit callbacks instead of inline printing in example
 code.
 
-This is the proof/trainer-facing public escape hatch for PyTorch-style custom loops:
+This is the runner-facing public path for PyTorch-style custom loops:
 - keep the optimizer/scheduler logic in the library,
-- inject logging, evaluation, and probe reporting through callbacks.
+- inject logging, evaluation, and prediction reporting through callbacks.
 
 This path keeps the `Runner` abstraction, including task modes and scheduler support.  For
-CUDA-heavy tutorials that already have a `TorchLean.Module.ScalarModule`, prefer
+CUDA-heavy entrypoints that already have a `TorchLean.Module.ScalarModule`, prefer
 `fitModuleLoaderWith`; both paths consume the same general `API.Data.batchLoader`.
 -/
 def fitLoaderWith {σ τ : Spec.Shape} {n : Nat} {task : Task (.dim n σ) (.dim n τ)}
@@ -2980,12 +3119,12 @@ namespace Report
 /-!
 ### Small Reporting Helpers (IO)
 
-These helpers keep tutorial code readable by factoring out common "print a loss/accuracy table"
-patterns. They do not affect semantics: they only call the underlying `train.*` functions and
-print human-facing summaries.
+These helpers factor out common "print a loss/accuracy table" patterns for runnable model commands.
+They do not affect semantics: they only call the underlying `train.*` functions and print
+human-facing summaries.
 -/
 
-/-- Print a titled list of probe lines. -/
+/-- Print a titled list of named report lines. -/
 def reportProbes {β : Type} (title : String) (probes : List β) (lineOf : β → IO String) : IO Unit :=
   do
   IO.println title
@@ -3032,9 +3171,9 @@ def reportMeanLossModuleLoader
   IO.println s!"mean_loss({label}) = {loss}"
 
 /--
-Report predicted classes on a list of named probes.
+Report predicted classes on a list of named inputs.
 
-Each probe entry is `(name, x, expectedClass)`.
+Each entry is `(name, x, expectedClass)`.
 If `includeLogits := true`, also prints the raw model outputs.
 -/
 def reportClassProbes
@@ -3060,9 +3199,9 @@ def reportClassProbes
     pure s!"  {name}: expected={expected} predicted={predStr}{logitsStr}")
 
 /--
-Report predicted classes on a list of named probes, for a **batched** model.
+Report predicted classes on a list of named inputs, for a **batched** model.
 
-This expects probes of the *unbatched* input shape `σ` and replicates each probe across the batch
+This expects inputs of the *unbatched* input shape `σ` and replicates each one across the batch
 axis, then reports the prediction for row 0.
 -/
 def reportClassProbesBatchedFromSingle

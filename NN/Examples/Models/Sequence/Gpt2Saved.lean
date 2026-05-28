@@ -11,9 +11,9 @@ public import NN.Examples.Models.Sequence.Gpt2
 public import NN.API.Runtime
 
 /-!
-# GPT-2 Saved-Weights Demo
+# GPT-2 Saved-Weights Example
 
-This file is the "load + sample" half of the GPT-2 tutorial.
+This file is the load-and-sample half of the byte-level GPT example.
 
 1. Train and save parameters:
 
@@ -34,7 +34,7 @@ lake exe torchlean gpt2_saved --cuda --fast-kernels \
 
 ## What A "Checkpoint" Is In TorchLean
 
-TorchLean's simplest checkpoint format is intentionally explicit:
+TorchLean's simplest checkpoint format is explicit:
 
 - a **typed parameter pack**: `TList Float (nn.paramShapes model)`,
 - encoded as **exact IEEE-754 bit patterns** (`Float.toBits`) in JSON, and
@@ -57,8 +57,10 @@ open NN.API
 
 namespace NN.Examples.Models.Sequence.Gpt2Saved
 
+/-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean gpt2_saved"
 
+/-- Parsed options for loading a byte-level GPT checkpoint and sampling from it. -/
 structure LoadOptions where
   /-- JSON bits checkpoint produced by `torchlean gpt2 --save-params ...`. -/
   paramsPath : System.FilePath
@@ -80,6 +82,7 @@ structure LoadOptions where
   asciiOnly : Bool
 deriving Repr
 
+/-- Parse saved-parameter and generation flags after runtime/device flags. -/
 def parseLoadOptions (args : List String) : Except String (LoadOptions × List String) := do
   let (paramsRaw?, args) ← CLI.takeFlagValueOnce args "params"
   let paramsRaw ←
@@ -106,7 +109,7 @@ def parseLoadOptions (args : List String) : Except String (LoadOptions × List S
           asciiOnly := gen.asciiOnly }, args)
 
 /--
-Load parameters from disk and run sampling with the fixed tutorial architecture.
+Load parameters from disk and run sampling with the fixed byte-level GPT architecture.
 
 Important: the checkpoint must match `Gpt2.mkModel`'s parameter shapes. If the model configuration
 in `Gpt2.lean` changes (heads, width, layers, etc.), mismatched checkpoints fail the shape check
@@ -128,6 +131,7 @@ def sampleWithSavedParams (opts : Runtime.Autograd.Torch.Options) (load : LoadOp
     IO.println s!"  sampled={txt}"
     pure txt
 
+/-- CLI entrypoint for saved-parameter sampling. -/
 def main (args : List String) : IO UInt32 := do
   Common.runFloat exeName args
     (banner := fun opts =>

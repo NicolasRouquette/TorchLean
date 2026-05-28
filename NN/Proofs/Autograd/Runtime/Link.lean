@@ -841,8 +841,8 @@ private theorem foldlM_addGradAll_toIndexedAnyList_eq_add {α : Type} [Add α] [
 
                 -- Now `addGradAll` is a straight-line computation: fetch node, check flags/shapes,
                 -- add, and overwrite the `pref.size` slot.
-                -- Keep `Tensor.cast_shape` opaque here: in Lean 4.29, unfolding it too early tends
-                -- to leave behind `cast` terms that make later rewrites brittle.
+                -- Keep `Tensor.cast_shape` opaque here: unfolding it too early leaves behind
+                -- `cast` terms that make the subsequent tensor-equality rewrites brittle.
                 simp [Runtime.Autograd.Tape.addGradAll, hnode0', hreq0, hseedShape, hcontribShape,
                   hid, seedHeadAny, contribHeadAny, newHeadAny, Array.set_push]
 

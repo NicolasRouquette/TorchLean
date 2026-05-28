@@ -295,6 +295,34 @@ For the data boundary contract (`.npy`, small numeric CSV, UTF-8 text), see:
 - [NN/API/Data/README.md](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Data/README.md)
 - [NN/Examples/Data/README.md](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Data/README.md)
 
+# Step Streams
+
+Not every training job is a finite dataset pass.  Some workloads produce the next batch from a
+rule, a simulator, a replay buffer, or a file-backed token window.  For those cases TorchLean has a
+typed step stream:
+
+```
+train.StepBatchStream α inputShapes
+```
+
+A `StepBatchStream` is a function from the optimizer step number to the already-collated input list
+for the module.  The important point is that the shape list is still checked by Lean.  A stream for
+`[x, y]` samples and a stream for `[tokens, targets]` samples have different types, even if both are
+loaded from external files.
+
+The corresponding training helpers are:
+
+```
+train.fitModuleStreamStepsWith
+train.fitModuleStreamStepsReport
+train.fitModuleStreamStepsCurveFloat
+```
+
+Use a loader when the dataset is a fixed finite table. Use a step stream when the batch is produced
+on demand: RL rollouts, collocation points, generated windows from a large text file, or synthetic
+diagnostic inputs.  This keeps the public loop model-agnostic; only the stream knows where the next
+batch comes from.
+
 # Explicit Training Loops
 
 If you want something that looks closer to “manual PyTorch training code”, use the quickstart

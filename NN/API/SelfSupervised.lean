@@ -26,9 +26,9 @@ This module is the public, model-independent SSL surface:
 - it stays independent of any particular encoder, so the same SSL sample/objective helpers can be
   used with an MLP, CNN, ViT, ResNet, or a custom `nn.Sequential`.
 
-Architecture constructors, when useful, live under `NN.API.Models.*`.  For example, a compact
-vector autoencoder is convenient for runnable CIFAR smoke tests, but the MAE idea itself belongs
-here: create a masked view of a tensor and reconstruct the original content.
+Architecture constructors, when useful, live under `NN.API.Models.*`. For example, a compact vector
+autoencoder is convenient for CIFAR runs, but the MAE idea itself belongs here: create a masked view
+of a tensor and reconstruct the original content.
 -/
 
 @[expose] public section
@@ -67,7 +67,7 @@ private theorem vectorMaeHiddenMask_selected_iff (dataDim period offset : Nat) (
 Feature-level deterministic mask for MAE samples over a `batch × dataDim` matrix.
 
 Every coordinate whose index is congruent to `offset` modulo `period` is hidden by setting it to
-zero. This is intentionally deterministic so examples and tests are reproducible.
+zero. The mask is deterministic so examples and tests are reproducible.
 -/
 def vectorMaeMask (batch dataDim period offset : Nat)
     (x : Spec.Tensor Float (NN.Tensor.Shape.Mat batch dataDim)) :
@@ -284,7 +284,7 @@ def tensorPrefixMaeSample {source : Shape} (batch dataDim : Nat)
 /--
 Boolean predicate for the deterministic image-patch mask.
 
-The predicate is deliberately phrased at the *pixel* coordinate level rather than at an abstract
+The predicate is phrased at the *pixel* coordinate level rather than at an abstract
 patch-id level. This gives the BugZoo examples a coordinate-level contract: for any concrete `NCHW`
 tensor coordinate, Lean can say whether this exact scalar is hidden from the model input.
 
@@ -430,7 +430,7 @@ theorem imagePatchMaeSample_input_eq_imagePatchMask
 /--
 The image MAE sample input hides every pixel selected by `imagePatchHidden`.
 
-This theorem is intentionally stated against `sample.x`, not just `imagePatchMask`. It certifies the
+This theorem is stated against `sample.x`, not just `imagePatchMask`. It certifies the
 actual value handed to any downstream model constructor/training loop using `imagePatchMaeSample`.
 For the paper-level claim, this is the "no hidden target leakage into the encoder input" invariant.
 -/
@@ -499,8 +499,8 @@ def imageMaeReconstructionIdxs (reconDim : Nat) : List (Fin reconDim) :=
 The target row of the image MAE sample is the finite target batch used by the predictive-view
 objective.
 
-This theorem is intentionally narrow: the theorem-level target is definitionally the same tensor row
-that the runtime supervised-training path passes to MSE.
+This theorem keeps the target contract local: the theorem-level target is definitionally the same
+tensor row that the runtime supervised-training path passes to MSE.
 -/
 theorem imagePatchMaeSample_target_row_eq_flattened_source_row
     (batch c h w reconDim patchH patchW period offset : Nat)

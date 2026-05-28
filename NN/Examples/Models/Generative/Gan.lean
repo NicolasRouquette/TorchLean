@@ -19,7 +19,7 @@ public import NN.MLTheory.Generative.Latent.GAN
 /-!
 # GAN CIFAR Example
 
-Small LSGAN-style executable path.
+Compact LSGAN-style executable path.
 
 This trains:
 - a generator `z -> image` toward the current CIFAR minibatch as a stable warm-up objective;
@@ -37,22 +37,47 @@ open NN.API
 
 namespace NN.Examples.Models.Generative.Gan
 
+/-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean gan"
+
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/gan_trainlog.json"
+
+/--
+Shared vector-image configuration.
+
+The generator, discriminator, latent batch, score batch, and CIFAR vector batch all derive from this
+record, so shape changes stay centralized.
+-/
 def cfg : nn.models.VectorGenerativeConfig := nn.models.compactImageConfig
 
+/-- Latent-noise batch shape for the generator input. -/
 abbrev Z : Shape := nn.models.vectorLatentShape cfg
+
+/-- Flattened CIFAR image-vector batch shape. -/
 abbrev X : Shape := nn.models.vectorDataShape cfg
+
+/-- Discriminator score shape: one scalar score per batch row. -/
 abbrev S : Shape := NN.Tensor.Shape.Mat cfg.batch 1
 
+/-- Generator network mapping latent vectors to flattened image vectors. -/
 def mkGenerator : nn.M (nn.Sequential Z X) :=
   nn.models.vectorGanGenerator cfg
 
+/-- Discriminator network mapping flattened image vectors to scalar real/fake scores. -/
 def mkDiscriminator : nn.M (nn.Sequential X S) :=
   nn.models.vectorGanDiscriminator cfg
 
+/--
+Train the compact LSGAN-style pair and return a total-loss curve.
+
+The update rule is chosen for stable public runs: the generator first learns toward a fixed CIFAR
+minibatch, while the discriminator separates that minibatch from deterministic noise.
+The imported spec/theory modules carry the adversarial objective statements; this runtime path
+checks that both networks, optimizers, CUDA memory reporting, and real-data loading work together.
+-/
 def trainCurve (opts : TorchLean.Options) (xPath yPath : System.FilePath)
-    (nRows seed steps : Nat) : IO _root_.Runtime.Training.Curve := do
+    (nRows seed steps cudaMemWatch : Nat) : IO _root_.Runtime.Training.Curve := do
   nn.withModel mkGenerator fun gen => do
   nn.withModel mkDiscriminator fun disc => do
     let genDef := nn.mseScalarModuleDef gen
@@ -79,10 +104,13 @@ def trainCurve (opts : TorchLean.Options) (xPath yPath : System.FilePath)
     let d0f ← TorchLean.Module.forward (α := Float) discM discFake
     let mut last := Tensor.toScalar g0 + Tensor.toScalar d0r + Tensor.toScalar d0f
     curve := curve.push 0 last
+    let watchEvery := Common.effectiveCudaMemWatch opts steps cudaMemWatch
+    let mut memWatch? ← Common.reportCudaMemWatch opts watchEvery steps 0 none
     for step in [0:steps] do
       genH.step genSample
       discH.step discReal
       discH.step discFake
+      memWatch? ← Common.reportCudaMemWatch opts watchEvery steps (step + 1) memWatch?
       let g ← TorchLean.Module.forward (α := Float) genM genSample
       let dr ← TorchLean.Module.forward (α := Float) discM discReal
       let df ← TorchLean.Module.forward (α := Float) discM discFake
@@ -91,6 +119,12 @@ def trainCurve (opts : TorchLean.Options) (xPath yPath : System.FilePath)
     IO.println s!"  steps={steps} totalLoss0={Tensor.toScalar g0 + Tensor.toScalar d0r + Tensor.toScalar d0f} totalLoss{steps}={last}"
     pure curve
 
+/--
+Executable entrypoint for the compact GAN-style run.
+
+The command loads CIFAR vectors, trains generator and discriminator updates for `--steps`, and writes
+the combined loss curve to the requested logging destination.
+-/
 def main (args : List String) : IO UInt32 := do
   TorchLean.Module.run exeName args
     (.float (fun opts rest => do
@@ -98,10 +132,11 @@ def main (args : List String) : IO UInt32 := do
       let (train, rest) ← Common.orThrow exeName <|
         Common.parseLoggedTrainFlags exeName rest defaultLogJson 10
       Common.orThrow exeName <| CLI.requireNoArgs rest
-      let curve ← trainCurve opts xPath yPath nRows seed train.steps
+      let curve ← trainCurve opts xPath yPath nRows seed train.steps train.cudaMemWatch
       Common.writeCurveLogTo train.log "GAN-style CIFAR training" curve "total_loss"
         #[s!"data=cifar10", s!"latentDim={cfg.latentDim}", s!"nRows={nRows}",
-          s!"device={if opts.useGpu then "cuda" else "cpu"}"]
+          s!"device={if opts.useGpu then "cuda" else "cpu"}",
+          s!"cuda_mem_watch={Common.effectiveCudaMemWatch opts train.steps train.cudaMemWatch}"]
     ))
     { banner? := some (fun opts =>
         s!"{exeName}: CIFAR LSGAN-style training (device={if opts.useGpu then "cuda" else "cpu"})")

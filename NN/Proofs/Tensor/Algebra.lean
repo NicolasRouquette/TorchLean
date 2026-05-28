@@ -9,6 +9,7 @@ module
 public import NN.Spec.Core.Tensor.Constructors
 public import NN.Spec.Core.Tensor.Linalg
 public import NN.Spec.Core.TensorOps
+public import Mathlib.Data.List.Fold
 
 /-!
 # Tensor Algebra Proofs
@@ -154,7 +155,8 @@ lemma finRange_foldl_add_eq_finset_sum {α : Type} [AddCommMonoid α] {n : Nat} 
         List.foldl (fun s x : α => s + x) 0 ((List.finRange n).map f) =
           ((List.finRange n).map f).sum := by
       simpa [List.sum] using
-        (List.foldl_eq_foldr (f := fun s x : α => s + x) (a := (0 : α)) ((List.finRange n).map f))
+        (List.foldl_eq_foldr (f := fun s x : α => s + x) (a := (0 : α))
+          (l := (List.finRange n).map f))
     simpa [hmap] using hfold
   have hR :
       (Finset.univ : Finset (Fin n)).sum f = ((List.finRange n).map f).sum := by

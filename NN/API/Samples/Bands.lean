@@ -11,7 +11,7 @@ public import NN.API.Samples
 /-!
 # Small Band-Image Dataset (4×4)
 
-Several TorchLean tutorials use a compact 4×4 image classification task:
+Several TorchLean examples use a compact 4×4 image classification task:
 
 - class `0`: a vertical band
 - class `1`: a horizontal band

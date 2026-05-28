@@ -143,6 +143,41 @@ def embedding {α : Type} [Context α] [DecidableEq Shape]
     m (RefTy (m := m) (α := α) (.dim dim .scalar)) :=
   gatherRow (m := m) (α := α) (rows := vocab) (cols := dim) w idx
 
+/--
+Embedding lookup for a vector of token ids.
+
+This is the indexed version of the public one-hot embedding layer: instead of multiplying a
+`k × vocab` one-hot matrix by the embedding table, gather the `k` rows directly from
+`w : vocab × dim`.
+-/
+def embeddingRowsNat {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {vocab dim k : Nat}
+    (w : RefTy (m := m) (α := α) (.dim vocab (.dim dim .scalar)))
+    (idx : Tensor Nat (.dim k .scalar)) :
+    m (RefTy (m := m) (α := α) (.dim k (.dim dim .scalar))) :=
+  gatherRowsNat (m := m) (α := α) (rows := vocab) (cols := dim) (k := k) w idx
+
+/--
+Embedding lookup for a flattened `(batch × seqLen)` token-id tensor.
+
+The index tensor is kept flat because that is how datasets and CUDA gather kernels naturally store
+token ids.  The result is reshaped back to `(batch, seqLen, dim)` after the row gather.
+-/
+def embeddingBatchSeqNat {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {vocab dim batch seqLen : Nat}
+    (w : RefTy (m := m) (α := α) (.dim vocab (.dim dim .scalar)))
+    (idx : Tensor Nat (.dim (batch * seqLen) .scalar)) :
+    m (RefTy (m := m) (α := α) (.dim batch (.dim seqLen (.dim dim .scalar)))) := do
+  let gathered ← embeddingRowsNat (m := m) (α := α)
+    (vocab := vocab) (dim := dim) (k := batch * seqLen) w idx
+  reshape (m := m) (α := α)
+    (s₁ := .dim (batch * seqLen) (.dim dim .scalar))
+    (s₂ := .dim batch (.dim seqLen (.dim dim .scalar)))
+    gathered (by
+      simp [Shape.size, Nat.mul_assoc])
+
 /-! ## Reductions -/
 
 /--

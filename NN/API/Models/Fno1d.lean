@@ -14,7 +14,7 @@ public import NN.Runtime.Autograd.TorchLean.Fno1d
 
 Reusable configuration for the real-valued 1D FNO path used by the runnable Burgers example.
 
-The public example is intentionally about data loading, training, evaluation, and plotting.  The
+The public example focuses on data loading, training, evaluation, and plotting. The
 model constructor lives here so other examples can reuse the same typed FNO shape contract without
 copying the wiring.
 -/

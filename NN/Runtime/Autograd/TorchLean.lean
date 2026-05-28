@@ -86,10 +86,15 @@ export _root_.Runtime.Autograd.TorchLean.Optim
 /-! ## Module wrappers (PyTorch-style) -/
 export _root_.Runtime.Autograd.TorchLean.Module
   (ScalarModuleDef ScalarModule)
+namespace RuntimeInit
+export _root_.Runtime.Autograd.TorchLean.Module.RuntimeInit
+  (FloatInit Plan xavierUniformForShape kaimingUniformForShape xavierLinearWeight
+   kaimingLinearWeight)
+end RuntimeInit
 export _root_.Runtime.Autograd.TorchLean.Module.ScalarModule
   (create forward backward step initOptim stepWith params)
 export _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef
-  (instantiate)
+  (instantiate instantiateFloatWithRuntimePlan instantiateFloatWithRuntimeInit)
 
 end TorchLean
 end Autograd

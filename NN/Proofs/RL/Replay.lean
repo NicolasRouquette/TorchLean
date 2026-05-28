@@ -7,7 +7,8 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.RL.Replay
-public import Mathlib.Data.Array.Extract
+public import Batteries.Data.Array.Lemmas
+public import Mathlib.Init
 
 /-!
 # Replay-Buffer Proofs

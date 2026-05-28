@@ -161,9 +161,9 @@ def loadCifarBatch {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
 /--
 Load a user-prepared ImageNet-style `64x64` minibatch.
 
-This is intentionally a `.npy` reader, not a JPEG reader.  The Python converter is the trust boundary
-for filesystem image decoding and resizing; this Lean path checks the resulting tensor shape and class
-range before handing the batch to examples.
+This loader reads prepared `.npy` arrays rather than JPEG files. The Python converter is the trust
+boundary for filesystem image decoding and resizing; this Lean path checks the resulting tensor shape
+and class range before handing the batch to examples.
 -/
 def loadImageNet64Loader {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
     (exeName : String) (batch nRows seed : Nat) (xPath yPath : System.FilePath) :
@@ -185,8 +185,8 @@ def loadImageNet64Loader {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
           "If your local .npy files contain fewer rows, pass --n-total with that row count; " ++
           "to create ImageNet64 arrays, run the image-folder converter described in the error hint."
         throw <| IO.userError hint
-  -- Same convention as CIFAR: this is the reusable loader for all full-dataset loops.  The
-  -- `loadImageNet64Batch` wrapper below is only for examples that intentionally want one batch.
+  -- Same convention as CIFAR: this is the reusable loader for full-dataset loops. The
+  -- `loadImageNet64Batch` wrapper below is for call sites that need a single fixed minibatch.
   let dl := Data.batchLoader ds batch (shuffle := true) (seed := seed) (dropLast := true)
   pure dl
 

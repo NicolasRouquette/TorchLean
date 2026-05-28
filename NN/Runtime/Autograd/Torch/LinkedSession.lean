@@ -1671,7 +1671,7 @@ def convTranspose2d {α : Type} (s : SessionIR α) [Context α]
 /--
 Multi-head self-attention.
 
-This is a shape-specialized attention primitive used by some demo transformer-style models:
+This is a shape-specialized attention primitive used by transformer-style examples:
 - input `x` has shape `(n, dModel)`
 - `wq`, `wk`, `wv` map `dModel → numHeads*headDim`
 - `wo` maps `numHeads*headDim → dModel`

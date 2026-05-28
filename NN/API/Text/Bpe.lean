@@ -16,8 +16,8 @@ public import Std.Data.HashMap
 
 Lean-native support for GPT-2-style byte-level BPE tokenizers.
 
-This module is intentionally in `NN.API.Text` rather than a model file: any Transformer, diffusion
-LM, or verifier that wants GPT-2-compatible tokenization should share the same implementation.
+This module lives in `NN.API.Text` rather than a model file: any Transformer, diffusion LM, or
+verifier that wants GPT-2-compatible tokenization should share the same implementation.
 The implementation parses the standard `vocab.json` and `merges.txt` files directly in Lean.
 
 The pre-tokenizer implements the GPT-2 regex shape:

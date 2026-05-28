@@ -34,18 +34,17 @@ open Spec
 /-!
 ## Common Helpers For Workflows And Small Programs
 
-We keep this module small and practical: it contains helper functions that show up
-repeatedly in executable workflows and tutorials.
+This module contains helper functions that show up repeatedly in executable workflows.
 
 What belongs here:
 - casting `Spec.Tensor Float` into an arbitrary scalar backend `α` (given `Float → α`)
 - building typed tensors from raw lists (`tensorF`, `vecF`, `matF`)
 - bridging `Except String` into `IO` (`orThrow`)
-- running small examples under a chosen scalar backend via `--dtype` (see `NN.API.DType`)
+- running model commands under a chosen scalar backend via `--dtype` (see `NN.API.DType`)
 
 What does *not* belong here:
 - core semantics/proofs (those live under `NN` / `NN.Proofs`)
-- serious CLI parsing (these helpers are for small runnable binaries)
+- command-specific CLI parsing that belongs with a model or tool entrypoint
 -/
 
 /-!
@@ -99,7 +98,8 @@ def writeBeforeAfterLossLog (path : System.FilePath) (title : String) (steps : N
 /--
 Write a before/after loss log to an explicit logging destination.
 
-`LogDestination.disabled` is a no-op, mirroring `wandb disabled` for quick smoke tests.
+`LogDestination.disabled` is a no-op, mirroring `wandb disabled` for runs where metrics should stay
+on stdout only.
 -/
 def writeBeforeAfterLossLogTo (dest : _root_.Runtime.Training.LogDestination)
     (title : String) (steps : Nat) (loss0 loss1 : Float) (notes : Array String := #[]) :
@@ -136,6 +136,8 @@ structure LoggedTrainFlags where
   log : _root_.Runtime.Training.LogDestination
   /-- Path where the JSON `TrainLog` should be written. -/
   logPath : System.FilePath
+  /-- CUDA allocator telemetry cadence shared by fixed-sample and custom training loops. -/
+  cudaMemWatch : Nat := 0
 deriving Repr
 
 /--
@@ -150,10 +152,12 @@ def parseLoggedTrainFlags (exeName : String) (args : List String)
     Except String (LoggedTrainFlags × List String) := do
   let (logRaw?, args) ← CLI.takeFlagValueOnce args "log"
   let (steps, args) ← CLI.takeStepsOrEpochs args defaultSteps
+  let (cudaMemWatch?, args) ← CLI.takeNatFlagOnce args "cuda-mem-watch"
   if steps = 0 && !allowZeroSteps then
     throw s!"{exeName}: --steps/--epochs must be > 0"
   let log := _root_.Runtime.Training.LogDestination.parse? defaultLogPath logRaw?
-  pure ({ steps := steps, log := log, logPath := log.pathD defaultLogPath }, args)
+  pure ({ steps := steps, log := log, logPath := log.pathD defaultLogPath,
+          cudaMemWatch := cudaMemWatch?.getD 0 }, args)
 
 /--
 Training flags shared by the runnable model examples.
@@ -189,11 +193,10 @@ def parseModelTrainFlags (exeName : String) (args : List String)
     Except String (ModelTrainFlags × List String) := do
   let (train, args) ← parseLoggedTrainFlags exeName args defaultLogPath defaultSteps allowZeroSteps
   let (lr?, args) ← CLI.takeFloatFlagOnce args "lr"
-  let (cudaMemWatch?, args) ← CLI.takeNatFlagOnce args "cuda-mem-watch"
   let lr := lr?.getD defaultLr
   if lr <= 0.0 then
     throw s!"{exeName}: --lr must be > 0"
-  pure ({ train := train, lr := lr, cudaMemWatch := cudaMemWatch?.getD 0 }, args)
+  pure ({ train := train, lr := lr, cudaMemWatch := train.cudaMemWatch }, args)
 
 /-! ### CUDA Memory Watch Helpers -/
 
@@ -268,7 +271,7 @@ Default Adam optimizer constructor used by supervised and vision examples.
 
 The reusable part is the optimizer convention, not the model.  Individual examples still own their
 architecture and loss, while this helper keeps the Adam hyperparameter spelling identical across
-MLP, CNN, ResNet, ViT, and similar small demos.
+MLP, CNN, ResNet, ViT, and similar model commands.
 -/
 def adamOptimizer {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
     (cast : Float → α) (ps : List Shape) (lr : Float) :
@@ -281,7 +284,7 @@ Run an executable with the standard TorchLean runtime parser, using the polymorp
 default and switching to the `Float` path when requested.
 
 This is the common shape for public examples that support all executable scalar backends, but need
-the `Float` path for CUDA bridges, decoded probes, or JSON artifacts whose metrics are stored as
+the `Float` path for CUDA bridges, decoded reports, or JSON artifacts whose metrics are stored as
 `Float`.
 -/
 def runAnyOrFloat

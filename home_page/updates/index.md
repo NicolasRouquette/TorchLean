@@ -5,8 +5,8 @@ usemathjax: true
 
 # TorchLean Updates
 
-This is the release log where we record the public releases, recent fixes,
-validation notes, and any user-facing issues worth knowing about.
+This is the release log for public releases, recent fixes, validation notes,
+and user-facing issues.
 
 For correctness assumptions and trusted boundaries, use
 [Trust Boundaries](https://github.com/lean-dojo/TorchLean/blob/main/TRUST_BOUNDARIES.md).
@@ -15,9 +15,32 @@ For source-level provenance and release hygiene, use
 
 ## Index
 
+- [May 2026: Lean 4.30 and Runtime API Update](#may-2026-lean-430-and-runtime-api-update)
 - [May 2026: CUDA Training Stability Update](#may-2026-cuda-training-stability-update)
 - [May 2026: Quickstart Data Note](#may-2026-quickstart-data-note)
 - [May 2026: TorchLean Released](#may-2026-torchlean-released)
+
+## May 2026: Lean 4.30 and Runtime API Update
+
+TorchLean now builds with `leanprover/lean4:v4.30.0`. The Lake manifests, the
+Verso guide package, and the website build metadata have been updated together
+so the README, guide, and generated site agree about the toolchain.
+
+This update also documents the runtime pieces that were added while tightening
+long CUDA runs:
+
+- runtime-side Float initializers for large CPU/CUDA modules;
+- shape-indexed initializer plans, so each parameter receives exactly one
+  initializer;
+- step-indexed training streams for batches produced by a rule, simulator,
+  replay buffer, or file-backed window source;
+- integer-token embedding and row-wise cross-entropy helpers for GPT-style
+  language-model training;
+- CUDA allocator diagnostics and explicit workspace-buffer ownership in the eager
+  runtime.
+
+The guide now has dedicated sections for step streams, runtime initialization,
+CUDA memory ownership, and integer-token GPT training.
 
 ## May 2026: CUDA Training Stability Update
 
@@ -28,29 +51,27 @@ problem could show up even on small examples if enough per-step CUDA objects
 were kept alive.
 
 The issue was not that the model suddenly needed more parameters. It was that
-some temporary values created during training -- tape entries, gradient buffers,
-and kernel scratch buffers -- could stay attached to the run longer than they
+some intermediate values created during training -- tape entries, gradient buffers,
+and kernel workspace buffers -- could stay attached to the run longer than they
 needed to. Over many optimizer updates, that turns into allocator pressure. The
 fix was to make the training loop and CUDA eager backend more explicit about
-which values are returned to the caller and which temporary buffers can be
+which values are returned to the caller and which intermediate buffers can be
 released after the step finishes.
 
-The CUDA training path used by the public model examples now follows three
-user-facing conventions:
+The CUDA training path used by the public model examples now does three things:
 
 - loader-based model commands now treat `--steps` as optimizer updates;
-- CUDA eager/autograd releases temporary tape, gradient, and scratch buffers
+- CUDA eager/autograd releases ephemeral tape, gradient, and workspace buffers
   after the values needed by the caller have been extracted;
 - longer CUDA example runs report allocator telemetry by default, with
   `--cuda-mem-watch N` available when a user wants an exact sampling cadence.
 
 The allocator report is a runtime diagnostic. It prints live and peak allocator
 state while a run is still in progress, and it warns if the observed free-memory
-trend would run out before the requested training horizon. It is there for the
-same reason loss logging is useful: if a long run is going wrong, the terminal
-should show that early instead of leaving the user to discover it at the end.
-It does not change the Lean-side trust-boundary story; it makes the native
-runtime behavior easier to inspect.
+trend would run out before the requested training horizon. If a long run is
+going wrong, the terminal should show that early instead of leaving the user to
+discover it at the end. It does not change the Lean-side trust-boundary story;
+it makes the native runtime behavior easier to inspect.
 
 Validation for this update included:
 
@@ -63,15 +84,15 @@ Validation for this update included:
 - `lake exe -K cuda=true torchlean gpt2 --cuda --fast-kernels --steps 1200 --generate 0 --log false`
 - `lake exe -K cuda=true torchlean fno1d_burgers --cuda --fast-kernels --steps 50 --log false`
 
-The smoke runs above checked two things: representative losses or MSE values
-went down, and the CUDA allocator stayed bounded on the exercised runs. CUDA
-execution remains an implementation path; the mathematical trust boundary is
-still documented separately.
+The validation commands above checked two things: representative losses or MSE
+values went down, and the CUDA allocator stayed bounded on the exercised runs.
+CUDA execution remains an implementation path; the mathematical trust boundary
+is still documented separately.
 
 ## May 2026: Quickstart Data Note
 
-Some examples intentionally use real public datasets and do not download them
-during `lake build`. If a model reports a missing dataset, run the downloader it
+Some examples use real public datasets and do not download them during
+`lake build`. If a model reports a missing dataset, run the downloader it
 prints. For the README MLP quickstart:
 
 ```bash

@@ -14,7 +14,7 @@ public import NN.Examples.Data.RealPaths
 /-!
 # LSTM Seasonal Regression / Forecasting
 
-This is the runnable supervised sequence example: an LSTM fits a small real-valued forecasting task
+This is the runnable supervised sequence example: an LSTM fits a real-valued forecasting task
 and works with the same CPU/CUDA runtime flags as the other model commands.
 
 The default data path uses the UCI Individual Household Electric Power Consumption dataset:
@@ -29,11 +29,11 @@ Prepare the real data once:
 python3 scripts/datasets/download_example_data.py --household-power --household-power-windows 512
 ```
 
-We keep the walkthrough small enough to inspect quickly:
-- use `--steps 1` when you only want to check CUDA and the loader;
-- use `--steps 200 --windows 96` when you want to see the printed forecast move toward the target;
-- change `--probe-offset` to look at a different part of the power curve;
-- lower `--lr` first if the probe gets worse instead of better.
+Recommended runs:
+- use `--steps 1` to check that the runtime, data loader, and CUDA path agree on shapes;
+- use `--steps 200 --windows 96` for a short training run with before/after forecast reports;
+- change `--report-offset` to evaluate a different part of the power curve;
+- lower `--lr` if the reported forecast error increases.
 
 ```bash
 lake exe -K cuda=true torchlean lstm_regression --cuda --steps 1 --windows 1
@@ -71,7 +71,7 @@ def seqLen : Nat := 24
 /-- One scalar feature. If you add calendar/weather features, increase this and update `scalarRow`. -/
 def inputSize : Nat := 1
 
-/-- Small hidden width for the tutorial. Increase this only after the data path is working. -/
+/-- Hidden width for the recurrent state used by this example. -/
 def hiddenSize : Nat := 32
 
 /--
@@ -137,10 +137,10 @@ def loadRealSamples (xPath yPath : System.FilePath) (windows : Nat) :
         pure <| ds.map (fun d => ((Data.toList d).take windows).toArray)
 
 /--
-Fallback sample used for defensive array access.
+Fallback sample used for defensive array access inside reporting and training helpers.
 
-The CLI rejects `--windows 0`, so this is only here to keep helper calls total if this file gets
-copied into a more experimental tutorial.
+The command-line parser rejects `--windows 0`; this helper keeps the remaining code total and gives
+a clear error if a caller provides an empty sample array directly.
 -/
 def firstSample? (xs : Array (API.sample.Supervised Float σ τ)) :
     Except String (API.sample.Supervised Float σ τ) :=
@@ -149,11 +149,11 @@ def firstSample? (xs : Array (API.sample.Supervised Float σ τ)) :
   | none => .error "no training windows loaded"
 
 /--
-Representative MSE over at most 32 windows.
+Validation MSE over a bounded prefix of loaded windows.
 
-This is just the quick "are we moving in the right direction?" number. It keeps evaluation cheap
-even when `--windows` is large. If you want a real validation report, raise the cap or add a
-separate held-out window list.
+The example reports a fixed-size prefix so evaluation cost is predictable even when the training
+window count is large. This is an in-sample diagnostic for the loaded window source; a separate
+experiment can pass held-out windows here when it needs an out-of-sample validation number.
 -/
 def meanLossOnSamples
     (model : nn.Sequential σ τ)
@@ -168,10 +168,10 @@ def meanLossOnSamples
   pure (total / Float.ofNat (Nat.max 1 evalCount))
 
 /--
-Read `t[row,0]` from a `seqLen × 1` tensor.
+Read `t[row,0]` from a `seqLen × 1` forecast tensor.
 
-Probe printing uses this to show scalar values. The row is clamped so changing `seqLen` cannot make
-the tutorial crash just because the print loop asks for too many rows.
+The row is clamped so the reporting loop remains valid if `seqLen` is changed without also updating
+the number of displayed rows.
 -/
 def readSeriesAt (t : Tensor Float τ) (i : Nat) : Float :=
   let i : Fin seqLen :=
@@ -185,12 +185,13 @@ def readSeriesAt (t : Tensor Float τ) (i : Nat) : Float :=
           | Tensor.scalar x => x
 
 /--
-Print the first few predicted/target pairs for one offset.
+Print the first few predicted/target pairs for one dataset offset.
 
-This is the easiest way to debug whether the model is actually learning the curve. Try
-`--probe-offset 0`, `--probe-offset 96`, or `--probe-offset 144` to inspect different phases.
+The report is tied to a deterministic offset so before/after comparisons refer to the same window.
+Try `--report-offset 0`, `--report-offset 96`, or `--report-offset 144` to inspect different parts
+of the seasonal curve.
 -/
-def printForecastProbe
+def printForecastReport
     (opts : Runtime.Autograd.Torch.Options)
     (model : nn.Sequential σ τ)
     (params : TorchLean.ParamList Float (nn.paramShapes model))
@@ -200,20 +201,20 @@ def printForecastProbe
   let sample := samples.getD (offset % Nat.max 1 samples.size) fallback
   let pred ← nn.eval1NoGrad (α := Float) opts model params (NN.API.sample.x sample)
   let target := NN.API.sample.y sample
-  IO.println s!"  probe_index={offset % Nat.max 1 samples.size}"
+  IO.println s!"  report_index={offset % Nat.max 1 samples.size}"
   for i in [0:Nat.min seqLen 8] do
     IO.println s!"    t+{i+1}: pred={readSeriesAt pred i} target={readSeriesAt target i}"
 
 /-- Example-specific training options after the shared runtime parser has handled CPU/CUDA flags. -/
 structure TrainOptions where
-  /-- Optimizer steps. Use `1` on CUDA for smoke; use around `200` on CUDA to see learning. -/
+  /-- Optimizer steps. -/
   steps : Nat
   /-- Number of deterministic windows to cycle through. More windows mean more seasonal coverage. -/
   windows : Nat
-  /-- Adam learning rate. If the probe oscillates or explodes, lower this. -/
+  /-- Adam learning rate. -/
   lr : Float
-  /-- Start offset for the printed before/after probe. This does not affect training. -/
-  probeOffset : Nat
+  /-- Start offset for the printed before/after forecast report. This does not affect training. -/
+  reportOffset : Nat
   /-- Prepared UCI household-power input windows. Override with `--x`. -/
   xPath : System.FilePath
   /-- Prepared UCI household-power target windows. Override with `--y`. -/
@@ -222,6 +223,8 @@ structure TrainOptions where
   log : _root_.Runtime.Training.LogDestination
   /-- Concrete default path when `log` is path-backed. -/
   logPath : System.FilePath
+  /-- CUDA allocator telemetry cadence. `0` means quiet unless the shared default enables it. -/
+  cudaMemWatch : Nat := 0
 deriving Repr
 
 /--
@@ -235,7 +238,7 @@ def parseTrainOptions (args : List String) : Except String (TrainOptions × List
   let (dataDir, args) ← _root_.NN.Examples.Data.RealPaths.takeDataDir args
   let (windows?, args) ← CLI.takeNatFlagOnce args "windows"
   let (lr?, args) ← CLI.takeFloatFlagOnce args "lr"
-  let (probeOffset?, args) ← CLI.takeNatFlagOnce args "probe-offset"
+  let (reportOffset?, args) ← CLI.takeNatFlagOnce args "report-offset"
   let (x?, args) ← CLI.takePathFlagOnce args "x"
   let (y?, args) ← CLI.takePathFlagOnce args "y"
   let windows := windows?.getD 512
@@ -244,26 +247,27 @@ def parseTrainOptions (args : List String) : Except String (TrainOptions × List
   pure ({ steps := train.steps
           windows := windows
           lr := lr?.getD 0.01
-          probeOffset := probeOffset?.getD 96
+          reportOffset := reportOffset?.getD 96
           xPath := x?.getD (_root_.NN.Examples.Data.RealPaths.householdPowerX dataDir)
           yPath := y?.getD (_root_.NN.Examples.Data.RealPaths.householdPowerY dataDir)
           log := train.log
-          logPath := train.logPath }, args)
+          logPath := train.logPath
+          cudaMemWatch := train.cudaMemWatch }, args)
 
 /--
 Train the LSTM forecaster and return `(lossBefore, lossAfter)`.
 
-The training recipe is plain on purpose:
+The training recipe is direct:
 
 1. construct the model under `nn.withModel`;
 2. wrap it as a scalar MSE module;
 3. load UCI household-power windows;
-4. print a probe before training;
+4. print a forecast report before training;
 5. run Adam over the loaded windows; and
-6. print the same probe after training.
+6. print the same forecast report after training.
 
-Because the data is deterministic, bad changes are easy to spot: the loss should drop and the probe
-predictions should move toward the target values.
+Because the data is deterministic, repeated runs are easy to compare: the loss should drop and the
+reported predictions should move toward the target values.
 -/
 def trainForecast (opts : Runtime.Autograd.Torch.Options) (train : TrainOptions) :
     IO (Float × Float) := do
@@ -272,8 +276,8 @@ def trainForecast (opts : Runtime.Autograd.Torch.Options) (train : TrainOptions)
     let modDef := nn.mseScalarModuleDef model
     let m ← TorchLean.Module.instantiateWithOptions (α := Float) modDef id opts
     let L0 ← meanLossOnSamples model m xs
-    IO.println "  before training forecast probe:"
-    printForecastProbe opts model m.trainer.params xs train.probeOffset
+    IO.println "  before training forecast report:"
+    printForecastReport opts model m.trainer.params xs train.reportOffset
 
     let opt := TorchLean.Optim.adam (α := Float)
       (paramShapes := nn.paramShapes model)
@@ -283,12 +287,15 @@ def trainForecast (opts : Runtime.Autograd.Torch.Options) (train : TrainOptions)
       (epsilon := 1e-8)
     let optH ← TorchLean.Optim.handle (α := Float) m opt
     let fallback ← Common.orThrow exeName (firstSample? xs)
+    let cudaMemWatch := Common.effectiveCudaMemWatch opts train.steps train.cudaMemWatch
+    let mut memWatch? ← Common.reportCudaMemWatch opts cudaMemWatch train.steps 0 none
     for step in [0:train.steps] do
       optH.step (xs.getD (step % Nat.max 1 xs.size) fallback)
+      memWatch? ← Common.reportCudaMemWatch opts cudaMemWatch train.steps (step + 1) memWatch?
 
     let L1 ← meanLossOnSamples model m xs
-    IO.println "  after training forecast probe:"
-    printForecastProbe opts model m.trainer.params xs train.probeOffset
+    IO.println "  after training forecast report:"
+    printForecastReport opts model m.trainer.params xs train.reportOffset
     IO.println s!"  steps={train.steps} windows={xs.size} lr={train.lr} loss0={L0} loss1={L1}"
     pure (L0, L1)
 
@@ -303,7 +310,8 @@ def main (args : List String) : IO UInt32 := do
       let (L0, L1) ← trainForecast opts train
       Common.writeBeforeAfterLossLogTo train.log "LSTM seasonal regression" train.steps L0 L1
         (#[s!"device={if opts.useGpu then "cuda" else "cpu"}", s!"windows={train.windows}",
-          s!"lr={train.lr}", s!"probe_index={train.probeOffset}",
+          s!"lr={train.lr}", s!"report_index={train.reportOffset}",
+          s!"cuda_mem_watch={Common.effectiveCudaMemWatch opts train.steps train.cudaMemWatch}",
           "task=next-step household power forecasting"] ++ dataTags train.xPath train.yPath))
 
 end NN.Examples.Models.Supervised.LstmRegression

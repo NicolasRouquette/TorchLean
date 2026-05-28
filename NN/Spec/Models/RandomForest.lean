@@ -8,6 +8,7 @@ module
 
 public import NN.Spec.Models.GradientBoostedTrees
 public import NN.Spec.Module.DecisionTree
+import Lean.Data.RBMap
 
 /-!
 # Random Forest

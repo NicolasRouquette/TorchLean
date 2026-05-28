@@ -233,8 +233,8 @@ theorem flatten_unflatten_inverse {α : Type} [Inhabited α] :
   | .scalar, t => by
       cases t with
       | scalar x =>
-          -- `simp` no longer unfolds `unflattenSpec` reliably on Lean 4.29, so we do the
-          -- computation step-by-step.
+          -- Do the computation step by step instead of asking `simp` to choose how far to unfold
+          -- the shape-indexed round trip.
           simp [flattenSpec, Shape.size]
           unfold unflattenSpec
           rfl

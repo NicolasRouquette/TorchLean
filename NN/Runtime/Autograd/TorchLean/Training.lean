@@ -13,7 +13,7 @@ public import NN.Runtime.Autograd.TorchLean.Optim
 # TorchLean training-loop helpers
 
 This module contains training-loop utilities that need the high-level `TorchLean.Optim` optimizer
-interface. The lower-level `Runtime.Autograd.Torch.Utils` file intentionally stops at
+interface. The lower-level `Runtime.Autograd.Torch.Utils` file stops at
 `trainCycleSGD`, because that helper only depends on the `ScalarTrainer` update bundled by the
 low-level session layer.
 -/

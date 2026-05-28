@@ -20,8 +20,8 @@ import Mathlib.Algebra.Order.Algebra
 TorchLean uses dependently-typed heterogeneous lists (`TList α ss`) to keep tensor shapes aligned
 with the type-level list `ss`.
 
-This is great for safety, but raw `.cons ...` pattern matching is noisy in tutorials. This module
-provides small tuple-like accessors and constructors so end-user code can stay readable.
+This is great for safety, but raw `.cons ...` pattern matching is noisy in model code. This module
+provides tuple-like accessors and constructors so end-user code can stay readable.
 
 ### PyTorch Mapping
 
@@ -39,11 +39,11 @@ namespace API
 namespace tlist
 
 /-!
-Small ergonomics for TorchLean's typed tensor lists (`TList`).
+Ergonomics for TorchLean's typed tensor lists (`TList`).
 
 `TList α ss` is a heterogeneous list of tensors whose shapes are tracked by the type-level list
   `ss`.
-It is great for safety, but raw destructuring via `.cons ...` is noisy in demos.
+It is great for safety, but raw destructuring via `.cons ...` is noisy in examples.
 
 This namespace provides the small "get/unpack" helpers you would expect from tuple-like samples.
 -/
@@ -179,7 +179,7 @@ namespace sample
 /-!
 Ergonomics for the common supervised-learning sample shape `TList α [xShape, yShape]`.
 
-This keeps tutorial code closer to the PyTorch convention of `(x, y)` pairs without losing
+This keeps example code closer to the PyTorch convention of `(x, y)` pairs without losing
 TorchLean's static shape safety.
 -/
 

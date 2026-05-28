@@ -151,7 +151,7 @@ We return only the `cos` branch:
 
 Notes:
 - We clamp `u1` below by `ε` to avoid `log 0`.
-- This is intended as a deterministic *pseudo*-normal sampler for demos and benchmarking.
+- This is intended as a deterministic *pseudo*-normal sampler for examples and benchmarking.
   It is not a cryptographic RNG.
 
 Reference:

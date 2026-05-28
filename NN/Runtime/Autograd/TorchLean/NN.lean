@@ -40,7 +40,7 @@ example code does not have to spell `paramShapes := [...]` / `inputShapes := [..
 - The `updateBuffers` mechanism is like updating non-gradient buffers (e.g. BatchNorm running
   stats).
 
-The surface here is intentionally narrow: it supports TorchLean's executable model constructors and
+The surface here is narrow by design: it supports TorchLean's executable model constructors and
 training helpers without trying to mirror the full `torch.nn` API.
 
 ## References
@@ -85,7 +85,7 @@ A shape-typed layer definition with explicit parameters and a backend-polymorphi
 
 `LayerDef σ τ` is the core building block used by `Seq` (sequential composition). It stores:
 - a list of parameter shapes,
-- initial values for those parameters/buffers (as `Float` tensors, for demo-friendly
+- initial values for those parameters/buffers (as `Float` tensors, for reproducible
   initialization),
 - per-parameter `requires_grad` flags, and
 - a `forward` program that is polymorphic over the backend monad and scalar type.
@@ -417,7 +417,7 @@ def programWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
   Why this exists: several runnable examples want to inspect logits (argmax decoding, probes,
   interactive loops) without re-implementing the `useParams/useInputs` boilerplate.
 
-  Note: this is intentionally eager-only. If you want "compile once, run many", use `compileOut`
+  Note: this is eager-only. If you want "compile once, run many", use `compileOut`
   + `predict1` instead.
   -/
 
@@ -433,7 +433,7 @@ def programWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
   ```
 
   This uses the eager runtime so CUDA fast kernels stay available, reads back the concrete output,
-  and then releases temporary tape buffers because no backward pass will follow. Use this for
+  and then releases ephemeral tape buffers because no backward pass will follow. Use this for
   validation, decoding, diffusion sampling, and other inference loops.
   -/
   def eval1NoGrad {σ τ : Shape}
@@ -876,7 +876,7 @@ learns an input candidate, a token/state-dependent retention gate, and an output
 
 The recurrence is unrolled with ordinary TorchLean differentiable ops, so the same definition trains
 on the CPU backend and on the CUDA backend.  The lower-level selective-scan CUDA kernels are still
-available for forward experiments, but this layer is intentionally built from autograd-covered ops so
+available for forward experiments, but this layer is built from autograd-covered ops so
 all projections and gates train correctly.
 -/
 def mamba (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
@@ -1933,7 +1933,7 @@ tlseq[
 ```
 
 It expands to `seq1 ... >>> seq1 ... >>> ...`.
-The syntax is intentionally namespaced to avoid colliding with other libraries.
+The syntax is namespaced to avoid colliding with other libraries.
 -/
 
 syntax (name := torchLeanSeqLit) "tlseq" "[" term,+ "]" : term

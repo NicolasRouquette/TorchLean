@@ -24,8 +24,8 @@ A `Session α` is TorchLean's runtime analogue of a PyTorch "training loop envir
 - can apply simple optimizer steps (e.g. SGD) in a session-style workflow.
 
 TorchLean exposes a **single API** with two execution backends selected at construction time:
-- `.eager`: a tape-backed runtime session (imperative autograd tape; great for debugging and quick
-  demos),
+- `.eager`: a tape-backed runtime session (imperative autograd tape; useful for debugging and
+  interactive examples),
 - `.compiled`: a proof-linked session that also records a (proved) IR graph while you build the tape
   and
   then executes via `Runtime.Autograd.Torch.Internal.SessionIR`.
@@ -2219,8 +2219,8 @@ def withFreshTape {α β : Type} (s : Session α) (act : IO β) : IO β := do
 /--
 Build one scalar-loss graph, run backward on it, and apply a dense SGD step.
 
-This is the small "session-style training step" helper intended for demos and simple imperative
-workflows that are lower-level than `API.TorchLean.Trainer`, but should still avoid manual
+This is the "session-style training step" helper for imperative workflows that are lower-level than
+`API.TorchLean.Trainer`, but should still avoid manual
 `resetTape` / `backwardScalarDenseAll` / `sgdStepAll` wiring.
 -/
 def sgdStepScalarGraph {α : Type} (s : Session α)

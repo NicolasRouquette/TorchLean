@@ -21,10 +21,12 @@ Many runnable examples in `NN/Examples/Models/*` follow the same pattern:
 
 This module keeps that loop in one place so examples stay short and consistent.
 
-What this is (and is not):
-- it is a tutorial helper for fixed-sample runs, not a full dataset trainer;
+Scope:
+- it trains against one fixed sample supplied by the caller;
 - it is model-agnostic: callers supply the loss wrapper and optimizer constructor;
 - it is backend-agnostic: callers can use it on CPU or CUDA via `TorchLean.Options`.
+
+For dataset-backed training, use the loader/stream helpers in `NN.API.train`.
 -/
 
 @[expose] public section
@@ -57,7 +59,8 @@ def steps
     (cast : Float → α)
     (opts : TorchLean.Options)
     (sample : sample.Supervised α σ τ)
-    (steps : Nat) :
+    (steps : Nat)
+    (cudaMemWatch : Nat := 0) :
     IO (LossPair α) := do
   nn.withModel mkModel fun model => do
     let modDef := mkModuleDef model
@@ -66,8 +69,11 @@ def steps
     let L0 := _root_.Spec.Tensor.toScalar loss0
     let opt := mkOptim cast (nn.paramShapes model)
     let optH ← TorchLean.Optim.handle (α := α) m opt
-    for _ in [0:steps] do
+    let watchEvery := Common.effectiveCudaMemWatch opts steps cudaMemWatch
+    let mut memWatch? ← Common.reportCudaMemWatch opts watchEvery steps 0 none
+    for step in [0:steps] do
       optH.step sample
+      memWatch? ← Common.reportCudaMemWatch opts watchEvery steps (step + 1) memWatch?
     let loss1 ← TorchLean.Module.forward (α := α) m sample
     let L1 := _root_.Spec.Tensor.toScalar loss1
     pure { loss0 := L0, loss1 := L1 }
@@ -83,7 +89,8 @@ def curveFloat
       (paramShapes : List Shape) → TorchLean.Optim.Optimizer Float paramShapes)
     (opts : TorchLean.Options)
     (sample : sample.Supervised Float σ τ)
-    (steps : Nat) :
+    (steps : Nat)
+    (cudaMemWatch : Nat := 0) :
     IO _root_.Runtime.Training.Curve := do
   nn.withModel mkModel fun model => do
     let modDef := mkModuleDef model
@@ -95,8 +102,11 @@ def curveFloat
     let mut curve : _root_.Runtime.Training.Curve := {}
     curve := curve.push 0 L0
     let mut last := L0
+    let watchEvery := Common.effectiveCudaMemWatch opts steps cudaMemWatch
+    let mut memWatch? ← Common.reportCudaMemWatch opts watchEvery steps 0 none
     for step in [0:steps] do
       optH.step sample
+      memWatch? ← Common.reportCudaMemWatch opts watchEvery steps (step + 1) memWatch?
       let loss ← TorchLean.Module.forward (α := Float) m sample
       last := _root_.Spec.Tensor.toScalar loss
       curve := curve.push (step + 1) last

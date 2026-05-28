@@ -37,7 +37,7 @@ and via the top-level `NN` facade.
 
 `DType` here plays a role similar to `torch.dtype` selection in Python, but it also encodes a key
 TorchLean distinction:
-- some scalar types are executable (you can `#eval` / run demos), and
+- some scalar types are executable (you can `#eval` / run examples), and
 - some scalar types are proof-only (e.g. `ℝ` or a noncomputable float model).
 -/
 
@@ -79,7 +79,7 @@ Runtime conversion from host `Float` constants into a TorchLean scalar type.
 
 PyTorch analogy:
 
-- in Python tutorials, users write float literals directly and tensors inherit a runtime dtype;
+- in Python examples, users write float literals directly and tensors inherit a runtime dtype;
 - in TorchLean, examples often start from host `Float` literals and inject them into the chosen
   runtime scalar backend with `Runtime.ofFloat`.
 -/
@@ -223,7 +223,7 @@ def takePathFlagOnce (args : List String) (key : String) :
   let (value?, rest) ← takeFlagValueOnce args key
   pure (value?.map (fun s => (s : System.FilePath)), rest)
 
-/-- Common training flags that appear across many demos: `--epochs` and `--batch`. -/
+/-- Common training flags used by executable examples: `--epochs` and `--batch`. -/
 structure EpochBatch where
   /-- Number of epochs to train for. -/
   epochs : Nat
@@ -244,7 +244,7 @@ def takeEpochBatch (args : List String) (defaultEpochs defaultBatch : Nat) :
 /--
 Parse a `--steps` flag, but also accept `--epochs` as a synonym.
 
-This is a small ergonomics helper for tutorials that use a step-based loop,
+This is an ergonomics helper for examples that use a step-based loop,
 while still letting users pass `--epochs` out of habit from typical PyTorch training code.
 
 If both `--steps` and `--epochs` are provided, this errors.
@@ -280,7 +280,7 @@ structure Float32Config where
   deriving Repr, DecidableEq
 
 /--
-Scalar type choice for demos and small executables.
+Scalar type choice for runnable executables.
 
 This is a *runtime* selection mechanism used by example programs; the core library itself is
 parametric in the scalar type `α`.
@@ -433,7 +433,7 @@ def withRuntime
 /--
 Run `k` under the scalar type selected by `dt`, passing an explicit cast function `Float → α`.
 
-This is a convenient shape for small demos that want to construct tensors from `Float` lists.
+This is a convenient shape for executables that construct tensors from `Float` lists.
 -/
 def withExec
     (dt : DType)

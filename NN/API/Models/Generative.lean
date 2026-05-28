@@ -12,10 +12,10 @@ public import NN.API.Tensor.Views
 /-!
 # Generative Model Helpers (API)
 
-Small config-style constructors for runnable generative examples.
+Config-style constructors for runnable generative examples.
 
-These are intentionally vector models: examples can flatten images, train the model, and later swap
-in convolutional encoders/decoders without changing the command-line/data-loading surface.
+These are vector models: examples can flatten images, train the model, and later swap in
+convolutional encoders/decoders without changing the command-line/data-loading surface.
 -/
 
 @[expose] public section
@@ -41,11 +41,10 @@ def vectorGenerativeConfig (batch dataDim hiddenDim latentDim : Nat) : VectorGen
   { batch, dataDim, hiddenDim, latentDim }
 
 /--
-Small default config used by the runnable image-vector examples.
+Default config used by the runnable image-vector examples.
 
-The input dimension is intentionally a prefix of a flattened image, not a full image decoder. That
-keeps examples fast while still exercising real data, batched training, and generative model
-constructors.
+The input dimension is a prefix of a flattened image rather than a full image decoder. That keeps
+examples fast while still exercising real data, batched training, and generative model constructors.
 -/
 def compactImageConfig (batch : Nat := 4) (dataDim : Nat := 128)
     (hiddenDim : Nat := 64) (latentDim : Nat := 32) : VectorGenerativeConfig :=
@@ -75,8 +74,8 @@ abbrev vectorVaeOutShape (cfg : VectorGenerativeConfig) : Shape :=
 /--
 Flatten each sample in a batch and keep the first `cfg.dataDim` entries.
 
-This is useful for quick image-vector experiments: a model can train on a small typed vector view of
-an image without every example needing to carry its own flattening proof adapters.
+This is useful for image-vector experiments: a model can train on a typed vector view of an image
+without every example needing to carry its own flattening proof adapters.
 -/
 def flattenBatchPrefix {α : Type} [Inhabited α] (cfg : VectorGenerativeConfig) {source : Shape}
     (hData : cfg.dataDim ≤ Shape.size source)

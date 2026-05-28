@@ -13,8 +13,8 @@ public import NN.API.Public
 
 Reusable actor/critic MLP constructors for PPO examples.
 
-These helpers intentionally cover only the neural-network shape. Environment collection, trust
-boundary checks, advantage computation, and optimizer loops stay in the examples/runtime modules.
+These helpers cover the neural-network shape. Environment collection, trust-boundary checks,
+advantage computation, and optimizer loops stay in the examples/runtime modules.
 -/
 
 @[expose] public section
@@ -66,4 +66,3 @@ end nn
 
 end API
 end NN
-

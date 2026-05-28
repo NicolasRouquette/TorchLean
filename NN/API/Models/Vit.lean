@@ -13,7 +13,7 @@ public import NN.API.Public
 
 This module provides a compact, reusable ViT-style model constructor used by runnable examples.
 
-This is intentionally minimal:
+This constructor keeps the architecture compact:
 - patch embedding is a strided convolution,
 - tokenization is a reshape + axis swap (`N×C×H×W -> N×(H*W)×C`),
 - the “transformer” is a single encoder block,

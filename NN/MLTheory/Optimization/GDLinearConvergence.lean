@@ -106,7 +106,7 @@ theorem step_norm_sq_le (η μ : ℝ) (hη : 0 ≤ η) {L : NNReal} (g : E → E
     have hs : ‖g x - g y‖ * ‖g x - g y‖ ≤ ((L : ℝ) * ‖x - y‖) * ((L : ℝ) * ‖x - y‖) := by
       have hx : 0 ≤ (L : ℝ) * ‖x - y‖ := by
         have hL0 : 0 ≤ (L : ℝ) := by
-          exact_mod_cast (show (0 : NNReal) ≤ L from (zero_le L))
+          exact L.coe_nonneg
         exact mul_nonneg hL0 (norm_nonneg _)
       exact mul_le_mul hL hL (norm_nonneg _) hx
     -- rearrange

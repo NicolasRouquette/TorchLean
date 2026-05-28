@@ -327,6 +327,29 @@ In practice this gives TorchLean three related but distinct CUDA layers:
 Keeping those three layers separate prevents a common mistake: treating "the CUDA demo trained" as
 "the CUDA implementation has been verified."
 
+# Runtime-Side Initialization
+
+Large Float/CUDA modules should not have to construct every initial parameter as a nested Lean
+tensor before the runtime can allocate device storage.  TorchLean therefore exposes runtime-side
+Float initializers:
+
+```
+TorchLean.RuntimeInit.FloatInit
+TorchLean.RuntimeInit.Plan
+TorchLean.Module.instantiateFloatWithRuntimePlanOptions
+TorchLean.Module.instantiateFloatWithRuntimeInitOptions
+```
+
+The typed `Plan` is indexed by the module's parameter-shape list.  That means Lean checks that every
+parameter has exactly one initializer.  In CPU Float mode the initializer materializes a normal host
+tensor.  In CUDA mode the supported initializers allocate device buffers directly and keep the host
+slot as a synchronized mirror for explicit readback.
+
+This is a runtime feature, not a new mathematical semantics.  The parameter is still a tensor of the
+declared shape.  The improvement is where storage is materialized: zeros, ones, uniform,
+Xavier/Glorot, Kaiming/He, and exact flat payloads can be created through the runtime path instead
+of first building a huge Lean object only to upload it immediately.
+
 # Float32 Only
 
 The CUDA backend is a float32 backend. Native buffers store C/CUDA `float`, and the Lean

@@ -13,7 +13,7 @@ public import NN.Spec.Core.Tensor.Core
 
 TorchLean metrics helpers.
 
-These are non-differentiable evaluation helpers for demos (e.g. accuracy).
+These are non-differentiable evaluation helpers for examples (e.g. accuracy).
 -/
 
 @[expose] public section

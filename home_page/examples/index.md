@@ -128,3 +128,7 @@ CUDA is opt-in. The build flags, runtime path, and agreement assumptions are exp
 For long CUDA training runs, model commands also expose allocator telemetry through
 `--cuda-mem-watch N`; longer runs choose a small default cadence so device-memory behavior is visible
 while the example is running.
+
+The guide also covers the newer runtime-facing APIs used by larger examples: runtime-side Float
+initializers, typed step streams for generated or file-backed batches, and integer-token GPT helpers
+that avoid one-hot targets for language-model training.

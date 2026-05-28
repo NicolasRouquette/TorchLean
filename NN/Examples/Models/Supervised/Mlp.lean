@@ -19,7 +19,7 @@ public import NN.Examples.Data.RealPaths
 /-!
 # MLP Tabular Regression
 
-This example trains a small MLP on the UCI Auto MPG regression task.  The prepared CSV has seven
+This example trains an MLP on the UCI Auto MPG regression task. The prepared CSV has seven
 normalized numeric car features and one normalized target column for miles per gallon, so the model
 is just ordinary supervised tabular regression:
 
@@ -43,24 +43,37 @@ open NN.API
 
 namespace NN.Examples.Models.Supervised.Mlp
 
+/-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean mlp"
+
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/mlp_trainlog.json"
 
+/-- Static minibatch size for the Auto MPG tabular loader. -/
 def batch : Nat := 5
+
 /-- Auto MPG has seven numeric predictors after dropping `car_name`. -/
 def inDim : Nat := 7
+
+/-- Hidden width of the one-hidden-layer MLP. -/
 def hidDim : Nat := 32
+
+/-- Regression target width: normalized miles-per-gallon. -/
 def outDim : Nat := 1
 
+/-- Shared MLP configuration used by shapes and the constructor. -/
 def cfg : nn.models.Mlp1Config :=
   { batch := batch, inDim := inDim, hidDim := hidDim, outDim := outDim }
 
+/-- Input shape: a minibatch of Auto MPG feature vectors. -/
 abbrev σ : Shape :=
   nn.models.mlp1InShape cfg
 
+/-- Output shape: one scalar regression prediction per row. -/
 abbrev τ : Shape :=
   nn.models.mlp1OutShape cfg
 
+/-- One-hidden-layer ReLU MLP from the public model API. -/
 def mkModel : nn.M (nn.Sequential σ τ) :=
   nn.models.mlp1Relu cfg
 
@@ -104,6 +117,7 @@ def fitAutoMpg (opts : Runtime.Autograd.Torch.Options)
       "loss" flags.train.cudaMemWatch
     pure report
 
+/-- CLI entrypoint for Auto MPG regression on CPU or CUDA. -/
 def main (args : List String) : IO UInt32 := do
   Common.runFloat exeName args
     (banner := fun opts =>

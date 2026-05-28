@@ -29,7 +29,7 @@ namespace Schedulers
 /--
 Small learning-rate scheduler surface for higher-level training code.
 
-This file keeps the interface deliberately small: a `Config` is just a description of a schedule,
+This file keeps the interface compact: a `Config` is just a description of a schedule,
 and `lrAt cfg t` computes the learning rate at step/epoch index `t`.
 
 ### PyTorch mapping

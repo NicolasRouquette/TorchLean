@@ -25,8 +25,8 @@ public import NN.Runtime.Autograd.Engine.Cuda.Fno1dRfftFused
 /-!
 # Native TorchLean FNO1D Burgers
 
-This file is the operator-learning tutorial we want people to read after the basic CNN/MLP
-examples. The Python helpers do the two jobs Lean should not own here: download/reshape the public
+This file is the operator-learning example to read after the basic CNN/MLP examples. The Python
+helpers do the two jobs Lean should not own here: download/reshape the public
 `burgers_data_R10.mat` file, then plot the prediction CSV. The model, loss, optimizer, and training
 loop stay in TorchLean.
 
@@ -39,9 +39,9 @@ Why we use the real-split FNO path in this executable:
   reference path when someone wants to inspect the math without CUDA in the way.
 
 The training task follows the standard FNO Burgers setup: learn the operator
-`u₀(x) ↦ u(x,T)` on a fixed periodic grid. We keep the default grid and row counts modest because
-the first run should answer one question quickly: "is my TorchLean/CUDA path wired correctly?" Once
-that works, raise `--steps`, export more rows, and bump the constants below.
+`u₀(x) ↦ u(x,T)` on a fixed periodic grid. The default grid and row counts are modest enough for a
+local run while still exercising the real operator-learning path. Larger runs can raise `--steps`,
+export more rows, and bump the constants below.
 
 References for the dataset/training convention:
 - Li et al., “Fourier Neural Operator for Parametric Partial Differential Equations”, 2020/2021.
@@ -92,6 +92,7 @@ structure TrainConfig where
   steps : Nat
   seed : Nat
   logEvery : Nat
+  cudaMemWatch : Nat
   trainRows : Nat
   testRows : Nat
   evalRows : Nat
@@ -122,6 +123,7 @@ def parseFlags (args : List String) :
   let (steps, args) ← CLI.takeStepsOrEpochs args 50
   let (seed, args) ← CLI.takeSeed args 0
   let (logEvery?, args) ← CLI.takeNatFlagOnce args "log-every"
+  let (cudaMemWatch?, args) ← CLI.takeNatFlagOnce args "cuda-mem-watch"
   let (trainRows?, args) ← CLI.takeNatFlagOnce args "train-rows"
   let (testRows?, args) ← CLI.takeNatFlagOnce args "test-rows"
   let (evalRows?, args) ← CLI.takeNatFlagOnce args "eval-rows"
@@ -136,6 +138,7 @@ def parseFlags (args : List String) :
     { steps := steps
       seed := seed
       logEvery := logEvery?.getD 10
+      cudaMemWatch := cudaMemWatch?.getD 0
       trainRows := trainRows?.getD defaultTrainRows
       testRows := testRows?.getD defaultTestRows
       evalRows := evalRows?.getD 16
@@ -276,11 +279,14 @@ def run (spec : RunSpec) : IO Unit := do
       (grid := grid) (width := width) (modes := modes) (blocks := blocks) cfg.seed
   let mut adamSt : _root_.Runtime.Autograd.Cuda.Fno1dRfftFused.AdamState := {}
   let mut hist ← recordEval reportTrainSamples reportTestSamples metricHistory 0 ps "before"
+  let cudaMemWatch := Common.effectiveCudaMemWatch { useGpu := true } cfg.steps cfg.cudaMemWatch
+  let mut memWatch? ← Common.reportCudaMemWatch { useGpu := true } cudaMemWatch cfg.steps 0 none
   for step in [0:cfg.steps] do
     let sample := trainCycle (cfg.seed + step)
     let (ps', adamSt') ← trainStep cfg.lr ps adamSt sample
     ps := ps'
     adamSt := adamSt'
+    memWatch? ← Common.reportCudaMemWatch { useGpu := true } cudaMemWatch cfg.steps (step + 1) memWatch?
     if cfg.logEvery != 0 && (step + 1) % cfg.logEvery == 0 then
       hist ← recordEval reportTrainSamples reportTestSamples hist (step + 1) ps s!"step {step + 1}"
   hist ← recordEval reportTrainSamples reportTestSamples hist cfg.steps ps "after"
@@ -307,7 +313,7 @@ def runPortableDense
     let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith (α := Float) modDef id opts
     let trainSamples := Data.toList data.train
     let testSamples := Data.toList data.test
-    -- Evaluation uses fixed prefixes so before/after metrics are deterministic and cheap.
+    -- Evaluation uses fixed prefixes so before/after metrics are deterministic and bounded.
     let reportTrainSamples := trainSamples.take cfg.evalRows
     let reportTestSamples := testSamples.take cfg.evalRows
     -- Training cycles through the dataset by seed/step instead of materializing a repeated epoch
@@ -328,14 +334,17 @@ def runPortableDense
       IO.println s!"  {tag}: train_mse={trainLoss} test_mse={testLoss}"
       pure <| hist.push step #[trainLoss, testLoss]
     let mut hist ← recordEval metricHistory 0 "before"
+    let cudaMemWatch := Common.effectiveCudaMemWatch opts cfg.steps cfg.cudaMemWatch
+    let mut memWatch? ← Common.reportCudaMemWatch opts cudaMemWatch cfg.steps 0 none
     for step in [0:cfg.steps] do
       st ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.stepWith m opt st
         (trainCycle (cfg.seed + step))
+      memWatch? ← Common.reportCudaMemWatch opts cudaMemWatch cfg.steps (step + 1) memWatch?
       if cfg.logEvery != 0 && (step + 1) % cfg.logEvery == 0 then
         hist ← recordEval hist (step + 1) s!"step {step + 1}"
     hist ← recordEval hist cfg.steps "after"
 
-    -- Save one prediction probe so the example reports both scalar loss curves and a field-level
+    -- Save one prediction slice so the example reports both scalar loss curves and a field-level
     -- Burgers trajectory comparison.
     let params ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.params m
     let compiled ← _root_.Runtime.Autograd.TorchLean.NN.Seq.compileOut model (α := Float)
@@ -358,6 +367,7 @@ def logRunHeader (opts : _root_.Runtime.Autograd.Torch.Options) (spec : RunSpec)
   IO.println s!"  device={if opts.useGpu then "cuda" else "cpu"} backend={backendName}"
   IO.println s!"  grid={grid} width={width} modes={modes} blocks={blocks}"
   IO.println s!"  rows train={spec.train.trainRows} test={spec.train.testRows} eval_prefix={spec.train.evalRows}"
+  IO.println s!"  cuda_mem_watch={Common.effectiveCudaMemWatch opts spec.train.steps spec.train.cudaMemWatch}"
   IO.println s!"  train={spec.files.trainX} / {spec.files.trainY}"
   IO.println s!"  test ={spec.files.testX} / {spec.files.testY}"
   IO.println s!"  log  ={spec.logJson}"

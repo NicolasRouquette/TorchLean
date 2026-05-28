@@ -32,13 +32,13 @@ This module is a thin wrapper around `Runtime.Autograd.Torch.Init` that returns 
 `Spec.Tensor`s with shapes tracked in the type.
 
 All initializers are deterministic given an explicit `seed : Nat`, which is convenient for:
-- reproducible demos
+- reproducible examples
 - stable tests
 - proofs that want to fix concrete initial values
 
 ### PyTorch Mapping
 
-The names intentionally mirror common PyTorch initializers:
+The names mirror common PyTorch initializers:
 - Xavier/Glorot: `torch.nn.init.xavier_uniform_`, `torch.nn.init.xavier_normal_`
 - Kaiming/He: `torch.nn.init.kaiming_uniform_`, `torch.nn.init.kaiming_normal_`
 

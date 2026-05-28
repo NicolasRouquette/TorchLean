@@ -39,9 +39,9 @@ internal runtime modules directly.
 
 ## How This Relates To `NN.API.Public`
 
-`NN.API.Public` is the higher-level, PyTorch-like facade intended for most examples and tutorial
-code. It builds on this runtime facade and adds more ergonomic constructors (record-based configs,
-fewer proof arguments, etc.).
+`NN.API.Public` is the higher-level, PyTorch-like facade intended for most user-facing model code.
+It builds on this runtime facade and adds more ergonomic constructors (record-based configs, fewer
+proof arguments, etc.).
 
 ## PyTorch Mapping
 
@@ -134,7 +134,7 @@ namespace F
 export _root_.Runtime.Autograd.TorchLean.F
   (square checkpoint
    addB mulB
-   embedding mean
+   embedding embeddingRowsNat embeddingBatchSeqNat mean
    detach stopGrad
    dropoutSeeded)
 end F
@@ -143,6 +143,7 @@ namespace Loss
 /- Loss helpers mirroring the usual `torch.nn.functional` loss family. -/
 export _root_.Runtime.Autograd.TorchLean.Loss
   (Reduction mse nllOneHot crossEntropyOneHot nllIndex nllNat crossEntropyIndex crossEntropyNat
+    rowTargetFlatIndices nllRowsNat crossEntropyRowsNat
     bceWithLogits bce)
 end Loss
 
@@ -360,7 +361,8 @@ namespace Random
 /-!
 Deterministic RNG helpers re-exported for the runtime facade.
 
-These are small utilities used by demos and training loops (`keyOf`, `nextSeed`, `uniform`, `mask`).
+These are deterministic utilities used by examples and training loops (`keyOf`, `nextSeed`,
+`uniform`, `mask`).
 -/
 export _root_.Runtime.Autograd.TorchLean.Random (keyOf nextSeed uniform mask)
 end Random
@@ -371,8 +373,8 @@ namespace Layers
 ### Sequential Layer Helpers
 
 `Runtime.Autograd.TorchLean.NN` exposes *layers* (`LayerDef σ τ`) and *sequential models*
-(`Seq σ τ`). For demos we often want to "just stack layers", so this namespace provides small
-helpers that return `Seq` directly (and compute a few common derived shapes like `flattenLinear`).
+(`Seq σ τ`). This namespace provides direct `Seq` constructors and common derived shapes such as
+`flattenLinear`.
 
 For the more fully-documented public surface (named-field configs, blocks, etc.), see
 `NN.API.Public` under `API.nn`.
@@ -895,8 +897,8 @@ namespace Models
 /-!
 ## Model constructors (re-export)
 
-This namespace re-exports a small set of ready-made model constructors (MLP/CNN/ResNet18/etc.),
-primarily for runnable demos and smoke tests.
+This namespace re-exports ready-made model constructors (MLP/CNN/ResNet18/etc.) for runnable
+examples and integration checks.
 
 For compositional building blocks, prefer `API.TorchLean.NN` and `API.TorchLean.Layers`.
 -/
@@ -919,9 +921,15 @@ helpers (`Module.withModule` / `Module.withModuleRuntime`) that select dtype/bac
 -/
 
 export _root_.Runtime.Autograd.TorchLean.Module (ScalarModuleDef ScalarModule)
+namespace RuntimeInit
+export _root_.Runtime.Autograd.TorchLean.Module.RuntimeInit
+  (FloatInit Plan xavierUniformForShape kaimingUniformForShape xavierLinearWeight
+   kaimingLinearWeight)
+end RuntimeInit
 export _root_.Runtime.Autograd.TorchLean.Module.ScalarModule
   (create forward backward step initOptim stepWith params setParams trainSGD trainWith meanLoss)
-export _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef (instantiate)
+export _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef
+  (instantiate instantiateFloatWithRuntimePlan instantiateFloatWithRuntimeInit)
 
 /--
 Instantiate a `ScalarModuleDef` under explicit Torch options (`backend`, `fastKernels`, `useGpu`,
@@ -942,6 +950,38 @@ def instantiateWithOptions
     IO (ScalarModule α paramShapes inputShapes) :=
   _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith
     (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) defn cast opts
+
+/--
+Instantiate a Float module with runtime-side parameter initializers.
+
+This is the public runtime-initialization entrypoint. The initializer plan is indexed by the same
+`paramShapes` list as the module, so Lean checks that every parameter has exactly one initializer.
+In CUDA mode, supported initializers allocate device buffers directly instead of first constructing
+every parameter as a large nested Lean tensor.
+-/
+def instantiateFloatWithRuntimePlanOptions
+    {paramShapes inputShapes : List Spec.Shape}
+    (defn : ScalarModuleDef paramShapes inputShapes)
+    (opts : Options)
+    (plan : RuntimeInit.Plan paramShapes) :
+    IO (ScalarModule Float paramShapes inputShapes) :=
+  _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateFloatWithRuntimePlan
+    (paramShapes := paramShapes) (inputShapes := inputShapes) defn opts plan
+
+/--
+List-based wrapper for checkpoint/JSON boundaries.
+
+If the caller has a statically known parameter list, prefer
+`instantiateFloatWithRuntimePlanOptions`; this wrapper checks the list length before applying it.
+-/
+def instantiateFloatWithRuntimeInitOptions
+    {paramShapes inputShapes : List Spec.Shape}
+    (defn : ScalarModuleDef paramShapes inputShapes)
+    (opts : Options)
+    (inits : List RuntimeInit.FloatInit) :
+    IO (ScalarModule Float paramShapes inputShapes) :=
+  _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateFloatWithRuntimeInit
+    (paramShapes := paramShapes) (inputShapes := inputShapes) defn opts inits
 
 /--
 Execution configuration parsed from CLI flags.
@@ -1045,7 +1085,7 @@ def parseAndStrip (args : List String) : Except String (ExecConfig × List Strin
   let defaultDType : DType := if args.contains "--cuda" then .float else .float32 {}
   parseAndStripWithDefaultDType args defaultDType
 
-/-- Log the chosen execution config to stdout (for reproducible demos). -/
+/-- Log the chosen execution config to stdout for reproducible runs. -/
 def log (cfg : ExecConfig) : IO Unit := do
   DType.log cfg.dtype
   IO.println s!"[TorchLean] backend: {reprStr cfg.backend}"
@@ -1069,8 +1109,8 @@ def withRuntime
     (args : List String)
     (k :
       ∀ {α : Type}, [API.Semantics.Scalar α] → [DecidableEq Spec.Shape] → [ToString α] →
-        [API.Runtime.Scalar α] → (cast : Float → α) → (opts : Options) → (rest : List String) → IO
-          Unit) :
+        [API.Runtime.Scalar α] →
+        (cast : Float → α) → (opts : Options) → (rest : List String) → IO Unit) :
     IO Unit := do
   let (cfg, rest) ←
     match ExecConfig.parseAndStrip args with
@@ -1100,26 +1140,39 @@ def withModule
     (args : List String)
     (k :
       ∀ {α : Type}, [API.Semantics.Scalar α] → [DecidableEq Spec.Shape] → [ToString α] →
-        (cast : Float → α) → ScalarModule α paramShapes inputShapes → (rest : List String) → IO
-          Unit) :
+        (cast : Float → α) → ScalarModule α paramShapes inputShapes → (rest : List String) →
+        IO Unit) :
     IO Unit := do
   let (cfg, rest) ←
     match ExecConfig.parseAndStrip args with
     | .ok v => pure v
     | .error msg => throw <| IO.userError msg
   ExecConfig.log cfg
-  match (← DType.withExec cfg.dtype (fun {α} _ _ _ cast => do
-        let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith
-          (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
-          defn cast
-            { backend := cfg.backend
-              useGpu := cfg.useGpu
-              fastKernels := cfg.fastKernels
-              fastGpuMatmulPrecision := cfg.fastGpuMatmulPrecision }
-        k (α := α) cast m rest
-      )) with
-  | .ok () => pure ()
-  | .error msg => throw <| IO.userError msg
+  let opts : Options :=
+    { backend := cfg.backend
+      useGpu := cfg.useGpu
+      fastKernels := cfg.fastKernels
+      fastGpuMatmulPrecision := cfg.fastGpuMatmulPrecision }
+  match cfg.dtype with
+  | .float =>
+      -- Keep the Float branch explicit. If this path is hidden behind the scalar-polymorphic
+      -- `DType.withExec` continuation, Lean can elaborate module construction with the generic
+      -- fallback CUDA converter instead of the real Float upload bridge. That still compiles, but
+      -- a CUDA training step later fails when it tries to upload a Float tensor.
+      let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith
+        (α := Float) (paramShapes := paramShapes) (inputShapes := inputShapes) defn id opts
+      k (α := Float) id m rest
+  | _ =>
+      if cfg.useGpu then
+        throw <| IO.userError "torch: eager CUDA module execution currently requires --dtype float"
+      match (← DType.withExec cfg.dtype (fun {α} _ _ _ cast => do
+            let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith
+              (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+              defn cast opts
+            k (α := α) cast m rest
+          )) with
+      | .ok () => pure ()
+      | .error msg => throw <| IO.userError msg
 
 /--
 Like `withModule`, but also provides an `API.Runtime.Scalar α` instance (for numeric literals).
@@ -1130,26 +1183,38 @@ def withModuleRuntime
     (args : List String)
     (k :
       ∀ {α : Type}, [API.Semantics.Scalar α] → [DecidableEq Spec.Shape] → [ToString α] →
-        [API.Runtime.Scalar α] → ScalarModule α paramShapes inputShapes → (rest : List String) → IO
-          Unit) :
+        [API.Runtime.Scalar α] →
+        ScalarModule α paramShapes inputShapes → (rest : List String) → IO Unit) :
     IO Unit := do
   let (cfg, rest) ←
     match ExecConfig.parseAndStrip args with
     | .ok v => pure v
     | .error msg => throw <| IO.userError msg
   ExecConfig.log cfg
-  match (← DType.withRuntime cfg.dtype (fun {α} _ _ _ _ => do
-        let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith
-          (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
-          defn (API.Runtime.ofFloat (α := α))
-            { backend := cfg.backend
-              useGpu := cfg.useGpu
-              fastKernels := cfg.fastKernels
-              fastGpuMatmulPrecision := cfg.fastGpuMatmulPrecision }
-        k (α := α) m rest
-      )) with
-  | .ok () => pure ()
-  | .error msg => throw <| IO.userError msg
+  let opts : Options :=
+    { backend := cfg.backend
+      useGpu := cfg.useGpu
+      fastKernels := cfg.fastKernels
+      fastGpuMatmulPrecision := cfg.fastGpuMatmulPrecision }
+  match cfg.dtype with
+  | .float =>
+      -- Same reason as `withModule`: CUDA module construction should see `α = Float` directly, so
+      -- the Float-specific `TensorConv` instance is selected before the runner is handed to user
+      -- code.
+      let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith
+        (α := Float) (paramShapes := paramShapes) (inputShapes := inputShapes) defn id opts
+      k (α := Float) m rest
+  | _ =>
+      if cfg.useGpu then
+        throw <| IO.userError "torch: eager CUDA module execution currently requires --dtype float"
+      match (← DType.withRuntime cfg.dtype (fun {α} _ _ _ _ => do
+            let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith
+              (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+              defn (API.Runtime.ofFloat (α := α)) opts
+            k (α := α) m rest
+          )) with
+      | .ok () => pure ()
+      | .error msg => throw <| IO.userError msg
 
 /-!
 ## Executable `main` Helpers
@@ -1448,7 +1513,7 @@ A fully instantiated supervised task runner.
 This bundles:
 - the imperative `ScalarModule` (parameters/buffers stored in refs),
 - compiled predictors and loss functions for both `.train` and `.eval` modes (so switching mode is
-  cheap),
+  low-overhead),
 - and the current mode stored in an `IO.Ref`.
 
 The mode influences both operator behavior (e.g. dropout/batchnorm) and whether buffers are updated
@@ -2279,7 +2344,7 @@ namespace Trainer
 
 Usage note:
 
-If you're writing tutorials or user code, prefer the PyTorch-shaped entrypoint `NN.API.train`
+If you're writing model code, prefer the PyTorch-shaped entrypoint `NN.API.train`
 (available after `import NN`). This `API.TorchLean.Trainer` namespace is the underlying runtime
 layer that `API.train` delegates to, and it exposes more knobs than most users need.
 
@@ -2661,7 +2726,7 @@ abbrev ExecConfig := Module.ExecConfig
 namespace ExecConfig
 /-- Parse and strip execution flags, returning `(config, remainingArgs)`. -/
 abbrev parseAndStrip := Module.ExecConfig.parseAndStrip
-/-- Log the chosen execution config to stdout (useful for reproducible demos). -/
+/-- Log the chosen execution config to stdout for reproducible runs. -/
 abbrev log := Module.ExecConfig.log
 end ExecConfig
 

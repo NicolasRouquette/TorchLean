@@ -12,7 +12,7 @@ public import NN.Runtime.Training.Log
 /-!
 # RL CLI Helpers (API)
 
-TorchLean's runnable RL examples (`NN/Examples/Models/RL/*`) intentionally share one CLI shape:
+TorchLean's runnable RL examples (`NN/Examples/Models/RL/*`) share one CLI shape:
 
 - `--updates <n>`: how many update iterations to run,
 - `--eval-every <n>`: evaluate every `n` updates,
@@ -84,4 +84,3 @@ end rl
 
 end API
 end NN
-

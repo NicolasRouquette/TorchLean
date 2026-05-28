@@ -19,10 +19,10 @@ by Andrej Karpathy's minGPT/nanoGPT teaching material:
 
 - build an alphabet (`itos`) from the training text,
 - build a `stoi` tokenizer from that alphabet,
-- train a small causal Transformer to predict the next character,
+- train a compact causal Transformer to predict the next character,
 - sample text continuations from a prompt.
 
-It uses TorchLean's one-hot token interface (`batch × seqLen × vocab`) so the whole demo stays in
+It uses TorchLean's one-hot token interface (`batch × seqLen × vocab`) so the whole example stays in
 the same typed tensor world as the rest of the codebase.
 
 Implementation note: training draws a fresh deterministic random window each step (minGPT-style
@@ -43,28 +43,37 @@ open NN.API
 
 namespace NN.Examples.Models.Sequence.CharGpt
 
+/-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean chargpt"
 
+/-- Default single-file text corpus used by `--tiny-shakespeare`. -/
 def tinyShakespearePath : System.FilePath :=
   "data/real/text/tiny_shakespeare.txt"
 
+/-- Error message shown when the default corpus has not been downloaded yet. -/
 def missingTextHint : String :=
   "Download Tiny Shakespeare with:\n" ++
   "  python3 scripts/datasets/download_example_data.py --tiny-shakespeare"
 
+/-- Parse corpus flags and return the UTF-8 training text plus remaining CLI arguments. -/
 def takeInputText (args : List String) : IO (String × List String) :=
   text.Corpus.takeUtf8Input exeName tinyShakespearePath
     [("--tiny-shakespeare", tinyShakespearePath)] missingTextHint args
 
+/-- Build a deterministic character alphabet from the corpus. -/
 def buildAlphabet (s : String) : Array Char :=
   let chars : List Char := s.toList.eraseDups
   -- Deterministic order: sort by codepoint.
   let sorted := List.mergeSort chars (fun a b => decide (a.toNat ≤ b.toNat))
   sorted.toArray
 
+/-- Parsed training, sampling, and checkpoint options for the CharGPT command. -/
 structure TrainOptions where
+  /-- Common model-training flags: steps, log path, CUDA memory watch, and learning rate. -/
   base : Common.ModelTrainFlags
+  /-- Number of independently sampled corpus windows per optimizer step. -/
   batch : Nat
+  /-- Character context length. -/
   seqLen : Nat
   /--
   Accepted for CLI compatibility with fixed-window trainer entrypoints.
@@ -73,36 +82,52 @@ structure TrainOptions where
   precomputing a fixed `windows` array. We still accept `--windows` so scripts don't break.
   -/
   windows : Nat
+  /-- Prompt used for before/after reports and generation. -/
   prompt : String
+  /-- Number of generated characters after training. -/
   generate : Nat
+  /-- Sampling temperature for generation. -/
   temperature : Float
+  /-- Top-k cutoff for generation; `1` gives greedy decoding. -/
   topK : Nat
+  /-- Penalty applied to recently generated token ids. -/
   repeatPenalty : Float
+  /-- Number of recent tokens considered by the repetition penalty. -/
   repeatWindow : Nat
+  /-- Sampling and training-window seed. -/
   seed : Nat
+  /-- Restrict sampled characters to printable ASCII plus newline. -/
   asciiOnly : Bool
+  /-- Optional checkpoint path loaded before training/generation. -/
   loadParams? : Option System.FilePath
+  /-- Optional checkpoint path written after training. -/
   saveParams? : Option System.FilePath
 deriving Repr
 
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/chargpt_trainlog.json"
 
 namespace TrainOptions
 
+/-- Number of optimizer steps. -/
 def steps (train : TrainOptions) : Nat :=
   train.base.train.steps
 
+/-- Adam learning rate. -/
 def lr (train : TrainOptions) : Float :=
   train.base.lr
 
+/-- Training-log destination. -/
 def log (train : TrainOptions) : _root_.Runtime.Training.LogDestination :=
   train.base.train.log
 
+/-- Concrete JSON log path when the destination is file-backed. -/
 def logPath (train : TrainOptions) : System.FilePath :=
   train.base.train.logPath
 
 end TrainOptions
 
+/-- Parse CharGPT-specific flags after runtime/device flags. -/
 def parseTrainOptions (opts : Runtime.Autograd.Torch.Options) (args : List String) :
     Except String (TrainOptions × List String) := do
   let defaultSteps : Nat := if opts.useGpu then 500 else 0
@@ -146,12 +171,15 @@ def parseTrainOptions (opts : Runtime.Autograd.Torch.Options) (args : List Strin
           loadParams? := loadParamsRaw?.map (fun p => (p : System.FilePath))
           saveParams? := saveParamsRaw?.map (fun p => (p : System.FilePath)) }, args)
 
+/-- Decode token ids for terminal output with control characters escaped. -/
 def escapeCharIdsForDisplay (t : text.Tokenizer) (ids : List Nat) : String :=
   text.escapeForDisplay (t.decode ids)
 
+/-- Printable-ASCII generation filter used by `--ascii-only`. -/
 def asciiAllowed (c : Char) : Bool :=
   c = '\n' || (32 ≤ c.toNat && c.toNat ≤ 126)
 
+/-- Autoregressively extend character token ids using a trained CharGPT model. -/
 partial def generateSampledFromIds
     (batch seqLen vocab : Nat)
     (opts : Runtime.Autograd.Torch.Options)
@@ -196,31 +224,38 @@ partial def generateSampledFromIds
             []
           else
             ids.drop (ids.length - Nat.min ids.length repeatWindow)
-        let scores : Array Float :=
+        let pos : Nat := Nat.min predPos (seqLen - 1)
+        have hpos : pos < seqLen := by
+          have hle : pos ≤ (seqLen - 1) := Nat.min_le_right _ _
+          have hlt : (seqLen - 1) < seqLen :=
+            Nat.sub_lt (Nat.pos_of_ne_zero hSeqLen) (by decide)
+          exact Nat.lt_of_le_of_lt hle hlt
+        let posFin : Fin seqLen := ⟨pos, hpos⟩
+        let batchRows? :=
           match logits with
-          | Tensor.dim batches =>
-              match batches b0 with
-              | Tensor.dim rows =>
-                  let pos : Nat := Nat.min predPos (seqLen - 1)
-                  have hpos : pos < seqLen := by
-                    have hle : pos ≤ (seqLen - 1) := Nat.min_le_right _ _
-                    have hlt : (seqLen - 1) < seqLen :=
-                      Nat.sub_lt (Nat.pos_of_ne_zero hSeqLen) (by decide)
-                    exact Nat.lt_of_le_of_lt hle hlt
-                  let posFin : Fin seqLen := ⟨pos, hpos⟩
-                  match rows posFin with
-                  | Tensor.dim cols =>
-                      Array.ofFn (fun j : Fin vocab =>
-                        match cols j with
-                        | Tensor.scalar x => x)
-                  | _ => Array.replicate vocab 0.0
-              | _ => Array.replicate vocab 0.0
-          | _ => Array.replicate vocab 0.0
+          | Tensor.dim batches => some (batches b0)
+          | _ => none
+        let scores? : Option (Array Float) := do
+          let rowTensor ← batchRows?
+          let rows ←
+            match rowTensor with
+            | Tensor.dim rows => some rows
+            | _ => none
+          let colTensor := rows posFin
+          let cols ←
+            match colTensor with
+            | Tensor.dim cols => some cols
+            | _ => none
+          some <| Array.ofFn (fun j : Fin vocab =>
+            match cols j with
+            | Tensor.scalar x => x)
+        let scores : Array Float := scores?.getD (Array.replicate vocab 0.0)
         let nextTok : Nat :=
           text.chooseNextToken scores gen generatedSoFar recent allowId
         loop (ids ++ [nextTok]) n
   loop promptIds steps
 
+/-- CLI entrypoint for character-level GPT training and sampling. -/
 def main (args : List String) : IO UInt32 := do
   if args.contains "--cuda" || CLI.hasFlagValue args "log" then
     Common.runFloat exeName args
@@ -292,9 +327,13 @@ def main (args : List String) : IO UInt32 := do
               (beta2 := 0.999)
               (epsilon := 1e-8)
             let optH ← TorchLean.Optim.handle (α := Float) m opt
+            let cudaMemWatch :=
+              Common.effectiveCudaMemWatch opts train.steps train.base.cudaMemWatch
+            let mut memWatch? ← Common.reportCudaMemWatch opts cudaMemWatch train.steps 0 none
             for step in [0:train.steps] do
               let sample := mkBatchSample step
               optH.step sample
+              memWatch? ← Common.reportCudaMemWatch opts cudaMemWatch train.steps (step + 1) memWatch?
 
           let loss1 ← TorchLean.Module.forward (α := Float) m firstSample
           let L1 := Tensor.toScalar loss1
@@ -316,6 +355,7 @@ def main (args : List String) : IO UInt32 := do
             #[s!"device={if opts.useGpu then "cuda" else "cpu"}",
               s!"vocab={vocab}",
               s!"usable_windows={usableStarts}",
+              s!"cuda_mem_watch={Common.effectiveCudaMemWatch opts train.steps train.base.cudaMemWatch}",
               s!"prompt={text.escapeForDisplay train.prompt}",
               s!"generated={sampled}"]
           match train.saveParams? with

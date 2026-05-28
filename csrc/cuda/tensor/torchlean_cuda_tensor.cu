@@ -587,7 +587,10 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_release_then(
 }
 
 extern "C" LEAN_EXPORT uint32_t torchlean_runtime_collect_allocator(uint32_t force) {
-  mi_collect(force != 0);
+  const bool force_collect = force != 0;
+  mi_collect(force_collect);
+  mi_heap_collect(mi_heap_get_default(), force_collect);
+  mi_collect_reduce(0);
   return 1;
 }
 
@@ -658,6 +661,12 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_of_float_array(b_lean_
             "cudaMemcpy H2D failed");
   free(tmp);
   return torchlean_cuda_buffer_box(out);
+}
+
+extern "C" LEAN_EXPORT lean_obj_res
+torchlean_cuda_buffer_of_float_array_with_token(b_lean_obj_arg AObj, uint32_t token) {
+  (void)token;
+  return torchlean_cuda_buffer_of_float_array(AObj);
 }
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_to_float_array(b_lean_obj_arg BObj) {

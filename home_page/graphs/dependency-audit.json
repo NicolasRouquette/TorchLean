@@ -1,30 +1,30 @@
 {
   "code_stats": {
-    "blank_or_comment_lines": 93345,
-    "code_lines": 180957,
+    "blank_or_comment_lines": 94324,
+    "code_lines": 181971,
     "declaration_counts": {
-      "abbrev": 685,
+      "abbrev": 687,
       "axiom": 2,
       "class": 24,
-      "def": 7267,
-      "inductive": 86,
+      "def": 7338,
+      "inductive": 88,
       "instance": 227,
       "lemma": 646,
-      "opaque": 93,
-      "structure": 503,
-      "theorem": 1323
+      "opaque": 100,
+      "structure": 510,
+      "theorem": 1324
     },
-    "declarations": 10856,
+    "declarations": 10946,
     "layer_sizes": [
       {
         "files": 114,
         "layer": "NN.Proofs",
-        "lines": 54516
+        "lines": 54517
       },
       {
         "files": 132,
         "layer": "NN.Runtime",
-        "lines": 47768
+        "lines": 48687
       },
       {
         "files": 114,
@@ -34,7 +34,7 @@
       {
         "files": 116,
         "layer": "NN.Spec",
-        "lines": 31055
+        "lines": 31057
       },
       {
         "files": 60,
@@ -44,22 +44,22 @@
       {
         "files": 110,
         "layer": "NN.Examples",
-        "lines": 17459
+        "lines": 17721
       },
       {
         "files": 40,
         "layer": "NN.API",
-        "lines": 14235
+        "lines": 14945
       },
       {
         "files": 49,
         "layer": "blueprint",
-        "lines": 13217
+        "lines": 13317
       },
       {
         "files": 40,
         "layer": "NN.Verification",
-        "lines": 11696
+        "lines": 11695
       },
       {
         "files": 34,
@@ -118,7 +118,7 @@
       }
     ],
     "lean_files": 873,
-    "theorem_like_declarations": 1969,
+    "theorem_like_declarations": 1970,
     "top_level_files": [
       {
         "directory": "NN",
@@ -141,7 +141,7 @@
         "files": 1
       }
     ],
-    "total_lines": 274302
+    "total_lines": 276295
   },
   "edges": [
     {
@@ -385,6 +385,13 @@
     {
       "dst": "NN.API.Public",
       "line": 9,
+      "path": "NN/API/Models/Gpt2.lean",
+      "public": true,
+      "src": "NN.API.Models.Gpt2"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TorchLean.NN",
+      "line": 10,
       "path": "NN/API/Models/Gpt2.lean",
       "public": true,
       "src": "NN.API.Models.Gpt2"
@@ -13396,8 +13403,15 @@
       "src": "NN.Proofs.RL.Replay"
     },
     {
-      "dst": "Mathlib.Data.Array.Extract",
+      "dst": "Batteries.Data.Array.Lemmas",
       "line": 10,
+      "path": "NN/Proofs/RL/Replay.lean",
+      "public": true,
+      "src": "NN.Proofs.RL.Replay"
+    },
+    {
+      "dst": "Mathlib.Init",
+      "line": 11,
       "path": "NN/Proofs/RL/Replay.lean",
       "public": true,
       "src": "NN.Proofs.RL.Replay"
@@ -14154,6 +14168,13 @@
     {
       "dst": "NN.Spec.Core.TensorOps",
       "line": 11,
+      "path": "NN/Proofs/Tensor/Algebra.lean",
+      "public": true,
+      "src": "NN.Proofs.Tensor.Algebra"
+    },
+    {
+      "dst": "Mathlib.Data.List.Fold",
+      "line": 12,
       "path": "NN/Proofs/Tensor/Algebra.lean",
       "public": true,
       "src": "NN.Proofs.Tensor.Algebra"
@@ -17876,6 +17897,13 @@
       "src": "NN.Spec.Models.Knn"
     },
     {
+      "dst": "Lean.Data.RBMap",
+      "line": 10,
+      "path": "NN/Spec/Models/Knn.lean",
+      "public": false,
+      "src": "NN.Spec.Models.Knn"
+    },
+    {
       "dst": "NN.Spec.Autograd.AutogradSpec",
       "line": 9,
       "path": "NN/Spec/Models/LinearRegression.lean",
@@ -17964,6 +17992,13 @@
       "line": 10,
       "path": "NN/Spec/Models/RandomForest.lean",
       "public": true,
+      "src": "NN.Spec.Models.RandomForest"
+    },
+    {
+      "dst": "Lean.Data.RBMap",
+      "line": 11,
+      "path": "NN/Spec/Models/RandomForest.lean",
+      "public": false,
       "src": "NN.Spec.Models.RandomForest"
     },
     {
@@ -21734,35 +21769,35 @@
     },
     {
       "dst": "NN.Runtime.Autograd.Engine.Cuda.Float32Contract",
-      "line": 154,
+      "line": 165,
       "path": "blueprint/TorchLeanBlueprint/Guide/Ch3_Backend/GPUAndCUDA.lean",
       "public": false,
       "src": "blueprint.TorchLeanBlueprint.Guide.Ch3_Backend.GPUAndCUDA"
     },
     {
       "dst": "NN.Runtime.Autograd.Engine.Cuda.KernelSpec",
-      "line": 155,
+      "line": 166,
       "path": "blueprint/TorchLeanBlueprint/Guide/Ch3_Backend/GPUAndCUDA.lean",
       "public": false,
       "src": "blueprint.TorchLeanBlueprint.Guide.Ch3_Backend.GPUAndCUDA"
     },
     {
       "dst": "NN.Runtime.Autograd.Engine.Cuda.NativeSources",
-      "line": 156,
+      "line": 167,
       "path": "blueprint/TorchLeanBlueprint/Guide/Ch3_Backend/GPUAndCUDA.lean",
       "public": false,
       "src": "blueprint.TorchLeanBlueprint.Guide.Ch3_Backend.GPUAndCUDA"
     },
     {
       "dst": "NN.Runtime.Autograd.Engine.Cuda.Float32Contract",
-      "line": 198,
+      "line": 209,
       "path": "blueprint/TorchLeanBlueprint/Guide/Ch3_Backend/GPUAndCUDA.lean",
       "public": false,
       "src": "blueprint.TorchLeanBlueprint.Guide.Ch3_Backend.GPUAndCUDA"
     },
     {
       "dst": "NN.Spec.Layers.FlashAttention",
-      "line": 372,
+      "line": 415,
       "path": "blueprint/TorchLeanBlueprint/Guide/Ch3_Backend/GPUAndCUDA.lean",
       "public": false,
       "src": "blueprint.TorchLeanBlueprint.Guide.Ch3_Backend.GPUAndCUDA"
@@ -22796,13 +22831,13 @@
     },
     {
       "count": 18,
-      "dst_layer": "NN.Entrypoint",
-      "src_layer": "NN.Tests"
-    },
-    {
-      "count": 17,
       "dst_layer": "NN.Runtime",
       "src_layer": "NN.API"
+    },
+    {
+      "count": 18,
+      "dst_layer": "NN.Entrypoint",
+      "src_layer": "NN.Tests"
     },
     {
       "count": 17,
@@ -23355,6 +23390,7 @@
       "train",
       "TaskRunner",
       "Callbacks",
+      "StepBatchStream",
       "Report",
       "nn",
       "functional",
@@ -23428,6 +23464,7 @@
       "Function1",
       "Models",
       "Module",
+      "RuntimeInit",
       "ExecConfig",
       "RunOptions",
       "Supervised",
@@ -25195,7 +25232,8 @@
       "Runtime",
       "Autograd",
       "Cuda",
-      "Buffer"
+      "Buffer",
+      "WithWorkspace"
     ],
     "NN.Runtime.Autograd.Engine.Cuda.ConvPool": [
       "Runtime",
@@ -25321,7 +25359,8 @@
       "TorchLean",
       "Init",
       "Samples",
-      "ScalarTrainer"
+      "ScalarTrainer",
+      "RuntimeInit"
     ],
     "NN.Runtime.Autograd.TorchLean.Autodiff": [
       "Runtime",
@@ -25394,6 +25433,8 @@
       "Autograd",
       "TorchLean",
       "Module",
+      "RuntimeInit",
+      "Plan",
       "ScalarModule",
       "ScalarModuleDef"
     ],
@@ -26580,8 +26621,8 @@
     "critical_path_import_edges": 33,
     "errors": 0,
     "findings": 0,
-    "import_edges": 3216,
-    "internal_import_edges": 2668,
+    "import_edges": 3221,
+    "internal_import_edges": 2669,
     "layers": [
       "Library",
       "NN",
@@ -26605,8 +26646,8 @@
       "scripts"
     ],
     "modules": 873,
-    "private_import_edges": 333,
-    "public_import_edges": 2883,
+    "private_import_edges": 335,
+    "public_import_edges": 2886,
     "warnings": 0
   },
   "top_fan_in": [
@@ -26668,11 +26709,11 @@
     },
     {
       "count": 17,
-      "module": "NN.Verification.TorchLean.Compile"
+      "module": "NN.Runtime.Autograd.TorchLean.NN"
     },
     {
-      "count": 16,
-      "module": "NN.Runtime.Autograd.TorchLean.NN"
+      "count": 17,
+      "module": "NN.Verification.TorchLean.Compile"
     },
     {
       "count": 15,

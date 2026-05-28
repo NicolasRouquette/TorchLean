@@ -20,9 +20,9 @@ public import NN.Examples.Models.Common.RealData
 /-!
 # Masked Autoencoder CIFAR Example
 
-This is the smallest ViT-MAE-style training path in TorchLean.
+This is the compact ViT-MAE-style training path in TorchLean.
 
-The data path is intentionally concrete:
+The data path is explicit:
 
 1. load real CIFAR-10 `.npy` arrays through `NN.API.Data`;
 2. take a typed image batch with shape `[batch, channels, height, width]`;
@@ -30,8 +30,8 @@ The data path is intentionally concrete:
 4. run a ViT encoder over patch tokens;
 5. train a decoder head to reconstruct the original image vector.
 
-This is still intentionally small: one transformer encoder block and a linear pixel decoder rather
-than a large asymmetric MAE decoder. The important pieces are the MAE pieces exercised by the
+The architecture uses one transformer encoder block and a linear pixel decoder rather than a large
+asymmetric MAE decoder. The important pieces are the MAE pieces exercised by the
 example: image patch masking, patch embedding, transformer tokens, and reconstruction of the
 original image.
 -/
@@ -46,21 +46,46 @@ namespace NN.Examples.Models.Generative.Mae
 /-- Command name used in error messages and CLI output. -/
 def exeName : String := "torchlean mae"
 
-/-- Default training curve location. `data/` is intentionally ignored by git. -/
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/mae_trainlog.json"
 
+/-- CIFAR minibatch size used by the typed MAE command. -/
 def batch : Nat := 1
+
+/-- Number of CIFAR image channels. -/
 def inC : Nat := RealData.cifarChannels
+
+/-- CIFAR image height in pixels. -/
 def inH : Nat := RealData.cifarHeight
+
+/-- CIFAR image width in pixels. -/
 def inW : Nat := RealData.cifarWidth
+
+/-- Patch height for the image-to-token projection. -/
 def patchH : Nat := 16
+
+/-- Patch width for the image-to-token projection. -/
 def patchW : Nat := 16
+
+/-- Patch stride; equal to patch size here, so patches do not overlap. -/
 def stride : Nat := 16
+
+/-- Zero padding around the image before patch extraction. -/
 def padding : Nat := 0
+
+/-- Transformer token width. -/
 def dModel : Nat := 8
+
+/-- Number of self-attention heads in the compact ViT encoder. -/
 def numHeads : Nat := 1
+
+/-- Per-head attention width; `numHeads * headDim = dModel`. -/
 def headDim : Nat := 8
+
+/-- Hidden width of the feed-forward block inside the encoder. -/
 def ffnHidden : Nat := 32
+
+/-- Number of reconstructed flattened pixels predicted by the decoder head. -/
 def reconDim : Nat := 256
 
 /--
@@ -68,8 +93,8 @@ Small ViT-MAE configuration.
 
 CIFAR-10 with `16×16` patches gives `2×2 = 4` patch tokens. The model embeds patches into
 `dModel = 8`, runs one transformer encoder block, then decodes the flattened token state back to a
-256-pixel prefix of the original image. This is intentionally compact: it keeps the example runnable
-while still exercising a real patch-token transformer path. For full-image reconstruction, set
+256-pixel prefix of the original image. The configuration keeps the command runnable while still
+exercising a real patch-token transformer path. For full-image reconstruction, set
 `reconDim := inC * inH * inW`.
 -/
 def cfg : nn.models.VitMaeConfig :=
@@ -93,6 +118,8 @@ Hide one patch-index class every four patch positions.
 The image remains an image tensor; the mask zeros whole patch regions before patch embedding.
 -/
 def maskPeriod : Nat := 4
+
+/-- Phase of the deterministic patch mask. Changing this selects a different patch-index class. -/
 def maskOffset : Nat := 0
 
 /-- Input shape: a real batched CIFAR image tensor. -/
@@ -116,7 +143,7 @@ def mkModel : nn.M (nn.Sequential σ τ) :=
 /--
 Load one CIFAR minibatch as an image tensor batch.
 
-This function deliberately stops at the data boundary: it returns CIFAR as typed image tensors.  The
+This function stops at the data boundary: it returns CIFAR as typed image tensors.  The
 self-supervised conversion happens in `mkMaeSample`, using the public SSL API, so the loader does
 not secretly define the model's representation.
 -/
@@ -143,7 +170,7 @@ The curve is written by `main` using TorchLean's general training-log JSON forma
 dashboard tools can consume it the same way they consume the other model examples.
 -/
 def trainCurve (opts : TorchLean.Options) (xPath yPath : System.FilePath)
-    (nRows seed steps : Nat) : IO _root_.Runtime.Training.Curve := do
+    (nRows seed steps cudaMemWatch : Nat) : IO _root_.Runtime.Training.Curve := do
   let batch ← loadCifarBatch xPath yPath nRows seed
   let sample := mkMaeSample batch
   _root_.NN.API.Models.TrainFixed.curveFloat
@@ -153,6 +180,7 @@ def trainCurve (opts : TorchLean.Options) (xPath yPath : System.FilePath)
       TorchLean.Optim.adam (α := Float) (paramShapes := ps)
         (lr := 1e-3) (beta1 := 0.9) (beta2 := 0.999) (epsilon := 1e-8))
     (opts := opts) (sample := sample) (steps := steps)
+    (cudaMemWatch := cudaMemWatch)
 
 /--
 CLI entrypoint.
@@ -176,14 +204,15 @@ def main (args : List String) : IO UInt32 := do
   let (train, rest) ← Common.orThrow exeName <|
     Common.parseLoggedTrainFlags exeName rest defaultLogJson 10
   Common.orThrow exeName <| CLI.requireNoArgs rest
-  let curve ← trainCurve opts xPath yPath nRows seed train.steps
+  let curve ← trainCurve opts xPath yPath nRows seed train.steps train.cudaMemWatch
   let loss0 := curve.values.getD 0 0.0
   let lossN := curve.values.getD (curve.values.size - 1) loss0
   IO.println s!"  steps={train.steps} loss0={loss0} loss{train.steps}={lossN}"
   Common.writeCurveLogTo train.log "MAE CIFAR masked reconstruction" curve "loss"
     #[s!"data=cifar10", s!"x={xPath}", s!"y={yPath}", s!"nRows={nRows}",
       s!"maskPeriod={maskPeriod}", s!"maskOffset={maskOffset}",
-      s!"device={if opts.useGpu then "cuda" else "cpu"}"]
+      s!"device={if opts.useGpu then "cuda" else "cpu"}",
+      s!"cuda_mem_watch={Common.effectiveCudaMemWatch opts train.steps train.cudaMemWatch}"]
   IO.println "OK"
   pure 0
 

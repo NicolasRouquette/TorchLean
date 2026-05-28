@@ -21,7 +21,7 @@ Dataset example:
   lake exe torchlean gpt2 --cuda --fast-kernels --data-file data/real/text/tiny_shakespeare.txt \
     --steps 100
 
-This is a small GPT2-style *causal* language-model walkthrough (byte-level tokens).
+This is a compact GPT-2-style *causal* language-model command (byte-level tokens).
 
 Performance note: the CPU path is a pure Lean eager runtime and is much slower than CUDA for
 Transformer workloads. By default we run a forward pass on CPU (`--steps` defaults to `0`) and a
@@ -47,11 +47,11 @@ public import NN.API.Runtime
 /-!
 # GPT-2-Style Causal Language Model Example
 
-Runnable `torchlean gpt2` example. It builds a small GPT-2-style causal transformer over
+Runnable `torchlean gpt2` example. It builds a compact GPT-2-style causal transformer over
 byte-level tokens, with optional real text input from tiny-shakespeare or `--data-file PATH`.
 
 If you are looking for the simplest "Karpathy-style single text file" path, start with
-`torchlean chargpt` (character-level tokenizer). This `gpt2` example is byte-level and is meant to
+`torchlean chargpt` (character-level tokenizer). This `gpt2` command is byte-level and is meant to
 show the Transformer block wiring and save/reload loop.
 
 ```bash
@@ -67,14 +67,18 @@ open NN.API
 
 namespace NN.Examples.Models.Sequence.Gpt2
 
+/-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean gpt2"
+
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/gpt2_trainlog.json"
 
 /--
-Small batch size.
+Batch size for the byte-level causal Transformer.
 
-The executable intentionally overfits a small real-text slice rather than presenting it as a full pretraining run: it shows the
-full TorchLean stack can run a causal Transformer, update parameters, and decode logits back to
+The executable trains on a compact real-text slice rather than presenting itself as a full
+pretraining recipe. The point is to exercise the full TorchLean stack for a causal Transformer: build
+typed batches, run attention and feed-forward layers, update parameters, and decode logits back to
 text.
 -/
 def batch : Nat := 2
@@ -82,7 +86,7 @@ def batch : Nat := 2
 /--
 Prompt/target window length.
 
-Sixty-four byte tokens is still small enough for local eager-CUDA runs, but it gives the miniature
+Sixty-four byte tokens stays practical for local eager-CUDA runs, but it gives the compact
 Transformer enough local context to learn short names, line breaks, speaker prefixes, and a little
 phrase structure in Tiny Shakespeare. Shorter windows are useful for parser/kernel checks but
 underrepresent the model stack during text generation.
@@ -98,10 +102,10 @@ def numHeads : Nat := 2
 /--
 Per-head embedding width. The model dimension is `numHeads * headDim`.
 
-We keep the default small so the tutorial finishes locally. A wider `dModel = 64` variant runs, but
-in the current eager-CUDA training loop it is slower and did not improve the 2k-step Shakespeare
+The default is sized for a local byte-level language-model run. A wider `dModel = 64` variant runs,
+but in the current eager-CUDA training loop it is slower and did not improve the 2k-step Shakespeare
 sample enough to justify making it the default. Use this file to inspect Transformer/autograd
-behavior; use the Mamba example when the goal is the cleanest compact text sample.
+behavior; use the Mamba example when the goal is a compact text model with longer sequence context.
 -/
 def headDim : Nat := 16
 
@@ -132,12 +136,15 @@ def missingTextHint : String :=
   "For TinyStories (valid split):\n" ++
   "  python3 scripts/datasets/download_example_data.py --tinystories-valid"
 
+/-- Input shape: batched byte-level one-hot token windows. -/
 abbrev σ : Shape :=
   shape![batch, seqLen, vocab]
 
+/-- Output shape: one vocabulary-logit row for every input token position. -/
 abbrev τ : Shape :=
   σ
 
+/-- Public GPT-style causal Transformer constructor specialized to the byte-level config. -/
 def mkModel : nn.M (nn.Sequential σ τ) :=
   nn.models.causalTransformerOneHot
     { batch := batch
@@ -148,6 +155,7 @@ def mkModel : nn.M (nn.Sequential σ τ) :=
       ffnHidden := ffnHidden
       layers := layers }
 
+/-- Build a batched causal-LM sample by repeating one token window across all rows. -/
 def mkSampleFromTokenIds {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
     (toks : List Nat) : API.sample.Supervised α σ τ :=
   let (x2DF, y2DF) := text.causalLmXYOneHotMatFloat (seqLen := seqLen) (vocab := vocab) toks
@@ -186,41 +194,61 @@ def takeInputText (args : List String) : IO (String × List String) :=
     [("--tiny-shakespeare", tinyShakespearePath), ("--tinystories-valid", tinyStoriesValidPath)]
     missingTextHint args
 
+/-- Parsed training, sampling, and checkpoint options for the byte-level GPT command. -/
 structure TrainOptions where
+  /-- Common model-training flags: steps, log path, CUDA memory watch, and learning rate. -/
   base : Common.ModelTrainFlags
+  /-- Number of corpus windows cycled through during training. -/
   windows : Nat
+  /-- Prompt used for before/after reports and generation. -/
   prompt : String
+  /-- Number of generated byte tokens after training. -/
   generate : Nat
+  /-- Sampling temperature for generation. -/
   temperature : Float
+  /-- Top-k cutoff for generation; `1` gives greedy decoding. -/
   topK : Nat
+  /-- Penalty applied to recently generated byte ids. -/
   repeatPenalty : Float
+  /-- Number of recent bytes considered by the repetition penalty. -/
   repeatWindow : Nat
+  /-- Seed for reproducible top-k sampling. -/
   seed : Nat
+  /-- Restrict generated bytes to printable ASCII plus newline. -/
   asciiOnly : Bool
+  /-- Enable the terminal prompt loop after training. -/
   interactive : Bool
+  /-- Optional checkpoint path loaded before training/generation. -/
   loadParams? : Option System.FilePath
+  /-- Optional checkpoint path written after training. -/
   saveParams? : Option System.FilePath
 deriving Repr
 
 namespace TrainOptions
 
+/-- Number of optimizer steps. -/
 def steps (train : TrainOptions) : Nat :=
   train.base.train.steps
 
+/-- Adam learning rate. -/
 def lr (train : TrainOptions) : Float :=
   train.base.lr
 
+/-- Training-log destination. -/
 def log (train : TrainOptions) : _root_.Runtime.Training.LogDestination :=
   train.base.train.log
 
+/-- Concrete JSON log path when the destination is file-backed. -/
 def logPath (train : TrainOptions) : System.FilePath :=
   train.base.train.logPath
 
+/-- CUDA allocator telemetry cadence. -/
 def cudaMemWatch (train : TrainOptions) : Nat :=
   train.base.cudaMemWatch
 
 end TrainOptions
 
+/-- Parse GPT-specific flags after runtime/device flags. -/
 def parseTrainOptions (opts : Runtime.Autograd.Torch.Options) (args : List String) :
     Except String (TrainOptions × List String) := do
   let defaultSteps : Nat := if opts.useGpu then 100 else 0
@@ -256,23 +284,26 @@ def parseTrainOptions (opts : Runtime.Autograd.Torch.Options) (args : List Strin
           loadParams? := loadParamsRaw?.map (fun p => (p : System.FilePath))
           saveParams? := saveParamsRaw?.map (fun p => (p : System.FilePath)) }, args)
 
+/-- Byte-token window used for reporting prompt/target text. -/
 def tokenWindowIds (input : String) (offset : Nat) : List Nat :=
   text.tokenWindow text.Tokenizer.byte seqLen input (offset := offset) (padId := 32)
 
-/-- Print a compact before/after language-model probe for the first batch row. -/
-def printPredictionProbe (label : String) (input : String) (logits : Tensor Float σ) :
+/-- Print a compact before/after language-model report for the first batch row. -/
+def printPredictionReport (label : String) (input : String) (logits : Tensor Float σ) :
     IO Unit := do
   let predIds := text.argmaxTokenIdsFromBatchLogits (α := Float) logits ⟨0, by decide⟩
   IO.println s!"  {label} pred={text.escapeByteIdsForDisplay predIds}"
   IO.println s!"  prompt={text.escapeByteIdsForDisplay (tokenWindowIds input 0)}"
   IO.println s!"  target={text.escapeByteIdsForDisplay (tokenWindowIds input 1)}"
 
+/-- Convert byte ids into the typed batched one-hot input tensor used for generation. -/
 def inputTensorFromIds (ids : List Nat) : Tensor Float σ :=
   let (x2DF, _) := text.causalLmXYOneHotMatFloat (seqLen := seqLen) (vocab := vocab) ids
     (padId := 32)
   let x : Tensor Float σ := Tensor.dim (fun _bi => x2DF)
   x
 
+/-- Extract the first batch row's vocabulary score vector at one sequence position. -/
 def logitsArrayAt (logits : Tensor Float σ) (pos : Nat) : Array Float :=
   let pos : Fin seqLen :=
     ⟨Nat.min pos (seqLen - 1),
@@ -289,6 +320,7 @@ def logitsArrayAt (logits : Tensor Float σ) (pos : Nat) : Array Float :=
 
 mutual
 
+/-- Autoregressively extend byte token ids using a trained byte-level GPT model. -/
 partial def generateSampledFromIds
     (opts : Runtime.Autograd.Torch.Options) (model : nn.Sequential σ τ)
     (params : TorchLean.ParamList Float (nn.paramShapes model))
@@ -319,11 +351,12 @@ partial def generateSampledFromIds
           else
             ids.drop (ids.length - Nat.min ids.length repeatWindow)
         let tok := text.chooseNextToken (logitsArrayAt logits predPos) gen generatedSoFar recent allowId
-        -- Keep the same "space" fallback convention as the byte-level demos.
+        -- Keep the same "space" fallback convention across byte-level text commands.
         let nextTok := if tok < vocab then tok else 32
         loop (ids ++ [nextTok]) n
   loop promptIds steps
 
+/-- Encode a string prompt and autoregressively extend it. -/
 partial def generateSampled
     (opts : Runtime.Autograd.Torch.Options) (model : nn.Sequential σ τ)
     (params : TorchLean.ParamList Float (nn.paramShapes model))
@@ -334,6 +367,7 @@ partial def generateSampled
 
 end
 
+/-- Build a finite cyclic training set from corpus text, biased toward the prompt when present. -/
 def samplesFromCorpus (input prompt : String) (windows : Nat) :
     Array (API.sample.Supervised Float σ τ) :=
   let toks := text.Tokenizer.byte.encode input
@@ -347,16 +381,18 @@ def samplesFromCorpus (input prompt : String) (windows : Nat) :
         text.tokenWindow text.Tokenizer.byte (seqLen + 1) input (offset := off') (padId := 32))
     mkSampleBatchFromTokenIds idsByBatch)
 
+/-- Fallback sample used when a caller passes an empty training-window array. -/
 def firstSample (samples : Array (API.sample.Supervised Float σ τ)) :
     API.sample.Supervised Float σ τ :=
   samples.getD 0 (mkSampleFromTokenIds (α := Float) (List.replicate (seqLen + 1) 32))
 
+/-- Mean loss over a bounded deterministic prefix of the training windows. -/
 def meanLossOnSamples
     (model : nn.Sequential σ τ)
     (m : TorchLean.Module.ScalarModule Float (nn.paramShapes model) [σ, τ])
     (samples : Array (API.sample.Supervised Float σ τ)) : IO Float := do
   -- Reporting loss over every training window would run a separate scalar forward for each window.
-  -- A fixed probe subset keeps example logs stable without making evaluation dominate training.
+  -- A fixed evaluation prefix keeps logs stable without making evaluation dominate training.
   let evalCount := Nat.min samples.size 32
   let mut total := 0.0
   for i in [0:evalCount] do
@@ -366,10 +402,10 @@ def meanLossOnSamples
   pure (total / Float.ofNat (Nat.max 1 evalCount))
 
 /--
-Compact interactive prompt loop for the in-memory Float model.
+Interactive prompt loop for the in-memory Float model.
 
-This is a diagnostic REPL, not pretrained text generation. Each line is interpreted as one causal LM
-window, and the model prints the per-position argmax prediction for that window.
+Each line is appended to the current byte context, decoded through the trained local model, and then
+kept as context for the next prompt unless the user clears it.
 -/
 partial def interactiveLoopFloat
     (opts : Runtime.Autograd.Torch.Options) (model : nn.Sequential σ τ)
@@ -400,12 +436,45 @@ partial def interactiveLoopFloat
       loop outIds
   loop []
 
+/-- Metadata stored beside the before/after loss for byte-level GPT runs. -/
+def trainLogNotes (opts : Runtime.Autograd.Torch.Options) (train : TrainOptions)
+    (generated : String) (cudaMemWatch? : Option Nat := none) : Array String :=
+  #[s!"device={if opts.useGpu then "cuda" else "cpu"}",
+    s!"prompt={text.escapeForDisplay train.prompt}",
+    s!"generated={generated}",
+    s!"windows={train.windows}",
+    s!"temperature={train.temperature}", s!"top_k={train.topK}", s!"sample_seed={train.seed}",
+    s!"repeat_penalty={train.repeatPenalty}", s!"repeat_window={train.repeatWindow}",
+    s!"ascii_only={train.asciiOnly}"] ++
+  match cudaMemWatch? with
+  | none => #[]
+  | some cudaMemWatch => #[s!"cuda_mem_watch={cudaMemWatch}"]
+
+/-- Write the standard byte-level GPT before/after loss log. -/
+def writeTrainLog (opts : Runtime.Autograd.Torch.Options) (train : TrainOptions)
+    (loss0 loss1 : Float) (generated : String) (cudaMemWatch? : Option Nat := none) : IO Unit :=
+  Common.writeBeforeAfterLossLogTo train.log "GPT-2 byte prompt training" train.steps loss0 loss1
+    (trainLogNotes opts train generated cudaMemWatch?)
+
+/-- Save a checkpoint when `--save-params` is present. -/
+def saveParamsIfRequested
+    (model : nn.Sequential σ τ)
+    (m : TorchLean.Module.ScalarModule Float (TorchLean.NN.Seq.paramShapes model) [σ, τ])
+    (train : TrainOptions) : IO Unit := do
+  match train.saveParams? with
+  | none => pure ()
+  | some path =>
+      TorchLean.ParamIO.saveModuleParamsBits
+        (paramShapes := nn.paramShapes model) (inputShapes := [σ, τ]) m path
+      IO.println s!"  wrote params: {path}"
+
+/-- Scalar-polymorphic compatibility path for one fixed byte-level training sample. -/
 def unitTrainSteps {α : Type} [Semantics.Scalar α] [DecidableEq Shape] [ToString α]
     [Runtime.Scalar α] [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (cast : Float → α) (opts : Runtime.Autograd.Torch.Options) (input : String) (steps : Nat) :
     IO (α × α) := do
   nn.withModel mkModel fun model => do
-    let sample := mkSample (α := α) (input := input)
+  let sample := mkSample (α := α) (input := input)
     let modDef := nn.crossEntropyOneHotScalarModuleDef model (reduction := .mean)
     let m ← TorchLean.Module.instantiateWithOptions (α := α) modDef cast opts
     let loss0 ← TorchLean.Module.forward (α := α) m sample
@@ -431,17 +500,17 @@ def unitTrainSteps {α : Type} [Semantics.Scalar α] [DecidableEq Shape] [ToStri
       pure (L0, L1)
 
 /--
-Float-specialized training path with decoded prediction probes.
+Float-specialized training path with decoded prediction reports.
 
 The CUDA executable uses Lean `Float` tensors, so this branch can show actual prompt,
 target, and predicted text before and after training. The polymorphic path above is still used for
-non-Float dtype smoke runs.
+non-Float dtype compatibility runs.
 -/
 def unitTrainStepsFloat (opts : Runtime.Autograd.Torch.Options) (input : String)
     (train : TrainOptions) : IO (Float × Float × String) := do
   nn.withModel mkModel fun model => do
     let samples := samplesFromCorpus input train.prompt train.windows
-    let probeSample := mkSample (α := Float) (input := train.prompt)
+    let reportSample := mkSample (α := Float) (input := train.prompt)
     let modDef := nn.crossEntropyOneHotScalarModuleDef model (reduction := .mean)
     let m ← TorchLean.Module.instantiateWithOptions (α := Float) modDef id opts
     match train.loadParams? with
@@ -451,8 +520,8 @@ def unitTrainStepsFloat (opts : Runtime.Autograd.Torch.Options) (input : String)
           m path
     let logits0 ← nn.eval1 (α := Float) opts model
       m.trainer.params
-      (NN.API.sample.x probeSample)
-    printPredictionProbe "before" train.prompt logits0
+      (NN.API.sample.x reportSample)
+    printPredictionReport "before" train.prompt logits0
     let L0 ← meanLossOnSamples model m samples
 
     if train.steps = 0 then
@@ -462,20 +531,8 @@ def unitTrainStepsFloat (opts : Runtime.Autograd.Torch.Options) (input : String)
       let generatedIds ← generateSampled opts model m.trainer.params train.prompt train.generate
         train.temperature train.topK train.seed train.repeatWindow train.repeatPenalty train.asciiOnly
       let generated := text.escapeByteIdsForDisplay generatedIds
-      Common.writeBeforeAfterLossLogTo train.log "GPT-2 byte prompt training" train.steps L0 L0
-        #[s!"device={if opts.useGpu then "cuda" else "cpu"}",
-          s!"prompt={text.escapeForDisplay train.prompt}",
-          s!"generated={generated}",
-          s!"windows={train.windows}",
-          s!"temperature={train.temperature}", s!"top_k={train.topK}", s!"sample_seed={train.seed}",
-          s!"repeat_penalty={train.repeatPenalty}", s!"repeat_window={train.repeatWindow}",
-          s!"ascii_only={train.asciiOnly}"]
-      match train.saveParams? with
-      | none => pure ()
-      | some path =>
-          TorchLean.ParamIO.saveModuleParamsBits (paramShapes := nn.paramShapes model) (inputShapes := [σ, τ])
-            m path
-          IO.println s!"  wrote params: {path}"
+      writeTrainLog opts train L0 L0 generated
+      saveParamsIfRequested model m train
       pure (L0, L0, generated)
     else
       let opt := TorchLean.Optim.adam (α := Float)
@@ -495,8 +552,8 @@ def unitTrainStepsFloat (opts : Runtime.Autograd.Torch.Options) (input : String)
       let L1 ← meanLossOnSamples model m samples
       let logits1 ← nn.eval1 (α := Float) opts model
         m.trainer.params
-        (NN.API.sample.x probeSample)
-      printPredictionProbe "after " train.prompt logits1
+        (NN.API.sample.x reportSample)
+      printPredictionReport "after " train.prompt logits1
       let generatedIds ← generateSampled opts model m.trainer.params train.prompt train.generate
         train.temperature train.topK train.seed train.repeatWindow train.repeatPenalty train.asciiOnly
       let generated := text.escapeByteIdsForDisplay generatedIds
@@ -507,23 +564,11 @@ def unitTrainStepsFloat (opts : Runtime.Autograd.Torch.Options) (input : String)
       IO.println s!"  repetition_penalty={train.repeatPenalty} repeat_window={train.repeatWindow}"
       if train.interactive then
         interactiveLoopFloat opts model m train
-      Common.writeBeforeAfterLossLogTo train.log "GPT-2 byte prompt training" train.steps L0 L1
-        #[s!"device={if opts.useGpu then "cuda" else "cpu"}",
-          s!"prompt={text.escapeForDisplay train.prompt}",
-          s!"generated={generated}",
-          s!"windows={train.windows}",
-          s!"temperature={train.temperature}", s!"top_k={train.topK}", s!"sample_seed={train.seed}",
-          s!"repeat_penalty={train.repeatPenalty}", s!"repeat_window={train.repeatWindow}",
-          s!"ascii_only={train.asciiOnly}",
-          s!"cuda_mem_watch={cudaMemWatch}"]
-      match train.saveParams? with
-      | none => pure ()
-      | some path =>
-          TorchLean.ParamIO.saveModuleParamsBits (paramShapes := nn.paramShapes model) (inputShapes := [σ, τ])
-            m path
-          IO.println s!"  wrote params: {path}"
+      writeTrainLog opts train L0 L1 generated (some cudaMemWatch)
+      saveParamsIfRequested model m train
       pure (L0, L1, generated)
 
+/-- CLI entrypoint for byte-level GPT training, sampling, logging, and checkpointing. -/
 def main (args : List String) : IO UInt32 := do
   Common.runAnyOrFloat exeName args
     (preferFloat := fun args => args.contains "--cuda" || CLI.hasFlagValue args "log")

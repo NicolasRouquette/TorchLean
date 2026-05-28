@@ -12,7 +12,7 @@ public import NN.Examples.Models.Common.RealData
 /-!
 # Shared Simple Sequence Text Runner
 
-This file is the shared runner for the small RNN/LSTM/Transformer text smoke tests.
+This file is the shared runner for the RNN/LSTM/Transformer text commands.
 
 Both examples have the same public shape:
 
@@ -33,7 +33,7 @@ open NN.API
 
 namespace NN.Examples.Models.Sequence.SimpleText
 
-/-- Configuration for a small real-text sequence training example. -/
+/-- Configuration for a real-text sequence training command. -/
 structure RunnerConfig (σ τ : Shape) where
   /-- CLI subcommand name, e.g. `torchlean rnn`. -/
   exeName : String
@@ -52,11 +52,11 @@ structure RunnerConfig (σ τ : Shape) where
   lr : Float
 
 /--
-Train one small sequence model for `steps` optimizer updates.
+Train one sequence model for `steps` optimizer updates.
 
-This is intentionally a smoke-scale routine: one fixed corpus-derived sample, one optimizer, and a
-before/after loss. More realistic streaming/minibatch examples live elsewhere; this helper is for
-architecture sanity checks that should run quickly on CPU or CUDA.
+The runner uses one corpus-derived sample and reports a before/after loss. That keeps the recurrent
+and encoder commands comparable while still going through the same module, optimizer, CPU/CUDA, and
+logging paths as the larger text examples.
 -/
 def unitTrainSteps {σ τ : Shape} {α : Type}
     [Semantics.Scalar α] [DecidableEq Shape] [ToString α]
@@ -81,7 +81,7 @@ def unitTrainSteps {σ τ : Shape} {α : Type}
     IO.println s!"  steps={steps} loss0={L0} loss1={L1}"
     pure (L0, L1)
 
-/-- Shared `main` implementation for the small RNN/LSTM text examples. -/
+/-- Shared `main` implementation for the RNN/LSTM/Transformer text commands. -/
 def main {σ τ : Shape} (cfg : RunnerConfig σ τ) (args : List String) : IO UInt32 := do
   let banner := fun (opts : Runtime.Autograd.Torch.Options) =>
     s!"{cfg.exeName}: {cfg.modelName} text example (device={if opts.useGpu then "cuda" else "cpu"})"

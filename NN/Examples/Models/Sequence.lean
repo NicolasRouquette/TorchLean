@@ -35,7 +35,7 @@ The “main” entrypoints most people should look at first:
 
 Other sequence examples:
 
-- `Rnn` and `Lstm`: compact real-text recurrent smoke tests over the shared `SimpleText` runner.
+- `Rnn` and `Lstm`: compact real-text recurrent training checks over the shared `SimpleText` runner.
 - `Transformer`: one-block encoder example for attention/norm/FFN wiring.
 - `GptAdder`: synthetic algorithmic curriculum (addition), runnable as `torchlean gpt_adder`.
 

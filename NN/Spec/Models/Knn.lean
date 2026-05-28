@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Models.CommonHelpers
+import Lean.Data.RBMap
 
 /-!
 # k‑Nearest Neighbors (kNN) (spec model)

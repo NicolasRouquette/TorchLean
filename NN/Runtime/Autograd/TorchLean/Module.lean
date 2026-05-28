@@ -61,6 +61,294 @@ def castTList {α : Type} (cast : Float → α) : {ss : List Shape} → Torch.TL
   | [], .nil => .nil
   | _s :: ss, .cons x xs => .cons (castTensor cast x) (castTList (cast := cast) (ss := ss) xs)
 
+/-! ## Runtime Float Initializers -/
+
+namespace RuntimeInit
+
+/--
+Runtime initializer for a Float parameter.
+
+The usual `ScalarModuleDef.initParams` path stores initializers as typed Lean tensors. That is the
+right representation when the initial value itself is part of the Lean object being inspected.
+For large Float runs, it is better to allocate runtime storage from a compact initialization scheme
+and synchronize the host tensor only when parameters are explicitly read back.
+
+The design mirrors the storage-first APIs used by mainstream runtimes:
+
+- PyTorch exposes in-place initializers such as `torch.nn.init.uniform_`,
+  `torch.nn.init.xavier_uniform_`, and `torch.nn.init.kaiming_uniform_` for already-allocated
+  tensors: `https://pytorch.org/docs/stable/nn.init.html`.
+- PyTorch's meta-device / `to_empty` path separates "module structure exists" from "real storage is
+  materialized", after which users explicitly initialize parameters:
+  `https://docs.pytorch.org/docs/main/meta.html`.
+
+TorchLean keeps the semantic parameter type (`Tensor Float s`) available, but this runtime path lets
+CPU/CUDA execution initialize real storage directly.
+-/
+inductive FloatInit where
+  /-- Fill with zeros. PyTorch analogue: `torch.nn.init.zeros_`. -/
+  | zeros
+  /-- Fill with ones. PyTorch analogue: `torch.nn.init.ones_`. -/
+  | ones
+  /-- Uniform distribution over `[lo, hi)`, using TorchLean's deterministic runtime RNG. -/
+  | uniform (lo hi : Float) (seed : Nat := 0)
+  /-- Xavier/Glorot uniform with explicit fan-in and fan-out. -/
+  | xavierUniform (fanIn fanOut : Nat) (seed : Nat := 0)
+  /-- Kaiming/He uniform with explicit fan-in. -/
+  | kaimingUniform (fanIn : Nat) (seed : Nat := 0)
+  /-- Exact row-major payload. Used for imported checkpoints or generated tensors. -/
+  | flat (values : FloatArray)
+
+/--
+A shape-indexed initialization plan.
+
+This is the typed runtime-initialization API for modules with a known parameter shape list.  It is
+the initialization analogue of `TList`: the type says there is exactly one initializer
+for each parameter shape, in the same order.  That removes the annoying runtime failure mode where a
+plain list is one element too short or too long.
+
+The initializers themselves are runtime schemes rather than proof objects.  The proof-facing story
+is still the ordinary `Tensor Float s` parameter value; this plan only controls how the executable
+Float runtime materializes those tensors on CPU or CUDA.
+-/
+inductive Plan : List Shape → Type where
+  /-- No parameters, no initializers. -/
+  | nil : Plan []
+  /-- Initializer for the head parameter, followed by the plan for the remaining parameters. -/
+  | cons {s : Shape} {ss : List Shape} (init : FloatInit) (rest : Plan ss) : Plan (s :: ss)
+
+namespace Plan
+
+/-- Forget the shape index when interoperating with list-based callers. -/
+def toList : {ss : List Shape} → Plan ss → List FloatInit
+  | [], .nil => []
+  | _ :: _, .cons init rest => init :: toList rest
+
+/--
+The type index is not decorative: forgetting a `Plan ss` to a list produces exactly `ss.length`
+initializers.  This checked fact lets the runtime API avoid the usual
+"initializer list does not match parameter list" class of bugs once a plan has been built.
+-/
+theorem length_toList : {ss : List Shape} → (plan : Plan ss) → plan.toList.length = ss.length
+  | [], .nil => rfl
+  | _ :: _, .cons _ rest => by
+      simp [toList, length_toList rest]
+
+/--
+Recover a shape-indexed plan from a plain list.
+
+This keeps the older list API available at the boundary, but converts immediately into the safer
+representation before touching any parameters.
+-/
+def ofList? : (ss : List Shape) → List FloatInit → Except String (Plan ss)
+  | [], [] => .ok .nil
+  | [], _ :: _ => .error "torch.runtimeInit: initializer list longer than parameter list"
+  | _ :: _, [] => .error "torch.runtimeInit: initializer list shorter than parameter list"
+  | _ :: ss, init :: rest => do
+      let restPlan ← ofList? ss rest
+      pure (.cons init restPlan)
+
+end Plan
+
+/-- Product of a list of dimensions, used for convolutional receptive-field sizes. -/
+def dimProduct (xs : List Nat) : Nat :=
+  xs.foldl (fun acc x => acc * x) 1
+
+/--
+Infer `(fanIn, fanOut)` from a parameter shape using the common linear/conv convention.
+
+For a matrix shaped `[out, in]`, this returns `(in, out)`. For convolution-like weights shaped
+`[outChannels, inChannels, k1, ..., kd]`, it returns:
+
+```text
+fanIn  = inChannels  * k1 * ... * kd
+fanOut = outChannels * k1 * ... * kd
+```
+
+This is the same fan convention documented by PyTorch's Xavier/Kaiming initialization utilities.
+-/
+def fanInOut? (s : Shape) : Option (Nat × Nat) :=
+  match Shape.toList s with
+  | outDim :: inDim :: spatial =>
+      let receptive := dimProduct spatial
+      some (inDim * receptive, outDim * receptive)
+  | _ => none
+
+/-- Build a Xavier initializer by deriving fan-in/fan-out from a Linear/Conv-style weight shape. -/
+def xavierUniformForShape (s : Shape) (seed : Nat := 0) : Except String FloatInit :=
+  match fanInOut? s with
+  | some (fanIn, fanOut) => .ok (.xavierUniform fanIn fanOut seed)
+  | none =>
+      .error s!"torch.runtimeInit: Xavier initialization expects at least 2 dimensions, got {Shape.pretty s}"
+
+/-- Build a Kaiming initializer by deriving fan-in from a Linear/Conv-style weight shape. -/
+def kaimingUniformForShape (s : Shape) (seed : Nat := 0) : Except String FloatInit :=
+  match fanInOut? s with
+  | some (fanIn, _fanOut) => .ok (.kaimingUniform fanIn seed)
+  | none =>
+      .error s!"torch.runtimeInit: Kaiming initialization expects at least 2 dimensions, got {Shape.pretty s}"
+
+/-- Convenience initializer for a matrix weight stored as `[outDim, inDim]`. -/
+def xavierLinearWeight (outDim inDim : Nat) (seed : Nat := 0) : FloatInit :=
+  .xavierUniform inDim outDim seed
+
+/-- Convenience initializer for a ReLU-style matrix weight stored as `[outDim, inDim]`. -/
+def kaimingLinearWeight (_outDim inDim : Nat) (seed : Nat := 0) : FloatInit :=
+  .kaimingUniform inDim seed
+
+/--
+Deterministic unit sample used by CPU/runtime initialization.
+
+The CUDA path below uses `Cuda.Buffer.randUniform`, which is keyed by the same SplitMix64 family.
+Exact CPU/CUDA bit equality is not the contract here; reproducible initialization for a fixed path
+is. Tests that need exact CUDA RNG parity use the lower-level CUDA RNG stress tests.
+-/
+def unitAt (seed idx : Nat) : Float :=
+  let key := _root_.Runtime.Autograd.TorchLean.Random.keyOf seed 0
+  let z := _root_.Runtime.Autograd.TorchLean.Random.splitmix64 (key + UInt64.ofNat idx)
+  (Float.ofNat z.toUInt32.toNat) / 4294967296.0
+
+/-- Scalar value generated by a `FloatInit` at a row-major flat index. -/
+def sampleAt : FloatInit → Nat → Float
+  | .zeros, _ => 0.0
+  | .ones, _ => 1.0
+  | .uniform lo hi seed, idx => lo + unitAt seed idx * (hi - lo)
+  | .xavierUniform fanIn fanOut seed, idx =>
+      let denom := Float.ofNat fanIn + Float.ofNat fanOut
+      let limit := Float.sqrt (6.0 / denom)
+      (-limit) + unitAt seed idx * (2.0 * limit)
+  | .kaimingUniform fanIn seed, idx =>
+      let limit := Float.sqrt (6.0 / Float.ofNat fanIn)
+      (-limit) + unitAt seed idx * (2.0 * limit)
+  | .flat values, idx => values.get! idx
+
+/--
+Materialize an initializer as a host `FloatArray`.
+
+CPU execution uses this path directly. CUDA uses it only when the initializer already is an exact
+flat payload; analytic initializers such as uniform/Xavier/Kaiming are created on the runtime side.
+-/
+def floatArrayOf (n : Nat) (init : FloatInit) : IO FloatArray := do
+  match init with
+  | .flat values =>
+      if values.size = n then
+        pure values
+      else
+        throw <| IO.userError
+          s!"torch.runtimeInit: flat initializer length mismatch (expected {n}, got {values.size})"
+  | _ =>
+      let mut out : Array Float := Array.mkEmpty n
+      for i in [0:n] do
+        out := out.push (sampleAt init i)
+      pure (FloatArray.mk out)
+
+/-- Checked conversion to the current CUDA buffer API's `UInt32` element count. -/
+def natToU32Checked (ctx : String) (n : Nat) : IO UInt32 := do
+  let u := UInt32.ofNat n
+  if u.toNat = n then
+    pure u
+  else
+    throw <| IO.userError s!"{ctx}: tensor too large for CUDA buffer API ({n} elements)"
+
+/--
+Allocate a CUDA buffer filled with `U(lo, hi)`.
+
+The implementation keeps all element generation on the runtime side: first create a CUDA uniform
+buffer in `[0,1)`, then perform `lo + (hi-lo) * u` with CUDA buffer ops.
+-/
+def cudaUniformBuffer (n : Nat) (lo hi : Float) (seed : Nat) :
+    IO _root_.Runtime.Autograd.Cuda.Buffer := do
+  let n32 ← natToU32Checked "torch.runtimeInit" n
+  let key := _root_.Runtime.Autograd.TorchLean.Random.keyOf seed 0
+  let u := _root_.Runtime.Autograd.Cuda.Buffer.randUniform n32 key
+  let shift := _root_.Runtime.Autograd.Cuda.Buffer.full n32 lo
+  let out := _root_.Runtime.Autograd.Cuda.Buffer.axpy shift u (hi - lo)
+  pure <| _root_.Runtime.Autograd.Cuda.Buffer.releaseThen u <|
+    _root_.Runtime.Autograd.Cuda.Buffer.releaseThen shift out
+
+/--
+Allocate a CUDA buffer for a `FloatInit`.
+
+For analytic schemes (`zeros`, `ones`, `uniform`, `xavierUniform`, `kaimingUniform`), this avoids
+building a large nested Lean tensor. For `.flat`, the caller already supplied the exact payload, so
+we upload that payload directly.
+-/
+def cudaBufferOf (n : Nat) (init : FloatInit) : IO _root_.Runtime.Autograd.Cuda.Buffer := do
+  let n32 ← natToU32Checked "torch.runtimeInit" n
+  match init with
+  | .zeros => pure <| _root_.Runtime.Autograd.Cuda.Buffer.zeros n32
+  | .ones => pure <| _root_.Runtime.Autograd.Cuda.Buffer.full n32 1.0
+  | .uniform lo hi seed =>
+      cudaUniformBuffer n lo hi seed
+  | .xavierUniform fanIn fanOut seed =>
+      let denom := Float.ofNat fanIn + Float.ofNat fanOut
+      let limit := Float.sqrt (6.0 / denom)
+      cudaUniformBuffer n (-limit) limit seed
+  | .kaimingUniform fanIn seed =>
+      let limit := Float.sqrt (6.0 / Float.ofNat fanIn)
+      cudaUniformBuffer n (-limit) limit seed
+  | .flat values =>
+      if values.size = n then
+        _root_.Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO values
+      else
+        throw <| IO.userError
+          s!"torch.runtimeInit: flat initializer length mismatch (expected {n}, got {values.size})"
+
+/-- Materialize a runtime initializer as a normal host tensor. Used for CPU execution. -/
+def hostTensorOf {s : Shape} (init : FloatInit) : IO (Tensor Float s) := do
+  let values ← floatArrayOf (Shape.size s) init
+  pure <| _root_.Runtime.Autograd.Cuda.Convert.unflattenFloatUnsafe (s := s) values
+
+/--
+Host slots for a parameter list before runtime initialization installs the real values.
+
+CUDA runtime initialization immediately replaces these with CUDA mirrors and marks the host values
+stale. These entries still give the existing `Param` type a valid host slot for later explicit
+readback.
+-/
+def zeroFloatTList : {ss : List Shape} → Torch.TList Float ss
+  | [] => .nil
+  | s :: ss => .cons (Spec.fill 0.0 s) (zeroFloatTList (ss := ss))
+
+/--
+Apply a shape-indexed initialization plan to an already-created parameter list.
+
+The key point is that the shape list appears on both sides of the type:
+
+```lean
+Torch.ParamList Float ss → RuntimeInit.Plan ss → IO Unit
+```
+
+So Lean checks the bookkeeping that Python frameworks usually check at runtime: every parameter gets
+one initializer, and no extra initializer is silently ignored.
+-/
+def applyFloatPlan (opts : Torch.Options) :
+    {ss : List Shape} → Torch.ParamList Float ss → Plan ss → IO Unit
+  | [], .nil, .nil => pure ()
+  | s :: ss, .cons p ps, .cons init rest => do
+      if opts.useGpu then
+        let buf ← cudaBufferOf (Shape.size s) init
+        _root_.Runtime.Autograd.Torch.Internal.setParamCudaValue (α := Float) (sh := s) p
+          { s := s, buf := buf }
+      else
+        let t ← hostTensorOf (s := s) init
+        _root_.Runtime.Autograd.Torch.Internal.setParamHostValue (α := Float) (sh := s) p t
+      applyFloatPlan (opts := opts) (ss := ss) ps rest
+
+/--
+List-based compatibility wrapper around `applyFloatPlan`.
+
+New code should prefer `Plan ss`, because it records the length agreement in the type.  This wrapper
+is still useful when initializers are loaded from JSON/checkpoints or CLI-controlled experiments.
+-/
+def applyFloatInits (opts : Torch.Options) {ss : List Shape}
+    (ps : Torch.ParamList Float ss) (inits : List FloatInit) : IO Unit := do
+  match Plan.ofList? ss inits with
+  | .ok plan => applyFloatPlan (opts := opts) ps plan
+  | .error msg => throw <| IO.userError msg
+
+end RuntimeInit
+
 /-! ## Scalar-loss module (training) -/
 
 /--
@@ -228,6 +516,43 @@ def instantiateWith {α : Type} [Context α] [DecidableEq Shape]
   let initParams : Torch.TList α paramShapes := castTList (α := α) cast d.initParams
   ScalarModule.create (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
     (opts := opts) (initRequiresGrad := d.initRequiresGrad) (loss := d.loss (α := α)) initParams
+
+/--
+Instantiate a Float module using runtime parameter initializers.
+
+This is the runtime-initialized sibling of `instantiateWith`.  Instead of first building every initial
+parameter as a full Lean tensor, it creates minimal zero host placeholders and then applies a
+shape-indexed runtime plan to the module parameters.  In CUDA mode those initializers allocate
+device buffers directly and mark the host copies stale; public parameter readback still
+synchronizes them through the existing CUDA mirror machinery.
+-/
+def instantiateFloatWithRuntimePlan {paramShapes inputShapes : List Shape}
+    (d : ScalarModuleDef paramShapes inputShapes)
+    (opts : Torch.Options)
+    (plan : RuntimeInit.Plan paramShapes) :
+    IO (ScalarModule Float paramShapes inputShapes) := do
+  let initParams := RuntimeInit.zeroFloatTList (ss := paramShapes)
+  let module ← ScalarModule.create (α := Float) (paramShapes := paramShapes) (inputShapes := inputShapes)
+    (opts := opts) (initRequiresGrad := d.initRequiresGrad) (loss := d.loss (α := Float))
+    initParams
+  RuntimeInit.applyFloatPlan (opts := opts) module.trainer.params plan
+  pure module
+
+/--
+Instantiate a Float module from a plain initializer list.
+
+This wrapper is useful at file/JSON boundaries.  Internally it immediately checks the list against
+`paramShapes` and then delegates to `instantiateFloatWithRuntimePlan`, so the actual parameter
+mutation still goes through the shape-indexed path.
+-/
+def instantiateFloatWithRuntimeInit {paramShapes inputShapes : List Shape}
+    (d : ScalarModuleDef paramShapes inputShapes)
+    (opts : Torch.Options)
+    (inits : List RuntimeInit.FloatInit) :
+    IO (ScalarModule Float paramShapes inputShapes) := do
+  match RuntimeInit.Plan.ofList? paramShapes inits with
+  | .ok plan => instantiateFloatWithRuntimePlan d opts plan
+  | .error msg => throw <| IO.userError msg
 
 /-- Convenience instantiator that chooses only the backend (`.eager` or `.compiled`). -/
 def instantiate {α : Type} [Context α] [DecidableEq Shape]

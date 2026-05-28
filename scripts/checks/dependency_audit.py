@@ -22,6 +22,7 @@ import argparse
 import json
 import pathlib
 import re
+import subprocess
 import sys
 from collections import Counter, defaultdict, deque
 from dataclasses import asdict, dataclass
@@ -99,7 +100,23 @@ def iter_lean_files(root: pathlib.Path) -> Iterable[pathlib.Path]:
             continue
         if any(part in EXTERNAL_TREE_NAMES for part in rel_parts):
             continue
+        if is_git_ignored(root, path):
+            continue
         yield path
+
+
+def is_git_ignored(root: pathlib.Path, path: pathlib.Path) -> bool:
+    """Return whether Git ignores `path`."""
+    rel = path.relative_to(root).as_posix()
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "check-ignore", "-q", rel],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+    return proc.returncode == 0
 
 
 def module_name(root: pathlib.Path, path: pathlib.Path) -> str:

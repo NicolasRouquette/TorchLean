@@ -12,7 +12,7 @@ GPU-only corpus-training example:
 Prepare that file with:
   python3 scripts/datasets/download_example_data.py --tinystories-valid
 
-GPT-2 BPE smoke run:
+GPT-2 BPE tokenizer run:
   lake exe torchlean text_gpt2 \
     --data-file data/real/text/tiny_shakespeare.txt \
     --bpe-vocab data/real/gpt2/vocab.json \
@@ -20,7 +20,7 @@ GPT-2 BPE smoke run:
     --allow-small-data --max-chars 20000 --steps 10 --log-every 1 \
     --prompt "First Citizen:" --generate 8
 
-Smoke test on a small local file:
+Local file run:
   lake exe torchlean text_gpt2 \
     --data-file /tmp/tiny.txt --allow-small-data --steps 2 --log-every 1
 -/
@@ -46,8 +46,8 @@ pretrained PyTorch/Hugging Face checkpoint:
 
 The default path is byte-level because it is compact and fast.  Passing `--bpe-vocab` and
 `--bpe-merges` switches to the Lean-native GPT-2 BPE tokenizer, using the standard 50,257-way GPT-2
-token vocabulary.  That BPE path is still **training from scratch** in TorchLean; it does not load a
-pretrained checkpoint.
+token vocabulary.  That BPE path still trains a randomly initialized model in TorchLean; it does
+not load a pretrained checkpoint.
 -/
 
 @[expose] public section
@@ -57,8 +57,10 @@ open NN.API
 
 namespace NN.Examples.Models.Sequence.TextGpt2
 
-/-- Runner subcommand name. This subcommand trains a GPT-2-style model from scratch. -/
+/-- Runner subcommand name. This subcommand trains a randomly initialized GPT-2-style model. -/
 def exeName : String := "torchlean text_gpt2"
+
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/text_gpt2_trainlog.json"
 
 /-- Minimum corpus size for the default public training path: 100 MiB. -/
@@ -85,15 +87,15 @@ structure TrainOptions where
   finetuneSteps : Nat
   /-- Print loss every `logEvery` steps.  `0` disables progress logging. -/
   logEvery : Nat
-  /-- Allow small files for bounded local checks. -/
+  /-- Allow corpora below `minTrainingBytes` for bounded local runs. -/
   allowSmallData : Bool
   /-- Optional GPT-2 `vocab.json` path.  Supplying this plus `bpeMerges?` enables BPE mode. -/
   bpeVocab? : Option System.FilePath
   /-- Optional GPT-2 `merges.txt` path.  Supplying this plus `bpeVocab?` enables BPE mode. -/
   bpeMerges? : Option System.FilePath
-  /-- Prompt used for the post-training generation probe. -/
+  /-- Prompt used for post-training generation. -/
   prompt : String
-  /-- Number of autoregressive BPE tokens to generate in the post-training probe. -/
+  /-- Number of autoregressive tokens to generate after training. -/
   generate : Nat
   /-- Keep the trained CUDA model alive and read prompts from stdin. -/
   interactive : Bool
@@ -103,12 +105,15 @@ deriving Repr
 
 namespace TrainOptions
 
+/-- Number of optimizer steps in the main corpus phase. -/
 def steps (trainOpts : TrainOptions) : Nat :=
   trainOpts.train.steps
 
+/-- Concrete JSON log path when the destination is file-backed. -/
 def logPath (trainOpts : TrainOptions) : System.FilePath :=
   trainOpts.train.logPath
 
+/-- Training-log destination. -/
 def log (trainOpts : TrainOptions) : _root_.Runtime.Training.LogDestination :=
   trainOpts.train.log
 
@@ -174,6 +179,7 @@ def mkSampleFromTokensWith {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
       (shape![batch, seqLen, vocab]) :=
   text.causalLmSampleOneHotBatch (α := α) batch seqLen vocab tokens
 
+/-- Build a supervised next-token sample from one token window per batch row. -/
 def mkSampleFromTokenRowsWith {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
     {batch seqLen vocab : Nat} (tokensAt : Fin batch → List Nat) :
     API.sample.Supervised α (shape![batch, seqLen, vocab])
@@ -185,7 +191,7 @@ namespace ByteGpt2
 /-- Byte-level vocabulary: one token per byte. -/
 def vocab : Nat := text.Tokenizer.byte.vocabSize
 
-/-- Single-sequence batches keep the example small and fully interactive. -/
+/-- Single-sequence batch for the byte-level corpus path. -/
 def batch : Nat := 1
 
 /--
@@ -197,7 +203,7 @@ something we should quietly make the default before allocator pressure is solved
 -/
 def seqLen : Nat := byteSeqLen
 
-/-- Small two-head Transformer width. -/
+/-- Number of attention heads in the byte-level Transformer. -/
 def numHeads : Nat := 2
 
 /-- Per-head width. -/
@@ -215,6 +221,7 @@ def layers : Nat := 1
 local instance : NeZero seqLen := ⟨by decide⟩
 local instance : NeZero dModel := ⟨by decide⟩
 
+/-- Byte-level GPT configuration shared by shapes and the model constructor. -/
 def cfg : nn.models.CausalOneHotConfig :=
   { batch := batch
     seqLen := seqLen
@@ -224,23 +231,26 @@ def cfg : nn.models.CausalOneHotConfig :=
     ffnHidden := ffnHidden
     layers := layers }
 
+/-- Input shape: byte-level one-hot token sequence. -/
 abbrev σ : Shape :=
   nn.models.causalOneHotShape cfg
 
+/-- Output shape: one byte-logit row per input position. -/
 abbrev τ : Shape :=
   σ
 
 /--
 Runnable byte-level GPT-style model for corpus pretraining/fine-tuning.
 
-This is deliberately compact, but it has enough context to make the interactive prompt loop
-useful for quick local experiments.
+The model is compact enough for the eager CUDA path while still exercising attention, feed-forward
+layers, byte tokenization, and the interactive prompt loop.
 -/
 def mkModel : nn.M (nn.Sequential σ τ) :=
   nn.models.causalTransformerOneHot cfg
 
 end ByteGpt2
 
+/-- Build one byte-level training sample from a corpus byte offset. -/
 def mkByteCorpusSample {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
     (bytes : ByteArray) (i : Nat) : API.sample.Supervised α ByteGpt2.σ ByteGpt2.τ :=
   let toks := text.byteTokenWindow bytes (ByteGpt2.seqLen + 1)
@@ -248,6 +258,7 @@ def mkByteCorpusSample {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
   mkSampleFromTokensWith (α := α) (batch := ByteGpt2.batch) (seqLen := ByteGpt2.seqLen)
     (vocab := ByteGpt2.vocab) toks
 
+/-- Build one byte-level prompt sample for before/after generation reports. -/
 def mkBytePromptSample {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
     (prompt : String) : API.sample.Supervised α ByteGpt2.σ ByteGpt2.τ :=
   let ids := text.Tokenizer.byte.encode prompt
@@ -256,12 +267,14 @@ def mkBytePromptSample {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
   mkSampleFromTokensWith (α := α) (batch := ByteGpt2.batch) (seqLen := ByteGpt2.seqLen)
     (vocab := ByteGpt2.vocab) window
 
+/-- Final-position argmax byte id from the first batch row. -/
 def lastPredictedByteId (logits : Tensor Float ByteGpt2.τ) : Nat :=
   let ids := text.argmaxTokenIdsFromBatchLogits (α := Float)
     (batch := ByteGpt2.batch) (seqLen := ByteGpt2.seqLen) (vocab := ByteGpt2.vocab)
     (batchIdx := ⟨0, by decide⟩) logits
   ids.getD (ByteGpt2.seqLen - 1) 0
 
+/-- Greedy byte-level generation from the trained model. -/
 def generateByteGreedy
     (opts : Runtime.Autograd.Torch.Options)
     (model : nn.Sequential ByteGpt2.σ ByteGpt2.τ)
@@ -280,6 +293,7 @@ def generateByteGreedy
     ids := ids ++ [lastPredictedByteId logits]
   pure (text.Tokenizer.byte.decode ids)
 
+/-- Terminal prompt loop for the trained byte-level model. -/
 partial def interactiveByteLoop
     (opts : Runtime.Autograd.Torch.Options)
     (model : nn.Sequential ByteGpt2.σ ByteGpt2.τ)
@@ -305,14 +319,14 @@ namespace BpeGpt2
 /--
 Compact vocabulary used by the runnable BPE training path.
 
-The tokenizer still uses GPT-2's real 50,257-token BPE files.  For the small Lean/CUDA smoke model
+The tokenizer still uses GPT-2's real 50,257-token BPE files. For this Lean/CUDA model
 we project the corpus tokens into a local vocabulary of the first observed BPE ids.  This keeps the
 example interactive while preserving the tokenizer/data path; a full 50k-way output head is a much
 larger training run.
 -/
 def vocab : Nat := 512
 
-/-- Keep the BPE smoke model aligned with the small byte-level GPT-2 path. -/
+/-- Batch size for the BPE corpus path. -/
 def batch : Nat := 2
 
 /-- Short context window used by the trainer. -/
@@ -321,7 +335,7 @@ def seqLen : Nat := byteSeqLen
 /-- Number of attention heads in the miniature BPE Transformer. -/
 def numHeads : Nat := 1
 
-/-- Per-head width.  The model is intentionally compact even though the vocabulary is real GPT-2. -/
+/-- Per-head width for the BPE Transformer. -/
 def headDim : Nat := 8
 
 /-- Transformer embedding width. -/
@@ -336,6 +350,7 @@ def layers : Nat := 1
 local instance : NeZero seqLen := ⟨by decide⟩
 local instance : NeZero dModel := ⟨by decide⟩
 
+/-- BPE GPT configuration shared by shapes and the model constructor. -/
 def cfg : nn.models.CausalOneHotConfig :=
   { batch := batch
     seqLen := seqLen
@@ -345,18 +360,19 @@ def cfg : nn.models.CausalOneHotConfig :=
     ffnHidden := ffnHidden
     layers := layers }
 
+/-- Input shape: local-BPE one-hot token batch. -/
 abbrev σ : Shape :=
   nn.models.causalOneHotShape cfg
 
+/-- Output shape: one local-BPE logit row per input position. -/
 abbrev τ : Shape :=
   σ
 
 /--
-Compact GPT-2-style model with the real GPT-2 BPE vocabulary.
+Compact GPT-2-style model with the real GPT-2 BPE tokenizer path.
 
-This is not OpenAI GPT-2-small.  It is a TorchLean-native miniature Transformer whose input/output
-vocabulary matches GPT-2 BPE, so tokenizer/probing behavior is realistic while the model remains
-small enough for a local smoke run.
+This is not OpenAI GPT-2-small. It is a TorchLean-native Transformer whose tokenizer comes from
+GPT-2 BPE files and whose output head uses a local projection of the observed corpus ids.
 -/
 def mkModel : nn.M (nn.Sequential σ τ) :=
   nn.models.causalTransformerOneHot cfg
@@ -411,7 +427,7 @@ def localizeBpeTokens (lv : LocalBpeVocab) (tokens : Array Nat) : Array Nat :=
 /-- Build one BPE training sample from a tokenized corpus. -/
 def mkBpeCorpusSample {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
     (tokens : Array Nat) (i : Nat) : API.sample.Supervised α BpeGpt2.σ BpeGpt2.τ :=
-  -- The BPE smoke model uses a real batch as well: each batch row gets a different deterministic
+  -- The BPE model uses a real batch as well: each batch row gets a different deterministic
   -- corpus window.  This keeps the tokenizer/vocabulary path realistic without needing a huge
   -- 50k-way model head for this runnable example.
   let toksAt := text.Corpus.randomBatchTokenWindows tokens BpeGpt2.batch BpeGpt2.seqLen 0 i
@@ -435,14 +451,16 @@ def lastPredictedTokenId (logits : Tensor Float BpeGpt2.τ) : Nat :=
     (batchIdx := ⟨0, by decide⟩) logits
   ids.getD (BpeGpt2.seqLen - 1) 0
 
+/-- Decode original GPT-2 BPE ids with the loaded tokenizer. -/
 def decodeBpeD (tok : text.Gpt2Bpe.Tokenizer) (ids : List Nat) : String :=
   text.Gpt2Bpe.decodeD tok ids
 
+/-- Decode local BPE ids by mapping them back to original GPT-2 ids first. -/
 def decodeLocalBpeD (tok : text.Gpt2Bpe.Tokenizer) (lv : LocalBpeVocab) (ids : List Nat) :
     String :=
   decodeBpeD tok (ids.map lv.toOriginal)
 
-/-- Print an argmax probe for a prompt under the BPE model. -/
+/-- Print an argmax prediction report for a prompt under the BPE model. -/
 def printBpePredictionProbe
     (opts : Runtime.Autograd.Torch.Options)
     (tok : text.Gpt2Bpe.Tokenizer)
@@ -490,8 +508,8 @@ def generateBpeGreedy
 /--
 Train the GPT-2-style model over a text corpus using CUDA.
 
-This intentionally performs one optimizer step per corpus window, rather than materializing the
-entire dataset in memory.  The example is still compact by GPT-2 standards, but the data path is real:
+This performs one optimizer step per corpus window, rather than materializing the entire dataset in
+memory. The example is compact by GPT-2 standards, but the data path is real:
 file bytes → token windows → one-hot tensors → TorchLean CUDA training.
 -/
 def trainCorpusFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : TrainOptions)
@@ -522,8 +540,8 @@ def trainCorpusFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : TrainO
         optH.step sample
         let done := step + 1
         if trainOpts.logEvery != 0 && done % trainOpts.logEvery == 0 then
-          let probe := mkByteCorpusSample (α := Float) phaseBytes done
-          let loss ← TorchLean.Module.forward (α := Float) m probe
+          let evalSample := mkByteCorpusSample (α := Float) phaseBytes done
+          let loss ← TorchLean.Module.forward (α := Float) m evalSample
           IO.println s!"  {label} step={done} loss={Tensor.toScalar loss}"
 
     trainPhase "pretrain" bytes trainOpts.steps
@@ -596,8 +614,8 @@ def printBpeCorpusPreview (tok : text.Gpt2Bpe.Tokenizer) (lv : LocalBpeVocab)
 /--
 Train the compact GPT-2-style model with the real GPT-2 BPE tokenizer.
 
-This is deliberately a smoke-scale model: it exercises the 50,257-way tokenizer/vocabulary path and
-can overfit local windows, but it is far too small and short-trained to behave like pretrained GPT-2.
+This exercises the GPT-2 tokenizer/vocabulary path and can overfit local windows. It is not a
+pretrained GPT-2 checkpoint; it is a randomly initialized TorchLean model trained by this command.
 -/
 def trainBpeCorpusFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : TrainOptions)
     (tok : text.Gpt2Bpe.Tokenizer) (lv : LocalBpeVocab) (tokens : Array Nat) : IO Unit := do
@@ -624,8 +642,8 @@ def trainBpeCorpusFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : Tra
       optH.step sample
       let done := step + 1
       if trainOpts.logEvery != 0 && done % trainOpts.logEvery == 0 then
-        let probe := mkBpeCorpusSample (α := Float) tokens done
-        let loss ← TorchLean.Module.forward (α := Float) m probe
+        let evalSample := mkBpeCorpusSample (α := Float) tokens done
+        let loss ← TorchLean.Module.forward (α := Float) m evalSample
         IO.println s!"  step={done} loss={Tensor.toScalar loss}"
 
     let loss1 ← TorchLean.Module.forward (α := Float) m sample0
@@ -638,6 +656,7 @@ def trainBpeCorpusFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : Tra
       #[s!"data={trainOpts.dataFile}", s!"device={if opts.useGpu then "cuda" else "cpu"}",
         s!"localVocab={lv.size}/{BpeGpt2.vocab}", s!"tokens={tokens.size}"]
 
+/-- CLI entrypoint for CUDA byte/BPE corpus training. -/
 def main (args : List String) : IO UInt32 := do
   match forceCudaArgs args with
   | .error e =>

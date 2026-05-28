@@ -29,13 +29,11 @@ The model constructor lives in `NN.API.Models.SimpleSeq` so other examples can r
 keeps only the architecture-specific declarations; the shared corpus loading, CLI parsing, logging,
 and train loop live in `NN.Examples.Models.Sequence.SimpleText`.
 
-## What This Example Is (And Is Not)
+## Scope
 
-This is a **small layer smoke test** for the LSTM cell plus the TorchLean training loop. It uses a
-single fixed text window and a simple MSE-on-one-hot objective to keep runs short and predictable.
-
-If you want a real language-model tutorial (proper autoregressive loss + longer context + sampling),
-use one of:
+This command is the focused LSTM path: one real corpus window, one gated recurrent cell, and the same
+training/logging interface used by the other sequence examples. For autoregressive sampling and
+longer-context language-model behavior, use one of:
 - `torchlean chargpt` (Karpathy-style, single-file char-level GPT),
 - `torchlean gpt2` (byte-level GPT-2-style model + save/reload),
 - `torchlean text_gpt2` (CUDA corpus trainer).
@@ -53,17 +51,19 @@ open NN.API
 
 namespace NN.Examples.Models.Sequence.Lstm
 
+/-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean lstm"
+
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/lstm_trainlog.json"
 
-/-- Short byte-window length used for a quick gated-recurrent smoke test. -/
+/-- Byte-window length used by the typed recurrent sample. -/
 def seqLen : Nat := 8
 /--
 Byte vocabulary size.
 
-This example uses byte-level tokens (`0..255`) rather than hashing bytes down to a smaller bucket
-count. Earlier smoke tests used `32` here for speed, but the full byte vocab avoids unnecessary
-aliasing and makes the tutorial behavior easier to reason about.
+This example uses byte-level tokens (`0..255`) rather than hashing bytes into a reduced bucket
+count. The full byte vocabulary avoids unnecessary aliasing and keeps the sample semantics clear.
 -/
 def inputSize : Nat := 256
 /-- Hidden state width of the LSTM cell. -/
@@ -73,12 +73,15 @@ def hiddenSize : Nat := 64
 def cfg : nn.models.SeqRnnHeadConfig :=
   { seqLen := seqLen, inputSize := inputSize, hiddenSize := hiddenSize }
 
+/-- Input shape: one byte-level one-hot vector per timestep. -/
 abbrev σ : Shape :=
   nn.models.seqRnnHeadInShape cfg
 
+/-- Output shape: one logit row per input timestep. -/
 abbrev τ : Shape :=
   nn.models.seqRnnHeadOutShape cfg
 
+/-- LSTM followed by a time-distributed linear output head. -/
 def mkModel : nn.M (nn.Sequential σ τ) :=
   nn.models.lstmWithLinearHead cfg
 
@@ -97,6 +100,7 @@ def runner : SimpleText.RunnerConfig σ τ :=
     mkSample := fun {α} _ _ input => mkSample (α := α) input
     lr := 1e-2 }
 
+/-- CLI entrypoint for the LSTM text command. -/
 def main (args : List String) : IO UInt32 := do
   SimpleText.main runner args
 

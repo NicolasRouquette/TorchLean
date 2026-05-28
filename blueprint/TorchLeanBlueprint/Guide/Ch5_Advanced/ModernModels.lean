@@ -155,7 +155,7 @@ The important data path is:
 - read a corpus file;
 - tokenize into bounded ids;
 - form causal windows;
-- train next token prediction;
+- train next-token prediction with integer labels;
 - optionally save parameters;
 - reload the parameter file and prompt the saved model.
 
@@ -171,6 +171,27 @@ L = -\sum_t \log p_\theta(tokens_t \mid tokens_{<t})`
 
 The small examples make token ids, causal windows, parameter files, and generation traces explicit
 objects so later correctness work has something concrete to talk about.
+
+The API supports two token representations. One-hot tokens are convenient for bounded examples and
+teaching. Integer token ids are the representation used by file-backed language-model runs.
+The GPT helper layer therefore separates the embedding boundary from the Transformer body:
+
+```
+nn.causalTransformerFromEmbeddings
+nn.causalTransformerOneHot
+nn.causalTransformerTokenScalarModuleDef
+```
+
+The integer-token loss uses row-wise class labels:
+
+```
+TorchLean.F.embeddingBatchSeqNat
+TorchLean.Loss.crossEntropyRowsNat
+```
+
+So a language-model batch can store flattened token ids and targets instead of materializing a
+large one-hot target tensor.  The model body is the same causal Transformer shape; only the input
+boundary changes.
 
 # Mamba-Style State-Space Models
 

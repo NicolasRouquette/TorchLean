@@ -115,13 +115,12 @@ def softplusBuf (x : Buffer) (n : UInt32) : Buffer :=
       Buffer.releaseThen onePlusExp <| Buffer.releaseThen logTerm y
 
 /--
-Row-wise stable softmax plus scratch buffers that should be released after the backward pass.
+Row-wise stable softmax.
 
-The output is the first component. The scratch list records temporary buffers created while
-computing the stable formula so long training runs do not wait for native finalizers.
+The returned `WithWorkspace` records the buffers used to compute the stable formula. The tape keeps
+those buffers only as long as the node may need them for backprop, then releases them explicitly.
 -/
-def softmax2dFwdWithCleanup (x : Buffer) (rows cols : UInt32) : Buffer × List Buffer :=
-  -- Numerically stable row-wise softmax.
+def softmax2dForward (x : Buffer) (rows cols : UInt32) : Buffer.WithWorkspace :=
   let rowMax := Buffer.reduceMaxAxis1 x rows cols
   let maxB := Buffer.broadcastVecToCols rowMax rows cols
   let shifted := Buffer.sub x maxB
@@ -129,10 +128,10 @@ def softmax2dFwdWithCleanup (x : Buffer) (rows cols : UInt32) : Buffer × List B
   let rowSum := Buffer.reduceSumAxis1 ex rows cols
   let sumB := Buffer.broadcastVecToCols rowSum rows cols
   let y := Buffer.div ex sumB
-  (y, [rowMax, maxB, shifted, ex, rowSum, sumB])
+  { value := y, workspace := [rowMax, maxB, shifted, ex, rowSum, sumB] }
 
 def softmax2dFwd (x : Buffer) (rows cols : UInt32) : Buffer :=
-  (softmax2dFwdWithCleanup x rows cols).1
+  (softmax2dForward x rows cols).value
 
 /-- Row-wise softmax VJP: `dX = y * (dY - sum(dY*y, axis=1))`. -/
 def softmax2dBwd (y dLdy : Buffer) (rows cols : UInt32) : Buffer :=
@@ -145,12 +144,13 @@ def softmax2dBwd (y dLdy : Buffer) (rows cols : UInt32) : Buffer :=
     Buffer.releaseThen centered <| Buffer.mul y centered
 
 /--
-Row-wise stable log-softmax plus scratch buffers that should be released after backprop.
+Row-wise stable log-softmax.
 
 This computes `x - rowMax - log(sum(exp(x-rowMax)))` directly, avoiding the less stable
-`log(softmax(x))` route.
+`log(softmax(x))` route. As with softmax, the returned workspace buffers belong to the tape node
+until the backward pass has finished.
 -/
-def logSoftmax2dFwdWithCleanup (x : Buffer) (rows cols : UInt32) : Buffer × List Buffer :=
+def logSoftmax2dForward (x : Buffer) (rows cols : UInt32) : Buffer.WithWorkspace :=
   let rowMax := Buffer.reduceMaxAxis1 x rows cols
   let maxB := Buffer.broadcastVecToCols rowMax rows cols
   let shifted := Buffer.sub x maxB
@@ -159,10 +159,10 @@ def logSoftmax2dFwdWithCleanup (x : Buffer) (rows cols : UInt32) : Buffer × Lis
   let logSum := Buffer.log rowSum
   let logSumB := Buffer.broadcastVecToCols logSum rows cols
   let y := Buffer.sub shifted logSumB
-  (y, [rowMax, maxB, shifted, ex, rowSum, logSum, logSumB])
+  { value := y, workspace := [rowMax, maxB, shifted, ex, rowSum, logSum, logSumB] }
 
 def logSoftmax2dFwd (x : Buffer) (rows cols : UInt32) : Buffer :=
-  (logSoftmax2dFwdWithCleanup x rows cols).1
+  (logSoftmax2dForward x rows cols).value
 
 /-- Row-wise log-softmax VJP: `dX = dY - exp(y) * sum(dY, axis=1)`. -/
 def logSoftmax2dBwd (y dLdy : Buffer) (rows cols : UInt32) : Buffer :=
@@ -179,7 +179,7 @@ def logSoftmax2dBwd (y dLdy : Buffer) (rows cols : UInt32) : Buffer :=
 
 The backward closures below return newly allocated gradient buffers. When a derivative uses
 intermediate CUDA buffers, it releases those intermediates before returning the final gradient. The
-returned buffers are owned by the tape/gradient accumulator; scratch buffers are owned locally.
+returned buffers are owned by the tape/gradient accumulator; workspace buffers are owned locally.
 -/
 
 /-- Elementwise addition. -/
@@ -406,12 +406,12 @@ def swapAdjacentAtDepth {s : Shape} (t : Tape) (depth : Nat) (xId : Nat) : Resul
       if validDepth then
         Buffer.swapAdjacentAtDepth x dimsIn depth32
       else
-        x)
+        Buffer.copy x)
     (backward := fun _x dLdy =>
       if validDepth then
         Buffer.swapAdjacentAtDepth dLdy dimsOut depth32
       else
-        dLdy)
+        Buffer.copy dLdy)
 
 /-- Permute a 3D tensor `(a,b,c) → (b,c,a)`. -/
 def transpose3dFirstToLast {a b c : Nat} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
@@ -1657,16 +1657,16 @@ def softmax {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
   | _ =>
       let (rows32, cols32) ← foldRowsColsLastAxis s
       let x ← requireValue (t := t) xId s
-      let (y, cleanup) := softmax2dFwdWithCleanup x rows32 cols32
+      let yOwned := softmax2dForward x rows32 cols32
       let node : Node :=
         { name := some "softmax"
-          value := { s := s, buf := y }
+          value := { s := s, buf := yOwned.value }
           requires_grad := true
           parents := [xId]
-          cleanup := cleanup
+          cleanup := yOwned.workspace
           backward := fun dLdyAny => do
             let dLdy ← requireGrad dLdyAny s
-            let dx := softmax2dBwd y dLdy.buf rows32 cols32
+            let dx := softmax2dBwd yOwned.value dLdy.buf rows32 cols32
             pure [(xId, { s := s, buf := dx })] }
       pure (t.addNode node)
 
@@ -1690,16 +1690,16 @@ def logSoftmax {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
   | _ =>
       let (rows32, cols32) ← foldRowsColsLastAxis s
       let x ← requireValue (t := t) xId s
-      let (y, cleanup) := logSoftmax2dFwdWithCleanup x rows32 cols32
+      let yOwned := logSoftmax2dForward x rows32 cols32
       let node : Node :=
         { name := some "log_softmax"
-          value := { s := s, buf := y }
+          value := { s := s, buf := yOwned.value }
           requires_grad := true
           parents := [xId]
-          cleanup := cleanup
+          cleanup := yOwned.workspace
           backward := fun dLdyAny => do
             let dLdy ← requireGrad dLdyAny s
-            let dx := logSoftmax2dBwd y dLdy.buf rows32 cols32
+            let dx := logSoftmax2dBwd yOwned.value dLdy.buf rows32 cols32
             pure [(xId, { s := s, buf := dx })] }
       pure (t.addNode node)
 
@@ -1763,10 +1763,11 @@ def multiHeadAttention
         let inDims : Array Nat := #[n, n]
         let outDims : Array Nat := #[numHeads, n, n]
         let axisMap : Array Nat := #[0, 1, 2]
-        (Buffer.broadcastTo mF inDims outDims axisMap, 1)
+        let maskB := Buffer.broadcastTo mF inDims outDims axisMap
+        (Buffer.releaseThen mF maskB, 1)
   -- Fused native attention over split heads. This replaces the composed
   -- `scores -> mask -> softmax -> bmm` path while keeping the same spec contract.
-  let (outHeads, attnCleanup) ←
+  let (outHeads, attentionWorkspace) ←
     if useFlash then
       let outHeads := Buffer.flashAttentionFwd Qh Kh Vh maskB hasMask h32 n32 head32 scale
       pure (outHeads, ([] : List Buffer))
@@ -1788,9 +1789,10 @@ def multiHeadAttention
             let scaled := Buffer.add scaledMask fillMask
             pure (scaled, [ones, invMask, fill, scaledMask, fillMask])
       let rowsFold32 ← u32 (numHeads * n)
-      let (attn, softmaxCleanup) := softmax2dFwdWithCleanup scaled rowsFold32 n32
-      let outHeads := Buffer.bmm attn Vh h32 n32 n32 head32
-      pure (outHeads, [KhT, scores, scaled0, scaled, attn] ++ maskCleanup ++ softmaxCleanup)
+      let attnOwned := softmax2dForward scaled rowsFold32 n32
+      let outHeads := Buffer.bmm attnOwned.value Vh h32 n32 n32 head32
+      pure (outHeads, [KhT, scores, scaled0, scaled, attnOwned.value] ++ maskCleanup ++
+        attnOwned.workspace)
   -- combine heads: swap to (n,numHeads,headDim), then reshape to (n,projDim)
   let swapped := Buffer.swapAdjacentAtDepth outHeads dimsHead depth0  -- (n,numHeads,headDim)
   let concat := swapped  -- view as (n,projDim)
@@ -1802,7 +1804,7 @@ def multiHeadAttention
       value := { s := outShape, buf := y }
       requires_grad := true
       parents := [wqId, wkId, wvId, woId, xId]
-      cleanup := [Q, K, V, Qh, Kh, Vh, maskB, outHeads, swapped] ++ attnCleanup
+      cleanup := [Q, K, V, Qh, Kh, Vh, maskB, outHeads, swapped] ++ attentionWorkspace
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny outShape
         -- Backprop through output projection: y = concat @ wo
@@ -1844,15 +1846,15 @@ def multiHeadAttention
                     Buffer.releaseThen fill <| Buffer.releaseThen scaledMask <|
                       Buffer.releaseThen fillMask <| Buffer.add scaledMask fillMask
             let rowsFold32 ← u32 (numHeads * n)
-            let attn := softmax2dFwd scaled rowsFold32 n32
+            let attnOwned := softmax2dForward scaled rowsFold32 n32
             let VhT := Buffer.swapAdjacentAtDepth Vh dimsHead depth1
             let dAttn := Buffer.releaseThen VhT <|
               Buffer.bmm dOutHeads VhT h32 n32 head32 n32
-            let attnT := Buffer.swapAdjacentAtDepth attn dimsAttn depth1
+            let attnT := Buffer.swapAdjacentAtDepth attnOwned.value dimsAttn depth1
             let dVh := Buffer.releaseThen attnT <|
               Buffer.releaseThen dOutHeads <|
                 Buffer.bmm attnT dOutHeads h32 n32 n32 head32
-            let dScaled := softmax2dBwd attn dAttn rowsFold32 n32
+            let dScaled := softmax2dBwd attnOwned.value dAttn rowsFold32 n32
             let dScoresMasked := Buffer.scale dScaled scale
             let dScores :=
               match mask with
@@ -1864,9 +1866,9 @@ def multiHeadAttention
               Buffer.bmm dScoresT Qh h32 n32 n32 head32
             let dQh := Buffer.releaseThen KhT <| Buffer.releaseThen scores <|
               Buffer.releaseThen scaled0 <| Buffer.releaseThen scaled <|
-                Buffer.releaseThen attn <| Buffer.releaseThen dAttn <|
+                Buffer.releaseThen attnOwned.value <| Buffer.releaseThen dAttn <|
                   Buffer.releaseThen dScaled <| Buffer.releaseThen dScoresMasked <|
-                    Buffer.releaseThen dScores dQh
+                    Buffer.releaseThen dScores <| attnOwned.releaseWorkspaceThen dQh
             pure (dQh, dKh, dVh)
         -- Backprop split-head permutations: swap back to (n,numHeads,headDim), then view as (n,projDim).
         let dQ := Buffer.releaseThen dQh <| Buffer.swapAdjacentAtDepth dQh dimsHead depth0

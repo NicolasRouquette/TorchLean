@@ -39,12 +39,16 @@ open NN.API
 
 namespace NN.Examples.Models.Sequence.Transformer
 
+/-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean transformer"
+
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/transformer_trainlog.json"
 
-/-- Number of identical rows in the small batch used by this encoder check. -/
+/-- Number of rows in the typed encoder batch. -/
 def batch : Nat := 4
-/-- Short sequence length: enough to exercise attention without making CPU runs painful. -/
+
+/-- Sequence length used by the encoder reconstruction sample. -/
 def seqLen : Nat := 8
 /-- Transformer feature width. -/
 def dModel : Nat := 32
@@ -64,21 +68,23 @@ def cfg : nn.models.TransformerEncoderConfig :=
     headDim := headDim
     ffnHidden := ffnHidden }
 
+/-- Input shape: a batch of sequence rows with `dModel` features per token. -/
 abbrev σ : Shape :=
   nn.models.transformerEncoderShape cfg
 
+/-- Output shape matches the input because this command trains a reconstruction objective. -/
 abbrev τ : Shape :=
   σ
 
+/-- One reusable transformer encoder block from the public model API. -/
 def mkModel : nn.M (nn.Sequential σ τ) :=
   nn.models.transformerEncoder cfg
 
 /--
-Build one batch by repeating a real-text causal sample.
+Build one encoder reconstruction batch from a real-text causal sample.
 
-This is intentionally an encoder-block reconstruction example, not autoregressive generation. The
-causal GPT/Mamba files cover language-model decoding; this file keeps the attention block itself
-small and easy to sanity-check.
+This command exercises the encoder block directly. The causal GPT/Mamba files cover
+language-model decoding; this file keeps the attention/norm/FFN path isolated.
 -/
 def mkSample {α : Type} [Semantics.Scalar α] [Runtime.Scalar α] (input : String) :
     API.sample.Supervised α σ τ :=
@@ -92,9 +98,8 @@ def mkSample {α : Type} [Semantics.Scalar α] [Runtime.Scalar α] (input : Stri
 /--
 Shared runner configuration for `torchlean transformer`.
 
-We intentionally reuse the same training infrastructure as `torchlean rnn` and `torchlean lstm`:
-the goal here is to compare the *architecture* (attention/norm/FFN) rather than read three copies
-of the same CLI/runtime wrapper.
+The RNN, LSTM, and Transformer commands use the same runner so differences in behavior come from
+the architecture rather than from separate CLI/runtime wrappers.
 -/
 def runner : SimpleText.RunnerConfig σ τ :=
   { exeName := exeName
@@ -106,6 +111,7 @@ def runner : SimpleText.RunnerConfig σ τ :=
     -- Attention + LayerNorm is more sensitive than the RNN/LSTM checks; keep the default LR small.
     lr := 1e-4 }
 
+/-- CLI entrypoint for the Transformer encoder text command. -/
 def main (args : List String) : IO UInt32 := do
   SimpleText.main runner args
 

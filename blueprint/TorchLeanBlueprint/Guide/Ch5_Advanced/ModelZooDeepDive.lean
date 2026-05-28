@@ -113,8 +113,8 @@ lake exe -K cuda=true torchlean chargpt --cuda --tiny-shakespeare \
 These examples stress the API in a way MLPs do not. The model shape depends on vocabulary, sequence
 length, number of heads, head dimension, and transformer depth. The data path has to turn raw text
 into bounded token windows. The runtime has to carry a long eager tape through embeddings, attention
-blocks, layer style operations, and output logits. The logging path writes before and after loss and
-decoded probes so a user can see whether the tiny local model is moving in the right direction.
+blocks, layer style operations, and output logits. The logging path writes before/after losses and
+decoded reports so generated text can be compared across training checkpoints.
 
 The semantic core is still a typed next token map:
 

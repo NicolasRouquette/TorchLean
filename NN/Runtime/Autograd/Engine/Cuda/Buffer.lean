@@ -137,9 +137,29 @@ def AllocatorStats.format (s : AllocatorStats) : String :=
   " cuda_free=" ++ mibString s.deviceFreeBytes ++
   " cuda_total=" ++ mibString s.deviceTotalBytes
 
-/-- Create a device buffer by copying from a host `FloatArray` (casts each element to float32). -/
+/--
+Create a device buffer by copying from a host `FloatArray` (casts each element to float32).
+
+This primitive has a pure Lean type, but the native implementation allocates a fresh device buffer.
+Runtime code that repeatedly uploads the same host value should prefer `ofFloatArrayIO`, which adds
+an IO token so two uploads cannot be collapsed into the same external object after one is released.
+-/
 @[extern "torchlean_cuda_buffer_of_float_array"]
 opaque ofFloatArray (a : FloatArray) : Buffer
+
+@[extern "torchlean_cuda_buffer_of_float_array_with_token"]
+opaque ofFloatArrayWithToken (a : FloatArray) (token : UInt32) : Buffer
+
+/--
+Effectful host-to-device upload.
+
+The token is ignored by C/CUDA. Its purpose is semantic: repeated uploads of the same `FloatArray`
+must still allocate distinct device buffers. Without a changing token, Lean can treat the extern as
+a pure expression, which is not the ownership model we want for long eager CUDA training loops.
+-/
+def ofFloatArrayIO (a : FloatArray) : IO Buffer := do
+  let t ← IO.monoNanosNow
+  pure <| ofFloatArrayWithToken a (UInt32.ofNat t)
 
 /-- Copy a buffer back to a host `FloatArray` (casts float32 elements to `Float`). -/
 @[extern "torchlean_cuda_buffer_to_float_array"]
@@ -159,13 +179,47 @@ The C finalizer is still safe after an explicit release because the pointer is n
 opaque release (b : Buffer) : UInt32
 
 /--
-Release `scratch` and return `keep`.
+Release `workspace` and return `keep`.
 
 This exists for pure CUDA tape code: because the returned buffer is used downstream, Lean cannot
 erase the native release call as dead code.
 -/
 @[extern "torchlean_cuda_buffer_release_then"]
-opaque releaseThen (scratch keep : Buffer) : Buffer
+opaque releaseThen (workspace keep : Buffer) : Buffer
+
+/--
+Release a collection of workspace buffers and return `keep`.
+
+Many CUDA tape formulas create a group of intermediate buffers, then continue with one final result
+buffer. Threading cleanup through the result keeps ownership local to the formula and avoids waiting
+for external-object finalizers in long training loops.
+-/
+def releaseManyThen (workspace : List Buffer) (keep : Buffer) : Buffer :=
+  workspace.foldr (fun b acc => releaseThen b acc) keep
+
+/--
+A CUDA result together with workspace buffers that were needed to compute it.
+
+This is the common ownership shape for eager CUDA formulas.  Some forward computations need
+intermediate buffers again during the backward pass, so the tape keeps those buffers on the node
+and releases them when the node is retired.  Backward formulas use the same shape when they
+recompute a value only to differentiate through it.
+-/
+structure WithWorkspace where
+  value : Buffer
+  workspace : List Buffer := []
+
+namespace WithWorkspace
+
+/-- Return `keep` after releasing all workspace buffers owned by this result. -/
+def releaseWorkspaceThen (r : WithWorkspace) (keep : Buffer) : Buffer :=
+  releaseManyThen r.workspace keep
+
+/-- Return `keep` after releasing both the result buffer and its workspace buffers. -/
+def releaseAllThen (r : WithWorkspace) (keep : Buffer) : Buffer :=
+  releaseThen r.value <| releaseManyThen r.workspace keep
+
+end WithWorkspace
 
 /--
 Ask the Lean runtime allocator (mimalloc) to collect abandoned/free pages.

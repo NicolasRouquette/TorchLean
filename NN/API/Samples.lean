@@ -13,15 +13,15 @@ public import NN.Runtime.Autograd.Torch.Utils
 import Mathlib.Algebra.Order.Algebra
 
 /-!
-# Synthetic Samples and Small Datasets
+# Synthetic Samples and Compact Datasets
 
-This module provides small deterministic data generators used by examples and tests:
+This module provides deterministic data generators used by examples and tests:
 - 2D tabular grids (`grid2`, `linspace`)
 - simple regression/classification sample builders
-- a small "band image" generator (2D patterns) for CHW examples
+- a compact "band image" generator (2D patterns) for CHW examples
 
-These helpers are simple and in-memory. They keep tutorial code focused on models and verification
-rather than data-loading infrastructure.
+These helpers are in-memory. They keep example code focused on models and verification rather than
+data-loading infrastructure.
 -/
 
 @[expose] public section

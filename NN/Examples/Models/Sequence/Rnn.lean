@@ -29,14 +29,11 @@ The model constructor lives in `NN.API.Models.SimpleSeq` so other examples can r
 keeps only the architecture-specific declarations; the shared corpus loading, CLI parsing, logging,
 and train loop live in `NN.Examples.Models.Sequence.SimpleText`.
 
-## What This Example Is (And Is Not)
+## Scope
 
-This is a **small layer smoke test** for the vanilla RNN cell plus the TorchLean training loop. It
-uses a single fixed text window and a simple MSE-on-one-hot objective so it can run on CPU or CUDA
-quickly.
-
-For an actual language-model walkthrough (longer context, sampling, etc.), use `chargpt`, `gpt2`,
-or `text_gpt2`.
+This command is the focused vanilla-RNN path: one real corpus window, one recurrent cell, and the
+same training/logging interface used by the other sequence examples. For autoregressive sampling
+and longer-context language-model behavior, use `chargpt`, `gpt2`, or `text_gpt2`.
 
 ```bash
 python3 scripts/datasets/download_example_data.py --tiny-shakespeare
@@ -51,10 +48,13 @@ open NN.API
 
 namespace NN.Examples.Models.Sequence.Rnn
 
+/-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean rnn"
+
+/-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := "data/model_zoo/rnn_trainlog.json"
 
-/-- Short byte-window length used for a quick recurrent-model smoke test. -/
+/-- Byte-window length used by the typed recurrent sample. -/
 def seqLen : Nat := 8
 /--
 Byte vocabulary size.
@@ -70,12 +70,15 @@ def hiddenSize : Nat := 64
 def cfg : nn.models.SeqRnnHeadConfig :=
   { seqLen := seqLen, inputSize := inputSize, hiddenSize := hiddenSize }
 
+/-- Input shape: one byte-level one-hot vector per timestep. -/
 abbrev σ : Shape :=
   nn.models.seqRnnHeadInShape cfg
 
+/-- Output shape: one logit row per input timestep. -/
 abbrev τ : Shape :=
   nn.models.seqRnnHeadOutShape cfg
 
+/-- Vanilla RNN followed by a time-distributed linear output head. -/
 def mkModel : nn.M (nn.Sequential σ τ) :=
   nn.models.rnnWithLinearHead cfg
 
@@ -94,6 +97,7 @@ def runner : SimpleText.RunnerConfig σ τ :=
     mkSample := fun {α} _ _ input => mkSample (α := α) input
     lr := 1e-2 }
 
+/-- CLI entrypoint for the vanilla RNN text command. -/
 def main (args : List String) : IO UInt32 := do
   SimpleText.main runner args
 

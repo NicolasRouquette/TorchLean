@@ -186,6 +186,56 @@ def crossEntropyNat {α : Type} [Context α] [DecidableEq Shape]
   let logp ← logSoftmax (m := m) (α := α) (s := .dim n .scalar) logits (ε := ε)
   nllNat (m := m) (α := α) (n := n) logp target
 
+/-- Convert per-row class labels into flat indices for a row-major `(rows × classes)` matrix. -/
+def rowTargetFlatIndices (rows classes : Nat) (target : Tensor Nat (.dim rows .scalar)) :
+    Tensor Nat (.dim rows .scalar) :=
+  match target with
+  | Tensor.dim f =>
+      Tensor.dim (fun r =>
+        match f r with
+        | Tensor.scalar cls => Tensor.scalar (r.val * classes + cls))
+
+/--
+Negative log-likelihood for a matrix of log-probabilities and integer row labels.
+
+`logProbs` has shape `(rows × classes)` and `target[r]` is the class id for row `r`.  This is the
+integer-label counterpart of `nllOneHot`; it avoids materializing a one-hot target matrix.
+-/
+def nllRowsNat {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {rows classes : Nat}
+    (logProbs : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
+    (target : Tensor Nat (.dim rows .scalar))
+    (reduction : Reduction := .mean) :
+    m (RefTy (m := m) (α := α) Shape.scalar) := do
+  let flat ← reshape (m := m) (α := α)
+    (s₁ := .dim rows (.dim classes .scalar))
+    (s₂ := .dim (rows * classes) .scalar)
+    logProbs (by
+      simp [Shape.size])
+  let picked ← gatherVecNat (m := m) (α := α)
+    (n := rows * classes) (k := rows) flat (rowTargetFlatIndices rows classes target)
+  let neg ← scale (m := m) (α := α) (s := .dim rows .scalar) picked (-1)
+  reduce (m := m) (α := α) (s := .dim rows .scalar) neg reduction
+
+/--
+Cross-entropy for row-wise logits with integer labels.
+
+This matches the common language-model/classification layout after flattening all prefix dimensions
+into `rows`: logits are `(rows × classes)`, labels are a length-`rows` vector of class ids.
+-/
+def crossEntropyRowsNat {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {rows classes : Nat}
+    (logits : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
+    (target : Tensor Nat (.dim rows .scalar))
+    (reduction : Reduction := .mean) (ε : α := Numbers.epsilon) :
+    m (RefTy (m := m) (α := α) Shape.scalar) := do
+  let logp ← logSoftmax (m := m) (α := α) (s := .dim rows (.dim classes .scalar))
+    logits (ε := ε)
+  nllRowsNat (m := m) (α := α) (rows := rows) (classes := classes)
+    logp target (reduction := reduction)
+
 /--
 Binary cross-entropy with logits (elementwise), using the stable identity:
 `BCEWithLogits(x,y) = y * softplus(-x) + (1-y) * softplus(x)`.

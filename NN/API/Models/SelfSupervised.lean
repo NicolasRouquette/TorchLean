@@ -16,8 +16,8 @@ public import NN.API.Models.Vit
 Most SSL machinery belongs in `NN.API.ssl`: masks, tensor-to-training-sample transforms, and
 objective-facing helpers should work with any compatible model.
 
-This file keeps only architecture-level conveniences.  The compact MAE constructor below is useful
-for examples and smoke tests, but the SSL idea itself is not tied to this model.
+This file keeps architecture-level conveniences. The compact MAE constructor below is useful for
+examples, but the SSL idea itself is not tied to this model.
 -/
 
 @[expose] public section

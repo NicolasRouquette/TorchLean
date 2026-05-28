@@ -20,7 +20,7 @@ This folder is for examples whose main structure is a labeled or paired target:
 - `LstmRegression`: real time-series forecasting on UCI household-power windows.
 
 Sequence architectures can still appear here when the task is supervised forecasting. The
-`Sequence` folder is reserved for sequence-model behavior itself: RNN/LSTM smoke tests,
+`Sequence` folder is reserved for sequence-model behavior itself: RNN/LSTM language-model checks,
 Transformer blocks, GPT-style language modeling, Mamba, and synthetic sequence curricula.
 -/
 
