@@ -355,8 +355,7 @@ CI-only umbrella: import (almost) everything under `NN/`.
 This module exists for CI. It pulls in the full library plus the curated examples so we can
 catch “works in one corner but not the other” breakage early.
 
-This file may be generated/updated by developer tooling, but the generator is not part of the
-compact source tree.
+Developer tooling may refresh this file as new modules are added.
 
 What’s excluded:
 - A handful of *very slow* proofs (build them explicitly when you want CI coverage).

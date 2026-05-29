@@ -4,15 +4,16 @@
 DocGen owns the declaration pages. This script only adds a nicer landing page and a thin visual
 layer after `lake build NN:docs` has produced `home_page/docs`.
 
-The important design rule is: do not fork DocGen. DocGen keeps producing
-search data, declaration pages, source links, sidebars, and module navigation,
-then apply small, deterministic post-processing steps that make those artifacts
-feel like part of the TorchLean website.
+The script keeps DocGen as the source of truth for search data, declaration pages,
+source links, sidebars, and module navigation. The post-processing below is small
+and deterministic: it makes those generated artifacts feel like part of the
+TorchLean website.
 """
 
 from __future__ import annotations
 
 import argparse
+import shutil
 from pathlib import Path
 
 
@@ -20,6 +21,39 @@ from pathlib import Path
 # re-appending the TorchLean-specific CSS.  That lets `build_site.sh` and local
 # preview loops run repeatedly without duplicating the polish block.
 STYLE_MARKER = "/* TorchLean public docs polish */"
+
+DOCGEN_DEPENDENCY_MODULES = {
+    "Aesop",
+    "Batteries",
+    "ImportGraph",
+    "Init",
+    "Lake",
+    "Lean",
+    "LeanSearchClient",
+    "Mathlib",
+    "Plausible",
+    "ProofWidgets",
+    "Qq",
+    "Std",
+}
+
+
+def prune_dependency_pages(docs: Path) -> None:
+    """Keep the published API docs focused on TorchLean modules.
+
+    DocGen generates pages for every imported package. That is useful in a local
+    theorem-library browser, but expensive on GitHub Pages: Mathlib and Lean's
+    own generated pages dominate the artifact size while sending users away
+    from the `NN` API surface they came to inspect. We keep shared DocGen assets
+    and the TorchLean `NN` pages, and rely on upstream docs for dependencies.
+    """
+    for name in DOCGEN_DEPENDENCY_MODULES:
+        path = docs / name
+        if path.is_dir():
+            shutil.rmtree(path)
+        page = docs / f"{name}.html"
+        if page.exists():
+            page.unlink()
 
 
 def write_index(docs: Path) -> None:
@@ -934,10 +968,10 @@ body:not(.tl-docs-index) :not(pre) > code {
 def add_nav_hint(docs: Path) -> None:
     """Add a small hint above DocGen's module tree.
 
-    The generated tree includes every imported library, so a first-time visitor
-    sees `Aesop`, `Batteries`, `Lean`, `Mathlib`, and `NN` at the same level.
-    For TorchLean docs, `NN` is the useful subtree.  Rather than deleting the
-    dependency modules, the script keeps the full tree and adds a clear nudge.
+    The generated tree can still contain dependency names in cached navigation
+    metadata. The published pages are pruned to TorchLean modules, so this hint
+    points visitors at the `NN` subtree without pretending the docs are a full
+    mirror of Mathlib or Lean.
     """
     nav = docs / "navbar.html"
     if not nav.exists():
@@ -965,7 +999,7 @@ def rename_docgen_header(docs: Path) -> None:
     express against generated HTML fragments:
 
     - add cross-site links to each generated header,
-    - fix known stale path casing in generated doc links,
+    - fix old path casing in generated doc links,
     - convert old `tl-docsite-links` nav wrappers into divs,
     - add a compact declaration-kind legend to pages with declarations.
 
@@ -995,9 +1029,8 @@ def rename_docgen_header(docs: Path) -> None:
         # module name display.
         updated = text.replace("<span>Documentation</span>", "<span>TorchLean API</span>")
 
-        # Older docstrings used a lowercase `tensor` path.  Linux hosting is
-        # case-sensitive, so keep this defensive rewrite until all generated
-        # docs come from fresh Lean sources.
+        # Older docstrings used a lowercase `tensor` path. Linux hosting is
+        # case-sensitive, so this rewrite keeps old links working.
         updated = updated.replace(
             "NN/Spec/Core/tensor/Core.html",
             "NN/Spec/Core/Tensor/Core.html",
@@ -1043,6 +1076,7 @@ def main() -> None:
     docs = Path(args.docs).resolve()
     if not docs.exists():
         raise SystemExit(f"DocGen output directory does not exist: {docs}")
+    prune_dependency_pages(docs)
     write_index(docs)
     append_style(docs)
     add_nav_hint(docs)

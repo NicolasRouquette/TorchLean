@@ -30,8 +30,8 @@ For graphs, the matching path is:
 
 Architecture-specific example loaders live beside their fixtures under
 `NN.Examples.Interop.PyTorch.{MLP,CNN,Transformer}.Import`. They may support
-serious verification workflows, but they still bake in model-family key conventions and therefore
-do not belong in the model-agnostic runtime bridge.
+serious verification workflows, but they still bake in model-family key conventions. The runtime
+bridge stays model-agnostic.
 -/
 
 @[expose] public section

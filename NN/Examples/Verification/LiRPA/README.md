@@ -19,5 +19,5 @@ python3 scripts/verification/regenerate_assets.py --group lirpa --run
 lake exe verify -- all
 ```
 
-Do not add large model dumps here. Larger LiRPA/auto LiRPA experiments should write to `_external/`,
-`/tmp`, or a documented generated data directory.
+Larger LiRPA/auto LiRPA experiments write to `_external/`, `/tmp`, or a documented generated data
+directory. This folder keeps the compact fixtures that are useful for review and CI.

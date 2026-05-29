@@ -4,13 +4,12 @@ This folder contains the TorchLean pieces of a two stage Van der Pol verificatio
 The Python scripts are producers and baselines; their outputs are not trusted until a Lean checker
 parses and verifies the relevant property.
 
-## What Belongs In Git
+## Files
 
 - Source code belongs here: Lean modules, Python producers, and small documentation.
-- Regenerated weights and stage outputs should go under `_external/`, `/tmp`, or another ignored
-  local output directory.
-- Do not commit large stage checkpoints or generated JSON weight dumps unless they are deliberately
-  promoted to a tiny reproducible fixture.
+- Regenerated weights and stage outputs go under `_external/`, `/tmp`, or another local output
+  directory.
+- Tiny reproducible fixtures can live here when a checker or doc page uses them directly.
 
 ## Scripts
 

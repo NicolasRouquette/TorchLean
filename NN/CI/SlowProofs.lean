@@ -11,8 +11,8 @@ public import NN.Runtime.Autograd.Compiled.IRExec.Correctness
 /-!
 # Slow Proof CI Target
 
-This module collects proof-heavy targets that we want CI to check regularly but
-do not want to put on the normal development critical path.
+This module collects proof-heavy targets for regular CI coverage while keeping
+the everyday build focused on the main library surface.
 
 The main target here is compiled IR execution correctness. Keeping it
 as a named CI import makes the proof surface explicit without forcing every

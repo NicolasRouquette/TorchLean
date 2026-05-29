@@ -129,8 +129,8 @@ def runOne
     if hIn : inputShape = eg.inShape then
       pure <| Spec.Tensor.castShape (t := x) hIn
     else
-      -- This should never happen for well-formed tutorials, but keep the error readable if someone
-      -- edits the graph and forgets to update the `inputShape` argument.
+      -- Well-formed tutorials keep these shapes aligned; this branch keeps the error readable if a
+      -- graph edit and the `inputShape` argument drift apart.
       throw <| IO.userError
         s!"{tag}: inputShape mismatch: arg={repr inputShape}, graph={repr eg.inShape}"
   let valsExec := Runtime.Autograd.Compiled.ExecGraphData.denoteAll (α := α) eg xExec

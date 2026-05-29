@@ -22,8 +22,8 @@ which is a `forward` function plus metadata (`kind`, `export_func`)
 used by tooling (export/extraction) and by the runtime/IR pipeline described in
 the TorchLean paper (`arXiv:2602.22631`).
 
-We keep that metadata separate from the semantics: changing `kind`/`toPyTorch` should never change
-what `forward` means.
+We keep that metadata separate from the semantics: `forward` is the mathematical meaning, while
+`kind` and `toPyTorch` describe tooling/export behavior.
 
 `SpecChain` is a dependent composition operator that enforces intermediate shape agreement at
 compile time, so you can build pipelines without runtime shape casts.

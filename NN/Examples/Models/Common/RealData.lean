@@ -83,7 +83,7 @@ def missingImageNet64Hint : String :=
   "    --x-output data/real/imagenet64/imagenet64_train_X.npy \\\n" ++
   "    --y-output data/real/imagenet64/imagenet64_train_y.npy \\\n" ++
   "    --height 64 --width 64 --labels-from-dirs --limit 2000\n" ++
-  "TorchLean does not redistribute ImageNet; this path expects a local image-folder dataset."
+  "This path expects a local ImageNet-style image-folder dataset."
 
 def missingTextHint : String :=
   "Prepare the text corpus with:\n" ++

@@ -13,7 +13,7 @@ echo "==> Building DocGen API docs"
 # rendering while keeping declaration types, docstrings, source links, search, and module pages.
 #
 # Lake does not include DISABLE_EQUATIONS in the docInfo trace, so remove the cached DocGen DB/data
-# before rebuilding. Otherwise Lake may replay stale noisy docInfo artifacts.
+# before rebuilding. Otherwise Lake may replay old noisy docInfo artifacts.
 rm -rf .lake/build/doc .lake/build/doc-data .lake/build/api-docs.db
 DISABLE_EQUATIONS=1 lake build NN:docs
 

@@ -55,7 +55,7 @@ Native CUDA/C source notes are documented by the Lean module
 `DISABLE_EQUATIONS=1` is intentional for public site builds. It keeps DocGen from trying to render
 equation lemmas for every imported Lean and Mathlib definition, which otherwise produces many
 non-fatal timeout warnings. Clear `.lake/build/doc-data` first when switching to this mode because
-Lake can otherwise replay stale DocGen artifacts.
+Lake can otherwise replay old DocGen artifacts.
 
 ### Verso Guide (Blueprint Package)
 

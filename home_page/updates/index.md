@@ -10,7 +10,7 @@ and user-facing issues.
 
 For correctness assumptions and trusted boundaries, use
 [Trust Boundaries](https://github.com/lean-dojo/TorchLean/blob/main/TRUST_BOUNDARIES.md).
-For source-level provenance and release hygiene, use
+For source-level provenance and third-party notes, use
 [Third-Party Notices](https://github.com/lean-dojo/TorchLean/blob/main/THIRD_PARTY_NOTICES.md).
 
 ## Index
@@ -38,7 +38,7 @@ and documentation-quality update:
 
 - large proof and runtime files were split along existing conceptual boundaries;
 - umbrella modules were kept only where they clarify the public import surface;
-- stale import shells and example names were removed;
+- old import shells and example names were removed;
 - comments were rewritten in a more mathlib-style voice, explaining definitions
   and trust boundaries as part of the maintained source; (Check Mathlib documentation style guide)
 - examples, API docs, the Verso guide, and website pages were rebuilt against the

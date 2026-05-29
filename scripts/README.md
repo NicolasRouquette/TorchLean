@@ -4,12 +4,10 @@ This directory contains support commands for local checks, repository hygiene au
 site generation, dataset preparation, artifact producers, and optional sandboxed Lean checking.
 
 Generated files such as `__pycache__/`, downloaded datasets, built documentation, and local output
-artifacts should not live here. Keep those in ignored output directories such as `data/`, `_out/`,
-or `home_page/_site/`.
+artifacts belong in ignored output directories such as `data/`, `_out/`, or `home_page/_site/`.
 
-## Release Surface
+## Directory Map
 
-For a release, keep this directory small, but do not delete scripts only because they are Python.
 Everything is organized by purpose:
 
 - `checks/`: local CI, repository lint, dependency audit, CUDA sanitizer/profiling helpers, and
@@ -20,9 +18,9 @@ Everything is organized by purpose:
 - `rl/`: optional reinforcement-learning bridge examples.
 - `sandbox/`: comparator/untrusted-Lean helper tooling.
 
-### Required Release Support
+### Build and Check Support
 
-These are part of the release/check/build path and should stay:
+These scripts are used by the build, documentation, and local verification paths:
 
 - `checks/check.sh`
 - `checks/cuda_sanitize_tests.sh`
@@ -37,13 +35,11 @@ These are part of the release/check/build path and should stay:
 - `sandbox/run_comparator.py`
 - `comparator/nn_ci_all.json`
 
-`docs/polish_docgen.py` and `docs/polish_verso_guide.py` are not verification logic. They are the
-final website post-processors called by `docs/build_site.sh`: DocGen and Verso generate correct
-HTML, then these scripts add the TorchLean landing page, navigation polish, responsive figures, copy
-buttons, asset copying, and public-site styling. Delete them only together with a matching
-`docs/build_site.sh` change and a decision to publish the upstream generated HTML directly.
+`docs/polish_docgen.py` and `docs/polish_verso_guide.py` are website post-processors rather than
+verification logic. DocGen and Verso generate the HTML; these scripts add the TorchLean landing page,
+navigation polish, responsive figures, copy buttons, asset copying, and public-site styling.
 
-### Required reproducibility helpers
+### Reproducibility Helpers
 
 These are referenced by examples, docs, or artifact-regeneration workflows:
 
@@ -61,36 +57,35 @@ These are referenced by examples, docs, or artifact-regeneration workflows:
 Use the subfolder paths directly, for example
 `python3 scripts/datasets/download_example_data.py --cifar10`.
 
-### Optional examples and research workflows
+### Optional Examples and Research Workflows
 
-These are not release blockers, but they are documented examples rather than junk:
+These scripts support documented workflows outside the core build path:
 
 - `datasets/download_wikitext.py`
 - `rl/gymnasium_server.py`
 - `rl/export_gymnasium_rollout.py`
 - `rl/train_ppo_cartpole_sb3.py`
 
-### Delete on sight
+### Local Output
 
-These should never be checked in:
+These are generated locally and stay out of the source tree:
 
 - `__pycache__/`
 - `*.pyc`
 - local checkpoints, downloaded data, generated plots, generated JSON output
-- scratch notebooks or ad hoc scripts unless they are promoted into one of the buckets
-  above
+- scratch notebooks or ad hoc scripts until they are promoted into one of the groups above
 
 ## Plot and Asset Policy
 
-Most plots are generated output and should stay ignored. The release source should track only small,
-intentional documentation assets that are referenced by Markdown or Verso pages.
+Most plots are generated output. The source tree tracks only small documentation assets that are
+referenced by Markdown or Verso pages.
 
 Keep tracked:
 
 - `home_page/assets/media/**` when referenced by homepage Markdown.
 - `blueprint/TorchLeanBlueprint/Guide/Assets/**` when referenced by the Verso guide.
 
-Do not track:
+Generated locally:
 
 - `_external/**`: local model outputs, Geometry3D certificates, overlays, and diagnostic PNGs.
 - `_out/**`: generated Verso/blueprint build output.

@@ -217,7 +217,7 @@ Fuel-bounded worker for GPT-2 regex pre-token fragments before byte escaping and
 The branch order mirrors GPT-2's tokenizer regex exactly: contractions, optional-space letter runs,
 optional-space number runs, optional-space non-space/non-letter/non-number runs, whitespace not
 followed by non-space, and finally a plain whitespace run. The fuel argument keeps this definition
-total and should never be exhausted when called by `pretokenize`.
+total; `pretokenize` supplies enough fuel for the whole input.
 -/
 def pretokenizeAux : Nat → List Char → List String
   | 0, _ => []

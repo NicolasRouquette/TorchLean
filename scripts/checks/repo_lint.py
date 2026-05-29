@@ -68,7 +68,7 @@ class Finding:
 def _iter_lean_files() -> Iterable[pathlib.Path]:
     """Yield project Lean files while skipping vendored and generated trees."""
     for p in REPO_ROOT.rglob("*.lean"):
-        # Never lint vendored dependencies.
+        # Vendored dependencies are checked by their own projects.
         if ".lake" in p.parts:
             continue
         if any(d in p.parts for d in VENDORED_DIR_NAMES):
@@ -80,7 +80,7 @@ def _iter_lean_files() -> Iterable[pathlib.Path]:
 
 
 def _iter_generated_script_artifacts() -> Iterable[pathlib.Path]:
-    """Generated files that should never live under the checked-in `scripts/` tree."""
+    """Generated files that stay outside the checked-in `scripts/` tree."""
 
     scripts_dir = REPO_ROOT / "scripts"
     if not scripts_dir.exists():

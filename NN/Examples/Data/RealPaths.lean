@@ -13,11 +13,9 @@ public import NN.API.Core
 
 Generated tutorial fixtures live in `NN.Examples.Data.SamplePaths`.
 
-This module names the default paths used by examples that train on externally
-downloaded datasets prepared by `scripts/datasets/download_example_data.py`.
-
-The files are not committed: CIFAR-10 and text corpora are real datasets with their
-own licenses/citation expectations, and CI should not download hundreds of megabytes implicitly.
+This module names the default paths used by examples that train on datasets prepared by
+`scripts/datasets/download_example_data.py`. The examples use small checked fixtures by default;
+larger public datasets live under `data/real` after the user runs the preparation script.
 -/
 
 @[expose] public section
@@ -60,9 +58,9 @@ def cifar10TestY (dataDir : System.FilePath := defaultDataDir) : System.FilePath
 /--
 Directory containing a user-prepared ImageNet-style 64x64 subset.
 
-TorchLean does not redistribute ImageNet.  Users point `scripts/datasets/torchlean_data_convert.py
-image-folder` at their own ImageNet/ILSVRC, ImageNet-compatible, or Tiny-ImageNet-style directory
-tree and write the converted arrays here.
+ImageNet-style runs start from a local image-folder dataset. Users point
+`scripts/datasets/torchlean_data_convert.py image-folder` at an ImageNet/ILSVRC,
+ImageNet-compatible, or Tiny-ImageNet-style directory tree and write the converted arrays here.
 -/
 def imagenet64Dir (dataDir : System.FilePath := defaultDataDir) : System.FilePath :=
   dataDir / "imagenet64"

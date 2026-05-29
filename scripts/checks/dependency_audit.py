@@ -388,8 +388,8 @@ def audit(root: pathlib.Path) -> dict:
     for e in internal_edges:
         src_layer = layer_of(e.src)
         dst_layer = layer_of(e.dst)
-        # Hard architectural boundaries: specs should not depend on runtime code,
-        # and reusable runtime code should never depend on examples.
+        # Hard architectural boundaries: specs stay independent of runtime code,
+        # and reusable runtime code stays independent of examples.
         if src_layer == "NN.Spec" and dst_layer.startswith("NN.Runtime"):
             findings.append(
                 Finding(
