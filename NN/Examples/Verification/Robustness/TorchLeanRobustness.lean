@@ -99,8 +99,8 @@ affine/CROWN-style pass.
 def runOnce {α : Type} [Semantics.Scalar α] [DecidableEq Shape] [ToString α]
     [Runtime.Scalar α] : IO Unit := do
   let cast : Float → α := Runtime.ofFloat
-  -- These in-source constants are intentional: this workflow is a compact TorchLean-native
-  -- verifier path check, not a data-backed benchmark. Data-backed robustness uses
+  -- These in-source constants make the TorchLean-native verifier path fully inspectable.
+  -- Data-backed robustness uses
   -- `NN.Verification.Robustness.Digits`, which loads weights and examples from JSON assets.
   --
   -- The chosen weights keep the hidden pre-activation positive over the whole ε-box, so the ReLU

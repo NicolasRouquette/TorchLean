@@ -142,15 +142,36 @@ theorem buildFrom_denoteAllFrom_max_pool2d
                                     cases hIdx :
                                         mkIdx (inShape := inShape) (ss := ss) pId sIn with
                                     | error msg =>
-                                        have hFalse : False := by
-                                          simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
-                                        cases hFalse
+                                        have hGuarded :
+                                            (do
+                                                NN.IR.OpContracts.checkWindowFits
+                                                  "max_pool2d" "height" inH kH 0
+                                                NN.IR.OpContracts.checkWindowFits
+                                                  "max_pool2d" "width" inW kW 0
+                                                (Except.error msg : Except String (State α inShape))) =
+                                              Except.ok st' := by
+                                          simpa [hS, hkH0, hkW0, hs, sIn, hIdx] using hBuild
+                                        have hTail :
+                                            (Except.error msg : Except String (State α inShape)) =
+                                              Except.ok st' :=
+                                          exceptUnit_two_bind_tail_ok hGuarded
+                                        cases hTail
                                     | ok ip =>
                                         simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
                                         let expected : Shape :=
                                           Spec.pool2dMultiOutShape inC inH inW kH kW stride
                                         by_cases hOut : expected = n.outShape
                                         · simp [expected, hOut] at hBuild
+                                          have hFitH :
+                                              NN.IR.OpContracts.checkWindowFits
+                                                  "max_pool2d" "height" inH kH 0 =
+                                                Except.ok () :=
+                                            exceptUnit_two_bind_first_ok hBuild
+                                          have hFitW :
+                                              NN.IR.OpContracts.checkWindowFits
+                                                  "max_pool2d" "width" inW kW 0 =
+                                                Except.ok () :=
+                                            exceptUnit_two_bind_second_ok hBuild
                                           let layer : Spec.MaxPool2DSpec kH kW stride hkH0 hkW0 hs := {}
                                           let nodeData : NodeData α Unit ([inShape] ++ ss) n.outShape
                                             :=
@@ -170,8 +191,8 @@ theorem buildFrom_denoteAllFrom_max_pool2d
                                               buildFrom (α := α) (g := g) (payload := payload)
                                                 (inShape := inShape)
                                                   (i := i + 1) st1 = .ok st' := by
-                                            simp [st1, nodeData]
-                                            exact hBuild
+                                            simpa [st1, nodeData] using
+                                              exceptUnit_two_bind_tail_ok hBuild
                                           have hGet :
                                               vals0[pId]! =
                                                 NN.IR.DVal.mk (α := α) sIn
@@ -210,7 +231,8 @@ theorem buildFrom_denoteAllFrom_max_pool2d
                                               simpa [sIn] using hExpSIn
                                             simp [NN.IR.Graph.evalAt, hN, hk, hp, hExp,
                                               nodeData, layer,
-                                              hFst, sIn, expected, hkH0, hkW0, hs, hOut]
+                                              hFst, sIn, expected, hkH0, hkW0, hs, hOut,
+                                              hFitH, hFitW]
                                           have hStep :
                                               denoteAllState (α := α) inShape st1 x =
                                                 vals0.push (NN.IR.DVal.mk (α := α) n.outShape
@@ -227,7 +249,9 @@ theorem buildFrom_denoteAllFrom_max_pool2d
                                             (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval
                                               hStep
                                         · exact False.elim <|
-                                            throw_bind_ne_ok (by simpa [expected, hOut, hs] using hBuild)
+                                            throw_bind_ne_ok (by
+                                              simpa [expected, hOut, hs] using
+                                                exceptUnit_two_bind_tail_ok hBuild)
 
 /-- Correctness lemma for the `.max_pool2d_pad` node compiler (explicit padding). -/
 theorem buildFrom_denoteAllFrom_max_pool2d_pad
@@ -306,9 +330,20 @@ theorem buildFrom_denoteAllFrom_max_pool2d_pad
                                     cases hIdx :
                                         mkIdx (inShape := inShape) (ss := ss) pId sIn with
                                     | error msg =>
-                                        have hFalse : False := by
-                                          simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
-                                        cases hFalse
+                                        have hGuarded :
+                                            (do
+                                                NN.IR.OpContracts.checkWindowFits
+                                                  "max_pool2d_pad" "height" inH kH padding
+                                                NN.IR.OpContracts.checkWindowFits
+                                                  "max_pool2d_pad" "width" inW kW padding
+                                                (Except.error msg : Except String (State α inShape))) =
+                                              Except.ok st' := by
+                                          simpa [hS, hkH0, hkW0, hs, sIn, hIdx] using hBuild
+                                        have hTail :
+                                            (Except.error msg : Except String (State α inShape)) =
+                                              Except.ok st' :=
+                                          exceptUnit_two_bind_tail_ok hGuarded
+                                        cases hTail
                                     | ok ip =>
                                         simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
                                         let expected : Shape :=
@@ -316,6 +351,16 @@ theorem buildFrom_denoteAllFrom_max_pool2d_pad
                                             padding
                                         by_cases hOut : expected = n.outShape
                                         · simp [expected, hOut] at hBuild
+                                          have hFitH :
+                                              NN.IR.OpContracts.checkWindowFits
+                                                  "max_pool2d_pad" "height" inH kH padding =
+                                                Except.ok () :=
+                                            exceptUnit_two_bind_first_ok hBuild
+                                          have hFitW :
+                                              NN.IR.OpContracts.checkWindowFits
+                                                  "max_pool2d_pad" "width" inW kW padding =
+                                                Except.ok () :=
+                                            exceptUnit_two_bind_second_ok hBuild
                                           let layer : Spec.MaxPool2DSpec kH kW stride hkH0 hkW0 hs := {}
                                           let nodeData : NodeData α Unit ([inShape] ++ ss) n.outShape
                                             :=
@@ -336,8 +381,8 @@ theorem buildFrom_denoteAllFrom_max_pool2d_pad
                                               buildFrom (α := α) (g := g) (payload := payload)
                                                 (inShape := inShape)
                                                   (i := i + 1) st1 = .ok st' := by
-                                            simp [st1, nodeData]
-                                            exact hBuild
+                                            simpa [st1, nodeData] using
+                                              exceptUnit_two_bind_tail_ok hBuild
                                           have hGet :
                                               vals0[pId]! =
                                                 NN.IR.DVal.mk (α := α) sIn
@@ -374,7 +419,8 @@ theorem buildFrom_denoteAllFrom_max_pool2d_pad
                                               simpa [sIn] using hExpSIn
                                             simp [NN.IR.Graph.evalAt, hN, hk, hp, hExp,
                                               nodeData, layer,
-                                              hFst, sIn, expected, hkH0, hkW0, hs, hOut]
+                                              hFst, sIn, expected, hkH0, hkW0, hs, hOut,
+                                              hFitH, hFitW]
                                           have hStep :
                                               denoteAllState (α := α) inShape st1 x =
                                                 vals0.push (NN.IR.DVal.mk (α := α) n.outShape
@@ -391,7 +437,9 @@ theorem buildFrom_denoteAllFrom_max_pool2d_pad
                                             (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval
                                               hStep
                                         · exact False.elim <|
-                                            throw_bind_ne_ok (by simpa [expected, hOut, hs] using hBuild)
+                                            throw_bind_ne_ok (by
+                                              simpa [expected, hOut, hs] using
+                                                exceptUnit_two_bind_tail_ok hBuild)
 
 /-- Correctness lemma for the `.avg_pool2d` node compiler (no padding). -/
 theorem buildFrom_denoteAllFrom_avg_pool2d
@@ -469,15 +517,36 @@ theorem buildFrom_denoteAllFrom_avg_pool2d
                                     cases hIdx :
                                         mkIdx (inShape := inShape) (ss := ss) pId sIn with
                                     | error msg =>
-                                        have hFalse : False := by
-                                          simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
-                                        cases hFalse
+                                        have hGuarded :
+                                            (do
+                                                NN.IR.OpContracts.checkWindowFits
+                                                  "avg_pool2d" "height" inH kH 0
+                                                NN.IR.OpContracts.checkWindowFits
+                                                  "avg_pool2d" "width" inW kW 0
+                                                (Except.error msg : Except String (State α inShape))) =
+                                              Except.ok st' := by
+                                          simpa [hS, hkH0, hkW0, hs, sIn, hIdx] using hBuild
+                                        have hTail :
+                                            (Except.error msg : Except String (State α inShape)) =
+                                              Except.ok st' :=
+                                          exceptUnit_two_bind_tail_ok hGuarded
+                                        cases hTail
                                     | ok ip =>
                                         simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
                                         let expected : Shape :=
                                           Spec.pool2dMultiOutShape inC inH inW kH kW stride
                                         by_cases hOut : expected = n.outShape
                                         · simp [expected, hOut] at hBuild
+                                          have hFitH :
+                                              NN.IR.OpContracts.checkWindowFits
+                                                  "avg_pool2d" "height" inH kH 0 =
+                                                Except.ok () :=
+                                            exceptUnit_two_bind_first_ok hBuild
+                                          have hFitW :
+                                              NN.IR.OpContracts.checkWindowFits
+                                                  "avg_pool2d" "width" inW kW 0 =
+                                                Except.ok () :=
+                                            exceptUnit_two_bind_second_ok hBuild
                                           let layer : Spec.AvgPool2DSpec kH kW stride hkH0 hkW0 hs := {}
                                           let nodeData : NodeData α Unit ([inShape] ++ ss) n.outShape
                                             :=
@@ -498,8 +567,8 @@ theorem buildFrom_denoteAllFrom_avg_pool2d
                                               buildFrom (α := α) (g := g) (payload := payload)
                                                 (inShape := inShape)
                                                   (i := i + 1) st1 = .ok st' := by
-                                            simp [st1, nodeData]
-                                            exact hBuild
+                                            simpa [st1, nodeData] using
+                                              exceptUnit_two_bind_tail_ok hBuild
                                           have hGet :
                                               vals0[pId]! =
                                                 NN.IR.DVal.mk (α := α) sIn
@@ -536,7 +605,8 @@ theorem buildFrom_denoteAllFrom_avg_pool2d
                                               simpa [sIn] using hExpSIn
                                             simp [NN.IR.Graph.evalAt, hN, hk, hp, hExp,
                                               nodeData, layer,
-                                              hFst, sIn, expected, hkH0, hkW0, hs, hOut]
+                                              hFst, sIn, expected, hkH0, hkW0, hs, hOut,
+                                              hFitH, hFitW]
                                           have hStep :
                                               denoteAllState (α := α) inShape st1 x =
                                                 vals0.push (NN.IR.DVal.mk (α := α) n.outShape
@@ -553,7 +623,9 @@ theorem buildFrom_denoteAllFrom_avg_pool2d
                                             (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval
                                               hStep
                                         · exact False.elim <|
-                                            throw_bind_ne_ok (by simpa [expected, hOut, hs] using hBuild)
+                                            throw_bind_ne_ok (by
+                                              simpa [expected, hOut, hs] using
+                                                exceptUnit_two_bind_tail_ok hBuild)
 
 /-- Correctness lemma for the `.avg_pool2d_pad` node compiler (explicit padding). -/
 theorem buildFrom_denoteAllFrom_avg_pool2d_pad
@@ -632,9 +704,20 @@ theorem buildFrom_denoteAllFrom_avg_pool2d_pad
                                     cases hIdx :
                                         mkIdx (inShape := inShape) (ss := ss) pId sIn with
                                     | error msg =>
-                                        have hFalse : False := by
-                                          simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
-                                        cases hFalse
+                                        have hGuarded :
+                                            (do
+                                                NN.IR.OpContracts.checkWindowFits
+                                                  "avg_pool2d_pad" "height" inH kH padding
+                                                NN.IR.OpContracts.checkWindowFits
+                                                  "avg_pool2d_pad" "width" inW kW padding
+                                                (Except.error msg : Except String (State α inShape))) =
+                                              Except.ok st' := by
+                                          simpa [hS, hkH0, hkW0, hs, sIn, hIdx] using hBuild
+                                        have hTail :
+                                            (Except.error msg : Except String (State α inShape)) =
+                                              Except.ok st' :=
+                                          exceptUnit_two_bind_tail_ok hGuarded
+                                        cases hTail
                                     | ok ip =>
                                         simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
                                         let expected : Shape :=
@@ -642,6 +725,16 @@ theorem buildFrom_denoteAllFrom_avg_pool2d_pad
                                             padding
                                         by_cases hOut : expected = n.outShape
                                         · simp [expected, hOut] at hBuild
+                                          have hFitH :
+                                              NN.IR.OpContracts.checkWindowFits
+                                                  "avg_pool2d_pad" "height" inH kH padding =
+                                                Except.ok () :=
+                                            exceptUnit_two_bind_first_ok hBuild
+                                          have hFitW :
+                                              NN.IR.OpContracts.checkWindowFits
+                                                  "avg_pool2d_pad" "width" inW kW padding =
+                                                Except.ok () :=
+                                            exceptUnit_two_bind_second_ok hBuild
                                           let layer : Spec.AvgPool2DSpec kH kW stride hkH0 hkW0 hs := {}
                                           let nodeData : NodeData α Unit ([inShape] ++ ss) n.outShape
                                             :=
@@ -663,8 +756,8 @@ theorem buildFrom_denoteAllFrom_avg_pool2d_pad
                                               buildFrom (α := α) (g := g) (payload := payload)
                                                 (inShape := inShape)
                                                   (i := i + 1) st1 = .ok st' := by
-                                            simp [st1, nodeData]
-                                            exact hBuild
+                                            simpa [st1, nodeData] using
+                                              exceptUnit_two_bind_tail_ok hBuild
                                           have hGet :
                                               vals0[pId]! =
                                                 NN.IR.DVal.mk (α := α) sIn
@@ -701,7 +794,8 @@ theorem buildFrom_denoteAllFrom_avg_pool2d_pad
                                               simpa [sIn] using hExpSIn
                                             simp [NN.IR.Graph.evalAt, hN, hk, hp, hExp,
                                               nodeData, layer,
-                                              hFst, sIn, expected, hkH0, hkW0, hs, hOut]
+                                              hFst, sIn, expected, hkH0, hkW0, hs, hOut,
+                                              hFitH, hFitW]
                                           have hStep :
                                               denoteAllState (α := α) inShape st1 x =
                                                 vals0.push (NN.IR.DVal.mk (α := α) n.outShape
@@ -718,7 +812,9 @@ theorem buildFrom_denoteAllFrom_avg_pool2d_pad
                                             (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval
                                               hStep
                                         · exact False.elim <|
-                                            throw_bind_ne_ok (by simpa [expected, hOut, hs] using hBuild)
+                                            throw_bind_ne_ok (by
+                                              simpa [expected, hOut, hs] using
+                                                exceptUnit_two_bind_tail_ok hBuild)
 
 
 

@@ -12,7 +12,7 @@ public import NN.API.Samples.Bands
 /-!
 # ResNet BasicBlock training example (small CHW)
 
-This next-step file demonstrates the public `API.nn.blocks.resnetBasicBlock` builder on a small 4×4
+This next-step file shows the public `API.nn.blocks.resnetBasicBlock` builder on a small 4×4
 "band" dataset (vertical vs horizontal bars).
 
 It is not part of the first introductory path. It is here as a compact bridge from the
@@ -130,8 +130,8 @@ def runOnce {batch : Nat} (task : train.Task (Shape.Images batch 1 4 4) (shape![
     else
       let batchedDs ← API.Common.orThrow "ResNetBasicBlockTrain" <| Data.BatchLoader.batchDataset
         loader
-      -- The richer path mirrors how a user would inspect a real image classifier:
-      -- check accuracy and a few probe predictions before training, during training, and after.
+      -- The richer path mirrors how a user would inspect an image classifier:
+      -- check accuracy and representative predictions before training, during training, and after.
       pure <|
         (train.onTrainStart do
           train.withMode runner .eval do

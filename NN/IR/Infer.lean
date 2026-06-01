@@ -125,8 +125,11 @@ def inferNodeOutShape (n : Node) (parentShapes : List Shape) : Except String Sha
   | .broadcastTo s₁ s₂ =>
       match parentShapes with
       | [s] =>
-          if s = s₁ then pure s₂
-          else throw s!"broadcastTo: parent shape mismatch: expected {repr s₁}, got {repr s}"
+          if s != s₁ then
+            throw s!"broadcastTo: parent shape mismatch: expected {repr s₁}, got {repr s}"
+          match OpContracts.mkCanBroadcastTo? s₁ s₂ with
+          | some _ => pure s₂
+          | none => throw s!"broadcastTo: invalid broadcast from {repr s₁} to {repr s₂}"
       | _ => throw "broadcastTo: expected 1 parent"
   | .reduceSum axis =>
     match parentShapes with
@@ -167,6 +170,10 @@ def inferNodeOutShape (n : Node) (parentShapes : List Shape) : Except String Sha
       match parentShapes with
       | [s] => OpContracts.inferConv2dCHWOutShape inC outC kH kW stride padding s
       | _ => throw "conv2d: expected 1 parent"
+  | .batchNorm2dNchwEval channels =>
+      match parentShapes with
+      | [s] => OpContracts.inferBatchNorm2dNchwEvalOutShape channels s
+      | _ => throw "batch_norm2d_nchw_eval: expected 1 parent"
   | .relu | .tanh | .sigmoid | .exp | .log | .inv | .sin | .cos =>
       match parentShapes with
       | [s] => pure s
@@ -178,9 +185,7 @@ def inferNodeOutShape (n : Node) (parentShapes : List Shape) : Except String Sha
   | .layernorm axis =>
       match parentShapes with
       | [s] =>
-          -- LayerNorm preserves shape. We only validate that `axis` is in bounds; the semantics
-          -- interprets it as a *suffix* normalization region (see `OpContracts.layerNorm2DParams`).
-          OpContracts.checkAxisValid axis s
+          let _ ← OpContracts.layerNorm2DParams axis s
           pure s
       | _ => throw "layernorm: expected 1 parent"
   | .reshape inS outS =>

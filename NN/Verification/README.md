@@ -15,9 +15,20 @@ Key themes:
 - **Proof layer**: `NN.Entrypoint.Verification` includes theorem level CROWN/LiRPA
   soundness statements alongside the reusable verifier APIs. JSON checkers are executable
   recomputation checks; theorem credit requires discharging the corresponding Lean hypotheses.
+  The TorchLean compiler proof surface also includes IR-level bridge facts for supported imported
+  ops, including elementwise arithmetic/activations, reshape/flatten/broadcast/sum, direct
+  leading-axis concat and generic concat through the shared evaluator, axis reductions, axis
+  permutation, supported transpose forms,
+  rank-2/3 matrix multiplication,
+  softmax through the evaluator's axis-permutation path, and the
+  payload-backed constants, `linear`, no-dilation `conv2d`, eval-mode NCHW BatchNorm, CHW pooling,
+  reshape-based LayerNorm, graph input/detach, and scalar MSE formulas used by the PyTorch/ONNX
+  path. For payload-backed imported ops, the bridge records both the helper evaluator contract
+  and the actual one-step `Graph.evalAt` success path. `Eval.Coverage` keeps a checked list of
+  the IR constructor families covered by those local evaluator lemmas.
 - **Data workflows**: reusable dataset and weight loading should live under `NN.Verification`
-  rather than directly inside examples. For example, sklearn digits certified accuracy lives in
-  `NN.Verification.Robustness.Digits`.
+  rather than directly inside examples. For example, sklearn digits certified accuracy and the
+  train-then-certify command live in `NN.Verification.Robustness.Digits`.
 
 ## Subfolders
 

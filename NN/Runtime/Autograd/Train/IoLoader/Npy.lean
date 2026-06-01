@@ -167,8 +167,8 @@ def parseShapeValue (s : String) : Option (List Nat) :=
 Parse the NumPy header dictionary.
 
 We only need three standard fields: `descr`, `fortran_order`, and `shape`. The header format is a
-Python-literal dictionary padded to an alignment boundary; this parser is intentionally
-field-oriented rather than a full Python parser.
+Python-literal dictionary padded to an alignment boundary, so this parser stays field-oriented
+rather than trying to become a full Python parser.
 -/
 def parseHeader (tag : String) (hdr : String) :
   Result (String × Bool × List Nat) :=
@@ -178,6 +178,79 @@ def parseHeader (tag : String) (hdr : String) :
   match descrOpt, fortranOpt, shapeOpt with
   | some descr, some fortran, some shape => .ok (descr, fortran, shape)
   | _, _, _ => .error (tagError tag "failed to parse NPY header")
+
+/-- Parsed `.npy` metadata needed before reading the numeric payload. -/
+structure NpyHeaderMeta where
+  /-- Dtype descriptor from the header, for example `"<f4"` or `"<f8"`. -/
+  descr : String
+  /-- Whether the on-disk payload is Fortran-ordered. -/
+  fortran : Bool
+  /-- Logical array shape from the header. -/
+  shape : List Nat
+  /-- Byte offset where the numeric payload begins. -/
+  dataStart : Nat
+
+/-- Read and validate the NumPy magic/version/header block shared by all NPY loaders. -/
+def parseNpyHeaderMeta (tag : String) (bs : ByteArray) : Result NpyHeaderMeta := do
+  if bs.size < 10 then
+    .error (tagError tag "file too small")
+  else
+    let magicOk :=
+      ((byteAt? bs 0).map (fun b => b.toNat == 0x93) |>.getD false)
+      && ((byteAt? bs 1).map (fun b => b.toNat == ('N' : Char).toNat) |>.getD false)
+      && ((byteAt? bs 2).map (fun b => b.toNat == ('U' : Char).toNat) |>.getD false)
+      && ((byteAt? bs 3).map (fun b => b.toNat == ('M' : Char).toNat) |>.getD false)
+      && ((byteAt? bs 4).map (fun b => b.toNat == ('P' : Char).toNat) |>.getD false)
+      && ((byteAt? bs 5).map (fun b => b.toNat == ('Y' : Char).toNat) |>.getD false)
+    if !magicOk then
+      .error (tagError tag "invalid NPY magic header")
+    else
+      let major := (byteAt? bs 6).map (fun b => b.toNat) |>.getD 0
+      if !(major = 1 || major = 2) then
+        .error (tagError tag s!"unsupported NPY version: {major}")
+      else
+        let headerLenOpt :=
+          if major = 1 then
+            readUInt16LE bs 8
+          else
+            readUInt32LE bs 8 |>.map UInt32.toNat
+        match headerLenOpt with
+        | none => .error (tagError tag "invalid NPY header length")
+        | some headerLen =>
+            let headerStart := if major = 1 then 10 else 12
+            let headerEnd := headerStart + headerLen
+            if headerEnd > bs.size then
+              .error (tagError tag "NPY header out of bounds")
+            else
+              let headerBytes := bs.extract headerStart headerEnd
+              let headerStr :=
+                match String.fromUTF8? headerBytes with
+                | some s => s
+                | none => ""
+              let (descr, fortran, shape) <- parseHeader tag headerStr
+              .ok { descr := descr, fortran := fortran, shape := shape, dataStart := headerEnd }
+
+/-- Byte width for the dtypes supported by TorchLean's NPY loader. -/
+def npyElementBytes (tag descr : String) : Result Nat :=
+  if descr = "<f8" then
+    .ok 8
+  else if descr = "<f4" then
+    .ok 4
+  else
+    .error (tagError tag s!"unsupported dtype: {descr}")
+
+/-- Read one supported numeric element from an NPY payload. -/
+def readNpyElement (tag descr : String) (bs : ByteArray) (off : Nat) : Result Float :=
+  if descr = "<f8" then
+    match readUInt64LE bs off with
+    | some w => .ok (Float.ofBits w)
+    | none => .error (tagError tag "invalid float64 data")
+  else if descr = "<f4" then
+    match readUInt32LE bs off with
+    | some w => .ok (Float32.toFloat (Float32.ofBits w))
+    | none => .error (tagError tag "invalid float32 data")
+  else
+    .error (tagError tag s!"unsupported dtype: {descr}")
 
 end IoLoader.Internal
 
@@ -189,83 +262,29 @@ That makes loader failures explicit at the trust boundary instead of silently pr
 the wrong shape or partial data.
 -/
 def parseNpy (tag : String) (bs : ByteArray) : Result NpyData := do
-  if bs.size < 10 then
-    .error (tagError tag "file too small")
+  let hdr <- parseNpyHeaderMeta tag bs
+  let bytesPer <- npyElementBytes tag hdr.descr
+  let count := hdr.shape.foldl (fun acc n => acc * n) 1
+  let dataBytes := count * bytesPer
+  if hdr.dataStart + dataBytes > bs.size then
+    .error (tagError tag "NPY data truncated")
   else
-    let magicOk :=
-      ((byteAt? bs 0).map (fun b => b.toNat == 0x93) |>.getD false)
-      && ((byteAt? bs 1).map (fun b => b.toNat == ('N' : Char).toNat) |>.getD false)
-      && ((byteAt? bs 2).map (fun b => b.toNat == ('U' : Char).toNat) |>.getD false)
-      && ((byteAt? bs 3).map (fun b => b.toNat == ('M' : Char).toNat) |>.getD false)
-      && ((byteAt? bs 4).map (fun b => b.toNat == ('P' : Char).toNat) |>.getD false)
-      && ((byteAt? bs 5).map (fun b => b.toNat == ('Y' : Char).toNat) |>.getD false)
-    if !magicOk then
-      .error (tagError tag "invalid NPY magic header")
-    else
-      let major := (byteAt? bs 6).map (fun b => b.toNat) |>.getD 0
-      if !(major = 1 || major = 2) then
-        .error (tagError tag s!"unsupported NPY version: {major}")
-      else
-        let headerLenOpt :=
-          if major = 1 then
-            readUInt16LE bs 8
-          else
-            readUInt32LE bs 8 |>.map UInt32.toNat
-        match headerLenOpt with
-        | none => .error (tagError tag "invalid NPY header length")
-        | some headerLen =>
-            let headerStart := if major = 1 then 10 else 12
-            let headerEnd := headerStart + headerLen
-            if headerEnd > bs.size then
-              .error (tagError tag "NPY header out of bounds")
-            else
-              let headerBytes := bs.extract headerStart headerEnd
-              let headerStr :=
-                match String.fromUTF8? headerBytes with
-                | some s => s
-                | none => ""
-              let (descr, fortran, shape) <- parseHeader tag headerStr
-              let (bytesPer, readElem) :=
-                if descr = "<f8" then
-                  (8, fun off =>
-                    match readUInt64LE bs off with
-                    | some w => .ok (Float.ofBits w)
-                    | none => .error (tagError tag "invalid float64 data"))
-                else if descr = "<f4" then
-                  (4, fun off =>
-                    match readUInt32LE bs off with
-                    | some w => .ok (Float32.toFloat (Float32.ofBits w))
-                    | none => .error (tagError tag "invalid float32 data"))
-                else
-                  (0, fun _ => .error (tagError tag s!"unsupported dtype: {descr}"))
-              if bytesPer = 0 then
-                .error (tagError tag s!"unsupported dtype: {descr}")
-              else
-                let count := shape.foldl (fun acc n => acc * n) 1
-                let dataStart := headerEnd
-                let dataBytes := count * bytesPer
-                if dataStart + dataBytes > bs.size then
-                  .error (tagError tag "NPY data truncated")
-                else
-                  let mut raw : Array Float := Array.mkEmpty count
-                  for i in [0:count] do
-                    let v ← readElem (dataStart + i * bytesPer)
-                    raw := raw.push v
-                  let values := if fortran then reorderFortranToC shape raw else raw
-                  .ok { dtype := descr, shape := shape, fortran := false, values := values }
+    let mut raw : Array Float := Array.mkEmpty count
+    for i in [0:count] do
+      let v ← readNpyElement tag hdr.descr bs (hdr.dataStart + i * bytesPer)
+      raw := raw.push v
+    let values := if hdr.fortran then reorderFortranToC hdr.shape raw else raw
+    .ok { dtype := hdr.descr, shape := hdr.shape, fortran := false, values := values }
 
 /--
 Parse only the requested leading rows of a C-order `.npy` array.
 
-This supports the common tutorial workflow where a large exported tensor is kept on disk but a run
-uses only the first `n` rows. The rank and trailing dimensions must match exactly; only dim 0 may be
-larger than requested.
+This supports large exported tensors kept on disk while a run uses only the first `n` rows. The rank
+and trailing dimensions must match exactly; only dim 0 may be larger than requested.
 
-The implementation repeats the compact NPY header checks instead of calling `parseNpy`
-and slicing afterwards.  `parseNpy` decodes the entire data payload; that is fine for compact examples
-but wasteful when a command asks for a small prefix of a real image or sequence dataset.  Here we
-read the header, validate that the file layout is compatible with the requested type-level shape,
-and then decode exactly `expectedShape.product` elements.
+The implementation shares header and dtype parsing with `parseNpy`, then decodes only the requested
+prefix. This avoids building a full `Array Float` when a command asks for a small leading slice of a
+real image or sequence dataset.
 
 Why C-order only?  In row-major NPY files, the first `n` rows are physically contiguous, so the
 prefix is exactly the first `n * trailingSize` elements.  In Fortran-order files the same logical
@@ -274,85 +293,35 @@ silently returning bad rows, we reject Fortran-order prefix loading and ask call
 array to C-order first.
 -/
 def parseNpyPrefixDim0 (tag : String) (expectedShape : List Nat) (bs : ByteArray) : Result NpyData := do
-  if bs.size < 10 then
-    .error (tagError tag "file too small")
+  let hdr <- parseNpyHeaderMeta tag bs
+  let bytesPer <- npyElementBytes tag hdr.descr
+  if hdr.fortran then
+    .error (tagError tag "prefix row loading requires C-order NPY arrays")
   else
-    let magicOk :=
-      ((byteAt? bs 0).map (fun b => b.toNat == 0x93) |>.getD false)
-      && ((byteAt? bs 1).map (fun b => b.toNat == ('N' : Char).toNat) |>.getD false)
-      && ((byteAt? bs 2).map (fun b => b.toNat == ('U' : Char).toNat) |>.getD false)
-      && ((byteAt? bs 3).map (fun b => b.toNat == ('M' : Char).toNat) |>.getD false)
-      && ((byteAt? bs 4).map (fun b => b.toNat == ('P' : Char).toNat) |>.getD false)
-      && ((byteAt? bs 5).map (fun b => b.toNat == ('Y' : Char).toNat) |>.getD false)
-    if !magicOk then
-      .error (tagError tag "invalid NPY magic header")
-    else
-      let major := (byteAt? bs 6).map (fun b => b.toNat) |>.getD 0
-      if !(major = 1 || major = 2) then
-        .error (tagError tag s!"unsupported NPY version: {major}")
-      else
-        let headerLenOpt :=
-          if major = 1 then
-            readUInt16LE bs 8
+    match expectedShape, hdr.shape with
+    | expectedN :: expectedTail, actualN :: actualTail =>
+        if actualTail != expectedTail then
+          .error (tagError tag
+            s!"shape mismatch: expected trailing dims {expectedTail}, got {actualTail}")
+        else if actualN < expectedN then
+          .error (tagError tag s!"expected at least {expectedN} rows, got {actualN}")
+        else
+          let expectedCount := expectedShape.foldl (fun acc n => acc * n) 1
+          let actualCount := hdr.shape.foldl (fun acc n => acc * n) 1
+          if hdr.dataStart + actualCount * bytesPer > bs.size then
+            .error (tagError tag "NPY data truncated")
+          else if hdr.dataStart + expectedCount * bytesPer > bs.size then
+            .error (tagError tag "NPY prefix data truncated")
           else
-            readUInt32LE bs 8 |>.map UInt32.toNat
-        match headerLenOpt with
-        | none => .error (tagError tag "invalid NPY header length")
-        | some headerLen =>
-            let headerStart := if major = 1 then 10 else 12
-            let headerEnd := headerStart + headerLen
-            if headerEnd > bs.size then
-              .error (tagError tag "NPY header out of bounds")
-            else
-              let headerBytes := bs.extract headerStart headerEnd
-              let headerStr :=
-                match String.fromUTF8? headerBytes with
-                | some s => s
-                | none => ""
-              let (descr, fortran, shape) <- parseHeader tag headerStr
-              let (bytesPer, readElem) :=
-                if descr = "<f8" then
-                  (8, fun off =>
-                    match readUInt64LE bs off with
-                    | some w => .ok (Float.ofBits w)
-                    | none => .error (tagError tag "invalid float64 data"))
-                else if descr = "<f4" then
-                  (4, fun off =>
-                    match readUInt32LE bs off with
-                    | some w => .ok (Float32.toFloat (Float32.ofBits w))
-                    | none => .error (tagError tag "invalid float32 data"))
-                else
-                  (0, fun _ => .error (tagError tag s!"unsupported dtype: {descr}"))
-              if bytesPer = 0 then
-                .error (tagError tag s!"unsupported dtype: {descr}")
-              else if fortran then
-                .error (tagError tag "prefix row loading requires C-order NPY arrays")
-              else
-                match expectedShape, shape with
-                | expectedN :: expectedTail, actualN :: actualTail =>
-                    if actualTail != expectedTail then
-                      .error (tagError tag
-                        s!"shape mismatch: expected trailing dims {expectedTail}, got {actualTail}")
-                    else if actualN < expectedN then
-                      .error (tagError tag s!"expected at least {expectedN} rows, got {actualN}")
-                    else
-                      let expectedCount := expectedShape.foldl (fun acc n => acc * n) 1
-                      let actualCount := shape.foldl (fun acc n => acc * n) 1
-                      let dataStart := headerEnd
-                      if dataStart + actualCount * bytesPer > bs.size then
-                        .error (tagError tag "NPY data truncated")
-                      else if dataStart + expectedCount * bytesPer > bs.size then
-                        .error (tagError tag "NPY prefix data truncated")
-                      else
-                        let mut raw : Array Float := Array.mkEmpty expectedCount
-                        for i in [0:expectedCount] do
-                          let v ← readElem (dataStart + i * bytesPer)
-                          raw := raw.push v
-                        .ok { dtype := descr, shape := expectedShape, fortran := false, values := raw }
-                | [], [] =>
-                    .ok { dtype := descr, shape := [], fortran := false, values := #[] }
-                | _, _ =>
-                    .error (tagError tag s!"shape mismatch: expected {expectedShape}, got {shape}")
+            let mut raw : Array Float := Array.mkEmpty expectedCount
+            for i in [0:expectedCount] do
+              let v ← readNpyElement tag hdr.descr bs (hdr.dataStart + i * bytesPer)
+              raw := raw.push v
+            .ok { dtype := hdr.descr, shape := expectedShape, fortran := false, values := raw }
+    | [], [] =>
+        .ok { dtype := hdr.descr, shape := [], fortran := false, values := #[] }
+    | _, _ =>
+        .error (tagError tag s!"shape mismatch: expected {expectedShape}, got {hdr.shape}")
 
 /-- Read a `.npy` file from disk and parse it as `NpyData`. -/
 def readNpy (path : System.FilePath) : IO (Result NpyData) := do

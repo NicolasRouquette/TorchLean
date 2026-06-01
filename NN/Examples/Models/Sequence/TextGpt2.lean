@@ -61,7 +61,7 @@ namespace NN.Examples.Models.Sequence.TextGpt2
 def exeName : String := "torchlean text_gpt2"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/text_gpt2_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "text_gpt2"
 
 /-- Minimum corpus size for the default public training path: 100 MiB. -/
 def minTrainingBytes : Nat :=
@@ -481,7 +481,7 @@ def printBpePredictionProbe
 
 /--
 Greedy BPE generation by repeatedly feeding the last `seqLen` tokens and appending the final-position
-argmax. This is a compact diagnostic loop, not a high-quality sampler.
+argmax. This is a deterministic sampling path for inspecting the trained next-token model.
 -/
 def generateBpeGreedy
     (opts : Runtime.Autograd.Torch.Options)
@@ -539,7 +539,7 @@ def trainCorpusFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : TrainO
         let sample := mkByteCorpusSample (α := Float) phaseBytes step
         optH.step sample
         let done := step + 1
-        if trainOpts.logEvery != 0 && done % trainOpts.logEvery == 0 then
+        if Common.shouldLogStep trainOpts.logEvery done then
           let evalSample := mkByteCorpusSample (α := Float) phaseBytes done
           let loss ← TorchLean.Module.forward (α := Float) m evalSample
           IO.println s!"  {label} step={done} loss={Tensor.toScalar loss}"
@@ -581,8 +581,8 @@ def loadBpeCorpusTokens (trainOpts : TrainOptions) (tok : text.Gpt2Bpe.Tokenizer
     throw <| IO.userError s!"{exeName}: BPE corpus is too small for a {BpeGpt2.seqLen}-token window"
   pure arr
 
-/-- Verbose BPE loader used by this example so long startup work is visible. -/
-def loadBpeTokenizerForDemo (vocabPath mergesPath : System.FilePath) :
+/-- Load the GPT-2 BPE vocabulary and merges while reporting the longer parsing steps. -/
+def loadBpeTokenizerFromFiles (vocabPath mergesPath : System.FilePath) :
     IO text.Gpt2Bpe.Tokenizer := do
   IO.eprintln s!"{exeName}: reading BPE vocab.json"
   let vocabText ← IO.FS.readFile vocabPath
@@ -641,7 +641,7 @@ def trainBpeCorpusFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : Tra
       let sample := mkBpeCorpusSample (α := Float) tokens step
       optH.step sample
       let done := step + 1
-      if trainOpts.logEvery != 0 && done % trainOpts.logEvery == 0 then
+      if Common.shouldLogStep trainOpts.logEvery done then
         let evalSample := mkBpeCorpusSample (α := Float) tokens done
         let loss ← TorchLean.Module.forward (α := Float) m evalSample
         IO.println s!"  step={done} loss={Tensor.toScalar loss}"
@@ -675,7 +675,7 @@ def main (args : List String) : IO UInt32 := do
           match trainOpts.bpeVocab?, trainOpts.bpeMerges? with
           | some vocabPath, some mergesPath =>
               IO.eprintln s!"{exeName}: loading BPE tokenizer vocab={vocabPath} merges={mergesPath}"
-              let tok ← loadBpeTokenizerForDemo vocabPath mergesPath
+              let tok ← loadBpeTokenizerFromFiles vocabPath mergesPath
               IO.eprintln s!"{exeName}: loaded BPE tokenizer vocab={tok.vocab.size} merges={tok.merges.size}"
               let capMsg :=
                 match trainOpts.maxChars? with

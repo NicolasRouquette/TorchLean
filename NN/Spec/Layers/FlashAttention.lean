@@ -106,8 +106,8 @@ contract rather than only at an opaque fused primitive:
 3. compute the same row-wise normalized weights that an online summary converges to;
 4. multiply by values.
 
-This is intentionally schedule-polymorphic: `cfg.blockQ` and `cfg.blockK` describe how a runtime may
-tile the work, but they do not alter the denotation.
+This is schedule-polymorphic: `cfg.blockQ` and `cfg.blockK` describe how a runtime may tile the
+work, but they do not alter the denotation.
 -/
 
 /-- Unmasked attention scores `QKᵀ`. -/
@@ -196,8 +196,8 @@ def cudaLoopFlashAttention
 /--
 The CUDA denotational target has the same spec meaning as standard SDPA.
 
-This is intentionally a definitional theorem, not a proof about CUDA machine code or an online
-softmax tile recurrence.
+This is a definitional theorem about the denotational target, not a proof about CUDA machine code or
+an online softmax tile recurrence.
 -/
 @[simp] theorem cudaLoopFlashAttention_eq_scaledDotProductAttention
     (cfg : FlashAttentionConfig)

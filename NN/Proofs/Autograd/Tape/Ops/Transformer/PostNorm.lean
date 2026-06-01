@@ -648,9 +648,8 @@ block that produces the same LayerNorm context. If the LayerNorm domain hypothes
 
 is differentiable, with derivative given by the usual chain rule.
 
-This is intentionally more general than MHA: the same theorem covers Transformer, ViT, GPT-style
-blocks, and future residual modules once they expose the residual stream plus affine LayerNorm
-parameters.
+This is more general than MHA: the same theorem covers Transformer, ViT, GPT-style blocks, and
+future residual modules once they expose the residual stream plus affine LayerNorm parameters.
 -/
 theorem residualThenPostNorm_hasFDerivAt
     {E : Type u} [NormedAddCommGroup E] [NormedSpace ℝ E]

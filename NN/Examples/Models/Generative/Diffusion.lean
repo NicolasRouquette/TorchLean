@@ -51,6 +51,7 @@ Train on ImageNet64 and save visual artifacts:
 lake build -R -K cuda=true
 CUDA_VISIBLE_DEVICES=0 lake exe -K cuda=true torchlean diffusion --cuda --fast-kernels \
   --dataset imagenet64 --n-total 800 --steps 1000 --hidden-c 8 --T 100 --beta-end 0.12 \
+  --log data/model_zoo/diffusion_trainlog.json \
   --reference-ppm data/model_zoo/diffusion_reference.ppm \
   --noisy-ppm data/model_zoo/diffusion_noisy.ppm \
   --reconstruct-ppm data/model_zoo/diffusion_reconstruct.ppm \
@@ -76,7 +77,7 @@ namespace NN.Examples.Models.Generative.Diffusion
 def exeName : String := "torchlean diffusion"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/diffusionlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "diffusion"
 
 /-- Static minibatch size used by both CIFAR-10 and ImageNet64 typed branches. -/
 def batch : Nat := 4
@@ -159,25 +160,8 @@ batches, and returns NCHW tensors already mapped into `[-1,1]`.
 def loadCifarX0Batches (xPath yPath : System.FilePath) (nRows seed : Nat) :
     IO (List (Tensor Float (x0Shape RealData.cifarChannels RealData.cifarHeight
       RealData.cifarWidth))) := do
-  unless (← xPath.pathExists) do
-    throw <| IO.userError s!"{exeName}: missing CIFAR-10 images: {xPath}\n{RealData.missingCifarHint}"
-  unless (← yPath.pathExists) do
-    throw <| IO.userError s!"{exeName}: missing CIFAR-10 labels: {yPath}\n{RealData.missingCifarHint}"
-  let src := Data.LabeledSource.ofPaths .npy xPath yPath nRows
-    [RealData.cifarChannels, RealData.cifarHeight, RealData.cifarWidth] RealData.cifarClasses
-  let dsE ← src.load (α := Float)
-  let ds ←
-    match dsE with
-    | .ok ds => pure ds
-    | .error msg =>
-        throw <| IO.userError s!"{exeName}: failed to load CIFAR-10 arrays for --n-total {nRows}.\n{msg}"
-  let dl := Data.batchLoader ds batch (shuffle := true) (seed := seed) (dropLast := true)
-  let (_dl', batches) ← Common.orThrow exeName <| Data.BatchLoader.epoch exeName dl
-  match batches.map cifarBatchX0 with
-  | [] =>
-      throw <| IO.userError
-        s!"{exeName}: no full CIFAR-10 minibatch available (batch={batch}, rows={Data.size ds})"
-  | xs => pure xs
+  let batches ← RealData.loadCifarBatches (α := Float) exeName batch nRows seed xPath yPath
+  pure (batches.map cifarBatchX0)
 
 /--
 Load ImageNet64-style batches as a finite list of clean diffusion images.
@@ -188,27 +172,8 @@ only consumes the prepared `.npy` arrays and keeps the tensor shapes explicit.
 def loadImageNet64X0Batches (xPath yPath : System.FilePath) (nRows seed : Nat) :
     IO (List (Tensor Float (x0Shape RealData.imagenet64Channels RealData.imagenet64Height
       RealData.imagenet64Width))) := do
-  unless (← xPath.pathExists) do
-    throw <| IO.userError s!"{exeName}: missing ImageNet64 images: {xPath}\n{RealData.missingImageNet64Hint}"
-  unless (← yPath.pathExists) do
-    throw <| IO.userError s!"{exeName}: missing ImageNet64 labels: {yPath}\n{RealData.missingImageNet64Hint}"
-  let src := Data.LabeledSource.ofPaths .npy xPath yPath nRows
-    [RealData.imagenet64Channels, RealData.imagenet64Height, RealData.imagenet64Width]
-    RealData.imagenet64Classes
-  let dsE ← src.load (α := Float)
-  let ds ←
-    match dsE with
-    | .ok ds => pure ds
-    | .error msg =>
-        throw <| IO.userError
-          s!"{exeName}: failed to load ImageNet64 arrays for --n-total {nRows}.\n{msg}"
-  let dl := Data.batchLoader ds batch (shuffle := true) (seed := seed) (dropLast := true)
-  let (_dl', batches) ← Common.orThrow exeName <| Data.BatchLoader.epoch exeName dl
-  match batches.map imageNet64BatchX0 with
-  | [] =>
-      throw <| IO.userError
-        s!"{exeName}: no full ImageNet64 minibatch available (batch={batch}, rows={Data.size ds})"
-  | xs => pure xs
+  let batches ← RealData.loadImageNet64Batches (α := Float) exeName batch nRows seed xPath yPath
+  pure (batches.map imageNet64BatchX0)
 
 /--
 Deterministic Gaussian noise tensor for a dataset shape and logical step.
@@ -352,7 +317,7 @@ def trainCurveFloat {c h w : Nat} [NeZero c] [NeZero h] [NeZero w]
       optH.step s
       let done := step + 1
       memWatch? ← Common.reportCudaMemWatch opts cudaMemWatch cfg.steps done memWatch?
-      if cfg.logEvery != 0 && done % cfg.logEvery == 0 then
+      if Common.shouldLogStep cfg.logEvery done then
         let loss ← TorchLean.Module.forward (α := Float) m evalSample
         last := Tensor.toScalar loss
         curve := curve.push done last

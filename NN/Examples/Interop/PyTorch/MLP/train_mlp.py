@@ -1,8 +1,7 @@
 """
-Train the compact MLP example and export its weights to JSON for TorchLean.
+Train the MLP reference example and export its weights to JSON for TorchLean.
 
-This script is intentionally compact: it trains on a single fixed input/target pair and then
-writes a JSON object that matches the importer in:
+The training run uses a fixed input/target pair and writes a JSON object that matches the importer in:
 
   `NN/Examples/Interop/PyTorch/MLP/Import.lean` (`Import.MLPPyTorch.loadMlpStateDict`).
 
@@ -24,7 +23,7 @@ THIS_DIR = Path(__file__).resolve().parent
 
 
 class TestMLP(nn.Module):
-    """Compact MLP: Linear(2→3) → ReLU → Linear(3→1)."""
+    """Reference MLP: Linear(2→3) → ReLU → Linear(3→1)."""
 
     def __init__(self):
         super().__init__()
@@ -50,8 +49,8 @@ def save_mlp_to_json(model: TestMLP, json_path: str):
     """Save MLP weights to JSON.
 
     Notes:
-    - `Import.MLPPyTorch` supports both `fc1.weight`/`fc2.bias` keys and the older
-      `layers.0.weight`/`layers.2.bias` sequential-style keys.
+    - `Import.MLPPyTorch` supports both named-module keys (`fc1.weight`/`fc2.bias`)
+      and sequential-module keys (`layers.0.weight`/`layers.2.bias`).
     - We emit the sequential-style keys to keep the file format stable across
       different PyTorch module naming conventions.
     """

@@ -372,6 +372,25 @@ def propagateAffineNode
         | none => affs
       | _, _ => affs
     | _ => affs
+  | .batchNorm2dNchwEval .. =>
+    match node.parents with
+    | p1 :: _ =>
+      match getAff p1, ps.batchNorm2dNchwEval[id]? with
+      | some paff, some cfg =>
+        match batchNorm2dNchwEvalLinear? (α := α) nodes[p1]!.outShape cfg with
+        | some p =>
+          if hdim : paff.outDim = p.n then
+            let bnAff0 := affOfLinear (α := α) p
+            let bnAff := castAffineIn (α := α) (n := p.n) (n' := paff.outDim) (m := p.m)
+              hdim.symm bnAff0
+            let composed := AffineVec.compose (α := α)
+              (n := paff.inDim) (h := paff.outDim) (m := p.m) bnAff paff.aff
+            affs.set! id (some { inDim := paff.inDim, outDim := p.m, aff := composed })
+          else
+            affs
+        | none => affs
+      | _, _ => affs
+    | _ => affs
   | .exp =>
     -- Use a simple linear upper envelope over [l,u]: secant line of exp
     match node.parents with
@@ -531,16 +550,7 @@ def propagateAffineNode
           let mu_hi := sum_hi / nA
           let flo := getDimScalarFn (α:=α) preB'.lo
           let fhi := getDimScalarFn (α:=α) preB'.hi
-          -- Upper bound on variance as before
-          let sumAbsSq : α := (List.finRange n).foldl (fun acc (i : Fin n) =>
-            match flo i, fhi i with
-            | .scalar l, .scalar u =>
-              let dl := MathFunctions.abs (l - mu_hi)
-              let du := MathFunctions.abs (u - mu_lo)
-              let a := if dl > du then dl else du
-              acc + (a * a)
-          ) 0
-          let var_hi := sumAbsSq / nA
+          let var_hi := layerNormVarianceUpper (α := α) preB'.lo preB'.hi mu_lo mu_hi
           let s_lo := MathFunctions.sqrt Numbers.epsilon
           let s_hi := MathFunctions.sqrt (var_hi + Numbers.epsilon)
           let t_lo := Numbers.one / (if s_hi > Numbers.epsilon then s_hi else Numbers.epsilon)

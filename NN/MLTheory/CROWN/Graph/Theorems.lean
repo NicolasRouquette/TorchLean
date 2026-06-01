@@ -51,7 +51,7 @@ lemma ibp_linear_output_dim
   : ((ibp_linear (α:=α) id ps Xin).map (·.dim) = some p.m) := by
   -- From the definition of `ibp_linear`, the result is `some (toFlatBox p.m yB)`.
   -- Mapping `(·.dim)` over that gives `some p.m` by `toFlatBox_dim`.
-  simp [ibp_linear, h, hstore, toFlatBox_dim]
+  simp [ibp_linear, ibpLinearParams, h, hstore, toFlatBox_dim]
 
 /-- Simple shape-preservation facts for FlatBox combinators used by IBP. -/
 lemma box_add_dim (B1 B2 : FlatBox α) : (box_add (α:=α) B1 B2).dim = B1.dim := by

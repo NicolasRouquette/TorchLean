@@ -10,6 +10,7 @@ public import NN
 public import NN.API.Models.Gpt2
 public import NN.Runtime.Autograd.TorchLean.NN
 public import NN.API.Runtime
+public import NN.Examples.Models.Common.RealData
 
 /-!
 # Char-GPT (minGPT-style) Example
@@ -25,9 +26,9 @@ by Andrej Karpathy's minGPT/nanoGPT teaching material:
 It uses TorchLean's one-hot token interface (`batch × seqLen × vocab`) so the whole example stays in
 the same typed tensor world as the rest of the codebase.
 
-Implementation note: training draws a fresh deterministic random window each step (minGPT-style
-`get_batch`). The `--windows` flag is still accepted for compatibility, but it no longer controls
-how many windows are precomputed.
+Implementation note: training draws a fresh deterministic random window each step, following the
+minGPT/nanoGPT batching pattern. The `--windows` flag is accepted as a corpus-scale hint for shared
+scripts, but this command does not precompute a fixed window table.
 
 ```bash
 lake build -R -K cuda=true torchlean:exe
@@ -46,19 +47,10 @@ namespace NN.Examples.Models.Sequence.CharGpt
 /-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean chargpt"
 
-/-- Default single-file text corpus used by `--tiny-shakespeare`. -/
-def tinyShakespearePath : System.FilePath :=
-  "data/real/text/tiny_shakespeare.txt"
-
-/-- Error message shown when the default corpus has not been downloaded yet. -/
-def missingTextHint : String :=
-  "Download Tiny Shakespeare with:\n" ++
-  "  python3 scripts/datasets/download_example_data.py --tiny-shakespeare"
-
 /-- Parse corpus flags and return the UTF-8 training text plus remaining CLI arguments. -/
 def takeInputText (args : List String) : IO (String × List String) :=
-  text.Corpus.takeUtf8Input exeName tinyShakespearePath
-    [("--tiny-shakespeare", tinyShakespearePath)] missingTextHint args
+  text.Corpus.takeUtf8Input exeName RealData.tinyShakespearePath
+    [("--tiny-shakespeare", RealData.tinyShakespearePath)] RealData.missingTinyShakespeareHint args
 
 /-- Build a deterministic character alphabet from the corpus. -/
 def buildAlphabet (s : String) : Array Char :=
@@ -76,10 +68,10 @@ structure TrainOptions where
   /-- Character context length. -/
   seqLen : Nat
   /--
-  Accepted for CLI compatibility with fixed-window trainer entrypoints.
+  Corpus-scale hint accepted by the shared model CLI.
 
-  CharGPT draws a fresh random window each step (minGPT-style), so training does not depend on
-  precomputing a fixed `windows` array. We still accept `--windows` so scripts don't break.
+  CharGPT draws a fresh random window each step, so the value is recorded with the run metadata
+  rather than used to build a fixed window table.
   -/
   windows : Nat
   /-- Prompt used for before/after reports and generation. -/
@@ -105,7 +97,7 @@ structure TrainOptions where
 deriving Repr
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/chargpt_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "chargpt"
 
 namespace TrainOptions
 
@@ -148,14 +140,11 @@ def parseTrainOptions (opts : Runtime.Autograd.Torch.Options) (args : List Strin
   let (loadParamsRaw?, args) ← CLI.takeFlagValueOnce args "load-params"
   let (saveParamsRaw?, args) ← CLI.takeFlagValueOnce args "save-params"
   let batch := batch?.getD 4
-  if batch = 0 then
-    throw s!"{exeName}: --batch must be > 0"
+  Common.requirePositiveNatFlag exeName "batch" batch
   let seqLen := seqLen?.getD 128
-  if seqLen = 0 then
-    throw s!"{exeName}: --seq-len must be > 0"
+  Common.requirePositiveNatFlag exeName "seq-len" seqLen
   let windows := windows?.getD 256
-  if windows = 0 then
-    throw s!"{exeName}: --windows must be > 0"
+  Common.requirePositiveNatFlag exeName "windows" windows
   pure ({ base := base
           batch := batch
           seqLen := seqLen

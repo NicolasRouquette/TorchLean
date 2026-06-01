@@ -22,8 +22,8 @@ Reading map:
 * `denoteAllState_nil`: base case table lemma for the empty compiled prefix.
 * `permuteDVal_eq_applySwapsTensor` (+ helper): connects IR permutation semantics to the runtime
   swap-based implementation.
-* `buildFrom_denoteAllFrom_{unary,binary}_exact`: named lemmas that package the standard
-  semantic equivalence proof pattern once a `nodeData` closure has been constructed.
+* `buildFrom_denoteAllFrom_nodeData_exact`: packages the standard semantic equivalence proof
+  pattern once a `nodeData` closure has been constructed.
 
 These helpers exist because the main correctness proof is expensive to elaborate. They keep the
 recursive theorem from re-solving the same typed-context and dynamic-value facts for every operator.
@@ -113,62 +113,13 @@ theorem permuteDVal_eq_applySwapsTensor
 attribute [grind =] applySwapsTensor_eq_foldl_applySwapDepth
 
 /--
-Semantic Equivalence lemma for a unary op compilation step (already-compiled `nodeData`).
+Semantic equivalence lemma for a compilation step after the typed `nodeData` has been built.
 
-This packages the common pattern for unary operators: compile the node, compute its forward value,
-push it onto the value table, and appeal to the inductive hypothesis for the tail.
+Many operator cases differ only in how they validate parents and construct the forward closure.
+Once that closure and the matching `evalAt` fact are available, the tail-of-graph argument is the
+same for unary, binary, and shape-changing nodes.
 -/
-theorem buildFrom_denoteAllFrom_unary_exact
-    {α : Type} [Context α] [DecidableEq Shape]
-    (g : NN.IR.Graph) (payload : Payload α) {inShape : Shape} {ss : List Shape}
-    (gd : GraphData α Unit [inShape] ss)
-    (i : Nat) (st' : State α inShape) (x : Tensor α inShape)
-    (hi : i < g.nodes.size)
-    (τ : Shape)
-    (nodeData : NodeData α Unit ([inShape] ++ ss) τ)
-    (hTail :
-      NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := NN.IR.DVal.mk (α := α) inShape x) (i := i + 1)
-          (vals := denoteAllState (α := α) inShape
-            (st := (⟨ss ++ [τ], .snoc (ss := ss) gd nodeData⟩ : State α inShape)) x) =
-        .ok (denoteAllState (α := α) inShape st' x))
-    (hEval :
-      NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
-          (input := NN.IR.DVal.mk (α := α) inShape x)
-          (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x)
-          (i := i) =
-        .ok
-          (NN.IR.DVal.mk (α := α) τ
-            (nodeData.forward
-              (GraphData.eval (α := α) (Δ := Unit) (Γ := [inShape]) (ss := ss) gd (.cons x .nil) ())
-                ()))) :
-    NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-        (input := NN.IR.DVal.mk (α := α) inShape x) (i := i)
-        (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
-      .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (NN.IR.DVal α) :=
-    denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
-    GraphData.eval (α := α) (Δ := Unit) (Γ := [inShape]) (ss := ss) gd (.cons x .nil) ()
-  let input : NN.IR.DVal α := NN.IR.DVal.mk (α := α) inShape x
-  have hStep :
-      denoteAllState (α := α) inShape
-          (st := (⟨ss ++ [τ], .snoc (ss := ss) gd nodeData⟩ : State α inShape)) x =
-        vals0.push (NN.IR.DVal.mk (α := α) τ (nodeData.forward ctx ())) := by
-    simpa [vals0, ctx] using
-      (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss) (τ := τ)
-        (gd := gd) (nodeData := nodeData) (x := x))
-  exact buildFrom_denoteAllFrom_finish (α := α) (g := g) (payload := payload)
-    (i := i) (x := x) (hi := hi) (τ := τ) (nodeData := nodeData)
-    (st1 := ⟨ss ++ [τ], .snoc (ss := ss) gd nodeData⟩) (st' := st')
-    (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval hStep
-
-/--
-Semantic Equivalence lemma for a binary op compilation step (already-compiled `nodeData`).
-
-This is the two-parent analogue of `buildFrom_denoteAllFrom_unary_exact`.
--/
-theorem buildFrom_denoteAllFrom_binary_exact
+theorem buildFrom_denoteAllFrom_nodeData_exact
     {α : Type} [Context α] [DecidableEq Shape]
     (g : NN.IR.Graph) (payload : Payload α) {inShape : Shape} {ss : List Shape}
     (gd : GraphData α Unit [inShape] ss)

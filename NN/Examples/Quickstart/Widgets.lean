@@ -25,8 +25,8 @@ Use this file in the editor:
 - Lean's infoview renders an interactive panel;
 - if you want the full gallery, open `NN.Examples.Advanced.Widgets`.
 
-This quickstart keeps only the smallest useful examples so the widget path does not feel like a
-full model zoo.
+This quickstart keeps only the smallest useful examples; the full widget gallery lives in
+`NN.Examples.Advanced.Widgets`.
 -/
 
 @[expose] public section

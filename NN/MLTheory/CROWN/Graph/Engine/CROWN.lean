@@ -31,25 +31,16 @@ variable [BoundOps α]
 open BoundOps
 
 /-!
-Basic CROWN-style affine bounds pass (lower + upper)
-===================================================
+For a chosen flattened input node `ctx.inputId`, the pass computes a pair of affine forms
+`loAff(x) ≤ node(x) ≤ hiAff(x)` for each supported node.  The transfer rules below use the usual
+CROWN/DeepPoly ingredients:
 
-This pass computes a *pair* of affine forms per node:
-
-  loAff(x) ≤ node(x) ≤ hiAff(x)
-
-where both affines are with respect to a designated flattened input node `ctx.inputId`.
-
-This pass is a practical CROWN/DeepPoly implementation:
 - Linear layers use sign-splitting (`W⁺/W⁻`) to combine parent bounds.
 - ReLU uses the standard triangle upper bound and a simple evidence-based lower choice (0 vs x).
 - Exp/log use secant/tangent bounds (convex/concave).
-- Softmax/LayerNorm have conservative last-axis affine relaxations; on unsupported axes or
-  shape mismatches we fall back to *constant* affine bounds derived from the IBP box.
+- Softmax and LayerNorm use conservative last-axis relaxations.
 
-The pass is structured so a soundness theorem can cite per-op transfer rules for the supported
-relaxations. Unsupported axes or shape mismatches use constant affine bounds derived from the IBP
-box.
+Unsupported axes or shape mismatches fall back to constant affine bounds derived from the IBP box.
 -/
 
 /-- Exact lower and upper affine bounds for the identity node. -/
@@ -690,15 +681,11 @@ def propagateLayernormBoundsLastAxis
           let base := g.val * m
           let muLo := getAtOrZero muLoG [g.val]
           let muHi := getAtOrZero muHiG [g.val]
-          let sumAbsSq : α :=
-            (List.range m).foldl (fun acc j =>
-              let l := getAtOrZero preB.lo [base + j]
-              let u := getAtOrZero preB.hi [base + j]
-              let dl := MathFunctions.abs (l - muHi)
-              let du := MathFunctions.abs (u - muLo)
-              let a := if dl > du then dl else du
-              acc + (a * a)) 0
-          let varHi := sumAbsSq / mA
+          let loSlice : Tensor α (.dim m .scalar) :=
+            Tensor.dim (fun j => Tensor.scalar (getAtOrZero preB.lo [base + j.val]))
+          let hiSlice : Tensor α (.dim m .scalar) :=
+            Tensor.dim (fun j => Tensor.scalar (getAtOrZero preB.hi [base + j.val]))
+          let varHi := layerNormVarianceUpper (α := α) loSlice hiSlice muLo muHi
           Tensor.scalar (MathFunctions.sqrt (varHi + Numbers.epsilon)))
       let flo := getDimScalarFn (α := α) preB.lo
       let fhi := getDimScalarFn (α := α) preB.hi
@@ -1599,6 +1586,21 @@ def propagateCROWNNode
             else bounds
           | none => bounds
       | none => bounds
+    | _ => bounds
+  | .batchNorm2dNchwEval .. =>
+    match node.parents with
+    | p1 :: _ =>
+      match getB p1, ps.batchNorm2dNchwEval[id]? with
+      | some xin, some cfg =>
+        match batchNorm2dNchwEvalLinear? (α := α) nodes[p1]!.outShape cfg with
+        | some p =>
+          if hout : xin.outDim = p.n then
+            let out := propagateLinearBounds (α := α) (n := p.n) (m := p.m) p.w p.b xin hout
+            bounds.set! id (some out)
+          else
+            bounds
+        | none => bounds
+      | _, _ => bounds
     | _ => bounds
 
 /-- Run the basic CROWN affine-bounds pass; requires prior IBP for per-node intervals. -/

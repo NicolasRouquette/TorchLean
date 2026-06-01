@@ -1,7 +1,7 @@
 # AbCrown Verification Assets
 
 The reusable Lean checker lives in `NN/Verification/Cert/AbCrownLeafCert.lean`.
-This folder keeps only the compact offline sample artifact:
+This folder keeps the reviewable offline sample artifact:
 
 - `sample_abcrown_leaf_cert_v0_1.json`
 

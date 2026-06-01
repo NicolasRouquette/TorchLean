@@ -37,7 +37,7 @@ Optional testing command:
 - `trainLogHtml`: render scalar metric series and recent-step tables.
 - `confusionHtml`: render confusion matrix + per-class precision/recall.
 - `#train_log_view` / `#train_log_file_view`: in-memory and file-backed entry points.
-- `#confusion_view`: quick classifier diagnostics.
+- `#confusion_view`: classifier diagnostics for a label/confusion-matrix pair.
 
 ## Implementation notes
 

@@ -14,12 +14,9 @@ Device-agnostic example:
     --prompt "First Citizen:" --generate 160
 
 Dataset example:
-  mkdir -p data/real/text
-  curl -L https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt \
-    -o data/real/text/tiny_shakespeare.txt
-  lake exe torchlean gpt2 --cuda --data-file data/real/text/tiny_shakespeare.txt --steps 100
-  lake exe torchlean gpt2 --cuda --fast-kernels --data-file data/real/text/tiny_shakespeare.txt \
-    --steps 100
+  python3 scripts/datasets/download_example_data.py --tiny-shakespeare
+  lake exe torchlean gpt2 --cuda --tiny-shakespeare --steps 100
+  lake exe torchlean gpt2 --cuda --fast-kernels --tiny-shakespeare --steps 100
 
 This is a compact GPT-2-style *causal* language-model command (byte-level tokens).
 
@@ -43,6 +40,7 @@ public import NN
 public import NN.API.Models.Gpt2
 public import NN.Runtime.Autograd.TorchLean.NN
 public import NN.API.Runtime
+public import NN.Examples.Models.Common.RealData
 
 /-!
 GPT-2 style sequence model example.
@@ -79,7 +77,7 @@ namespace NN.Examples.Models.Sequence.Gpt2
 def exeName : String := "torchlean gpt2"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/gpt2_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "gpt2"
 
 /--
 Batch size for the byte-level causal Transformer.
@@ -128,21 +126,6 @@ def layers : Nat := 2
 
 local instance : NeZero seqLen := ⟨by decide⟩
 local instance : NeZero dModel := ⟨by decide⟩
-
-/-- Conventional local path for the Tiny Shakespeare text corpus. -/
-def tinyShakespearePath : System.FilePath :=
-  "data/real/text/tiny_shakespeare.txt"
-
-/-- Conventional local path for the TinyStories validation slice. -/
-def tinyStoriesValidPath : System.FilePath :=
-  "data/real/text/tinystories_valid.txt"
-
-/-- Shared data-preparation hint for the GPT text examples. -/
-def missingTextHint : String :=
-  "Download Tiny Shakespeare with:\n" ++
-  "  python3 scripts/datasets/download_example_data.py --tiny-shakespeare\n" ++
-  "For TinyStories (valid split):\n" ++
-  "  python3 scripts/datasets/download_example_data.py --tinystories-valid"
 
 /-- Input shape: batched byte-level one-hot token windows. -/
 abbrev σ : Shape :=
@@ -198,9 +181,10 @@ def mkSample {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
 Parse GPT-2-specific data flags and return the training corpus plus remaining runtime flags.
 -/
 def takeInputText (args : List String) : IO (String × List String) :=
-  text.Corpus.takeUtf8Input exeName tinyShakespearePath
-    [("--tiny-shakespeare", tinyShakespearePath), ("--tinystories-valid", tinyStoriesValidPath)]
-    missingTextHint args
+  text.Corpus.takeUtf8Input exeName RealData.tinyShakespearePath
+    [("--tiny-shakespeare", RealData.tinyShakespearePath),
+      ("--tinystories-valid", RealData.tinyStoriesValidPath)]
+    RealData.missingTinyShakespeareOrTinyStoriesHint args
 
 /-- Parsed training, sampling, and checkpoint options for the byte-level GPT command. -/
 structure TrainOptions where
@@ -276,8 +260,7 @@ def parseTrainOptions (opts : Runtime.Autograd.Torch.Options) (args : List Strin
   let (loadParamsRaw?, args) ← CLI.takeFlagValueOnce args "load-params"
   let (saveParamsRaw?, args) ← CLI.takeFlagValueOnce args "save-params"
   let windows := windows?.getD 128
-  if windows = 0 then
-    throw s!"{exeName}: --windows must be > 0"
+  Common.requirePositiveNatFlag exeName "windows" windows
   pure ({ base := base
           windows := windows
           prompt := gen.prompt
@@ -459,7 +442,7 @@ def trainLogNotes (opts : Runtime.Autograd.Torch.Options) (train : TrainOptions)
   | some cudaMemWatch => #[s!"cuda_mem_watch={cudaMemWatch}"]
 
 /-- Write the standard byte-level GPT before/after loss log. -/
-def writeTrainLog (opts : Runtime.Autograd.Torch.Options) (train : TrainOptions)
+def writeGpt2TrainLog (opts : Runtime.Autograd.Torch.Options) (train : TrainOptions)
     (loss0 loss1 : Float) (generated : String) (cudaMemWatch? : Option Nat := none) : IO Unit :=
   Common.writeBeforeAfterLossLogTo train.log "GPT-2 byte prompt training" train.steps loss0 loss1
     (trainLogNotes opts train generated cudaMemWatch?)
@@ -476,7 +459,7 @@ def saveParamsIfRequested
         (paramShapes := nn.paramShapes model) (inputShapes := [σ, τ]) m path
       IO.println s!"  wrote params: {path}"
 
-/-- Scalar-polymorphic compatibility path for one fixed byte-level training sample. -/
+/-- Scalar-polymorphic training path for one fixed byte-level sample. -/
 def unitTrainSteps {α : Type} [Semantics.Scalar α] [DecidableEq Shape] [ToString α]
     [Runtime.Scalar α] [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (cast : Float → α) (opts : Runtime.Autograd.Torch.Options) (input : String) (steps : Nat) :
@@ -504,15 +487,16 @@ def unitTrainSteps {α : Type} [Semantics.Scalar α] [DecidableEq Shape] [ToStri
 
       let loss1 ← TorchLean.Module.forward (α := α) m sample
       let L1 := Tensor.toScalar loss1
-      IO.println s!"  steps={steps} loss0={L0} loss1={L1}"
+      Common.printFitReport steps
+        ({ before := L0, after := L1 } : TorchLean.Trainer.FitReport α)
       pure (L0, L1)
 
 /--
 Float-specialized training path with decoded prediction reports.
 
 The CUDA executable uses Lean `Float` tensors, so this branch can show actual prompt,
-target, and predicted text before and after training. The polymorphic path above is still used for
-non-Float dtype compatibility runs.
+target, and predicted text before and after training. The polymorphic path above remains useful for
+checking the same training loop over other scalar backends.
 -/
 def unitTrainStepsFloat (opts : Runtime.Autograd.Torch.Options) (input : String)
     (train : TrainOptions) : IO (Float × Float × String) := do
@@ -539,7 +523,7 @@ def unitTrainStepsFloat (opts : Runtime.Autograd.Torch.Options) (input : String)
       let generatedIds ← generateSampled opts model m.trainer.params train.prompt train.generate
         train.temperature train.topK train.seed train.repeatWindow train.repeatPenalty train.asciiOnly
       let generated := text.escapeByteIdsForDisplay generatedIds
-      writeTrainLog opts train L0 L0 generated
+      writeGpt2TrainLog opts train L0 L0 generated
       saveParamsIfRequested model m train
       pure (L0, L0, generated)
     else
@@ -572,7 +556,7 @@ def unitTrainStepsFloat (opts : Runtime.Autograd.Torch.Options) (input : String)
       IO.println s!"  repetition_penalty={train.repeatPenalty} repeat_window={train.repeatWindow}"
       if train.interactive then
         interactiveLoopFloat opts model m train
-      writeTrainLog opts train L0 L1 generated (some cudaMemWatch)
+      writeGpt2TrainLog opts train L0 L1 generated (some cudaMemWatch)
       saveParamsIfRequested model m train
       pure (L0, L1, generated)
 

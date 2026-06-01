@@ -406,9 +406,8 @@ def softmax {α : Type} [Context α] [Add α] [Zero α] [DecidableEq Shape]
 /--
 Stable log-softmax along the last axis.
 
-This is intentionally a primitive in the compiled graph, not the composition
-`log ∘ softmax`, so proof/IR execution and eager CUDA share the same PyTorch-style numerical
-contract.
+This is a primitive in the compiled graph, not the composition `log ∘ softmax`, so proof/IR
+execution and eager CUDA share the same PyTorch-style numerical contract.
 -/
 def logSoftmax {α : Type} [Context α] [Add α] [Zero α] [DecidableEq Shape]
   {Δ : Type} {Γ : List Shape} {s : Shape} (x : Var s) : MWith α Δ Γ (Var s) := do

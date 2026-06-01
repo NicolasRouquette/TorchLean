@@ -16,15 +16,15 @@ set_option linter.unnecessarySimpa false
 
 Semantic-preservation lemmas for unary activation operators in the IR -> compiled runtime bridge.
 
-Each lemma mirrors the corresponding branch in `Correctness/SemanticEquivalence.lean`, but is
-named and factored out so we can keep the main semantic equivalence proof focused on graph
-traversal rather than repeating parent-list and typed-index boilerplate.
+Each lemma mirrors the corresponding branch in `Correctness/SemanticEquivalence.lean` and gives
+that operator a stable theorem name. The main semantic equivalence proof can then focus on graph
+traversal instead of carrying every parent-list and typed-index detail inline.
 
 Build note: these proofs can be slower than the operators look. The activation itself is simple;
 the proof cost comes from checking the singleton-parent contract, recovering a typed index from the
 IR parent id, and showing that the dynamically evaluated `DVal` is the same value as the compiled
-node output. The shared unary-operator skeleton keeps each activation
-only supplies its tensor function.
+node output. The shared unary-operator skeleton keeps each activation branch focused on its tensor
+function.
 -/
 
 @[expose] public section
@@ -114,7 +114,7 @@ theorem buildFrom_denoteAllFrom_relu
                 simp [NN.IR.Graph.evalAt, hN, hk, hp, hExp,
                   nodeData, mkFwdNode, NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
 
@@ -187,7 +187,7 @@ theorem buildFrom_denoteAllFrom_tanh
                 simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
                   nodeData, mkFwdNode, NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
 
@@ -260,7 +260,7 @@ theorem buildFrom_denoteAllFrom_sigmoid
                 simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
                   nodeData, mkFwdNode, NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
 
@@ -333,7 +333,7 @@ theorem buildFrom_denoteAllFrom_exp
                 simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
                   nodeData, mkFwdNode, NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
 
@@ -413,7 +413,7 @@ theorem buildFrom_denoteAllFrom_log
                 simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
                   nodeData, mkFwdNode, NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
 
@@ -487,7 +487,7 @@ theorem buildFrom_denoteAllFrom_sin
                 simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
                   nodeData, mkFwdNode, NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
 
@@ -561,7 +561,7 @@ theorem buildFrom_denoteAllFrom_cos
                 simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
                   nodeData, mkFwdNode, NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
 

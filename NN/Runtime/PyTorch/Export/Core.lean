@@ -24,7 +24,7 @@ Design note (PyTorch export APIs, for context only):
 PyTorch also has *graph capture* / *serialization* mechanisms such as ONNX export and
   `torch.export`.
 Those APIs produce IR-like artifacts intended for execution in other runtimes. TorchLean's exporter
-in this folder instead emits plain Python source primarily for readability and for round-trip tests.
+in this folder emits auditable Python source for parity checks and round-trip tests.
 
 Reading map:
 
@@ -77,6 +77,9 @@ structure PyTorchExportMetadata (α : Type) (s t : Shape) where
 
 /-- Join a list of lines with newline separators. -/
 def joinLines (xs : List String) : String := String.intercalate "\n" xs
+/-- Render a Lean `Bool` as the corresponding Python literal. -/
+def pyBool (b : Bool) : String :=
+  if b then "True" else "False"
 /-- Indent a line by `n` spaces. -/
 def indent (n : Nat) (s : String) : String :=
   -- Use a computable definition (Lean's `String.replicate` is `meta` in some imports).

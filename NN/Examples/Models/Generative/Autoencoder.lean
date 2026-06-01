@@ -32,7 +32,7 @@ namespace NN.Examples.Models.Generative.Autoencoder
 def exeName : String := "torchlean autoencoder"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/autoencoder_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "autoencoder"
 
 /--
 Shared vector-image configuration.
@@ -66,28 +66,11 @@ fits the autoencoder for `--steps`, and writes the standard TorchLean training c
 def main (args : List String) : IO UInt32 := do
   TorchLean.Module.run exeName args
     (.float (fun opts rest => do
-      let (xPath, yPath, nRows, seed, rest) ← Common.orThrow exeName <| RealData.parseCifarFlags rest
-      let (train, rest) ← Common.orThrow exeName <|
-        Common.parseLoggedTrainFlags exeName rest defaultLogJson 10
-      Common.orThrow exeName <| CLI.requireNoArgs rest
-      let x ← RealData.loadCifarVectorBatch cfg (by decide) exeName xPath yPath nRows seed
-      let sample := nn.models.reconstructionSample cfg x
-      let curve ←
-        _root_.NN.API.Models.TrainFixed.curveFloat
-          (mkModel := mkModel)
-          (mkModuleDef := fun model => nn.mseScalarModuleDef model)
-          (mkOptim := fun ps =>
-            TorchLean.Optim.adam (α := Float) (paramShapes := ps)
-              (lr := 1e-3) (beta1 := 0.9) (beta2 := 0.999) (epsilon := 1e-8))
-          (opts := opts) (sample := sample) (steps := train.steps)
-          (cudaMemWatch := train.cudaMemWatch)
-      let loss0 := curve.values.getD 0 0.0
-      let lossN := curve.values.getD (curve.values.size - 1) loss0
-      IO.println s!"  steps={train.steps} loss0={loss0} loss{train.steps}={lossN}"
-      Common.writeCurveLogTo train.log "Autoencoder CIFAR reconstruction" curve "loss"
-        #[s!"data=cifar10", s!"x={xPath}", s!"y={yPath}", s!"nRows={nRows}",
-          s!"device={if opts.useGpu then "cuda" else "cpu"}",
-          s!"cuda_mem_watch={Common.effectiveCudaMemWatch opts train.steps train.cudaMemWatch}"]
+      let flags ← Common.orThrow exeName <|
+        RealData.parseCifarLoggedTrainFlags exeName rest defaultLogJson 10
+      let _curve ← RealData.fitCifarVectorCurve cfg (by decide) exeName
+        "Autoencoder CIFAR reconstruction" mkModel (nn.models.reconstructionSample cfg)
+        opts flags #[s!"x={flags.xPath}", s!"y={flags.yPath}"]
     ))
     { banner? := some (fun opts =>
         s!"{exeName}: CIFAR vector reconstruction (device={if opts.useGpu then "cuda" else "cpu"})")

@@ -36,6 +36,14 @@ namespace Process
 open Lean
 
 /-!
+## Artifact paths
+-/
+
+/-- Build-directory scratch space for subprocess adapters and generated check artifacts. -/
+def artifactWorkDir (stem : String) : System.FilePath :=
+  System.FilePath.mk s!".lake/build/torchlean_{stem}"
+
+/-!
 ## Executable resolution
 -/
 
@@ -65,6 +73,14 @@ def isCmdAvailable (cmd : String) (args : Array String := #["--version"]) : IO B
     pure (out.exitCode == 0)
   catch _ =>
     pure false
+
+/-- Check whether a Python command can import the requested modules. -/
+def pythonCanImport (modules : Array String) (pythonCmd : String := "python3") : IO Bool := do
+  if modules.isEmpty then
+    pure true
+  else
+    let code := "import " ++ String.intercalate ", " modules.toList
+    isCmdAvailable pythonCmd #["-c", code]
 
 /--
 Require a command to be available and return the command name/path.

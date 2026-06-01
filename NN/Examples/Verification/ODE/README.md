@@ -1,9 +1,9 @@
-# ODE Verification Fixtures
+# ODE Verification Artifacts
 
-The reusable ODE verifier lives under `NN/Verification/ODE`. This folder contains compact JSON
-fixtures consumed by the unified verifier CLI.
+The reusable ODE verifier lives under `NN/Verification/ODE`. This folder contains small JSON
+artifacts consumed by the unified verifier CLI.
 
-The JSON files here are compact fixtures for small checks and examples:
+The JSON files here are curated artifacts for small checks and examples:
 
 - `sample_ode_cert.json`
 - `sin_cert.json`
@@ -24,5 +24,5 @@ Regenerate the curated ODE assets with:
 python3 scripts/verification/regenerate_assets.py --group ode --run
 ```
 
-These files are small enough to keep as public fixtures. Larger learned ODE/PINN weights should be
+These files are small enough to keep in the public repository. Larger learned ODE/PINN weights should be
 stored outside git and passed to `lake exe verify -- ode ...` explicitly.

@@ -1,13 +1,9 @@
 #include <lean/lean.h>
+
+#include "torchlean_size_common.h"
+
 #include <stddef.h>
 #include <stdint.h>
-
-static inline size_t checked_mul_size(size_t a, size_t b, const char* msg) {
-  if (a != 0 && b > SIZE_MAX / a) {
-    lean_internal_panic(msg);
-  }
-  return a * b;
-}
 
 // CPU fallback for `torchlean_dgemm_cuda`.
 //

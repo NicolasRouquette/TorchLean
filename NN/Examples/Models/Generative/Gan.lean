@@ -41,7 +41,7 @@ namespace NN.Examples.Models.Generative.Gan
 def exeName : String := "torchlean gan"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/gan_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "gan"
 
 /--
 Shared vector-image configuration.
@@ -128,15 +128,12 @@ the combined loss curve to the requested logging destination.
 def main (args : List String) : IO UInt32 := do
   TorchLean.Module.run exeName args
     (.float (fun opts rest => do
-      let (xPath, yPath, nRows, seed, rest) ← Common.orThrow exeName <| RealData.parseCifarFlags rest
-      let (train, rest) ← Common.orThrow exeName <|
-        Common.parseLoggedTrainFlags exeName rest defaultLogJson 10
-      Common.orThrow exeName <| CLI.requireNoArgs rest
-      let curve ← trainCurve opts xPath yPath nRows seed train.steps train.cudaMemWatch
-      Common.writeCurveLogTo train.log "GAN-style CIFAR training" curve "total_loss"
-        #[s!"data=cifar10", s!"latentDim={cfg.latentDim}", s!"nRows={nRows}",
-          s!"device={if opts.useGpu then "cuda" else "cpu"}",
-          s!"cuda_mem_watch={Common.effectiveCudaMemWatch opts train.steps train.cudaMemWatch}"]
+      let flags ← Common.orThrow exeName <|
+        RealData.parseCifarLoggedTrainFlags exeName rest defaultLogJson 10
+      let curve ← trainCurve opts flags.xPath flags.yPath flags.nRows flags.seed
+        flags.train.steps flags.train.cudaMemWatch
+      Common.writeCurveLogTo flags.train.log "GAN-style CIFAR training" curve "total_loss"
+        (RealData.cifarTrainNotes opts flags #[s!"latentDim={cfg.latentDim}"])
     ))
     { banner? := some (fun opts =>
         s!"{exeName}: CIFAR LSGAN-style training (device={if opts.useGpu then "cuda" else "cpu"})")

@@ -137,8 +137,8 @@ theorem length_toList : {ss : List Shape} → (plan : Plan ss) → plan.toList.l
 /--
 Recover a shape-indexed plan from a plain list.
 
-This keeps the older list API available at the boundary, but converts immediately into the safer
-representation before touching any parameters.
+List-based callers still enter through this boundary, but the runtime converts them immediately
+into the shape-indexed representation before touching any parameters.
 -/
 def ofList? : (ss : List Shape) → List FloatInit → Except String (Plan ss)
   | [], [] => .ok .nil

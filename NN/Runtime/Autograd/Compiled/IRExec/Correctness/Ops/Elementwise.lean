@@ -126,7 +126,7 @@ theorem buildFrom_denoteAllFrom_add
                           Graph.expectShape_mk, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                           NN.IR.DVal.mk, Tensor.eqRec_proof_irrel, nodeData, mkFwdNode,
                           throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-                      exact buildFrom_denoteAllFrom_binary_exact (α := α) (g := g)
+                      exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
                         (payload := payload) (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                         (τ := n.outShape) (nodeData := nodeData) hTail hEval
           | cons _ _ =>
@@ -220,7 +220,7 @@ theorem buildFrom_denoteAllFrom_sub
                           Graph.expectShape_mk, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                           NN.IR.DVal.mk, nodeData, mkFwdNode, throw_eq_error,
                           Except.instMonad, Except.bind, Except.pure]
-                      exact buildFrom_denoteAllFrom_binary_exact (α := α) (g := g)
+                      exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
                         (payload := payload) (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                         (τ := n.outShape) (nodeData := nodeData) hTail hEval
           | cons _ _ =>
@@ -314,7 +314,7 @@ theorem buildFrom_denoteAllFrom_mul_elem
                           Graph.expectShape_mk, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                           NN.IR.DVal.mk, nodeData, mkFwdNode, throw_eq_error,
                           Except.instMonad, Except.bind, Except.pure]
-                      exact buildFrom_denoteAllFrom_binary_exact (α := α) (g := g)
+                      exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
                         (payload := payload) (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                         (τ := n.outShape) (nodeData := nodeData) hTail hEval
           | cons _ _ =>
@@ -408,7 +408,7 @@ theorem buildFrom_denoteAllFrom_max_elem
                           Graph.expectShape_mk, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                           NN.IR.DVal.mk, nodeData, mkFwdNode, throw_eq_error,
                           Except.instMonad, Except.bind, Except.pure]
-                      exact buildFrom_denoteAllFrom_binary_exact (α := α) (g := g)
+                      exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
                         (payload := payload) (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                         (τ := n.outShape) (nodeData := nodeData) hTail hEval
           | cons _ _ =>
@@ -502,7 +502,7 @@ theorem buildFrom_denoteAllFrom_min_elem
                           Graph.expectShape_mk, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                           NN.IR.DVal.mk, nodeData, mkFwdNode, throw_eq_error,
                           Except.instMonad, Except.bind, Except.pure]
-                      exact buildFrom_denoteAllFrom_binary_exact (α := α) (g := g)
+                      exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
                         (payload := payload) (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                         (τ := n.outShape) (nodeData := nodeData) hTail hEval
           | cons _ _ =>

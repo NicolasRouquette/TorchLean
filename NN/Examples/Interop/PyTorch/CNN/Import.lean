@@ -11,9 +11,9 @@ public import NN.Spec.Module.Conv
 public import NN.Spec.Module.Linear
 
 /-!
-# CNN PyTorch Fixture Import
+# CNN PyTorch Reference Import
 
-CNN fixture weight import from a PyTorch-style `state_dict`.
+CNN reference weight import from a PyTorch-style `state_dict`.
 
 We mirror the common PyTorch naming convention for modules:
 

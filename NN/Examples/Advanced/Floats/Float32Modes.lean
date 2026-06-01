@@ -55,7 +55,7 @@ open NN.API
 open TorchLean.Floats.IEEE754
 
 /-
-This tutorial intentionally uses the *public* TorchLean API surface:
+This tutorial uses the *public* TorchLean API surface:
 
 - models: `API.nn.Sequential` built from `API.nn.*`
 - execution: `API.nn.compileOut` + `API.nn.predict1`

@@ -13,8 +13,9 @@ public import NN.Verification.Robustness.Digits
 
 Reusable robustness-verification workflows and data-backed certified-accuracy utilities.
 
-The fixtures under `NN/Examples/Verification/Robustness` stay thin: they choose default asset paths
-and CLI names, while reusable loaders, typed model shapes, and certified-accuracy logic live here.
+The artifacts under `NN/Examples/Verification/Robustness` stay thin: they choose default asset
+paths and CLI names, while reusable loaders, typed model shapes, and certified-accuracy logic live
+here.
 -/
 
 @[expose] public section

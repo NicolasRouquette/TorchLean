@@ -15,8 +15,8 @@ public import NN.MLTheory.CROWN.Graph
 
 End-to-end “one semantic universe” tutorial (single graph, many semantics, one checker).
 
-This tutorial is intentionally **not** part of the beginner training tutorials; it lives under
-`NN/Examples/Advanced`.
+This tutorial lives under `NN/Examples/Advanced` because it connects execution, interval semantics,
+and checker soundness in one graph.
 
 We build one medium IR graph:
 

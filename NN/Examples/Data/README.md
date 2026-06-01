@@ -10,9 +10,9 @@ external dataset -> Python converter/downloader -> .npy or numeric CSV -> NN.API
 Use Python for JPEG folders, `.pt`, `.npz`, `.mat`, and dataset downloads. Use Lean for typed
 tensors, typed batching, training, verification, and reproducible evaluation.
 
-## Local Tutorial Fixtures
+## Local Tutorial Artifacts
 
-Generate the small ignored fixtures used by the loader tutorials:
+Generate the small ignored artifacts used by the loader tutorials:
 
 ```bash
 python3 NN/Examples/Data/generate_small_data.py
@@ -154,4 +154,4 @@ Y : Tensor α (Shape.dim batch (Shape.Vec classes))
 ## Provenance
 
 CIFAR-10, UCI Auto MPG, UCI household power, Tiny Shakespeare, and TinyStories keep their upstream
-licenses and citations. The generated tutorial fixtures are local examples and are ignored by git.
+licenses and citations. The generated tutorial artifacts are local examples and are ignored by git.

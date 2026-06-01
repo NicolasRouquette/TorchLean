@@ -34,8 +34,8 @@ hover it to see its type + docstring. InfoView hover tooltips can be toggled in 
 
 ## Implementation notes
 
-- We intentionally keep the command surface small: in day-to-day work, one "quick text" and one
-  "richer panel" mode is usually enough.
+- The command surface is small: in day-to-day work, one plain-text view and one richer panel mode
+  is usually enough.
 - We resolve terms to constants before lookup, because that keeps behavior predictable and avoids
   surprising partial reductions.
 - We use ProofWidgets `#html` so this stays a Lean-native widget (no external JS pipeline).

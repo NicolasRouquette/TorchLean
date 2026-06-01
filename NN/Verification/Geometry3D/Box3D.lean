@@ -281,12 +281,12 @@ def vecGet {α : Type} {n : Nat}
 def corner {α : Type} (corners : BoxCorners α) (i : Fin 8) : Point3 α :=
   Spec.Tensor.dim (fun j => Spec.Tensor.scalar (matGet corners i j))
 
-/-- Build a matrix tensor from a coordinate function. Useful for small fixtures. -/
+/-- Build a matrix tensor from a coordinate function. Useful for small artifacts. -/
 def matOfFn {α : Type} (rows cols : Nat) (f : Fin rows → Fin cols → α) :
     Spec.Tensor α (NN.Tensor.Shape.Mat rows cols) :=
   Spec.Tensor.dim (fun i => Spec.Tensor.dim (fun j => Spec.Tensor.scalar (f i j)))
 
-/-- Build a vector tensor from a coordinate function. Useful for small fixtures. -/
+/-- Build a vector tensor from a coordinate function. Useful for small artifacts. -/
 def vecOfFn {α : Type} (n : Nat) (f : Fin n → α) :
     Spec.Tensor α (NN.Tensor.Shape.Vec n) :=
   Spec.Tensor.dim (fun i => Spec.Tensor.scalar (f i))

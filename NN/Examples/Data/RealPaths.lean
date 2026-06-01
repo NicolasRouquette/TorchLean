@@ -11,10 +11,10 @@ public import NN.API.Core
 /-!
 # Real Dataset Paths
 
-Generated tutorial fixtures live in `NN.Examples.Data.SamplePaths`.
+Generated tutorial artifacts live in `NN.Examples.Data.SamplePaths`.
 
 This module names the default paths used by examples that train on datasets prepared by
-`scripts/datasets/download_example_data.py`. The examples use small checked fixtures by default;
+`scripts/datasets/download_example_data.py`. The examples use small checked artifacts by default;
 larger public datasets live under `data/real` after the user runs the preparation script.
 -/
 

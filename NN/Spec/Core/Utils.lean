@@ -46,7 +46,7 @@ def mapTensor {α β : Type} : ∀ {s : Shape}, (α → β) → Tensor α s → 
   | .scalar, f, Tensor.scalar x => Tensor.scalar (f x)
   | .dim _ _, f, Tensor.dim g => Tensor.dim (fun i => mapTensor f (g i))
 
--- Tensor constructors used by examples, specs, and small proof fixtures.
+-- Tensor constructors used by examples, specs, and small proof artifacts.
 
 /-! ### Small constructors -/
 

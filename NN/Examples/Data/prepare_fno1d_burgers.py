@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prepare the 1D Burgers FNO dataset for native TorchLean training.
 
-This script intentionally does **data preparation only**.  Training happens in
+This script prepares the dataset consumed by the native TorchLean trainer. Training happens in
 `NN/Examples/Models/Operators/Fno1dBurgers.lean`, so the example stays native TorchLean while still
 using the standard `burgers_data_R10.mat` file used by many FNO tutorials.
 

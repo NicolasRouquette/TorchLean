@@ -64,7 +64,7 @@ namespace NN.Examples.Models.Sequence.GptAdder
 def exeName : String := "torchlean gpt_adder"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/gpt_adder_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "gpt_adder"
 
 /--
 Number of input digits per operand.
@@ -646,7 +646,7 @@ def trainAdderFloat (opts : Runtime.Autograd.Torch.Options) (trainOpts : TrainOp
     for step in [0:trainOpts.steps] do
       stepSample trainSample
       let done := step + 1
-      if trainOpts.logEvery != 0 && done % trainOpts.logEvery == 0 then
+      if Common.shouldLogStep trainOpts.logEvery done then
         let loss ← TorchLean.Module.forward (α := Float) m trainSample
         let lossVal := Tensor.toScalar loss
         Common.check exeName s!"non-finite training loss at step {done}" (lossVal == lossVal)

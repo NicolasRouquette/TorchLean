@@ -58,7 +58,7 @@ open Json
 abbrev StateDict := Std.TreeMap.Raw String Json
 
 /--
-`defaultTensor s` is a zero-filled sentinel used in internal parsing helpers.
+`defaultTensor s` is a zero-filled sentinel used while parsing tensor JSON.
 
 It is only used in code paths that are unreachable once we have validated the JSON shape
 (e.g. after checking an array has exactly the expected length).
@@ -167,9 +167,8 @@ def getTensor? (o : StateDict) (k : String) (s : Shape) : Option (Tensor Float s
 /-!
 ## Error-reporting variants (ergonomics)
 
-Most of the import code in this folder is written in the `Option` monad to keep examples short.
-When you are debugging a round-trip, it is often more helpful to get a concrete *reason* why an
-import failed (missing key vs wrong JSON type vs wrong shape).
+Most importers in this folder use `Option` for direct structural parsing. Round-trip checks need
+more precise failures, especially when distinguishing a missing key from a wrong JSON type or shape.
 
 The helpers below provide small `Except String` wrappers around the `Option`-based core.
 -/

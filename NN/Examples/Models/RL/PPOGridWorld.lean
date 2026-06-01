@@ -10,6 +10,7 @@ module
 
 public import NN
 public import NN.API.Models.PPO
+public import NN.API.RL.Cli
 public import NN.Runtime.RL.Artifacts.GridWorld
 public import NN.Runtime.RL.Artifacts.DefaultPaths
 
@@ -338,31 +339,17 @@ This executable:
 def main (args : List String) : IO UInt32 := do
   TorchLean.Module.run exeName args
     (.float (fun opts rest => do
-      let (logPath?, rest) ← Common.orThrow exeName <| CLI.takePathFlagOnce rest "log"
       let (policyPath?, rest) ← Common.orThrow exeName <| CLI.takePathFlagOnce rest "policy"
       let (pathPath?, rest) ← Common.orThrow exeName <| CLI.takePathFlagOnce rest "path"
-      let (updates?, rest) ← Common.orThrow exeName <| CLI.takeNatFlagOnce rest "updates"
-      let (evalEvery?, rest) ← Common.orThrow exeName <| CLI.takeNatFlagOnce rest "eval-every"
-      let (evalEpisodes?, rest) ← Common.orThrow exeName <| CLI.takeNatFlagOnce rest "eval-episodes"
-      let (evalMaxSteps?, rest) ← Common.orThrow exeName <| CLI.takeNatFlagOnce rest "eval-max-steps"
+      let (ppo, rest) ← Common.orThrow exeName <|
+        rl.cli.parsePpoFlags exeName rest Runtime.RL.Artifacts.DefaultPaths.ppoGridWorldTrainLog
+          updatesMax evalEvery evalEpisodes 128
       Common.orThrow exeName <| CLI.requireNoArgs rest
 
-      let updates : Nat := updates?.getD updatesMax
-      let evalEvery : Nat := evalEvery?.getD evalEvery
-      let evalEpisodes : Nat := evalEpisodes?.getD evalEpisodes
-      let evalMaxSteps : Nat := evalMaxSteps?.getD 128
-
-      if updates = 0 then
-        throw <| IO.userError s!"{exeName}: --updates must be > 0"
-      if evalEvery = 0 then
-        throw <| IO.userError s!"{exeName}: --eval-every must be > 0"
-      if evalEpisodes = 0 then
-        throw <| IO.userError s!"{exeName}: --eval-episodes must be > 0"
-      if evalMaxSteps = 0 then
-        throw <| IO.userError s!"{exeName}: --eval-max-steps must be > 0"
-
-      let logPath : System.FilePath :=
-        logPath?.getD Runtime.RL.Artifacts.DefaultPaths.ppoGridWorldTrainLog
+      let updates : Nat := ppo.updates
+      let evalEvery : Nat := ppo.evalEvery
+      let evalEpisodes : Nat := ppo.evalEpisodes
+      let evalMaxSteps : Nat := ppo.evalMaxSteps
       let policyPath : System.FilePath :=
         policyPath?.getD Runtime.RL.Artifacts.DefaultPaths.ppoGridWorldPolicy
       let pathPath : System.FilePath :=
@@ -518,8 +505,7 @@ def main (args : List String) : IO UInt32 := do
             s!"eval_max_steps={evalMaxSteps}",
             s!"device={(if opts.useGpu then "cuda" else "cpu")}"
           ])
-      rl.train.writeJson logPath trainLog
-      IO.println s!"{exeName}: wrote train log to {logPath}"
+      Common.writeTrainLogTo ppo.log trainLog
 
       let polDiff : _root_.Runtime.RL.Artifacts.GridWorld.PolicyDiff :=
         { width := width, height := height, before := policyBefore, after := policyAfter

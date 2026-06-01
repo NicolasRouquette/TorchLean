@@ -43,7 +43,7 @@ namespace NN.Examples.Models.Sequence.Transformer
 def exeName : String := "torchlean transformer"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/transformer_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "transformer"
 
 /-- Number of rows in the typed encoder batch. -/
 def batch : Nat := 4

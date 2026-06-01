@@ -40,7 +40,7 @@ References:
 - `ToVizFloat`: compact conversion class for plotting different scalar backends.
 - `ppoRolloutTrainLog`: converts rollout tensors into `TrainLog` series.
 - `ppoRolloutHtml`: delegates to the generic training viewer.
-- `#ppo_rollout_view`: command form for quick rollout inspection.
+- `#ppo_rollout_view`: command form for inspecting rollout summaries.
 
 ## Implementation notes
 
@@ -77,8 +77,8 @@ namespace PPO
 /--
 Lossy conversion from a scalar backend `α` to Lean's `Float` for visualization.
 
-This is intentionally a small widget-only typeclass. If you define your own scalar backend for RL,
-add an instance here (or locally in your project) to enable `#ppo_rollout_view`.
+This is a small widget-only typeclass. If you define your own scalar backend for RL, add an
+instance here (or locally in your project) to enable `#ppo_rollout_view`.
 -/
 class ToVizFloat (α : Type) where
   toVizFloat : α → Float

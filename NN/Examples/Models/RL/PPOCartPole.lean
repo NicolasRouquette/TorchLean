@@ -15,7 +15,7 @@ public import NN.Runtime.RL.Artifacts.DefaultPaths
 /-!
 # PPO on Gymnasium CartPole (Executable Example)
 
-This example is intentionally “small but complete”:
+This example is small but complete:
 
 - **Environment**: external Python Gymnasium (started as a subprocess).
 - **Trust boundary**: every step is checked against a Lean-side contract
@@ -58,8 +58,8 @@ Artifacts:
 - When Gymnasium is external, TorchLean cannot prove the environment satisfies Markov/measurability
   assumptions. The trust-boundary contract turns some common assumptions (finite tensors, reward
   bounds, done-flag semantics) into checked preconditions.
-- This is not a tuned “benchmark PPO” implementation. It is designed to be readable, typed, and
-  easy to inspect with widgets.
+- The run favors readability, typed boundaries, and widget inspection over benchmark-specific PPO
+  tuning.
 
 References (primary):
 - Schulman et al., "Proximal Policy Optimization Algorithms" (2017): https://arxiv.org/abs/1707.06347
@@ -85,8 +85,8 @@ def exeName : String := "torchlean ppo_cartpole"
 /-!
 ## Configuration
 
-We keep this example discrete-action and small (CartPole) so it runs quickly in a native Lean
-executable.
+This stays with discrete-action CartPole so the native Lean executable remains easy to run and
+inspect.
 -/
 
 /-- Gymnasium environment id passed to the Python subprocess (see Gymnasium docs for supported ids). -/
@@ -327,8 +327,7 @@ def main (args : List String) : IO UInt32 := do
               s!"eval_episodes={evalEpisodes}",
               s!"device={(if opts.useGpu then "cuda" else "cpu")}"
             ])
-        rl.train.writeJson logPath trainLog
-        IO.println s!"{exeName}: wrote train log to {logPath}"
+        Common.writeTrainLog logPath trainLog
         IO.println s!"{exeName}: done"
       finally
         gym.close

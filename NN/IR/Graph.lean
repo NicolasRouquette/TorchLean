@@ -17,7 +17,7 @@ Today it is used as the shared target for:
 - TorchLean → verifier compilation (`NN/Verification/TorchLean/Compile.lean`),
 - bound-propagation / verification tooling (CROWN/LiRPA) (`NN/MLTheory/CROWN/Graph.lean`),
 - IR → PyTorch emission (`NN/Runtime/PyTorch/Export/IRPyTorch.lean`),
-- small tutorial graphs (e.g. `NN/Examples/Advanced/GraphSpec/Tutorial.lean`).
+- compact example graphs (e.g. `NN/Examples/Advanced/GraphSpec/Tutorial.lean`).
 
 Longer-term, the intent is to use the same IR as a bridge target for:
 - spec-level graphs (compile a model spec to an IR graph),
@@ -124,6 +124,9 @@ inductive OpKind where
       -- the sole parent is the activation input `x`.
   | conv2d (inC outC kH kW stride padding : Nat)
       -- 2D convolution (NCHW-style). Parameters live in an external store keyed by node id.
+  | batchNorm2dNchwEval (channels : Nat)
+      -- BatchNorm2d in eval mode for NCHW tensors. Affine parameters and running statistics live
+      -- in an external store keyed by node id.
   | relu | tanh | sigmoid | exp | log | sin | cos
       -- Common elementwise activations / nonlinearities.
   | softmax (axis : Nat)
@@ -183,6 +186,7 @@ def minParents : OpKind → Nat
   | .matmul => 2
   | .linear => 1
   | .conv2d .. => 1
+  | .batchNorm2dNchwEval .. => 1
   | .relu => 1
   | .tanh => 1
   | .sigmoid => 1
@@ -236,6 +240,7 @@ def tag : OpKind → String
   | .matmul => "matmul"
   | .linear => "linear"
   | .conv2d .. => "conv2d"
+  | .batchNorm2dNchwEval .. => "batch_norm2d_nchw_eval"
   | .relu => "relu"
   | .tanh => "tanh"
   | .sigmoid => "sigmoid"
@@ -288,6 +293,8 @@ def describe : OpKind → String
   | .linear => "linear(payload=node_id)"
   | .conv2d inC outC kH kW stride padding =>
       s!"conv2d(inC={inC}, outC={outC}, kH={kH}, kW={kW}, stride={stride}, padding={padding})"
+  | .batchNorm2dNchwEval channels =>
+      s!"batch_norm2d_nchw_eval(channels={channels}, payload=node_id)"
   | .relu => "relu"
   | .tanh => "tanh"
   | .sigmoid => "sigmoid"
@@ -381,7 +388,7 @@ def outShape? (g : Graph) (id : Nat) : Option Shape :=
 /--
 Explain why `Node.hasValidArity` failed.
 
-This is intentionally *stringly-typed*; it is primarily meant for human-facing error messages.
+This returns a human-facing message rather than structured data; callers use it for diagnostics.
 -/
 def arityError (n : Node) : String :=
   let got := n.parents.length

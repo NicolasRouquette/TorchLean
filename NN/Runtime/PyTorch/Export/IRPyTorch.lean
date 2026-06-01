@@ -144,6 +144,15 @@ def conv2dKernelAttr (id : Nat) : String := s!"conv2d_{id}_kernel"
 /-- Attribute name for a conv2d bias tensor in the ParamStore (`self.conv2d_<id>_bias`). -/
 def conv2dBiasAttr (id : Nat) : String := s!"conv2d_{id}_bias"
 
+/-- Attribute name for a BatchNorm scale tensor (`self.batchnorm_<id>_gamma`). -/
+def batchNormGammaAttr (id : Nat) : String := s!"batchnorm_{id}_gamma"
+/-- Attribute name for a BatchNorm bias tensor (`self.batchnorm_<id>_beta`). -/
+def batchNormBetaAttr (id : Nat) : String := s!"batchnorm_{id}_beta"
+/-- Attribute name for a BatchNorm running mean tensor (`self.batchnorm_<id>_mean`). -/
+def batchNormMeanAttr (id : Nat) : String := s!"batchnorm_{id}_mean"
+/-- Attribute name for a BatchNorm running variance tensor (`self.batchnorm_<id>_var`). -/
+def batchNormVarAttr (id : Nat) : String := s!"batchnorm_{id}_var"
+
 /-- Emit a `torch.tensor([...]).reshape(...)` expression from a flat Python list literal and a
   `Shape`. -/
 def pyTensorFromFlat (flatList : String) (shape : Shape) (dtypeVar : String := "dtype") : String :=
@@ -274,6 +283,17 @@ private def collectBindings (g : NN.IR.Graph) (ps : ParamStore Float) (opts : Op
                 s!"self.{conv2dKernelAttr n.id} = nn.Parameter({pyTensorFromFlat kFlat kShape})"
               , indent4
                 s!"self.{conv2dBiasAttr n.id} = nn.Parameter({pyTensorFromFlat bFlat bShape})"
+              ]
+    | .batchNorm2dNchwEval .. =>
+        match ps.batchNorm2dNchwEval.get? n.id with
+        | none => throw s!"IR→PyTorch: missing batch_norm2d_nchw_eval params for node {n.id}"
+        | some p =>
+            let sC : Shape := .dim p.c .scalar
+            initLines := initLines ++
+              [ indent4 s!"self.{batchNormGammaAttr n.id} = nn.Parameter({pyTensorFromFlat (tensorToPyFlat (s := sC) p.gamma) sC})"
+              , indent4 s!"self.{batchNormBetaAttr n.id} = nn.Parameter({pyTensorFromFlat (tensorToPyFlat (s := sC) p.beta) sC})"
+              , indent4 s!"self.register_buffer(\"{batchNormMeanAttr n.id}\", {pyTensorFromFlat (tensorToPyFlat (s := sC) p.mean) sC})"
+              , indent4 s!"self.register_buffer(\"{batchNormVarAttr n.id}\", {pyTensorFromFlat (tensorToPyFlat (s := sC) p.var) sC})"
               ]
     | _ => pure ()
 
@@ -438,6 +458,23 @@ private def emitForwardBody (g : NN.IR.Graph) (ps : ParamStore Float) (bindings 
               , indent4 s!"v{id} = _y"
               ]
             let _ := (inC, outC, kH, kW) -- keep args for readability; already embedded in kind
+    | .batchNorm2dNchwEval channels =>
+        let xId ← expectUnary id n.parents
+        match ps.batchNorm2dNchwEval.get? id with
+        | none => throw s!"IR→PyTorch: missing batch_norm2d_nchw_eval params for node {id}"
+        | some p =>
+            lines := lines ++
+              [ indent4 s!"_x = v{xId}"
+              , indent4 "_batched = (_x.dim() == 4)"
+              , indent4 "if not _batched:"
+              , indent8 "_x = _x.unsqueeze(0)"
+              , indent4
+                s!"_y = F.batch_norm(_x, self.{batchNormMeanAttr id}, self.{batchNormVarAttr id}, self.{batchNormGammaAttr id}, self.{batchNormBetaAttr id}, training=False, eps={p.eps})"
+              , indent4 "if not _batched:"
+              , indent8 "_y = _y.squeeze(0)"
+              , indent4 s!"v{id} = _y"
+              ]
+            let _ := channels
     | .maxPool2d kH kW stride =>
         let xId ← expectUnary id n.parents
         lines := lines ++

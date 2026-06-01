@@ -4,6 +4,7 @@
 #include "torchlean_cuda_buffer.h"
 #include "torchlean_cuda_deterministic_reductions_env.h"
 #include "torchlean_cuda_rng_common.h"
+#include "torchlean_size_common.h"
 
 #include <math.h>
 #include <stdbool.h>
@@ -27,16 +28,8 @@ static uint64_t g_torchlean_cuda_peak_bytes = 0u;
 static uint64_t g_torchlean_cuda_alloc_count = 0u;
 static uint64_t g_torchlean_cuda_free_count = 0u;
 
-static uint64_t torchlean_cuda_bytes_for(size_t n) {
-  const uint64_t max = UINT64_MAX / (uint64_t)sizeof(float);
-  if ((uint64_t)n > max) {
-    return UINT64_MAX;
-  }
-  return (uint64_t)n * (uint64_t)sizeof(float);
-}
-
 static void torchlean_cuda_note_alloc(size_t n) {
-  const uint64_t bytes = torchlean_cuda_bytes_for(n);
+  const uint64_t bytes = torchlean_float_bytes_for(n);
   g_torchlean_cuda_alloc_count++;
   g_torchlean_cuda_live_bytes += bytes;
   if (g_torchlean_cuda_live_bytes > g_torchlean_cuda_peak_bytes) {
@@ -45,7 +38,7 @@ static void torchlean_cuda_note_alloc(size_t n) {
 }
 
 static void torchlean_cuda_note_free(size_t n) {
-  const uint64_t bytes = torchlean_cuda_bytes_for(n);
+  const uint64_t bytes = torchlean_float_bytes_for(n);
   g_torchlean_cuda_free_count++;
   g_torchlean_cuda_live_bytes =
       g_torchlean_cuda_live_bytes > bytes ? g_torchlean_cuda_live_bytes - bytes : 0u;
@@ -74,15 +67,23 @@ LEAN_EXPORT uint32_t torchlean_cuda_set_deterministic_reductions_checked(uint32_
   return torchlean_cuda_get_deterministic_reductions();
 }
 
+static bool torchlean_cuda_buffer_release_data(torchlean_cuda_buffer* b) {
+  if (!b || !b->data) {
+    return false;
+  }
+  free(b->data);
+  torchlean_cuda_note_free(b->size);
+  b->data = NULL;
+  b->size = 0;
+  return true;
+}
+
 static void torchlean_cuda_buffer_finalize(void* ptr) {
   torchlean_cuda_buffer* b = (torchlean_cuda_buffer*)ptr;
   if (!b) {
     return;
   }
-  if (b->data) {
-    torchlean_cuda_note_free(b->size);
-  }
-  free(b->data);
+  (void)torchlean_cuda_buffer_release_data(b);
   free(b);
 }
 
@@ -112,6 +113,14 @@ torchlean_cuda_buffer* torchlean_cuda_buffer_unbox(b_lean_obj_arg obj) {
 
 lean_obj_res torchlean_cuda_buffer_box(torchlean_cuda_buffer* b) {
   return lean_alloc_external(torchlean_cuda_buffer_get_class(), b);
+}
+
+void torchlean_cuda_buffer_drop_unboxed(torchlean_cuda_buffer* b) {
+  if (!b) {
+    return;
+  }
+  (void)torchlean_cuda_buffer_release_data(b);
+  free(b);
 }
 
 torchlean_cuda_buffer* torchlean_cuda_buffer_alloc(size_t n) {
@@ -172,16 +181,9 @@ LEAN_EXPORT uint32_t torchlean_cuda_buffer_size(b_lean_obj_arg BObj) {
 
 LEAN_EXPORT uint32_t torchlean_cuda_buffer_release(b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (!b || !b->data) {
-    return 0;
-  }
-  free(b->data);
-  torchlean_cuda_note_free(b->size);
   // Explicit release is an eager-runtime lifetime hint. We mark the handle as empty so accidental
   // reuse fails by size checks instead of touching freed memory.
-  b->data = NULL;
-  b->size = 0;
-  return 1;
+  return torchlean_cuda_buffer_release_data(b) ? 1 : 0;
 }
 
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_release_then(
@@ -284,9 +286,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_abs(b_lean_obj_arg BObj) {
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_abs_bwd(b_lean_obj_arg XObj, b_lean_obj_arg GObj) {
   torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (x->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_abs_bwd_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(x, g, "torchlean_cuda_buffer_abs_bwd_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
   for (size_t i = 0; i < x->size; ++i) {
     float v = x->data[i];
@@ -308,9 +308,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_sqrt(b_lean_obj_arg BObj) {
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_sqrt_bwd(b_lean_obj_arg XObj, b_lean_obj_arg GObj) {
   torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (x->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_sqrt_bwd_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(x, g, "torchlean_cuda_buffer_sqrt_bwd_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
   for (size_t i = 0; i < x->size; ++i) {
     float v = x->data[i];
@@ -371,9 +369,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_clamp_bwd(b_lean_obj_arg XObj, b_
                                                         double lo, double hi) {
   torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (x->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_clamp_bwd_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(x, g, "torchlean_cuda_buffer_clamp_bwd_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
   float flo = (float)lo;
   float fhi = (float)hi;
@@ -387,9 +383,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_clamp_bwd(b_lean_obj_arg XObj, b_
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_max(b_lean_obj_arg AObj, b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_max_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(a, b, "torchlean_cuda_buffer_max_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
   for (size_t i = 0; i < a->size; ++i) {
     out->data[i] = fmaxf(a->data[i], b->data[i]);
@@ -402,9 +396,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_max_bwd(b_lean_obj_arg AObj, b_le
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (a->size != b->size || a->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_max_bwd_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size3(a, b, g, "torchlean_cuda_buffer_max_bwd_stub");
   torchlean_cuda_buffer* dA = torchlean_cuda_buffer_alloc(a->size);
   torchlean_cuda_buffer* dB = torchlean_cuda_buffer_alloc(a->size);
   for (size_t i = 0; i < a->size; ++i) {
@@ -422,18 +414,13 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_max_bwd(b_lean_obj_arg AObj, b_le
       dB->data[i] = 0.5f * gg;
     }
   }
-  lean_object* pair = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(pair, 0, torchlean_cuda_buffer_box(dA));
-  lean_ctor_set(pair, 1, torchlean_cuda_buffer_box(dB));
-  return pair;
+  return torchlean_cuda_box_buffer_pair(dA, dB);
 }
 
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_min(b_lean_obj_arg AObj, b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_min_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(a, b, "torchlean_cuda_buffer_min_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
   for (size_t i = 0; i < a->size; ++i) {
     out->data[i] = fminf(a->data[i], b->data[i]);
@@ -446,9 +433,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_min_bwd(b_lean_obj_arg AObj, b_le
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (a->size != b->size || a->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_min_bwd_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size3(a, b, g, "torchlean_cuda_buffer_min_bwd_stub");
   torchlean_cuda_buffer* dA = torchlean_cuda_buffer_alloc(a->size);
   torchlean_cuda_buffer* dB = torchlean_cuda_buffer_alloc(a->size);
   for (size_t i = 0; i < a->size; ++i) {
@@ -466,18 +451,13 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_min_bwd(b_lean_obj_arg AObj, b_le
       dB->data[i] = 0.5f * gg;
     }
   }
-  lean_object* pair = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(pair, 0, torchlean_cuda_buffer_box(dA));
-  lean_ctor_set(pair, 1, torchlean_cuda_buffer_box(dB));
-  return pair;
+  return torchlean_cuda_box_buffer_pair(dA, dB);
 }
 
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_div(b_lean_obj_arg AObj, b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_div_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(a, b, "torchlean_cuda_buffer_div_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
   for (size_t i = 0; i < a->size; ++i) {
     out->data[i] = a->data[i] / b->data[i];
@@ -498,9 +478,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_relu(b_lean_obj_arg BObj) {
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_relu_bwd(b_lean_obj_arg XObj, b_lean_obj_arg GObj) {
   torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (x->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_relu_bwd_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(x, g, "torchlean_cuda_buffer_relu_bwd_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
   for (size_t i = 0; i < x->size; ++i) {
     float v = x->data[i];
@@ -512,12 +490,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_relu_bwd(b_lean_obj_arg XObj, b_l
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_add(b_lean_obj_arg AObj, b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    char msg[160];
-    snprintf(msg, sizeof(msg), "torchlean_cuda_buffer_add_stub: size mismatch (%zu vs %zu)",
-             a->size, b->size);
-    lean_internal_panic(msg);
-  }
+  torchlean_cuda_require_same_size2(a, b, "torchlean_cuda_buffer_add_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
   for (size_t i = 0; i < a->size; ++i) {
     out->data[i] = a->data[i] + b->data[i];
@@ -528,9 +501,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_add(b_lean_obj_arg AObj, b_lean_o
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_sub(b_lean_obj_arg AObj, b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_sub_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(a, b, "torchlean_cuda_buffer_sub_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
   for (size_t i = 0; i < a->size; ++i) {
     out->data[i] = a->data[i] - b->data[i];
@@ -541,9 +512,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_sub(b_lean_obj_arg AObj, b_lean_o
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_mul(b_lean_obj_arg AObj, b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_mul_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(a, b, "torchlean_cuda_buffer_mul_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
   for (size_t i = 0; i < a->size; ++i) {
     out->data[i] = a->data[i] * b->data[i];
@@ -565,9 +534,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_axpy(b_lean_obj_arg AObj, b_lean_
                                                    double c) {
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_axpy_stub: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(a, b, "torchlean_cuda_buffer_axpy_stub");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
   float fc = (float)c;
   for (size_t i = 0; i < a->size; ++i) {

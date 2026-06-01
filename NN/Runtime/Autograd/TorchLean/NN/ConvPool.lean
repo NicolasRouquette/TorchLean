@@ -192,17 +192,6 @@ def conv2d
             k b x
   }
 
-/-- Alias for `conv2d`. -/
-abbrev conv2dCompat
-    (inC outC kH kW stride padding inH inW : Nat)
-    {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (seedK seedB : Nat := 0)
-    (kInit : Torch.Init.Scheme := .uniform (-0.1) 0.1) :=
-  conv2d (inC := inC) (outC := outC) (kH := kH) (kW := kW)
-    (stride := stride) (padding := padding) (inH := inH) (inW := inW)
-    (h1 := h1) (h2 := h2) (h3 := h3)
-    (seedK := seedK) (seedB := seedB) (kInit := kInit)
-
 /--
 2D transpose convolution layer for a `C×H×W` (channel-first) input.
 
@@ -322,14 +311,8 @@ def avgPool2dPad
             (stride := stride) (padding := padding) h1 h2 x
   }
 
-/-- Compat alias for `max_pool2d` (unbatched CHW pooling). -/
-abbrev maxPool2dCompat := maxPool2d
-
 /-- Alias for `max_pool2d_pad` (PyTorch-style shorthand). -/
 abbrev maxPoolPad := maxPool2dPad
-
-/-- Compat alias for `avg_pool2d` (unbatched CHW pooling). -/
-abbrev avgPool2dCompat := avgPool2d
 
 /-- Alias for `avg_pool2d_pad` (PyTorch-style shorthand). -/
 abbrev avgPoolPad := avgPool2dPad
@@ -377,4 +360,3 @@ end NN
 end TorchLean
 end Autograd
 end Runtime
-

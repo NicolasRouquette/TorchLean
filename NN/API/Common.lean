@@ -74,6 +74,10 @@ def orThrow {α : Type} (tag : String := "Example") : Except String α → IO α
   | .ok a => pure a
   | .error msg => throw <| IO.userError s!"{tag}: {msg}"
 
+/-- Standard location for model-example training logs under `data/model_zoo`. -/
+def modelZooTrainLog (stem : String) : System.FilePath :=
+  System.FilePath.mk s!"data/model_zoo/{stem}_trainlog.json"
+
 /--
 Fail with a tagged `userError` if a boolean condition is false.
 
@@ -82,6 +86,24 @@ Executable workflows use this for named precondition checks such as
 -/
 def check (tag msg : String) (b : Bool) : IO Unit :=
   unless b do throw <| IO.userError s!"{tag}: {msg}"
+
+/-- Validate that a natural-number CLI flag is positive. -/
+def requirePositiveNatFlag (exeName flag : String) (value : Nat) : Except String Unit := do
+  if value = 0 then
+    throw s!"{exeName}: --{flag} must be > 0"
+
+/-- Write a prepared `TrainLog` JSON artifact and report the file path. -/
+def writeTrainLog (path : System.FilePath) (log : _root_.Runtime.Training.TrainLog) : IO Unit := do
+  _root_.Runtime.Training.TrainLog.writeJson path log
+  IO.println s!"  wrote TrainLog JSON: {path}"
+
+/-- Write a prepared `TrainLog` to a destination that may be disabled. -/
+def writeTrainLogTo (dest : _root_.Runtime.Training.LogDestination)
+    (log : _root_.Runtime.Training.TrainLog) : IO Unit := do
+  _root_.Runtime.Training.LogDestination.writeTrainLog dest log
+  match dest.path? with
+  | some path => IO.println s!"  wrote TrainLog JSON: {path}"
+  | none => IO.println "  TrainLog JSON disabled"
 
 /--
 Write a standard JSON training artifact for routines that record an initial and final loss.
@@ -92,8 +114,7 @@ The output schema is independent of the model, dataset, and runtime backend.
 def writeBeforeAfterLossLog (path : System.FilePath) (title : String) (steps : Nat)
     (loss0 loss1 : Float) (notes : Array String := #[]) : IO Unit := do
   let log := _root_.Runtime.Training.TrainLog.beforeAfterLoss title steps loss0 loss1 notes
-  _root_.Runtime.Training.TrainLog.writeJson path log
-  IO.println s!"  wrote TrainLog JSON: {path}"
+  writeTrainLog path log
 
 /--
 Write a before/after loss log to an explicit logging destination.
@@ -105,28 +126,32 @@ def writeBeforeAfterLossLogTo (dest : _root_.Runtime.Training.LogDestination)
     (title : String) (steps : Nat) (loss0 loss1 : Float) (notes : Array String := #[]) :
     IO Unit := do
   let log := _root_.Runtime.Training.TrainLog.beforeAfterLoss title steps loss0 loss1 notes
-  _root_.Runtime.Training.LogDestination.writeTrainLog dest log
-  match dest.path? with
-  | some path => IO.println s!"  wrote TrainLog JSON: {path}"
-  | none => IO.println "  TrainLog JSON disabled"
+  writeTrainLogTo dest log
+
+/-- Print the standard before/after loss summary returned by `fit` helpers. -/
+def printFitReport {α : Type} [ToString α] (steps : Nat)
+    (report : TorchLean.Trainer.FitReport α) : IO Unit :=
+  IO.println s!"  steps={steps} loss0={report.before} loss1={report.after}"
+
+/-- Print the standard first/last loss summary for a scalar training curve. -/
+def printCurveLossSummary (steps : Nat) (curve : _root_.Runtime.Training.Curve) : IO Unit := do
+  let loss0 := curve.values.getD 0 0.0
+  let lossN := curve.values.getD (curve.values.size - 1) loss0
+  IO.println s!"  steps={steps} loss0={loss0} loss{steps}={lossN}"
 
 /-- Write a one-series scalar curve as a standard `TrainLog` JSON artifact. -/
 def writeCurveLog (path : System.FilePath) (title : String)
     (curve : _root_.Runtime.Training.Curve) (seriesName : String := "loss")
     (notes : Array String := #[]) : IO Unit := do
   let log := curve.toTrainLog title seriesName (notes := notes)
-  _root_.Runtime.Training.TrainLog.writeJson path log
-  IO.println s!"  wrote TrainLog JSON: {path}"
+  writeTrainLog path log
 
 /-- Write a one-series scalar curve to an explicit logging destination. -/
 def writeCurveLogTo (dest : _root_.Runtime.Training.LogDestination) (title : String)
     (curve : _root_.Runtime.Training.Curve) (seriesName : String := "loss")
     (notes : Array String := #[]) : IO Unit := do
   let log := curve.toTrainLog title seriesName (notes := notes)
-  _root_.Runtime.Training.LogDestination.writeTrainLog dest log
-  match dest.path? with
-  | some path => IO.println s!"  wrote TrainLog JSON: {path}"
-  | none => IO.println "  TrainLog JSON disabled"
+  writeTrainLogTo dest log
 
 /-- Common CLI result for training commands that accept `--steps`/`--epochs` and `--log`. -/
 structure LoggedTrainFlags where
@@ -153,8 +178,8 @@ def parseLoggedTrainFlags (exeName : String) (args : List String)
   let (logRaw?, args) ← CLI.takeFlagValueOnce args "log"
   let (steps, args) ← CLI.takeStepsOrEpochs args defaultSteps
   let (cudaMemWatch?, args) ← CLI.takeNatFlagOnce args "cuda-mem-watch"
-  if steps = 0 && !allowZeroSteps then
-    throw s!"{exeName}: --steps/--epochs must be > 0"
+  unless allowZeroSteps do
+    requirePositiveNatFlag exeName "steps/--epochs" steps
   let log := _root_.Runtime.Training.LogDestination.parse? defaultLogPath logRaw?
   pure ({ steps := steps, log := log, logPath := log.pathD defaultLogPath,
           cudaMemWatch := cudaMemWatch?.getD 0 }, args)
@@ -197,6 +222,17 @@ def parseModelTrainFlags (exeName : String) (args : List String)
   if lr <= 0.0 then
     throw s!"{exeName}: --lr must be > 0"
   pure ({ train := train, lr := lr, cudaMemWatch := train.cudaMemWatch }, args)
+
+/-! ### Progress Cadence Helpers -/
+
+/--
+Return whether a completed training step should emit a progress report.
+
+The convention is shared across example trainers: `logEvery = 0` disables progress output; otherwise
+we log at exact multiples of the completed-step count.
+-/
+def shouldLogStep (logEvery done : Nat) : Bool :=
+  logEvery != 0 && done % logEvery == 0
 
 /-! ### CUDA Memory Watch Helpers -/
 

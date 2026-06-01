@@ -15,9 +15,9 @@ public import NN.Examples.Interop.PyTorch.Transformer.Export
 
 Example-specific PyTorch `nn.Module` generators used by the round-trip examples.
 
-These are intentionally outside `NN.Runtime.PyTorch`: they bake in tutorial model shapes and naming
-conventions, while the runtime bridge owns the general IR and `state_dict` paths. The actual files
-live beside their fixtures under `MLP/`, `CNN/`, and `Transformer/`.
+These stay outside `NN.Runtime.PyTorch` because they fix particular model shapes and naming
+conventions. The runtime bridge owns the general IR and `state_dict` paths; these modules live
+beside the MLP/CNN/Transformer reference artifacts.
 -/
 
 @[expose] public section

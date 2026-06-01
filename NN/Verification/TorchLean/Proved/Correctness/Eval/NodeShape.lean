@@ -312,6 +312,19 @@ open NN.Verification.TorchLean
                 simp [evalNode, hx, Bind.bind, Except.bind] at hEq
                 cases hEq
                 simp
+        case conv2d inC outC kH kW stride padding inH inW hIn hKH hKW hHeight hWidth kernel bias x =>
+            cases hx :
+                getVal (α := α) (inShape := inShape) (ss := ss)
+                  (s := .dim inC (.dim inH (.dim inW .scalar))) vals x with
+            | error e =>
+                have hEq : (Except.error e : Except String (DVal α)) = Except.ok v := by
+                  simp [evalNode, hx, Bind.bind, Except.bind] at hv
+                cases hEq
+            | ok xT =>
+                have hEq := hv
+                simp [evalNode, hx, Bind.bind, Except.bind] at hEq
+                cases hEq
+                simp
         case mseLoss yhat target =>
             -- `mseLoss` is statically typed with a shared parent shape `s`, but `evalNode`
             -- Mirrors the IR semantics and shape-checks dynamically.

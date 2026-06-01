@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 import NN.API.Common
+import NN.API.Json
 import NN.Examples.Interop.PyTorch.Export
 import NN.Examples.Interop.PyTorch.Import
 
@@ -17,8 +18,8 @@ This module is the single source of truth for the state-dict round-trip examples
 
 It does **not** re-implement model math. Instead it wires together the existing:
 
-- PyTorch exporters beside the example fixtures (`MLP/Export`, `CNN/Export`, `Transformer/Export`)
-- PyTorch JSON importers beside the example fixtures (`MLP/Import`, `CNN/Import`, `Transformer/Import`)
+- PyTorch exporters beside the reference examples (`MLP/Export`, `CNN/Export`, `Transformer/Export`)
+- PyTorch JSON importers beside the reference examples (`MLP/Import`, `CNN/Import`, `Transformer/Import`)
 - Spec models (`NN/Spec/Models/*`) for running a small forward pass in Lean
 
 Run via the TorchLean example runner:
@@ -129,12 +130,6 @@ private def writePy (dir : System.FilePath) (base : String) (content : String) :
   IO.FS.createDirAll dir
   IO.FS.writeFile (dir / s!"{base}.py") content
 
-private def readJsonFile (path : System.FilePath) : IO Json := do
-  let jsonStr ← IO.FS.readFile path
-  match Json.parse jsonStr with
-  | .ok j => pure j
-  | .error msg => throw <| IO.userError s!"bad json in {path}: {msg}"
-
 /-! ## Export actions -/
 
 private def exportMLP : IO Unit := do
@@ -144,7 +139,7 @@ private def exportMLP : IO Unit := do
   writePy dir "TestMLP_PyTorch" stub
   -- If we have a JSON state_dict handy, also emit a runnable "with weights" helper.
   try
-    let j ← readJsonFile (jsonOf .mlp)
+    let j ← NN.API.Json.parseFile (jsonOf .mlp)
     let some sd := Import.MLPPyTorch.loadMlpStateDict mlpInDim mlpHidDim mlpOutDim j
       | throw <| IO.userError "MLP JSON present but failed to parse as an MLP state_dict"
     let codeW := Export.MLPPyTorch.generateMLPWithWeights sd.w1 sd.b1 sd.w2 sd.b2 "TestMLP"
@@ -180,7 +175,7 @@ private def exportCNN : IO Unit := do
   writePy dir "TestCNN_PyTorch" stub
   -- If we have a JSON state_dict handy, also emit a runnable "with weights" helper.
   try
-    let j ← readJsonFile (jsonOf .cnn)
+    let j ← NN.API.Json.parseFile (jsonOf .cnn)
     let some sd := Import.CNNPyTorch.loadCnnStateDict cnnInC cnnOutC cnnKH cnnKW cnnFlatSize j
       | throw <| IO.userError "CNN JSON present but failed to parse as a CNN state_dict"
     let codeW :=
@@ -206,7 +201,7 @@ private def exportTransformer : IO Unit := do
   writePy dir "TestTransformer_Encoder" stub
   -- If we have a JSON state_dict handy, also emit a runnable "with weights" helper.
   try
-    let j ← readJsonFile (jsonOf .transformer)
+    let j ← NN.API.Json.parseFile (jsonOf .transformer)
     let some sd := Import.TransformerPyTorch.loadTransformerEncoderStateDict trEmbedDim trHeadCount
       trHiddenDim j
       | throw <| IO.userError "Transformer JSON present but failed to parse as a Transformer state_dict"
@@ -231,7 +226,7 @@ private def runExport (m : Model) : IO Unit := do
 /-! ## Import actions (Lean forward pass) -/
 
 private def importMLP : IO Unit := do
-  let j ← readJsonFile (jsonOf .mlp)
+  let j ← NN.API.Json.parseFile (jsonOf .mlp)
   let some sd := Import.MLPPyTorch.loadMlpStateDict mlpInDim mlpHidDim mlpOutDim j
     | throw <| IO.userError "Failed to load MLP state dict"
 
@@ -244,7 +239,7 @@ private def importMLP : IO Unit := do
   NN.Tensor.print y
 
 private def importCNN : IO Unit := do
-  let j ← readJsonFile (jsonOf .cnn)
+  let j ← NN.API.Json.parseFile (jsonOf .cnn)
   let some sd := Import.CNNPyTorch.loadCnnStateDict cnnInC cnnOutC cnnKH cnnKW cnnFlatSize j
     | throw <| IO.userError "Failed to load CNN state dict"
 
@@ -290,7 +285,7 @@ private def importCNN : IO Unit := do
   NN.Tensor.print y
 
 private def importTransformer : IO Unit := do
-  let j ← readJsonFile (jsonOf .transformer)
+  let j ← NN.API.Json.parseFile (jsonOf .transformer)
   let some sd := Import.TransformerPyTorch.loadTransformerEncoderStateDict trEmbedDim trHeadCount
     trHiddenDim j
     | throw <| IO.userError "Failed to load Transformer encoder state dict"

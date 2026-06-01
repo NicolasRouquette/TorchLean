@@ -1,6 +1,7 @@
 #include <lean/lean.h>
 
 #include "torchlean_cuda_buffer.h"
+#include "torchlean_size_common.h"
 
 #include <math.h>
 #include <limits.h>
@@ -15,13 +16,6 @@
 // file; these stubs are also useful as readable reference implementations for tests and audits.
 
 static const float kTorchLeanPiF = 3.14159265358979323846f;
-
-static size_t checked_mul_size_stub(size_t a, size_t b, const char* msg) {
-  if (a != 0 && b > SIZE_MAX / a) {
-    lean_internal_panic(msg);
-  }
-  return a * b;
-}
 
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_sum_axis0(b_lean_obj_arg BObj, uint32_t rows,
                                                                uint32_t cols) {
@@ -244,10 +238,10 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_rfft1d_packed(b_lean_obj_arg XObj
   const size_t N = (size_t)n;
   const size_t Freq = N / 2 + 1;
   const size_t inSz =
-      checked_mul_size_stub(Batch, N, "torchlean_cuda_buffer_rfft1d_packed_stub: input size overflow");
-  const size_t complexSz = checked_mul_size_stub(
+      checked_mul_size(Batch, N, "torchlean_cuda_buffer_rfft1d_packed_stub: input size overflow");
+  const size_t complexSz = checked_mul_size(
       Batch, Freq, "torchlean_cuda_buffer_rfft1d_packed_stub: spectrum size overflow");
-  const size_t outSz = checked_mul_size_stub(
+  const size_t outSz = checked_mul_size(
       complexSz, (size_t)2, "torchlean_cuda_buffer_rfft1d_packed_stub: packed size overflow");
   if (x->size != inSz) {
     lean_internal_panic("torchlean_cuda_buffer_rfft1d_packed_stub: size mismatch");
@@ -282,12 +276,12 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_irfft1d_packed(b_lean_obj_arg Spe
   const size_t Batch = (size_t)batch;
   const size_t N = (size_t)n;
   const size_t Freq = N / 2 + 1;
-  const size_t complexSz = checked_mul_size_stub(
+  const size_t complexSz = checked_mul_size(
       Batch, Freq, "torchlean_cuda_buffer_irfft1d_packed_stub: spectrum size overflow");
-  const size_t specSz = checked_mul_size_stub(
+  const size_t specSz = checked_mul_size(
       complexSz, (size_t)2, "torchlean_cuda_buffer_irfft1d_packed_stub: packed size overflow");
   const size_t outSz =
-      checked_mul_size_stub(Batch, N, "torchlean_cuda_buffer_irfft1d_packed_stub: output size overflow");
+      checked_mul_size(Batch, N, "torchlean_cuda_buffer_irfft1d_packed_stub: output size overflow");
   if (spec->size != specSz) {
     lean_internal_panic("torchlean_cuda_buffer_irfft1d_packed_stub: size mismatch");
   }
@@ -330,9 +324,9 @@ static void validate_spectral_conv1d_stub(torchlean_cuda_buffer* x, torchlean_cu
     lean_internal_panic("spectralConv1dRfft_stub: modes exceeds rfft frequency count");
   }
   const size_t xSz =
-      checked_mul_size_stub((size_t)grid, (size_t)width, "spectralConv1dRfft_stub: x size overflow");
-  const size_t wSz = checked_mul_size_stub(
-      checked_mul_size_stub((size_t)modes, (size_t)width, "spectralConv1dRfft_stub: w size overflow"),
+      checked_mul_size((size_t)grid, (size_t)width, "spectralConv1dRfft_stub: x size overflow");
+  const size_t wSz = checked_mul_size(
+      checked_mul_size((size_t)modes, (size_t)width, "spectralConv1dRfft_stub: w size overflow"),
       (size_t)width, "spectralConv1dRfft_stub: w size overflow");
   if (x->size != xSz) {
     lean_internal_panic("spectralConv1dRfft_stub: x size mismatch");
@@ -608,16 +602,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_selective_scan_diag_bwd(
     dH0->data[j] = dhNext;
   }
 
-  lean_object* inner2 = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(inner2, 0, torchlean_cuda_buffer_box(dX));
-  lean_ctor_set(inner2, 1, torchlean_cuda_buffer_box(dH0));
-  lean_object* inner1 = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(inner1, 0, torchlean_cuda_buffer_box(dB));
-  lean_ctor_set(inner1, 1, inner2);
-  lean_object* outer = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(outer, 0, torchlean_cuda_buffer_box(dA));
-  lean_ctor_set(outer, 1, inner1);
-  return outer;
+  return torchlean_cuda_box_four_buffers(dA, dB, dX, dH0);
 }
 
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_selective_scan_diag_var_fwd(

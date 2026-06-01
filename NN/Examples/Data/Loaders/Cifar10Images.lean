@@ -56,7 +56,7 @@ Why this tutorial matters:
 
 - it shows the public `API.Data` file-loading path rather than only in-memory tensors;
 - it keeps the model architecture familiar (Conv/ReLU/Pool stack + classifier head);
-- it demonstrates the "offline artifact" workflow many PyTorch users already have, where arrays
+- it shows the "offline artifact" workflow many PyTorch users already have, where arrays
   have been pre-exported to `.npy` and training happens without any dataset download step.
 -/
 

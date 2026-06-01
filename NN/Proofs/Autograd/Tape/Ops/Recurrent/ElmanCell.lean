@@ -270,6 +270,94 @@ theorem elmanTwoStep_hasFDerivAt
     (elmanCell_eval_hasFDerivAt (inputSize := inputSize) (hiddenSize := hiddenSize)
       cell (secondCtx (cellEval (firstCtx x)))).comp x hSecondCtxAfterFirst
 
+/-- Forward evaluation map for a single Elman-cell graph. -/
+def elmanCellEval {inputSize hiddenSize : Nat}
+    (cell : Spec.LinearSpec ℝ (inputSize + hiddenSize) hiddenSize) :
+    CtxVec (ΓElman inputSize hiddenSize) →
+      CtxVec (ΓElman inputSize hiddenSize ++ ssElmanCell inputSize hiddenSize) :=
+  Graph.evalVec
+    (Γ := ΓElman inputSize hiddenSize)
+    (ss := ssElmanCell inputSize hiddenSize)
+    (elmanCellDGraph (inputSize := inputSize) (hiddenSize := hiddenSize) cell).g
+
+/--
+Unroll an Elman cell through an arbitrary list of transition builders.
+
+Each transition consumes the full trace of the previous cell and constructs the next cell context.
+This covers the usual sequence case, where the transition selects the next input token/vector and
+threads the hidden state produced by the previous step.
+-/
+def elmanUnroll {inputSize hiddenSize : Nat}
+    (cell : Spec.LinearSpec ℝ (inputSize + hiddenSize) hiddenSize) :
+    List
+      (CtxVec (ΓElman inputSize hiddenSize ++ ssElmanCell inputSize hiddenSize) →
+        CtxVec (ΓElman inputSize hiddenSize)) →
+      CtxVec (ΓElman inputSize hiddenSize) →
+      CtxVec (ΓElman inputSize hiddenSize ++ ssElmanCell inputSize hiddenSize)
+  | [], x => elmanCellEval cell x
+  | step :: rest, x => elmanUnroll cell rest (step (elmanCellEval cell x))
+
+/--
+Local differentiability obligations for an arbitrary recurrent unroll.
+
+For each transition, the obligation is stated at the trace actually produced by the previous cell.
+Keeping this as a recursive predicate makes the induction theorem independent of any particular
+sequence storage convention.
+-/
+def elmanTransitionsDifferentiableAt {inputSize hiddenSize : Nat}
+    (cell : Spec.LinearSpec ℝ (inputSize + hiddenSize) hiddenSize) :
+    List
+      (CtxVec (ΓElman inputSize hiddenSize ++ ssElmanCell inputSize hiddenSize) →
+        CtxVec (ΓElman inputSize hiddenSize)) →
+      CtxVec (ΓElman inputSize hiddenSize) → Prop
+  | [], _ => True
+  | step :: rest, x =>
+      (∃ Dstep :
+        CtxVec (ΓElman inputSize hiddenSize ++ ssElmanCell inputSize hiddenSize) →L[ℝ]
+          CtxVec (ΓElman inputSize hiddenSize),
+        HasFDerivAt step Dstep (elmanCellEval cell x)) ∧
+      elmanTransitionsDifferentiableAt cell rest (step (elmanCellEval cell x))
+
+/--
+Arbitrary-length BPTT chain-rule induction for an Elman RNN unroll.
+
+If every transition between cells is differentiable at the trace reached during the forward pass,
+then the whole unrolled recurrence is differentiable at the initial cell context.  This is the
+mathematical induction principle behind backpropagation through time for the vanilla tanh RNN cell.
+-/
+theorem elmanUnroll_hasFDerivAt
+    {inputSize hiddenSize : Nat}
+    (cell : Spec.LinearSpec ℝ (inputSize + hiddenSize) hiddenSize)
+    (steps :
+      List
+        (CtxVec (ΓElman inputSize hiddenSize ++ ssElmanCell inputSize hiddenSize) →
+          CtxVec (ΓElman inputSize hiddenSize)))
+    (x : CtxVec (ΓElman inputSize hiddenSize))
+    (hSteps : elmanTransitionsDifferentiableAt cell steps x) :
+    ∃ D :
+      CtxVec (ΓElman inputSize hiddenSize) →L[ℝ]
+        CtxVec (ΓElman inputSize hiddenSize ++ ssElmanCell inputSize hiddenSize),
+      HasFDerivAt (elmanUnroll cell steps) D x := by
+  induction steps generalizing x with
+  | nil =>
+      refine ⟨fderiv ℝ (elmanCellEval cell) x, ?_⟩
+      simpa [elmanCellEval, elmanUnroll] using
+        elmanCell_eval_hasFDerivAt (inputSize := inputSize) (hiddenSize := hiddenSize) cell x
+  | cons step rest ih =>
+      rcases hSteps with ⟨⟨Dstep, hStep⟩, hRest⟩
+      let cellEval := elmanCellEval (inputSize := inputSize) (hiddenSize := hiddenSize) cell
+      have hCell :
+          HasFDerivAt cellEval (fderiv ℝ cellEval x) x := by
+        simpa [cellEval, elmanCellEval] using
+          elmanCell_eval_hasFDerivAt (inputSize := inputSize) (hiddenSize := hiddenSize) cell x
+      have hStepAfterCell :
+          HasFDerivAt (fun z => step (cellEval z))
+            (Dstep.comp (fderiv ℝ cellEval x)) x :=
+        hStep.comp x hCell
+      rcases ih (step (cellEval x)) hRest with ⟨Drest, hUnrollRest⟩
+      refine ⟨Drest.comp (Dstep.comp (fderiv ℝ cellEval x)), ?_⟩
+      simpa [elmanUnroll, cellEval] using hUnrollRest.comp x hStepAfterCell
+
 end
 
 end Recurrent

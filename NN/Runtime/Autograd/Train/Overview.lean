@@ -46,7 +46,7 @@ in the architecture/API modules; this directory only supplies the loop machinery
   https://pytorch.org/docs/stable/data.html
 - PyTorch optimizers (`torch.optim`):
   https://pytorch.org/docs/stable/optim.html
-- A canonical training/eval loop tutorial:
+- PyTorch training-loop reference:
   https://pytorch.org/tutorials/beginner/basics/optimization_tutorial.html
 -/
 

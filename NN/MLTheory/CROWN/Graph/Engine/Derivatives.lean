@@ -347,65 +347,25 @@ def runDeriv1D (g : Graph) (ps : ParamStore α) (ibp : Array (Option (FlatBox α
           let n := Xin.dim
           if hn : dXin.dim = n then
             -- Compute mean bounds of x and dx
-            let sum_lo := Spec.Tensor.sumSpec Xin.lo
-            let sum_hi := Spec.Tensor.sumSpec Xin.hi
+            let muBounds := layerNormMeanBounds (α := α) Xin.lo Xin.hi
             let nA : α := (n : Nat)
-            let mu_lo := sum_lo / nA
-            let mu_hi := sum_hi / nA
+            let mu_lo := muBounds.1
+            let mu_hi := muBounds.2
             -- u_j bounds = x_j - mean(x)
-            let flo := getDimScalarFn (α:=α) Xin.lo
-            let fhi := getDimScalarFn (α:=α) Xin.hi
-            let u_lo :=
-              Tensor.dim (fun i =>
-                match flo i, fhi i with
-                | .scalar l, .scalar u =>
-                  let dl := l - mu_hi
-                  let du := u - mu_lo
-                  let mn := if dl < du then dl else du
-                  Tensor.scalar mn)
-            let u_hi :=
-              Tensor.dim (fun i =>
-                match flo i, fhi i with
-                | .scalar l, .scalar u =>
-                  let dl := l - mu_hi
-                  let du := u - mu_lo
-                  let mx := if dl > du then dl else du
-                  Tensor.scalar mx)
+            let uBounds := layerNormCenteredBounds (α := α) Xin.lo Xin.hi mu_lo mu_hi
+            let u_lo := uBounds.1
+            let u_hi := uBounds.2
             -- Bounds on variance and denom s = sqrt(var+eps)
-            let sumAbsSq : α := (List.finRange n).foldl (fun acc (i : Fin n) =>
-              match flo i, fhi i with
-              | .scalar l, .scalar u =>
-                let dl := MathFunctions.abs (l - mu_hi)
-                let du := MathFunctions.abs (u - mu_lo)
-                let a := if dl > du then dl else du
-                acc + (a * a)
-            ) 0
-            let var_hi := sumAbsSq / nA
+            let var_hi := layerNormVarianceUpper (α := α) Xin.lo Xin.hi mu_lo mu_hi
             let s_lo := MathFunctions.sqrt Numbers.epsilon
-            let s_hi := MathFunctions.sqrt (var_hi + Numbers.epsilon)
-            let t_lo := Numbers.one / (if s_hi > Numbers.epsilon then s_hi else Numbers.epsilon)
-            let t_hi := Numbers.one / (if s_lo > Numbers.epsilon then s_lo else Numbers.epsilon)
+            let tBounds := layerNormInvStdBounds (α := α) var_hi
+            let t_lo := tBounds.1
+            let t_hi := tBounds.2
             -- dx mean bounds and v_j = dx_j - mean(dx)
-            let dlo := getDimScalarFn (α:=α) dXin.lo
-            let dhi := getDimScalarFn (α:=α) dXin.hi
-            let sum_dx_lo := Spec.Tensor.sumSpec dXin.lo
-            let sum_dx_hi := Spec.Tensor.sumSpec dXin.hi
-            let dmu_lo := sum_dx_lo / nA
-            let dmu_hi := sum_dx_hi / nA
-            let v_lo :=
-              Tensor.dim (fun i =>
-                match dlo i, dhi i with
-                | .scalar l, .scalar u =>
-                  let a := l - dmu_hi
-                  let b := u - dmu_lo
-                  Tensor.scalar (if a < b then a else b))
-            let v_hi :=
-              Tensor.dim (fun i =>
-                match dlo i, dhi i with
-                | .scalar l, .scalar u =>
-                  let a := l - dmu_hi
-                  let b := u - dmu_lo
-                  Tensor.scalar (if a > b then a else b))
+            let dmuBounds := layerNormMeanBounds (α := α) dXin.lo dXin.hi
+            let vBounds := layerNormCenteredBounds (α := α) dXin.lo dXin.hi dmuBounds.1 dmuBounds.2
+            let v_lo := vBounds.1
+            let v_hi := vBounds.2
             -- Align v bounds to dimension n via cast
             let v_loN := castDimScalar (α:=α) (n:=dXin.dim) (n':=n) (h:=hn) v_lo
             let v_hiN := castDimScalar (α:=α) (n:=dXin.dim) (n':=n) (h:=hn) v_hi
@@ -489,7 +449,7 @@ def runDeriv1D (g : Graph) (ps : ParamStore α) (ibp : Array (Option (FlatBox α
       .. =>
       drs
     | .mseLoss => drs
-    | .conv2d .. => drs
+    | .conv2d .. | .batchNorm2dNchwEval .. => drs
   (List.finRange g.nodes.size).foldl propagate init
 
 /-- Directional first-derivative pass: like `runDeriv1D` but seeds the derivative at the
@@ -806,46 +766,17 @@ def runDerivDirectional (g : Graph) (ps : ParamStore α)
         | some dXin, some Xin =>
           let n := Xin.dim
           if hn : dXin.dim = n then
-            let sum_lo := Spec.Tensor.sumSpec Xin.lo
-            let sum_hi := Spec.Tensor.sumSpec Xin.hi
-            let nA : α := (n : Nat)
-            let mu_lo := sum_lo / nA
-            let mu_hi := sum_hi / nA
-            let flo := getDimScalarFn (α:=α) Xin.lo
-            let fhi := getDimScalarFn (α:=α) Xin.hi
-            let sumAbsSq : α := (List.finRange n).foldl (fun acc (i : Fin n) =>
-              match flo i, fhi i with
-              | .scalar l, .scalar u =>
-                let dl := MathFunctions.abs (l - mu_hi)
-                let du := MathFunctions.abs (u - mu_lo)
-                let a := if dl > du then dl else du
-                acc + (a * a)
-            ) 0
-            let var_hi := sumAbsSq / nA
-            let s_lo := MathFunctions.sqrt Numbers.epsilon
-            let s_hi := MathFunctions.sqrt (var_hi + Numbers.epsilon)
-            let t_lo := Numbers.one / (if s_hi > Numbers.epsilon then s_hi else Numbers.epsilon)
-            let t_hi := Numbers.one / (if s_lo > Numbers.epsilon then s_lo else Numbers.epsilon)
-            let dlo := getDimScalarFn (α:=α) dXin.lo
-            let dhi := getDimScalarFn (α:=α) dXin.hi
-            let sum_dx_lo := Spec.Tensor.sumSpec dXin.lo
-            let sum_dx_hi := Spec.Tensor.sumSpec dXin.hi
-            let dmu_lo := sum_dx_lo / nA
-            let dmu_hi := sum_dx_hi / nA
-            let v_lo :=
-              Tensor.dim (fun i =>
-                match dlo i, dhi i with
-                | .scalar l, .scalar u =>
-                  let a := l - dmu_hi
-                  let b := u - dmu_lo
-                  Tensor.scalar (if a < b then a else b))
-            let v_hi :=
-              Tensor.dim (fun i =>
-                match dlo i, dhi i with
-                | .scalar l, .scalar u =>
-                  let a := l - dmu_hi
-                  let b := u - dmu_lo
-                  Tensor.scalar (if a > b then a else b))
+            let muBounds := layerNormMeanBounds (α := α) Xin.lo Xin.hi
+            let mu_lo := muBounds.1
+            let mu_hi := muBounds.2
+            let var_hi := layerNormVarianceUpper (α := α) Xin.lo Xin.hi mu_lo mu_hi
+            let tBounds := layerNormInvStdBounds (α := α) var_hi
+            let t_lo := tBounds.1
+            let t_hi := tBounds.2
+            let dmuBounds := layerNormMeanBounds (α := α) dXin.lo dXin.hi
+            let vBounds := layerNormCenteredBounds (α := α) dXin.lo dXin.hi dmuBounds.1 dmuBounds.2
+            let v_lo := vBounds.1
+            let v_hi := vBounds.2
             let v_loN := castDimScalar (α:=α) (n:=dXin.dim) (n':=n) (h:=hn) v_lo
             let v_hiN := castDimScalar (α:=α) (n:=dXin.dim) (n':=n) (h:=hn) v_hi
             let vLoFn := getDimScalarFn (α:=α) v_loN
@@ -886,7 +817,7 @@ def runDerivDirectional (g : Graph) (ps : ParamStore α)
       .. =>
       drs
     | .mseLoss => drs
-    | .conv2d .. => drs
+    | .conv2d .. | .batchNorm2dNchwEval .. => drs
   (List.finRange g.nodes.size).foldl propagate init
 
 /-- Second-derivative IBP pass for 1D input: computes per node an interval on d²y/dx².
@@ -1386,76 +1317,34 @@ def runDeriv2D (g : Graph) (ps : ParamStore α)
           if hn1 : dXin.dim = n then
             if hn2 : d2Xin.dim = n then
               let nA : α := (n : Nat)
-              let sum_lo := Spec.Tensor.sumSpec Xin.lo
-              let sum_hi := Spec.Tensor.sumSpec Xin.hi
-              let mu_lo := sum_lo / nA
-              let mu_hi := sum_hi / nA
-              let flo := getDimScalarFn (α:=α) Xin.lo
-              let fhi := getDimScalarFn (α:=α) Xin.hi
+              let muBounds := layerNormMeanBounds (α := α) Xin.lo Xin.hi
+              let mu_lo := muBounds.1
+              let mu_hi := muBounds.2
               -- u := x - mean(x)
-              let u_lo :=
-                Tensor.dim (fun i => match flo i, fhi i with
-                  | .scalar l, .scalar u =>
-                    let dl := l - mu_hi; let du := u - mu_lo
-                    Tensor.scalar (if dl < du then dl else du))
-              let u_hi :=
-                Tensor.dim (fun i => match flo i, fhi i with
-                  | .scalar l, .scalar u =>
-                    let dl := l - mu_hi; let du := u - mu_lo
-                    Tensor.scalar (if dl > du then dl else du))
+              let uBounds := layerNormCenteredBounds (α := α) Xin.lo Xin.hi mu_lo mu_hi
+              let u_lo := uBounds.1
+              let u_hi := uBounds.2
               -- s = sqrt(var+eps), bounds
-              let sumAbsSq : α := (List.finRange n).foldl (fun acc (i : Fin n) =>
-                match flo i, fhi i with
-                | .scalar l, .scalar u =>
-                  let dl := MathFunctions.abs (l - mu_hi)
-                  let du := MathFunctions.abs (u - mu_lo)
-                  let a := if dl > du then dl else du
-                  acc + (a * a)
-              ) 0
-              let var_hi := sumAbsSq / nA
+              let var_hi := layerNormVarianceUpper (α := α) Xin.lo Xin.hi mu_lo mu_hi
               let s_lo := MathFunctions.sqrt Numbers.epsilon
-              let s_hi := MathFunctions.sqrt (var_hi + Numbers.epsilon)
-              let t_lo := Numbers.one / (if s_hi > Numbers.epsilon then s_hi else Numbers.epsilon)
-              let t_hi := Numbers.one / (if s_lo > Numbers.epsilon then s_lo else Numbers.epsilon)
+              let tBounds := layerNormInvStdBounds (α := α) var_hi
+              let t_lo := tBounds.1
+              let t_hi := tBounds.2
               -- d2v = d2x - mean(d2x)
               let d2lo := castDimScalar (α:=α) (n:=d2Xin.dim) (n':=n) (h:=hn2) d2Xin.lo
               let d2hi := castDimScalar (α:=α) (n:=d2Xin.dim) (n':=n) (h:=hn2) d2Xin.hi
-              let sum_d2_lo := Spec.Tensor.sumSpec d2lo
-              let sum_d2_hi := Spec.Tensor.sumSpec d2hi
-              let d2mu_lo := sum_d2_lo / nA
-              let d2mu_hi := sum_d2_hi / nA
-              let fd2Lo := getDimScalarFn (α:=α) d2lo
-              let fd2Hi := getDimScalarFn (α:=α) d2hi
-              let d2v_lo :=
-                Tensor.dim (fun i => match fd2Lo i, fd2Hi i with
-                  | .scalar l, .scalar u =>
-                    let a := l - d2mu_hi; let b := u - d2mu_lo
-                    Tensor.scalar (if a < b then a else b))
-              let d2v_hi :=
-                Tensor.dim (fun i => match fd2Lo i, fd2Hi i with
-                  | .scalar l, .scalar u =>
-                    let a := l - d2mu_hi; let b := u - d2mu_lo
-                    Tensor.scalar (if a > b then a else b))
+              let d2muBounds := layerNormMeanBounds (α := α) d2lo d2hi
+              let d2vBounds := layerNormCenteredBounds (α := α) d2lo d2hi d2muBounds.1 d2muBounds.2
+              let d2v_lo := d2vBounds.1
+              let d2v_hi := d2vBounds.2
               -- v = dx - mean(dx)
               let dlo := castDimScalar (α:=α) (n:=dXin.dim) (n':=n) (h:=hn1) dXin.lo
               let dhi := castDimScalar (α:=α) (n:=dXin.dim) (n':=n) (h:=hn1) dXin.hi
-              let sum_dx_lo := Spec.Tensor.sumSpec dlo
-              let sum_dx_hi := Spec.Tensor.sumSpec dhi
-              let dmu_lo := sum_dx_lo / nA
-              let dmu_hi := sum_dx_hi / nA
-              let fd1Lo := getDimScalarFn (α:=α) dlo
-              let fd1Hi := getDimScalarFn (α:=α) dhi
-              let v_lo :=
-                Tensor.dim (fun i => match fd1Lo i, fd1Hi i with
-                  | .scalar l, .scalar u =>
-                    let a := l - dmu_hi; let b := u - dmu_lo
-                    Tensor.scalar (if a < b then a else b))
-              let v_hi :=
-                Tensor.dim (fun i => match fd1Lo i, fd1Hi i with
-                  | .scalar l, .scalar u =>
-                    let a := l - dmu_hi; let b := u - dmu_lo
-                    Tensor.scalar (if a > b then a else b))
-              -- helper: abs max per comp
+              let dmuBounds := layerNormMeanBounds (α := α) dlo dhi
+              let vBounds := layerNormCenteredBounds (α := α) dlo dhi dmuBounds.1 dmuBounds.2
+              let v_lo := vBounds.1
+              let v_hi := vBounds.2
+              -- Maximum endpoint magnitude for one scalar interval.
               let abs_max (l u : α) : α :=
                 let al := MathFunctions.abs l; let au := MathFunctions.abs u
                 if al > au then al else au
@@ -1531,7 +1420,7 @@ def runDeriv2D (g : Graph) (ps : ParamStore α)
     | .abs | .sqrt | .inv | .maxElem | .minElem | .broadcastTo .. | .reduceSum .. | .reduceMean
       .. =>
       d2s
-    | .conv2d .. => d2s
+    | .conv2d .. | .batchNorm2dNchwEval .. => d2s
   (List.finRange g.nodes.size).foldl propagate init
 
 end NN.MLTheory.CROWN.Graph

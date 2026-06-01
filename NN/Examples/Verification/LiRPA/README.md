@@ -1,8 +1,8 @@
-# LiRPA Verification Fixtures
+# LiRPA Verification Artifacts
 
-These files are compact offline fixtures for checking TorchLean's graph IBP certificate
+These files are small offline artifacts for checking TorchLean's graph IBP certificate
 checker. The reusable checker is `NN.Verification.Cert.IBPCert`; the Lean files here define small
-model fixtures and call that checker.
+model artifacts and call that checker.
 
 The JSON files are compact and reproducible:
 
@@ -20,4 +20,4 @@ lake exe verify -- all
 ```
 
 Larger LiRPA/auto LiRPA experiments write to `_external/`, `/tmp`, or a documented generated data
-directory. This folder keeps the compact fixtures that are useful for review and CI.
+directory. This folder keeps the curated artifacts that are useful for review and CI.

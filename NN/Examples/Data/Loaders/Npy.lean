@@ -74,8 +74,8 @@ def mkModel {batch : Nat} : nn.M (nn.Sequential (Shape.Mat batch inDim) (Shape.M
 /--
 Load the `.npy` tensors, print their metadata, then apply a small input transform.
 
-This file is intentionally interop-first: it shows the path from NumPy/PyTorch exports on disk to
-TorchLean's normal training API.
+This file follows the interop path from NumPy/PyTorch exports on disk to TorchLean's normal
+training API.
 -/
 def loadDataset (xPath yPath : System.FilePath)
     {α : Type} [Semantics.Scalar α] [Runtime.Scalar α] :

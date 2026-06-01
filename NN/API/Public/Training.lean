@@ -765,8 +765,7 @@ def fitModuleStreamStepsReport {inputShapes : List Spec.Shape} {paramShapes : Li
   let hooks : Callbacks α :=
     memHooks
     ++ extraCallbacks
-    ++ onTrainEnd (α := α) (fun report =>
-      IO.println s!"  steps={steps} loss0={report.before} loss1={report.after}")
+    ++ onTrainEnd (α := α) (Common.printFitReport steps)
   fitModuleStreamStepsWith module optimizer steps stream hooks
 
 /--

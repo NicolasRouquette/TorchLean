@@ -37,7 +37,7 @@ Architecture-specific loaders are still useful, but only for mapping names and s
 format itself is model-agnostic.
 
 References:
-- PyTorch tutorial, "Saving and Loading Models":
+- PyTorch documentation, "Saving and Loading Models":
   `https://docs.pytorch.org/tutorials/beginner/saving_loading_models.html`
 - PyTorch `torch.export` user guide:
   `https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/export.html`
@@ -70,10 +70,6 @@ structure JsonBridgeOptions where
   /-- Python expression passed as `weights_only` to `torch.load`. -/
   weightsOnlyExpr : String := "True"
   deriving Repr
-
-/-- Render a Python boolean literal. -/
-def pyBool (b : Bool) : String :=
-  if b then "True" else "False"
 
 /--
 Emit a standalone Python script that converts a PyTorch checkpoint into TorchLean JSON.

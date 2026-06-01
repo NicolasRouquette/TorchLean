@@ -18,7 +18,7 @@ It mirrors the simplest PyTorch workflow:
 1. build a small synthetic dataset (in-memory),
 2. define an MLP (`Linear -> ReLU -> Linear`),
 3. train with Adam,
-4. report loss before/after, plus a few probe predictions.
+4. report loss before/after, plus a few sample predictions.
 
 Run:
 
@@ -61,7 +61,7 @@ Small piecewise-linear regression target:
 
 `y = 0.8 * relu(x1 + x2) - 0.4 * relu(x2 - x1) + 0.2`.
 
-This is easy for a compact ReLU MLP to fit, which keeps the quickstart dependable.
+This is a natural fit for a small ReLU MLP, which keeps the command dependable.
 -/
 def target {α : Type} [Semantics.Scalar α] [Runtime.Scalar α] (x1 x2 : α) : α :=
   (0.8 * Semantics.relu (x1 + x2)) - (0.4 * Semantics.relu (x2 - x1)) + 0.2

@@ -33,8 +33,8 @@ The common path is therefore:
 4. run a bound engine,
 5. inspect or check the output bounds.
 
-The examples under `NN/Examples/Verification/TorchLean/` are compact enough that the whole bound
-path can be read without opening a large benchmark harness.
+The examples under `NN/Examples/Verification/TorchLean/` keep the model, input box, bound pass, and
+reported margin in one place, so the verification path can be read directly from the source.
 
 The seed box is built explicitly. For the small MLP example, `x0` is the center point, `eps` is the
 radius, and `xB` is the flattened input box inserted at the compiled input node:
@@ -179,12 +179,15 @@ Start with the small TorchLean-native examples:
 ```bash
 lake exe verify -- torchlean-crown-ops --dtype float
 lake exe verify -- torchlean-robustness --dtype float
+lake exe verify -- digits-train-certify --epochs=50 --eps=0.02 --max=100
 lake exe verify -- margin-cert
 ```
 
-`torchlean-crown-ops` compiles a compact graph, seeds an input box, runs IBP, then runs forward and
+`torchlean-crown-ops` compiles a small graph, seeds an input box, runs IBP, then runs forward and
 backward CROWN-style affine passes over supported operations. `torchlean-robustness` prints IBP,
-CROWN, and backward-CROWN certification booleans for a small robustness workflow. `margin-cert`
+CROWN, and backward-CROWN certification booleans for a small robustness workflow.
+`digits-train-certify` trains a small sklearn-digits classifier with Python, exports weights and
+test examples, then immediately recompiles and certifies those artifacts in Lean. `margin-cert`
 checks an exported margin JSON artifact by recomputing the margin predicate.
 
 Typical output from the native CROWN example includes softmax bounds, an MSE-loss bound, a margin
@@ -225,7 +228,7 @@ def leafVerifiedAt (lb thr : Array Float) (witnessIdx : Nat) : Bool :=
     false
 ```
 
-The CLI entry point defaults to a small bundled fixture:
+The CLI entry point defaults to a small bundled artifact:
 
 ```bash
 lake exe verify -- abcrown-leaf \

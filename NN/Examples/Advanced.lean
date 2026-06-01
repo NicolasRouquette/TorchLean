@@ -20,7 +20,7 @@ public import NN.Examples.Advanced.Widgets
 
 Curated umbrella for advanced TorchLean examples.
 
-These files are not beginner introductory examples. They demonstrate cross-cutting boundaries:
+These files are not beginner introductory examples. They cover cross-cutting boundaries:
 
 - float/runtime semantics and Arb-backed interval comparison;
 - GraphSpec lowering into the training API;

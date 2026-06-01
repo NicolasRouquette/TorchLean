@@ -9,9 +9,9 @@
 // Shared helpers for convolution and pooling FFI implementations.
 //
 // Both CUDA and CPU-stub files include this header so their shape arithmetic stays synchronized.
-// The formulas intentionally mirror TorchLean's Nat-style specs: subtractions truncate at zero
-// instead of becoming negative, and host wrappers reject invalid kernel/stride metadata before work
-// reaches the device.
+// The formulas mirror TorchLean's Nat-style specs: subtractions truncate at zero instead of
+// becoming negative, and host wrappers reject invalid kernel/stride metadata before work reaches
+// the device.
 
 enum { TORCHLEAN_CUDA_CONV_POOL_MAX_RANK = 8 };
 
@@ -19,6 +19,19 @@ static inline void checkBufSize(torchlean_cuda_buffer* b, size_t elems, const ch
   if (b->size != elems) {
     lean_internal_panic(msg);
   }
+}
+
+static inline lean_object* torchlean_cuda_box_three_buffers(
+    torchlean_cuda_buffer* first,
+    torchlean_cuda_buffer* second,
+    torchlean_cuda_buffer* third) {
+  lean_object* tail = lean_alloc_ctor(0, 2, 0);
+  lean_ctor_set(tail, 0, torchlean_cuda_buffer_box(second));
+  lean_ctor_set(tail, 1, torchlean_cuda_buffer_box(third));
+  lean_object* out = lean_alloc_ctor(0, 2, 0);
+  lean_ctor_set(out, 0, torchlean_cuda_buffer_box(first));
+  lean_ctor_set(out, 1, tail);
+  return out;
 }
 
 static inline uint32_t outDim(uint32_t in, uint32_t k, uint32_t stride, uint32_t padding) {

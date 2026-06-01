@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Graph.Core
+public import NN.IR.Payload
 
 /-!
 Shared definitions for the graph CROWN engine.
@@ -18,27 +19,6 @@ objective passes.
 
 public section
 
-
-/-
-Flat LiRPA engine over flattened vectors
-=======================================
-This module contains the shared executable pieces used by the graph engine: flat vectors,
-parameter stores, interval box arithmetic, shape permutation helpers, and small tensor casts.
-The actual passes live next to this file:
-
-- `Engine.IBP` runs interval bound propagation.
-- `Engine.Derivatives` runs derivative interval propagation.
-- `Engine.Affine` builds affine forms.
-- `Engine.CROWN` runs forward CROWN/DeepPoly bounds.
-- `Engine.BackwardObjective` runs objective-dependent backward CROWN.
-
-Proof-facing shape/enclosure facts live separately in `Graph/Theorems`.
-
-The executable engine covers the verifier dialect used by TorchLean certificates, including
-input/const/add/sub/relu/reshape/flatten/linear/matmul and selected convolution, normalization,
-softmax, and elementwise rules. Operators outside a specific transfer rule are kept conservative:
-they either return interval-only state or an explicit `none`, depending on the pass.
--/
 namespace NN.MLTheory.CROWN.Graph
 
 open _root_.Spec
@@ -89,31 +69,61 @@ structure MatParams (α : Type) [Context α] where
   w : Tensor α (.dim m (.dim n .scalar))
 
 /-- Conv2D parameters with cached spatial dimensions for graph propagation. -/
-structure Conv2DParams (α : Type) [Context α] where
-  /-- Input channels. -/
-  inC : Nat
-  /-- Output channels. -/
-  outC : Nat
-  /-- Kernel height. -/
-  kH : Nat
-  /-- Kernel width. -/
-  kW : Nat
-  /-- Stride (shared for height/width). -/
-  stride : Nat
-  /-- Zero padding (shared for height/width). -/
-  padding : Nat
-  /-- Input height. -/
-  inH : Nat
-  /-- Input width. -/
-  inW : Nat
-  /-- Proof that `inC` is nonzero (required by the typed conv spec). -/
-  hIn : inC ≠ 0
-  /-- Proof that `kH` is nonzero. -/
-  hKH : kH ≠ 0
-  /-- Proof that `kW` is nonzero. -/
-  hKW : kW ≠ 0
-  /-- Typed conv specification payload. -/
-  spec : Spec.Conv2DSpec inC outC kH kW stride padding α hIn hKH hKW
+abbrev Conv2DParams (α : Type) [Context α] : Type :=
+  NN.IR.Conv2DParams α
+
+/-- Eval-mode BatchNorm2d parameters for an `N×C×H×W` node. -/
+abbrev BatchNorm2DNchwEvalParams (α : Type) [Context α] : Type :=
+  NN.IR.BatchNorm2DNchwEvalParams α
+
+/-- Channel index for a flattened `N×C×H×W` tensor in row-major order. -/
+def nchwChannelOfFlat (c h w idx : Nat) : Nat :=
+  if h * w = 0 then
+    0
+  else
+    (idx / (h * w)) % c
+
+/-- Eval BatchNorm scale for one channel. -/
+def batchNorm2dNchwEvalScale (cfg : BatchNorm2DNchwEvalParams α) (ci : Fin cfg.c) : α :=
+  match getAtSpec cfg.gamma ci, getAtSpec cfg.var ci with
+  | .scalar gamma, .scalar var =>
+      gamma / MathFunctions.sqrt (max var Numbers.zero + cfg.eps)
+
+/-- Eval BatchNorm bias for one channel after folding running statistics into an affine map. -/
+def batchNorm2dNchwEvalBias (cfg : BatchNorm2DNchwEvalParams α) (ci : Fin cfg.c) : α :=
+  match getAtSpec cfg.beta ci, getAtSpec cfg.mean ci with
+  | .scalar beta, .scalar mean =>
+      beta - mean * batchNorm2dNchwEvalScale (α := α) cfg ci
+
+/--
+Build the exact diagonal affine form for eval-mode BatchNorm2d over an `N×C×H×W` tensor.
+
+The IR stores the channel parameters in the node payload. The spatial dimensions come from the
+checked parent shape, so malformed shapes simply do not produce a verifier transfer rule.
+-/
+def batchNorm2dNchwEvalLinear? (parentShape : Shape)
+    (cfg : BatchNorm2DNchwEvalParams α) : Option (LinParams α) :=
+  match parentShape with
+  | .dim _n (.dim c (.dim h (.dim w .scalar))) =>
+      if hcfg : cfg.c = 0 then
+        none
+      else if c = cfg.c then
+        haveI : NeZero cfg.c := ⟨hcfg⟩
+        let outDim := parentShape.size
+        let weight : Tensor α (.dim outDim (.dim outDim .scalar)) :=
+          Tensor.dim (fun oi =>
+            Tensor.dim (fun ii =>
+              let ch := nchwChannelOfFlat cfg.c h w oi.val
+              let scale := batchNorm2dNchwEvalScale (α := α) cfg (Fin.ofNat cfg.c ch)
+              Tensor.scalar (if decide (oi.val = ii.val) then scale else Numbers.zero)))
+        let bias : Tensor α (.dim outDim .scalar) :=
+          Tensor.dim (fun oi =>
+            let ch := nchwChannelOfFlat cfg.c h w oi.val
+            Tensor.scalar (batchNorm2dNchwEvalBias (α := α) cfg (Fin.ofNat cfg.c ch)))
+        some { m := outDim, n := outDim, w := weight, b := bias }
+      else
+        none
+  | _ => none
 
 /--
 Parameters keyed by node id (weights, biases, constants, and seeded input boxes).
@@ -132,6 +142,9 @@ structure ParamStore (α : Type) [Context α] where
   matmulW    : Std.HashMap Nat (MatParams α) := Std.HashMap.emptyWithCapacity
   /-- Conv2d specs (`id -> conv configuration`). -/
   conv2dCfg  : Std.HashMap Nat (Conv2DParams α) := Std.HashMap.emptyWithCapacity
+  /-- Eval-mode BatchNorm2d parameters (`id -> gamma/beta/running stats`). -/
+  batchNorm2dNchwEval : Std.HashMap Nat (BatchNorm2DNchwEvalParams α) :=
+    Std.HashMap.emptyWithCapacity
 
 /-- Default inhabitant for `FlatBox` (a 0-dimensional box at `0`). -/
 instance [Context α] : Inhabited (FlatBox α) where
@@ -602,6 +615,68 @@ References:
 - Bound propagation context: Xu et al., 2020 (auto_LiRPA): https://arxiv.org/abs/2002.12920
 -/
 
+/--
+Upper bound on the variance term used by the LayerNorm interval rules.
+
+Given endpoint bounds for a vector and bounds on its mean, each coordinate is at most
+`max |x_i - μ|` away from the bounded mean interval. Squaring and summing those coordinate radii
+gives the conservative variance upper bound reused by IBP, affine propagation, and derivative
+interval passes.
+-/
+def layerNormVarianceUpper {n : Nat}
+    (lo hi : Tensor α (.dim n .scalar)) (muLo muHi : α) : α :=
+  match lo, hi with
+  | .dim flo, .dim fhi =>
+      let sumAbsSq : α := (List.finRange n).foldl (fun acc (i : Fin n) =>
+        match flo i, fhi i with
+        | .scalar l, .scalar u =>
+          let dl := MathFunctions.abs (l - muHi)
+          let du := MathFunctions.abs (u - muLo)
+          let a := if dl > du then dl else du
+          acc + (a * a)) 0
+      sumAbsSq / (n : Nat)
+
+/-- Mean bounds for a vector whose coordinates are bounded by endpoint tensors. -/
+def layerNormMeanBounds {n : Nat}
+    (lo hi : Tensor α (.dim n .scalar)) : α × α :=
+  let nA : α := (n : Nat)
+  (Spec.Tensor.sumSpec lo / nA, Spec.Tensor.sumSpec hi / nA)
+
+/--
+Bounds for `x - μ` when `x` is bounded coordinatewise and `μ` is bounded by an interval.
+
+LayerNorm transfer rules repeatedly need this centered interval for the input, first derivative,
+and second derivative streams. Keeping it here avoids duplicating the same endpoint arithmetic in
+IBP and derivative propagation.
+-/
+def layerNormCenteredBounds {n : Nat}
+    (lo hi : Tensor α (.dim n .scalar)) (muLo muHi : α) :
+    Tensor α (.dim n .scalar) × Tensor α (.dim n .scalar) :=
+  let flo := match lo with | .dim f => f
+  let fhi := match hi with | .dim f => f
+  let loOut :=
+    Tensor.dim (fun i =>
+      match flo i, fhi i with
+      | .scalar l, .scalar u =>
+        let dl := l - muHi
+        let du := u - muLo
+        Tensor.scalar (if dl < du then dl else du))
+  let hiOut :=
+    Tensor.dim (fun i =>
+      match flo i, fhi i with
+      | .scalar l, .scalar u =>
+        let dl := l - muHi
+        let du := u - muLo
+        Tensor.scalar (if dl > du then dl else du))
+  (loOut, hiOut)
+
+/-- Bounds for the reciprocal LayerNorm denominator from an upper variance bound. -/
+def layerNormInvStdBounds (varHi : α) : α × α :=
+  let sLo := MathFunctions.sqrt Numbers.epsilon
+  let sHi := MathFunctions.sqrt (varHi + Numbers.epsilon)
+  (Numbers.one / (if sHi > Numbers.epsilon then sHi else Numbers.epsilon),
+   Numbers.one / (if sLo > Numbers.epsilon then sLo else Numbers.epsilon))
+
 /-- Interval bound propagation for `layernorm`, applied on the last axis and lifted over leading
   dims. -/
 def ibpLayernormLastTensor : {s : Shape} → Tensor α s → Tensor α s → (Tensor α s × Tensor α s)
@@ -615,15 +690,7 @@ def ibpLayernormLastTensor : {s : Shape} → Tensor α s → Tensor α s → (Te
         let mu_hi := sum_hi / nA
         let flo := match lo with | .dim f => f
         let fhi := match hi with | .dim f => f
-        let sumAbsSq : α := (List.finRange n).foldl (fun acc (i : Fin n) =>
-          match flo i, fhi i with
-          | .scalar l, .scalar u =>
-            let dl := MathFunctions.abs (l - mu_hi)
-            let du := MathFunctions.abs (u - mu_lo)
-            let a := if dl > du then dl else du
-            acc + (a * a)
-        ) 0
-        let var_hi := sumAbsSq / nA
+        let var_hi := layerNormVarianceUpper (α := α) lo hi mu_lo mu_hi
         let den_lo := MathFunctions.sqrt Numbers.epsilon
         let den_hi := MathFunctions.sqrt (var_hi + Numbers.epsilon)
         let outLo :=
@@ -708,23 +775,26 @@ abbrev castDimScalar {n n' : Nat}
   (h : n = n') (t : Tensor α (.dim n .scalar)) : Tensor α (.dim n' .scalar) := by
   simpa [h] using t
 
+/-- IBP propagation through explicit linear parameters. -/
+@[expose]
+public def ibpLinearParams (p : LinParams α) (Xin : FlatBox α) : Option (FlatBox α) :=
+  if h : Xin.dim = p.n then
+    let xB   : Box α (.dim p.n .scalar) := castBoxDim (α:=α) h (ofFlatBox Xin)
+    let bBox : Box α (.dim p.m .scalar) := Box.point (α:=α) p.b
+    let yB   := NN.MLTheory.CROWN.IBP.linear (α:=α) (m:=p.m) (n:=p.n) p.w xB bBox
+    -- Materialize to avoid deep closure chains in multi-layer verifier runs.
+    let yB' : Box α (.dim p.m .scalar) :=
+      { lo := Tensor.materialize yB.lo
+        hi := Tensor.materialize yB.hi }
+    some (toFlatBox p.m yB')
+  else none
+
 /-- IBP propagation for a `.linear` node using `ParamStore.linearWB`. -/
 @[expose]
 public def ibp_linear (id : Nat) (ps : ParamStore α) (Xin : FlatBox α) : Option (FlatBox α) :=
   match ps.linearWB[id]? with
   | none => none
-  | some p =>
-    if h : Xin.dim = p.n then
-      let xB   : Box α (.dim p.n .scalar) := castBoxDim (α:=α) h (ofFlatBox Xin)
-      let bBox : Box α (.dim p.m .scalar) := Box.point (α:=α) p.b
-      let yB   := NN.MLTheory.CROWN.IBP.linear (α:=α) (m:=p.m) (n:=p.n) p.w xB bBox
-      -- Materialize to avoid deep closure chains (crucial for runtime performance on
-      -- multi-layer networks when tensors are represented functionally).
-      let yB' : Box α (.dim p.m .scalar) :=
-        { lo := Tensor.materialize yB.lo
-          hi := Tensor.materialize yB.hi }
-      some (toFlatBox p.m yB')
-    else none
+  | some p => ibpLinearParams (α := α) p Xin
 
 /-- IBP propagation for a `.matmul` node (bias-free) using `ParamStore.matmulW`. -/
 @[expose]

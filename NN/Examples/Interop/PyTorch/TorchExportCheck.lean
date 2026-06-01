@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import Lean.Data.Json
+public import NN.API.Json
 public import NN.Runtime.External.Process
 public import NN.Runtime.PyTorch.Export.TorchExport
 public import NN.Runtime.PyTorch.Import.TorchExport
@@ -40,7 +41,7 @@ namespace NN.Examples.Interop.PyTorch.TorchExportCheck
 open Lean
 
 def workDir : System.FilePath :=
-  ".lake/build/torchlean_pytorch_export_check"
+  Runtime.External.Process.artifactWorkDir "pytorch_export_check"
 
 def bridgePath : System.FilePath :=
   workDir / "export_torchlean_graph.py"
@@ -94,6 +95,13 @@ def supportedModelSource : String :=
     , "        x = torch.flatten(x)"
     , "        return self.fc(x)"
     , ""
+    , "class TinyBatchNorm2d(nn.Module):"
+    , "    def __init__(self):"
+    , "        super().__init__()"
+    , "        self.bn = nn.BatchNorm2d(2)"
+    , "    def forward(self, x):"
+    , "        return self.bn(x)"
+    , ""
     , "class TinyNormSoftmax(nn.Module):"
     , "    def __init__(self):"
     , "        super().__init__()"
@@ -139,12 +147,6 @@ def supportedModelSource : String :=
     , ""
     ]
 
-def readJsonFile (path : System.FilePath) : IO Json := do
-  let txt ← IO.FS.readFile path
-  match Json.parse txt with
-  | .ok j => pure j
-  | .error e => throw <| IO.userError s!"bad JSON in {path}: {e}"
-
 def runCapture (ctor : String) (outPath : System.FilePath) (shape : String) : IO String := do
   Runtime.External.Process.runStdoutChecked
     (ctx := s!"PyTorch graph capture ({ctor})")
@@ -155,13 +157,13 @@ def runCapture (ctor : String) (outPath : System.FilePath) (shape : String) : IO
 /--
 Write a real PyTorch checkpoint used by `TinyCheckpointMLP`.
 
-This is intentionally a compact `state_dict` round-trip: Python owns `.pt` loading/saving, and the graph
-bridge only sees the resulting initialized `nn.Module`. That mirrors the intended user workflow:
+Python owns `.pt` loading/saving, and the graph bridge only sees the resulting initialized
+`nn.Module`. That mirrors the intended user workflow:
 load trained weights in Python, capture the model graph, then ask Lean to validate the exported IR.
 -/
 def writeCheckpoint : IO Unit := do
   let _stdout ← Runtime.External.Process.runStdoutChecked
-    (ctx := "PyTorch checkpoint fixture")
+    (ctx := "PyTorch checkpoint reference")
     (cmd := "python")
     (args := #[
       "-c",
@@ -188,7 +190,11 @@ def runSupportedCase (ctor shape : String) : IO Unit := do
   let outPath := workDir / s!"{ctor}.graph.json"
   let _stdout ← runCapture ctor outPath shape
   IO.println s!"captured supported graph: {ctor} ({shape})"
-  let j ← readJsonFile outPath
+  if ctor = "TinyBatchNorm2d" then
+    let txt ← IO.FS.readFile outPath
+    unless txt.contains "\"eps\"" do
+      throw <| IO.userError "TinyBatchNorm2d export did not preserve BatchNorm epsilon metadata"
+  let j ← NN.API.Json.parseFile outPath
   match Import.PyTorch.TorchExport.parseGraph j with
   | .ok cg =>
       IO.println s!"  accepted: nodes={cg.graph.nodes.size}, input={cg.inputId}, output={cg.outputId}"
@@ -203,6 +209,7 @@ def runSupported : IO Unit := do
   runSupportedCase "TinyCheckpointMLP" "4"
   runSupportedCase "TinyCNN" "1,8,8"
   runSupportedCase "TinyCNNHead" "1,8,8"
+  runSupportedCase "TinyBatchNorm2d" "1,2,4,4"
   runSupportedCase "TinyNormSoftmax" "4"
   runSupportedCase "TinyTransformerishBlock" "4"
   runSupportedCase "TinySelfAttentionOps" "1,2,4"
@@ -229,7 +236,7 @@ or incorrectly treating the tuple producer as a tensor op.
 def runLeanUnsupportedCase (ctor shape msg : String) : IO Unit := do
   let outPath := workDir / s!"{ctor}.graph.json"
   let _stdout ← runCapture ctor outPath shape
-  let j ← readJsonFile outPath
+  let j ← NN.API.Json.parseFile outPath
   match Import.PyTorch.TorchExport.parseGraph j with
   | .ok _ =>
       throw <| IO.userError s!"unsupported PyTorch value graph unexpectedly lowered: {ctor}"

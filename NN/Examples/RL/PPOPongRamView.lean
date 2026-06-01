@@ -15,8 +15,9 @@ public import NN.Runtime.RL.Artifacts.DefaultPaths
 This file visualizes the training curve produced by
 `NN/Examples/Models/RL/PPOPongRam.lean` (`lake exe torchlean ppo_pong_ram`).
 
-Pong RAM intentionally uses the same Gymnasium boundary as CartPole, but with ALE registration and
-a higher-dimensional observation. It is an integration/regression example, not a tuned Atari agent.
+Pong RAM uses the same Gymnasium boundary as CartPole, with ALE registration and a
+higher-dimensional observation. The viewer focuses on saved-artifact inspection for the Atari RAM
+path rather than benchmark-specific PPO tuning.
 
 Workflow:
 1. Run:

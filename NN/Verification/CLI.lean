@@ -13,6 +13,7 @@ public import NN.Verification.PINN.CLI
 public import NN.Verification.PINN.Certificate
 public import NN.Verification.PINN.DatasetCheck
 public import NN.Verification.ODE.Verify
+public import NN.Verification.Robustness.Digits
 
 /-!
 # CLI
@@ -202,6 +203,11 @@ def otherTools : List Tool :=
       includeInAll := false
       run := fun args =>
         NN.Verification.Robustness.Digits.main args }
+  , { name := "digits-train-certify"
+      description := "train sklearn-digits classifier, compile to IR, then run IBP/CROWN report"
+      includeInAll := false
+      run := fun args =>
+        NN.Verification.Robustness.Digits.mainTrainThenCertify args }
   , { name := "vnncomp-mnistfc"
       description := "VNN-COMP-style suite: MNIST-FC (vnncomp2022) via exported JSON"
       includeInAll := false

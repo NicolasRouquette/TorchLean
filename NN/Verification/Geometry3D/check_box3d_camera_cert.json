@@ -1,6 +1,6 @@
 {
   "format": "torchlean.camera.box3d.v1",
-  "source": "runtime fixture for the Geometry3D CLI; not model output",
+  "source": "runtime artifact for the Geometry3D CLI; not model output",
   "image_width": 640.0,
   "image_height": 480.0,
   "tol": 0.0,

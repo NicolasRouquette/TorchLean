@@ -27,25 +27,19 @@ TorchLean has had a large repository cleanup pass. The goal was simple: make
 the public source tree easier to read, easier to review, and easier to extend
 without changing the intended behavior of the library.
 
-This was made possible by having enough Codex-assisted development credits available
-to do the kind of careful refactor that is usually hard to justify in one
-sitting: split very large Lean files into smaller modules, update import
-surfaces, rebuild the generated documentation, and polish comments across the
-codebase. Overall to us it seems like it did a good job, we also manually reviewed many of the files.
-
-The pass is intentionally not a new technical feature. It is a source-structure
-and documentation-quality update:
+This pass is a source-structure and documentation-quality update, not a change
+to TorchLean's mathematical or runtime semantics:
 
 - large proof and runtime files were split along existing conceptual boundaries;
 - umbrella modules were kept only where they clarify the public import surface;
-- old import shells and example names were removed;
+- obsolete import shells and example names were removed;
 - comments were rewritten in a more mathlib-style voice, explaining definitions
-  and trust boundaries as part of the maintained source; (Check Mathlib documentation style guide)
+  and trust boundaries as part of the maintained source;
 - examples, API docs, the Verso guide, and website pages were rebuilt against the
   new module layout.
 
-Finally we want to emphasize that this pass did not have any technical changes i.e., model
-semantics, verification claims, CUDA behavior, or trusted boundaries.
+This pass does not change model semantics, verification claims, CUDA behavior,
+or trusted boundaries.
 
 ## May 2026: Lean 4.30 and Runtime API Update
 

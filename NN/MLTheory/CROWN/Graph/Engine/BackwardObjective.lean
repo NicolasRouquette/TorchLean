@@ -31,16 +31,8 @@ variable [BoundOps α]
 open BoundOps
 
 /-!
-Backward/dual CROWN (objective-dependent) propagation
-----------------------------------------------------
-
-`runCROWN` above is a forward DeepPoly-style pass: it computes nodewise affine bounds that do not
-depend on an objective.
-
-Basic CROWN additionally supports *backward* propagation for a linear objective
-`cᵀ · output`, selecting per-neuron relaxations based on the sign of the downstream coefficients.
-
-The implementation below is pragmatic and covers the IR ops we support in `runCROWN`.
+The backward pass covers the same verifier dialect as `runCROWN` where objective-dependent
+relaxations are available. Unsupported nodes consume already-computed IBP boxes conservatively.
 -/
 
 private inductive BackwardDir where
@@ -516,6 +508,21 @@ private def backwardNode (dir : BackwardDir)
         | some cadd => { st with cst := st.cst + cadd }
         | none => st
       | none => st
+    | .batchNorm2dNchwEval .. =>
+      match node.parents with
+      | p1 :: _ =>
+        match ps.batchNorm2dNchwEval[id]? with
+        | some cfg =>
+          match batchNorm2dNchwEvalLinear? (α := α) nodes[p1]!.outShape cfg with
+          | some p =>
+            match backwardLinear (α := α) (m := p.m) (n := p.n) aY p.w p.b with
+            | some (aX, cadd) =>
+              let st' := addCoeff (α := α) st p1 aX
+              { st' with cst := st'.cst + cadd }
+            | none => st
+          | none => st
+        | none => st
+      | _ => st
     | .linear =>
       match node.parents with
       | p1 :: _ =>

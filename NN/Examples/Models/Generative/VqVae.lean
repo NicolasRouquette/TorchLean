@@ -36,7 +36,7 @@ namespace NN.Examples.Models.Generative.VqVae
 def exeName : String := "torchlean vqvae"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/vqvae_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "vqvae"
 
 /--
 Shared vector-image configuration.
@@ -70,28 +70,11 @@ loss-curve artifact format as the other generative commands.
 def main (args : List String) : IO UInt32 := do
   TorchLean.Module.run exeName args
     (.float (fun opts rest => do
-      let (xPath, yPath, nRows, seed, rest) ← Common.orThrow exeName <| RealData.parseCifarFlags rest
-      let (train, rest) ← Common.orThrow exeName <|
-        Common.parseLoggedTrainFlags exeName rest defaultLogJson 10
-      Common.orThrow exeName <| CLI.requireNoArgs rest
-      let x ← RealData.loadCifarVectorBatch cfg (by decide) exeName xPath yPath nRows seed
-      let sample := nn.models.reconstructionSample cfg x
-      let curve ←
-        _root_.NN.API.Models.TrainFixed.curveFloat
-          (mkModel := mkModel)
-          (mkModuleDef := fun model => nn.mseScalarModuleDef model)
-          (mkOptim := fun ps =>
-            TorchLean.Optim.adam (α := Float) (paramShapes := ps)
-              (lr := 1e-3) (beta1 := 0.9) (beta2 := 0.999) (epsilon := 1e-8))
-          (opts := opts) (sample := sample) (steps := train.steps)
-          (cudaMemWatch := train.cudaMemWatch)
-      let loss0 := curve.values.getD 0 0.0
-      let lossN := curve.values.getD (curve.values.size - 1) loss0
-      IO.println s!"  steps={train.steps} loss0={loss0} loss{train.steps}={lossN}"
-      Common.writeCurveLogTo train.log "VQ-VAE-style CIFAR reconstruction" curve "loss"
-        #[s!"data=cifar10", s!"latentDim={cfg.latentDim}", s!"nRows={nRows}",
-          s!"device={if opts.useGpu then "cuda" else "cpu"}",
-          s!"cuda_mem_watch={Common.effectiveCudaMemWatch opts train.steps train.cudaMemWatch}"]
+      let flags ← Common.orThrow exeName <|
+        RealData.parseCifarLoggedTrainFlags exeName rest defaultLogJson 10
+      let _curve ← RealData.fitCifarVectorCurve cfg (by decide) exeName
+        "VQ-VAE-style CIFAR reconstruction" mkModel (nn.models.reconstructionSample cfg)
+        opts flags #[s!"latentDim={cfg.latentDim}"]
     ))
     { banner? := some (fun opts =>
         s!"{exeName}: CIFAR VQ-VAE-style training (device={if opts.useGpu then "cuda" else "cpu"})")

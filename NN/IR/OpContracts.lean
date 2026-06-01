@@ -86,6 +86,26 @@ def checkPositive (tag param : String) (n : Nat) : Except String Unit := do
     pure ()
 
 /--
+Reconstruct the proof object required by the typed tensor broadcast primitive.
+
+IR nodes store dynamic shapes, so every pass that accepts `.broadcastTo` must rebuild this witness
+instead of trusting that the declared input and output shapes are compatible.
+-/
+def mkCanBroadcastTo? : (s₁ s₂ : Shape) → Option (Shape.CanBroadcastTo s₁ s₂)
+  | .scalar, s₂ => some (.scalar_to_any s₂)
+  | .dim n₁ t₁, .dim n₂ t₂ =>
+      if hEq : n₁ = n₂ then
+        (mkCanBroadcastTo? t₁ t₂).map (fun tail =>
+          hEq ▸ Shape.CanBroadcastTo.dim_eq (n := n₁) (s₁ := t₁) (s₂ := t₂) tail)
+      else if h1 : n₁ = 1 then
+        (mkCanBroadcastTo? t₁ t₂).map (fun tail =>
+          h1 ▸ Shape.CanBroadcastTo.dim_1_to_n (n := n₂) (s₁ := t₁) (s₂ := t₂) tail)
+      else
+        (mkCanBroadcastTo? (.dim n₁ t₁) t₂).map (fun tail =>
+          Shape.CanBroadcastTo.expand_dims (n := n₂) (s₁ := .dim n₁ t₁) (s₂ := t₂) tail)
+  | _, _ => none
+
+/--
 Compute the `(seqLen, embedDim)` pair used to interpret `layernorm axis`.
 
 TorchLean’s IR stores LayerNorm as an `axis : Nat` instead of a full `normalized_shape` tuple.
@@ -106,6 +126,8 @@ def layerNorm2DParams (axis : Nat) (s : Shape) : Except String (Nat × Nat) := d
   let dims := Shape.toList s
   let seqLen : Nat := (dims.take axis).foldl (fun acc d => acc * d) 1
   let embedDim : Nat := (dims.drop axis).foldl (fun acc d => acc * d) 1
+  checkPositive "layernorm" "seqLen" seqLen
+  checkPositive "layernorm" "embedDim" embedDim
   pure (seqLen, embedDim)
 
 /--
@@ -298,6 +320,19 @@ def slideOut (inLen k stride : Nat) : Nat :=
 def slideOutPad (inLen k stride padding : Nat) : Nat :=
   (inLen + 2 * padding - k) / stride + 1
 
+/--
+Reject sliding-window shapes where the kernel has no valid placement.
+
+Lean `Nat` subtraction saturates at zero, so `(in + 2*pad - k)` would otherwise turn an invalid
+window into a plausible one-element output.
+-/
+def checkWindowFits (tag axis : String) (inLen k padding : Nat) : Except String Unit := do
+  let padded := inLen + 2 * padding
+  if padded < k then
+    throw s!"{tag}: {axis} window does not fit padded input: input={inLen}, padding={padding}, kernel={k}"
+  else
+    pure ()
+
 /-- Output shape for CHW pooling without padding. -/
 def pool2dCHWOutShape (c inH inW kH kW stride : Nat) : Shape :=
   let outH := slideOut inH kH stride
@@ -324,6 +359,8 @@ def inferPool2dCHWOutShape (tag : String) (kH kW stride : Nat) (parent : Shape) 
   checkPositive tag "stride" stride
   match parent with
   | .dim c (.dim inH (.dim inW .scalar)) =>
+      checkWindowFits tag "height" inH kH 0
+      checkWindowFits tag "width" inW kW 0
       pure (pool2dCHWOutShape c inH inW kH kW stride)
   | s =>
       throw s!"{tag}: expected input shape (C,H,W), got {repr s}"
@@ -336,13 +373,15 @@ def inferPool2dCHWOutShapePad (tag : String) (kH kW stride padding : Nat) (paren
   checkPositive tag "stride" stride
   match parent with
   | .dim c (.dim inH (.dim inW .scalar)) =>
+      checkWindowFits tag "height" inH kH padding
+      checkWindowFits tag "width" inW kW padding
       pure (pool2dCHWOutShapePad c inH inW kH kW stride padding)
   | s =>
       throw s!"{tag}: expected input shape (C,H,W), got {repr s}"
 
 /-- Infer the output shape for CHW Conv2D, checking the declared `inC` against the parent shape. -/
 def inferConv2dCHWOutShape (inC outC kH kW stride padding : Nat) (parent : Shape) : Except String
-  Shape := do
+    Shape := do
   checkPositive "conv2d" "inC" inC
   checkPositive "conv2d" "kH" kH
   checkPositive "conv2d" "kW" kW
@@ -351,9 +390,26 @@ def inferConv2dCHWOutShape (inC outC kH kW stride padding : Nat) (parent : Shape
   | .dim inC' (.dim inH (.dim inW .scalar)) =>
       if inC != inC' then
         throw s!"conv2d: inC mismatch: op={inC} vs input={inC'}"
+      checkWindowFits "conv2d" "height" inH kH padding
+      checkWindowFits "conv2d" "width" inW kW padding
       pure (conv2dCHWOutShape outC inH inW kH kW stride padding)
   | s =>
       throw s!"conv2d: expected input shape (inC,inH,inW), got {repr s}"
+
+/-- Output shape for eval-mode BatchNorm2d on NCHW tensors. -/
+def inferBatchNorm2dNchwEvalOutShape (channels : Nat) (parent : Shape) : Except String Shape := do
+  checkPositive "batch_norm2d_nchw_eval" "channels" channels
+  match parent with
+  | .dim n (.dim c (.dim h (.dim w .scalar))) =>
+      checkPositive "batch_norm2d_nchw_eval" "batch" n
+      checkPositive "batch_norm2d_nchw_eval" "height" h
+      checkPositive "batch_norm2d_nchw_eval" "width" w
+      if channels = c then
+        pure parent
+      else
+        throw s!"batch_norm2d_nchw_eval: channel mismatch: op={channels} vs input={c}"
+  | s =>
+      throw s!"batch_norm2d_nchw_eval: expected input shape (N,C,H,W), got {repr s}"
 
 end OpContracts
 

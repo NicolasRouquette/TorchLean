@@ -17,8 +17,8 @@ Low-level coverage for the packed real FFT buffer primitives:
 - `Buffer.rfft1dPacked`: `(batch, n)` real float32 rows to `(batch, n/2+1, 2)`,
 - `Buffer.irfft1dPacked`: packed half-spectrum back to normalized real rows.
 
-The CUDA backend uses cuFFT. The non-CUDA build uses a direct CPU DFT stub. These tests are
-intentionally about the runtime buffer contract, not yet about an autograd-facing spectral layer.
+The CUDA backend uses cuFFT. The non-CUDA build uses a direct CPU DFT stub. These tests check the
+runtime buffer contract; autograd-facing spectral layers are covered separately.
 -/
 
 @[expose] public section
@@ -133,8 +133,8 @@ def runSpectralConvFiniteDiff : IO Unit := do
 
   -- This validates the explicit VJP kernels against the scalar pairing
   --   L(x,w) = sum(spectralConv1dRfft(x,w) * dY).
-  -- The half-spectrum adjoint has subtle `2/n` factors for interior frequencies, so this test is
-  -- intentionally small and direct rather than relying on only shape-level tape coverage.
+  -- The half-spectrum adjoint has subtle `2/n` factors for interior frequencies, so this test
+  -- checks the numeric VJP directly instead of relying only on shape-level tape coverage.
   let grid : UInt32 := 4
   let width : UInt32 := 1
   let modes : UInt32 := 3

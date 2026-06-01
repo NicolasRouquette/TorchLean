@@ -78,6 +78,12 @@ abbrev BuildM (α : Type) [Context α] : Type → Type :=
 def fail {α : Type} [Context α] {β : Type} (msg : String) : BuildM α β :=
   throw msg
 
+/-- Run a shared IR shape contract and surface its error from the compiler path. -/
+def requireContract {α : Type} [Context α] {β : Type} (r : Except String β) : BuildM α Unit := do
+  match r with
+  | .ok _ => pure ()
+  | .error msg => fail (α := α) msg
+
 /-- Append a freshly constructed IR node to the builder state. -/
 def pushNode {α : Type} [Context α] (n : Node) : BuildM α Unit := do
   modify fun st => { st with nodes := st.nodes.push n }
@@ -396,6 +402,9 @@ instance {α : Type} [Context α] [DecidableEq Shape] [Inhabited α] :
 
         if hs : sH = sW then
           if hp : pH = pW then
+            requireContract (α := α) <|
+              NN.IR.OpContracts.inferPool2dCHWOutShapePad "max_pool2d_pad" kH kW sH pH
+                (.dim C (.dim inH (.dim inW .scalar)))
             let xId ← ensureNode (α := α) xCHW
             let id ← freshId (α := α)
             let outShape : Shape := Spec.pool2dMultiOutShapePad C inH inW kH kW sH pH
@@ -458,6 +467,9 @@ instance {α : Type} [Context α] [DecidableEq Shape] [Inhabited α] :
 
         if hs : sH = sW then
           if hp : pH = pW then
+            requireContract (α := α) <|
+              NN.IR.OpContracts.inferPool2dCHWOutShapePad "avg_pool2d_pad" kH kW sH pH
+                (.dim C (.dim inH (.dim inW .scalar)))
             let xId ← ensureNode (α := α) xCHW
             let id ← freshId (α := α)
             let outShape : Shape := Spec.pool2dMultiOutShapePad C inH inW kH kW sH pH
@@ -499,6 +511,9 @@ instance {α : Type} [Context α] [DecidableEq Shape] [Inhabited α] :
     fail (α := α) "TorchLean→IR: smooth_max_pool is outside the verifier IR fragment"
 
   maxPool2d := fun {kH kW inH inW inC stride} {_h1 : kH ≠ 0} {_h2 : kW ≠ 0} x => do
+    requireContract (α := α) <|
+      NN.IR.OpContracts.inferPool2dCHWOutShape "max_pool2d" kH kW stride
+        (.dim inC (.dim inH (.dim inW .scalar)))
     let xId ← ensureNode (α := α) (s := .dim inC (.dim inH (.dim inW .scalar))) x
     let id ← freshId (α := α)
     let outShape : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
@@ -507,6 +522,9 @@ instance {α : Type} [Context α] [DecidableEq Shape] [Inhabited α] :
     pushNode (α := α) node
     pure (.node id)
   maxPool2dPad := fun {kH kW inH inW inC stride padding} {_h1 : kH ≠ 0} {_h2 : kW ≠ 0} x => do
+    requireContract (α := α) <|
+      NN.IR.OpContracts.inferPool2dCHWOutShapePad "max_pool2d_pad" kH kW stride padding
+        (.dim inC (.dim inH (.dim inW .scalar)))
     let xId ← ensureNode (α := α) (s := .dim inC (.dim inH (.dim inW .scalar))) x
     let id ← freshId (α := α)
     let outShape : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW stride padding
@@ -520,6 +538,9 @@ instance {α : Type} [Context α] [DecidableEq Shape] [Inhabited α] :
   smoothMaxPool2d := fun {_kH _kW _inH _inW _inC _stride} {_h1} {_h2} _x _temp =>
     fail (α := α) "TorchLean→IR: smooth_max_pool2d is outside the verifier IR fragment"
   avgPool2d := fun {kH kW inH inW inC stride} (_h1 : kH ≠ 0) (_h2 : kW ≠ 0) x => do
+    requireContract (α := α) <|
+      NN.IR.OpContracts.inferPool2dCHWOutShape "avg_pool2d" kH kW stride
+        (.dim inC (.dim inH (.dim inW .scalar)))
     let xId ← ensureNode (α := α) (s := .dim inC (.dim inH (.dim inW .scalar))) x
     let id ← freshId (α := α)
     let outShape : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
@@ -528,6 +549,9 @@ instance {α : Type} [Context α] [DecidableEq Shape] [Inhabited α] :
     pushNode (α := α) node
     pure (.node id)
   avgPool2dPad := fun {kH kW inH inW inC stride padding} (_h1 : kH ≠ 0) (_h2 : kW ≠ 0) x => do
+    requireContract (α := α) <|
+      NN.IR.OpContracts.inferPool2dCHWOutShapePad "avg_pool2d_pad" kH kW stride padding
+        (.dim inC (.dim inH (.dim inW .scalar)))
     let xId ← ensureNode (α := α) (s := .dim inC (.dim inH (.dim inW .scalar))) x
     let id ← freshId (α := α)
     let outShape : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW stride padding
@@ -721,6 +745,9 @@ instance {α : Type} [Context α] [DecidableEq Shape] [Inhabited α] :
 
         if hs : sH = sW then
           if hp : pH = pW then
+            requireContract (α := α) <|
+              NN.IR.OpContracts.inferConv2dCHWOutShape inC outC kH kW sH pH
+                (.dim inC (.dim inH (.dim inW .scalar)))
             let kT ← getConst (α := α) (s := .dim outC (.dim inC (.dim kH (.dim kW .scalar)))) w4
             let bT ← getConst (α := α) (s := .dim outC .scalar) b
             let xId ← ensureNode (α := α) xCHW
@@ -779,6 +806,9 @@ instance {α : Type} [Context α] [DecidableEq Shape] [Inhabited α] :
     fail (α := α) "TorchLean→IR: conv_transpose is outside the verifier IR fragment"
 
   conv2d := fun {inC outC kH kW stride padding inH inW} {h1} {h2} {h3} kernel bias input => do
+    requireContract (α := α) <|
+      NN.IR.OpContracts.inferConv2dCHWOutShape inC outC kH kW stride padding
+        (.dim inC (.dim inH (.dim inW .scalar)))
     let kT ← getConst (α := α) (s := .dim outC (.dim inC (.dim kH (.dim kW .scalar)))) kernel
     let bT ← getConst (α := α) (s := .dim outC .scalar) bias
     let xId ← ensureNode (α := α) (s := .dim inC (.dim inH (.dim inW .scalar))) input

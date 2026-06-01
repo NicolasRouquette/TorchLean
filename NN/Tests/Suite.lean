@@ -17,9 +17,9 @@ public import NN.Tests.Runtime.Cuda.Suite
 
 Top-level executable test entrypoint for TorchLean.
 
-This suite is intentionally not a replacement for the theorem stack in `NN/Proofs`. It is the
-regression harness for runtime trust boundaries: native CUDA kernels, FFI buffers,
-floating-point execution, executable parsers, and public API runtime checks.
+This suite does not replace the theorem stack in `NN/Proofs`. It is the regression harness for
+runtime trust boundaries: native CUDA kernels, FFI buffers, floating-point execution, executable
+parsers, and public API runtime checks.
 -/
 
 @[expose] public section

@@ -10,9 +10,9 @@ public import NN.Runtime.PyTorch.Export.Core
 public import NN.Spec.Models.Transformer
 
 /-!
-# Transformer PyTorch Fixture Export
+# Transformer PyTorch Reference Export
 
-PyTorch code generator for the small Transformer encoder round-trip fixture.
+PyTorch code generator for the Transformer encoder round-trip reference model.
 
 This file produces a readable Python `nn.Module` implementation that follows the usual PyTorch
 structure (MHA + residual + LayerNorm + FFN). In the TorchLean repo we mostly use this as a

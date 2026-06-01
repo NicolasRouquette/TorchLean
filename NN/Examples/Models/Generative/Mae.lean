@@ -47,7 +47,7 @@ namespace NN.Examples.Models.Generative.Mae
 def exeName : String := "torchlean mae"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/mae_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "mae"
 
 /-- CIFAR minibatch size used by the typed MAE command. -/
 def batch : Nat := 1
@@ -141,17 +141,6 @@ def mkModel : nn.M (nn.Sequential σ τ) :=
   nn.models.vitMaskedAutoencoder cfg
 
 /--
-Load one CIFAR minibatch as an image tensor batch.
-
-This function stops at the data boundary: it returns CIFAR as typed image tensors.  The
-self-supervised conversion happens in `mkMaeSample`, using the public SSL API, so the loader does
-not secretly define the model's representation.
--/
-def loadCifarBatch (xPath yPath : System.FilePath) (nRows seed : Nat) :
-    IO (sample.Batch Float cfg.batch RealData.CifarImage RealData.CifarTarget) :=
-  RealData.loadCifarBatch (α := Float) exeName cfg.batch nRows seed xPath yPath
-
-/--
 Turn a typed CIFAR image batch into the compact MAE training sample.
 
 The input stays an image tensor with some patches zeroed out. The target is the original image
@@ -171,7 +160,7 @@ dashboard tools can consume it the same way they consume the other model example
 -/
 def trainCurve (opts : TorchLean.Options) (xPath yPath : System.FilePath)
     (nRows seed steps cudaMemWatch : Nat) : IO _root_.Runtime.Training.Curve := do
-  let batch ← loadCifarBatch xPath yPath nRows seed
+  let batch ← RealData.loadCifarBatch (α := Float) exeName cfg.batch nRows seed xPath yPath
   let sample := mkMaeSample batch
   _root_.NN.API.Models.TrainFixed.curveFloat
     (mkModel := mkModel)
@@ -200,19 +189,15 @@ def main (args : List String) : IO UInt32 := do
       fastKernels := rt.fastKernels
       fastGpuMatmulPrecision := rt.fastGpuMatmulPrecision }
   IO.println s!"{exeName}: CIFAR masked reconstruction (device={if opts.useGpu then "cuda" else "cpu"})"
-  let (xPath, yPath, nRows, seed, rest) ← Common.orThrow exeName <| RealData.parseCifarFlags rest
-  let (train, rest) ← Common.orThrow exeName <|
-    Common.parseLoggedTrainFlags exeName rest defaultLogJson 10
-  Common.orThrow exeName <| CLI.requireNoArgs rest
-  let curve ← trainCurve opts xPath yPath nRows seed train.steps train.cudaMemWatch
-  let loss0 := curve.values.getD 0 0.0
-  let lossN := curve.values.getD (curve.values.size - 1) loss0
-  IO.println s!"  steps={train.steps} loss0={loss0} loss{train.steps}={lossN}"
-  Common.writeCurveLogTo train.log "MAE CIFAR masked reconstruction" curve "loss"
-    #[s!"data=cifar10", s!"x={xPath}", s!"y={yPath}", s!"nRows={nRows}",
-      s!"maskPeriod={maskPeriod}", s!"maskOffset={maskOffset}",
-      s!"device={if opts.useGpu then "cuda" else "cpu"}",
-      s!"cuda_mem_watch={Common.effectiveCudaMemWatch opts train.steps train.cudaMemWatch}"]
+  let flags ← Common.orThrow exeName <|
+    RealData.parseCifarLoggedTrainFlags exeName rest defaultLogJson 10
+  let curve ← trainCurve opts flags.xPath flags.yPath flags.nRows flags.seed
+    flags.train.steps flags.train.cudaMemWatch
+  Common.printCurveLossSummary flags.train.steps curve
+  Common.writeCurveLogTo flags.train.log "MAE CIFAR masked reconstruction" curve "loss"
+    (RealData.cifarTrainNotes opts flags
+      #[s!"x={flags.xPath}", s!"y={flags.yPath}", s!"maskPeriod={maskPeriod}",
+        s!"maskOffset={maskOffset}"])
   IO.println "OK"
   pure 0
 

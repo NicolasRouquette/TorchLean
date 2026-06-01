@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <atomic>
 #include <math.h>
+#include <pthread.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -39,16 +40,118 @@ static std::atomic<uint64_t> g_torchlean_cuda_peak_bytes{0u};
 static std::atomic<uint64_t> g_torchlean_cuda_alloc_count{0u};
 static std::atomic<uint64_t> g_torchlean_cuda_free_count{0u};
 
-static uint64_t torchlean_cuda_bytes_for(size_t n) {
-  const uint64_t max = UINT64_MAX / (uint64_t)sizeof(float);
-  if ((uint64_t)n > max) {
-    return UINT64_MAX;
+extern "C" void torchlean_cuda_kernels_flush_scratch_cache(void);
+extern "C" void torchlean_cuda_conv_pool_flush_scratch_cache(void);
+extern "C" void torchlean_cuda_blas_flush_scratch_cache(void);
+
+struct torchlean_cuda_cached_block {
+  size_t size;
+  float* data;
+  cudaEvent_t ready;
+};
+
+static void torchlean_cuda_free_best_effort(void* ptr, const char* what);
+static void torchlean_cuda_destroy_event_best_effort(cudaEvent_t event, const char* what);
+static void torchlean_cuda_synchronize_event_best_effort(cudaEvent_t event, const char* what);
+
+static pthread_mutex_t g_torchlean_cuda_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
+static torchlean_cuda_cached_block* g_torchlean_cuda_cache = nullptr;
+static size_t g_torchlean_cuda_cache_count = 0;
+static size_t g_torchlean_cuda_cache_cap = 0;
+
+// Reuse exact-size buffers only after CUDA has recorded that all earlier work using the block has
+// completed. This lowers allocator pressure during long training loops without forcing a global
+// device synchronization on every free.
+static void torchlean_cuda_cache_push(torchlean_cuda_cached_block block) {
+  if (g_torchlean_cuda_cache_count == g_torchlean_cuda_cache_cap) {
+    size_t new_cap = g_torchlean_cuda_cache_cap == 0 ? 16 : g_torchlean_cuda_cache_cap * 2;
+    void* next = realloc(g_torchlean_cuda_cache, new_cap * sizeof(torchlean_cuda_cached_block));
+    if (!next) {
+      lean_internal_panic_out_of_memory();
+    }
+    g_torchlean_cuda_cache = (torchlean_cuda_cached_block*)next;
+    g_torchlean_cuda_cache_cap = new_cap;
   }
-  return (uint64_t)n * (uint64_t)sizeof(float);
+  g_torchlean_cuda_cache[g_torchlean_cuda_cache_count++] = block;
+}
+
+static float* torchlean_cuda_take_cached_block(size_t n) {
+  if (n == 0) {
+    return NULL;
+  }
+  torchlean_cuda_lock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_lock buffer cache failed");
+  for (size_t i = 0; i < g_torchlean_cuda_cache_count; ++i) {
+    if (g_torchlean_cuda_cache[i].size != n) {
+      continue;
+    }
+    cudaError_t ready = cudaEventQuery(g_torchlean_cuda_cache[i].ready);
+    if (ready == cudaSuccess) {
+      float* data = g_torchlean_cuda_cache[i].data;
+      torchlean_cuda_destroy_event_best_effort(g_torchlean_cuda_cache[i].ready,
+                                               "cudaEventDestroy cached buffer reuse failed");
+      g_torchlean_cuda_cache[i] = g_torchlean_cuda_cache[g_torchlean_cuda_cache_count - 1];
+      g_torchlean_cuda_cache_count--;
+      torchlean_cuda_unlock(&g_torchlean_cuda_cache_mutex,
+                            "pthread_mutex_unlock buffer cache failed");
+      return data;
+    }
+    if (ready != cudaErrorNotReady) {
+      fprintf(stderr, "TorchLean CUDA warning: cudaEventQuery cached buffer failed: %s\n",
+              cudaGetErrorString(ready));
+    }
+  }
+  torchlean_cuda_unlock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_unlock buffer cache failed");
+  return NULL;
+}
+
+static void torchlean_cuda_return_cached_block(size_t n, float* data) {
+  if (!data || n == 0) {
+    return;
+  }
+  cudaEvent_t ready = nullptr;
+  cudaError_t err = cudaEventCreateWithFlags(&ready, cudaEventDisableTiming);
+  if (err != cudaSuccess) {
+    fprintf(stderr, "TorchLean CUDA warning: cudaEventCreate cached buffer failed: %s\n",
+            cudaGetErrorString(err));
+    torchlean_cuda_free_best_effort(data, "cudaFree uncached buffer after event-create failure failed");
+    return;
+  }
+  err = cudaEventRecord(ready, 0);
+  if (err != cudaSuccess) {
+    fprintf(stderr, "TorchLean CUDA warning: cudaEventRecord cached buffer failed: %s\n",
+            cudaGetErrorString(err));
+    torchlean_cuda_destroy_event_best_effort(ready,
+                                             "cudaEventDestroy buffer after record failure failed");
+    torchlean_cuda_free_best_effort(data, "cudaFree uncached buffer after event-record failure failed");
+    return;
+  }
+  torchlean_cuda_lock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_lock buffer return failed");
+  torchlean_cuda_cache_push({n, data, ready});
+  torchlean_cuda_unlock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_unlock buffer return failed");
+}
+
+static void torchlean_cuda_flush_cached_blocks(void) {
+  torchlean_cuda_lock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_lock buffer flush failed");
+  torchlean_cuda_cached_block* blocks = g_torchlean_cuda_cache;
+  size_t count = g_torchlean_cuda_cache_count;
+  g_torchlean_cuda_cache = nullptr;
+  g_torchlean_cuda_cache_count = 0;
+  g_torchlean_cuda_cache_cap = 0;
+  torchlean_cuda_unlock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_unlock buffer flush failed");
+
+  for (size_t i = 0; i < count; ++i) {
+    torchlean_cuda_cached_block block = blocks[i];
+    torchlean_cuda_synchronize_event_best_effort(block.ready,
+                                                 "cudaEventSynchronize cached buffer failed");
+    torchlean_cuda_destroy_event_best_effort(block.ready,
+                                             "cudaEventDestroy cached buffer failed");
+    torchlean_cuda_free_best_effort(block.data, "cudaFree cached buffer failed");
+  }
+  free(blocks);
 }
 
 static void torchlean_cuda_note_alloc(size_t n) {
-  const uint64_t bytes = torchlean_cuda_bytes_for(n);
+  const uint64_t bytes = torchlean_float_bytes_for(n);
   g_torchlean_cuda_alloc_count.fetch_add(1u, std::memory_order_relaxed);
   const uint64_t live =
       g_torchlean_cuda_live_bytes.fetch_add(bytes, std::memory_order_relaxed) + bytes;
@@ -60,7 +163,7 @@ static void torchlean_cuda_note_alloc(size_t n) {
 }
 
 static void torchlean_cuda_note_free(size_t n) {
-  const uint64_t bytes = torchlean_cuda_bytes_for(n);
+  const uint64_t bytes = torchlean_float_bytes_for(n);
   g_torchlean_cuda_free_count.fetch_add(1u, std::memory_order_relaxed);
   uint64_t live = g_torchlean_cuda_live_bytes.load(std::memory_order_relaxed);
   while (true) {
@@ -80,7 +183,7 @@ static void torchlean_cuda_panic_malloc_failed(size_t n, cudaError_t err) {
   snprintf(msg, sizeof(msg),
            "cudaMalloc buffer failed: requested=%llu bytes live=%llu peak=%llu "
            "allocs=%llu frees=%llu cuda_free=%llu cuda_total=%llu error=%s",
-           (unsigned long long)torchlean_cuda_bytes_for(n),
+           (unsigned long long)torchlean_float_bytes_for(n),
            (unsigned long long)g_torchlean_cuda_live_bytes.load(std::memory_order_relaxed),
            (unsigned long long)g_torchlean_cuda_peak_bytes.load(std::memory_order_relaxed),
            (unsigned long long)g_torchlean_cuda_alloc_count.load(std::memory_order_relaxed),
@@ -100,17 +203,43 @@ static void torchlean_cuda_free_best_effort(void* ptr, const char* what) {
   }
 }
 
+static void torchlean_cuda_destroy_event_best_effort(cudaEvent_t event, const char* what) {
+  if (!event) {
+    return;
+  }
+  cudaError_t err = cudaEventDestroy(event);
+  if (err != cudaSuccess) {
+    fprintf(stderr, "TorchLean CUDA warning: %s: %s\n", what, cudaGetErrorString(err));
+  }
+}
+
+static void torchlean_cuda_synchronize_event_best_effort(cudaEvent_t event, const char* what) {
+  if (!event) {
+    return;
+  }
+  cudaError_t err = cudaEventSynchronize(event);
+  if (err != cudaSuccess) {
+    fprintf(stderr, "TorchLean CUDA warning: %s: %s\n", what, cudaGetErrorString(err));
+  }
+}
+
+static bool torchlean_cuda_buffer_release_data(torchlean_cuda_buffer* b) {
+  if (!b || !b->data) {
+    return false;
+  }
+  torchlean_cuda_note_free(b->size);
+  torchlean_cuda_return_cached_block(b->size, b->data);
+  b->data = NULL;
+  b->size = 0;
+  return true;
+}
+
 static void torchlean_cuda_buffer_finalize(void* ptr) {
   torchlean_cuda_buffer* b = (torchlean_cuda_buffer*)ptr;
   if (!b) {
     return;
   }
-  if (b->data) {
-    // cudaFree is synchronous w.r.t. work using this allocation, so freeing is safe even if GC
-    // runs before a kernel finishes.
-    torchlean_cuda_note_free(b->size);
-    torchlean_cuda_free_best_effort(b->data, "cudaFree buffer finalizer failed");
-  }
+  (void)torchlean_cuda_buffer_release_data(b);
   free(b);
 }
 
@@ -142,6 +271,14 @@ extern "C" lean_obj_res torchlean_cuda_buffer_box(torchlean_cuda_buffer* b) {
   return lean_alloc_external(torchlean_cuda_buffer_get_class(), b);
 }
 
+extern "C" void torchlean_cuda_buffer_drop_unboxed(torchlean_cuda_buffer* b) {
+  if (!b) {
+    return;
+  }
+  (void)torchlean_cuda_buffer_release_data(b);
+  free(b);
+}
+
 extern "C" torchlean_cuda_buffer* torchlean_cuda_buffer_alloc(size_t n) {
   torchlean_cuda_buffer* b = (torchlean_cuda_buffer*)malloc(sizeof(torchlean_cuda_buffer));
   if (!b) {
@@ -150,11 +287,20 @@ extern "C" torchlean_cuda_buffer* torchlean_cuda_buffer_alloc(size_t n) {
   b->size = n;
   b->data = NULL;
   if (n > 0) {
+    b->data = torchlean_cuda_take_cached_block(n);
+  }
+  if (n > 0 && !b->data) {
     cudaError_t err = cudaMalloc((void**)&b->data, n * sizeof(float));
     if (err != cudaSuccess) {
-      free(b);
-      torchlean_cuda_panic_malloc_failed(n, err);
+      torchlean_cuda_flush_cached_blocks();
+      err = cudaMalloc((void**)&b->data, n * sizeof(float));
+      if (err != cudaSuccess) {
+        free(b);
+        torchlean_cuda_panic_malloc_failed(n, err);
+      }
     }
+  }
+  if (n > 0) {
     torchlean_cuda_note_alloc(n);
   }
   return b;
@@ -436,7 +582,7 @@ static inline dim3 torchlean_blocks_for(size_t n) {
 }
 
 static inline unsigned int torchlean_det_reduce_blocks_for(size_t n) {
-  // For deterministic reductions we intentionally cap the number of blocks.
+  // Deterministic reductions cap the number of blocks.
   // This keeps scratch allocations bounded while still covering all elements via grid-stride loops.
   size_t blocks = (n + (size_t)kBlockSize - 1) / (size_t)kBlockSize;
   if (blocks == 0) {
@@ -459,7 +605,7 @@ static void torchlean_reduce_sum_deterministic(const float* in, size_t n, float*
   // Stage 1: partials over the original input.
   unsigned int blocks = torchlean_det_reduce_blocks_for(n);
   float* partial = nullptr;
-  checkCuda(cudaMalloc((void**)&partial, (size_t)blocks * sizeof(float)),
+  partial = (float*)torchlean_cuda_scratch_alloc_bytes((size_t)blocks * sizeof(float),
             "cudaMalloc deterministic reduceSum partials failed");
   torchlean_reduce_sum_partials_f32<<<dim3(blocks), dim3(kBlockSize)>>>(in, partial, n);
   checkCuda(cudaGetLastError(), "cuda deterministic reduceSum partial kernel launch failed");
@@ -469,18 +615,20 @@ static void torchlean_reduce_sum_deterministic(const float* in, size_t n, float*
   while (curSize > 1) {
     unsigned int nextBlocks = torchlean_det_reduce_blocks_for(curSize);
     float* next = nullptr;
-    checkCuda(cudaMalloc((void**)&next, (size_t)nextBlocks * sizeof(float)),
+    next = (float*)torchlean_cuda_scratch_alloc_bytes((size_t)nextBlocks * sizeof(float),
               "cudaMalloc deterministic reduceSum next partials failed");
     torchlean_reduce_sum_partials_f32<<<dim3(nextBlocks), dim3(kBlockSize)>>>(partial, next, curSize);
     checkCuda(cudaGetLastError(), "cuda deterministic reduceSum next partial kernel launch failed");
-    checkCuda(cudaFree(partial), "cudaFree deterministic reduceSum partials failed");
+    torchlean_cuda_scratch_free_bytes((void**)&partial, curSize * sizeof(float),
+                                      "cudaFree deterministic reduceSum partials failed");
     partial = next;
     curSize = (size_t)nextBlocks;
   }
 
   checkCuda(cudaMemcpy(outScalar, partial, sizeof(float), cudaMemcpyDeviceToDevice),
             "cudaMemcpy deterministic reduceSum final copy failed");
-  checkCuda(cudaFree(partial), "cudaFree deterministic reduceSum final partial failed");
+  torchlean_cuda_scratch_free_bytes((void**)&partial, curSize * sizeof(float),
+                                    "cudaFree deterministic reduceSum final partial failed");
 }
 
 // --- Exports -----------------------------------------------------------------
@@ -567,16 +715,9 @@ extern "C" LEAN_EXPORT uint32_t torchlean_cuda_buffer_size(b_lean_obj_arg BObj) 
 
 extern "C" LEAN_EXPORT uint32_t torchlean_cuda_buffer_release(b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (!b || !b->data) {
-    return 0;
-  }
-  checkCuda(cudaFree(b->data), "cudaFree buffer release failed");
-  torchlean_cuda_note_free(b->size);
   // Explicit release is an eager-runtime lifetime hint. We mark the handle as empty so accidental
   // reuse fails by size checks instead of touching freed device memory.
-  b->data = NULL;
-  b->size = 0;
-  return 1;
+  return torchlean_cuda_buffer_release_data(b) ? 1 : 0;
 }
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_release_then(
@@ -588,6 +729,13 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_release_then(
 
 extern "C" LEAN_EXPORT uint32_t torchlean_runtime_collect_allocator(uint32_t force) {
   const bool force_collect = force != 0;
+  if (force_collect) {
+    torchlean_cuda_flush_cached_blocks();
+    torchlean_cuda_scratch_flush();
+    torchlean_cuda_kernels_flush_scratch_cache();
+    torchlean_cuda_conv_pool_flush_scratch_cache();
+    torchlean_cuda_blas_flush_scratch_cache();
+  }
   mi_collect(force_collect);
   mi_heap_collect(mi_heap_get_default(), force_collect);
   mi_collect_reduce(0);
@@ -694,26 +842,74 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_to_float_array(b_lean_
   return out;
 }
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_abs(b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(b->size);
-  if (b->size == 0) {
-    return torchlean_cuda_buffer_box(out);
+#define TORCHLEAN_DEFINE_UNARY_BUFFER_EXPORT(EXPORT_NAME, KERNEL, LABEL)                         \
+  extern "C" LEAN_EXPORT lean_obj_res EXPORT_NAME(b_lean_obj_arg BObj) {                        \
+    torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);                                \
+    torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(b->size);                           \
+    if (b->size == 0) {                                                                          \
+      return torchlean_cuda_buffer_box(out);                                                     \
+    }                                                                                            \
+    dim3 blocks = torchlean_blocks_for(b->size);                                                 \
+    dim3 threads = dim3(kBlockSize);                                                             \
+    KERNEL<<<blocks, threads>>>(b->data, out->data, b->size);                                    \
+    checkCuda(cudaGetLastError(), "cuda " LABEL " kernel launch failed");                      \
+    return torchlean_cuda_buffer_box(out);                                                       \
   }
-  dim3 blocks = torchlean_blocks_for(b->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_abs_f32<<<blocks, threads>>>(b->data, out->data, b->size);
-  checkCuda(cudaGetLastError(), "cuda abs kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+
+#define TORCHLEAN_DEFINE_BINARY_BUFFER_EXPORT(EXPORT_NAME, KERNEL, LABEL)                        \
+  extern "C" LEAN_EXPORT lean_obj_res EXPORT_NAME(b_lean_obj_arg AObj, b_lean_obj_arg BObj) {   \
+    torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);                                \
+    torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);                                \
+    torchlean_cuda_require_same_size2(a, b, #EXPORT_NAME);                                      \
+    torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);                           \
+    if (a->size == 0) {                                                                          \
+      return torchlean_cuda_buffer_box(out);                                                     \
+    }                                                                                            \
+    dim3 blocks = torchlean_blocks_for(a->size);                                                 \
+    dim3 threads = dim3(kBlockSize);                                                             \
+    KERNEL<<<blocks, threads>>>(a->data, b->data, out->data, a->size);                           \
+    checkCuda(cudaGetLastError(), "cuda " LABEL " kernel launch failed");                      \
+    return torchlean_cuda_buffer_box(out);                                                       \
+  }
+
+#define TORCHLEAN_DEFINE_UNARY_SCALAR_BUFFER_EXPORT(EXPORT_NAME, KERNEL, LABEL)                  \
+  extern "C" LEAN_EXPORT lean_obj_res EXPORT_NAME(b_lean_obj_arg BObj, double c) {               \
+    torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);                                \
+    torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(b->size);                           \
+    if (b->size == 0) {                                                                          \
+      return torchlean_cuda_buffer_box(out);                                                     \
+    }                                                                                            \
+    dim3 blocks = torchlean_blocks_for(b->size);                                                 \
+    dim3 threads = dim3(kBlockSize);                                                             \
+    KERNEL<<<blocks, threads>>>(b->data, out->data, b->size, (float)c);                          \
+    checkCuda(cudaGetLastError(), "cuda " LABEL " kernel launch failed");                      \
+    return torchlean_cuda_buffer_box(out);                                                       \
+  }
+
+#define TORCHLEAN_DEFINE_BINARY_SCALAR_BUFFER_EXPORT(EXPORT_NAME, KERNEL, LABEL)                 \
+  extern "C" LEAN_EXPORT lean_obj_res EXPORT_NAME(b_lean_obj_arg AObj, b_lean_obj_arg BObj,     \
+                                                  double c) {                                    \
+    torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);                                \
+    torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);                                \
+    torchlean_cuda_require_same_size2(a, b, #EXPORT_NAME);                                      \
+    torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);                           \
+    if (a->size == 0) {                                                                          \
+      return torchlean_cuda_buffer_box(out);                                                     \
+    }                                                                                            \
+    dim3 blocks = torchlean_blocks_for(a->size);                                                 \
+    dim3 threads = dim3(kBlockSize);                                                             \
+    KERNEL<<<blocks, threads>>>(a->data, b->data, out->data, a->size, (float)c);                 \
+    checkCuda(cudaGetLastError(), "cuda " LABEL " kernel launch failed");                      \
+    return torchlean_cuda_buffer_box(out);                                                       \
+  }
+
+TORCHLEAN_DEFINE_UNARY_BUFFER_EXPORT(torchlean_cuda_buffer_abs, torchlean_abs_f32, "abs")
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_abs_bwd(b_lean_obj_arg XObj,
                                                                  b_lean_obj_arg GObj) {
   torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (x->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_abs_bwd: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(x, g, "torchlean_cuda_buffer_abs_bwd");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
   if (x->size == 0) {
     return torchlean_cuda_buffer_box(out);
@@ -725,26 +921,13 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_abs_bwd(b_lean_obj_arg
   return torchlean_cuda_buffer_box(out);
 }
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_sqrt(b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(b->size);
-  if (b->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(b->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_sqrt_f32<<<blocks, threads>>>(b->data, out->data, b->size);
-  checkCuda(cudaGetLastError(), "cuda sqrt kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_UNARY_BUFFER_EXPORT(torchlean_cuda_buffer_sqrt, torchlean_sqrt_f32, "sqrt")
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_sqrt_bwd(b_lean_obj_arg XObj,
                                                                   b_lean_obj_arg GObj) {
   torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (x->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_sqrt_bwd: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(x, g, "torchlean_cuda_buffer_sqrt_bwd");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
   if (x->size == 0) {
     return torchlean_cuda_buffer_box(out);
@@ -756,44 +939,11 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_sqrt_bwd(b_lean_obj_ar
   return torchlean_cuda_buffer_box(out);
 }
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_exp(b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(b->size);
-  if (b->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(b->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_exp_f32<<<blocks, threads>>>(b->data, out->data, b->size);
-  checkCuda(cudaGetLastError(), "cuda exp kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_UNARY_BUFFER_EXPORT(torchlean_cuda_buffer_exp, torchlean_exp_f32, "exp")
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_log(b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(b->size);
-  if (b->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(b->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_log_f32<<<blocks, threads>>>(b->data, out->data, b->size);
-  checkCuda(cudaGetLastError(), "cuda log kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_UNARY_BUFFER_EXPORT(torchlean_cuda_buffer_log, torchlean_log_f32, "log")
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_inv(b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(b->size);
-  if (b->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(b->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_inv_f32<<<blocks, threads>>>(b->data, out->data, b->size);
-  checkCuda(cudaGetLastError(), "cuda inv kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_UNARY_BUFFER_EXPORT(torchlean_cuda_buffer_inv, torchlean_inv_f32, "inv")
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_clamp(b_lean_obj_arg BObj, double lo,
                                                                 double hi) {
@@ -814,9 +964,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_clamp_bwd(b_lean_obj_a
                                                                    double hi) {
   torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (x->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_clamp_bwd: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(x, g, "torchlean_cuda_buffer_clamp_bwd");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
   if (x->size == 0) {
     return torchlean_cuda_buffer_box(out);
@@ -829,23 +977,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_clamp_bwd(b_lean_obj_a
   return torchlean_cuda_buffer_box(out);
 }
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_max(b_lean_obj_arg AObj,
-                                                             b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_max: size mismatch");
-  }
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
-  if (a->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(a->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_max_f32<<<blocks, threads>>>(a->data, b->data, out->data, a->size);
-  checkCuda(cudaGetLastError(), "cuda max kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_BINARY_BUFFER_EXPORT(torchlean_cuda_buffer_max, torchlean_max_f32, "max")
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_max_bwd(b_lean_obj_arg AObj,
                                                                  b_lean_obj_arg BObj,
@@ -853,17 +985,12 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_max_bwd(b_lean_obj_arg
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (a->size != b->size || a->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_max_bwd: size mismatch");
-  }
+  torchlean_cuda_require_same_size3(a, b, g, "torchlean_cuda_buffer_max_bwd");
 
   torchlean_cuda_buffer* dA = torchlean_cuda_buffer_alloc(a->size);
   torchlean_cuda_buffer* dB = torchlean_cuda_buffer_alloc(a->size);
   if (a->size == 0) {
-    lean_object* pair = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(pair, 0, torchlean_cuda_buffer_box(dA));
-    lean_ctor_set(pair, 1, torchlean_cuda_buffer_box(dB));
-    return pair;
+    return torchlean_cuda_box_buffer_pair(dA, dB);
   }
 
   dim3 blocks = torchlean_blocks_for(a->size);
@@ -871,29 +998,10 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_max_bwd(b_lean_obj_arg
   torchlean_max_bwd_f32<<<blocks, threads>>>(a->data, b->data, g->data, dA->data, dB->data, a->size);
   checkCuda(cudaGetLastError(), "cuda max_bwd kernel launch failed");
 
-  lean_object* pair = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(pair, 0, torchlean_cuda_buffer_box(dA));
-  lean_ctor_set(pair, 1, torchlean_cuda_buffer_box(dB));
-  return pair;
+  return torchlean_cuda_box_buffer_pair(dA, dB);
 }
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_min(b_lean_obj_arg AObj,
-                                                             b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_min: size mismatch");
-  }
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
-  if (a->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(a->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_min_f32<<<blocks, threads>>>(a->data, b->data, out->data, a->size);
-  checkCuda(cudaGetLastError(), "cuda min kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_BINARY_BUFFER_EXPORT(torchlean_cuda_buffer_min, torchlean_min_f32, "min")
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_min_bwd(b_lean_obj_arg AObj,
                                                                  b_lean_obj_arg BObj,
@@ -901,17 +1009,12 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_min_bwd(b_lean_obj_arg
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (a->size != b->size || a->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_min_bwd: size mismatch");
-  }
+  torchlean_cuda_require_same_size3(a, b, g, "torchlean_cuda_buffer_min_bwd");
 
   torchlean_cuda_buffer* dA = torchlean_cuda_buffer_alloc(a->size);
   torchlean_cuda_buffer* dB = torchlean_cuda_buffer_alloc(a->size);
   if (a->size == 0) {
-    lean_object* pair = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(pair, 0, torchlean_cuda_buffer_box(dA));
-    lean_ctor_set(pair, 1, torchlean_cuda_buffer_box(dB));
-    return pair;
+    return torchlean_cuda_box_buffer_pair(dA, dB);
   }
 
   dim3 blocks = torchlean_blocks_for(a->size);
@@ -919,50 +1022,18 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_min_bwd(b_lean_obj_arg
   torchlean_min_bwd_f32<<<blocks, threads>>>(a->data, b->data, g->data, dA->data, dB->data, a->size);
   checkCuda(cudaGetLastError(), "cuda min_bwd kernel launch failed");
 
-  lean_object* pair = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(pair, 0, torchlean_cuda_buffer_box(dA));
-  lean_ctor_set(pair, 1, torchlean_cuda_buffer_box(dB));
-  return pair;
+  return torchlean_cuda_box_buffer_pair(dA, dB);
 }
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_div(b_lean_obj_arg AObj,
-                                                             b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_div: size mismatch");
-  }
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
-  if (a->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(a->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_div_f32<<<blocks, threads>>>(a->data, b->data, out->data, a->size);
-  checkCuda(cudaGetLastError(), "cuda div kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_BINARY_BUFFER_EXPORT(torchlean_cuda_buffer_div, torchlean_div_f32, "div")
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_relu(b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(b->size);
-  if (b->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(b->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_relu_f32<<<blocks, threads>>>(b->data, out->data, b->size);
-  checkCuda(cudaGetLastError(), "cuda relu kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_UNARY_BUFFER_EXPORT(torchlean_cuda_buffer_relu, torchlean_relu_f32, "relu")
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_relu_bwd(b_lean_obj_arg XObj,
                                                                   b_lean_obj_arg GObj) {
   torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
   torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
-  if (x->size != g->size) {
-    lean_internal_panic("torchlean_cuda_buffer_relu_bwd: size mismatch");
-  }
+  torchlean_cuda_require_same_size2(x, g, "torchlean_cuda_buffer_relu_bwd");
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
   if (x->size == 0) {
     return torchlean_cuda_buffer_box(out);
@@ -974,93 +1045,22 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_relu_bwd(b_lean_obj_ar
   return torchlean_cuda_buffer_box(out);
 }
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_add(b_lean_obj_arg AObj,
-                                                             b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    char msg[160];
-    snprintf(msg, sizeof(msg), "torchlean_cuda_buffer_add: size mismatch (%zu vs %zu)", a->size,
-             b->size);
-    lean_internal_panic(msg);
-  }
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
-  if (a->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(a->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_add_f32<<<blocks, threads>>>(a->data, b->data, out->data, a->size);
-  checkCuda(cudaGetLastError(), "cuda add kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_BINARY_BUFFER_EXPORT(torchlean_cuda_buffer_add, torchlean_add_f32, "add")
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_sub(b_lean_obj_arg AObj,
-                                                             b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_sub: size mismatch");
-  }
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
-  if (a->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(a->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_sub_f32<<<blocks, threads>>>(a->data, b->data, out->data, a->size);
-  checkCuda(cudaGetLastError(), "cuda sub kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_BINARY_BUFFER_EXPORT(torchlean_cuda_buffer_sub, torchlean_sub_f32, "sub")
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_mul(b_lean_obj_arg AObj,
-                                                             b_lean_obj_arg BObj) {
-  torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_mul: size mismatch");
-  }
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
-  if (a->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(a->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_mul_f32<<<blocks, threads>>>(a->data, b->data, out->data, a->size);
-  checkCuda(cudaGetLastError(), "cuda mul kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_BINARY_BUFFER_EXPORT(torchlean_cuda_buffer_mul, torchlean_mul_f32, "mul")
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_scale(b_lean_obj_arg BObj, double c) {
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(b->size);
-  if (b->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(b->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_scale_f32<<<blocks, threads>>>(b->data, out->data, b->size, (float)c);
-  checkCuda(cudaGetLastError(), "cuda scale kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_UNARY_SCALAR_BUFFER_EXPORT(torchlean_cuda_buffer_scale, torchlean_scale_f32,
+                                            "scale")
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_axpy(b_lean_obj_arg AObj,
-                                                              b_lean_obj_arg BObj, double c) {
-  torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
-  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
-  if (a->size != b->size) {
-    lean_internal_panic("torchlean_cuda_buffer_axpy: size mismatch");
-  }
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(a->size);
-  if (a->size == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-  dim3 blocks = torchlean_blocks_for(a->size);
-  dim3 threads = dim3(kBlockSize);
-  torchlean_axpy_f32<<<blocks, threads>>>(a->data, b->data, out->data, a->size, (float)c);
-  checkCuda(cudaGetLastError(), "cuda axpy kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
+TORCHLEAN_DEFINE_BINARY_SCALAR_BUFFER_EXPORT(torchlean_cuda_buffer_axpy, torchlean_axpy_f32,
+                                             "axpy")
+
+#undef TORCHLEAN_DEFINE_BINARY_SCALAR_BUFFER_EXPORT
+#undef TORCHLEAN_DEFINE_UNARY_SCALAR_BUFFER_EXPORT
+#undef TORCHLEAN_DEFINE_BINARY_BUFFER_EXPORT
+#undef TORCHLEAN_DEFINE_UNARY_BUFFER_EXPORT
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_sum(b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);

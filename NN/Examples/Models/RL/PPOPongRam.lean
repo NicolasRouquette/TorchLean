@@ -10,6 +10,7 @@ module
 
 public import NN
 public import NN.API.Models.PPO
+public import NN.API.RL.Cli
 public import NN.Runtime.RL.Artifacts.DefaultPaths
 
 /-!
@@ -188,29 +189,15 @@ def contract : rl.boundary.Contract obsShape nActions :=
 def main (args : List String) : IO UInt32 := do
   TorchLean.Module.run exeName args
     (.float (fun opts rest => do
-      let (logPath?, rest) ← Common.orThrow exeName <| CLI.takePathFlagOnce rest "log"
-      let (updates?, rest) ← Common.orThrow exeName <| CLI.takeNatFlagOnce rest "updates"
-      let (evalEvery?, rest) ← Common.orThrow exeName <| CLI.takeNatFlagOnce rest "eval-every"
-      let (evalEpisodes?, rest) ← Common.orThrow exeName <| CLI.takeNatFlagOnce rest "eval-episodes"
-      let (evalMaxSteps?, rest) ← Common.orThrow exeName <| CLI.takeNatFlagOnce rest "eval-max-steps"
+      let (ppo, rest) ← Common.orThrow exeName <|
+        rl.cli.parsePpoFlags exeName rest Runtime.RL.Artifacts.DefaultPaths.ppoPongRamTrainLog
+          updatesMax evalEvery evalEpisodes 10000
       Common.orThrow exeName <| CLI.requireNoArgs rest
 
-      let updates : Nat := updates?.getD updatesMax
-      let evalEvery : Nat := evalEvery?.getD evalEvery
-      let evalEpisodes : Nat := evalEpisodes?.getD evalEpisodes
-      let evalMaxSteps : Nat := evalMaxSteps?.getD 10000
-
-      if updates = 0 then
-        throw <| IO.userError s!"{exeName}: --updates must be > 0"
-      if evalEvery = 0 then
-        throw <| IO.userError s!"{exeName}: --eval-every must be > 0"
-      if evalEpisodes = 0 then
-        throw <| IO.userError s!"{exeName}: --eval-episodes must be > 0"
-      if evalMaxSteps = 0 then
-        throw <| IO.userError s!"{exeName}: --eval-max-steps must be > 0"
-
-      let logPath : System.FilePath :=
-        logPath?.getD Runtime.RL.Artifacts.DefaultPaths.ppoPongRamTrainLog
+      let updates : Nat := ppo.updates
+      let evalEvery : Nat := ppo.evalEvery
+      let evalEpisodes : Nat := ppo.evalEpisodes
+      let evalMaxSteps : Nat := ppo.evalMaxSteps
 
       IO.eprintln s!"  starting env: {envId} (obs_type=ram)"
       let gym ←
@@ -333,8 +320,7 @@ def main (args : List String) : IO UInt32 := do
               s!"eval_episodes={evalEpisodes}",
               s!"device={(if opts.useGpu then "cuda" else "cpu")}"
             ])
-        rl.train.writeJson logPath trainLog
-        IO.eprintln s!"{exeName}: wrote train log to {logPath}"
+        Common.writeTrainLogTo ppo.log trainLog
         IO.eprintln s!"{exeName}: done"
       finally
         gym.close

@@ -110,7 +110,7 @@ theorem buildFrom_denoteAllFrom_abs
                 simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
                   NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk, nodeData, mkFwdNode,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
 
@@ -183,7 +183,7 @@ theorem buildFrom_denoteAllFrom_sqrt
                 simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
                   NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk, nodeData, mkFwdNode,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
 
@@ -256,7 +256,7 @@ theorem buildFrom_denoteAllFrom_inv
                 simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
                   NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk, nodeData, mkFwdNode,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
-              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
 

@@ -10,9 +10,9 @@ public import NN.Runtime.PyTorch.Import.Core
 public import NN.Spec.Models.Transformer
 
 /-!
-# Transformer PyTorch Fixture Import
+# Transformer PyTorch Reference Import
 
-Transformer fixture weight import from JSON.
+Transformer reference weight import from JSON.
 
 In the spec layer, our transformer encoder parameters are explicit tensors (query/key/value/output
 projections, feed-forward weights, and LayerNorm affine parameters). In PyTorch these are usually

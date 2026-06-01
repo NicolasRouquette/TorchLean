@@ -11,6 +11,8 @@ public import NN.Proofs.Autograd.Tape.Nodes
 public import NN.Proofs.Autograd.Tape.Nodes.Batched
 public import NN.Proofs.Autograd.Tape.Nodes.Shape
 public import NN.Proofs.Autograd.Tape.Ops.Attention.MultiHeadSelfAttention
+public import NN.Proofs.Autograd.Tape.Ops.Attention.MaskedScaledDotProduct
+public import NN.Proofs.Autograd.Tape.Ops.Attention.MaskedMultiHeadSelfAttention
 public import NN.Proofs.Autograd.Tape.Ops.Attention.ScaledDotProduct
 public import NN.Proofs.Autograd.Tape.Ops.Conv.FDeriv
 public import NN.Proofs.Autograd.Tape.Ops.Embedding.GatherRows
@@ -18,6 +20,8 @@ public import NN.Proofs.Autograd.Tape.Ops.Norm.BatchNormChannelFirst
 public import NN.Proofs.Autograd.Tape.Ops.Norm.LayerNorm
 public import NN.Proofs.Autograd.Tape.Ops.Recurrent.ElmanCell
 public import NN.Proofs.Autograd.Tape.Ops.Transformer.FeedForward
+public import NN.Proofs.Autograd.Tape.Ops.Transformer.EncoderBlock
+public import NN.Proofs.Autograd.Tape.Ops.Transformer.DecoderBlock
 public import NN.Proofs.Autograd.Tape.Ops.Transformer.PostNorm
 public import NN.Proofs.Autograd.Tape.Ops.Transformer.ResidualAttention
 
@@ -78,6 +82,8 @@ The larger block proofs are built by composing the tape-node theorems:
 * last-axis softmax/log-softmax;
 * dense/matmul/reduction/broadcast/shape nodes;
 * scaled dot-product attention;
+* fixed finite-mask scaled dot-product attention `softmax(c · QKᵀ + bias) V`;
+* fixed finite-mask multi-head attention core over split heads;
 * unmasked multi-head self-attention;
 * residual multi-head self-attention sublayer `x + MHA(x)`;
 * residual Transformer feed-forward sublayers, both one-token/vector-shaped and sequence-shaped
@@ -88,15 +94,24 @@ The larger block proofs are built by composing the tape-node theorems:
   `LayerNorm(x + MHA(x), gamma, beta)`;
 * a single SSA graph and VJP theorem for the second post-norm Transformer sublayer
   `LayerNorm(X + FFN(X), gamma, beta)`;
-* a theorem-level two-sublayer post-norm Transformer encoder bridge, composing the MHA post-norm
-  sublayer into the FFN post-norm sublayer with both LayerNorm domain hypotheses stated explicitly;
+* a concrete full post-norm Transformer encoder-block SSA graph and VJP theorem, composing MHA,
+  the first LayerNorm, sequence FFN, and the second LayerNorm with both LayerNorm domain hypotheses
+  stated explicitly;
+* a concrete finite-mask GPT-style decoder-core SSA graph and VJP theorem, composing masked
+  split-head attention, attention projection, the first LayerNorm, sequence FFN, and the second
+  LayerNorm with both LayerNorm domain hypotheses stated explicitly;
+* a projection-to-residual bridge for GPT-style decoder attention, so differentiable Q/K/V front
+  ends and merge/residual packers instantiate the masked decoder block without reopening the
+  attention proof;
+* a more abstract GPT-style post-norm decoder-block differentiability theorem for outer model
+  packers that assemble token projections or other front-end context before the decoder core;
 * post-norm Transformer boundary `residual_stream ↦ LayerNorm(residual_stream, gamma, beta)`;
 * a chain-rule bridge `residualThenPostNorm_hasFDerivAt` showing that any differentiable
   residual-producing map composes correctly with the post-norm LayerNorm graph;
 * conv2d FDeriv/backward-dot infrastructure;
 * LayerNorm and channel-first BatchNorm-like graphs;
-* one-step tanh/Elman RNN cell `h' = tanh(W [x; h] + b)`, plus a two-step composition bridge
-  that exposes the chain-rule skeleton used by BPTT;
+* one-step tanh/Elman RNN cell `h' = tanh(W [x; h] + b)`, a two-step composition bridge, and an
+  arbitrary-length BPTT chain-rule induction over differentiable recurrent transition builders;
 * finite-index gather-row / embedding lookup adjointness (`gather` VJP is scatter-add).
 
 ## Remaining model-level proof work
@@ -105,12 +120,11 @@ The runtime/API model zoo is broader than the current end-to-end proof zoo. The 
 above are intentionally the hard foundations, but the following model-level theorems are still open
 work rather than already-proved claims:
 
-* a monolithic SSA backprop theorem that chains the two already-proved post-norm sublayer graphs
-  into one executable encoder-block graph. The theorem-level Fréchet-derivative bridge is proved;
-  the remaining assembly step is graph-level wiring across the first LayerNorm output into the
-  second sequence-FFN input, plus threading the second sublayer's parameters through that composed
-  context;
-* masked/causal attention blocks used by GPT-style decoders;
+* one runtime-layout lowering theorem connecting the concrete encoder-block SSA graph here to each
+  executable model-zoo Transformer wrapper;
+* a concrete SSA graph for a GPT decoder block. The block-level theorem and finite-mask attention
+  composition theorem are proved; the remaining lowering step is to instantiate the abstract
+  `maskedAttentionPack` with the model-zoo decoder's projection/split/merge/residual graph;
 * full ViT/GPT encoder or decoder stacks, including embeddings and classifier/language-model heads;
 * full recurrent/state-space sequence theorems (`RNN`, `GRU`, `LSTM`,
   Mamba/selective-scan-style recurrences). We cover the one-step tanh/Elman cell and the two-step

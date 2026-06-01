@@ -3,7 +3,7 @@ title: Examples
 usemathjax: true
 ---
 
-The examples are the quickest way to see TorchLean as a working system. Each page starts from
+The examples are the most direct way to see TorchLean as a working system. Each page starts from
 something concrete: a model run, a graph, a tensor artifact, a saved log, a verifier result, or a
 bug pattern. The goal is to show how runnable ML code becomes an object that Lean can inspect,
 lower, check, or relate to a theorem.
@@ -18,7 +18,7 @@ the text-model and diffusion walkthroughs. For the clearest motivation, read Bug
     <img class="showcase-media" src="{{ '/assets/media/examples/showcase/ir-bounds.png' | relative_url }}" alt="TorchLean graph IR to interval bounds example"/>
     <span class="showcase-body">
       <span class="showcase-title">Graph IR and Bounds</span>
-      <span class="showcase-text">Follow a compact model as it becomes an op-tagged graph, then use that graph for shape checks, execution traces, and interval bounds.</span>
+      <span class="showcase-text">Follow a small model as it becomes an op-tagged graph, then use that graph for shape checks, execution traces, and interval bounds.</span>
       <span class="showcase-link">Open guide page</span>
     </span>
   </a>

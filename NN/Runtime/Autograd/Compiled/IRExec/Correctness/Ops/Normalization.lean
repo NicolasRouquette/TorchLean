@@ -38,13 +38,13 @@ References:
 
 ## Implementation notes
 
-- This proof is intentionally shape-driven and mirrors compilation checks; this makes it
-  easier to maintain as layernorm contracts evolve.
+- This proof is shape-driven and follows the same checks as compilation, which keeps it
+  maintainable as layernorm contracts evolve.
 - Branches that fail preconditions are discharged as contradictions close to where they arise,
   keeping the successful path readable.
-- LayerNorm is proof-expensive because the normalized axis affects both the shape discipline and the
-  tensor computation. Axis-validity and shape-cast facts belong in small
-  helper lemmas before adding more normalization operators.
+- LayerNorm carries axis constraints through both the shape discipline and the tensor computation.
+  Keep axis-validity and shape-cast facts in small helper lemmas so the semantic theorem stays
+  focused on the compiled/evaluator agreement.
 
 ## Tags
 

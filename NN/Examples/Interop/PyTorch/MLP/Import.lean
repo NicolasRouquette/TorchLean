@@ -11,9 +11,9 @@ public import NN.Spec.Layers.Activation
 public import NN.Spec.Module.Linear
 
 /-!
-# MLP PyTorch Fixture Import
+# MLP PyTorch Reference Import
 
-MLP fixture weight import from a PyTorch-style `state_dict`.
+MLP reference weight import from a PyTorch-style `state_dict`.
 
 On the Python side we usually write JSON (nested lists of floats) under keys that mirror the names
 you would see in `model.state_dict()`:

@@ -16,8 +16,8 @@ Derivative residual regression test for the PINN certificate pipeline.
 This checks that derivative-based residual bounds stored in the Python-produced certificate
 match Lean's `runDeriv2D` bounds pointwise (within a small tolerance).
 
-This module intentionally does **not** define a top-level `main` so it can be imported by other
-test runners (e.g. `NN.Tests.Suite`) without a `main` name collision.
+This module has no top-level `main`, so it can be imported by test runners
+(e.g. `NN.Tests.Suite`) without a `main` name collision.
 -/
 
 @[expose] public section

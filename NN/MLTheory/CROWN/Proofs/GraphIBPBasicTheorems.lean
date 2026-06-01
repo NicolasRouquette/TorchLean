@@ -319,7 +319,7 @@ theorem graph_ibp_linear_valid_real (id : Nat) (ps : ParamStore ℝ) (Xin : Flat
   | some p =>
       by_cases hdim : Xin.dim = p.n
       · -- dimension match: reduce to `IBP.linear_valid_real`
-        simp [hdim]
+        simp [ibpLinearParams, hdim]
         -- show the produced box is valid
         -- Convert input to a dimension-safe `Box` and prove it is valid.
         have hxBoxValid : Valid (castBoxDim (α := ℝ) hdim (ofFlatBox (α := ℝ) Xin)) := by
@@ -340,7 +340,7 @@ theorem graph_ibp_linear_valid_real (id : Nat) (ps : ParamStore ℝ) (Xin : Flat
         exact FlatBoxTheorems.valid_toFlatBox_real (B := IBP.linear (α := ℝ) (m := p.m) (n := p.n)
           p.w
           (castBoxDim (α := ℝ) hdim (ofFlatBox (α := ℝ) Xin)) (Box.point (α := ℝ) p.b)) hyValid
-      · simp [hdim]
+      · simp [ibpLinearParams, hdim]
 
 /-- Validity of the graph-level `matmul` IBP rule (over `ℝ`), if the parameters are present. -/
 theorem graph_ibp_matmul_valid_real (id : Nat) (ps : ParamStore ℝ) (Xin : FlatBox ℝ)

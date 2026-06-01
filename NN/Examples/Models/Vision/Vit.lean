@@ -55,7 +55,7 @@ open NN.API
 namespace NN.Examples.Models.Vision.Vit
 
 def exeName : String := "torchlean vit"
-def defaultLogJson : System.FilePath := "data/model_zoo/vit_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "vit"
 
 def batch : Nat := 2
 def inC : Nat := 3
@@ -100,46 +100,14 @@ abbrev τ : Shape :=
 def mkModel : nn.M (nn.Sequential σ τ) :=
   nn.models.vit1 cfg
 
-def loadCifarLoader {α : Type} [Semantics.Scalar α] [Runtime.Scalar α]
-    (xPath yPath : System.FilePath) (nRows seed : Nat) :
-    IO (Data.BatchLoader α batch RealData.CifarImage RealData.CifarTarget) := do
-  RealData.loadCifarLoader (α := α) exeName batch nRows seed xPath yPath
-
-/--
-Train the ViT-style classifier through the same Float runtime path used by the other image models.
-
-The ViT-specific work is in `mkModel`; this function only connects that model to the standard
-cross-entropy module and shared training/logging helper.
--/
-def fitCifar (opts : Runtime.Autograd.Torch.Options)
-    (xPath yPath : System.FilePath) (nRows seed : Nat) (trainCfg : Common.ModelTrainFlags) :
-    IO (train.FitReport Float) := do
-  let loader ← loadCifarLoader (α := Float) xPath yPath nRows seed
-  nn.withModel mkModel fun model => do
-    let modDef := nn.crossEntropyOneHotScalarModuleDef model (reduction := .mean)
-    let module ← TorchLean.Module.instantiateWithOptions (α := Float) modDef id opts
-    let opt := Common.adamOptimizer (α := Float) id (nn.paramShapes model) trainCfg.lr
-    let cudaMemWatch :=
-      Common.effectiveCudaMemWatch opts trainCfg.train.steps trainCfg.cudaMemWatch
-    let (report, _loader') ← train.fitModuleLoaderStepsLoggedFloat module opt opts
-      trainCfg.train.steps loader trainCfg.train.log "ViT CIFAR training"
-      #[s!"x={xPath}", s!"y={yPath}", s!"nRows={nRows}",
-        s!"device={if opts.useGpu then "cuda" else "cpu"}", s!"lr={trainCfg.lr}",
-        s!"steps={trainCfg.train.steps}", s!"batch={batch}", s!"cuda_mem_watch={cudaMemWatch}"]
-      "loss" trainCfg.cudaMemWatch
-    pure report
-
 def main (args : List String) : IO UInt32 := do
   Common.runFloat exeName args
     (banner := fun opts =>
       s!"{exeName}: ViT CIFAR training (device={if opts.useGpu then "cuda" else "cpu"})")
     (k := fun opts rest => do
-        let (xPath, yPath, nRows, seed, rest) ← Common.orThrow exeName <|
-          RealData.parseCifarFlags rest
-        let (trainCfg, rest) ← Common.orThrow exeName <|
-          Common.parseModelTrainFlags exeName rest defaultLogJson 1 1e-3
-        Common.orThrow exeName <| CLI.requireNoArgs rest
-        let report ← fitCifar opts xPath yPath nRows seed trainCfg
-        IO.println s!"  steps={trainCfg.train.steps} loss0={report.before} loss1={report.after}")
+      let flags ← Common.orThrow exeName <|
+        RealData.parseCifarModelTrainFlags exeName rest defaultLogJson 1 1e-3
+      let report ← RealData.fitCifarClassifier exeName "ViT CIFAR training" batch mkModel opts flags
+      Common.printFitReport flags.train.train.steps report)
 
 end NN.Examples.Models.Vision.Vit

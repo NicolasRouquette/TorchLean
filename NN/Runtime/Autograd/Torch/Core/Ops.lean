@@ -1005,9 +1005,6 @@ def convTranspose2d {α : Type} (s : EagerSession α) [Context α]
     pure (some { id := id })
   dispatchCudaOpt (α := α) s "conv_transpose2d" cpu cuda
 
-/-- Alias for `conv2d`. -/
-abbrev conv2dCompat {α : Type} := conv2d (α := α)
-
 /-- 2D matrix multiplication. PyTorch: `torch.matmul` for 2D tensors. -/
 def matmul {α : Type} (s : EagerSession α) [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]

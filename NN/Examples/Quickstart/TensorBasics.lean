@@ -14,7 +14,7 @@ public import NN
 This is the first stop in the TorchLean examples. It does **not** use sessions, CUDA, or autograd.
 It is just about building typed tensors in Lean with a convenient constructor layer.
 
-What it demonstrates:
+What it covers:
 - 1D and N-D constructors from literal lists (`tensor1d`, `tensorND`),
 - the fact that the element type `α` is the “dtype” (e.g. `Float`, `ℚ`, `Int`),
 - Float-literal convenience constructors for executable float32 (`tensorF32_*`),

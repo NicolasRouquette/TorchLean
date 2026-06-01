@@ -28,7 +28,16 @@ For graphs, the matching path is:
 2. `Import.TorchExport` parses the resulting `torchlean.ir.v1` graph JSON into `NN.IR.Graph`.
 3. The parser runs the shared IR well-formedness and shape checkers before accepting the graph.
 
-Architecture-specific example loaders live beside their fixtures under
+This is the supported graph-import path today. The ONNX adapter emitted by
+`NN.Runtime.PyTorch.Export.ONNX` follows the same rule: lower ONNX nodes into the
+`torchlean.ir.v1` artifact, then reuse this parser and the shared IR validators. Keeping the
+artifact boundary explicit avoids a second, looser graph semantics.
+
+Graph import and payload import remain separate phases. A Conv/Gemm/BatchNorm graph can be
+validated as TorchLean IR once the adapter expands it into supported nodes; executing the graph
+then requires the matching constants/linear/conv payload store.
+
+Architecture-specific example loaders live beside their reference artifacts under
 `NN.Examples.Interop.PyTorch.{MLP,CNN,Transformer}.Import`. They may support
 serious verification workflows, but they still bake in model-family key conventions. The runtime
 bridge stays model-agnostic.

@@ -535,6 +535,20 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
         | some yB => boxes.set! id (some yB)
         | none    => boxes
     | _ => boxes
+  | .batchNorm2dNchwEval .. =>
+    match node.parents with
+    | p1 :: _ =>
+      match ps.batchNorm2dNchwEval[id]? with
+      | some cfg =>
+        match batchNorm2dNchwEvalLinear? (α := α) nodes[p1]!.outShape cfg with
+        | some p =>
+          let Xin := get! p1
+          match ibpLinearParams (α := α) p Xin with
+          | some yB => boxes.set! id (some yB)
+          | none => boxes
+        | none => boxes
+      | none => boxes
+    | _ => boxes
   | .exp =>
     match node.parents with
     | p1 :: _ =>

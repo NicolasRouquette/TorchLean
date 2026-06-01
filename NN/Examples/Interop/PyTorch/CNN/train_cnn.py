@@ -27,10 +27,10 @@ THIS_DIR = Path(__file__).resolve().parent
 
 class TestCNN(nn.Module):
     """
-    Compact CNN with named layers matching TorchLean import keys:
+    Reference CNN with named layers matching TorchLean import keys:
       conv1, conv2, fc
 
-    This model is intentionally aligned with the CNN shape used by:
+    The layer shapes match the CNN reference used by:
       `NN/Examples/Interop/PyTorch/Roundtrip.lean` (the Lean side import example)
 
     Architecture (batch-first, channel-first images):

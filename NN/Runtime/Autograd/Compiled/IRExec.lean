@@ -374,6 +374,10 @@ def buildFrom
     let parentIdx (pid : Nat) (s : Shape) : Except String (Idx ([inShape] ++ ss) s) :=
       mkIdx (inShape := inShape) (ss := ss) pid s
 
+    let fwd (forward : TList α ([inShape] ++ ss) → Tensor α τ) : NodeData α Unit
+        ([inShape] ++ ss) τ :=
+      mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+
     let nodeData : NodeData α Unit ([inShape] ++ ss) τ ←
       match n.kind with
       | .input =>
@@ -382,7 +386,7 @@ def buildFrom
           let t ← NN.IR.Graph.evalConst (α := α) (payload := payload) (id := n.id) (s := s)
           if hOut : s = τ then
             -- Cast so the node is typed at the declared outShape.
-            pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) (fun _ctx => hOut ▸ t)
+            pure <| fwd (fun _ctx => hOut ▸ t)
           else
             throw s!"IRExec: const node {i}: outShape mismatch: kind={repr s}, declared={repr τ}"
       | .permute perm =>
@@ -405,7 +409,7 @@ def buildFrom
                           swaps) x
                         let yExpected : Tensor α expected := Tensor.castShape y hFinal
                         Tensor.castShape yExpected hOut
-                      pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                      pure <| fwd forward
                     else
                       throw <|
                         s!"IRExec: node {i}: permute outShape mismatch: " ++
@@ -424,7 +428,7 @@ def buildFrom
               if hOut : s = τ then
                 let forward := fun ctx : TList α ([inShape] ++ ss) =>
                   hOut ▸ (getIdx (α := α) (xs := ctx) ip)
-                pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                pure <| fwd forward
               else
                 throw s!"IRExec: node {i}: detach expects outShape=parent.outShape ({n.summary})"
           | _ => throw s!"IRExec: node {i}: detach expects 1 parent ({n.summary})"
@@ -433,7 +437,7 @@ def buildFrom
           | [] =>
               let key := Runtime.Autograd.TorchLean.Random.keyOf seed i
               let t : Tensor α τ := Runtime.Autograd.TorchLean.Random.uniform (α := α) key (s := τ)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) (fun _ctx => t)
+              pure <| fwd (fun _ctx => t)
           | _ => throw s!"IRExec: node {i}: rand_uniform expects 0 parents ({n.summary})"
       | .bernoulliMask seed =>
           match n.parents with
@@ -446,7 +450,7 @@ def buildFrom
                   match kpT with
                   | Tensor.scalar v => v
                 Runtime.Autograd.TorchLean.Random.mask (α := α) key kp (s := τ)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: bernoulli_mask expects 1 parent ({n.summary})"
       | .add =>
           match n.parents with
@@ -456,7 +460,7 @@ def buildFrom
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.addSpec (α := α) (getIdx (α := α) (xs := ctx) ia) (getIdx (α := α) (xs :=
                   ctx) ib)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: add expects 2 parents ({n.summary})"
       | .sub =>
           match n.parents with
@@ -466,7 +470,7 @@ def buildFrom
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.subSpec (α := α) (getIdx (α := α) (xs := ctx) ia) (getIdx (α := α) (xs :=
                   ctx) ib)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: sub expects 2 parents ({n.summary})"
       | .mul_elem =>
           match n.parents with
@@ -476,7 +480,7 @@ def buildFrom
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.mulSpec (α := α) (getIdx (α := α) (xs := ctx) ia) (getIdx (α := α) (xs :=
                   ctx) ib)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: mul_elem expects 2 parents ({n.summary})"
       | .abs =>
           match n.parents with
@@ -484,7 +488,7 @@ def buildFrom
               let ip ← parentIdx pId τ
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.absSpec (α := α) (getIdx (α := α) (xs := ctx) ip)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: abs expects 1 parent ({n.summary})"
       | .sqrt =>
           match n.parents with
@@ -492,7 +496,7 @@ def buildFrom
               let ip ← parentIdx pId τ
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.sqrtSpec (α := α) (getIdx (α := α) (xs := ctx) ip)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: sqrt expects 1 parent ({n.summary})"
       | .inv =>
           match n.parents with
@@ -500,7 +504,7 @@ def buildFrom
               let ip ← parentIdx pId τ
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.invSpec (α := α) (getIdx (α := α) (xs := ctx) ip)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: inv expects 1 parent ({n.summary})"
       | .maxElem =>
           match n.parents with
@@ -510,7 +514,7 @@ def buildFrom
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.maxSpec (α := α) (getIdx (α := α) (xs := ctx) ia) (getIdx (α := α) (xs :=
                   ctx) ib)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: max_elem expects 2 parents ({n.summary})"
       | .minElem =>
           match n.parents with
@@ -520,7 +524,7 @@ def buildFrom
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.minSpec (α := α) (getIdx (α := α) (xs := ctx) ia) (getIdx (α := α) (xs :=
                   ctx) ib)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: min_elem expects 2 parents ({n.summary})"
       | .maxPool2d kH kW stride =>
           match n.parents with
@@ -535,6 +539,8 @@ def buildFrom
                   else if hs : stride = 0 then
                     throw s!"IRExec: node {i}: max_pool2d requires stride ≠ 0 ({n.summary})"
                   else
+                    let _ ← NN.IR.OpContracts.checkWindowFits "max_pool2d" "height" inH kH 0
+                    let _ ← NN.IR.OpContracts.checkWindowFits "max_pool2d" "width" inW kW 0
                     let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
                     let ip ← parentIdx pId sIn
                     let expected : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
@@ -547,7 +553,7 @@ def buildFrom
                             (inH := inH) (inW := inW) (inC := inC) (stride := stride)
                             (layer := layer) (input := xCHW)
                         hOut ▸ y
-                      pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                      pure <| fwd forward
                     else
                       throw <|
                         s!"IRExec: node {i}: max_pool2d outShape mismatch: " ++
@@ -568,6 +574,8 @@ def buildFrom
                   else if hs : stride = 0 then
                     throw s!"IRExec: node {i}: max_pool2d_pad requires stride ≠ 0 ({n.summary})"
                   else
+                    let _ ← NN.IR.OpContracts.checkWindowFits "max_pool2d_pad" "height" inH kH padding
+                    let _ ← NN.IR.OpContracts.checkWindowFits "max_pool2d_pad" "width" inW kW padding
                     let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
                     let ip ← parentIdx pId sIn
                     let expected : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW stride
@@ -582,7 +590,7 @@ def buildFrom
                               padding)
                             (layer := layer) (input := xCHW)
                         hOut ▸ y
-                      pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                      pure <| fwd forward
                     else
                       throw <|
                         s!"IRExec: node {i}: max_pool2d_pad outShape mismatch: " ++
@@ -603,6 +611,8 @@ def buildFrom
                   else if hs : stride = 0 then
                     throw s!"IRExec: node {i}: avg_pool2d requires stride ≠ 0 ({n.summary})"
                   else
+                    let _ ← NN.IR.OpContracts.checkWindowFits "avg_pool2d" "height" inH kH 0
+                    let _ ← NN.IR.OpContracts.checkWindowFits "avg_pool2d" "width" inW kW 0
                     let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
                     let ip ← parentIdx pId sIn
                     let expected : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
@@ -615,7 +625,7 @@ def buildFrom
                             (inH := inH) (inW := inW) (inC := inC) (stride := stride)
                             (h1 := hkH) (h2 := hkW) (layer := layer) (input := xCHW)
                         hOut ▸ y
-                      pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                      pure <| fwd forward
                     else
                       throw <|
                         s!"IRExec: node {i}: avg_pool2d outShape mismatch: " ++
@@ -636,6 +646,8 @@ def buildFrom
                   else if hs : stride = 0 then
                     throw s!"IRExec: node {i}: avg_pool2d_pad requires stride ≠ 0 ({n.summary})"
                   else
+                    let _ ← NN.IR.OpContracts.checkWindowFits "avg_pool2d_pad" "height" inH kH padding
+                    let _ ← NN.IR.OpContracts.checkWindowFits "avg_pool2d_pad" "width" inW kW padding
                     let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
                     let ip ← parentIdx pId sIn
                     let expected : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW stride
@@ -650,7 +662,7 @@ def buildFrom
                               padding)
                             (h1 := hkH) (h2 := hkW) (layer := layer) (input := xCHW)
                         hOut ▸ y
-                      pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                      pure <| fwd forward
                     else
                       throw <|
                         s!"IRExec: node {i}: avg_pool2d_pad outShape mismatch: " ++
@@ -662,7 +674,7 @@ def buildFrom
           match n.parents with
           | [pId] =>
               let ip ← parentIdx pId s₁
-              match NN.IR.Graph.mkCanBroadcastTo? s₁ s₂ with
+              match NN.IR.OpContracts.mkCanBroadcastTo? s₁ s₂ with
               | none =>
                   throw s!"IRExec: node {i}: broadcastTo invalid: {repr s₁} → {repr s₂}"
               | some cb =>
@@ -670,7 +682,7 @@ def buildFrom
                     let forward := fun ctx : TList α ([inShape] ++ ss) =>
                       let x := getIdx (α := α) (xs := ctx) ip
                       hOut ▸ Tensor.broadcastTo (α := α) (s₁ := s₁) (s₂ := s₂) cb x
-                    pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                    pure <| fwd forward
                   else
                     throw <|
                       s!"IRExec: node {i}: broadcastTo outShape mismatch: kind={repr s₂}, " ++
@@ -693,7 +705,7 @@ def buildFrom
                       let x := getIdx (α := α) (xs := ctx) ip
                       let y : Tensor α expected := Tensor.reduceSum (α := α) (s := s) axis x hRed
                       hOut ▸ y
-                    pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                    pure <| fwd forward
                   else
                     throw <|
                       s!"IRExec: node {i}: reduce_sum outShape mismatch: " ++
@@ -716,7 +728,7 @@ def buildFrom
                       let x := getIdx (α := α) (xs := ctx) ip
                       let y : Tensor α expected := Tensor.reduceMean (α := α) (s := s) axis x hRed
                       hOut ▸ y
-                    pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                    pure <| fwd forward
                   else
                     throw <|
                       s!"IRExec: node {i}: reduce_mean outShape mismatch: " ++
@@ -732,7 +744,7 @@ def buildFrom
                 let forward := fun ctx : TList α ([inShape] ++ ss) =>
                   let x := getIdx (α := α) (xs := ctx) ip
                   hOut ▸ Tensor.scalar (Tensor.sumSpec (α := α) x)
-                pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                pure <| fwd forward
               else
                 throw s!"IRExec: node {i}: sum expects scalar outShape ({n.summary})"
           | _ => throw s!"IRExec: node {i}: sum expects 1 parent ({n.summary})"
@@ -756,7 +768,7 @@ def buildFrom
                             let y : Tensor α expected := Spec.matMulSpec (α := α) (m := m) (n :=
                               nDim) (p := p) aT bT
                             hOut ▸ y
-                          pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                          pure <| fwd forward
                         else
                           throw <|
                             s!"IRExec: node {i}: matmul outShape mismatch: " ++
@@ -780,7 +792,7 @@ def buildFrom
                                 Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := nDim) (p :=
                                   p) aT bT
                               hOut ▸ y
-                            pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                            pure <| fwd forward
                           else
                             throw <|
                               s!"IRExec: node {i}: bmm outShape mismatch: " ++
@@ -812,7 +824,7 @@ def buildFrom
                         Tensor.addSpec (α := α)
                           (Spec.matVecMulSpec (α := α) (m := p.outDim) (n := p.inDim) W x) b
                       hOut ▸ y
-                    pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                    pure <| fwd forward
                   else
                     throw <|
                       s!"IRExec: linear {n.id}: declared outShape mismatch: {repr τ} vs " ++
@@ -838,19 +850,63 @@ def buildFrom
                       let y : Tensor α expected := Spec.conv2dSpec (α := α) (layer := cfg.spec)
                         (input := x)
                       hOut ▸ y
-                    pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                    pure <| fwd forward
                   else
                     throw <|
                       s!"IRExec: node {i}: conv2d outShape mismatch: expected={repr expected}, " ++
                         s!"declared={repr τ} ({n.summary})"
           | _ => throw s!"IRExec: node {i}: conv2d expects 1 parent ({n.summary})"
+      | .batchNorm2dNchwEval channels =>
+          match n.parents with
+          | [xId] =>
+              match payload.batchNorm2dNchwEval? n.id with
+              | none => throw s!"IRExec: missing batch_norm2d_nchw_eval payload for node {n.id}"
+              | some cfg =>
+                  match τ with
+                  | .dim nBatch (.dim c (.dim h (.dim w .scalar))) =>
+                      if hc : c = cfg.c then
+                        match hc with
+                        | rfl =>
+                            let expected : Shape := .dim nBatch (.dim cfg.c (.dim h (.dim w
+                              .scalar)))
+                            let ix ← parentIdx xId expected
+                            if hOut : expected = τ then
+                              let forward := fun ctx : TList α ([inShape] ++ ss) =>
+                                let x := getIdx (α := α) (xs := ctx) ix
+                                let y : Tensor α expected :=
+                                  Tensor.dim fun ni =>
+                                    Tensor.dim fun ci =>
+                                      Tensor.dim fun hi =>
+                                        Tensor.dim fun wi =>
+                                          match getAtSpec (getAtSpec (getAtSpec (getAtSpec x ni) ci)
+                                              hi) wi, getAtSpec cfg.gamma ci, getAtSpec cfg.beta ci,
+                                              getAtSpec cfg.mean ci, getAtSpec cfg.var ci with
+                                          | .scalar xv, .scalar gamma, .scalar beta, .scalar mean,
+                                            .scalar var =>
+                                              let denom := MathFunctions.sqrt
+                                                (max var (0 : α) + cfg.eps)
+                                              Tensor.scalar (((xv - mean) / denom) * gamma + beta)
+                                hOut ▸ y
+                              pure <| fwd forward
+                            else
+                              throw <|
+                                s!"IRExec: node {i}: batch_norm2d_nchw_eval outShape mismatch: " ++
+                                  s!"expected={repr expected}, declared={repr τ} ({n.summary})"
+                      else
+                        throw <|
+                          s!"IRExec: node {i}: batch_norm2d_nchw_eval channel mismatch: " ++
+                            s!"op={channels}, declared={c}, payload={cfg.c} ({n.summary})"
+                  | _ =>
+                      throw s!"IRExec: node {i}: batch_norm2d_nchw_eval expects NCHW outShape"
+          | _ =>
+              throw s!"IRExec: node {i}: batch_norm2d_nchw_eval expects 1 parent ({n.summary})"
       | .relu =>
           match n.parents with
           | [pId] =>
               let ip ← parentIdx pId τ
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Activation.reluSpec (α := α) (getIdx (α := α) (xs := ctx) ip)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: relu expects 1 parent ({n.summary})"
       | .tanh =>
           match n.parents with
@@ -858,7 +914,7 @@ def buildFrom
               let ip ← parentIdx pId τ
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Activation.tanhSpec (α := α) (getIdx (α := α) (xs := ctx) ip)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: tanh expects 1 parent ({n.summary})"
       | .sigmoid =>
           match n.parents with
@@ -866,7 +922,7 @@ def buildFrom
               let ip ← parentIdx pId τ
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Activation.sigmoidSpec (α := α) (getIdx (α := α) (xs := ctx) ip)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: sigmoid expects 1 parent ({n.summary})"
       | .exp =>
           match n.parents with
@@ -874,7 +930,7 @@ def buildFrom
               let ip ← parentIdx pId τ
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.expSpec (α := α) (getIdx (α := α) (xs := ctx) ip)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: exp expects 1 parent ({n.summary})"
       | .log =>
           match n.parents with
@@ -888,7 +944,7 @@ def buildFrom
                   Tensor.logSpec (α := α) x
                 else
                   panic! "IRExec: log: input contains values <= 0 (or NaN); use `safe_log` if you want epsilon protection"
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: log expects 1 parent ({n.summary})"
       | .sin =>
           match n.parents with
@@ -897,7 +953,7 @@ def buildFrom
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.mapSpec (α := α) (s := τ) (fun x => MathFunctions.sin x) (getIdx (α := α)
                   (xs := ctx) ip)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: sin expects 1 parent ({n.summary})"
       | .cos =>
           match n.parents with
@@ -906,7 +962,7 @@ def buildFrom
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Tensor.mapSpec (α := α) (s := τ) (fun x => MathFunctions.cos x) (getIdx (α := α)
                   (xs := ctx) ip)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: cos expects 1 parent ({n.summary})"
       | .softmax axis =>
           match n.parents with
@@ -918,7 +974,7 @@ def buildFrom
               let ip ← parentIdx pId τ
               let forward := fun ctx : TList α ([inShape] ++ ss) =>
                 Activation.softmaxSpec (α := α) (getIdx (α := α) (xs := ctx) ip)
-              pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+              pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: softmax expects 1 parent ({n.summary})"
       | .layernorm axis =>
           match n.parents with
@@ -945,7 +1001,7 @@ def buildFrom
                           (x := x2D) (gamma := gamma) (beta := beta)
                           (h_seq_pos := hSeq) (h_embed_pos := hEmb)
                       Tensor.reshapeSpec (α := α) (s₁ := view2D) (s₂ := τ) y2D hNumel.symm
-                    pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                    pure <| fwd forward
                   else
                     throw s!"IRExec: node {i}: layernorm embedDim must be > 0 (got {embedDim})"
                 else
@@ -965,7 +1021,7 @@ def buildFrom
                   let forward := fun ctx : TList α ([inShape] ++ ss) =>
                     let x := getIdx (α := α) (xs := ctx) ip
                     hOut ▸ Tensor.reshapeSpec (α := α) (s₁ := inS) (s₂ := outS) x hNumel
-                  pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                  pure <| fwd forward
                 else
                   throw <|
                     s!"IRExec: node {i}: reshape outShape mismatch: kind={repr outS}, " ++
@@ -985,7 +1041,7 @@ def buildFrom
                   let x := getIdx (α := α) (xs := ctx) ip
                   let y : Tensor α expected := Tensor.flattenSpec (α := α) (s := s) x
                   hOut ▸ y
-                pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                pure <| fwd forward
               else
                 throw <|
                   s!"IRExec: node {i}: flatten outShape mismatch: " ++
@@ -1047,7 +1103,7 @@ def buildFrom
                         simpa using congrArg (fun k => Shape.dim k rest) hSum
                       exact hDim.trans hτ.symm
                     Tensor.castShape tSum' hOutShape
-                  pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                  pure <| fwd forward
                 else
                   throw <|
                     s!"IRExec: node {i}: concat out dim mismatch: declared {nOut}, computed " ++
@@ -1193,7 +1249,7 @@ def buildFrom
                               applySwapsTensor (α := α) (s := outFrontExpected) (swaps := swapsBack)
                                 tFront
                             Tensor.castShape tBack hOutBackFinal
-                          pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                          pure <| fwd forward
                         else
                           throw <|
                             s!"IRExec: node {i}: concat out dim mismatch: declared {nOutFront}, " ++
@@ -1221,7 +1277,7 @@ def buildFrom
                         Tensor.swapFirstTwoSpec (α := α) (m := m) (n := nDim) (s := rest)
                           (getIdx (α := α) (xs := ctx) ip)
                       Tensor.castShape y hτ.symm
-                    pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                    pure <| fwd forward
                 | _ =>
                     throw s!"IRExec: node {i}: swap_first_two expects rank≥2 outShape ({n.summary})"
             | _ =>
@@ -1238,7 +1294,7 @@ def buildFrom
                         Tensor.transpose3DLastTwoSpec (α := α) (a := a) (b := b) (c := c)
                           (getIdx (α := α) (xs := ctx) ip)
                       Tensor.castShape y hτ.symm
-                    pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                    pure <| fwd forward
                 | _ =>
                     throw <|
                       s!"IRExec: node {i}: transpose3d_last_two expects rank=3 with scalar " ++
@@ -1264,7 +1320,7 @@ def buildFrom
                       let y0 : Tensor α Shape.scalar :=
                         Tensor.scalar (total / (↑(Shape.size s) : α))
                       Tensor.castShape y0 hOut
-                    pure <| mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := τ) forward
+                    pure <| fwd forward
                   else
                     throw s!"IRExec: node {i}: mse_loss expects scalar outShape ({n.summary})"
                 else

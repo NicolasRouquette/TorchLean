@@ -97,7 +97,7 @@ def cudaGrad {s : Shape} (grads : Array Runtime.Autograd.Cuda.AnyBuffer) (id : N
 /--
 Approximate equality for `Tensor Float s` by flattening in CUDA row-major order.
 
-This intentionally compares the numeric results, not the representation.
+This compares the numeric results rather than the representation.
 -/
 def assertTensorApprox {s : Shape} (msg : String) (x y : Tensor Float s) (tol : Float := 1e-3) :
     IO Unit := do

@@ -195,7 +195,8 @@ theorem buildFrom_denoteAllFrom_permute
                                   Tensor.eqRec_eq_cast_shape, Tensor.castShape, throw_eq_error]
                                 -- Close the remaining `pure _ = .ok _` goal by unfolding the `Except` instance.
                                 with_unfolding_all rfl
-                              exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+                              exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
+                                (payload := payload)
                                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
                             · simp [hOut] at hBuild

@@ -6,11 +6,10 @@ Authors: TorchLean Team
 
 module
 
-public import NN.IR.OpContracts
+public import NN.IR.Payload
 public import NN.Runtime.Context
 public import NN.Runtime.Autograd.TorchLean.Random
 public import NN.Spec.Layers.Activation
-public import NN.Spec.Layers.Conv
 public import NN.Spec.Layers.Normalization
 public import NN.Spec.Layers.Pooling
 
@@ -59,93 +58,6 @@ namespace NN.IR
 
 open _root_.Spec
 open _root_.Spec.Tensor
-
-/-!
-## Parameter payloads
-
-The IR graph stores `OpKind` and `outShape`, but it does not embed tensor values for parameters.
-Instead, evaluation is parameterized by a `Payload`:
-
-- `const? id` supplies a constant tensor for a `const` node,
-- `linear? id` supplies `W,b` for a `linear` node,
-- `conv2d? id` supplies the convolution spec/weights for a `conv2d` node.
-
-This matches how most graph formats work in practice: structure is one artifact, parameters are
-another.
--/
-
-/--
-Payload record for a `const` node.
-
-Constants are stored in a “flat” (1-D) representation so backends can keep a uniform container
-(e.g. an array). During evaluation we check the flat length against `Shape.size` and then
-`unflatten` to the requested `Shape`.
--/
-structure ConstFlat (α : Type) [Context α] where
-  /-- Number of scalar entries stored in the flat constant payload. -/
-  n : Nat
-  /-- Constant values stored as a vector before evaluation reshapes them to the IR node shape. -/
-  v : Tensor α (.dim n .scalar)
-
-/--
-Payload record for a `linear` node: weight matrix `W` and bias vector `b`.
-
-The node's input `x` comes from the graph edge; `W,b` live in the external `Payload` (similar to
-ONNX initializers or a PyTorch `state_dict`).
--/
-structure LinearWB (α : Type) [Context α] where
-  /-- Output dimension. -/
-  outDim : Nat
-  /-- Input dimension. -/
-  inDim  : Nat
-  /-- Weight matrix in the PyTorch convention `outDim × inDim`. -/
-  W : Tensor α (.dim outDim (.dim inDim .scalar))
-  /-- Bias vector added after matrix-vector multiplication. -/
-  b : Tensor α (.dim outDim .scalar)
-
-/--
-Payload record for a `conv2d` node.
-
-We store the spec-layer `Conv2DSpec` together with the dimension parameters needed to reconstruct
-it. The nonzero proofs are required by the spec-layer definition and ensure the convolution is
-well-formed.
--/
-structure Conv2DParams (α : Type) [Context α] where
-  /-- Input channels. -/
-  inC : Nat
-  /-- Output channels. -/
-  outC : Nat
-  /-- Kernel height. -/
-  kH : Nat
-  /-- Kernel width. -/
-  kW : Nat
-  /-- Stride. -/
-  stride : Nat
-  /-- Padding size. -/
-  padding : Nat
-  /-- in H. -/
-  inH : Nat
-  /-- Input width. -/
-  inW : Nat
-  /-- Proof that the input channel count is nonzero, required by the spec convolution layer. -/
-  hIn : inC ≠ 0
-  /-- Proof that the kernel height is nonzero. -/
-  hKH : kH ≠ 0
-  /-- Proof that the kernel width is nonzero. -/
-  hKW : kW ≠ 0
-  /-- Spec-layer convolution package containing weights, bias, and convolution metadata. -/
-  spec : Spec.Conv2DSpec inC outC kH kW stride padding α hIn hKH hKW
-
-/--
-External parameter payloads keyed by IR node id.
-
-This is focused; different backends may store parameters differently.
--/
-structure Payload (α : Type) [Context α] where
-  -- Each lookup is keyed by the *node id*.
-  const?  : Nat → Option (ConstFlat α) := fun _ => none
-  linear? : Nat → Option (LinearWB α) := fun _ => none
-  conv2d? : Nat → Option (Conv2DParams α) := fun _ => none
 
 /-!
 ## Dynamic (shape-tagged) values
@@ -208,29 +120,6 @@ def mkValidAxis? (axis : Nat) : (s : Shape) → Option (PLift (Shape.valid_axis 
           (mkValidAxis? a rest).map (fun h =>
             ⟨Shape.valid_axis.valid_succ (n := k) (s := rest) (k := a) h.down⟩)
       | Nat.succ _, 0 => none
-
-/--
-Build a witness that `s₁` can be broadcast to `s₂` (NumPy/PyTorch-style broadcasting).
-
-The spec-layer broadcasting operator is typed with `Shape.CanBroadcastTo`. Since the IR stores only
-runtime shapes, we reconstruct this witness on demand.
-
-Returns `none` when broadcasting is not possible.
--/
-def mkCanBroadcastTo? : (s₁ s₂ : Shape) → Option (Shape.CanBroadcastTo s₁ s₂)
-  | .scalar, s₂ => some (.scalar_to_any s₂)
-  | .dim n₁ t₁, .dim n₂ t₂ =>
-      if hEq : n₁ = n₂ then
-        (mkCanBroadcastTo? t₁ t₂).map (fun tail =>
-          hEq ▸ Shape.CanBroadcastTo.dim_eq (n := n₁) (s₁ := t₁) (s₂ := t₂) tail)
-      else if h1 : n₁ = 1 then
-        (mkCanBroadcastTo? t₁ t₂).map (fun tail =>
-          h1 ▸ Shape.CanBroadcastTo.dim_1_to_n (n := n₂) (s₁ := t₁) (s₂ := t₂) tail)
-      else
-        -- expand dims: broadcast s₁ to `t₂`, then add a leading dim
-        (mkCanBroadcastTo? (.dim n₁ t₁) t₂).map (fun tail =>
-          Shape.CanBroadcastTo.expand_dims (n := n₂) (s₁ := .dim n₁ t₁) (s₂ := t₂) tail)
-  | _, _ => none
 
 /-- Return the index of the first occurrence of `x` in `xs` (or `none` if absent). -/
 def findIndex? (xs : List Nat) (x : Nat) : Option Nat :=
@@ -411,6 +300,8 @@ def evalConv2D {α : Type} [Context α] [DecidableEq Shape]
   | some cfg =>
       let xT ← expectShape (α := α)
         (expected := Shape.dim cfg.inC (Shape.dim cfg.inH (Shape.dim cfg.inW Shape.scalar))) x
+      OpContracts.checkWindowFits "conv2d" "height" cfg.inH cfg.kH cfg.padding
+      OpContracts.checkWindowFits "conv2d" "width" cfg.inW cfg.kW cfg.padding
       let y := Spec.conv2dSpec (α := α)
         (layer := cfg.spec)
         (input := xT)
@@ -418,6 +309,36 @@ def evalConv2D {α : Type} [Context α] [DecidableEq Shape]
       let outW : Nat := (cfg.inW + 2 * cfg.padding - cfg.kW) / cfg.stride + 1
       let outShape : Shape := Shape.dim cfg.outC (Shape.dim outH (Shape.dim outW Shape.scalar))
       pure (DVal.mk (α := α) outShape y)
+
+/-- Evaluate eval-mode BatchNorm2d over an `N×C×H×W` tensor. -/
+def evalBatchNorm2DNchwEval {α : Type} [Context α] [DecidableEq Shape]
+    (payload : Payload α) (id : Nat) (x : DVal α) : Except String (DVal α) := do
+  match payload.batchNorm2dNchwEval? id with
+  | none => throw s!"IR eval: missing batch_norm2d_nchw_eval payload for node {id}"
+  | some cfg =>
+      match x.shape with
+      | .dim n (.dim c (.dim h (.dim w .scalar))) =>
+          if hc : c = cfg.c then
+            match hc with
+            | rfl =>
+                let xT ← expectShape (α := α)
+                  (expected := .dim n (.dim cfg.c (.dim h (.dim w .scalar)))) x
+                let y : Tensor α (.dim n (.dim cfg.c (.dim h (.dim w .scalar)))) :=
+                  Tensor.dim fun ni =>
+                    Tensor.dim fun ci =>
+                      Tensor.dim fun hi =>
+                        Tensor.dim fun wi =>
+                          match getAtSpec (getAtSpec (getAtSpec (getAtSpec xT ni) ci) hi) wi,
+                              getAtSpec cfg.gamma ci, getAtSpec cfg.beta ci,
+                              getAtSpec cfg.mean ci, getAtSpec cfg.var ci with
+                          | .scalar xv, .scalar gamma, .scalar beta, .scalar mean, .scalar var =>
+                              let denom := MathFunctions.sqrt (max var (0 : α) + cfg.eps)
+                              Tensor.scalar (((xv - mean) / denom) * gamma + beta)
+                pure (DVal.mk (α := α) (.dim n (.dim cfg.c (.dim h (.dim w .scalar)))) y)
+          else
+            throw s!"IR eval: batch_norm2d_nchw_eval channel mismatch: input={c}, payload={cfg.c}"
+      | s =>
+          throw s!"IR eval: batch_norm2d_nchw_eval expects NCHW input, got {repr s}"
 
 /-- Deterministic LayerNorm used by the IR evaluator (gamma=1, beta=0). -/
 def layernormPure {α : Type} [Context α]
@@ -435,6 +356,164 @@ def layernormPure {α : Type} [Context α]
       throw s!"layernorm: embedDim must be > 0 (got {embedDim})"
   else
     throw s!"layernorm: seqLen must be > 0 (got {seqLen})"
+
+/-- Fold leading-axis concat over dynamic values that already share the same tail shape. -/
+def evalConcatAxis0Fold {α : Type} [Context α]
+    (i : Nat) (nOut : Nat) (rest : Shape) (parents : List (DVal α)) :
+    Except String (DVal α) := do
+  let toSigma (pv : DVal α) : Except String (Sigma fun n => Tensor α (Shape.dim n rest)) := do
+    match pv.shape, pv.tensor with
+    | Shape.dim nP restP, t =>
+        if hRest : restP = rest then
+          let t' : Tensor α (Shape.dim nP rest) := by
+            simpa [hRest] using t
+          pure ⟨nP, t'⟩
+        else
+          throw <|
+            s!"IR eval: node {i}: concat: tail mismatch: {repr restP} vs {repr rest}"
+    | _, _ =>
+        throw s!"IR eval: node {i}: concat expects rank≥1 parents, got {repr pv.shape}"
+  let sigs ← parents.mapM toSigma
+  match sigs with
+  | [] =>
+      throw s!"IR eval: node {i}: concat internal error"
+  | s0 :: srest =>
+      let outSigma :=
+        srest.foldl
+          (fun acc nxt =>
+            match acc, nxt with
+            | ⟨n1, t1⟩, ⟨n2, t2⟩ =>
+                ⟨n1 + n2, Tensor.concatDim0Spec (α := α) (n := n1) (m := n2) (s := rest)
+                  t1 t2⟩)
+          s0
+      match outSigma with
+      | ⟨nSum, tSum⟩ =>
+          if h : nSum = nOut then
+            let y : Tensor α (Shape.dim nOut rest) := by
+              simpa [h] using tSum
+            pure (DVal.mk (α := α) (Shape.dim nOut rest) y)
+          else
+            throw <|
+              s!"IR eval: node {i}: concat out dim mismatch: declared {nOut}, " ++
+                s!"computed {nSum}"
+
+/--
+Evaluate a `concat` node from already evaluated parent values.
+
+The IR concat operation accepts any valid axis.  The tensor primitive concatenates along axis `0`,
+so the evaluator implements the generic case by moving the requested axis to the front, folding
+`Tensor.concatDim0Spec` over the permuted parents, and moving the result back.
+-/
+def evalConcat {α : Type} [Context α] [DecidableEq Shape]
+    (i : Nat) (n : Node) (axis : Nat) (parents : List (DVal α)) : Except String (DVal α) := do
+  let expected ←
+    match OpContracts.inferConcatOutShape axis (parents.map (fun pv => pv.shape)) with
+    | .ok s => pure s
+    | .error msg => throw s!"IR eval: node {i}: {msg} ({n.summary})"
+  if expected != n.outShape then
+    throw <|
+      s!"IR eval: node {i}: concat outShape mismatch: " ++
+        s!"expected={repr expected}, declared={repr n.outShape} ({n.summary})"
+
+  if axis = 0 then
+    match n.outShape with
+    | Shape.dim nOut rest =>
+        evalConcatAxis0Fold (α := α) i nOut rest parents
+    | _ =>
+        throw s!"IR eval: node {i}: concat expects rank≥1 outShape, got {repr n.outShape}"
+  else
+  let permFront ←
+    match OpContracts.permMoveAxisToFront axis n.outShape with
+    | .ok perm => pure perm
+    | .error msg => throw s!"IR eval: node {i}: concat: {msg} ({n.summary})"
+  let permBack ←
+    match OpContracts.inversePerm permFront with
+    | .ok perm => pure perm
+    | .error msg => throw s!"IR eval: node {i}: concat: {msg} ({n.summary})"
+  let outPermShape ←
+    match Spec.Shape.permute? n.outShape permFront with
+    | some s => pure s
+    | none =>
+        throw <|
+          s!"IR eval: node {i}: concat: internal error (invalid permutation for " ++
+            s!"outShape) ({n.summary})"
+  let parentsPerm : List (DVal α) ←
+    parents.mapM (fun pv => do
+      match permuteDVal (α := α) pv permFront with
+      | .ok v => pure v
+      | .error msg => throw s!"IR eval: node {i}: concat: {msg} ({n.summary})")
+  match outPermShape with
+  | Shape.dim nOut rest =>
+      let toSigma (pv : DVal α) : Except String (Sigma fun n => Tensor α (Shape.dim n rest))
+        := do
+        match pv.shape, pv.tensor with
+        | Shape.dim nP restP, t =>
+            if hRest : restP = rest then
+              let t' : Tensor α (Shape.dim nP rest) := by
+                simpa [hRest] using t
+              pure ⟨nP, t'⟩
+            else
+              throw <|
+                s!"IR eval: node {i}: concat: permuted tail mismatch: {repr restP} vs " ++
+                  s!"{repr rest}"
+        | _, _ =>
+            throw s!"IR eval: node {i}: concat expects rank≥1 parents, got {repr pv.shape}"
+      let sigs ← parentsPerm.mapM toSigma
+      match sigs with
+      | [] =>
+          throw s!"IR eval: node {i}: concat internal error"
+      | s0 :: srest =>
+          let outSigma :=
+            srest.foldl
+              (fun acc nxt =>
+                match acc, nxt with
+                | ⟨n1, t1⟩, ⟨n2, t2⟩ =>
+                    ⟨n1 + n2, Tensor.concatDim0Spec (α := α) (n := n1) (m := n2) (s := rest)
+                      t1 t2⟩)
+              s0
+          match outSigma with
+          | ⟨nSum, tSum⟩ =>
+              if h : nSum = nOut then
+                let yPerm : Tensor α (Shape.dim nOut rest) := by
+                  simpa [h] using tSum
+                let outPerm : DVal α := DVal.mk (α := α) (Shape.dim nOut rest) yPerm
+                let out0 ←
+                  match permuteDVal (α := α) outPerm permBack with
+                  | .ok v => pure v
+                  | .error msg => throw s!"IR eval: node {i}: concat: {msg} ({n.summary})"
+                let y ← expectShape (α := α) (expected := n.outShape) out0
+                pure (DVal.mk (α := α) n.outShape y)
+              else
+                throw <|
+                  s!"IR eval: node {i}: concat out dim mismatch: declared {nOut}, " ++
+                    s!"computed {nSum}"
+  | _ =>
+      throw s!"IR eval: node {i}: concat expects rank≥1 outShape, got {repr n.outShape}"
+
+/-- Normalize a node result to the node's declared shape, rejecting inconsistent implementations. -/
+def normalizeNodeOutput {α : Type} [Context α] [DecidableEq Shape]
+    (i : Nat) (n : Node) (v : DVal α) : Except String (DVal α) :=
+  if h : v.shape = n.outShape then
+    pure (DVal.mk (α := α) n.outShape (h ▸ v.tensor))
+  else
+    throw <|
+      s!"IR eval: node {i}: produced shape mismatch: produced={repr v.shape}, " ++
+        s!"declared={repr n.outShape} ({n.summary})"
+
+@[simp]
+theorem normalizeNodeOutput_declared {α : Type} [Context α] [DecidableEq Shape]
+    (i : Nat) (n : Node) (t : Tensor α n.outShape) :
+    normalizeNodeOutput (α := α) i n (DVal.mk (α := α) n.outShape t) =
+      .ok (DVal.mk (α := α) n.outShape t) := by
+  simp [normalizeNodeOutput, DVal.mk, DVal.shape, DVal.tensor, Pure.pure, Except.pure]
+
+@[simp]
+theorem normalizeNodeOutput_nodeShape {α : Type} [Context α] [DecidableEq Shape]
+    (i id : Nat) (parents : List Nat) (kind : OpKind) (s : Shape) (t : Tensor α s) :
+    normalizeNodeOutput (α := α) i { id := id, parents := parents, kind := kind, outShape := s }
+        ⟨s, t⟩ =
+      .ok ⟨s, t⟩ := by
+  simp [normalizeNodeOutput, DVal.shape, DVal.tensor, Pure.pure, Except.pure]
 
 /--
 Evaluate node `i` given already computed parent values `vals`.
@@ -561,6 +640,8 @@ def evalAt
                 else if hs : stride = 0 then
                   throw s!"IR eval: node {i}: max_pool2d requires stride ≠ 0 ({n.summary})"
                 else
+                  OpContracts.checkWindowFits "max_pool2d" "height" inH kH 0
+                  OpContracts.checkWindowFits "max_pool2d" "width" inW kW 0
                   let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
                   let xCHW ← expectShape (α := α) (expected := sIn) pV
                   let expected : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
@@ -591,6 +672,8 @@ def evalAt
                 else if hs : stride = 0 then
                   throw s!"IR eval: node {i}: max_pool2d_pad requires stride ≠ 0 ({n.summary})"
                 else
+                  OpContracts.checkWindowFits "max_pool2d_pad" "height" inH kH padding
+                  OpContracts.checkWindowFits "max_pool2d_pad" "width" inW kW padding
                   let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
                   let xCHW ← expectShape (α := α) (expected := sIn) pV
                   let expected : Shape :=
@@ -622,6 +705,8 @@ def evalAt
                 else if hs : stride = 0 then
                   throw s!"IR eval: node {i}: avg_pool2d requires stride ≠ 0 ({n.summary})"
                 else
+                  OpContracts.checkWindowFits "avg_pool2d" "height" inH kH 0
+                  OpContracts.checkWindowFits "avg_pool2d" "width" inW kW 0
                   let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
                   let xCHW ← expectShape (α := α) (expected := sIn) pV
                   let expected : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
@@ -652,6 +737,8 @@ def evalAt
                 else if hs : stride = 0 then
                   throw s!"IR eval: node {i}: avg_pool2d_pad requires stride ≠ 0 ({n.summary})"
                 else
+                  OpContracts.checkWindowFits "avg_pool2d_pad" "height" inH kH padding
+                  OpContracts.checkWindowFits "avg_pool2d_pad" "width" inW kW padding
                   let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
                   let xCHW ← expectShape (α := α) (expected := sIn) pV
                   let expected : Shape :=
@@ -674,7 +761,7 @@ def evalAt
         match n.parents with
         | [pId] =>
             let p ← expectShape (α := α) (expected := s₁) (getParent pId)
-            match mkCanBroadcastTo? s₁ s₂ with
+            match OpContracts.mkCanBroadcastTo? s₁ s₂ with
             | none => throw s!"IR eval: node {i}: broadcastTo invalid: {repr s₁} → {repr s₂}"
             | some cb =>
                 let y := Tensor.broadcastTo (α := α) (s₁ := s₁) (s₂ := s₂) cb p
@@ -780,6 +867,17 @@ def evalAt
                   s!"declared={repr n.outShape}"
             pure y
         | _ => throw s!"IR eval: node {i}: conv2d expects 1 parent ({n.summary})"
+    | .batchNorm2dNchwEval .. =>
+        match n.parents with
+        | [pId] =>
+            let y ← evalBatchNorm2DNchwEval (α := α) (payload := payload) (id := n.id)
+              (x := getParent pId)
+            if y.shape != n.outShape then
+              throw <|
+                s!"IR eval: node {i}: batch_norm2d_nchw_eval outShape mismatch: " ++
+                  s!"computed={repr y.shape}, declared={repr n.outShape}"
+            pure y
+        | _ => throw s!"IR eval: node {i}: batch_norm2d_nchw_eval expects 1 parent ({n.summary})"
     | .relu =>
         match n.parents with
         | [pId] =>
@@ -921,85 +1019,7 @@ def evalAt
         | _ => throw s!"IR eval: node {i}: flatten expects 1 parent ({n.summary})"
     | .concat axis => do
         let parents := n.parents.map getParent
-        let expected ←
-          match OpContracts.inferConcatOutShape axis (parents.map (fun pv => pv.shape)) with
-          | .ok s => pure s
-          | .error msg => throw s!"IR eval: node {i}: {msg} ({n.summary})"
-        if expected != n.outShape then
-          throw <|
-            s!"IR eval: node {i}: concat outShape mismatch: " ++
-              s!"expected={repr expected}, declared={repr n.outShape} ({n.summary})"
-
-        -- Interpret `concat axis` by permuting `axis` to the front (axis 0), concatenating along
-        -- axis 0
-        -- (using the spec primitive `concat_dim0_spec`), then permuting back.
-        let permFront ←
-          match OpContracts.permMoveAxisToFront axis n.outShape with
-          | .ok perm => pure perm
-          | .error msg => throw s!"IR eval: node {i}: concat: {msg} ({n.summary})"
-        let permBack ←
-          match OpContracts.inversePerm permFront with
-          | .ok perm => pure perm
-          | .error msg => throw s!"IR eval: node {i}: concat: {msg} ({n.summary})"
-        let outPermShape ←
-          match Spec.Shape.permute? n.outShape permFront with
-          | some s => pure s
-          | none =>
-              throw <|
-                s!"IR eval: node {i}: concat: internal error (invalid permutation for " ++
-                  s!"outShape) ({n.summary})"
-        let parentsPerm : List (DVal α) ←
-          parents.mapM (fun pv => do
-            match permuteDVal (α := α) pv permFront with
-            | .ok v => pure v
-            | .error msg => throw s!"IR eval: node {i}: concat: {msg} ({n.summary})")
-        match outPermShape with
-        | Shape.dim nOut rest =>
-            let toSigma (pv : DVal α) : Except String (Sigma fun n => Tensor α (Shape.dim n rest))
-              := do
-              match pv.shape, pv.tensor with
-              | Shape.dim nP restP, t =>
-                  if hRest : restP = rest then
-                    let t' : Tensor α (Shape.dim nP rest) := by
-                      simpa [hRest] using t
-                    pure ⟨nP, t'⟩
-                  else
-                    throw <|
-                      s!"IR eval: node {i}: concat: permuted tail mismatch: {repr restP} vs " ++
-                        s!"{repr rest}"
-              | _, _ =>
-                  throw s!"IR eval: node {i}: concat expects rank≥1 parents, got {repr pv.shape}"
-            let sigs ← parentsPerm.mapM toSigma
-            match sigs with
-            | [] =>
-                throw s!"IR eval: node {i}: concat internal error"
-            | s0 :: srest =>
-                let outSigma :=
-                  srest.foldl
-                    (fun acc nxt =>
-                      match acc, nxt with
-                      | ⟨n1, t1⟩, ⟨n2, t2⟩ =>
-                          ⟨n1 + n2, Tensor.concatDim0Spec (α := α) (n := n1) (m := n2) (s := rest)
-                            t1 t2⟩)
-                    s0
-                match outSigma with
-                | ⟨nSum, tSum⟩ =>
-                    if h : nSum = nOut then
-                      let yPerm : Tensor α (Shape.dim nOut rest) := by
-                        simpa [h] using tSum
-                      let outPerm : DVal α := DVal.mk (α := α) (Shape.dim nOut rest) yPerm
-                      let out0 ←
-                        match permuteDVal (α := α) outPerm permBack with
-                        | .ok v => pure v
-                        | .error msg => throw s!"IR eval: node {i}: concat: {msg} ({n.summary})"
-                      let y ← expectShape (α := α) (expected := n.outShape) out0
-                      pure (DVal.mk (α := α) n.outShape y)
-                    else
-                      throw <|
-                        s!"IR eval: node {i}: concat out dim mismatch: declared {nOut}, " ++
-                          s!"computed {nSum}"
-        | _ =>
-            throw s!"IR eval: node {i}: concat expects rank≥1 outShape, got {repr n.outShape}"
+        evalConcat (α := α) i n axis parents
       | .swap_first_two =>
           match n.parents with
           | [pId] =>

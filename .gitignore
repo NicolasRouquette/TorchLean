@@ -25,14 +25,15 @@ __pycache__/
 .mypy_cache/
 .ipynb_checkpoints/
 
-# Generated PyTorch exports (created by `lake exe examples -- run pytorch_roundtrip --action export`)
+# Generated PyTorch exports (created by `lake exe torchlean pytorch_roundtrip --action export`)
 NN/Examples/PyTorch/*/Test*.py
+NN/Examples/Interop/PyTorch/*/Test*.py
 
 # PINN training artifacts
 NN/Examples/Verification/PINN/checkpoints/
 *.pt
 
-# Verification experiment outputs. Small checked-in JSON fixtures live next to examples, but new
+# Verification experiment outputs. Small checked-in JSON artifacts live next to examples, but new
 # generated artifacts should go into these ignored directories or `_external/`.
 NN/Examples/Verification/**/generated/
 NN/Examples/Verification/**/outputs/

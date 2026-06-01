@@ -498,16 +498,9 @@ def diagMaskSpec {α : Type} [Zero α] [One α] (dims : List Nat) (p q : Nat) :
     Tensor α (Shape.ofList dims) :=
   diagMaskSpecAux (α := α) dims p q none none
 
-/-- `Shape.ofList` is a left-inverse of `Shape.toList`. -/
-theorem ofList_toList (s : Shape) : Shape.ofList (Shape.toList s) = s := by
-  induction s with
-  | scalar => rfl
-  | dim n s ih =>
-      simp [Shape.ofList, Shape.toList, ih]
-
 /-- Specialize `diagMaskSpec` to a concrete `Shape` by rewriting through `Shape.toList`. -/
 def diagMaskForShape {α : Type} [Zero α] [One α] (s : Shape) (p q : Nat) : Tensor α s := by
-  have hs : Shape.ofList (Shape.toList s) = s := ofList_toList s
+  have hs : Shape.ofList (Shape.toList s) = s := Shape.ofList_toList s
   exact hs ▸ diagMaskSpec (α := α) (Shape.toList s) p q
 
 /-- Return the first duplicate label in `xs`, along with its original and duplicate positions. -/

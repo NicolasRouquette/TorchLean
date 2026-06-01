@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.NodeShape
+public import NN.Verification.TorchLean.Proved.Correctness.Eval.PayloadBridge
 
 /-!
 # Compiled Forward Evaluation: SSA Denotation Agreement
@@ -93,6 +94,12 @@ open NN.Verification.TorchLean
         compileFGraph_ps_linearWB_get?_lt (α := α) (paramShapes := paramShapes) (inShape := inShape)
           (ss := ss₀ ++ [mid₀]) (out := out₀) (g := gNext) (params := params) (c := c') (hk := by
             simp [c', id, Array.size_push])
+      have hConv :
+          cOut.ps.conv2dCfg.get? id = c'.ps.conv2dCfg.get? id :=
+        compileFGraph_ps_conv2dCfg_get?_lt (α := α) (paramShapes := paramShapes)
+          (inShape := inShape) (ss := ss₀ ++ [mid₀]) (out := out₀) (g := gNext)
+          (params := params) (c := c') (hk := by
+            simp [c', id, Array.size_push])
       -- `getNode` at the fresh index is exactly the freshly pushed node.
       have hnId : n.id = id := by
         cases node <;> simp [n, res, compileNode, id]
@@ -118,20 +125,6 @@ open NN.Verification.TorchLean
         classical
         -- reduce to the freshly pushed IR node, then finish by cases on the source node
         -- (doing this case-by-case avoids `simp` timeouts on the full IR evaluator).
-        have expectShape_eq_ok {expected : Shape} (v : DVal α) (h : v.shape = expected) :
-            NN.IR.Graph.expectShape (α := α) (expected := expected) v = Except.ok (h ▸ v.tensor) :=
-              by
-          cases h
-          simp [NN.IR.Graph.expectShape, DVal.shape, DVal.tensor]
-          rfl
-        have getVal_eq_ok {expected : Shape} (idx : Idx (Ctx inShape ss₀) expected)
-            (h : (vals[idx.id]!).1 = expected) :
-            getVal (α := α) (inShape := inShape) (ss := ss₀) (s := expected) vals idx =
-              Except.ok (h ▸ (vals[idx.id]!).snd) := by
-          unfold getVal
-          simp [DVal.shape]
-          rw [dif_pos h]
-          rfl
         cases node with
         | const wf t =>
             letI : Shape.WellFormed mid₀ := wf
@@ -152,25 +145,21 @@ open NN.Verification.TorchLean
               simp [c', res, compileNode, ps', flat]
             have hGet : cOut.ps.constVals.get? id = some flat :=
               hConst.trans hGet'
-            have hConstPayload :
-                (payloadOfParamStore (α := α) cOut.ps).const? id =
-                  some { n := flat.n, v := flat.v } := by
-              dsimp [payloadOfParamStore]
-              -- rewrite the HashMap lookup before `simp` unfolds it
-              have hGetElem : cOut.ps.constVals[id]? = some flat := by
-                simpa using hGet
-              rw [hGetElem]
-              simp [flat]
-            have hEvalConst :
-                NN.IR.Graph.evalConst (α := α)
-                    (payload := payloadOfParamStore (α := α) cOut.ps) (id := id) (s := mid₀)
-                  =
-                Except.ok t := by
-              have hUF : unflattenSpec mid₀ t.flattenSpec = t := by
-                simpa using (Spec.Tensor.flatten_unflatten_inverse_wf (α := α) (s := mid₀) (t := t))
-              rw [NN.IR.Graph.evalConst, hConstPayload]
-              simp [flat, flatOfTensor, NN.IR.Graph.castDimScalar, hUF]
-              rfl
+            have hStoreConst :
+                cOut.ps.constVals.get? id =
+                  some ({ n := Shape.size mid₀, v := t.flattenSpec } :
+                    NN.MLTheory.CROWN.Graph.FlatVec α) := by
+              simpa [flat, flatOfTensor] using hGet
+            have hUF : unflattenSpec mid₀ t.flattenSpec = t := by
+              simpa using (Spec.Tensor.flatten_unflatten_inverse_wf (α := α) (s := mid₀) (t := t))
+            have hn :
+                n = { id := id, parents := [], kind := .const mid₀, outShape := mid₀ } := by
+              simp [n, res, compileNode]
+            have hGetNodeConst :
+                NN.IR.Graph.getNode (g := cOut.graph) id =
+                  pure ({ id := id, parents := [], kind := .const mid₀, outShape := mid₀ } :
+                    NN.IR.Node) := by
+              simp [hGetNode, hn]
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
@@ -179,20 +168,12 @@ open NN.Verification.TorchLean
                     (vals := vals) (i := id)
                   =
                 Except.ok (DVal.mk (α := α) mid₀ t) := by
-                have hn :
-                    n = { id := id, parents := [], kind := .const mid₀, outShape := mid₀ } := by
-                  simp [n, res, compileNode]
-                have hGetNodeConst :
-                    NN.IR.Graph.getNode (g := cOut.graph) id =
-                      pure ({ id := id, parents := [], kind := .const mid₀, outShape := mid₀ } :
-                        NN.IR.Node) := by
-                  simp [hGetNode, hn]
-                -- Let `simp` reduce the `do`-block without unfolding `pure`/`bind` (unfolding
-                -- `pure`
-                -- would block simp’s monad-law reductions).
-                simp [NN.IR.Graph.evalAt, hGetNodeConst, hEvalConst, DVal.shape, DVal.tensor,
-                  DVal.mk,
-                  throw, throwThe, MonadExceptOf.throw]
+              simpa [hUF] using
+                IRStep.evalAt_const_from_paramStore_of_getNode
+                  (α := α) (g := cOut.graph) (ps := cOut.ps) (i := id) (id := id)
+                  (s := mid₀) (inputShape := inShape) (input := x) (vals := vals)
+                  (v := t.flattenSpec)
+                  hGetNodeConst hStoreConst
             have hEvalNode :
                 evalNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out
                   := mid₀)
@@ -212,25 +193,14 @@ open NN.Verification.TorchLean
               simp [c', res, compileNode, ps', flat, tp]
             have hGet : cOut.ps.constVals.get? id = some flat :=
               hConst.trans hGet'
-            have hConstPayload :
-                (payloadOfParamStore (α := α) cOut.ps).const? id =
-                  some { n := flat.n, v := flat.v } := by
-              dsimp [payloadOfParamStore]
-              have hGetElem : cOut.ps.constVals[id]? = some flat := by
-                simpa using hGet
-              rw [hGetElem]
-              rfl
-            have hEvalConst :
-                NN.IR.Graph.evalConst (α := α)
-                    (payload := payloadOfParamStore (α := α) cOut.ps) (id := id) (s := mid₀)
-                  =
-                Except.ok tp := by
-              have hUF : unflattenSpec mid₀ tp.flattenSpec = tp := by
-                simpa using (Spec.Tensor.flatten_unflatten_inverse_wf (α := α) (s := mid₀) (t :=
-                  tp))
-              rw [NN.IR.Graph.evalConst, hConstPayload]
-              simp [flat, flatOfTensor, NN.IR.Graph.castDimScalar, hUF]
-              rfl
+            have hStoreConst :
+                cOut.ps.constVals.get? id =
+                  some ({ n := Shape.size mid₀, v := tp.flattenSpec } :
+                    NN.MLTheory.CROWN.Graph.FlatVec α) := by
+              simpa [flat, flatOfTensor] using hGet
+            have hUF : unflattenSpec mid₀ tp.flattenSpec = tp := by
+              simpa using (Spec.Tensor.flatten_unflatten_inverse_wf (α := α) (s := mid₀) (t :=
+                tp))
             have hnKind : n.kind = .const mid₀ := by
               simp [compileNode, res, n]
             have hnParents : n.parents = [] := by
@@ -245,17 +215,20 @@ open NN.Verification.TorchLean
                     (vals := vals) (i := id)
                   =
                 Except.ok (DVal.mk (α := α) mid₀ tp) := by
-                have hn :
-                    n = { id := id, parents := [], kind := .const mid₀, outShape := mid₀ } := by
-                  simp [n, res, compileNode]
-                have hGetNodeConst :
-                    NN.IR.Graph.getNode (g := cOut.graph) id =
-                      pure ({ id := id, parents := [], kind := .const mid₀, outShape := mid₀ } :
-                        NN.IR.Node) := by
-                  simp [hGetNode, hn]
-                simp [NN.IR.Graph.evalAt, hGetNodeConst, hEvalConst, DVal.shape, DVal.tensor,
-                  DVal.mk,
-                  throw, throwThe, MonadExceptOf.throw]
+              have hn :
+                  n = { id := id, parents := [], kind := .const mid₀, outShape := mid₀ } := by
+                simp [n, res, compileNode]
+              have hGetNodeConst :
+                  NN.IR.Graph.getNode (g := cOut.graph) id =
+                    pure ({ id := id, parents := [], kind := .const mid₀, outShape := mid₀ } :
+                      NN.IR.Node) := by
+                simp [hGetNode, hn]
+              simpa [hUF] using
+                IRStep.evalAt_const_from_paramStore_of_getNode
+                  (α := α) (g := cOut.graph) (ps := cOut.ps) (i := id) (id := id)
+                  (s := mid₀) (inputShape := inShape) (input := x) (vals := vals)
+                  (v := tp.flattenSpec)
+                  hGetNodeConst hStoreConst
             have hEvalNode :
                 evalNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out
                   := mid₀)
@@ -292,11 +265,11 @@ open NN.Verification.TorchLean
             have hGetValA :
                 getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals a = Except.ok ta
                   := by
-              simpa [ta] using getVal_eq_ok (expected := mid₀) (idx := a) ha
+              simpa [ta] using getVal_eq_ok (vals := vals) (expected := mid₀) (idx := a) ha
             have hGetValB :
                 getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals b = Except.ok tb
                   := by
-              simpa [tb] using getVal_eq_ok (expected := mid₀) (idx := b) hb
+              simpa [tb] using getVal_eq_ok (vals := vals) (expected := mid₀) (idx := b) hb
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
@@ -348,11 +321,11 @@ open NN.Verification.TorchLean
             have hGetValA :
                 getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals a = Except.ok ta
                   := by
-              simpa [ta] using getVal_eq_ok (expected := mid₀) (idx := a) ha
+              simpa [ta] using getVal_eq_ok (vals := vals) (expected := mid₀) (idx := a) ha
             have hGetValB :
                 getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals b = Except.ok tb
                   := by
-              simpa [tb] using getVal_eq_ok (expected := mid₀) (idx := b) hb
+              simpa [tb] using getVal_eq_ok (vals := vals) (expected := mid₀) (idx := b) hb
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
@@ -404,11 +377,11 @@ open NN.Verification.TorchLean
             have hGetValA :
                 getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals a = Except.ok ta
                   := by
-              simpa [ta] using getVal_eq_ok (expected := mid₀) (idx := a) ha
+              simpa [ta] using getVal_eq_ok (vals := vals) (expected := mid₀) (idx := a) ha
             have hGetValB :
                 getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals b = Except.ok tb
                   := by
-              simpa [tb] using getVal_eq_ok (expected := mid₀) (idx := b) hb
+              simpa [tb] using getVal_eq_ok (vals := vals) (expected := mid₀) (idx := b) hb
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
@@ -941,7 +914,7 @@ open NN.Verification.TorchLean
             have hGetValX :
                 getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals xIdx = Except.ok
                   tx := by
-              simpa [tx] using getVal_eq_ok (expected := mid₀) (idx := xIdx) hxF
+              simpa [tx] using getVal_eq_ok (vals := vals) (expected := mid₀) (idx := xIdx) hxF
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
@@ -974,8 +947,11 @@ open NN.Verification.TorchLean
                 OpContracts.layerNorm2DParams 1
                     (Shape.dim seqLen (Shape.dim embedDim Shape.scalar)) =
                   .ok (seqLen, embedDim) := by
+              have hSeqNe : seqLen ≠ 0 := Nat.ne_of_gt hSeq
+              have hEmbNe : embedDim ≠ 0 := Nat.ne_of_gt hEmb
               -- For a `(seqLen × embedDim)` tensor, `axis=1` normalizes the last dimension.
-              simp [OpContracts.layerNorm2DParams, OpContracts.checkAxisValid, Shape.toList]
+              simp [OpContracts.layerNorm2DParams, OpContracts.checkAxisValid,
+                OpContracts.checkPositive, Shape.toList, hSeqNe, hEmbNe]
               rfl
             have hx : (vals[xIdx.id]!).1 = .dim seqLen (.dim embedDim .scalar) := by
               simpa [DVal.shape] using
@@ -1018,7 +994,8 @@ open NN.Verification.TorchLean
                 getVal (α := α) (inShape := inShape) (ss := ss₀)
                     (s := .dim seqLen (.dim embedDim .scalar)) vals xIdx =
                   Except.ok tx := by
-              simpa [tx] using getVal_eq_ok (expected := .dim seqLen (.dim embedDim .scalar)) (idx
+              simpa [tx] using getVal_eq_ok (vals := vals)
+                (expected := .dim seqLen (.dim embedDim .scalar)) (idx
                 := xIdx) hxF
             have hLN :
                 NN.IR.Graph.layernormPure (α := α) (seqLen := seqLen) (embedDim := embedDim)
@@ -1117,28 +1094,14 @@ open NN.Verification.TorchLean
                 getVal (α := α) (inShape := inShape) (ss := ss₀)
                     (s := .dim inDim .scalar) vals xIdx =
                   Except.ok xT := by
-              simpa [xT] using getVal_eq_ok (expected := .dim inDim .scalar) (idx := xIdx) hxF
-            have hLinearPayload :
-                (payloadOfParamStore (α := α) cOut.ps).linear? id =
-                  some { outDim := outDim, inDim := inDim, W := wT, b := bT } := by
-                dsimp [payloadOfParamStore]
-                rw [show cOut.ps.linearWB[id]? = c'.ps.linearWB[id]? by simpa [hnId] using hLin']
-                simp [c', res, compileNode, ps', wT, bT]
-            have hEvalLinear :
-                NN.IR.Graph.evalLinear (α := α)
-                    (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (id := id)
-                    (x := vals[xIdx.id]!)
-                    (outShape := .dim outDim .scalar)
-                  =
-                Except.ok
-                  (DVal.mk (α := α) (.dim outDim .scalar)
-                    (Tensor.addSpec (α := α)
-                      (Tensor.matVecMulSpec (α := α) (m := outDim) (n := inDim) wT xT) bT)) := by
-              rw [NN.IR.Graph.evalLinear, hLinearPayload]
-              simp [wT, bT]
-              rw [hExpectIn]
-              simp
+              simpa [xT] using getVal_eq_ok (vals := vals) (expected := .dim inDim .scalar)
+                (idx := xIdx) hxF
+            have hLinearStore :
+                cOut.ps.linearWB.get? id =
+                  some ({ m := outDim, n := inDim, w := wT, b := bT } :
+                    NN.MLTheory.CROWN.Graph.LinParams α) := by
+              rw [hLin]
+              simp [c', res, compileNode, ps', wT, bT]
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
@@ -1148,24 +1111,92 @@ open NN.Verification.TorchLean
                   =
                 Except.ok
                   (DVal.mk (α := α) (.dim outDim .scalar)
-                    (Tensor.addSpec (α := α)
-                      (Tensor.matVecMulSpec (α := α) (m := outDim) (n := inDim) wT xT) bT)) := by
-              -- `evalAt` runs the op-specific evaluator (`evalLinear` here) and then normalizes the
-              -- returned value's shape tag to the node's declared `outShape`.
-              simp [NN.IR.Graph.evalAt, hGetNodeLinear, hEvalLinear, DVal.shape, DVal.tensor,
-                DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              -- `simp` does not reduce `Except` do-notation; specialize the `ok`-bind manually,
-              -- then simplify the `if` by reflexivity.
-              change (if h : (⟨Shape.dim outDim Shape.scalar,
-                        Tensor.addSpec (α := α)
-                          (Tensor.matVecMulSpec (α := α) (m := outDim) (n := inDim) wT xT) bT⟩ :
-                            DVal α).fst =
-                      Shape.dim outDim Shape.scalar then _ else _) = _
-              simp
-              rfl
+                      (Tensor.addSpec (α := α)
+                        (Tensor.matVecMulSpec (α := α) (m := outDim) (n := inDim) wT xT) bT)) := by
+              simpa [Spec.matVecMulSpec] using
+                IRStep.evalAt_linear_from_paramStore_of_getNode
+                  (α := α) (g := cOut.graph) (ps := cOut.ps) (i := id) (id := id)
+                  (pId := xIdx.id) (outDim := outDim) (inDim := inDim)
+                  (inputShape := inShape) (input := x) (vals := vals)
+                  (W := wT) (b := bT) (x := xT)
+                  hGetNodeLinear hExpectIn hLinearStore
             simpa [evalNode, getVal, DVal.shape, DVal.tensor, DVal.mk, hxF, xT, wT, bT] using
               hEvalAt
+        | conv2d inC outC kH kW stride padding inH inW hIn hKH hKW hHeight hWidth kernel bias xIdx =>
+            let kT : Tensor α (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))) :=
+              getParam (α := α) (paramShapes := paramShapes) params kernel
+            let bT : Tensor α (.dim outC .scalar) :=
+              getParam (α := α) (paramShapes := paramShapes) params bias
+            let outShape : Shape :=
+              .dim outC
+                (.dim ((inH + 2 * padding - kH) / stride + 1)
+                  (.dim ((inW + 2 * padding - kW) / stride + 1) .scalar))
+            have hx : (vals[xIdx.id]!).1 = .dim inC (.dim inH (.dim inW .scalar)) := by
+              simpa [DVal.shape] using
+                shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes)
+                  (idx := xIdx) (s := .dim inC (.dim inH (.dim inW .scalar)))
+            have hxF : (vals[xIdx.id]!).fst = .dim inC (.dim inH (.dim inW .scalar)) := by
+              simpa using hx
+            have hn :
+                n =
+                  ({ id := id
+                     parents := [xIdx.id]
+                     kind := .conv2d inC outC kH kW stride padding
+                     outShape := outShape } : NN.IR.Node) := by
+              simp [n, res, compileNode, outShape]
+            have hGetNodeConv :
+                NN.IR.Graph.getNode (g := cOut.graph) id =
+                  pure
+                    ({ id := id
+                       parents := [xIdx.id]
+                       kind := .conv2d inC outC kH kW stride padding
+                       outShape := outShape } : NN.IR.Node) := by
+              simp [hGetNode, hn]
+            let xT : Tensor α (.dim inC (.dim inH (.dim inW .scalar))) :=
+              hxF ▸ (vals[xIdx.id]!).snd
+            have hExpectIn :
+                NN.IR.Graph.expectShape (α := α)
+                    (expected := .dim inC (.dim inH (.dim inW .scalar))) (vals[xIdx.id]!) =
+                  Except.ok xT := by
+              simpa [xT] using
+                expectShape_eq_ok (expected := .dim inC (.dim inH (.dim inW .scalar)))
+                  (v := vals[xIdx.id]!) hxF
+            have hGetVal :
+                getVal (α := α) (inShape := inShape) (ss := ss₀)
+                    (s := .dim inC (.dim inH (.dim inW .scalar))) vals xIdx =
+                  Except.ok xT := by
+              simpa [xT] using getVal_eq_ok (vals := vals)
+                (expected := .dim inC (.dim inH (.dim inW .scalar))) (idx := xIdx) hxF
+            let spec : Spec.Conv2DSpec inC outC kH kW stride padding α hIn hKH hKW :=
+              { kernel := kT, bias := bT }
+            let cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α :=
+              { inC := inC, outC := outC, kH := kH, kW := kW
+                stride := stride, padding := padding
+                inH := inH, inW := inW
+                hIn := hIn, hKH := hKH, hKW := hKW
+                spec := spec }
+            have hConvStore :
+                cOut.ps.conv2dCfg.get? id = some cfg := by
+              rw [hConv]
+              simp [c', res, compileNode, ps', cfg, spec, kT, bT]
+            have hEvalAt :
+                NN.IR.Graph.evalAt (α := α)
+                    (g := cOut.graph)
+                    (payload := payloadOfParamStore (α := α) cOut.ps)
+                    (input := DVal.mk (α := α) inShape x)
+                    (vals := vals) (i := id)
+                  =
+                Except.ok
+                  (DVal.mk (α := α) outShape
+                    (Spec.conv2dSpec (α := α) (layer := spec) (input := xT))) := by
+              simpa [cfg, spec, outShape] using
+                IRStep.evalAt_conv2d_from_paramStore_of_getNode
+                  (α := α) (g := cOut.graph) (ps := cOut.ps) (i := id) (id := id)
+                  (pId := xIdx.id) (cfg := cfg) (inputShape := inShape) (input := x)
+                  (vals := vals) (x := xT)
+                  hGetNodeConv hExpectIn hConvStore hHeight hWidth
+            simpa [evalNode, getVal, DVal.shape, DVal.tensor, DVal.mk, hxF, xT, kT, bT,
+              spec, outShape] using hEvalAt
         | mseLoss yhat target =>
             rename_i s
             have hy : (vals[yhat.id]!).1 = s := by
@@ -1304,16 +1335,6 @@ open NN.Verification.TorchLean
 
   set_option maxHeartbeats 200000
 
-    /-- `Array` indexing is proof-irrelevant: the bounds proof does not affect the element returned.
-      -/
-    theorem array_getElem_proof_irrel
-        {β : Type} (a : Array β) (i : Nat) (h₁ h₂ : i < a.size) :
-        a[i]'h₁ = a[i]'h₂ := by
-      -- The bounds proof lives in `Prop`, so it is proof-irrelevant.
-      have : h₁ = h₂ := Subsingleton.elim _ _
-      cases this
-      rfl
-
     /-- Casting along an equality is proof-irrelevant: the proof does not affect the result. -/
     theorem cast_proof_irrel
         {β : Sort _} {a b : β} {P : β → Sort _}
@@ -1325,4 +1346,3 @@ open NN.Verification.TorchLean
 end Correctness
 
 end NN.Verification.TorchLean.Proved
-

@@ -26,7 +26,7 @@ Why this tutorial exists:
 
 * These three ops are easy to accidentally restrict to “last axis only” (because the spec primitives
   we reuse are last-axis).
-* The denotational IR semantics intentionally supports the PyTorch meaning on *any* valid axis:
+* The denotational IR semantics supports the PyTorch meaning on *any* valid axis:
   it implements non-last axes by reshaping/permuting into a form the spec primitive already
   supports.
 * The compiled IRExec backend is more conservative today. This tutorial runs compiled execution only for
@@ -49,8 +49,7 @@ open Runtime.Autograd.Compiled
 /-!
 ## Test Shapes
 
-We keep shapes small so this tutorial runs instantly, but still exercises the “axis is not last / not 0”
-code paths.
+We keep shapes compact while still exercising the “axis is not last / not 0” code paths.
 -/
 
 abbrev s234 : Spec.Shape := NN.Tensor.shapeOfDims [2, 3, 4]
@@ -74,8 +73,8 @@ def gLayerNormRank3Axis1 : NN.IR.Graph :=
     ] }
 
 def gConcatAxis1 : NN.IR.Graph :=
-  -- The input node is intentionally unused: the concat example uses `rand_uniform` sources so we
-  -- don’t have to carry an explicit constant payload in this tutorial.
+  -- The concat example uses `rand_uniform` sources, so the input node only fixes the graph's
+  -- single-input interface for the shared runner.
   { nodes := #[
       { id := 0, parents := [], kind := .input, outShape := Spec.Shape.scalar }
     , { id := 1, parents := [], kind := .randUniform (seed := 0), outShape := s234 }

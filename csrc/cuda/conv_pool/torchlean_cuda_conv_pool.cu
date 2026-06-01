@@ -16,9 +16,8 @@
 
 // CUDA implementation of TorchLean float32 conv/pool kernels over `Cuda.Buffer`.
 //
-// This file is intentionally explicit rather than clever: the 2D kernels serve the common fast path,
-// while the N-D kernels cover the generic spec. Both paths use row-major flattened CHW / N-D layouts
-// matching the Lean tensor specs.
+// The implementation keeps the fast 2D kernels and the generic N-D kernels side by side. Both paths
+// use row-major flattened CHW / N-D layouts matching the Lean tensor specs.
 //
 // Trust-boundary contract:
 // - host wrappers validate sizes, ranks, kernel sizes, stride, and padding-derived output shapes;
@@ -40,6 +39,95 @@ static inline int grid_for(size_t n) {
 
 static inline bool torchlean_cuda_deterministic_reductions_enabled() {
   return torchlean_cuda_get_deterministic_reductions() != 0;
+}
+
+extern "C" void torchlean_cuda_conv_pool_flush_scratch_cache(void) {
+  torchlean_cuda_scratch_flush();
+}
+
+struct DeviceSpatialScratch {
+  uint32_t* inSpatial;
+  uint32_t* outSpatial;
+  uint32_t* kSpatial;
+  uint32_t* stride;
+  uint32_t* padding;
+};
+
+static inline DeviceSpatialScratch alloc_spatial_scratch(int rank) {
+  const size_t count = (size_t)rank;
+  return {
+    torchlean_cuda_scratch_alloc<uint32_t>(count, "cudaMalloc inSpatial failed"),
+    torchlean_cuda_scratch_alloc<uint32_t>(count, "cudaMalloc outSpatial failed"),
+    torchlean_cuda_scratch_alloc<uint32_t>(count, "cudaMalloc kSpatial failed"),
+    torchlean_cuda_scratch_alloc<uint32_t>(count, "cudaMalloc stride failed"),
+    torchlean_cuda_scratch_alloc<uint32_t>(count, "cudaMalloc padding failed")
+  };
+}
+
+static inline void free_spatial_scratch(int rank, DeviceSpatialScratch* scratch) {
+  const size_t count = (size_t)rank;
+  torchlean_cuda_scratch_free(&scratch->inSpatial, count, "cudaFree inSpatial failed");
+  torchlean_cuda_scratch_free(&scratch->outSpatial, count, "cudaFree outSpatial failed");
+  torchlean_cuda_scratch_free(&scratch->kSpatial, count, "cudaFree kSpatial failed");
+  torchlean_cuda_scratch_free(&scratch->stride, count, "cudaFree stride failed");
+  torchlean_cuda_scratch_free(&scratch->padding, count, "cudaFree padding failed");
+}
+
+static inline void copy_spatial_scratch(
+    int rank,
+    const DeviceSpatialScratch& scratch,
+    const uint32_t* hInSpatial,
+    const uint32_t* hOutSpatial,
+    const uint32_t* hKSpatial,
+    const uint32_t* hStride,
+    const uint32_t* hPadding) {
+  const size_t bytes = (size_t)rank * sizeof(uint32_t);
+  checkCuda(cudaMemcpy(scratch.inSpatial, hInSpatial, bytes, cudaMemcpyHostToDevice),
+            "cudaMemcpy inSpatial failed");
+  checkCuda(cudaMemcpy(scratch.outSpatial, hOutSpatial, bytes, cudaMemcpyHostToDevice),
+            "cudaMemcpy outSpatial failed");
+  checkCuda(cudaMemcpy(scratch.kSpatial, hKSpatial, bytes, cudaMemcpyHostToDevice),
+            "cudaMemcpy kSpatial failed");
+  checkCuda(cudaMemcpy(scratch.stride, hStride, bytes, cudaMemcpyHostToDevice),
+            "cudaMemcpy stride failed");
+  checkCuda(cudaMemcpy(scratch.padding, hPadding, bytes, cudaMemcpyHostToDevice),
+            "cudaMemcpy padding failed");
+}
+
+__device__ inline void decode_spatial_index(
+    size_t index,
+    const uint32_t* dims,
+    int rank,
+    uint32_t* coord) {
+  for (int ax = rank - 1; ax >= 0; --ax) {
+    const uint32_t d = dims[ax];
+    coord[ax] = (uint32_t)(index % (size_t)d);
+    index /= (size_t)d;
+  }
+}
+
+__device__ inline bool input_index_from_window(
+    uint32_t c,
+    const uint32_t* outCoord,
+    const uint32_t* kCoord,
+    const uint32_t* inSpatial,
+    const uint32_t* stride,
+    const uint32_t* padding,
+    int rank,
+    size_t* inIdxOut) {
+  size_t inIdx = (size_t)c;
+  for (int ax = 0; ax < rank; ++ax) {
+    const int64_t pos =
+        (int64_t)outCoord[ax] * (int64_t)stride[ax] + (int64_t)kCoord[ax] -
+        (int64_t)padding[ax];
+    const uint32_t dim = inSpatial[ax];
+    if (pos < 0 || (uint32_t)pos >= dim) {
+      return false;
+    }
+    inIdx = inIdx * (size_t)dim + (size_t)(uint32_t)pos;
+  }
+  *inIdxOut = inIdx;
+  return true;
 }
 
 // -------------------------
@@ -682,24 +770,14 @@ __global__ void convnd_fwd_kernel(const float* input, const float* kernel, const
   const size_t spatialIdx = idx - (size_t)oc * outSpatialSize;
 
   uint32_t outCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t d = outSpatial[ax];
-    outCoord[ax] = (uint32_t)(tmp % (size_t)d);
-    tmp /= (size_t)d;
-  }
+  decode_spatial_index(spatialIdx, outSpatial, rank, outCoord);
 
   float acc = bias ? bias[oc] : 0.0f;
 
   uint32_t kCoord[kMaxRank];
   for (uint32_t ic = 0; ic < inC; ++ic) {
     for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-      size_t ktmp = kIdx;
-      for (int ax = rank - 1; ax >= 0; --ax) {
-        const uint32_t kd = kSpatial[ax];
-        kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-        ktmp /= (size_t)kd;
-      }
+      decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
       bool inBounds = true;
       size_t inIdx = (size_t)ic;
@@ -762,23 +840,13 @@ __global__ void convnd_dkernel_kernel(const float* input, const float* gradOutpu
   const uint32_t oc = (uint32_t)(tmp / (size_t)inC);
 
   uint32_t kCoord[kMaxRank];
-  size_t ktmp = kIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t kd = kSpatial[ax];
-    kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-    ktmp /= (size_t)kd;
-  }
+  decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
   float acc = 0.0f;
 
   uint32_t outCoord[kMaxRank];
   for (size_t outIdx = 0; outIdx < outSpatialSize; ++outIdx) {
-    size_t otmp = outIdx;
-    for (int ax = rank - 1; ax >= 0; --ax) {
-      const uint32_t od = outSpatial[ax];
-      outCoord[ax] = (uint32_t)(otmp % (size_t)od);
-      otmp /= (size_t)od;
-    }
+    decode_spatial_index(outIdx, outSpatial, rank, outCoord);
 
     bool inBounds = true;
     size_t inIdx = (size_t)ic;
@@ -820,12 +888,7 @@ __global__ void convnd_dinput_kernel(const float* kernel, const float* gradOutpu
   const size_t spatialIdx = idx - (size_t)ic * inSpatialSize;
 
   uint32_t inCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t id = inSpatial[ax];
-    inCoord[ax] = (uint32_t)(tmp % (size_t)id);
-    tmp /= (size_t)id;
-  }
+  decode_spatial_index(spatialIdx, inSpatial, rank, inCoord);
 
   uint32_t kCoord[kMaxRank];
   uint32_t outCoord[kMaxRank];
@@ -833,12 +896,7 @@ __global__ void convnd_dinput_kernel(const float* kernel, const float* gradOutpu
   float acc = 0.0f;
   for (uint32_t oc = 0; oc < outC; ++oc) {
     for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-      size_t ktmp = kIdx;
-      for (int ax = rank - 1; ax >= 0; --ax) {
-        const uint32_t kd = kSpatial[ax];
-        kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-        ktmp /= (size_t)kd;
-      }
+      decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
       bool ok = true;
       for (int ax = 0; ax < rank; ++ax) {
@@ -899,34 +957,15 @@ __global__ void maxpoolnd_fwd_kernel(const float* input, float* output,
   const size_t spatialIdx = idx - (size_t)c * outSpatialSize;
 
   uint32_t outCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t od = outSpatial[ax];
-    outCoord[ax] = (uint32_t)(tmp % (size_t)od);
-    tmp /= (size_t)od;
-  }
+  decode_spatial_index(spatialIdx, outSpatial, rank, outCoord);
 
   float best = -FLT_MAX;
   uint32_t kCoord[kMaxRank];
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-    size_t ktmp = kIdx;
-    for (int ax = rank - 1; ax >= 0; --ax) {
-      const uint32_t kd = kSpatial[ax];
-      kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-      ktmp /= (size_t)kd;
-    }
-
-    bool inBounds = true;
-    size_t inIdx = (size_t)c;
-    for (int ax = 0; ax < rank; ++ax) {
-      const int pos = (int)outCoord[ax] * (int)stride[ax] + (int)kCoord[ax] - (int)padding[ax];
-      const uint32_t dim = inSpatial[ax];
-      if (pos < 0 || (uint32_t)pos >= dim) {
-        inBounds = false;
-        break;
-      }
-      inIdx = inIdx * (size_t)dim + (size_t)(uint32_t)pos;
-    }
+    decode_spatial_index(kIdx, kSpatial, rank, kCoord);
+    size_t inIdx = 0;
+    const bool inBounds =
+        input_index_from_window(c, outCoord, kCoord, inSpatial, stride, padding, rank, &inIdx);
 
     float v = -INFINITY;
     if (inBounds) {
@@ -958,12 +997,7 @@ __global__ void maxpoolnd_bwd_kernel(const float* input, const float* gradOutput
   const size_t spatialIdx = idx - (size_t)c * outSpatialSize;
 
   uint32_t outCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t od = outSpatial[ax];
-    outCoord[ax] = (uint32_t)(tmp % (size_t)od);
-    tmp /= (size_t)od;
-  }
+  decode_spatial_index(spatialIdx, outSpatial, rank, outCoord);
 
   float best = -FLT_MAX;
   bool bestValid = false;
@@ -972,12 +1006,7 @@ __global__ void maxpoolnd_bwd_kernel(const float* input, const float* gradOutput
   uint32_t kCoord[kMaxRank];
 
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-    size_t ktmp = kIdx;
-    for (int ax = rank - 1; ax >= 0; --ax) {
-      const uint32_t kd = kSpatial[ax];
-      kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-      ktmp /= (size_t)kd;
-    }
+    decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
     bool inBounds = true;
     for (int ax = 0; ax < rank; ++ax) {
@@ -1040,12 +1069,7 @@ __global__ void maxpoolnd_bwd_det_kernel(const float* input, const float* gradOu
   const size_t spatialIdx = idx - (size_t)c * inSpatialSize;
 
   uint32_t inCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t d = inSpatial[ax];
-    inCoord[ax] = (uint32_t)(tmp % (size_t)d);
-    tmp /= (size_t)d;
-  }
+  decode_spatial_index(spatialIdx, inSpatial, rank, inCoord);
 
   // Output coordinate ranges per axis.
   int64_t oMin[kMaxRank];
@@ -1113,12 +1137,7 @@ __global__ void maxpoolnd_bwd_det_kernel(const float* input, const float* gradOu
       float best = -FLT_MAX;
       bool bestValid = false;
       for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-        size_t ktmp = kIdx;
-        for (int ax = rank - 1; ax >= 0; --ax) {
-          const uint32_t kd2 = kSpatial[ax];
-          kCoord[ax] = (uint32_t)(ktmp % (size_t)kd2);
-          ktmp /= (size_t)kd2;
-        }
+        decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
         bool inBounds = true;
         for (int ax = 0; ax < rank; ++ax) {
@@ -1187,34 +1206,15 @@ __global__ void avgpoolnd_fwd_kernel(const float* input, float* output,
   const size_t spatialIdx = idx - (size_t)c * outSpatialSize;
 
   uint32_t outCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t od = outSpatial[ax];
-    outCoord[ax] = (uint32_t)(tmp % (size_t)od);
-    tmp /= (size_t)od;
-  }
+  decode_spatial_index(spatialIdx, outSpatial, rank, outCoord);
 
   float acc = 0.0f;
   uint32_t kCoord[kMaxRank];
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-    size_t ktmp = kIdx;
-    for (int ax = rank - 1; ax >= 0; --ax) {
-      const uint32_t kd = kSpatial[ax];
-      kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-      ktmp /= (size_t)kd;
-    }
-
-    bool inBounds = true;
-    size_t inIdx = (size_t)c;
-    for (int ax = 0; ax < rank; ++ax) {
-      const int pos = (int)outCoord[ax] * (int)stride[ax] + (int)kCoord[ax] - (int)padding[ax];
-      const uint32_t dim = inSpatial[ax];
-      if (pos < 0 || (uint32_t)pos >= dim) {
-        inBounds = false;
-        break;
-      }
-      inIdx = inIdx * (size_t)dim + (size_t)(uint32_t)pos;
-    }
+    decode_spatial_index(kIdx, kSpatial, rank, kCoord);
+    size_t inIdx = 0;
+    const bool inBounds =
+        input_index_from_window(c, outCoord, kCoord, inSpatial, stride, padding, rank, &inIdx);
 
     if (inBounds) {
       acc += input[inIdx];
@@ -1243,35 +1243,16 @@ __global__ void avgpoolnd_bwd_kernel(const float* gradOutput, float* dInput,
   const size_t spatialIdx = idx - (size_t)c * outSpatialSize;
 
   uint32_t outCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t od = outSpatial[ax];
-    outCoord[ax] = (uint32_t)(tmp % (size_t)od);
-    tmp /= (size_t)od;
-  }
+  decode_spatial_index(spatialIdx, outSpatial, rank, outCoord);
 
   const float g = gradOutput[idx] / (float)(kSpatialSize);
 
   uint32_t kCoord[kMaxRank];
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-    size_t ktmp = kIdx;
-    for (int ax = rank - 1; ax >= 0; --ax) {
-      const uint32_t kd = kSpatial[ax];
-      kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-      ktmp /= (size_t)kd;
-    }
-
-    bool inBounds = true;
-    size_t inIdx = (size_t)c;
-    for (int ax = 0; ax < rank; ++ax) {
-      const int pos = (int)outCoord[ax] * (int)stride[ax] + (int)kCoord[ax] - (int)padding[ax];
-      const uint32_t dim = inSpatial[ax];
-      if (pos < 0 || (uint32_t)pos >= dim) {
-        inBounds = false;
-        break;
-      }
-      inIdx = inIdx * (size_t)dim + (size_t)(uint32_t)pos;
-    }
+    decode_spatial_index(kIdx, kSpatial, rank, kCoord);
+    size_t inIdx = 0;
+    const bool inBounds =
+        input_index_from_window(c, outCoord, kCoord, inSpatial, stride, padding, rank, &inIdx);
 
     if (inBounds) {
       atomicAdd(&dInput[inIdx], g);
@@ -1299,12 +1280,7 @@ __global__ void avgpoolnd_bwd_det_kernel(const float* gradOutput, float* dInput,
   const size_t spatialIdx = idx - (size_t)c * inSpatialSize;
 
   uint32_t inCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t d = inSpatial[ax];
-    inCoord[ax] = (uint32_t)(tmp % (size_t)d);
-    tmp /= (size_t)d;
-  }
+  decode_spatial_index(spatialIdx, inSpatial, rank, inCoord);
 
   int64_t oMin[kMaxRank];
   size_t rangeSize[kMaxRank];
@@ -1386,22 +1362,12 @@ __global__ void smoothmaxpoolnd_fwd_kernel(const float* input, float* output,
   const size_t spatialIdx = idx - (size_t)c * outSpatialSize;
 
   uint32_t outCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t od = outSpatial[ax];
-    outCoord[ax] = (uint32_t)(tmp % (size_t)od);
-    tmp /= (size_t)od;
-  }
+  decode_spatial_index(spatialIdx, outSpatial, rank, outCoord);
 
   float maxScaled = -INFINITY;
   uint32_t kCoord[kMaxRank];
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-    size_t ktmp = kIdx;
-    for (int ax = rank - 1; ax >= 0; --ax) {
-      const uint32_t kd = kSpatial[ax];
-      kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-      ktmp /= (size_t)kd;
-    }
+    decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
     bool inBounds = true;
     size_t inIdx = (size_t)c;
@@ -1424,12 +1390,7 @@ __global__ void smoothmaxpoolnd_fwd_kernel(const float* input, float* output,
 
   float sumExp = 0.0f;
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-    size_t ktmp = kIdx;
-    for (int ax = rank - 1; ax >= 0; --ax) {
-      const uint32_t kd = kSpatial[ax];
-      kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-      ktmp /= (size_t)kd;
-    }
+    decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
     bool inBounds = true;
     size_t inIdx = (size_t)c;
@@ -1472,22 +1433,12 @@ __global__ void smoothmaxpoolnd_bwd_kernel(const float* input, const float* grad
   const size_t spatialIdx = idx - (size_t)c * outSpatialSize;
 
   uint32_t outCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t od = outSpatial[ax];
-    outCoord[ax] = (uint32_t)(tmp % (size_t)od);
-    tmp /= (size_t)od;
-  }
+  decode_spatial_index(spatialIdx, outSpatial, rank, outCoord);
 
   float maxScaled = -INFINITY;
   uint32_t kCoord[kMaxRank];
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-    size_t ktmp = kIdx;
-    for (int ax = rank - 1; ax >= 0; --ax) {
-      const uint32_t kd = kSpatial[ax];
-      kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-      ktmp /= (size_t)kd;
-    }
+    decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
     bool inBounds = true;
     size_t inIdx = (size_t)c;
@@ -1510,12 +1461,7 @@ __global__ void smoothmaxpoolnd_bwd_kernel(const float* input, const float* grad
 
   float sumExp = 0.0f;
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-    size_t ktmp = kIdx;
-    for (int ax = rank - 1; ax >= 0; --ax) {
-      const uint32_t kd = kSpatial[ax];
-      kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-      ktmp /= (size_t)kd;
-    }
+    decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
     bool inBounds = true;
     size_t inIdx = (size_t)c;
@@ -1539,12 +1485,7 @@ __global__ void smoothmaxpoolnd_bwd_kernel(const float* input, const float* grad
   const float g = gradOutput[idx];
 
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-    size_t ktmp = kIdx;
-    for (int ax = rank - 1; ax >= 0; --ax) {
-      const uint32_t kd = kSpatial[ax];
-      kCoord[ax] = (uint32_t)(ktmp % (size_t)kd);
-      ktmp /= (size_t)kd;
-    }
+    decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
     bool inBounds = true;
     size_t inIdx = (size_t)c;
@@ -1587,12 +1528,7 @@ __global__ void smoothmaxpoolnd_bwd_det_kernel(const float* input, const float* 
   const size_t spatialIdx = idx - (size_t)c * inSpatialSize;
 
   uint32_t inCoord[kMaxRank];
-  size_t tmp = spatialIdx;
-  for (int ax = rank - 1; ax >= 0; --ax) {
-    const uint32_t d = inSpatial[ax];
-    inCoord[ax] = (uint32_t)(tmp % (size_t)d);
-    tmp /= (size_t)d;
-  }
+  decode_spatial_index(spatialIdx, inSpatial, rank, inCoord);
 
   int64_t oMin[kMaxRank];
   size_t rangeSize[kMaxRank];
@@ -1654,12 +1590,7 @@ __global__ void smoothmaxpoolnd_bwd_det_kernel(const float* input, const float* 
       // Recompute (maxScaled, sumExp) for this output window.
       float maxScaled = -INFINITY;
       for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-        size_t ktmp = kIdx;
-        for (int ax = rank - 1; ax >= 0; --ax) {
-          const uint32_t kd2 = kSpatial[ax];
-          kCoord[ax] = (uint32_t)(ktmp % (size_t)kd2);
-          ktmp /= (size_t)kd2;
-        }
+        decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
         bool inBounds = true;
         size_t inIdx = (size_t)c;
@@ -1683,12 +1614,7 @@ __global__ void smoothmaxpoolnd_bwd_det_kernel(const float* input, const float* 
 
       float sumExp = 0.0f;
       for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
-        size_t ktmp = kIdx;
-        for (int ax = rank - 1; ax >= 0; --ax) {
-          const uint32_t kd2 = kSpatial[ax];
-          kCoord[ax] = (uint32_t)(ktmp % (size_t)kd2);
-          ktmp /= (size_t)kd2;
-        }
+        decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
         bool inBounds = true;
         size_t inIdx = (size_t)c;
@@ -1833,14 +1759,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_conv2d_bwd(
   checkCuda(cudaDeviceSynchronize(), "conv2d_bwd sync failed");
 
   // Return (dKernel, dBias, dInput) as `Buffer × Buffer × Buffer`.
-  lean_object* inner = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(inner, 0, torchlean_cuda_buffer_box(dBias));
-  lean_ctor_set(inner, 1, torchlean_cuda_buffer_box(dInput));
-
-  lean_object* outer = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(outer, 0, torchlean_cuda_buffer_box(dKernel));
-  lean_ctor_set(outer, 1, inner);
-  return outer;
+  return torchlean_cuda_box_three_buffers(dKernel, dBias, dInput);
 }
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_convtranspose2d_fwd(
@@ -1948,14 +1867,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_convtranspose2d_bwd(
   checkCuda(cudaDeviceSynchronize(), "convtranspose2d_bwd sync failed");
 
   // Return (dKernel, dBias, dInput) as `Buffer × Buffer × Buffer`.
-  lean_object* inner = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(inner, 0, torchlean_cuda_buffer_box(dBias));
-  lean_ctor_set(inner, 1, torchlean_cuda_buffer_box(dInput));
-
-  lean_object* outer = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(outer, 0, torchlean_cuda_buffer_box(dKernel));
-  lean_ctor_set(outer, 1, inner);
-  return outer;
+  return torchlean_cuda_box_three_buffers(dKernel, dBias, dInput);
 }
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool2d_fwd(
@@ -2294,41 +2206,19 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_conv_fwd(
     return torchlean_cuda_buffer_box(out);
   }
 
-  uint32_t* dInSpatial = nullptr;
-  uint32_t* dOutSpatial = nullptr;
-  uint32_t* dKSpatial = nullptr;
-  uint32_t* dStride = nullptr;
-  uint32_t* dPadding = nullptr;
-  checkCuda(cudaMalloc((void**)&dInSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc inSpatial failed");
-  checkCuda(cudaMalloc((void**)&dOutSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc outSpatial failed");
-  checkCuda(cudaMalloc((void**)&dKSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc kSpatial failed");
-  checkCuda(cudaMalloc((void**)&dStride, (size_t)rank * sizeof(uint32_t)), "cudaMalloc stride failed");
-  checkCuda(cudaMalloc((void**)&dPadding, (size_t)rank * sizeof(uint32_t)), "cudaMalloc padding failed");
-
-  checkCuda(cudaMemcpy(dInSpatial, hInSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy inSpatial failed");
-  checkCuda(cudaMemcpy(dOutSpatial, hOutSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy outSpatial failed");
-  checkCuda(cudaMemcpy(dKSpatial, hKSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy kSpatial failed");
-  checkCuda(cudaMemcpy(dStride, hStride, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy stride failed");
-  checkCuda(cudaMemcpy(dPadding, hPadding, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy padding failed");
+  DeviceSpatialScratch scratch = alloc_spatial_scratch(rank);
+  copy_spatial_scratch(rank, scratch, hInSpatial, hOutSpatial, hKSpatial, hStride, hPadding);
 
   const int grid = grid_for(outElems);
   convnd_fwd_kernel<<<grid, kBlock>>>(input->data, kernel->data, bias->data, out->data,
                                      inC, outC,
-                                     dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                     scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                     scratch.stride, scratch.padding,
                                      rank, outSpatialSize, kSpatialSize);
   checkCuda(cudaGetLastError(), "convnd_fwd kernel launch failed");
   checkCuda(cudaDeviceSynchronize(), "convnd_fwd sync failed");
 
-  torchlean_cuda_free_checked((void**)&dInSpatial, "cudaFree convnd inSpatial failed");
-  torchlean_cuda_free_checked((void**)&dOutSpatial, "cudaFree convnd outSpatial failed");
-  torchlean_cuda_free_checked((void**)&dKSpatial, "cudaFree convnd kSpatial failed");
-  torchlean_cuda_free_checked((void**)&dStride, "cudaFree convnd stride failed");
-  torchlean_cuda_free_checked((void**)&dPadding, "cudaFree convnd padding failed");
+  free_spatial_scratch(rank, &scratch);
 
   return torchlean_cuda_buffer_box(out);
 }
@@ -2391,36 +2281,11 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_conv_bwd(
 
   if (kElems == 0 && (size_t)outC == 0 && inElems == 0) {
     // Return the empty buffers without allocating shape arrays on the device.
-    lean_object* inner = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(inner, 0, torchlean_cuda_buffer_box(dBias));
-    lean_ctor_set(inner, 1, torchlean_cuda_buffer_box(dInput));
-    lean_object* outer = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(outer, 0, torchlean_cuda_buffer_box(dKernel));
-    lean_ctor_set(outer, 1, inner);
-    return outer;
+    return torchlean_cuda_box_three_buffers(dKernel, dBias, dInput);
   }
 
-  uint32_t* dInSpatial = nullptr;
-  uint32_t* dOutSpatial = nullptr;
-  uint32_t* dKSpatial = nullptr;
-  uint32_t* dStride = nullptr;
-  uint32_t* dPadding = nullptr;
-  checkCuda(cudaMalloc((void**)&dInSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc inSpatial failed");
-  checkCuda(cudaMalloc((void**)&dOutSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc outSpatial failed");
-  checkCuda(cudaMalloc((void**)&dKSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc kSpatial failed");
-  checkCuda(cudaMalloc((void**)&dStride, (size_t)rank * sizeof(uint32_t)), "cudaMalloc stride failed");
-  checkCuda(cudaMalloc((void**)&dPadding, (size_t)rank * sizeof(uint32_t)), "cudaMalloc padding failed");
-
-  checkCuda(cudaMemcpy(dInSpatial, hInSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy inSpatial failed");
-  checkCuda(cudaMemcpy(dOutSpatial, hOutSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy outSpatial failed");
-  checkCuda(cudaMemcpy(dKSpatial, hKSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy kSpatial failed");
-  checkCuda(cudaMemcpy(dStride, hStride, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy stride failed");
-  checkCuda(cudaMemcpy(dPadding, hPadding, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy padding failed");
+  DeviceSpatialScratch scratch = alloc_spatial_scratch(rank);
+  copy_spatial_scratch(rank, scratch, hInSpatial, hOutSpatial, hKSpatial, hStride, hPadding);
 
   if ((size_t)outC > 0) {
     const int gridBias = grid_for((size_t)outC);
@@ -2432,7 +2297,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_conv_bwd(
     const int gridK = grid_for(kElems);
     convnd_dkernel_kernel<<<gridK, kBlock>>>(input->data, gradOutput->data, dKernel->data,
                                             inC, outC,
-                                            dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                            scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                            scratch.stride, scratch.padding,
                                             rank, outSpatialSize, kSpatialSize);
     checkCuda(cudaGetLastError(), "convnd_dkernel kernel launch failed");
   }
@@ -2441,27 +2307,17 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_conv_bwd(
     const int gridIn = grid_for(inElems);
     convnd_dinput_kernel<<<gridIn, kBlock>>>(kernel->data, gradOutput->data, dInput->data,
                                             inC, outC,
-                                            dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                            scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                            scratch.stride, scratch.padding,
                                             rank, inSpatialSize, outSpatialSize, kSpatialSize);
     checkCuda(cudaGetLastError(), "convnd_dinput kernel launch failed");
   }
 
   checkCuda(cudaDeviceSynchronize(), "convnd_bwd sync failed");
 
-  torchlean_cuda_free_checked((void**)&dInSpatial, "cudaFree convnd_bwd inSpatial failed");
-  torchlean_cuda_free_checked((void**)&dOutSpatial, "cudaFree convnd_bwd outSpatial failed");
-  torchlean_cuda_free_checked((void**)&dKSpatial, "cudaFree convnd_bwd kSpatial failed");
-  torchlean_cuda_free_checked((void**)&dStride, "cudaFree convnd_bwd stride failed");
-  torchlean_cuda_free_checked((void**)&dPadding, "cudaFree convnd_bwd padding failed");
+  free_spatial_scratch(rank, &scratch);
 
-  lean_object* inner = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(inner, 0, torchlean_cuda_buffer_box(dBias));
-  lean_ctor_set(inner, 1, torchlean_cuda_buffer_box(dInput));
-
-  lean_object* outer = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(outer, 0, torchlean_cuda_buffer_box(dKernel));
-  lean_ctor_set(outer, 1, inner);
-  return outer;
+  return torchlean_cuda_box_three_buffers(dKernel, dBias, dInput);
 }
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_convtranspose_fwd(
@@ -2527,34 +2383,14 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_convtranspose_fwd(
   // with the spatial/channel roles swapped:
   //   input (inC, inSpatial)   ↔ gradOutput (outC, outSpatial)
   //   output (outC, outSpatial) ↔ dInput    (inC, inSpatial)
-  uint32_t* dInSpatial = nullptr;
-  uint32_t* dOutSpatial = nullptr;
-  uint32_t* dKSpatial = nullptr;
-  uint32_t* dStride = nullptr;
-  uint32_t* dPadding = nullptr;
-  checkCuda(cudaMalloc((void**)&dInSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc inSpatial failed");
-  checkCuda(cudaMalloc((void**)&dOutSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc outSpatial failed");
-  checkCuda(cudaMalloc((void**)&dKSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc kSpatial failed");
-  checkCuda(cudaMalloc((void**)&dStride, (size_t)rank * sizeof(uint32_t)), "cudaMalloc stride failed");
-  checkCuda(cudaMalloc((void**)&dPadding, (size_t)rank * sizeof(uint32_t)), "cudaMalloc padding failed");
-
-  // For the conv-dInput kernel, "inSpatial" refers to the transposed output shape.
-  checkCuda(cudaMemcpy(dInSpatial, hOutSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy inSpatial failed");
-  // ...and "outSpatial" refers to the original input shape.
-  checkCuda(cudaMemcpy(dOutSpatial, hInSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy outSpatial failed");
-  checkCuda(cudaMemcpy(dKSpatial, hKSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy kSpatial failed");
-  checkCuda(cudaMemcpy(dStride, hStride, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy stride failed");
-  checkCuda(cudaMemcpy(dPadding, hPadding, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy padding failed");
+  DeviceSpatialScratch scratch = alloc_spatial_scratch(rank);
+  copy_spatial_scratch(rank, scratch, hOutSpatial, hInSpatial, hKSpatial, hStride, hPadding);
 
   const int grid = grid_for(outElems);
   convnd_dinput_kernel<<<grid, kBlock>>>(kernel->data, input->data, out->data,
                                         /*inC=*/outC, /*outC=*/inC,
-                                        dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                        scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                        scratch.stride, scratch.padding,
                                         rank, outSpatialSize, inSpatialSize, kSpatialSize);
   checkCuda(cudaGetLastError(), "convtranspose_fwd (convnd_dinput) kernel launch failed");
 
@@ -2566,11 +2402,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_convtranspose_fwd(
 
   checkCuda(cudaDeviceSynchronize(), "convtranspose_fwd sync failed");
 
-  torchlean_cuda_free_checked((void**)&dInSpatial, "cudaFree convtranspose inSpatial failed");
-  torchlean_cuda_free_checked((void**)&dOutSpatial, "cudaFree convtranspose outSpatial failed");
-  torchlean_cuda_free_checked((void**)&dKSpatial, "cudaFree convtranspose kSpatial failed");
-  torchlean_cuda_free_checked((void**)&dStride, "cudaFree convtranspose stride failed");
-  torchlean_cuda_free_checked((void**)&dPadding, "cudaFree convtranspose padding failed");
+  free_spatial_scratch(rank, &scratch);
 
   return torchlean_cuda_buffer_box(out);
 }
@@ -2632,38 +2464,11 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_convtranspose_bwd(
   torchlean_cuda_buffer* dInput = torchlean_cuda_buffer_alloc(inElems);
 
   if (kElems == 0 && (size_t)outC == 0 && inElems == 0) {
-    lean_object* inner = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(inner, 0, torchlean_cuda_buffer_box(dBias));
-    lean_ctor_set(inner, 1, torchlean_cuda_buffer_box(dInput));
-    lean_object* outer = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(outer, 0, torchlean_cuda_buffer_box(dKernel));
-    lean_ctor_set(outer, 1, inner);
-    return outer;
+    return torchlean_cuda_box_three_buffers(dKernel, dBias, dInput);
   }
 
-  uint32_t* dInSpatial = nullptr;
-  uint32_t* dOutSpatial = nullptr;
-  uint32_t* dKSpatial = nullptr;
-  uint32_t* dStride = nullptr;
-  uint32_t* dPadding = nullptr;
-  checkCuda(cudaMalloc((void**)&dInSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc inSpatial failed");
-  checkCuda(cudaMalloc((void**)&dOutSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc outSpatial failed");
-  checkCuda(cudaMalloc((void**)&dKSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc kSpatial failed");
-  checkCuda(cudaMalloc((void**)&dStride, (size_t)rank * sizeof(uint32_t)), "cudaMalloc stride failed");
-  checkCuda(cudaMalloc((void**)&dPadding, (size_t)rank * sizeof(uint32_t)), "cudaMalloc padding failed");
-
-  // In the conv kernels below, "inSpatial" refers to the transposed output shape.
-  checkCuda(cudaMemcpy(dInSpatial, hOutSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy inSpatial failed");
-  // ...and "outSpatial" refers to the original input shape.
-  checkCuda(cudaMemcpy(dOutSpatial, hInSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy outSpatial failed");
-  checkCuda(cudaMemcpy(dKSpatial, hKSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy kSpatial failed");
-  checkCuda(cudaMemcpy(dStride, hStride, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy stride failed");
-  checkCuda(cudaMemcpy(dPadding, hPadding, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy padding failed");
+  DeviceSpatialScratch scratch = alloc_spatial_scratch(rank);
+  copy_spatial_scratch(rank, scratch, hOutSpatial, hInSpatial, hKSpatial, hStride, hPadding);
 
   if ((size_t)outC > 0) {
     const int gridBias = grid_for((size_t)outC);
@@ -2675,7 +2480,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_convtranspose_bwd(
     const int gridK = grid_for(kElems);
     convnd_dkernel_kernel<<<gridK, kBlock>>>(gradOutput->data, input->data, dKernel->data,
                                             /*inC=*/outC, /*outC=*/inC,
-                                            dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                            scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                            scratch.stride, scratch.padding,
                                             rank, inSpatialSize, kSpatialSize);
     checkCuda(cudaGetLastError(), "convtranspose_bwd dkernel kernel launch failed");
   }
@@ -2684,27 +2490,17 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_convtranspose_bwd(
     const int gridIn = grid_for(inElems);
     convnd_fwd_kernel<<<gridIn, kBlock>>>(gradOutput->data, kernel->data, /*bias=*/nullptr, dInput->data,
                                          /*inC=*/outC, /*outC=*/inC,
-                                         dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                         scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                         scratch.stride, scratch.padding,
                                          rank, inSpatialSize, kSpatialSize);
     checkCuda(cudaGetLastError(), "convtranspose_bwd dinput (convnd_fwd) kernel launch failed");
   }
 
   checkCuda(cudaDeviceSynchronize(), "convtranspose_bwd sync failed");
 
-  torchlean_cuda_free_checked((void**)&dInSpatial, "cudaFree convtranspose_bwd inSpatial failed");
-  torchlean_cuda_free_checked((void**)&dOutSpatial, "cudaFree convtranspose_bwd outSpatial failed");
-  torchlean_cuda_free_checked((void**)&dKSpatial, "cudaFree convtranspose_bwd kSpatial failed");
-  torchlean_cuda_free_checked((void**)&dStride, "cudaFree convtranspose_bwd stride failed");
-  torchlean_cuda_free_checked((void**)&dPadding, "cudaFree convtranspose_bwd padding failed");
+  free_spatial_scratch(rank, &scratch);
 
-  lean_object* inner = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(inner, 0, torchlean_cuda_buffer_box(dBias));
-  lean_ctor_set(inner, 1, torchlean_cuda_buffer_box(dInput));
-
-  lean_object* outer = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(outer, 0, torchlean_cuda_buffer_box(dKernel));
-  lean_ctor_set(outer, 1, inner);
-  return outer;
+  return torchlean_cuda_box_three_buffers(dKernel, dBias, dInput);
 }
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool_fwd(
@@ -2759,41 +2555,19 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool_fwd(
     return torchlean_cuda_buffer_box(out);
   }
 
-  uint32_t* dInSpatial = nullptr;
-  uint32_t* dOutSpatial = nullptr;
-  uint32_t* dKSpatial = nullptr;
-  uint32_t* dStride = nullptr;
-  uint32_t* dPadding = nullptr;
-  checkCuda(cudaMalloc((void**)&dInSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc inSpatial failed");
-  checkCuda(cudaMalloc((void**)&dOutSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc outSpatial failed");
-  checkCuda(cudaMalloc((void**)&dKSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc kSpatial failed");
-  checkCuda(cudaMalloc((void**)&dStride, (size_t)rank * sizeof(uint32_t)), "cudaMalloc stride failed");
-  checkCuda(cudaMalloc((void**)&dPadding, (size_t)rank * sizeof(uint32_t)), "cudaMalloc padding failed");
-
-  checkCuda(cudaMemcpy(dInSpatial, hInSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy inSpatial failed");
-  checkCuda(cudaMemcpy(dOutSpatial, hOutSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy outSpatial failed");
-  checkCuda(cudaMemcpy(dKSpatial, hKSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy kSpatial failed");
-  checkCuda(cudaMemcpy(dStride, hStride, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy stride failed");
-  checkCuda(cudaMemcpy(dPadding, hPadding, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy padding failed");
+  DeviceSpatialScratch scratch = alloc_spatial_scratch(rank);
+  copy_spatial_scratch(rank, scratch, hInSpatial, hOutSpatial, hKSpatial, hStride, hPadding);
 
   const int grid = grid_for(outElems);
   maxpoolnd_fwd_kernel<<<grid, kBlock>>>(input->data, out->data,
                                         inC,
-                                        dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                        scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                        scratch.stride, scratch.padding,
                                         rank, outSpatialSize, kSpatialSize);
   checkCuda(cudaGetLastError(), "maxpoolnd_fwd kernel launch failed");
   checkCuda(cudaDeviceSynchronize(), "maxpoolnd_fwd sync failed");
 
-  torchlean_cuda_free_checked((void**)&dInSpatial, "cudaFree maxpoolnd inSpatial failed");
-  torchlean_cuda_free_checked((void**)&dOutSpatial, "cudaFree maxpoolnd outSpatial failed");
-  torchlean_cuda_free_checked((void**)&dKSpatial, "cudaFree maxpoolnd kSpatial failed");
-  torchlean_cuda_free_checked((void**)&dStride, "cudaFree maxpoolnd stride failed");
-  torchlean_cuda_free_checked((void**)&dPadding, "cudaFree maxpoolnd padding failed");
+  free_spatial_scratch(rank, &scratch);
 
   return torchlean_cuda_buffer_box(out);
 }
@@ -2857,33 +2631,15 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool_bwd(
     return torchlean_cuda_buffer_box(dInput);
   }
 
-  uint32_t* dInSpatial = nullptr;
-  uint32_t* dOutSpatial = nullptr;
-  uint32_t* dKSpatial = nullptr;
-  uint32_t* dStride = nullptr;
-  uint32_t* dPadding = nullptr;
-  checkCuda(cudaMalloc((void**)&dInSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc inSpatial failed");
-  checkCuda(cudaMalloc((void**)&dOutSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc outSpatial failed");
-  checkCuda(cudaMalloc((void**)&dKSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc kSpatial failed");
-  checkCuda(cudaMalloc((void**)&dStride, (size_t)rank * sizeof(uint32_t)), "cudaMalloc stride failed");
-  checkCuda(cudaMalloc((void**)&dPadding, (size_t)rank * sizeof(uint32_t)), "cudaMalloc padding failed");
-
-  checkCuda(cudaMemcpy(dInSpatial, hInSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy inSpatial failed");
-  checkCuda(cudaMemcpy(dOutSpatial, hOutSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy outSpatial failed");
-  checkCuda(cudaMemcpy(dKSpatial, hKSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy kSpatial failed");
-  checkCuda(cudaMemcpy(dStride, hStride, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy stride failed");
-  checkCuda(cudaMemcpy(dPadding, hPadding, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy padding failed");
+  DeviceSpatialScratch scratch = alloc_spatial_scratch(rank);
+  copy_spatial_scratch(rank, scratch, hInSpatial, hOutSpatial, hKSpatial, hStride, hPadding);
 
   if (det) {
     const int grid = grid_for(inElems);
     maxpoolnd_bwd_det_kernel<<<grid, kBlock>>>(input->data, gradOutput->data, dInput->data,
                                               inC,
-                                              dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                              scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                              scratch.stride, scratch.padding,
                                               rank, inSpatialSize, outSpatialSize, kSpatialSize);
     checkCuda(cudaGetLastError(), "maxpoolnd_bwd (deterministic) kernel launch failed");
     checkCuda(cudaDeviceSynchronize(), "maxpoolnd_bwd (deterministic) sync failed");
@@ -2891,17 +2647,14 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool_bwd(
     const int grid = grid_for(outElems);
     maxpoolnd_bwd_kernel<<<grid, kBlock>>>(input->data, gradOutput->data, dInput->data,
                                           inC,
-                                          dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                          scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                          scratch.stride, scratch.padding,
                                           rank, outSpatialSize, kSpatialSize);
     checkCuda(cudaGetLastError(), "maxpoolnd_bwd kernel launch failed");
     checkCuda(cudaDeviceSynchronize(), "maxpoolnd_bwd sync failed");
   }
 
-  torchlean_cuda_free_checked((void**)&dInSpatial, "cudaFree maxpoolnd_bwd inSpatial failed");
-  torchlean_cuda_free_checked((void**)&dOutSpatial, "cudaFree maxpoolnd_bwd outSpatial failed");
-  torchlean_cuda_free_checked((void**)&dKSpatial, "cudaFree maxpoolnd_bwd kSpatial failed");
-  torchlean_cuda_free_checked((void**)&dStride, "cudaFree maxpoolnd_bwd stride failed");
-  torchlean_cuda_free_checked((void**)&dPadding, "cudaFree maxpoolnd_bwd padding failed");
+  free_spatial_scratch(rank, &scratch);
 
   return torchlean_cuda_buffer_box(dInput);
 }
@@ -2958,41 +2711,19 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_avgpool_fwd(
     return torchlean_cuda_buffer_box(out);
   }
 
-  uint32_t* dInSpatial = nullptr;
-  uint32_t* dOutSpatial = nullptr;
-  uint32_t* dKSpatial = nullptr;
-  uint32_t* dStride = nullptr;
-  uint32_t* dPadding = nullptr;
-  checkCuda(cudaMalloc((void**)&dInSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc inSpatial failed");
-  checkCuda(cudaMalloc((void**)&dOutSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc outSpatial failed");
-  checkCuda(cudaMalloc((void**)&dKSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc kSpatial failed");
-  checkCuda(cudaMalloc((void**)&dStride, (size_t)rank * sizeof(uint32_t)), "cudaMalloc stride failed");
-  checkCuda(cudaMalloc((void**)&dPadding, (size_t)rank * sizeof(uint32_t)), "cudaMalloc padding failed");
-
-  checkCuda(cudaMemcpy(dInSpatial, hInSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy inSpatial failed");
-  checkCuda(cudaMemcpy(dOutSpatial, hOutSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy outSpatial failed");
-  checkCuda(cudaMemcpy(dKSpatial, hKSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy kSpatial failed");
-  checkCuda(cudaMemcpy(dStride, hStride, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy stride failed");
-  checkCuda(cudaMemcpy(dPadding, hPadding, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy padding failed");
+  DeviceSpatialScratch scratch = alloc_spatial_scratch(rank);
+  copy_spatial_scratch(rank, scratch, hInSpatial, hOutSpatial, hKSpatial, hStride, hPadding);
 
   const int grid = grid_for(outElems);
   avgpoolnd_fwd_kernel<<<grid, kBlock>>>(input->data, out->data,
                                        inC,
-                                       dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                       scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                       scratch.stride, scratch.padding,
                                        rank, outSpatialSize, kSpatialSize);
   checkCuda(cudaGetLastError(), "avgpoolnd_fwd kernel launch failed");
   checkCuda(cudaDeviceSynchronize(), "avgpoolnd_fwd sync failed");
 
-  torchlean_cuda_free_checked((void**)&dInSpatial, "cudaFree avgpoolnd inSpatial failed");
-  torchlean_cuda_free_checked((void**)&dOutSpatial, "cudaFree avgpoolnd outSpatial failed");
-  torchlean_cuda_free_checked((void**)&dKSpatial, "cudaFree avgpoolnd kSpatial failed");
-  torchlean_cuda_free_checked((void**)&dStride, "cudaFree avgpoolnd stride failed");
-  torchlean_cuda_free_checked((void**)&dPadding, "cudaFree avgpoolnd padding failed");
+  free_spatial_scratch(rank, &scratch);
 
   return torchlean_cuda_buffer_box(out);
 }
@@ -3054,33 +2785,15 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_avgpool_bwd(
     return torchlean_cuda_buffer_box(dInput);
   }
 
-  uint32_t* dInSpatial = nullptr;
-  uint32_t* dOutSpatial = nullptr;
-  uint32_t* dKSpatial = nullptr;
-  uint32_t* dStride = nullptr;
-  uint32_t* dPadding = nullptr;
-  checkCuda(cudaMalloc((void**)&dInSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc inSpatial failed");
-  checkCuda(cudaMalloc((void**)&dOutSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc outSpatial failed");
-  checkCuda(cudaMalloc((void**)&dKSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc kSpatial failed");
-  checkCuda(cudaMalloc((void**)&dStride, (size_t)rank * sizeof(uint32_t)), "cudaMalloc stride failed");
-  checkCuda(cudaMalloc((void**)&dPadding, (size_t)rank * sizeof(uint32_t)), "cudaMalloc padding failed");
-
-  checkCuda(cudaMemcpy(dInSpatial, hInSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy inSpatial failed");
-  checkCuda(cudaMemcpy(dOutSpatial, hOutSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy outSpatial failed");
-  checkCuda(cudaMemcpy(dKSpatial, hKSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy kSpatial failed");
-  checkCuda(cudaMemcpy(dStride, hStride, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy stride failed");
-  checkCuda(cudaMemcpy(dPadding, hPadding, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy padding failed");
+  DeviceSpatialScratch scratch = alloc_spatial_scratch(rank);
+  copy_spatial_scratch(rank, scratch, hInSpatial, hOutSpatial, hKSpatial, hStride, hPadding);
 
   if (det) {
     const int grid = grid_for(inElems);
     avgpoolnd_bwd_det_kernel<<<grid, kBlock>>>(gradOutput->data, dInput->data,
                                               inC,
-                                              dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                              scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                              scratch.stride, scratch.padding,
                                               rank, inSpatialSize, outSpatialSize, kSpatialSize);
     checkCuda(cudaGetLastError(), "avgpoolnd_bwd (deterministic) kernel launch failed");
     checkCuda(cudaDeviceSynchronize(), "avgpoolnd_bwd (deterministic) sync failed");
@@ -3088,17 +2801,14 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_avgpool_bwd(
     const int grid = grid_for(outElems);
     avgpoolnd_bwd_kernel<<<grid, kBlock>>>(gradOutput->data, dInput->data,
                                           inC,
-                                          dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                          scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                          scratch.stride, scratch.padding,
                                           rank, outSpatialSize, kSpatialSize);
     checkCuda(cudaGetLastError(), "avgpoolnd_bwd kernel launch failed");
     checkCuda(cudaDeviceSynchronize(), "avgpoolnd_bwd sync failed");
   }
 
-  torchlean_cuda_free_checked((void**)&dInSpatial, "cudaFree avgpoolnd_bwd inSpatial failed");
-  torchlean_cuda_free_checked((void**)&dOutSpatial, "cudaFree avgpoolnd_bwd outSpatial failed");
-  torchlean_cuda_free_checked((void**)&dKSpatial, "cudaFree avgpoolnd_bwd kSpatial failed");
-  torchlean_cuda_free_checked((void**)&dStride, "cudaFree avgpoolnd_bwd stride failed");
-  torchlean_cuda_free_checked((void**)&dPadding, "cudaFree avgpoolnd_bwd padding failed");
+  free_spatial_scratch(rank, &scratch);
 
   return torchlean_cuda_buffer_box(dInput);
 }
@@ -3155,44 +2865,22 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_fwd(
     return torchlean_cuda_buffer_box(out);
   }
 
-  uint32_t* dInSpatial = nullptr;
-  uint32_t* dOutSpatial = nullptr;
-  uint32_t* dKSpatial = nullptr;
-  uint32_t* dStride = nullptr;
-  uint32_t* dPadding = nullptr;
-  checkCuda(cudaMalloc((void**)&dInSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc inSpatial failed");
-  checkCuda(cudaMalloc((void**)&dOutSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc outSpatial failed");
-  checkCuda(cudaMalloc((void**)&dKSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc kSpatial failed");
-  checkCuda(cudaMalloc((void**)&dStride, (size_t)rank * sizeof(uint32_t)), "cudaMalloc stride failed");
-  checkCuda(cudaMalloc((void**)&dPadding, (size_t)rank * sizeof(uint32_t)), "cudaMalloc padding failed");
-
-  checkCuda(cudaMemcpy(dInSpatial, hInSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy inSpatial failed");
-  checkCuda(cudaMemcpy(dOutSpatial, hOutSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy outSpatial failed");
-  checkCuda(cudaMemcpy(dKSpatial, hKSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy kSpatial failed");
-  checkCuda(cudaMemcpy(dStride, hStride, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy stride failed");
-  checkCuda(cudaMemcpy(dPadding, hPadding, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy padding failed");
+  DeviceSpatialScratch scratch = alloc_spatial_scratch(rank);
+  copy_spatial_scratch(rank, scratch, hInSpatial, hOutSpatial, hKSpatial, hStride, hPadding);
 
   const int grid = grid_for(outElems);
   const float betaF =
       checked_smoothmax_beta(beta, "torchlean_cuda_smooth_maxpool_fwd: beta must be finite and nonzero");
   smoothmaxpoolnd_fwd_kernel<<<grid, kBlock>>>(input->data, out->data,
                                               inC,
-                                              dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                              scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                              scratch.stride, scratch.padding,
                                               rank, outSpatialSize, kSpatialSize,
                                               betaF);
   checkCuda(cudaGetLastError(), "smoothmaxpoolnd_fwd kernel launch failed");
   checkCuda(cudaDeviceSynchronize(), "smoothmaxpoolnd_fwd sync failed");
 
-  torchlean_cuda_free_checked((void**)&dInSpatial, "cudaFree smoothmaxpoolnd inSpatial failed");
-  torchlean_cuda_free_checked((void**)&dOutSpatial, "cudaFree smoothmaxpoolnd outSpatial failed");
-  torchlean_cuda_free_checked((void**)&dKSpatial, "cudaFree smoothmaxpoolnd kSpatial failed");
-  torchlean_cuda_free_checked((void**)&dStride, "cudaFree smoothmaxpoolnd stride failed");
-  torchlean_cuda_free_checked((void**)&dPadding, "cudaFree smoothmaxpoolnd padding failed");
+  free_spatial_scratch(rank, &scratch);
 
   return torchlean_cuda_buffer_box(out);
 }
@@ -3258,33 +2946,15 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
     return torchlean_cuda_buffer_box(dInput);
   }
 
-  uint32_t* dInSpatial = nullptr;
-  uint32_t* dOutSpatial = nullptr;
-  uint32_t* dKSpatial = nullptr;
-  uint32_t* dStride = nullptr;
-  uint32_t* dPadding = nullptr;
-  checkCuda(cudaMalloc((void**)&dInSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc inSpatial failed");
-  checkCuda(cudaMalloc((void**)&dOutSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc outSpatial failed");
-  checkCuda(cudaMalloc((void**)&dKSpatial, (size_t)rank * sizeof(uint32_t)), "cudaMalloc kSpatial failed");
-  checkCuda(cudaMalloc((void**)&dStride, (size_t)rank * sizeof(uint32_t)), "cudaMalloc stride failed");
-  checkCuda(cudaMalloc((void**)&dPadding, (size_t)rank * sizeof(uint32_t)), "cudaMalloc padding failed");
-
-  checkCuda(cudaMemcpy(dInSpatial, hInSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy inSpatial failed");
-  checkCuda(cudaMemcpy(dOutSpatial, hOutSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy outSpatial failed");
-  checkCuda(cudaMemcpy(dKSpatial, hKSpatial, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy kSpatial failed");
-  checkCuda(cudaMemcpy(dStride, hStride, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy stride failed");
-  checkCuda(cudaMemcpy(dPadding, hPadding, (size_t)rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy padding failed");
+  DeviceSpatialScratch scratch = alloc_spatial_scratch(rank);
+  copy_spatial_scratch(rank, scratch, hInSpatial, hOutSpatial, hKSpatial, hStride, hPadding);
 
   if (det) {
     const int grid = grid_for(inElems);
     smoothmaxpoolnd_bwd_det_kernel<<<grid, kBlock>>>(input->data, gradOutput->data, dInput->data,
                                                     inC,
-                                                    dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                                    scratch.inSpatial, scratch.outSpatial,
+                                                    scratch.kSpatial, scratch.stride, scratch.padding,
                                                     rank, inSpatialSize, outSpatialSize, kSpatialSize,
                                                     betaF);
     checkCuda(cudaGetLastError(), "smoothmaxpoolnd_bwd (deterministic) kernel launch failed");
@@ -3293,18 +2963,15 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
     const int grid = grid_for(outElems);
     smoothmaxpoolnd_bwd_kernel<<<grid, kBlock>>>(input->data, gradOutput->data, dInput->data,
                                                 inC,
-                                                dInSpatial, dOutSpatial, dKSpatial, dStride, dPadding,
+                                                scratch.inSpatial, scratch.outSpatial, scratch.kSpatial,
+                                                scratch.stride, scratch.padding,
                                                 rank, outSpatialSize, kSpatialSize,
                                                 betaF);
     checkCuda(cudaGetLastError(), "smoothmaxpoolnd_bwd kernel launch failed");
     checkCuda(cudaDeviceSynchronize(), "smoothmaxpoolnd_bwd sync failed");
   }
 
-  torchlean_cuda_free_checked((void**)&dInSpatial, "cudaFree smoothmaxpoolnd_bwd inSpatial failed");
-  torchlean_cuda_free_checked((void**)&dOutSpatial, "cudaFree smoothmaxpoolnd_bwd outSpatial failed");
-  torchlean_cuda_free_checked((void**)&dKSpatial, "cudaFree smoothmaxpoolnd_bwd kSpatial failed");
-  torchlean_cuda_free_checked((void**)&dStride, "cudaFree smoothmaxpoolnd_bwd stride failed");
-  torchlean_cuda_free_checked((void**)&dPadding, "cudaFree smoothmaxpoolnd_bwd padding failed");
+  free_spatial_scratch(rank, &scratch);
 
   return torchlean_cuda_buffer_box(dInput);
 }

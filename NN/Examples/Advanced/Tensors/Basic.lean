@@ -23,12 +23,11 @@ usually ask about once they understand typed shapes:
 - manual reshaping when you want the row-major convention to be visible.
 
 The bridge functions themselves live in `NN/Spec/Core/TensorBridge.lean`. This example imports that
-library code and only supplies concrete example values. In other words: this file is a tour, not a
-second tensor implementation.
+library code and supplies concrete values that make the representation boundary visible.
 
 ## Why both representations exist
 
-We intentionally keep two representations because they serve different goals:
+TorchLean keeps two tensor representations because they serve different goals:
 
 - The spec representation (`Spec.Tensor`) is a nested function tree (`Fin n → ...`), which is great
   for writing total definitions and proving shape-correctness by structural recursion.
@@ -232,7 +231,7 @@ flat = torch.tensor([1., 2., 3., 4., 5., 6.])
 reshaped = flat.reshape(2, 3)
 ```
 
-This section intentionally spells out the row-major index arithmetic. Most user code should prefer
+This section spells out the row-major index arithmetic. Most user code should prefer
 library reshape helpers when available, but this makes the layout convention completely explicit.
 -/
 
@@ -334,8 +333,8 @@ out = weight @ x
 grad_like = 2 * out
 ```
 
-This is not an autograd example; it is a shape-preserving tensor transformation that looks like a
-gradient buffer. Autograd examples live under `NN/Examples/Quickstart/AutogradBasics.lean`.
+This section focuses on shape-preserving tensor transformations that have the same shape discipline
+as gradient buffers. Autograd examples live under `NN/Examples/Quickstart/AutogradBasics.lean`.
 -/
 
 /-- A compact forward pass: `weights @ input`. -/

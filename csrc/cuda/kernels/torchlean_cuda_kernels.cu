@@ -36,22 +36,15 @@ static constexpr int kMaxRank = 8;
 static_assert(kBlockSize > 0 && (kBlockSize & (kBlockSize - 1)) == 0,
               "kBlockSize must remain a power of two for shared-memory reductions");
 
+extern "C" void torchlean_cuda_kernels_flush_scratch_cache(void) {
+  torchlean_cuda_scratch_flush();
+}
+
 static inline dim3 blocks_for(size_t n) {
   size_t blocks = (n + (size_t)kBlockSize - 1) / (size_t)kBlockSize;
   if (blocks == 0) blocks = 1;
   if (blocks > 2147483647ULL) blocks = 2147483647ULL;
   return dim3((unsigned int)blocks);
-}
-
-static inline size_t checked_mul_size(size_t a, size_t b, const char* msg) {
-  if (a != 0 && b > SIZE_MAX / a) {
-    lean_internal_panic(msg);
-  }
-  return a * b;
-}
-
-static inline size_t checked_mul3_size(size_t a, size_t b, size_t c, const char* msg) {
-  return checked_mul_size(checked_mul_size(a, b, msg), c, msg);
 }
 
 static inline void check_axis_grid_size(size_t blocks, const char* msg) {
@@ -73,6 +66,59 @@ static inline int checked_cufft_int(uint32_t x, const char* msg) {
     lean_internal_panic(msg);
   }
   return (int)x;
+}
+
+struct HostBroadcastArrays {
+  uint32_t* inDims;
+  uint32_t* outDims;
+  uint32_t* axisMap;
+};
+
+static inline HostBroadcastArrays alloc_host_broadcast_arrays(size_t rankIn, size_t rankOut) {
+  HostBroadcastArrays h = {
+      rankIn == 0 ? nullptr : (uint32_t*)malloc(rankIn * sizeof(uint32_t)),
+      rankOut == 0 ? nullptr : (uint32_t*)malloc(rankOut * sizeof(uint32_t)),
+      rankOut == 0 ? nullptr : (uint32_t*)malloc(rankOut * sizeof(uint32_t)),
+  };
+  if ((rankIn != 0 && !h.inDims) || (rankOut != 0 && (!h.outDims || !h.axisMap))) {
+    free(h.inDims);
+    free(h.outDims);
+    free(h.axisMap);
+    lean_internal_panic_out_of_memory();
+  }
+  return h;
+}
+
+static inline void free_host_broadcast_arrays(HostBroadcastArrays* h) {
+  if (!h) {
+    return;
+  }
+  free(h->inDims);
+  free(h->outDims);
+  free(h->axisMap);
+  h->inDims = nullptr;
+  h->outDims = nullptr;
+  h->axisMap = nullptr;
+}
+
+static inline uint32_t* upload_nat_indices(
+    b_lean_obj_arg idxObj,
+    size_t count,
+    const char* natMsg,
+    const char* mallocMsg,
+    const char* memcpyMsg) {
+  uint32_t* hIdx = count == 0 ? nullptr : (uint32_t*)malloc(count * sizeof(uint32_t));
+  if (count != 0 && !hIdx) {
+    lean_internal_panic_out_of_memory();
+  }
+  for (size_t j = 0; j < count; ++j) {
+    hIdx[j] = nat_to_u32_or_panic(lean_array_get_core(idxObj, j), natMsg);
+  }
+
+  uint32_t* dIdx = torchlean_cuda_scratch_alloc<uint32_t>(count, mallocMsg);
+  checkCuda(cudaMemcpy(dIdx, hIdx, count * sizeof(uint32_t), cudaMemcpyHostToDevice), memcpyMsg);
+  free(hIdx);
+  return dIdx;
 }
 
 __global__ void pack_cufft_complex_to_ri_f32(const cufftComplex* in, float* out, size_t count) {
@@ -1024,7 +1070,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_bmm(b_lean_obj_arg AOb
   const float alpha = 1.0f;
   const float beta = 0.0f;
 
-  // Row-major trick (same as TorchLean DGEMM): treat row-major buffers as transposed column-major.
+  // Treat row-major buffers as transposed column-major data for cuBLAS.
   // Compute C^T (p x m) = B^T (p x n) * A^T (n x m), without explicit transposes.
   const long long int strideA = (long long int)(N * P);  // B batch stride (treated as A in cuBLAS)
   const long long int strideB = (long long int)(M * N);  // A batch stride (treated as B in cuBLAS)
@@ -1078,9 +1124,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_rfft1d_packed(b_lean_o
       checked_cufft_int((uint32_t)Freq, "torchlean_cuda_buffer_rfft1d_packed: freq exceeds cuFFT int range");
 
   cufftComplex* dSpec = nullptr;
-  if (cudaMalloc((void**)&dSpec, complexSz * sizeof(cufftComplex)) != cudaSuccess) {
-    lean_internal_panic("torchlean_cuda_buffer_rfft1d_packed: cudaMalloc spectrum failed");
-  }
+  dSpec = torchlean_cuda_scratch_alloc<cufftComplex>(
+      complexSz, "torchlean_cuda_buffer_rfft1d_packed: cudaMalloc spectrum failed");
 
   cufftHandle plan;
   int nPlan[1] = {nInt};
@@ -1089,14 +1134,14 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_rfft1d_packed(b_lean_o
   cufftResult planRes =
       cufftPlanMany(&plan, 1, nPlan, inembed, 1, nInt, onembed, 1, freqInt, CUFFT_R2C, batchInt);
   if (planRes != CUFFT_SUCCESS) {
-    torchlean_cuda_free_checked((void**)&dSpec, "torchlean_cuda_buffer_rfft1d_packed: cleanup spectrum after plan failure failed");
+    torchlean_cuda_scratch_free(&dSpec, complexSz, "torchlean_cuda_buffer_rfft1d_packed: cleanup spectrum after plan failure failed");
     lean_internal_panic("torchlean_cuda_buffer_rfft1d_packed: cufftPlanMany R2C failed");
   }
 
   cufftResult execRes = cufftExecR2C(plan, (cufftReal*)x->data, dSpec);
   if (execRes != CUFFT_SUCCESS) {
     cufftDestroy(plan);
-    torchlean_cuda_free_checked((void**)&dSpec, "torchlean_cuda_buffer_rfft1d_packed: cleanup spectrum after exec failure failed");
+    torchlean_cuda_scratch_free(&dSpec, complexSz, "torchlean_cuda_buffer_rfft1d_packed: cleanup spectrum after exec failure failed");
     lean_internal_panic("torchlean_cuda_buffer_rfft1d_packed: cufftExecR2C failed");
   }
 
@@ -1104,12 +1149,12 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_rfft1d_packed(b_lean_o
                                                                             complexSz);
   if (cudaGetLastError() != cudaSuccess) {
     cufftDestroy(plan);
-    torchlean_cuda_free_checked((void**)&dSpec, "torchlean_cuda_buffer_rfft1d_packed: cleanup spectrum after pack failure failed");
+    torchlean_cuda_scratch_free(&dSpec, complexSz, "torchlean_cuda_buffer_rfft1d_packed: cleanup spectrum after pack failure failed");
     lean_internal_panic("torchlean_cuda_buffer_rfft1d_packed: pack kernel launch failed");
   }
 
   checkCufft(cufftDestroy(plan), "torchlean_cuda_buffer_rfft1d_packed: cufftDestroy failed");
-  checkCuda(cudaFree(dSpec), "torchlean_cuda_buffer_rfft1d_packed: cudaFree spectrum failed");
+  torchlean_cuda_scratch_free(&dSpec, complexSz, "torchlean_cuda_buffer_rfft1d_packed: cudaFree spectrum failed");
   return torchlean_cuda_buffer_box(out);
 }
 
@@ -1146,14 +1191,13 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_irfft1d_packed(b_lean_
       checked_cufft_int((uint32_t)Freq, "torchlean_cuda_buffer_irfft1d_packed: freq exceeds cuFFT int range");
 
   cufftComplex* dSpec = nullptr;
-  if (cudaMalloc((void**)&dSpec, complexSz * sizeof(cufftComplex)) != cudaSuccess) {
-    lean_internal_panic("torchlean_cuda_buffer_irfft1d_packed: cudaMalloc spectrum failed");
-  }
+  dSpec = torchlean_cuda_scratch_alloc<cufftComplex>(
+      complexSz, "torchlean_cuda_buffer_irfft1d_packed: cudaMalloc spectrum failed");
 
   pack_ri_to_cufft_complex_f32<<<blocks_for(complexSz), dim3(kBlockSize)>>>(spec->data, dSpec,
                                                                             complexSz);
   if (cudaGetLastError() != cudaSuccess) {
-    torchlean_cuda_free_checked((void**)&dSpec, "torchlean_cuda_buffer_irfft1d_packed: cleanup spectrum after pack failure failed");
+    torchlean_cuda_scratch_free(&dSpec, complexSz, "torchlean_cuda_buffer_irfft1d_packed: cleanup spectrum after pack failure failed");
     lean_internal_panic("torchlean_cuda_buffer_irfft1d_packed: pack kernel launch failed");
   }
 
@@ -1164,26 +1208,26 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_irfft1d_packed(b_lean_
   cufftResult planRes =
       cufftPlanMany(&plan, 1, nPlan, inembed, 1, freqInt, onembed, 1, nInt, CUFFT_C2R, batchInt);
   if (planRes != CUFFT_SUCCESS) {
-    torchlean_cuda_free_checked((void**)&dSpec, "torchlean_cuda_buffer_irfft1d_packed: cleanup spectrum after plan failure failed");
+    torchlean_cuda_scratch_free(&dSpec, complexSz, "torchlean_cuda_buffer_irfft1d_packed: cleanup spectrum after plan failure failed");
     lean_internal_panic("torchlean_cuda_buffer_irfft1d_packed: cufftPlanMany C2R failed");
   }
 
   cufftResult execRes = cufftExecC2R(plan, dSpec, (cufftReal*)out->data);
   if (execRes != CUFFT_SUCCESS) {
     cufftDestroy(plan);
-    torchlean_cuda_free_checked((void**)&dSpec, "torchlean_cuda_buffer_irfft1d_packed: cleanup spectrum after exec failure failed");
+    torchlean_cuda_scratch_free(&dSpec, complexSz, "torchlean_cuda_buffer_irfft1d_packed: cleanup spectrum after exec failure failed");
     lean_internal_panic("torchlean_cuda_buffer_irfft1d_packed: cufftExecC2R failed");
   }
 
   scale_f32<<<blocks_for(outSz), dim3(kBlockSize)>>>(out->data, outSz, 1.0f / (float)N);
   if (cudaGetLastError() != cudaSuccess) {
     cufftDestroy(plan);
-    torchlean_cuda_free_checked((void**)&dSpec, "torchlean_cuda_buffer_irfft1d_packed: cleanup spectrum after scale failure failed");
+    torchlean_cuda_scratch_free(&dSpec, complexSz, "torchlean_cuda_buffer_irfft1d_packed: cleanup spectrum after scale failure failed");
     lean_internal_panic("torchlean_cuda_buffer_irfft1d_packed: scale kernel launch failed");
   }
 
   checkCufft(cufftDestroy(plan), "torchlean_cuda_buffer_irfft1d_packed: cufftDestroy failed");
-  checkCuda(cudaFree(dSpec), "torchlean_cuda_buffer_irfft1d_packed: cudaFree spectrum failed");
+  torchlean_cuda_scratch_free(&dSpec, complexSz, "torchlean_cuda_buffer_irfft1d_packed: cudaFree spectrum failed");
   return torchlean_cuda_buffer_box(out);
 }
 
@@ -1260,8 +1304,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_spectral_conv1d_rfft_f
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(xSz);
   cufftComplex* X = nullptr;
   cufftComplex* Z = nullptr;
-  checkCuda(cudaMalloc((void**)&X, specSz * sizeof(cufftComplex)), "spectralConv1dRfft: malloc X failed");
-  checkCuda(cudaMalloc((void**)&Z, specSz * sizeof(cufftComplex)), "spectralConv1dRfft: malloc Z failed");
+  X = torchlean_cuda_scratch_alloc<cufftComplex>(specSz, "spectralConv1dRfft: malloc X failed");
+  Z = torchlean_cuda_scratch_alloc<cufftComplex>(specSz, "spectralConv1dRfft: malloc Z failed");
   checkCuda(cudaMemset(Z, 0, specSz * sizeof(cufftComplex)), "spectralConv1dRfft: memset Z failed");
 
   cufftHandle r2c = make_spectral_conv1d_r2c_plan(grid, width, (uint32_t)Freq);
@@ -1275,8 +1319,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_spectral_conv1d_rfft_f
   checkCuda(cudaGetLastError(), "spectralConv1dRfft: scale kernel failed");
   checkCufft(cufftDestroy(r2c), "spectralConv1dRfft: destroy R2C failed");
   checkCufft(cufftDestroy(c2r), "spectralConv1dRfft: destroy C2R failed");
-  checkCuda(cudaFree(X), "spectralConv1dRfft: free X failed");
-  checkCuda(cudaFree(Z), "spectralConv1dRfft: free Z failed");
+  torchlean_cuda_scratch_free(&X, specSz, "spectralConv1dRfft: free X failed");
+  torchlean_cuda_scratch_free(&Z, specSz, "spectralConv1dRfft: free Z failed");
   return torchlean_cuda_buffer_box(out);
 }
 
@@ -1287,9 +1331,9 @@ static inline void spectral_conv1d_make_x_dz(torchlean_cuda_buffer* x, torchlean
   cufftComplex* X = nullptr;
   cufftComplex* G = nullptr;
   cufftComplex* dZ = nullptr;
-  checkCuda(cudaMalloc((void**)&X, specSz * sizeof(cufftComplex)), "spectralConv1dRfft bwd: malloc X failed");
-  checkCuda(cudaMalloc((void**)&G, specSz * sizeof(cufftComplex)), "spectralConv1dRfft bwd: malloc G failed");
-  checkCuda(cudaMalloc((void**)&dZ, specSz * sizeof(cufftComplex)), "spectralConv1dRfft bwd: malloc dZ failed");
+  X = torchlean_cuda_scratch_alloc<cufftComplex>(specSz, "spectralConv1dRfft bwd: malloc X failed");
+  G = torchlean_cuda_scratch_alloc<cufftComplex>(specSz, "spectralConv1dRfft bwd: malloc G failed");
+  dZ = torchlean_cuda_scratch_alloc<cufftComplex>(specSz, "spectralConv1dRfft bwd: malloc dZ failed");
   checkCuda(cudaMemset(dZ, 0, specSz * sizeof(cufftComplex)), "spectralConv1dRfft bwd: memset dZ failed");
   cufftHandle r2c = make_spectral_conv1d_r2c_plan(grid, width, grid / 2 + 1);
   checkCufft(cufftExecR2C(r2c, (cufftReal*)x->data, X), "spectralConv1dRfft bwd: R2C x failed");
@@ -1298,7 +1342,7 @@ static inline void spectral_conv1d_make_x_dz(torchlean_cuda_buffer* x, torchlean
       G, dZ, grid, width, modes);
   checkCuda(cudaGetLastError(), "spectralConv1dRfft bwd: dZ kernel failed");
   checkCufft(cufftDestroy(r2c), "spectralConv1dRfft bwd: destroy R2C failed");
-  checkCuda(cudaFree(G), "spectralConv1dRfft bwd: free G failed");
+  torchlean_cuda_scratch_free(&G, specSz, "spectralConv1dRfft bwd: free G failed");
   *XOut = X;
   *dZOut = dZ;
 }
@@ -1319,7 +1363,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_spectral_conv1d_rfft_b
   cufftComplex* dZ = nullptr;
   spectral_conv1d_make_x_dz(x, dY, grid, width, modes, specSz, &X, &dZ);
   cufftComplex* dX = nullptr;
-  checkCuda(cudaMalloc((void**)&dX, specSz * sizeof(cufftComplex)), "spectralConv1dRfft bwd_x: malloc dX failed");
+  dX = torchlean_cuda_scratch_alloc<cufftComplex>(specSz, "spectralConv1dRfft bwd_x: malloc dX failed");
   checkCuda(cudaMemset(dX, 0, specSz * sizeof(cufftComplex)), "spectralConv1dRfft bwd_x: memset dX failed");
   spectral_conv1d_bwd_xspec_f32<<<blocks_for((size_t)modes * (size_t)width), dim3(kBlockSize)>>>(
       dZ, wRe->data, wIm->data, dX, width, modes);
@@ -1328,9 +1372,9 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_spectral_conv1d_rfft_b
   spectral_conv1d_irfft_adjoint_f32<<<blocks_for(xSz), dim3(kBlockSize)>>>(dX, dx->data, grid,
                                                                             width, modes);
   checkCuda(cudaGetLastError(), "spectralConv1dRfft bwd_x: irfft adjoint kernel failed");
-  checkCuda(cudaFree(X), "spectralConv1dRfft bwd_x: free X failed");
-  checkCuda(cudaFree(dZ), "spectralConv1dRfft bwd_x: free dZ failed");
-  checkCuda(cudaFree(dX), "spectralConv1dRfft bwd_x: free dX failed");
+  torchlean_cuda_scratch_free(&X, specSz, "spectralConv1dRfft bwd_x: free X failed");
+  torchlean_cuda_scratch_free(&dZ, specSz, "spectralConv1dRfft bwd_x: free dZ failed");
+  torchlean_cuda_scratch_free(&dX, specSz, "spectralConv1dRfft bwd_x: free dX failed");
   return torchlean_cuda_buffer_box(dx);
 }
 
@@ -1354,14 +1398,11 @@ static inline lean_obj_res spectral_conv1d_bwd_weight_common(
   spectral_conv1d_bwd_weights_f32<<<blocks_for(wSz), dim3(kBlockSize)>>>(X, dZ, dWRe->data,
                                                                           dWIm->data, width, modes);
   checkCuda(cudaGetLastError(), "spectralConv1dRfft bwd_w: weights kernel failed");
-  checkCuda(cudaFree(X), "spectralConv1dRfft bwd_w: free X failed");
-  checkCuda(cudaFree(dZ), "spectralConv1dRfft bwd_w: free dZ failed");
+  torchlean_cuda_scratch_free(&X, specSz, "spectralConv1dRfft bwd_w: free X failed");
+  torchlean_cuda_scratch_free(&dZ, specSz, "spectralConv1dRfft bwd_w: free dZ failed");
   torchlean_cuda_buffer* keep = imag ? dWIm : dWRe;
   torchlean_cuda_buffer* drop = imag ? dWRe : dWIm;
-  if (drop->data != nullptr) {
-    checkCuda(cudaFree(drop->data), "spectralConv1dRfft bwd_w: free unused weight grad data failed");
-  }
-  free(drop);
+  torchlean_cuda_buffer_drop_unboxed(drop);
   return torchlean_cuda_buffer_box(keep);
 }
 
@@ -1456,16 +1497,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_selective_scan_diag_bw
     checkCuda(cudaGetLastError(), "cuda selectiveScanDiagBwd kernel launch failed");
   }
 
-  lean_object* inner2 = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(inner2, 0, torchlean_cuda_buffer_box(dX));
-  lean_ctor_set(inner2, 1, torchlean_cuda_buffer_box(dH0));
-  lean_object* inner1 = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(inner1, 0, torchlean_cuda_buffer_box(dB));
-  lean_ctor_set(inner1, 1, inner2);
-  lean_object* outer = lean_alloc_ctor(0, 2, 0);
-  lean_ctor_set(outer, 0, torchlean_cuda_buffer_box(dA));
-  lean_ctor_set(outer, 1, inner1);
-  return outer;
+  return torchlean_cuda_box_four_buffers(dA, dB, dX, dH0);
 }
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_selective_scan_diag_var_fwd(
@@ -1513,10 +1545,10 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_selective_scan_diag_va
 //
 // These kernels compute the same mathematical operation as TorchLean's proof-facing
 // scaled-dot-product attention contract: scores = QK^T * scale, optional dense Boolean mask, stable
-// row softmax, then multiplication by V. The implementation is intentionally straightforward and
-// correctness-first: it recomputes row softmax statistics in backward rather than storing the full
-// attention matrix. It is not the production IO-tiled FlashAttention schedule; the website and trust
-// docs describe that distinction explicitly.
+// row softmax, then multiplication by V. The implementation favors a direct correctness-first
+// schedule: it recomputes row softmax statistics in backward rather than storing the full attention
+// matrix. It is not the production IO-tiled FlashAttention schedule; the website and trust docs
+// describe that distinction explicitly.
 //
 // Mask convention: a zero mask entry is treated as disallowed and receives the same large-negative
 // score used by the Lean spec. Backward skips disallowed score entries to match the hard-mask runtime
@@ -1813,27 +1845,18 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_gather_vec(b_lean_obj_
     return torchlean_cuda_buffer_box(out);
   }
 
-  uint32_t* hIdx = (uint32_t*)malloc(K * sizeof(uint32_t));
-  if (!hIdx) {
-    lean_internal_panic_out_of_memory();
-  }
-  for (size_t j = 0; j < K; ++j) {
-    b_lean_obj_res idxNat = lean_array_get_core(IdxObj, j);
-    hIdx[j] = nat_to_u32_or_panic(idxNat, "torchlean_cuda_buffer_gather_vec: bad index Nat");
-  }
-
-  uint32_t* dIdx = nullptr;
-  checkCuda(cudaMalloc((void**)&dIdx, K * sizeof(uint32_t)), "cudaMalloc indices failed");
-  checkCuda(cudaMemcpy(dIdx, hIdx, K * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy indices failed");
-  free(hIdx);
+  uint32_t* dIdx = upload_nat_indices(
+      IdxObj, K,
+      "torchlean_cuda_buffer_gather_vec: bad index Nat",
+      "cudaMalloc indices failed",
+      "cudaMemcpy indices failed");
 
   dim3 blocks = blocks_for(K);
   dim3 threads = dim3(kBlockSize);
   gather_vec_f32<<<blocks, threads>>>(v->data, dIdx, K, n, out->data);
   checkCuda(cudaGetLastError(), "cuda gatherVec kernel launch failed");
 
-  torchlean_cuda_free_checked((void**)&dIdx, "cudaFree gatherVec indices failed");
+  torchlean_cuda_scratch_free(&dIdx, K, "cudaFree gatherVec indices failed");
   return torchlean_cuda_buffer_box(out);
 }
 
@@ -1870,20 +1893,11 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_scatter_add(b_lean_obj
     return torchlean_cuda_buffer_box(out);
   }
 
-  uint32_t* hIdx = (uint32_t*)malloc(K * sizeof(uint32_t));
-  if (!hIdx) {
-    lean_internal_panic_out_of_memory();
-  }
-  for (size_t j = 0; j < K; ++j) {
-    b_lean_obj_res idxNat = lean_array_get_core(IdxObj, j);
-    hIdx[j] = nat_to_u32_or_panic(idxNat, "torchlean_cuda_buffer_scatter_add: bad index Nat");
-  }
-
-  uint32_t* dIdx = nullptr;
-  checkCuda(cudaMalloc((void**)&dIdx, K * sizeof(uint32_t)), "cudaMalloc indices failed");
-  checkCuda(cudaMemcpy(dIdx, hIdx, K * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy indices failed");
-  free(hIdx);
+  uint32_t* dIdx = upload_nat_indices(
+      IdxObj, K,
+      "torchlean_cuda_buffer_scatter_add: bad index Nat",
+      "cudaMalloc indices failed",
+      "cudaMemcpy indices failed");
 
   dim3 threads = dim3(kBlockSize);
   if (torchlean_cuda_get_deterministic_reductions()) {
@@ -1900,7 +1914,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_scatter_add(b_lean_obj
     checkCuda(cudaGetLastError(), "cuda scatterAdd kernel launch failed");
   }
 
-  torchlean_cuda_free_checked((void**)&dIdx, "cudaFree scatterAdd indices failed");
+  torchlean_cuda_scratch_free(&dIdx, K, "cudaFree scatterAdd indices failed");
   return torchlean_cuda_buffer_box(out);
 }
 
@@ -1923,12 +1937,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_broadcast_to(b_lean_ob
     lean_internal_panic("torchlean_cuda_buffer_broadcast_to: rank too large");
   }
 
-  uint32_t* hInDims = rankIn == 0 ? nullptr : (uint32_t*)malloc(rankIn * sizeof(uint32_t));
-  uint32_t* hOutDims = rankOut == 0 ? nullptr : (uint32_t*)malloc(rankOut * sizeof(uint32_t));
-  uint32_t* hMap = rankOut == 0 ? nullptr : (uint32_t*)malloc(rankOut * sizeof(uint32_t));
-  if ((rankIn != 0 && !hInDims) || (rankOut != 0 && (!hOutDims || !hMap))) {
-    lean_internal_panic_out_of_memory();
-  }
+  HostBroadcastArrays h = alloc_host_broadcast_arrays(rankIn, rankOut);
 
   size_t inSize = 1;
   for (size_t i = 0; i < rankIn; ++i) {
@@ -1937,7 +1946,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_broadcast_to(b_lean_ob
     if (d == UINT32_MAX) {
       lean_internal_panic("torchlean_cuda_buffer_broadcast_to: inDims contains big Nat");
     }
-    hInDims[i] = d;
+    h.inDims[i] = d;
     inSize *= (size_t)d;
   }
   size_t outSize = 1;
@@ -1947,29 +1956,29 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_broadcast_to(b_lean_ob
     if (d == UINT32_MAX) {
       lean_internal_panic("torchlean_cuda_buffer_broadcast_to: outDims contains big Nat");
     }
-    hOutDims[i] = d;
+    h.outDims[i] = d;
     outSize *= (size_t)d;
 
     b_lean_obj_res mNat = lean_array_get_core(AxisMapObj, i);
     uint32_t mv =
         nat_to_u32_or_panic(mNat, "torchlean_cuda_buffer_broadcast_to: axisMap contains big Nat");
-    hMap[i] = mv;
+    h.axisMap[i] = mv;
   }
 
   if (x->size != inSize) {
     lean_internal_panic("torchlean_cuda_buffer_broadcast_to: input size mismatch");
   }
 
-  // Check broadcast compatibility at the FFI boundary before launching the kernel.
+  // Check broadcast shape agreement at the FFI boundary before launching the kernel.
   for (size_t ax = 0; ax < rankOut; ++ax) {
-    uint32_t mv = hMap[ax];
+    uint32_t mv = h.axisMap[ax];
     if (mv == 0) continue;
     size_t inAx = (size_t)(mv - 1);
     if (inAx >= rankIn) {
       lean_internal_panic("torchlean_cuda_buffer_broadcast_to: axisMap out of range");
     }
-    uint32_t id = hInDims[inAx];
-    uint32_t od = hOutDims[ax];
+    uint32_t id = h.inDims[inAx];
+    uint32_t od = h.outDims[ax];
     if (!(id == 1 || id == od)) {
       lean_internal_panic("torchlean_cuda_buffer_broadcast_to: incompatible broadcast dims");
     }
@@ -1977,9 +1986,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_broadcast_to(b_lean_ob
 
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(outSize);
   if (outSize == 0) {
-    free(hInDims);
-    free(hOutDims);
-    free(hMap);
+    free_host_broadcast_arrays(&h);
     return torchlean_cuda_buffer_box(out);
   }
 
@@ -1987,21 +1994,19 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_broadcast_to(b_lean_ob
   uint32_t* dOutDims = nullptr;
   uint32_t* dMap = nullptr;
   if (rankIn != 0) {
-    checkCuda(cudaMalloc((void**)&dInDims, rankIn * sizeof(uint32_t)), "cudaMalloc inDims failed");
-    checkCuda(cudaMemcpy(dInDims, hInDims, rankIn * sizeof(uint32_t), cudaMemcpyHostToDevice),
+    dInDims = torchlean_cuda_scratch_alloc<uint32_t>(rankIn, "cudaMalloc inDims failed");
+    checkCuda(cudaMemcpy(dInDims, h.inDims, rankIn * sizeof(uint32_t), cudaMemcpyHostToDevice),
               "cudaMemcpy inDims failed");
   }
   if (rankOut != 0) {
-    checkCuda(cudaMalloc((void**)&dOutDims, rankOut * sizeof(uint32_t)), "cudaMalloc outDims failed");
-    checkCuda(cudaMalloc((void**)&dMap, rankOut * sizeof(uint32_t)), "cudaMalloc axisMap failed");
-    checkCuda(cudaMemcpy(dOutDims, hOutDims, rankOut * sizeof(uint32_t), cudaMemcpyHostToDevice),
+    dOutDims = torchlean_cuda_scratch_alloc<uint32_t>(rankOut, "cudaMalloc outDims failed");
+    dMap = torchlean_cuda_scratch_alloc<uint32_t>(rankOut, "cudaMalloc axisMap failed");
+    checkCuda(cudaMemcpy(dOutDims, h.outDims, rankOut * sizeof(uint32_t), cudaMemcpyHostToDevice),
               "cudaMemcpy outDims failed");
-    checkCuda(cudaMemcpy(dMap, hMap, rankOut * sizeof(uint32_t), cudaMemcpyHostToDevice),
+    checkCuda(cudaMemcpy(dMap, h.axisMap, rankOut * sizeof(uint32_t), cudaMemcpyHostToDevice),
               "cudaMemcpy axisMap failed");
   }
-  free(hInDims);
-  free(hOutDims);
-  free(hMap);
+  free_host_broadcast_arrays(&h);
 
   dim3 blocks = blocks_for(outSize);
   dim3 threads = dim3(kBlockSize);
@@ -2011,9 +2016,9 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_broadcast_to(b_lean_ob
                                        dMap);
   checkCuda(cudaGetLastError(), "cuda broadcastTo kernel launch failed");
 
-  torchlean_cuda_free_checked((void**)&dInDims, "cudaFree broadcastTo inDims failed");
-  torchlean_cuda_free_checked((void**)&dOutDims, "cudaFree broadcastTo outDims failed");
-  torchlean_cuda_free_checked((void**)&dMap, "cudaFree broadcastTo axisMap failed");
+  torchlean_cuda_scratch_free(&dInDims, rankIn, "cudaFree broadcastTo inDims failed");
+  torchlean_cuda_scratch_free(&dOutDims, rankOut, "cudaFree broadcastTo outDims failed");
+  torchlean_cuda_scratch_free(&dMap, rankOut, "cudaFree broadcastTo axisMap failed");
   return torchlean_cuda_buffer_box(out);
 }
 
@@ -2037,12 +2042,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_from_broadcast(
     lean_internal_panic("torchlean_cuda_buffer_reduce_from_broadcast: rank too large");
   }
 
-  uint32_t* hInDims = rankIn == 0 ? nullptr : (uint32_t*)malloc(rankIn * sizeof(uint32_t));
-  uint32_t* hOutDims = rankOut == 0 ? nullptr : (uint32_t*)malloc(rankOut * sizeof(uint32_t));
-  uint32_t* hMap = rankOut == 0 ? nullptr : (uint32_t*)malloc(rankOut * sizeof(uint32_t));
-  if ((rankIn != 0 && !hInDims) || (rankOut != 0 && (!hOutDims || !hMap))) {
-    lean_internal_panic_out_of_memory();
-  }
+  HostBroadcastArrays h = alloc_host_broadcast_arrays(rankIn, rankOut);
 
   size_t inSize = 1;
   for (size_t i = 0; i < rankIn; ++i) {
@@ -2050,7 +2050,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_from_broadcast(
     if (d == UINT32_MAX) {
       lean_internal_panic("torchlean_cuda_buffer_reduce_from_broadcast: inDims contains big Nat");
     }
-    hInDims[i] = d;
+    h.inDims[i] = d;
     inSize *= (size_t)d;
   }
   size_t outSize = 1;
@@ -2059,13 +2059,13 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_from_broadcast(
     if (d == UINT32_MAX) {
       lean_internal_panic("torchlean_cuda_buffer_reduce_from_broadcast: outDims contains big Nat");
     }
-    hOutDims[i] = d;
+    h.outDims[i] = d;
     outSize *= (size_t)d;
 
     uint32_t mv =
         nat_to_u32_or_panic(lean_array_get_core(AxisMapObj, i),
                             "torchlean_cuda_buffer_reduce_from_broadcast: axisMap contains big Nat");
-    hMap[i] = mv;
+    h.axisMap[i] = mv;
   }
 
   if (dOut->size != outSize) {
@@ -2074,14 +2074,14 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_from_broadcast(
 
   // Check the same broadcast contract used by the forward path.
   for (size_t ax = 0; ax < rankOut; ++ax) {
-    uint32_t mv = hMap[ax];
+    uint32_t mv = h.axisMap[ax];
     if (mv == 0) continue;
     size_t inAx = (size_t)(mv - 1);
     if (inAx >= rankIn) {
       lean_internal_panic("torchlean_cuda_buffer_reduce_from_broadcast: axisMap out of range");
     }
-    uint32_t id = hInDims[inAx];
-    uint32_t od = hOutDims[ax];
+    uint32_t id = h.inDims[inAx];
+    uint32_t od = h.outDims[ax];
     if (!(id == 1 || id == od)) {
       lean_internal_panic("torchlean_cuda_buffer_reduce_from_broadcast: incompatible broadcast dims");
     }
@@ -2089,18 +2089,14 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_from_broadcast(
 
   torchlean_cuda_buffer* dIn = torchlean_cuda_buffer_alloc(inSize);
   if (inSize == 0) {
-    free(hInDims);
-    free(hOutDims);
-    free(hMap);
+    free_host_broadcast_arrays(&h);
     return torchlean_cuda_buffer_box(dIn);
   }
   if (outSize == 0) {
     // Totalize empty output gradients as the all-zeros input gradient.
     checkCuda(cudaMemset(dIn->data, 0, inSize * sizeof(float)),
               "cudaMemset reduceFromBroadcast failed");
-    free(hInDims);
-    free(hOutDims);
-    free(hMap);
+    free_host_broadcast_arrays(&h);
     return torchlean_cuda_buffer_box(dIn);
   }
 
@@ -2108,21 +2104,19 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_from_broadcast(
   uint32_t* dOutDims = nullptr;
   uint32_t* dMap = nullptr;
   if (rankIn != 0) {
-    checkCuda(cudaMalloc((void**)&dInDims, rankIn * sizeof(uint32_t)), "cudaMalloc inDims failed");
-    checkCuda(cudaMemcpy(dInDims, hInDims, rankIn * sizeof(uint32_t), cudaMemcpyHostToDevice),
+    dInDims = torchlean_cuda_scratch_alloc<uint32_t>(rankIn, "cudaMalloc inDims failed");
+    checkCuda(cudaMemcpy(dInDims, h.inDims, rankIn * sizeof(uint32_t), cudaMemcpyHostToDevice),
               "cudaMemcpy inDims failed");
   }
   if (rankOut != 0) {
-    checkCuda(cudaMalloc((void**)&dOutDims, rankOut * sizeof(uint32_t)), "cudaMalloc outDims failed");
-    checkCuda(cudaMalloc((void**)&dMap, rankOut * sizeof(uint32_t)), "cudaMalloc axisMap failed");
-    checkCuda(cudaMemcpy(dOutDims, hOutDims, rankOut * sizeof(uint32_t), cudaMemcpyHostToDevice),
+    dOutDims = torchlean_cuda_scratch_alloc<uint32_t>(rankOut, "cudaMalloc outDims failed");
+    dMap = torchlean_cuda_scratch_alloc<uint32_t>(rankOut, "cudaMalloc axisMap failed");
+    checkCuda(cudaMemcpy(dOutDims, h.outDims, rankOut * sizeof(uint32_t), cudaMemcpyHostToDevice),
               "cudaMemcpy outDims failed");
-    checkCuda(cudaMemcpy(dMap, hMap, rankOut * sizeof(uint32_t), cudaMemcpyHostToDevice),
+    checkCuda(cudaMemcpy(dMap, h.axisMap, rankOut * sizeof(uint32_t), cudaMemcpyHostToDevice),
               "cudaMemcpy axisMap failed");
   }
-  free(hInDims);
-  free(hOutDims);
-  free(hMap);
+  free_host_broadcast_arrays(&h);
 
   dim3 threads = dim3(kBlockSize);
   if (torchlean_cuda_get_deterministic_reductions()) {
@@ -2147,9 +2141,9 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_from_broadcast(
     checkCuda(cudaGetLastError(), "cuda reduceFromBroadcast kernel launch failed");
   }
 
-  torchlean_cuda_free_checked((void**)&dInDims, "cudaFree reduceFromBroadcast inDims failed");
-  torchlean_cuda_free_checked((void**)&dOutDims, "cudaFree reduceFromBroadcast outDims failed");
-  torchlean_cuda_free_checked((void**)&dMap, "cudaFree reduceFromBroadcast axisMap failed");
+  torchlean_cuda_scratch_free(&dInDims, rankIn, "cudaFree reduceFromBroadcast inDims failed");
+  torchlean_cuda_scratch_free(&dOutDims, rankOut, "cudaFree reduceFromBroadcast outDims failed");
+  torchlean_cuda_scratch_free(&dMap, rankOut, "cudaFree reduceFromBroadcast axisMap failed");
   return torchlean_cuda_buffer_box(dIn);
 }
 
@@ -2187,7 +2181,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_swap_adjacent_at_depth
   }
 
   uint32_t* dDims = nullptr;
-  checkCuda(cudaMalloc((void**)&dDims, rank * sizeof(uint32_t)), "cudaMalloc dims failed");
+  dDims = torchlean_cuda_scratch_alloc<uint32_t>(rank, "cudaMalloc dims failed");
   checkCuda(cudaMemcpy(dDims, hDims, rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
             "cudaMemcpy dims failed");
 
@@ -2197,7 +2191,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_swap_adjacent_at_depth
                                                   (int)depth);
   checkCuda(cudaGetLastError(), "cuda swapAdjacentAtDepth kernel launch failed");
 
-  torchlean_cuda_free_checked((void**)&dDims, "cudaFree swapAdjacentAtDepth dims failed");
+  torchlean_cuda_scratch_free(&dDims, rank, "cudaFree swapAdjacentAtDepth dims failed");
   return torchlean_cuda_buffer_box(out);
 }
 
@@ -2253,7 +2247,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_sum_axis(
   }
 
   uint32_t* dDims = nullptr;
-  checkCuda(cudaMalloc((void**)&dDims, rank * sizeof(uint32_t)), "cudaMalloc dims failed");
+  dDims = torchlean_cuda_scratch_alloc<uint32_t>(rank, "cudaMalloc dims failed");
   checkCuda(cudaMemcpy(dDims, hDims, rank * sizeof(uint32_t), cudaMemcpyHostToDevice),
             "cudaMemcpy dims failed");
 
@@ -2274,7 +2268,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_sum_axis(
     checkCuda(cudaGetLastError(), "cuda reduceSumAxis kernel launch failed");
   }
 
-  torchlean_cuda_free_checked((void**)&dDims, "cudaFree reduceSumAxis dims failed");
+  torchlean_cuda_scratch_free(&dDims, rank, "cudaFree reduceSumAxis dims failed");
   return torchlean_cuda_buffer_box(out);
 }
 
@@ -2303,28 +2297,18 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_gather_rows(b_lean_obj
     return torchlean_cuda_buffer_box(out);
   }
 
-  uint32_t* hIdx = (uint32_t*)malloc(K * sizeof(uint32_t));
-  if (!hIdx) {
-    lean_internal_panic_out_of_memory();
-  }
-  for (size_t j = 0; j < K; ++j) {
-    hIdx[j] =
-        nat_to_u32_or_panic(lean_array_get_core(IdxObj, j),
-                            "torchlean_cuda_buffer_gather_rows: bad index Nat");
-  }
-
-  uint32_t* dIdx = nullptr;
-  checkCuda(cudaMalloc((void**)&dIdx, K * sizeof(uint32_t)), "cudaMalloc indices failed");
-  checkCuda(cudaMemcpy(dIdx, hIdx, K * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy indices failed");
-  free(hIdx);
+  uint32_t* dIdx = upload_nat_indices(
+      IdxObj, K,
+      "torchlean_cuda_buffer_gather_rows: bad index Nat",
+      "cudaMalloc indices failed",
+      "cudaMemcpy indices failed");
 
   dim3 blocks = blocks_for(outSz);
   dim3 threads = dim3(kBlockSize);
   gather_rows_f32<<<blocks, threads>>>(m->data, rows, cols, dIdx, k, out->data);
   checkCuda(cudaGetLastError(), "cuda gatherRows kernel launch failed");
 
-  torchlean_cuda_free_checked((void**)&dIdx, "cudaFree gatherScalar indices failed");
+  torchlean_cuda_scratch_free(&dIdx, K, "cudaFree gatherScalar indices failed");
   return torchlean_cuda_buffer_box(out);
 }
 
@@ -2398,20 +2382,11 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_scatter_add_rows(
     return torchlean_cuda_buffer_box(out);
   }
 
-  uint32_t* hIdx = (uint32_t*)malloc(K * sizeof(uint32_t));
-  if (!hIdx) {
-    lean_internal_panic_out_of_memory();
-  }
-  for (size_t j = 0; j < K; ++j) {
-    hIdx[j] =
-        nat_to_u32_or_panic(lean_array_get_core(IdxObj, j),
-                            "torchlean_cuda_buffer_scatter_add_rows: bad index Nat");
-  }
-  uint32_t* dIdx = nullptr;
-  checkCuda(cudaMalloc((void**)&dIdx, K * sizeof(uint32_t)), "cudaMalloc indices failed");
-  checkCuda(cudaMemcpy(dIdx, hIdx, K * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy indices failed");
-  free(hIdx);
+  uint32_t* dIdx = upload_nat_indices(
+      IdxObj, K,
+      "torchlean_cuda_buffer_scatter_add_rows: bad index Nat",
+      "cudaMalloc indices failed",
+      "cudaMemcpy indices failed");
 
   dim3 threads = dim3(kBlockSize);
   if (torchlean_cuda_get_deterministic_reductions()) {
@@ -2429,6 +2404,6 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_scatter_add_rows(
     checkCuda(cudaGetLastError(), "cuda scatterAddRows kernel launch failed");
   }
 
-  torchlean_cuda_free_checked((void**)&dIdx, "cudaFree scatterAddRow indices failed");
+  torchlean_cuda_scratch_free(&dIdx, K, "cudaFree scatterAddRow indices failed");
   return torchlean_cuda_buffer_box(out);
 }

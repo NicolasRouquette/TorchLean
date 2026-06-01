@@ -1,7 +1,8 @@
 # PyTorch Interop Examples
 
 This folder contains PyTorch interop examples. The reusable bridge lives in
-`NN/Runtime/PyTorch`; the files here are small interop examples, runtime checks, and tutorial fixtures.
+`NN/Runtime/PyTorch`; the files here are maintained reference examples, runtime checks, and
+round-trip artifacts.
 
 ## Two Separate Paths
 
@@ -31,15 +32,15 @@ Run:
 - `lake exe torchlean pytorch_roundtrip --model cnn --action import`
 - `lake exe torchlean pytorch_roundtrip --model transformer --action import`
 
-These examples are intentionally model specific: they show how a known MLP/CNN/Transformer JSON
+These examples are model specific: they show how a known MLP/CNN/Transformer JSON
 `state_dict` becomes typed Lean tensors and how generated PyTorch code can be produced for the same
-small architecture. For arbitrary checkpoints, prefer the general state dict adapter in
+architecture. For arbitrary checkpoints, prefer the general state dict adapter in
 `NN.Runtime.PyTorch.Export.StateDict`.
 
-## Fixture folders
+## Reference folders
 
-- `MLP/`, `CNN/`, `Transformer/` contain the compact model specific round trip fixtures: JSON
-  weights, compact Python producer scripts, and the Lean import/export helpers for that model.
+- `MLP/`, `CNN/`, `Transformer/` contain the model-specific round-trip artifacts: JSON weights,
+  Python producer scripts, and the Lean import/export helpers for that model.
 - Regenerate JSON weights with:
   - `python3 NN/Examples/Interop/PyTorch/MLP/train_mlp.py`
   - `python3 NN/Examples/Interop/PyTorch/CNN/train_cnn.py`
@@ -49,6 +50,6 @@ small architecture. For arbitrary checkpoints, prefer the general state dict ada
 
 - General PyTorch checkpoint adapters belong in `NN/Runtime/PyTorch`.
 - Verification checkpoint bridges belong under `NN/Verification/*`, not under examples.
-- Architecture specific verification loaders that are used outside examples should move to their
-  owning verification package once they stop being example fixtures.
+- Architecture specific verification loaders that are used outside examples should live in their
+  owning verification package.
 - Per-run generated files from graph capture belong under `.lake/build`, not in this folder.

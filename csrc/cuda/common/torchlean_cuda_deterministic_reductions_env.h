@@ -5,9 +5,9 @@
 
 // Env-var default for deterministic reductions mode.
 //
-// This is intentionally shared by CUDA and CPU stubs so the user-facing toggle has the same meaning
-// in both builds. The runtime setter can override the env default after startup; the env parser only
-// answers the initial policy.
+// CUDA and CPU stubs share this parser so the user-facing toggle has the same meaning in both
+// builds. The runtime setter can override the env default after startup; the env parser only answers
+// the initial policy.
 //
 // - `TORCHLEAN_CUDA_DETERMINISTIC_REDUCTIONS=1` (preferred)
 // - `TORCHLEAN_DETERMINISTIC_REDUCTIONS=1` (alias)

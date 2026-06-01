@@ -24,7 +24,76 @@ namespace Correctness
 
 open NN.Verification.TorchLean
 
+namespace IRStep
+
+/-- Reflexivity for the structural shape equality used by IR runtime guards. -/
+theorem shapeBEq_refl (s : Shape) : (s == s) = true := by
+  induction s with
+  | scalar => rfl
+  | dim _ rest ih =>
+      have ih' : Shape.areEqual rest rest = true := by
+        simpa [BEq.beq] using ih
+      simp [BEq.beq, Shape.areEqual, ih']
+
+/-- Reflexivity for the structural shape inequality used by IR runtime guards. -/
+theorem shapeBNe_refl (s : Shape) : (s != s) = false := by
+  simp [bne, shapeBEq_refl s]
+
+end IRStep
+
 /-! ### Compiler correctness (forward fragment) -/
+
+namespace IRStep
+
+/-! ### Local graph constructors for evaluator lemmas -/
+
+/-- A unary node with parent `0` and an explicit output shape. -/
+def unaryNodeOut (kind : OpKind) (outShape : Shape) : NN.IR.Node :=
+  { id := 1, parents := [0], kind := kind, outShape := outShape }
+
+/-- A two-node graph for a unary op with explicit input and output shapes. -/
+def unaryGraphOut (kind : OpKind) (inShape outShape : Shape) : Graph :=
+  { nodes := #[
+      { id := 0, parents := [], kind := .input, outShape := inShape },
+      unaryNodeOut kind outShape
+    ] }
+
+/-- A unary node whose input and output share the same shape. -/
+def unaryNode (kind : OpKind) (s : Shape) : NN.IR.Node :=
+  { id := 1, parents := [0], kind := kind, outShape := s }
+
+/-- A two-node graph for a unary op whose input and output share the same shape. -/
+def unaryGraph (kind : OpKind) (s : Shape) : Graph :=
+  { nodes := #[
+      { id := 0, parents := [], kind := .input, outShape := s },
+      unaryNode kind s
+    ] }
+
+/-- A binary node with parents `0` and `1` and an explicit output shape. -/
+def binaryNodeOut (kind : OpKind) (outShape : Shape) : NN.IR.Node :=
+  { id := 2, parents := [0, 1], kind := kind, outShape := outShape }
+
+/-- A three-node graph for a binary op with explicit parent and output shapes. -/
+def binaryGraphOut (kind : OpKind) (leftShape rightShape outShape : Shape) : Graph :=
+  { nodes := #[
+      { id := 0, parents := [], kind := .input, outShape := leftShape },
+      { id := 1, parents := [], kind := .input, outShape := rightShape },
+      binaryNodeOut kind outShape
+    ] }
+
+/-- A binary node whose inputs and output share the same shape. -/
+def binaryNode (kind : OpKind) (s : Shape) : NN.IR.Node :=
+  { id := 2, parents := [0, 1], kind := kind, outShape := s }
+
+/-- A three-node graph for a binary op whose inputs and output share the same shape. -/
+def binaryGraph (kind : OpKind) (s : Shape) : Graph :=
+  { nodes := #[
+      { id := 0, parents := [], kind := .input, outShape := s },
+      { id := 1, parents := [], kind := .input, outShape := s },
+      binaryNode kind s
+    ] }
+
+end IRStep
 
 def evalFGraphVals
     {α : Type} [Context α] [DecidableEq Shape]
@@ -43,6 +112,89 @@ def evalFGraphVals
         (out := out)
         gNext params (vals.push vOut)
 
+/-- `Graph.expectShape` returns the stored tensor when the dynamic shape tag matches. -/
+theorem expectShape_eq_ok
+    {α : Type} [Context α] [DecidableEq Shape]
+    {expected : Shape} (v : DVal α) (h : v.shape = expected) :
+    NN.IR.Graph.expectShape (α := α) (expected := expected) v =
+      Except.ok (h ▸ v.tensor) := by
+  cases h
+  simp [NN.IR.Graph.expectShape, DVal.shape, DVal.tensor]
+  rfl
+
+/-- `getVal` returns the indexed tensor when the runtime value carries the expected shape tag. -/
+theorem getVal_eq_ok
+    {α : Type} [Context α] [DecidableEq Shape]
+    {inShape : Shape} {ss : List Shape} {expected : Shape}
+    (vals : Array (DVal α)) (idx : Idx (Ctx inShape ss) expected)
+    (h : (vals[idx.id]!).1 = expected) :
+    getVal (α := α) (inShape := inShape) (ss := ss) (s := expected) vals idx =
+      Except.ok (h ▸ (vals[idx.id]!).snd) := by
+  unfold getVal
+  simp [DVal.shape]
+  rw [dif_pos h]
+  rfl
+
+  /--
+  Generic prefix-preservation argument for `ParamStore` lookups.
+
+  The forward compiler appends exactly one fresh IR node at each let-binding.  Any payload lookup
+  that is preserved by a single `compileNode` step for keys below the fresh id is therefore
+  preserved by the whole compiled suffix.
+  -/
+  private theorem compileFGraph_ps_lookup_get?_lt
+      {α β : Type} [Context α]
+      {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
+      (read : NN.MLTheory.CROWN.Graph.ParamStore α → Nat → Option β)
+      (hStep :
+        ∀ {ss₀ : List Shape} {mid₀ : Shape} {node : Node α paramShapes inShape ss₀ mid₀}
+          (id k : Nat) (params : Runtime.Autograd.Torch.TList α paramShapes)
+          (ps : NN.MLTheory.CROWN.Graph.ParamStore α),
+          k < id →
+          read
+              (compileNode (α := α) (paramShapes := paramShapes) (inShape := inShape)
+                (ss := ss₀) (out := mid₀) id node params ps).2 k =
+            read ps k)
+      (g : FGraph α paramShapes inShape ss out)
+      (params : Runtime.Autograd.Torch.TList α paramShapes)
+      (c : NN.Verification.TorchLean.CompiledIR α)
+      {k : Nat} (hk : k < c.graph.nodes.size) :
+      read
+          (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss)
+            (out := out) g params c).ps k =
+        read c.ps k := by
+    classical
+    induction g generalizing c with
+    | ret y =>
+        simp [compileFGraph]
+    | @let1 ss₀ mid₀ out₀ node gNext ih =>
+        let id := c.graph.nodes.size
+        have hk' : k < id := by simpa [id] using hk
+        have hk_succ : k < id + 1 := Nat.lt_succ_of_lt hk'
+        let res :=
+          compileNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀)
+            (out := mid₀) id node params c.ps
+        let n : NN.IR.Node := res.1
+        let ps' : NN.MLTheory.CROWN.Graph.ParamStore α := res.2
+        let c' : NN.Verification.TorchLean.CompiledIR α :=
+          { c with graph := { nodes := c.graph.nodes.push n }, ps := ps', outputId := id }
+        have hps' : read ps' k = read c.ps k := by
+          simpa [res, ps'] using hStep (id := id) (k := k) (params := params) (ps := c.ps) hk'
+        have hIH :=
+          ih (c := c') (hk := by simpa [c', Array.size_push, id] using hk_succ)
+        have : read
+            (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape)
+              (ss := ss₀ ++ [mid₀]) (out := out₀) gNext params c').ps k =
+            read c.ps k := by
+          calc
+            read
+                (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape)
+                  (ss := ss₀ ++ [mid₀]) (out := out₀) gNext params c').ps k
+                =
+              read c'.ps k := hIH
+            _ = read c.ps k := by simpa [c'] using hps'
+        simpa [compileFGraph, c', id, res] using this
+
   /--
   Compiling a let-chain does not change `ps.constVals` entries for keys `< c.graph.nodes.size`.
   Compilation only inserts payload at the fresh node id, so older keys are unchanged.
@@ -58,43 +210,16 @@ def evalFGraphVals
       out)
         g params c).ps.constVals.get? k = c.ps.constVals.get? k := by
   classical
-  induction g generalizing c with
-  | ret y =>
-      simp [compileFGraph]
-  | @let1 ss₀ mid₀ out₀ node gNext ih =>
-      -- One compilation step pushes a fresh node at `id = c.graph.nodes.size` and only inserts
-      -- payload at that id.
-      let id := c.graph.nodes.size
-      have hk' : k < id := by simpa [id] using hk
-      have hk_succ : k < id + 1 := Nat.lt_succ_of_lt hk'
-      let res :=
-        compileNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out :=
-          mid₀)
-          id node params c.ps
-      let n : NN.IR.Node := res.1
-      let ps' : NN.MLTheory.CROWN.Graph.ParamStore α := res.2
-      let c' : NN.Verification.TorchLean.CompiledIR α :=
-        { c with graph := { nodes := c.graph.nodes.push n }, ps := ps', outputId := id }
-      have hps' : ps'.constVals.get? k = c.ps.constVals.get? k := by
-        -- `compileNode` only inserts into `constVals` at key `id`, and `k < id`.
-        have hidk : id ≠ k := (ne_comm).1 hk'.ne
+  exact
+    compileFGraph_ps_lookup_get?_lt
+      (α := α) (β := NN.MLTheory.CROWN.Graph.FlatVec α)
+      (read := fun ps k => ps.constVals.get? k)
+      (hStep := by
+        intro ss₀ mid₀ node id k params ps hk
+        have hidk : id ≠ k := (ne_comm).1 hk.ne
         cases node <;>
-          simp [compileNode, res, ps', Std.HashMap.getElem?_insert,
-            beq_eq_false_iff_ne.mpr hidk]
-      -- Apply IH to the suffix compilation: keys < `c'.graph.nodes.size` are preserved.
-      have hIH :=
-        ih (c := c') (hk := by simpa [c', Array.size_push, id] using hk_succ)
-      have : (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀ ++
-        [mid₀]) (out := out₀)
-          gNext params c').ps.constVals.get? k = c.ps.constVals.get? k := by
-        calc
-          (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀ ++
-            [mid₀]) (out := out₀)
-              gNext params c').ps.constVals.get? k
-              =
-            c'.ps.constVals.get? k := hIH
-          _ = c.ps.constVals.get? k := by simpa [c'] using hps'
-      simpa [compileFGraph, c', id, res] using this
+          simp [compileNode, Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hidk])
+      g params c hk
 
   /--
   Compiling a let-chain does not change `ps.linearWB` entries for keys `< c.graph.nodes.size`.
@@ -111,40 +236,68 @@ def evalFGraphVals
       out)
         g params c).ps.linearWB.get? k = c.ps.linearWB.get? k := by
   classical
-  induction g generalizing c with
-  | ret y =>
-      simp [compileFGraph]
-  | @let1 ss₀ mid₀ out₀ node gNext ih =>
-      let id := c.graph.nodes.size
-      have hk' : k < id := by simpa [id] using hk
-      have hk_succ : k < id + 1 := Nat.lt_succ_of_lt hk'
-      let res :=
-        compileNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out :=
-          mid₀)
-          id node params c.ps
-      let n : NN.IR.Node := res.1
-      let ps' : NN.MLTheory.CROWN.Graph.ParamStore α := res.2
-      let c' : NN.Verification.TorchLean.CompiledIR α :=
-        { c with graph := { nodes := c.graph.nodes.push n }, ps := ps', outputId := id }
-      have hps' : ps'.linearWB.get? k = c.ps.linearWB.get? k := by
-        -- `compileNode` only inserts into `linearWB` at key `id`, and `k < id`.
-        have hidk : id ≠ k := (ne_comm).1 hk'.ne
+  exact
+    compileFGraph_ps_lookup_get?_lt
+      (α := α) (β := NN.MLTheory.CROWN.Graph.LinParams α)
+      (read := fun ps k => ps.linearWB.get? k)
+      (hStep := by
+        intro ss₀ mid₀ node id k params ps hk
+        have hidk : id ≠ k := (ne_comm).1 hk.ne
         cases node <;>
-          simp [compileNode, res, ps', Std.HashMap.getElem?_insert,
-            beq_eq_false_iff_ne.mpr hidk]
-      have hIH :=
-        ih (c := c') (hk := by simpa [c', Array.size_push, id] using hk_succ)
-      have : (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀ ++
-        [mid₀]) (out := out₀)
-          gNext params c').ps.linearWB.get? k = c.ps.linearWB.get? k := by
-        calc
-          (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀ ++
-            [mid₀]) (out := out₀)
-              gNext params c').ps.linearWB.get? k
-              =
-            c'.ps.linearWB.get? k := hIH
-          _ = c.ps.linearWB.get? k := by simpa [c'] using hps'
-      simpa [compileFGraph, c', id, res] using this
+          simp [compileNode, Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hidk])
+      g params c hk
+
+  /--
+  Compiling a let-chain does not change `ps.conv2dCfg` entries for keys `< c.graph.nodes.size`.
+  Compilation only inserts convolution payloads at fresh node ids, so older keys are unchanged.
+  -/
+  theorem compileFGraph_ps_conv2dCfg_get?_lt
+      {α : Type} [Context α]
+      {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
+      (g : FGraph α paramShapes inShape ss out)
+      (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (c : NN.Verification.TorchLean.CompiledIR α)
+    {k : Nat} (hk : k < c.graph.nodes.size) :
+    (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
+      out)
+        g params c).ps.conv2dCfg.get? k = c.ps.conv2dCfg.get? k := by
+  classical
+  exact
+    compileFGraph_ps_lookup_get?_lt
+      (α := α) (β := NN.MLTheory.CROWN.Graph.Conv2DParams α)
+      (read := fun ps k => ps.conv2dCfg.get? k)
+      (hStep := by
+        intro ss₀ mid₀ node id k params ps hk
+        have hidk : id ≠ k := (ne_comm).1 hk.ne
+        cases node <;>
+          simp [compileNode, Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hidk])
+      g params c hk
+
+  /--
+  Compiling a let-chain does not change `ps.batchNorm2dNchwEval` entries for keys below the
+  starting graph size.  Eval-mode BatchNorm payloads enter through the broader IR/import bridge,
+  not through this proved first-order fragment.
+  -/
+  theorem compileFGraph_ps_batchNorm2dNchwEval_get?_lt
+      {α : Type} [Context α]
+      {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
+      (g : FGraph α paramShapes inShape ss out)
+      (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (c : NN.Verification.TorchLean.CompiledIR α)
+    {k : Nat} (hk : k < c.graph.nodes.size) :
+    (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
+      out)
+        g params c).ps.batchNorm2dNchwEval.get? k =
+      c.ps.batchNorm2dNchwEval.get? k := by
+  classical
+  exact
+    compileFGraph_ps_lookup_get?_lt
+      (α := α) (β := NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α)
+      (read := fun ps k => ps.batchNorm2dNchwEval.get? k)
+      (hStep := by
+        intro ss₀ mid₀ node id k params ps hk
+        cases node <;> simp [compileNode])
+      g params c hk
 
   /--
   `compileFGraph` does not change existing nodes at indices `< c.graph.nodes.size`.
@@ -279,4 +432,3 @@ def evalFGraphVals
 end Correctness
 
 end NN.Verification.TorchLean.Proved
-

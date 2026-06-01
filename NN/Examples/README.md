@@ -35,7 +35,7 @@ Start here if you want the shortest route through the examples:
 | Directory | Purpose |
 | --- | --- |
 | `Quickstart/` | Small examples for tensors, autograd, widgets, proofs, and first training loops. |
-| `Data/` | CSV/NPY loaders, tutorial fixture generation, and dataset preparation notes. |
+| `Data/` | CSV/NPY loaders, tutorial artifact generation, and dataset preparation notes. |
 | `Models/` | Runnable supervised, vision, sequence, generative, operator-learning, and RL commands. |
 | `Verification/` | Bundled verifier examples and small local artifacts for `lake exe verify`. |
 | `Interop/PyTorch/` | JSON round trips and PyTorch graph export checks. |
@@ -58,7 +58,7 @@ the modules needed by a command when you run that command.
 
 ## Data
 
-Generated tutorial fixtures are local and ignored by git:
+Generated tutorial artifacts are local and ignored by git:
 
 ```bash
 python3 NN/Examples/Data/generate_small_data.py
@@ -105,5 +105,5 @@ Examples should prefer the curated API modules:
 | `NN.Entrypoint.Verification` | Verification APIs and theorem-level surfaces. |
 | `NN.Verification.CLI` | The `lake exe verify` registry. |
 
-For conceptual explanations, use the website guide. This README is intentionally only the local
-index.
+For conceptual explanations, use the website guide. This README is the local index for runnable
+example files and commands.

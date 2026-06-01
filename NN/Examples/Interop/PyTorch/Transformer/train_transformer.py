@@ -1,5 +1,5 @@
 """
-Create a compact Transformer encoder in PyTorch and export its parameters to JSON for TorchLean.
+Create a Transformer encoder reference in PyTorch and export its parameters to JSON for TorchLean.
 
 The JSON schema matches the importer in:
 
@@ -14,9 +14,8 @@ Run from the repo root:
   `python3 NN/Examples/Interop/PyTorch/Transformer/train_transformer.py`
 
 Design note:
-This script intentionally uses a *bias-free* attention block (`q_proj/k_proj/v_proj/out_proj`
-have `bias=False`) because TorchLean's spec transformer uses explicit projection matrices without
-bias terms (it makes the math and gradients much easier to audit).
+The attention block is bias-free (`q_proj/k_proj/v_proj/out_proj` have `bias=False`) because
+TorchLean's spec transformer uses explicit projection matrices without bias terms.
 """
 
 from __future__ import annotations

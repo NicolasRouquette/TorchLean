@@ -101,6 +101,42 @@ theorem throw_bind_ne_ok {β γ : Type} {msg : String} {k : β → Except String
       k y) = Except.ok v) : False := by
   simp [throw_eq_error] at h
 
+/-- If two unit guards and a tail computation return `.ok`, then the first guard succeeded. -/
+theorem exceptUnit_two_bind_first_ok
+    {β : Type} {e₁ e₂ : Except String Unit} {next : Except String β} {v : β}
+    (h : (do let _ ← e₁; let _ ← e₂; next) = Except.ok v) :
+    e₁ = Except.ok () := by
+  cases h₁ : e₁ <;> simp [h₁] at h
+  rename_i u
+  cases u
+  rfl
+
+/-- If two unit guards and a tail computation return `.ok`, then the second guard succeeded. -/
+theorem exceptUnit_two_bind_second_ok
+    {β : Type} {e₁ e₂ : Except String Unit} {next : Except String β} {v : β}
+    (h : (do let _ ← e₁; let _ ← e₂; next) = Except.ok v) :
+    e₂ = Except.ok () := by
+  cases h₁ : e₁ <;> simp [h₁] at h
+  rename_i u₁
+  cases u₁
+  cases h₂ : e₂ <;> simp [h₂] at h
+  rename_i u₂
+  cases u₂
+  rfl
+
+/-- If two unit guards and a tail computation return `.ok`, then the tail returned `.ok`. -/
+theorem exceptUnit_two_bind_tail_ok
+    {β : Type} {e₁ e₂ : Except String Unit} {next : Except String β} {v : β}
+    (h : (do let _ ← e₁; let _ ← e₂; next) = Except.ok v) :
+    next = Except.ok v := by
+  cases h₁ : e₁ <;> simp [h₁] at h
+  rename_i u₁
+  cases u₁
+  cases h₂ : e₂ <;> simp [h₂] at h
+  rename_i u₂
+  cases u₂
+  exact h
+
 /--
 Array indexing is proof-irrelevant.
 

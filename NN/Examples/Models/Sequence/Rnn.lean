@@ -8,7 +8,7 @@ Device-agnostic example:
   lake build -R -K cuda=true && lake exe torchlean rnn --cuda
 
 This is a real-data sequence run:
-- reads a local text corpus (default: `data/real/text/tiny_shakespeare.txt`),
+- reads a local text corpus selected by the shared `--tiny-shakespeare` / `--data-file` flags,
 - builds a byte-level causal-LM one-hot window,
 - trains `nn.rnn` plus a time-distributed linear head for one or more steps.
 -/
@@ -52,7 +52,7 @@ namespace NN.Examples.Models.Sequence.Rnn
 def exeName : String := "torchlean rnn"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/rnn_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "rnn"
 
 /-- Byte-window length used by the typed recurrent sample. -/
 def seqLen : Nat := 8

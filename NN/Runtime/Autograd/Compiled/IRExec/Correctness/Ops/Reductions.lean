@@ -88,7 +88,7 @@ theorem buildFrom_denoteAllFrom_broadcastTo
               simp [hp, hIdx] at hBuild; try cases hBuild
           | ok ip =>
               simp [hp, hIdx] at hBuild
-              cases hCan : NN.IR.Graph.mkCanBroadcastTo? s₁ s₂ with
+              cases hCan : NN.IR.OpContracts.mkCanBroadcastTo? s₁ s₂ with
               | none =>
                   simp [hCan] at hBuild; try cases hBuild
               | some cb =>
@@ -145,7 +145,7 @@ theorem buildFrom_denoteAllFrom_broadcastTo
                     try cases hBuild
 
 set_option maxHeartbeats 12000000 in
--- The proof below intentionally mirrors the inline `reduceSum` branch in
+-- The proof below follows the inline `reduceSum` branch in
 -- `...Correctness.SemanticEquivalence` and needs a higher heartbeat budget because `simp` unfolds
 -- a large dependent match in `NN.IR.Graph.evalAt`.
 /-- Correctness lemma for `.reduceSum axis` lowering. -/

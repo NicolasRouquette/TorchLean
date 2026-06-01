@@ -796,9 +796,6 @@ def convTranspose2d {α : Type} (s : EagerSession α) [Context α]
     (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 := h3)
     s.inner kernel bias input
 
-/-- Short alias for `conv2d`. -/
-abbrev conv2dCompat {α : Type} := conv2d (α := α)
-
 /--
 Multi-head self-attention (eager backend).
 

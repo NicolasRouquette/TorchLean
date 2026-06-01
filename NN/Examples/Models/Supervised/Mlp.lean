@@ -47,7 +47,7 @@ namespace NN.Examples.Models.Supervised.Mlp
 def exeName : String := "torchlean mlp"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/mlp_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "mlp"
 
 /-- Static minibatch size for the Auto MPG tabular loader. -/
 def batch : Nat := 5
@@ -128,6 +128,6 @@ def main (args : List String) : IO UInt32 := do
           _root_.NN.Examples.Data.RealPaths.autoMpgCsv defaultLogJson 1 1e-3
       Common.orThrow exeName <| CLI.requireNoArgs rest
       let report ← fitAutoMpg opts flags
-      IO.println s!"  steps={flags.train.train.steps} loss0={report.before} loss1={report.after}")
+      Common.printFitReport flags.train.train.steps report)
 
 end NN.Examples.Models.Supervised.Mlp

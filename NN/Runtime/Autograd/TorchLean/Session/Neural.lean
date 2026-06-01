@@ -224,9 +224,6 @@ def convTranspose2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape
         (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 := h3)
         kernel bias input
 
-/-- Short alias for `conv2d`. -/
-abbrev conv2dCompat := @conv2d
-
 /--
 Multi-head self-attention (single sequence, single batch).
 

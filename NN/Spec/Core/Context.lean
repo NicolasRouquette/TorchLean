@@ -60,8 +60,8 @@ typeclass:
 
 `Context α`
 
-This is intentionally broader than a standard algebraic structure: it bundles arithmetic,
-ordering, and common transcendental functions (exp/tanh/log/sqrt) used by activations and losses.
+This is broader than a standard algebraic structure: it bundles arithmetic, ordering, and common
+transcendental functions (exp/tanh/log/sqrt) used by activations and losses.
 
 ## Notes
 

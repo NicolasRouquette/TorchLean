@@ -45,9 +45,8 @@ def maskAfterSafeDiv {s : Spec.Shape}
 /--
 The risky shape of the graph: division is recorded first, and the mask is applied afterward.
 
-This definition is intentionally present as a contrast class. It can still be useful at runtime
-when a denominator is externally known to be safe, but that safety is not visible in the graph
-shape itself.
+This definition records the contrast class. It can still be useful at runtime when a denominator is
+externally known to be safe, but that safety is not visible in the graph shape itself.
 -/
 def unsafeDivThenMask {s : Spec.Shape}
     {α : Type} [Context α]

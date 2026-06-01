@@ -125,9 +125,9 @@ neural network and then uses the API helpers to build training samples.
 
 Two choices matter in the example:
 
-1. The epsilon predictor is a small residual CNN that preserves resolution
-   (`epsResidualConvNet`), not a full U-Net. It is intentionally sized so the
-   whole pipeline runs locally.
+1. The epsilon predictor is a residual CNN that preserves resolution
+   (`epsResidualConvNet`). This keeps the training, sampling, and visualization path easy to run
+   on a local checkout.
 2. Time is fed to the model as an extra channel: the input has `(data channels + 1)` channels,
    where the last channel is the normalized timestep broadcast across spatial positions.
 

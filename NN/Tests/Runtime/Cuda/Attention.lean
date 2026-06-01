@@ -16,7 +16,7 @@ public import NN.Tests.Runtime.Cuda.Utils
 
 Compares CPU eager tape vs CUDA eager tape for `multi_head_attention` (forward + backward).
 
-We keep the problem small so stub-mode runs quickly and float64/float32 roundoff differences are
+The case stays small so stub-mode remains lightweight and float64/float32 roundoff differences stay
 limited.
 -/
 

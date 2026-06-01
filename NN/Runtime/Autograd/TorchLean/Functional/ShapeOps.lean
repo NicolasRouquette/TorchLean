@@ -320,14 +320,6 @@ private theorem size_ofList_append_one (ds : List Nat) :
   | cons d ds ih =>
       simp [Shape.ofList, Shape.size, ih]
 
-/-- Local copy of `ofList_toList` (used in the squeeze/unsqueeze helpers outside the `Einsum`
-  namespace). -/
-private theorem ofList_toList' (s : Shape) : Shape.ofList (Shape.toList s) = s := by
-  induction s with
-  | scalar => simp [Shape.toList, Shape.ofList]
-  | dim n s ih =>
-      simp [Shape.toList, Shape.ofList, ih]
-
 /--
 Dynamic `unsqueeze`: insert a singleton dimension at `axis`.
 

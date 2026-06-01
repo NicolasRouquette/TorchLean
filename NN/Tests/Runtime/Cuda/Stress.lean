@@ -185,7 +185,7 @@ def runLargeBufferStress : IO Unit := do
 
   let _ := Buffer.setDeterministicReductionsChecked prevDet
 
-  -- Empty mean is intentionally NaN on the runtime path; keep that contract explicit.
+  -- The runtime contract for an empty mean is `NaN`; keep that edge case explicit.
   let emptyMean := Buffer.toFloatArray (Buffer.reduceMean (Buffer.zeros 0))
   if emptyMean.size != 1 then
     throw <| IO.userError s!"reduceMean empty size: expected 1, got {emptyMean.size}"

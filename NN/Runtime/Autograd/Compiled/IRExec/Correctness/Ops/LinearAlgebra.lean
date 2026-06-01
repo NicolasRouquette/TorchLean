@@ -45,7 +45,8 @@ The shape rules match the public PyTorch APIs for matrix multiply and batched ma
 
 - We explicitly split 2D and 3D cases, which makes shape distinctions visible instead of hiding them
   behind one very generic theorem.
-- The theorem shape follows compiler control flow so failed typing/shape branches collapse quickly.
+- The proof follows the compiler's shape checks, so each branch records the same preconditions
+  that the lowering code enforces.
 - Matmul proofs can be slow because the compiler has to distinguish 2D matrix multiplication from
   batched 3D multiplication while preserving exact type-level shapes. The
   shape-dispatch lemmas separate from the semantic equality proof.

@@ -104,8 +104,8 @@ def sampleTrainLog : Runtime.Training.TrainLog :=
 /-!
 Actual training curve (SGD on a small regression dataset).
 
-This is a real “training loop” computed in Lean. It is kept compact (2→2→1 MLP) so the
-widget evaluator can run it quickly inside the editor.
+This is a real training loop computed in Lean. The model is compact (2→2→1 MLP), which keeps the
+widget responsive inside the editor.
 
 Note:
 We keep this example **self-contained** (no Spec-tensor forward/backward), because the full

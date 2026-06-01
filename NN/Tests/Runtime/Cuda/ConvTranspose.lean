@@ -19,7 +19,8 @@ Compares CPU eager tape vs CUDA eager tape for `conv_transpose`:
 - a non-2D case (`d = 3`).
 
 Both cases check forward output and gradients (including `dInput`) via `backwardDenseAll`.
-Inputs are compact so stub-mode runs quickly and float64/float32 roundoff differences stay limited.
+Inputs are small so stub-mode remains lightweight and float64/float32 roundoff differences stay
+limited.
 -/
 
 @[expose] public section

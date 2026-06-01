@@ -108,7 +108,7 @@ require TorchLean from "../TorchLean"
 - `NN/MLTheory`: learning theory, robustness, CROWN/LiRPA, generative objectives,
   optimization theory, and related proof layers.
 - `NN/Verification`: certificate checkers and CLI workflows.
-- `NN/Examples`: quickstarts, model zoo commands, widgets, verification fixtures,
+- `NN/Examples`: quickstarts, model zoo commands, widgets, bundled verification assets,
   and interoperability workflows.
 - `blueprint/TorchLeanBlueprint/Guide`: source for the public guide.
 - `home_page`: project website sources.

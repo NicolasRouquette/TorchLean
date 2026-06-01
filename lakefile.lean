@@ -36,13 +36,15 @@ private def nativeLinkArgs : Array String :=
     #[
       "-L", s!"{cudaHome}/lib64",
       "-lcudart", "-lcublas", "-lcufft",
+      "-lstdc++",
       "-Wl,-rpath," ++ s!"{cudaHome}/lib64"
     ]
   else if Platform.isWindows then
     #[]
   else
-    -- CPU stubs call functions from `math.h`; Linux keeps these in `libm`.
-    #["-lm"]
+    -- CPU stubs call functions from `math.h`; CUDA objects are C++ when a checkout switches
+    -- between CPU and CUDA builds without cleaning `.lake`, so Linux links both runtimes.
+    #["-lm", "-lstdc++"]
 
 package TorchLean where
   version := v!"0.1.0"

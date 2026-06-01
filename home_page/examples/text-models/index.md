@@ -12,7 +12,7 @@ generation settings, and saved logs all appear as artifacts the reader can inspe
 
 ## Data: One Explicit Text File
 
-The text examples are intentionally built around a single UTF-8 text file. In the default setup, the
+The text examples use a single UTF-8 text file. In the default setup, the
 download script places Tiny Shakespeare under `data/real/text/`, and the Lean example fails loudly
 if the file is missing.
 

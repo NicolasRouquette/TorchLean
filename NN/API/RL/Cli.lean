@@ -66,10 +66,10 @@ def parsePpoFlags (exeName : String) (args : List String)
   let evalEpisodes := evalEpisodes?.getD defaultEvalEpisodes
   let evalMaxSteps := evalMaxSteps?.getD defaultEvalMaxSteps
 
-  if updates = 0 then throw s!"{exeName}: --updates must be > 0"
-  if evalEvery = 0 then throw s!"{exeName}: --eval-every must be > 0"
-  if evalEpisodes = 0 then throw s!"{exeName}: --eval-episodes must be > 0"
-  if evalMaxSteps = 0 then throw s!"{exeName}: --eval-max-steps must be > 0"
+  Common.requirePositiveNatFlag exeName "updates" updates
+  Common.requirePositiveNatFlag exeName "eval-every" evalEvery
+  Common.requirePositiveNatFlag exeName "eval-episodes" evalEpisodes
+  Common.requirePositiveNatFlag exeName "eval-max-steps" evalMaxSteps
 
   let log := _root_.Runtime.Training.LogDestination.parse? defaultLogPath logRaw?
   pure ({ updates := updates

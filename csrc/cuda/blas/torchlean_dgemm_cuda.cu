@@ -8,19 +8,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-static inline size_t checked_mul_size(size_t a, size_t b, const char* msg) {
-  if (a != 0 && b > SIZE_MAX / a) {
-    lean_internal_panic(msg);
-  }
-  return a * b;
-}
-
-template <typename T>
-static inline void torchlean_cuda_free_checked(T** ptr, const char* msg) {
-  if (*ptr) {
-    checkCuda(cudaFree(*ptr), msg);
-    *ptr = nullptr;
-  }
+extern "C" void torchlean_cuda_blas_flush_scratch_cache(void) {
+  torchlean_cuda_scratch_flush();
 }
 
 // Trusted native implementation for Lean `FloatArray` DGEMM.
@@ -75,34 +64,22 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_dgemm_cuda(b_lean_obj_arg AObj, b_
   }
 
   double *dA = nullptr, *dB = nullptr, *dC = nullptr;
-  cudaError_t err = cudaMalloc((void**)&dA, aSz * sizeof(double));
-  if (err != cudaSuccess) {
-    checkCuda(err, "cudaMalloc dA failed");
-  }
-  err = cudaMalloc((void**)&dB, bSz * sizeof(double));
-  if (err != cudaSuccess) {
-    torchlean_cuda_free_checked(&dA, "cudaFree dA after dB alloc failure failed");
-    checkCuda(err, "cudaMalloc dB failed");
-  }
-  err = cudaMalloc((void**)&dC, cSz * sizeof(double));
-  if (err != cudaSuccess) {
-    torchlean_cuda_free_checked(&dB, "cudaFree dB after dC alloc failure failed");
-    torchlean_cuda_free_checked(&dA, "cudaFree dA after dC alloc failure failed");
-    checkCuda(err, "cudaMalloc dC failed");
-  }
+  dA = torchlean_cuda_scratch_alloc<double>(aSz, "cudaMalloc dA failed");
+  dB = torchlean_cuda_scratch_alloc<double>(bSz, "cudaMalloc dB failed");
+  dC = torchlean_cuda_scratch_alloc<double>(cSz, "cudaMalloc dC failed");
 
-  err = cudaMemcpy(dA, hA, aSz * sizeof(double), cudaMemcpyHostToDevice);
+  cudaError_t err = cudaMemcpy(dA, hA, aSz * sizeof(double), cudaMemcpyHostToDevice);
   if (err != cudaSuccess) {
-    torchlean_cuda_free_checked(&dC, "cudaFree dC after A copy failure failed");
-    torchlean_cuda_free_checked(&dB, "cudaFree dB after A copy failure failed");
-    torchlean_cuda_free_checked(&dA, "cudaFree dA after A copy failure failed");
+    torchlean_cuda_scratch_free(&dC, cSz, "cudaFree dC after A copy failure failed");
+    torchlean_cuda_scratch_free(&dB, bSz, "cudaFree dB after A copy failure failed");
+    torchlean_cuda_scratch_free(&dA, aSz, "cudaFree dA after A copy failure failed");
     checkCuda(err, "cudaMemcpy A failed");
   }
   err = cudaMemcpy(dB, hB, bSz * sizeof(double), cudaMemcpyHostToDevice);
   if (err != cudaSuccess) {
-    torchlean_cuda_free_checked(&dC, "cudaFree dC after B copy failure failed");
-    torchlean_cuda_free_checked(&dB, "cudaFree dB after B copy failure failed");
-    torchlean_cuda_free_checked(&dA, "cudaFree dA after B copy failure failed");
+    torchlean_cuda_scratch_free(&dC, cSz, "cudaFree dC after B copy failure failed");
+    torchlean_cuda_scratch_free(&dB, bSz, "cudaFree dB after B copy failure failed");
+    torchlean_cuda_scratch_free(&dA, aSz, "cudaFree dA after B copy failure failed");
     checkCuda(err, "cudaMemcpy B failed");
   }
 
@@ -125,9 +102,9 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_dgemm_cuda(b_lean_obj_arg AObj, b_
                   &beta,
                   dC, (int)p);
   if (stat != CUBLAS_STATUS_SUCCESS) {
-    torchlean_cuda_free_checked(&dC, "cudaFree dC after cublasDgemm failure failed");
-    torchlean_cuda_free_checked(&dB, "cudaFree dB after cublasDgemm failure failed");
-    torchlean_cuda_free_checked(&dA, "cudaFree dA after cublasDgemm failure failed");
+    torchlean_cuda_scratch_free(&dC, cSz, "cudaFree dC after cublasDgemm failure failed");
+    torchlean_cuda_scratch_free(&dB, bSz, "cudaFree dB after cublasDgemm failure failed");
+    torchlean_cuda_scratch_free(&dA, aSz, "cudaFree dA after cublasDgemm failure failed");
     checkCublas(stat, "cublasDgemm failed");
   }
 
@@ -136,16 +113,16 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_dgemm_cuda(b_lean_obj_arg AObj, b_
   double* hC = lean_float_array_cptr(out);
   err = cudaMemcpy(hC, dC, cSz * sizeof(double), cudaMemcpyDeviceToHost);
   if (err != cudaSuccess) {
-    torchlean_cuda_free_checked(&dC, "cudaFree dC after C copy failure failed");
-    torchlean_cuda_free_checked(&dB, "cudaFree dB after C copy failure failed");
-    torchlean_cuda_free_checked(&dA, "cudaFree dA after C copy failure failed");
+    torchlean_cuda_scratch_free(&dC, cSz, "cudaFree dC after C copy failure failed");
+    torchlean_cuda_scratch_free(&dB, bSz, "cudaFree dB after C copy failure failed");
+    torchlean_cuda_scratch_free(&dA, aSz, "cudaFree dA after C copy failure failed");
     checkCuda(err, "cudaMemcpy C failed");
   }
   lean_sarray_set_size(out, cSz);
 
-  torchlean_cuda_free_checked(&dA, "cudaFree dA failed");
-  torchlean_cuda_free_checked(&dB, "cudaFree dB failed");
-  torchlean_cuda_free_checked(&dC, "cudaFree dC failed");
+  torchlean_cuda_scratch_free(&dA, aSz, "cudaFree dA failed");
+  torchlean_cuda_scratch_free(&dB, bSz, "cudaFree dB failed");
+  torchlean_cuda_scratch_free(&dC, cSz, "cudaFree dC failed");
 
   return out;
 }

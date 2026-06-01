@@ -10,13 +10,13 @@ public import NN.Runtime.PyTorch.Export.Core
 public import NN.Spec.Models.Mlp
 
 /-!
-# MLP PyTorch Fixture Export
+# MLP PyTorch Reference Export
 
-PyTorch code generator for the small MLP round-trip fixture.
+PyTorch code generator for the MLP round-trip reference model.
 
 The generated Python mirrors the common `nn.Linear → ReLU → nn.Linear` pattern. We also support
-embedding explicit weights into a `state_dict`-shaped dictionary, which is handy for round-trips
-and small regression tests.
+embedding explicit weights into a `state_dict`-shaped dictionary for round-trip and regression
+checks.
 -/
 
 @[expose] public section
@@ -317,7 +317,7 @@ This includes:
 - a base MLP class,
 - a Softmax variant,
 - shared helper modules from `NN/Runtime/PyTorch/Export/Core.lean`,
-- and a couple compact convenience helpers (constructor + parameter count).
+- and convenience helpers for construction and parameter counting.
 -/
 def generateCompleteMLPExport {inDim hidDim outDim : Nat}
   (className : String := "MLP") : String :=

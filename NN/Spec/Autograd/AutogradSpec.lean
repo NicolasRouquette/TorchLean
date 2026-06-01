@@ -17,8 +17,8 @@ This file defines a small interface for reverse-mode differentiation:
   (VJP) `backward`;
 - we provide sequential composition (`compose` / `>>>`) that implements the chain rule.
 
-This is intentionally a spec-layer interface: it is independent of any particular runtime
-autograd engine or tape representation. The runtime code is free to:
+This is a spec-layer interface: it is independent of any particular runtime autograd engine or tape
+representation. The runtime code is free to:
 
 - cache intermediates (PyTorch-style `ctx.save_for_backward`), or
 - recompute them, or

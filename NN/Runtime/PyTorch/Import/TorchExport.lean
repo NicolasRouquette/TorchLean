@@ -255,6 +255,8 @@ def parseOpKind (ctx : String) (outShape : Shape) (o : StateDict) : Except Strin
         (← natField ctx "inC" o) (← natField ctx "outC" o)
         (← natField ctx "kH" o) (← natField ctx "kW" o)
         (← natField ctx "stride" o) (← natField ctx "padding" o))
+  | "batch_norm2d_nchw_eval" =>
+      pure (.batchNorm2dNchwEval (← natField ctx "channels" o))
   | "relu" => pure .relu
   | "tanh" => pure .tanh
   | "sigmoid" => pure .sigmoid

@@ -51,6 +51,33 @@ structure RunnerConfig (σ τ : Shape) where
   /-- SGD learning rate. Kept per-example because attention/recurrent examples have different scale. -/
   lr : Float
 
+/-- Parsed corpus path and optimizer-step count shared by the simple text commands. -/
+structure RunArgs where
+  /-- Text corpus path selected by `--data-file` or the bundled real-data flags. -/
+  path : System.FilePath
+  /-- Number of optimizer updates. -/
+  steps : Nat
+
+/--
+Parse the CLI flags common to the RNN, LSTM, and Transformer text commands.
+
+The optional `--log` path is handled here for the Float/logging path so both runtime branches keep
+the same validation rules for corpus selection and step counts.
+-/
+def parseRunArgs {σ τ : Shape} (cfg : RunnerConfig σ τ) (args : List String)
+    (withLog : Bool := false) :
+    Except String (RunArgs × Option System.FilePath) := do
+  let (path, args) ← RealData.parseTextFlags args
+  let (log?, args) ←
+    if withLog then
+      CLI.takePathFlagOnce args "log"
+    else
+      pure (none, args)
+  let (steps, args) ← CLI.takeStepsOrEpochs args 1
+  Common.requirePositiveNatFlag cfg.exeName "steps/--epochs" steps
+  CLI.requireNoArgs args
+  pure ({ path := path, steps := steps }, log?)
+
 /--
 Train one sequence model for `steps` optimizer updates.
 
@@ -78,7 +105,8 @@ def unitTrainSteps {σ τ : Shape} {α : Type}
       optH.step sample
     let loss1 ← TorchLean.Module.forward (α := α) m sample
     let L1 := Tensor.toScalar loss1
-    IO.println s!"  steps={steps} loss0={L0} loss1={L1}"
+    Common.printFitReport steps
+      ({ before := L0, after := L1 } : TorchLean.Trainer.FitReport α)
     pure (L0, L1)
 
 /-- Shared `main` implementation for the RNN/LSTM/Transformer text commands. -/
@@ -88,13 +116,9 @@ def main {σ τ : Shape} (cfg : RunnerConfig σ τ) (args : List String) : IO UI
   let runAny :=
     TorchLean.Module.run cfg.exeName args
       (.any (fun {α} _ _ _ _ cast opts rest => do
-        let (path, rest) ← Common.orThrow cfg.exeName <| RealData.parseTextFlags rest
-        let (steps, rest) ← Common.orThrow cfg.exeName <| CLI.takeStepsOrEpochs rest 1
-        if steps = 0 then
-          throw <| IO.userError s!"{cfg.exeName}: --steps/--epochs must be > 0"
-        Common.orThrow cfg.exeName <| CLI.requireNoArgs rest
-        let input ← RealData.readTextCorpus cfg.exeName path
-        let _ ← unitTrainSteps (α := α) cfg cast opts input (steps := steps)
+        let (parsed, _log?) ← Common.orThrow cfg.exeName <| parseRunArgs cfg rest
+        let input ← RealData.readTextCorpus cfg.exeName parsed.path
+        let _ ← unitTrainSteps (α := α) cfg cast opts input (steps := parsed.steps)
         pure ()
       ))
       { banner? := some banner, printOk := true }
@@ -103,17 +127,13 @@ def main {σ τ : Shape} (cfg : RunnerConfig σ τ) (args : List String) : IO UI
     -- Float path for the same reason: JSON logs need concrete scalar values.
     TorchLean.Module.run cfg.exeName args
       (.float (fun opts rest => do
-        let (path, rest) ← Common.orThrow cfg.exeName <| RealData.parseTextFlags rest
-        let (log?, rest) ← Common.orThrow cfg.exeName <| CLI.takePathFlagOnce rest "log"
+        let (parsed, log?) ← Common.orThrow cfg.exeName <| parseRunArgs cfg rest (withLog := true)
         let logPath := log?.getD cfg.defaultLogJson
-        let (steps, rest) ← Common.orThrow cfg.exeName <| CLI.takeStepsOrEpochs rest 1
-        if steps = 0 then
-          throw <| IO.userError s!"{cfg.exeName}: --steps/--epochs must be > 0"
-        Common.orThrow cfg.exeName <| CLI.requireNoArgs rest
-        let input ← RealData.readTextCorpus cfg.exeName path
-        let (L0, L1) ← unitTrainSteps (α := Float) cfg (cast := id) opts input (steps := steps)
-        Common.writeBeforeAfterLossLog logPath cfg.logTitle steps L0 L1
-          #[s!"corpus={path}", s!"device={if opts.useGpu then "cuda" else "cpu"}"]
+        let input ← RealData.readTextCorpus cfg.exeName parsed.path
+        let (L0, L1) ← unitTrainSteps (α := Float) cfg (cast := id) opts input
+          (steps := parsed.steps)
+        Common.writeBeforeAfterLossLog logPath cfg.logTitle parsed.steps L0 L1
+          #[s!"corpus={parsed.path}", s!"device={if opts.useGpu then "cuda" else "cpu"}"]
       ))
       { banner? := some banner, printOk := true }
   else

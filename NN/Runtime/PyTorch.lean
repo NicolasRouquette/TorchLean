@@ -23,7 +23,7 @@ This umbrella contains the reusable bridge infrastructure:
 - parse those JSON artifacts into shape-checked TorchLean tensors, IR graphs, or verification
   parameter stores.
 
-Model examples and tutorial round-trips live under `NN.Examples.Interop.PyTorch.*`; keeping them there
+Model examples and executable round-trips live under `NN.Examples.Interop.PyTorch.*`; keeping them there
 prevents runtime imports from quietly depending on example-only shapes.
 -/
 

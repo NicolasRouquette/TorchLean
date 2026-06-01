@@ -8,9 +8,13 @@ module
 
 public import NN.Tests.Runtime.Floats.AllAutogradTests
 public import NN.Tests.Runtime.Floats.CertificatePreconditions
+public import NN.Tests.Runtime.Floats.IRBatchNorm
+public import NN.Tests.Runtime.Floats.IRShapeContracts
 public import NN.Tests.Runtime.Floats.KnnCheck
 public import NN.Tests.Runtime.Floats.ModelsCheck
+public import NN.Tests.Runtime.Floats.ONNXBridge
 public import NN.Tests.Runtime.Floats.PINNDerivResidual
+public import NN.Tests.Runtime.Floats.PyTorchRoundtripParity
 public import NN.Tests.Runtime.Floats.RLCheck
 public import NN.Tests.Runtime.Floats.RnnGruLstmBpttCheck
 public import NN.Tests.Runtime.Floats.TorchLeanIRExecEquivCheck
@@ -38,7 +42,11 @@ namespace Floats
 def run : IO Unit := do
   Tests.Floats.runAllAutogradTests
   Tests.Floats.CertificatePreconditions.run
+  Tests.Floats.IRBatchNorm.run
+  Tests.Floats.IRShapeContracts.run
   Tests.Floats.ModelsCheck.run
+  Tests.Floats.ONNXBridge.run
+  Tests.Floats.PyTorchRoundtripParity.run
   Tests.Floats.KNN.run
   Tests.Floats.RLCheck.run
   Tests.Floats.BPTT.run

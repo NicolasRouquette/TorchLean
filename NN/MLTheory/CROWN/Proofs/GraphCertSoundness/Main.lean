@@ -1256,7 +1256,7 @@ theorem cert_encloses_semantics
                           -- Substitute the concrete parent value into the semantic step.
                           simp [hlin, hgv] at hvalStep'
                           by_cases hXin : B1.dim = p.n
-                          · simp [hXin] at hcertStep'
+                          · simp [ibpLinearParams, hXin] at hcertStep'
                             by_cases hxDim' : v1.n = p.n
                             · simp [hxDim'] at hvalStep'
                               cases hcertStep'
@@ -1325,7 +1325,7 @@ theorem cert_encloses_semantics
                             ·
                               simp [hxDim'] at hvalStep'
                           ·
-                            simp [hXin] at hcertStep'
+                            simp [ibpLinearParams, hXin] at hcertStep'
         case matmul =>
           -- Same as `.linear`, but bias is zero and params come from `ParamStore.matmulW`.
           cases hparents : (g.nodes[k]!).parents with

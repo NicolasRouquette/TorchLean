@@ -10,9 +10,9 @@ public import NN.Runtime.PyTorch.Export.Core
 public import NN.Spec.Models.Cnn
 
 /-!
-# CNN PyTorch Fixture Export
+# CNN PyTorch Reference Export
 
-PyTorch exporter for the small 2-block ConvNet round-trip fixture.
+PyTorch exporter for the 2-block ConvNet round-trip reference model.
 
 This exporter is meant to mirror the "reference CNN example" shape that shows up in many TorchLean
 examples: two `Conv2d + ReLU + MaxPool2d` blocks, then `Flatten`, then a single `Linear` head.

@@ -165,6 +165,17 @@ inductive Node
       (b : Idx paramShapes (.dim outDim .scalar))
       (x : Idx (Ctx inShape ss) (.dim inDim .scalar)) :
       Node α paramShapes inShape ss (.dim outDim .scalar)
+  | conv2d (inC outC kH kW stride padding inH inW : Nat)
+      (hIn : inC ≠ 0) (hKH : kH ≠ 0) (hKW : kW ≠ 0)
+      (hHeight : OpContracts.checkWindowFits "conv2d" "height" inH kH padding = .ok ())
+      (hWidth : OpContracts.checkWindowFits "conv2d" "width" inW kW padding = .ok ())
+      (kernel : Idx paramShapes (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))))
+      (bias : Idx paramShapes (.dim outC .scalar))
+      (x : Idx (Ctx inShape ss) (.dim inC (.dim inH (.dim inW .scalar)))) :
+      Node α paramShapes inShape ss
+        (.dim outC
+          (.dim ((inH + 2 * padding - kH) / stride + 1)
+            (.dim ((inW + 2 * padding - kW) / stride + 1) .scalar)))
   | mseLoss {s : Shape} (yhat target : Idx (Ctx inShape ss) s) :
       Node α paramShapes inShape ss .scalar
 
@@ -302,6 +313,18 @@ def evalNode
       let y := Tensor.addSpec (α := α)
         (Tensor.matVecMulSpec (α := α) (m := outDim) (n := inDim) wT xT) bT
       pure <| DVal.mk (α := α) (.dim outDim .scalar) y
+  | .conv2d inC outC kH kW stride padding inH inW hIn hKH hKW _hHeight _hWidth kernel bias x =>
+      let kT := getParam (α := α) (paramShapes := paramShapes) params kernel
+      let bT := getParam (α := α) (paramShapes := paramShapes) params bias
+      let xT ← getVal (α := α) (inShape := inShape) (ss := ss)
+        (s := .dim inC (.dim inH (.dim inW .scalar))) vals x
+      let spec : Spec.Conv2DSpec inC outC kH kW stride padding α hIn hKH hKW :=
+        { kernel := kT, bias := bT }
+      let y := Spec.conv2dSpec (α := α) (layer := spec) (input := xT)
+      pure <| DVal.mk (α := α)
+        (.dim outC
+          (.dim ((inH + 2 * padding - kH) / stride + 1)
+            (.dim ((inW + 2 * padding - kW) / stride + 1) .scalar))) y
   | .mseLoss (s := _s) yhat target =>
       -- Mirror the IR semantics: `mse_loss` is dynamically shape-checked (both parents must have
       -- equal shape),

@@ -240,8 +240,8 @@ end Tensor
 Indexing design notes:
 
 - `get_spec` takes a runtime multi-index (`List Nat`) and returns `Option α`.
-  This is intentionally permissive and "frontend-friendly": you can use it for debugging, JSON
-  import/export checks, and any place you want to *try* an index without committing to proofs.
+  This permissive, frontend-friendly path is useful for debugging, JSON import/export checks, and
+  any place you want to *try* an index without committing to proofs.
 - For proof-driven code, you usually want `Fin n` indices and the `get`/`get2` helpers.
 
 PyTorch analogy:

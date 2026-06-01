@@ -19,7 +19,6 @@ public import NN.API.Models.Fno1d
 public import NN.Runtime.Autograd.TorchLean.Fno1d
 public import NN.Runtime.Training.Log
 
-import NN.Runtime.Autograd.TorchLean.Fno1d
 public import NN.Runtime.Autograd.Engine.Cuda.Fno1dRfftFused
 
 /-!
@@ -206,8 +205,7 @@ def writeMetricLog (path : System.FilePath) (hist : _root_.Runtime.Training.Metr
   let log := hist.toTrainLog
     (title := "FNO1D Burgers (TorchLean)")
     (notes := trainLogNotes spec spectralPath device)
-  _root_.Runtime.Training.TrainLog.writeJson path log
-  IO.println s!"  wrote TrainLog JSON: {path}"
+  Common.writeTrainLog path log
 
 structure LoadedData (α : Type) where
   train : Data.Dataset (sample.Supervised α σ τ)
@@ -287,7 +285,7 @@ def run (spec : RunSpec) : IO Unit := do
     ps := ps'
     adamSt := adamSt'
     memWatch? ← Common.reportCudaMemWatch { useGpu := true } cudaMemWatch cfg.steps (step + 1) memWatch?
-    if cfg.logEvery != 0 && (step + 1) % cfg.logEvery == 0 then
+    if Common.shouldLogStep cfg.logEvery (step + 1) then
       hist ← recordEval reportTrainSamples reportTestSamples hist (step + 1) ps s!"step {step + 1}"
   hist ← recordEval reportTrainSamples reportTestSamples hist cfg.steps ps "after"
   match Data.toList testDs with
@@ -340,7 +338,7 @@ def runPortableDense
       st ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.stepWith m opt st
         (trainCycle (cfg.seed + step))
       memWatch? ← Common.reportCudaMemWatch opts cudaMemWatch cfg.steps (step + 1) memWatch?
-      if cfg.logEvery != 0 && (step + 1) % cfg.logEvery == 0 then
+      if Common.shouldLogStep cfg.logEvery (step + 1) then
         hist ← recordEval hist (step + 1) s!"step {step + 1}"
     hist ← recordEval hist cfg.steps "after"
 

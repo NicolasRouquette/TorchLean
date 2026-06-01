@@ -14,7 +14,7 @@ public import NN.API.Public
 Config-style diffusion model constructors plus reusable, dataset-independent DDPM/DDIM helpers.
 
 The runnable examples decide where data comes from (CIFAR-10, ImageNet-style folders, synthetic
-fixtures).  The definitions here are shape-parametric and can be reused by tests, examples, and
+artifacts).  The definitions here are shape-parametric and can be reused by tests, examples, and
 future proof-facing specifications.
 -/
 

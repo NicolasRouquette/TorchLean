@@ -86,8 +86,8 @@ def zerosArray (n : Nat) : FloatArray :=
 /--
 One step of the small deterministic LCG used for fused-FNO parameter initialization.
 
-This is intentionally local to the fused CUDA example path so the engine layer does not depend on
-the higher-level `Torch.Init` helper namespace.
+This stays local to the fused CUDA example path so the engine layer does not depend on the
+higher-level `Torch.Init` helper namespace.
 -/
 def lcgNext (s : Nat) : Nat :=
   (1664525 * s + 1013904223) % 4294967296

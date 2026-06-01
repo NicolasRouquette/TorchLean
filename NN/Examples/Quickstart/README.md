@@ -10,7 +10,7 @@ to show the core moves clearly:
 - and see how ordinary Lean proofs fit into the workflow.
 
 For larger architectures, use `NN/Examples/Models`. For datasets and loaders backed by files, use
-`NN/Examples/Data/Loaders`. For runnable verification examples and bundled certificate fixtures,
+`NN/Examples/Data/Loaders`. For runnable verification examples and bundled certificate artifacts,
 start with `NN/Examples/Verification`; reusable checkers live under `NN/Verification`.
 
 ## Recommended Order

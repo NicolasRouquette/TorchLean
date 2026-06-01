@@ -21,7 +21,7 @@ This is the simplest certificate checker in the repo: given a graph `g` and para
 1. recompute IBP bounds in Lean (`runIBP`), and
 2. compare the final output interval `[lo,hi]` against a Python-exported JSON certificate.
 
-This is primarily used by the small LiRPA-style fixtures under
+This is primarily used by the small LiRPA-style artifacts under
 `NN/Examples/Verification/LiRPA/*`.
 
 Certificate shape:
@@ -106,7 +106,7 @@ def check (g : Graph) (ps : ParamStore Float) (outId : Nat) (path : String) (tol
 /--
 Run `check` and raise a readable error on mismatch.
 
-Verification examples use this entrypoint when the surrounding fixture should fail loudly rather
+Verification examples use this entrypoint when the surrounding artifact should fail loudly rather
 than returning a Boolean that a caller might ignore.
 -/
 def checkOrThrow (g : Graph) (ps : ParamStore Float) (outId : Nat) (path : String)

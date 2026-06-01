@@ -2,7 +2,7 @@
 """Generate the small local datasets used by TorchLean data examples.
 
 The generated files are deterministic and live next to the examples that consume them. Keeping the
-generator in source control makes the fixture provenance clear without treating derived arrays as
+generator in source control makes the artifact provenance clear without treating derived arrays as
 hand-written source.
 """
 

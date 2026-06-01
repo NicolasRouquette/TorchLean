@@ -638,12 +638,12 @@ Stable `log_softmax(x)` along the last axis.
 
 This is a backend primitive with the standard max-shifted formulation
 `x - max(x) - log(sum(exp(x - max(x))))`, matching PyTorch's numerical intent.  The optional
-`ε` parameter is kept for source compatibility with existing TorchLean callers and is ignored by
-this primitive; callers that need an epsilon-smoothed logarithm should use `safeLog` explicitly.
+`ε` parameter is accepted to keep existing call sites stable and is ignored by this primitive;
+callers that need an epsilon-smoothed logarithm should use `safeLog` explicitly.
 -/
 def logSoftmax {s : Shape} (x : Ref (m := m) (α := α) s) (ε : α := Numbers.epsilon) :
     m (Ref (m := m) (α := α) s) :=
-  let _epsilonKeptForSourceCompatibility := ε
+  let _epsilonAcceptedForCallSites := ε
   Ops.logSoftmax (m := m) (α := α) (s := s) x
 
 /-- SiLU / swish: `x * sigmoid(x)`. -/
@@ -853,9 +853,6 @@ def convTranspose2d {inC outC kH kW stride padding inH inW : Nat}
     (stride := stride) (padding := padding) (inH := inH) (inW := inW)
     (h1 := h1) (h2 := h2) (h3 := h3)
     kernel bias input
-
-/-- Alias for `conv2d`. -/
-abbrev conv2dCompat := @conv2d
 
 end
 end Torch

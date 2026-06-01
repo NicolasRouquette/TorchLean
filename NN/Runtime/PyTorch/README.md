@@ -13,9 +13,13 @@ We use PyTorch for two practical reasons:
 
 `Export/` contains reusable exporters and adapters.
 
-- `Export/Core.lean` holds shared string utilities and common boilerplate such as imports.
+- `Export/Core.lean` holds shared string utilities and import/header rendering.
 - `Export/IRPyTorch.lean` is the general model code path: it exports an `NN.IR.Graph` plus a
   parameter store into a standalone PyTorch module.
+- `Export/ONNX.lean` emits a conservative Python adapter that reads an ONNX graph and writes the
+  same `torchlean.ir.v1` JSON artifact used by the graph importer. It includes static-shape
+  lowerings for common tensor ops plus Conv/Gemm/BatchNorm graph structure where the current IR can
+  represent it.
 - `Export/StateDict.lean` emits a Python adapter that converts a PyTorch checkpoint
   (`torch.save(model.state_dict(), ...)`, or common checkpoint wrappers) into TorchLean's
   shape checkable JSON format.
@@ -29,6 +33,8 @@ Reading map:
   bridge into Lean readable JSON.
 - Use `Export/TorchExport.lean` when you already have a PyTorch `nn.Module` and want to capture
   its tensor program into a TorchLean graph artifact.
+- Use `Export/ONNX.lean` when you already have an ONNX graph and want a first-pass static graph
+  lowering into the checked TorchLean IR artifact.
 - Use `Export/IRPyTorch.lean` when you want a general `NN.IR.Graph` lowering path.
 
 ## Import
@@ -62,6 +68,19 @@ share.
 - Export PyTorch weights to TorchLean readable JSON through the generated state dict adapter.
 - Parse those JSON tensors in Lean with exact shape checks.
 - Capture supported PyTorch `nn.Module` graphs as TorchLean IR JSON and validate them in Lean.
+- Lower a conservative ONNX static graph fragment into the same TorchLean IR JSON path. Graph
+  validation and payload loading stay separate: imported Conv/Gemm/BatchNorm structure can be
+  checked as IR, while execution still needs the corresponding payload store.
+- Reuse the Lean IR semantics after import. Elementwise ops, reshape/flatten/broadcast/sum, direct
+  leading-axis concat plus generic concat through the shared evaluator, axis reductions, axis
+  permutation, supported transpose forms, rank-2/3 matmul, softmax through the evaluator's
+  axis-permutation path, and eval-mode NCHW BatchNorm now have theorem-level IR evaluator bridge
+  facts. Payload-backed `linear`, no-dilation `conv2d`, payload-backed constants, and eval-mode
+  NCHW BatchNorm are also covered at the actual one-step `Graph.evalAt` path, not only at their
+  helper evaluators. CHW pooling has the same local bridge to its spec operations. LayerNorm is
+  covered through the IR evaluator's reshape-to-2D `Spec.layerNorm` path, and graph plumbing nodes
+  such as input, detach, and scalar MSE are covered as well. The theorem import surface also
+  includes an `Eval.Coverage` checkpoint listing the covered IR constructor families.
 - Load supported verification model families such as PINNs/FNOs through the example interop loaders.
 - Emit readable PyTorch code from a TorchLean `NN.IR.Graph` and `ParamStore`.
 

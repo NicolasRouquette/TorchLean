@@ -395,8 +395,8 @@ def floatToJson (x : Float) : Json :=
 /--
 Decode a `Float` from JSON.
 
-We accept JSON numbers, Lean's non-finite string sentinels, and numeric strings for backward
-compatibility with generated artifacts.
+TrainLog files normally store finite floats as JSON numbers. We also accept Lean's non-finite
+string sentinels and numeric strings so previously generated logs remain readable.
 -/
 def floatOfJsonE (field : String) (j : Json) : Except String Float :=
   match j with

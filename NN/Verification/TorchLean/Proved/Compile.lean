@@ -34,7 +34,7 @@ def flatOfTensor {α : Type} [Context α] {s : Shape}
 Compile a single forward-fragment node into the verifier IR.
 
 Returns the corresponding `NN.IR.Node` together with an updated CROWN `ParamStore` that contains any
-payload required by `.const`/`.linear` nodes.
+payload required by `.const`, `.linear`, and payload-backed convolution nodes.
 -/
 def compileNode
     {α : Type} [Context α]
@@ -103,6 +103,28 @@ def compileNode
       let ps' :=
         { ps with
             linearWB := ps.linearWB.insert id { m := outDim, n := inDim, w := wT, b := bT } }
+      (n, ps')
+  | .conv2d inC outC kH kW stride padding inH inW hIn hKH hKW _hHeight _hWidth kernel bias x =>
+      let kT := getParam (α := α) (paramShapes := paramShapes) params kernel
+      let bT := getParam (α := α) (paramShapes := paramShapes) params bias
+      let outShape : Shape :=
+        .dim outC
+          (.dim ((inH + 2 * padding - kH) / stride + 1)
+            (.dim ((inW + 2 * padding - kW) / stride + 1) .scalar))
+      let n : NN.IR.Node :=
+        { id := id
+          parents := [x.id]
+          kind := .conv2d inC outC kH kW stride padding
+          outShape := outShape }
+      let spec : Spec.Conv2DSpec inC outC kH kW stride padding α hIn hKH hKW :=
+        { kernel := kT, bias := bT }
+      let cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α :=
+        { inC := inC, outC := outC, kH := kH, kW := kW
+          stride := stride, padding := padding
+          inH := inH, inW := inW
+          hIn := hIn, hKH := hKH, hKW := hKW
+          spec := spec }
+      let ps' := { ps with conv2dCfg := ps.conv2dCfg.insert id cfg }
       (n, ps')
   | .mseLoss (s := _s) yhat target =>
       ({ id := id, parents := [yhat.id, target.id], kind := .mseLoss, outShape := .scalar }, ps)

@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,6 +54,57 @@ typedef struct {
 torchlean_cuda_buffer* torchlean_cuda_buffer_unbox(b_lean_obj_arg obj);
 lean_obj_res torchlean_cuda_buffer_box(torchlean_cuda_buffer* b);
 torchlean_cuda_buffer* torchlean_cuda_buffer_alloc(size_t n);
+void torchlean_cuda_buffer_drop_unboxed(torchlean_cuda_buffer* b);
+
+static inline lean_object* torchlean_cuda_box_buffer_pair(
+    torchlean_cuda_buffer* a,
+    torchlean_cuda_buffer* b) {
+  lean_object* pair = lean_alloc_ctor(0, 2, 0);
+  lean_ctor_set(pair, 0, torchlean_cuda_buffer_box(a));
+  lean_ctor_set(pair, 1, torchlean_cuda_buffer_box(b));
+  return pair;
+}
+
+static inline lean_object* torchlean_cuda_box_four_buffers(
+    torchlean_cuda_buffer* first,
+    torchlean_cuda_buffer* second,
+    torchlean_cuda_buffer* third,
+    torchlean_cuda_buffer* fourth) {
+  lean_object* tail2 = lean_alloc_ctor(0, 2, 0);
+  lean_ctor_set(tail2, 0, torchlean_cuda_buffer_box(third));
+  lean_ctor_set(tail2, 1, torchlean_cuda_buffer_box(fourth));
+  lean_object* tail1 = lean_alloc_ctor(0, 2, 0);
+  lean_ctor_set(tail1, 0, torchlean_cuda_buffer_box(second));
+  lean_ctor_set(tail1, 1, tail2);
+  lean_object* out = lean_alloc_ctor(0, 2, 0);
+  lean_ctor_set(out, 0, torchlean_cuda_buffer_box(first));
+  lean_ctor_set(out, 1, tail1);
+  return out;
+}
+
+static inline void torchlean_cuda_require_same_size2(
+    const torchlean_cuda_buffer* a,
+    const torchlean_cuda_buffer* b,
+    const char* fn) {
+  if (a->size != b->size) {
+    char msg[192];
+    snprintf(msg, sizeof(msg), "%s: size mismatch (%zu vs %zu)", fn, a->size, b->size);
+    lean_internal_panic(msg);
+  }
+}
+
+static inline void torchlean_cuda_require_same_size3(
+    const torchlean_cuda_buffer* a,
+    const torchlean_cuda_buffer* b,
+    const torchlean_cuda_buffer* c,
+    const char* fn) {
+  if (a->size != b->size || a->size != c->size) {
+    char msg[224];
+    snprintf(msg, sizeof(msg), "%s: size mismatch (%zu vs %zu vs %zu)", fn, a->size, b->size,
+             c->size);
+    lean_internal_panic(msg);
+  }
+}
 
 // Deterministic reductions toggle.
 //

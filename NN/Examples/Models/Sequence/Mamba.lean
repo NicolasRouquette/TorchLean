@@ -39,7 +39,7 @@ namespace NN.Examples.Models.Sequence.Mamba
 def exeName : String := "torchlean mamba"
 
 /-- Default JSON loss-curve path for this command. -/
-def defaultLogJson : System.FilePath := "data/model_zoo/mamba_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "mamba"
 
 /--
 Training/generation context length in byte tokens.
@@ -120,8 +120,7 @@ def parseTrainOptions (args : List String) : Except String (TrainOptions × List
   let (topK?, args) ← CLI.takeNatFlagOnce args "top-k"
   let (seed?, args) ← CLI.takeNatFlagOnce args "sample-seed"
   let windows := windows?.getD 128
-  if windows = 0 then
-    throw s!"{exeName}: --windows must be > 0"
+  Common.requirePositiveNatFlag exeName "windows" windows
   let temperature := temperature?.getD 0.9
   if temperature <= 0.0 then
     throw s!"{exeName}: --temperature must be > 0"

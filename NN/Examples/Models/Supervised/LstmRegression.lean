@@ -59,7 +59,7 @@ Default JSON path for the before/after loss.
 
 Pass `--log PATH` to write somewhere else, or `--log disabled` when you only want terminal output.
 -/
-def defaultLogJson : System.FilePath := "data/model_zoo/lstm_regression_trainlog.json"
+def defaultLogJson : System.FilePath := Common.modelZooTrainLog "lstm_regression"
 
 /-- Default root for downloaded real datasets. Override with `--data-dir`. -/
 def defaultDataDir : System.FilePath :=
@@ -242,8 +242,7 @@ def parseTrainOptions (args : List String) : Except String (TrainOptions × List
   let (x?, args) ← CLI.takePathFlagOnce args "x"
   let (y?, args) ← CLI.takePathFlagOnce args "y"
   let windows := windows?.getD 512
-  if windows = 0 then
-    throw s!"{exeName}: --windows must be > 0"
+  Common.requirePositiveNatFlag exeName "windows" windows
   pure ({ steps := train.steps
           windows := windows
           lr := lr?.getD 0.01

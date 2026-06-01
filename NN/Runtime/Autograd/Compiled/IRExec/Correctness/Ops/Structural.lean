@@ -182,7 +182,8 @@ theorem buildFrom_denoteAllFrom_detach
                         throw_eq_error, Except.instMonad, Except.bind, Except.pure]
 
                     have hTail := ih st1 hRec
-                    exact buildFrom_denoteAllFrom_unary_exact (α := α) (g := g) (payload := payload)
+                    exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
+                      (payload := payload)
                       (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                       (τ := n.outShape) (nodeData := nodeData) hTail (by simpa using hEval)
                   · simp [hOut] at hBuild

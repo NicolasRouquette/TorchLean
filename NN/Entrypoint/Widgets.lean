@@ -36,7 +36,7 @@ entrypoints.
 The entrypoint is editor-facing:
 
 - ordinary runtime/proof files should import the concrete library modules they need;
-- tutorial and inspection files can import this one module to get all widget commands;
+- example and inspection files can import this one module to get all widget commands;
 - adding a widget here does not make it part of TorchLean's trusted semantics.
 
 `NN.Widgets.Interop.PyTorchTranslator` is included here because it is exactly that kind of

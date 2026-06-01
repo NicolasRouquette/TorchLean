@@ -56,10 +56,6 @@ structure GraphBridgeOptions where
   includeDebugTargets : Bool := true
 deriving Repr
 
-/-- Render a Lean `Bool` as the corresponding Python literal. -/
-def pyBool (b : Bool) : String :=
-  if b then "True" else "False"
-
 /--
 Emit a Python script that captures a PyTorch module and writes TorchLean graph JSON.
 
@@ -195,6 +191,8 @@ def generateGraphBridgeScript (opts : GraphBridgeOptions := {}) : String :=
     , indent8 "    stride = _first_int(mod.stride, 1)"
     , indent8 "    padding = _first_int(mod.padding, 0)"
     , indent8 "    return {\"kind\": \"conv2d\", \"inC\": int(mod.in_channels), \"outC\": int(mod.out_channels), \"kH\": kH, \"kW\": kW, \"stride\": stride, \"padding\": padding}"
+    , indent8 "if isinstance(mod, nn.BatchNorm2d):"
+    , indent8 "    return {\"kind\": \"batch_norm2d_nchw_eval\", \"channels\": int(mod.num_features), \"eps\": float(mod.eps)}"
     , indent8 "if isinstance(mod, nn.MaxPool2d):"
     , indent8 "    kH, kW = _pair(mod.kernel_size, 1)"
     , indent8 "    stride = _first_int(mod.stride if mod.stride is not None else mod.kernel_size, kH)"
@@ -247,6 +245,11 @@ def generateGraphBridgeScript (opts : GraphBridgeOptions := {}) : String :=
     , indent4 "if name.startswith(\"aten.layer_norm\") or node.target is F.layer_norm:"
     , indent8 "return {\"kind\": \"layernorm\", \"axis\": 1}"
     , indent4 "if name.startswith(\"aten.linear\") or node.target is F.linear: return {\"kind\": \"linear\"}"
+    , indent4 "if \"batch_norm\" in name or node.target is F.batch_norm:"
+    , indent8 "shape = _node_shape(node)"
+    , indent8 "channels = int(shape[1]) if len(shape) >= 2 else 0"
+    , indent8 "eps = float(kwargs.get(\"eps\", args[7] if len(args) > 7 else 1e-5))"
+    , indent8 "return {\"kind\": \"batch_norm2d_nchw_eval\", \"channels\": channels, \"eps\": eps}"
     , indent4 "if name.startswith(\"aten.conv2d\") or node.target is F.conv2d:"
     , indent8 "stride = _first_int(kwargs.get(\"stride\", args[3] if len(args) > 3 else 1), 1)"
     , indent8 "padding = _first_int(kwargs.get(\"padding\", args[4] if len(args) > 4 else 0), 0)"
