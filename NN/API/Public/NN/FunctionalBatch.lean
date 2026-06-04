@@ -36,6 +36,12 @@ export TorchLean.F
    embedding embeddingRowsNat embeddingBatchSeqNat mean
    dropoutSeeded)
 
+-- Elementwise transcendentals + scalar-affine for scientific forward models
+-- (fully qualified to disambiguate the `exp`/`log`/`scale` identifiers, which
+-- also name primitives in scope).
+export _root_.Runtime.Autograd.TorchLean.F
+  (exp log scale shift affine)
+
 end functional
 
 /-!

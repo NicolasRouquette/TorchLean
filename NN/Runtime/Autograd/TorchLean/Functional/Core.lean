@@ -49,6 +49,60 @@ def square {α : Type} [Context α] [DecidableEq Shape]
     {s : Shape} (x : RefTy (m := m) (α := α) s) : m (RefTy (m := m) (α := α) s) :=
   mul (m := m) (α := α) (s := s) x x
 
+/-! ## Elementwise transcendentals (scientific forward-model ops)
+
+These lift the primitive `Ops.{exp,log}` and the scalar-affine
+`Ops.scale`/`Ops.const` into the functional surface, so geophysical / scientific
+forward models — which lean on `exp`/`log` of an affine argument rather than the
+NN-flavoured `relu`/`square`/`softmax` ops — can be written directly as a pure
+`Function1.Fn` and differentiated by the autograd engine. Each wraps a primitive
+that already carries a registered backward, so reverse-mode `jacrev`/`grad`
+works through them unchanged.
+
+PyTorch analogues: `torch.exp`, `torch.log`, and `c·x` / `c·x + k` via
+`torch.mul`/`torch.add` against scalars. -/
+
+/-- Elementwise exponential `x ↦ eˣ`.  PyTorch: `torch.exp`. -/
+def exp {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {s : Shape} (x : RefTy (m := m) (α := α) s) : m (RefTy (m := m) (α := α) s) :=
+  _root_.Runtime.Autograd.Torch.exp (m := m) (α := α) (s := s) x
+
+/-- Elementwise natural log `x ↦ ln x`.  PyTorch: `torch.log`. -/
+def log {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {s : Shape} (x : RefTy (m := m) (α := α) s) : m (RefTy (m := m) (α := α) s) :=
+  _root_.Runtime.Autograd.Torch.log (m := m) (α := α) (s := s) x
+
+/-- Multiply by a compile-time-or-runtime constant scalar `c`: `x ↦ c · x`.
+A re-export of the primitive `Ops.scale` onto the functional surface (it powers
+`mean`, but was not itself exposed as `nn.functional.*`). -/
+def scale {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {s : Shape} (x : RefTy (m := m) (α := α) s) (c : α) : m (RefTy (m := m) (α := α) s) :=
+  _root_.Runtime.Autograd.Torch.scale (m := m) (α := α) (s := s) x c
+
+/-- Add a constant scalar `c` to every element: `x ↦ x + c`.  Builds the
+constant via `Ops.const` at scalar shape and broadcasts it to `s` (same pattern
+as the dropout keep-probability broadcast). -/
+def shift {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {s : Shape} (x : RefTy (m := m) (α := α) s) (c : α) : m (RefTy (m := m) (α := α) s) := do
+  let cs ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) (s := Shape.scalar)
+    (Tensor.scalar c)
+  let cb ← _root_.Runtime.Autograd.Torch.broadcastTo (m := m) (α := α)
+    (s₁ := Shape.scalar) (s₂ := s) (Shape.CanBroadcastTo.scalar_to_any s) cs
+  _root_.Runtime.Autograd.Torch.add (m := m) (α := α) (s := s) x cb
+
+/-- Scalar affine map `x ↦ c · x + k`.  The single most common building block of
+linearised physical forward models (e.g. the SMAP-NISAR AVS surface/vegetation
+terms).  Composes `scale` then `shift`. -/
+def affine {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {s : Shape} (x : RefTy (m := m) (α := α) s) (c k : α) : m (RefTy (m := m) (α := α) s) := do
+  let sx ← scale (m := m) (α := α) (s := s) x c
+  shift (m := m) (α := α) (s := s) sx k
+
 /-! ## Checkpointing (semantics-first identity wrapper) -/
 
 /--
