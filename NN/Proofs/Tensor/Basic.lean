@@ -9,6 +9,25 @@ module
 public import NN.Proofs.Tensor.Basic.Core
 public import NN.Proofs.Tensor.Basic.Folds
 public import NN.Proofs.Tensor.Basic.LinearAlgebra
+public import NN.Proofs.Tensor.Basic.Factorizations
+public import NN.Proofs.Tensor.Basic.FactorizationsReconstruction
+public import NN.Proofs.Tensor.Basic.FactorizationsSolve
+public import NN.Proofs.Tensor.Basic.FactorizationsVariational
+public import NN.Proofs.Tensor.Basic.FactorizationsDecision
+public import NN.Proofs.Tensor.Basic.FactorizationsZTest
+public import NN.Proofs.Tensor.Basic.FactorizationsZAsymptotic
+public import NN.Proofs.Tensor.Basic.FactorizationsKernels
+public import NN.Proofs.Tensor.Basic.FactorizationsKernelMatrix
+public import NN.Proofs.Tensor.Basic.FactorizationsKernelMatrixPSD
+public import NN.Proofs.Tensor.Basic.FactorizationsKernelLoss
+public import NN.Proofs.Tensor.Basic.FactorizationsKernelGrad
+public import NN.Proofs.Tensor.Basic.FactorizationsKernelMLEGrad
+public import NN.Proofs.Tensor.Basic.FactorizationsCondVar
+public import NN.Proofs.Tensor.Basic.FactorizationsOptimizers
+public import NN.Proofs.Tensor.Basic.FactorizationsOrthonormal
+public import NN.Proofs.Tensor.Basic.FactorizationsJacobi
+public import NN.Proofs.Tensor.Basic.FactorizationsJacobiDecrease
+public import NN.Proofs.Tensor.Basic.FactorizationsJacobiRate
 public import NN.Proofs.Tensor.Basic.BoundsNorms
 public import NN.Proofs.Tensor.Basic.Algebra
 

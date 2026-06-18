@@ -33,6 +33,16 @@ import TorchLeanBlueprint.Guide.Ch4_Verification.ApproximationTheory
 import TorchLeanBlueprint.Guide.Ch4_Verification.ClassicalMLProofs
 import TorchLeanBlueprint.Guide.Ch4_Verification.ProbabilityAndGradients
 import TorchLeanBlueprint.Guide.Ch4_Verification.ScientificMLVerification
+import TorchLeanBlueprint.Guide.Ch4_Verification.Factorizations
+import TorchLeanBlueprint.Guide.Ch4_Verification.KernelMatrix
+import TorchLeanBlueprint.Guide.Ch4_Verification.KernelMatrixPSD
+import TorchLeanBlueprint.Guide.Ch4_Verification.KernelLoss
+import TorchLeanBlueprint.Guide.Ch4_Verification.CondVar
+import TorchLeanBlueprint.Guide.Ch4_Verification.Optimizers
+import TorchLeanBlueprint.Guide.Ch4_Verification.KernelGrad
+import TorchLeanBlueprint.Guide.Ch4_Verification.KernelMLEGrad
+import TorchLeanBlueprint.Guide.Ch4_Verification.KernelFlowsParity
+import TorchLeanBlueprint.Guide.Ch4_Verification.GenSymEigWhitening
 import TorchLeanBlueprint.Guide.Ch4_Verification.Certificates
 import TorchLeanBlueprint.Guide.Ch4_Verification.FP32Soundness
 import TorchLeanBlueprint.Guide.Ch4_Verification.TwoStageWorkflows
@@ -230,6 +240,26 @@ into precise mathematical statements.
 {include 2 TorchLeanBlueprint.Guide.Ch4_Verification.ProbabilityAndGradients}
 
 {include 2 TorchLeanBlueprint.Guide.Ch4_Verification.ScientificMLVerification}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.Factorizations}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.KernelMatrix}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.KernelMatrixPSD}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.KernelLoss}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.CondVar}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.Optimizers}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.KernelGrad}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.KernelMLEGrad}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.KernelFlowsParity}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.GenSymEigWhitening}
 
 {include 2 TorchLeanBlueprint.Guide.Ch4_Verification.Certificates}
 
