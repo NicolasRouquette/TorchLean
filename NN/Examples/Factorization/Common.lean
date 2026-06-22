@@ -84,8 +84,8 @@ def assertGe (name : String) (err : Float) (threshold : Float := 0.5) : IO Unit 
 /--
 Compiled **negative-control** assertion that a reconstruction *fails*: succeeds when the error is not
 below `tol` — including the `NaN` produced when a hypothesis is violated (e.g. Cholesky of a
-non-positive-definite matrix takes `√(negative)`). Documents that the success hypotheses (SPD pivots,
-full column rank) are genuinely necessary.
+non-positive-definite matrix takes `√(negative)`). Documents that the success hypotheses (positive
+Cholesky pivots, positive `R` pivots / full column rank) are genuinely necessary.
 -/
 def assertReconFails (name : String) (err : Float) (tolerance : Float := tol) : IO Unit :=
   if err < tolerance then

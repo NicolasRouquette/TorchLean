@@ -1,5 +1,4 @@
 import VersoManual
-import VersoBlueprint
 
 open Verso.Genre Manual
 
@@ -58,10 +57,22 @@ re-expanding that span. Together they give `IsQR A Q R`.
 # Honest scope
 
 Everything in this chapter is an *exact finite identity*: there is no sweep count, no residual, no
-asymptotic limit. The hypotheses are the genuine success conditions of the algorithms — SPD (positive
-Cholesky pivots) and full column rank (positive `R` diagonal) — and no goal is left unproved.
-The triangular- and ridge-solve helpers that ride on the Cholesky factor are shipped as executable APIs
-only; their correctness theorems are not part of this PR.
+asymptotic limit. Three layers are kept distinct, and only the first is a verified claim:
+
+- *Proved specs* (over `ℝ`): the predicates `IsCholesky` / `IsQR`, together with reconstruction,
+  triangularity, and orthonormality, each derived from the executable column fold.
+- *Executable examples* (over `Float`): concrete witnesses with residual checks — evidence that the
+  definitions run and reconstruct, not proofs about floating-point arithmetic.
+- *Trusted runtime hooks*: the strict-array `@[implemented_by]` replacements are runtime substitutions
+  used for fast evaluation; they are *not* proved equal to the clean proof definitions.
+
+The formal Cholesky hypothesis is *positivity of the executable pivots*, `∀ j, 0 < choleskyFn A j j` —
+*not* SPD. `Matrix.PosDef A` is the expected sufficient condition for those pivots to be positive, but
+the implication `PosDef A → ∀ j, 0 < choleskyFn A j j` is *not* formalized in this PR. QR likewise
+assumes positive executable `R`-pivots (full column rank), not a separately proved rank hypothesis. Under
+those pivot hypotheses no goal in the chapter is left unproved. The triangular- and ridge-solve helpers
+that ride on the Cholesky factor are shipped as executable APIs only; their correctness theorems are not
+part of this PR.
 
 # Executable witnesses
 
