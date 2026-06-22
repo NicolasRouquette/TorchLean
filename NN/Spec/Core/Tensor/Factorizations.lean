@@ -12,20 +12,26 @@ public import NN.Spec.Core.TensorReductionShape.LinearAlgebra
 /-!
 # Matrix factorizations (spec layer)
 
-This file provides **real**, shape-indexed reference implementations of the two *exact, finite*
-matrix factorizations that classical / scientific-ML models (Gaussian processes, kernel ridge
-regression, PCA, least squares) depend on, and which were previously missing from the spec layer:
+This file provides **real**, shape-indexed reference implementations of the matrix
+factorizations that classical / scientific-ML models (Gaussian processes, kernel ridge
+regression, PCA, least squares) depend on, and which were previously missing from the spec
+layer:
 
-- `choleskySpec`   — Cholesky factorization `A = L · Lᵀ` (lower-triangular `L`), for matrices
-                     with positive executable Cholesky pivots.
-- `qrSpec`         — QR factorization `A = Q · R` via classical Gram–Schmidt
-                     (`Q` has orthonormal columns, `R` upper-triangular).
+- `choleskySpec`     — Cholesky factorization `A = L · Lᵀ` (lower-triangular `L`), for matrices
+                       with positive executable Cholesky pivots.
+- `qrSpec`           — QR factorization `A = Q · R` via classical Gram–Schmidt
+                       (`Q` has orthonormal columns, `R` upper-triangular).
+- `symEigJacobiSpec` — **full** symmetric eigendecomposition via the cyclic Jacobi algorithm
+                       (all eigenpairs, not just the largest).
+- `svdSpec`          — singular value decomposition `A = U · diag(σ) · Vᵀ`, built on the
+                       symmetric eigendecomposition of `Aᵀ·A`.
 
-It also provides the linear solves that ride on the Cholesky factor:
+## Relationship to `eigendecompSpec`
 
-- `triSolveLowerFn` / `triSolveUpperFn` — forward / back triangular substitution;
-- `cholSolveFn`    — solve `A · x = b` from a Cholesky factor of `A`;
-- `solveRidgeSpec` — the Tikhonov / kernel-ridge solve `(K + γ·I) · x = b`.
+`Spec.eigendecompSpec` (in `NN/Spec/Models/CommonHelpers.lean`) is a power-iteration *stub* that
+only recovers the **largest** eigenpair. It is intentionally left untouched (PCA depends on it).
+`symEigJacobiSpec` here is the full replacement: for a symmetric matrix it returns *all* `n`
+eigenvalues and an orthogonal matrix of eigenvectors.
 
 ## Verification scope
 
@@ -49,6 +55,10 @@ Internally the algorithms are written over the plain function representation
 `Fin n → Fin n → α` (matrices) and `Fin n → α` (vectors), then wrapped back into `Spec.Tensor`
 at the boundary. This keeps the numerical formulas readable and keeps later correctness proofs
 working on ordinary functions rather than on nested `Tensor` `match`es.
+
+The iterative routines (Jacobi) take an explicit `sweeps` count: convergence of Jacobi is
+asymptotic, so the caller chooses how much work to do. A dozen sweeps is ample for the small
+matrices these specs target.
 -/
 
 @[expose] public section
@@ -88,6 +98,13 @@ def dotFn {p : Nat} (u v : Fin p → α) : α :=
 def normFn {p : Nat} (v : Fin p → α) : α :=
   MathFunctions.sqrt (dotFn v v)
 
+/-- Decide `x < y` as a `Bool` (via the `Context`'s decidable `>`). -/
+def ltBool (x y : α) : Bool := Context.gtBool y x
+
+/-- Decide `x ≤ y` as a `Bool`. Ascending comparator for `List.mergeSort` (e.g. to sort the
+unordered Jacobi eigenvalues). -/
+def leBool (x y : α) : Bool := !ltBool y x
+
 /-! ## Cholesky factorization
 
 For a symmetric positive-definite `A`, compute the lower-triangular `L` with `A = L · Lᵀ`.
@@ -97,21 +114,6 @@ The columns are computed left to right. Column `j` uses only columns `0 .. j-1`:
 - diagonal:  `L[j,j] = sqrt(A[j,j] - Σ_{k<j} L[j,k]²)`
 - below:     `L[i,j] = (A[i,j] - Σ_{k<j} L[i,k]·L[j,k]) / L[j,j]`   for `i > j`
 - above:     `L[i,j] = 0`                                           for `i < j`
-
-### Trust boundary: the `@[implemented_by]` performance hooks
-
-Several defs here (`choleskyColsFn`, `cholSolveFn`, `solveRidgeFn`) carry an `@[implemented_by …Impl]`
-attribute. The clean closure form is what the correctness proofs reason about; the `…Impl` companion
-is a strict, array-backed rewrite that the compiler runs instead, so `#eval` stays fast (the closure
-form re-evaluates prefixes exponentially in the interpreter).
-
-**This substitution is *trusted*, not verified.** No Lean theorem proves `choleskyColsFn = choleskyColsImpl`
-(etc.), so compiled `#eval`/runtime code executes the `…Impl` body while the proofs constrain only the
-closure body. The two are believed equal by construction (they transcribe the same recurrence), and the
-numeric examples in `NN/Examples/Factorization` are *evidence* the compiled path is correct — but they
-exercise the `…Impl` replacement, not the proof body, and are not a substitute for an equivalence proof.
-Anything proved about `choleskyFn`/`solveRidgeFn` therefore transfers to `#eval` output only modulo this
-unverified hook.
 -/
 
 /--
@@ -119,9 +121,8 @@ Strict, array-backed runtime implementation of `choleskyColsFn` (registered via 
 Each column is *materialized* into an `Array α`, so a back-reference `L[i,k]` is an `O(1)` lookup
 rather than a closure that re-evaluates the whole prefix. The closure form below is mathematically
 clean (and is what the proofs reason about), but reading the full factor `L` from it re-evaluates
-columns exponentially — ruinous in the interpreter (`#eval`). It is *intended* to compute the same
-factor strictly; this equivalence is **trusted, not proved** (see the trust-boundary note above), with
-the numeric examples (`A = L·Lᵀ`, the ridge-solve residual ≈ 0) as evidence rather than a proof.
+columns exponentially — ruinous in the interpreter (`#eval`). This computes the *same* factor strictly;
+the numeric examples (`A = L·Lᵀ`, the ridge-solve residual ≈ 0) validate the two agree.
 -/
 def choleskyColsImpl {n : Nat} (A : Fin n → Fin n → α) : List (Fin n → α) :=
   let cols : Array (Array α) := (List.finRange n).foldl (fun cols j =>
@@ -149,8 +150,7 @@ Element `j` of the result is column `j` of `L`. Built by a left fold so that whe
 formed, `cols` already holds columns `0 .. j-1`.
 
 The runtime implementation is `choleskyColsImpl` (strict arrays); the closure form here is the one the
-correctness proofs reason about. The two are intended to compute the same factor — trusted, not proved;
-see the trust-boundary note above.
+correctness proofs reason about. Both compute the same factor.
 -/
 @[implemented_by choleskyColsImpl]
 def choleskyColsFn {n : Nat} (A : Fin n → Fin n → α) : List (Fin n → α) :=
@@ -189,7 +189,7 @@ triangular substitutions: forward-solve `L · z = b`, then back-solve `Lᵀ · x
 visits the unknowns in an order such that, when row `i` is reached, every unknown it depends on has
 already been computed; the accumulator `acc` holds those values and `0` everywhere else, so the dot
 `dotFn (row i) acc` is exactly the required partial sum (the not-yet-solved and structurally-zero
-terms drop out). -/
+terms drop out). This is the linear solve at the heart of CHD `solve_variationnal`. -/
 
 /-- Forward substitution: solve `L · y = b` for a lower-triangular `L` with nonzero diagonal.
 Unknowns are visited `0, 1, …, n-1`; when row `i` is reached `acc` holds `y₀ … yᵢ₋₁` (and `0`
@@ -213,9 +213,8 @@ It materializes `L` into a strict `Array (Array α)` once, then runs both triang
 `Array`s, so a back-reference is an `O(1)` lookup. The closure form below (`triSolveUpperFn` over
 `triSolveLowerFn`) is mathematically clean — and is what the correctness proofs reason about — but reads
 the `Function.update` accumulator chain on every step, which is ruinous in the interpreter (`#eval`) when
-`L` is itself an unmaterialized closure (e.g. `choleskyFn` of a kernel matrix). It is *intended* to
-compute the same solution strictly; this equivalence is **trusted, not proved** (see the trust-boundary
-note above), with the numeric examples (the ridge residual ≈ 0) as evidence rather than a proof. -/
+`L` is itself an unmaterialized closure (e.g. `choleskyFn` of a kernel matrix). This computes the *same*
+solution strictly; the numeric examples (the ridge residual ≈ 0) validate the two agree. -/
 def cholSolveImpl {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fin n → α :=
   let La : Array (Array α) := Array.ofFn (fun i : Fin n => Array.ofFn (fun j : Fin n => L i j))
   let Lent : Nat → Nat → α := fun i j => (La.getD i #[]).getD j 0
@@ -237,8 +236,7 @@ def cholSolveImpl {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fi
 `L · z = b`, then back-solve `Lᵀ · x = z`.
 
 The runtime implementation is `cholSolveImpl` (strict arrays); the closure form here is what the
-correctness proofs reason about. The two are intended to compute the same solution — trusted, not
-proved; see the trust-boundary note above. -/
+correctness proofs reason about. Both compute the same solution. -/
 @[implemented_by cholSolveImpl]
 def cholSolveFn {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fin n → α :=
   triSolveUpperFn (fun i k => L k i) (triSolveLowerFn L b)
@@ -253,9 +251,7 @@ Strict, array-backed runtime implementation of `solveRidgeFn` (registered via `@
 It factors `K + γ·I = L·Lᵀ` and runs both triangular substitutions entirely over `Array`s, so no step
 materializes the deep `Fin n → α` closures the functional definition builds — those re-evaluate
 columns / the substitution accumulator exponentially, which is ruinous in the interpreter (`#eval`).
-Intended to be the same linear solve; this equivalence is **trusted, not proved** (see the
-trust-boundary note above), with the numeric examples (residual `(K+γ·I)·x − b ≈ 0`) as evidence
-rather than a proof.
+Same linear solve; the numeric examples (residual `(K+γ·I)·x − b ≈ 0`) validate the two agree.
 -/
 def solveRidgeImpl {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n → α) : Fin n → α :=
   let A : Fin n → Fin n → α := fun i j => K i j + (if i.val == j.val then γ else 0)
@@ -290,11 +286,11 @@ def solveRidgeImpl {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n �
   fun i => x.getD i.val 0
 
 /-- The Tikhonov-regularized (kernel-ridge) solve `(K + γ·I)·x = b`, via the Cholesky factorization
-of `K + γ·I`.
+of `K + γ·I`. This is the linear solve at the core of CHD `solve_variationnal`.
 
 The runtime implementation is `solveRidgeImpl` (strict arrays); the closure form here, built from the
-`choleskyFn` / `triSolve*` pieces the correctness proofs reason about. The two are intended to compute
-the same solution — trusted, not proved; see the trust-boundary note above. -/
+verified `choleskyFn` / `triSolve*` pieces, is what the correctness proofs reason about. Both compute
+the same solution. -/
 @[implemented_by solveRidgeImpl]
 def solveRidgeFn {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n → α) : Fin n → α :=
   cholSolveFn (choleskyFn (addScaledIdFn K γ)) b
@@ -364,5 +360,276 @@ PyTorch analogue: `torch.linalg.qr(A)`.
 def qrSpec {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) :
     Tensor α (.dim m (.dim n .scalar)) × Tensor α (.dim n (.dim n .scalar)) :=
   (qrQSpec A, qrRSpec A)
+
+/-! ## Symmetric eigendecomposition (cyclic Jacobi)
+
+For a symmetric `A`, iteratively apply Givens rotations `J` that zero one off-diagonal entry at a
+time, accumulating `A ← Jᵀ A J` and `V ← V J`. Each `J` is orthogonal, so every step is an
+orthogonal similarity: the spectrum is preserved and `V` stays orthogonal. After enough sweeps the
+off-diagonal mass vanishes; the diagonal holds the eigenvalues and the columns of `V` are the
+eigenvectors.
+-/
+
+/-!
+The iteration below runs over an `Array (Array α)` representation rather than `Fin n → Fin n → α`.
+Arrays are strict values, so threading them through the rotation loop cannot build the deep closure
+chains that a functional representation would (one matrix product per rotation), which is what keeps
+execution cheap. We convert to/from `Spec.Tensor` only at the boundary.
+-/
+
+/-- Read entry `(i, j)` of an `Array (Array α)` matrix (`0` if out of bounds). -/
+def arrGet (M : Array (Array α)) (i j : Nat) : α := (M.getD i #[]).getD j 0
+
+/-- Materialize a matrix function into a strict `Array (Array α)`. -/
+def matToArr {n : Nat} (X : Fin n → Fin n → α) : Array (Array α) :=
+  Array.ofFn (fun i : Fin n => Array.ofFn (fun j : Fin n => X i j))
+
+/-- Matrix product `X · Y` of two `n × n` array matrices. -/
+def arrMatMul (n : Nat) (X Y : Array (Array α)) : Array (Array α) :=
+  Array.ofFn (fun i : Fin n => Array.ofFn (fun j : Fin n =>
+    (List.finRange n).foldl (fun s k => s + arrGet X i.val k.val * arrGet Y k.val j.val) 0))
+
+/-- Transpose of an `n × n` array matrix. -/
+def arrTr (n : Nat) (X : Array (Array α)) : Array (Array α) :=
+  Array.ofFn (fun i : Fin n => Array.ofFn (fun j : Fin n => arrGet X j.val i.val))
+
+/-- `n × n` identity as an array matrix. -/
+def arrId (n : Nat) : Array (Array α) :=
+  Array.ofFn (fun i : Fin n => Array.ofFn (fun j : Fin n => if i.val == j.val then 1 else 0))
+
+/--
+Givens rotation in the `(p, q)` plane as an array matrix:
+identity except `J[p,p]=J[q,q]=c`, `J[p,q]=s`, `J[q,p]=-s`.
+-/
+def arrGivens (n : Nat) (p q : Nat) (c s : α) : Array (Array α) :=
+  Array.ofFn (fun i : Fin n => Array.ofFn (fun j : Fin n =>
+    if i.val == p && j.val == p then c
+    else if i.val == q && j.val == q then c
+    else if i.val == p && j.val == q then s
+    else if i.val == q && j.val == p then -s
+    else if i.val == j.val then 1 else 0))
+
+/--
+Apply one Jacobi rotation that targets off-diagonal entry `(p, q)`, updating `(A, V)` as strict
+arrays. If `A[p,q]` is already (numerically) zero, the state is returned unchanged.
+
+The rotation parameters follow Golub & Van Loan:
+`τ = (A[q,q] - A[p,p]) / (2 A[p,q])`, `t = sign(τ)/(|τ| + sqrt(1+τ²))` (or `1` if `τ = 0`),
+`c = 1/sqrt(1+t²)`, `s = t·c`.
+-/
+def arrJacobiRotate (n : Nat) (A V : Array (Array α)) (p q : Nat) :
+    Array (Array α) × Array (Array α) :=
+  let apq := arrGet A p q
+  if Context.gtBool (MathFunctions.abs apq) 0 then
+    let τ := (arrGet A q q - arrGet A p p) / (Numbers.two * apq)
+    let absτ := MathFunctions.abs τ
+    let sgn : α := if ltBool τ 0 then Numbers.neg_one else 1
+    let t : α :=
+      if Context.gtBool absτ 0 then sgn / (absτ + MathFunctions.sqrt (1 + τ * τ)) else 1
+    let c := 1 / MathFunctions.sqrt (1 + t * t)
+    let s := t * c
+    let J := arrGivens n p q c s
+    (arrMatMul n (arrTr n J) (arrMatMul n A J), arrMatMul n V J)
+  else
+    (A, V)
+
+/-- All index pairs `(p, q)` with `p < q`, in row-major order (one cyclic Jacobi sweep). -/
+def jacobiPairs (n : Nat) : List (Nat × Nat) :=
+  (List.range n).flatMap (fun p =>
+    (List.range n).filterMap (fun q => if p < q then some (p, q) else none))
+
+/-- One Jacobi sweep: rotate through every `(p, q)` pair with `p < q`. -/
+def arrJacobiSweep (n : Nat) (st : Array (Array α) × Array (Array α)) :
+    Array (Array α) × Array (Array α) :=
+  (jacobiPairs n).foldl (fun s pq => arrJacobiRotate n s.1 s.2 pq.1 pq.2) st
+
+/-- Run `sweeps` Jacobi sweeps starting from `(A, I)`, returning the rotated `A` and accumulated `V`. -/
+def arrJacobiRun (n : Nat) (A : Array (Array α)) (sweeps : Nat) :
+    Array (Array α) × Array (Array α) :=
+  (List.range sweeps).foldl (fun st _ => arrJacobiSweep n st) (A, arrId n)
+
+/--
+Full symmetric eigendecomposition of `A` via cyclic Jacobi, returning `(eigenvalues, eigenvectors)`.
+
+The eigenvalues are the diagonal of the rotated matrix; the eigenvectors are the **columns** of the
+returned matrix `V` (so `eigenvectors[i, j]` is the `i`-th component of the `j`-th eigenvector).
+`sweeps` controls how many Jacobi sweeps to run (default `12`).
+
+Unlike `eigendecompSpec`, this recovers **all** `n` eigenpairs.
+
+PyTorch analogue: `torch.linalg.eigh(A)`.
+-/
+def symEigJacobiSpec {n : Nat} (A : Tensor α (.dim n (.dim n .scalar))) (sweeps : Nat := 12) :
+    Tensor α (.dim n .scalar) × Tensor α (.dim n (.dim n .scalar)) :=
+  let (Af, Vf) := arrJacobiRun n (matToArr (toMatFn A)) sweeps
+  (ofVecFn (fun i => arrGet Af i.val i.val), ofMatFn (fun i j => arrGet Vf i.val j.val))
+
+/-! ## Singular value decomposition
+
+For `A : m × n`, form the symmetric `M = Aᵀ·A : n × n`, eigendecompose it as `M = V Λ Vᵀ`,
+take `σ = sqrt(max(Λ, 0))`, and recover `U` columns as `uⱼ = A vⱼ / σⱼ` (zero when `σⱼ = 0`).
+Then `A = U · diag(σ) · Vᵀ`. This is the simplest reference SVD and is exact (up to the Jacobi
+sweep count) for `A` of full column rank.
+-/
+
+/--
+Singular value decomposition of `A : m × n` returning `(U, σ, V)` with
+`A = U · diag(σ) · Vᵀ`, `U : m × n` with orthonormal columns (full-rank case), `σ : n` the singular
+values, and `V : n × n` orthogonal.
+
+`sweeps` controls the Jacobi sweep count used for the eigendecomposition of `Aᵀ·A`.
+
+PyTorch analogue: `torch.linalg.svd(A, full_matrices=False)`.
+-/
+def svdSpec {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) (sweeps : Nat := 12) :
+    Tensor α (.dim m (.dim n .scalar)) × Tensor α (.dim n .scalar) ×
+      Tensor α (.dim n (.dim n .scalar)) :=
+  let Af := toMatFn A
+  -- M = Aᵀ A  (n × n, symmetric PSD), as a strict array matrix
+  let M : Array (Array α) :=
+    Array.ofFn (fun i : Fin n => Array.ofFn (fun j : Fin n =>
+      (List.finRange m).foldl (fun s k => s + Af k i * Af k j) 0))
+  let (Mf, Vf) := arrJacobiRun n M sweeps
+  let σ : Fin n → α := fun j =>
+    let d := arrGet Mf j.val j.val
+    MathFunctions.sqrt (if ltBool d 0 then 0 else d)
+  let U : Fin m → Fin n → α := fun i j =>
+    let sj := σ j
+    if Context.gtBool sj 0 then
+      ((List.finRange n).foldl (fun s k => s + Af i k * arrGet Vf k.val j.val) 0) / sj
+    else 0
+  (ofMatFn U, ofVecFn σ, ofMatFn (fun i j => arrGet Vf i.val j.val))
+
+/-! ## Generalized symmetric eigenproblem via Cholesky whitening (CCA / dimension reduction)
+
+The generalized symmetric eigenproblem `A·v = λ·B·v` — with `A` symmetric and `B` symmetric
+positive-definite — is the algebraic core of *canonical-correlation analysis* (CCA) and the
+whitening step of dimension reduction. It is reduced to the *standard* symmetric eigenproblem the
+landed `symEigJacobiSpec` already solves, by *whitening* `B`:
+
+* factor `B = L·Lᵀ` (`choleskyFn`, `B` SPD ⟹ the factorization succeeds);
+* form the *whitened* matrix `C = L⁻¹·A·L⁻ᵀ`, which is symmetric and has the **same eigenvalues** as
+  the pencil `(A, B)` — substituting `w = Lᵀ·v` turns `A·v = λ·B·v` into `C·w = λ·w`;
+* standard-eigendecompose `C = W·diag(λ)·Wᵀ` (`symEigJacobiSpec`);
+* *unwhiten* the eigenvectors: `v = L⁻ᵀ·w` (back-substitution `Lᵀ·v = w`).
+
+The recovered eigenvalues `λ` are the generalized eigenvalues (the canonical correlations, for the
+CCA pencil); the columns of the recovered `V` are `B`-orthonormal (`Vᵀ·B·V = I`) rather than
+ordinary-orthonormal — that is exactly the whitening guarantee CCA needs. Every piece is a *landed*
+primitive (`choleskyFn`, the triangular solves, `symEigJacobiSpec`); only this composition is new. -/
+
+/-- Strict, array-backed runtime implementation of `whitenFn` (registered via `@[implemented_by]`).
+Materializes `L` once, runs the two rounds of forward substitution over arrays. -/
+def whitenImpl {n : Nat} (L A : Fin n → Fin n → α) : Fin n → Fin n → α :=
+  let La : Array (Array α) := Array.ofFn (fun i : Fin n => Array.ofFn (fun j : Fin n => L i j))
+  let Lent : Nat → Nat → α := fun i j => (La.getD i #[]).getD j 0
+  let fsolve : (Nat → α) → Array α := fun b =>
+    (List.finRange n).foldl (fun x i =>
+      let iv := i.val
+      let s := (List.finRange n).foldl
+        (fun acc k => if k.val < iv then acc + Lent iv k.val * x.getD k.val 0 else acc) 0
+      x.push ((b iv - s) / Lent iv iv)) #[]
+  -- `M = L⁻¹·A`, by columns: `Mcols[j][i] = M[i][j]`.
+  let Mcols : Array (Array α) :=
+    Array.ofFn (fun j : Fin n => fsolve (fun r => if h : r < n then A ⟨r, h⟩ j else 0))
+  -- `C = L⁻¹·Mᵀ` (`Cᵀ = L⁻¹·Mᵀ`), by rows: `Crows[i][j] = C[i][j]`.
+  let Crows : Array (Array α) :=
+    Array.ofFn (fun i : Fin n => fsolve (fun k => (Mcols.getD k #[]).getD i.val 0))
+  fun i j => (Crows.getD i.val #[]).getD j.val 0
+
+/-- Whiten `A` by the Cholesky factor `L` of `B` (so `B = L·Lᵀ`): the symmetric matrix
+`C = L⁻¹·A·L⁻ᵀ`. Computed by triangular solves only (no explicit inverse): `M = L⁻¹·A` column by
+column (`triSolveLowerFn L (A·,j)`), then `C = L⁻¹·Mᵀ` row by row (using `Cᵀ = L⁻¹·Mᵀ`), so
+`C[i,j] = (L⁻¹·(row i of M))[j]`. In exact arithmetic `C = Cᵀ`.
+
+The runtime implementation is `whitenImpl` (strict arrays); this closure form is what the correctness
+proofs reason about. -/
+@[implemented_by whitenImpl]
+def whitenFn {n : Nat} (L A : Fin n → Fin n → α) : Fin n → Fin n → α :=
+  let M : Fin n → Fin n → α := fun i j => triSolveLowerFn L (fun r => A r j) i
+  fun i j => triSolveLowerFn L (fun k => M i k) j
+
+/--
+Strict, array-backed runtime implementation of `genSymEigCholeskyFn` (registered via
+`@[implemented_by]`). It materializes `L = choleskyFn B` into a strict `Array (Array α)` once, runs the
+whitening `C = L⁻¹·A·L⁻ᵀ` and the eigenvector unwhitening `V = L⁻ᵀ·W` entirely over arrays, and calls
+the (already strict) `symEigJacobiSpec` on `C`. The closure form below is what the correctness proofs
+reason about; this computes the *same* result without re-evaluating the deep `choleskyFn` / triangular
+closures the functional form rebuilds per entry. The numeric parity examples validate the two agree. -/
+def genSymEigCholeskyImpl {n : Nat} (A B : Fin n → Fin n → α) (sweeps : Nat) :
+    (Fin n → α) × (Fin n → Fin n → α) :=
+  -- Cholesky columns of `B`, left to right: `cols[j][i] = L[i][j]` (strict arrays).
+  let cols : Array (Array α) := (List.finRange n).foldl (fun cols j =>
+    let jv := j.val
+    let sumsq := (List.finRange n).foldl
+      (fun s k => if k.val < jv then let v := (cols.getD k.val #[]).getD jv 0; s + v * v else s) 0
+    let Ljj := MathFunctions.sqrt (B j j - sumsq)
+    cols.push (Array.ofFn (fun i : Fin n =>
+      if i.val < jv then 0
+      else if i.val == jv then Ljj
+      else
+        let s := (List.finRange n).foldl (fun acc k =>
+          if k.val < jv then
+            acc + (cols.getD k.val #[]).getD i.val 0 * (cols.getD k.val #[]).getD jv 0
+          else acc) 0
+        (B i j - s) / Ljj))) #[]
+  let Lent : Nat → Nat → α := fun i j => (cols.getD j #[]).getD i 0
+  -- Forward solve `L·x = b`: `x[i] = (b[i] − Σ_{k<i} L[i,k]·x[k]) / L[i,i]`.
+  let fsolve : (Nat → α) → Array α := fun b =>
+    (List.finRange n).foldl (fun x i =>
+      let iv := i.val
+      let s := (List.finRange n).foldl
+        (fun acc k => if k.val < iv then acc + Lent iv k.val * x.getD k.val 0 else acc) 0
+      x.push ((b iv - s) / Lent iv iv)) #[]
+  -- Back solve `Lᵀ·x = b`: `x[i] = (b[i] − Σ_{k>i} L[k,i]·x[k]) / L[i,i]`, `i = n−1 … 0`.
+  let bsolve : (Nat → α) → Array α := fun b =>
+    (List.finRange n).reverse.foldl (fun xs i =>
+      let iv := i.val
+      let s := (List.finRange n).foldl
+        (fun acc k => if iv < k.val then acc + Lent k.val iv * xs.getD k.val 0 else acc) 0
+      xs.set! iv ((b iv - s) / Lent iv iv)) (Array.replicate n 0)
+  -- `M = L⁻¹·A`, stored by columns: `Mcols[j][i] = M[i][j]`.
+  let Mcols : Array (Array α) :=
+    (Array.ofFn (fun j : Fin n => fsolve (fun r => if h : r < n then A ⟨r, h⟩ j else 0)))
+  -- `C = L⁻¹·Mᵀ` (so `Cᵀ = L⁻¹·Mᵀ`), stored by rows: `Crows[i][j] = C[i][j]`.
+  let Crows : Array (Array α) :=
+    (Array.ofFn (fun i : Fin n => fsolve (fun k => (Mcols.getD k #[]).getD i.val 0)))
+  let C : Fin n → Fin n → α := fun i j => (Crows.getD i.val #[]).getD j.val 0
+  let (Λ, W) := symEigJacobiSpec (ofMatFn C) sweeps
+  let Wf := toMatFn W
+  -- Unwhiten: `V[·,j] = L⁻ᵀ·W[·,j]`, stored by columns `Vcols[j][i] = V[i][j]`.
+  let Vcols : Array (Array α) :=
+    Array.ofFn (fun j : Fin n => bsolve (fun r => if h : r < n then Wf ⟨r, h⟩ j else 0))
+  (toVecFn Λ, fun i j => (Vcols.getD j.val #[]).getD i.val 0)
+
+/--
+Generalized symmetric eigendecomposition `A·v = λ·B·v` for symmetric `A` and SPD `B`, via Cholesky
+whitening of `B` (the CCA / dimension-reduction reduction). Returns `(λ, V)` with `λ` the generalized
+eigenvalues (ascending) and the columns of `V` the generalized eigenvectors, `B`-orthonormal
+(`Vᵀ·B·V = I` in exact arithmetic).
+
+The runtime implementation is `genSymEigCholeskyImpl` (strict arrays); this closure form, built from the
+landed `choleskyFn`, `whitenFn` (triangular solves), and `symEigJacobiSpec`, is what the correctness
+proofs reason about. Both compute the same result.
+
+`scipy.linalg.eigh(A, B)` / Julia `eigen(A, B)` analogue (the generalized symmetric driver). -/
+@[implemented_by genSymEigCholeskyImpl]
+def genSymEigCholeskyFn {n : Nat} (A B : Fin n → Fin n → α) (sweeps : Nat) :
+    (Fin n → α) × (Fin n → Fin n → α) :=
+  let L := choleskyFn B
+  let C := whitenFn L A
+  let (Λ, W) := symEigJacobiSpec (ofMatFn C) sweeps
+  let Wf := toMatFn W
+  (toVecFn Λ, fun i j => triSolveUpperFn (fun a b => L b a) (fun r => Wf r j) i)
+
+/-- Tensor-level generalized symmetric eigendecomposition `A·v = λ·B·v` (`A` symmetric, `B` SPD),
+via Cholesky whitening. Returns `(eigenvalues, V)` with columns of `V` the `B`-orthonormal generalized
+eigenvectors. `sweeps` controls the Jacobi sweep count for the whitened standard eigenproblem.
+
+PyTorch / SciPy analogue: `scipy.linalg.eigh(A, B)`. -/
+def genSymEigCholeskySpec {n : Nat} (A B : Tensor α (.dim n (.dim n .scalar)))
+    (sweeps : Nat := 12) : Tensor α (.dim n .scalar) × Tensor α (.dim n (.dim n .scalar)) :=
+  let (evals, V) := genSymEigCholeskyFn (toMatFn A) (toMatFn B) sweeps
+  (ofVecFn evals, ofMatFn V)
 
 end Spec

@@ -16,10 +16,10 @@ public import Mathlib.Algebra.BigOperators.Fin
 
 This file proves the *exact* algebraic reconstruction of the finite executable Cholesky and QR
 factorizations from [`NN.Spec.Core.Tensor.Factorizations`](../../../Spec/Core/Tensor/Factorizations.lean),
-building on the predicates and fold-indexing lemmas of `NN.Proofs.Tensor.Basic.Factorizations`. Because
-Cholesky and Gram–Schmidt are *direct, finite* constructions — no iteration, no convergence caveat —
-over `ℝ` they reconstruct their input on the nose under the success hypotheses (positive pivots / full
-column rank), an exact identity rather than an a-posteriori bound.
+the increment promised in `NN.Proofs.Tensor.Basic.Factorizations`. Unlike the iterative Jacobi/SVD
+routines (whose reconstruction is only an a-posteriori residual certificate), Cholesky and Gram–Schmidt
+are *finite* constructions, so over `ℝ` they reconstruct their input on the nose under the success
+hypotheses.
 
 ## Main results
 
@@ -82,6 +82,61 @@ theorem finsum_eq_finRange_sum (h : Fin n → ℝ) :
     ∑ i, h i = ((List.finRange n).map h).sum := by
   rw [← List.sum_toFinset _ (List.nodup_finRange n)]
   · simp [List.toFinset_finRange]
+
+/-! ## General snoc-fold read lemmas -/
+
+section FoldSnoc
+
+variable {β : Type _} {ι : Type _}
+
+/-- A left fold that appends one element per input grows the accumulator by `l.length`. -/
+theorem length_foldl_snoc (g : List β → ι → β) (l : List ι) (acc : List β) :
+    (l.foldl (fun s a => s ++ [g s a]) acc).length = acc.length + l.length := by
+  induction l generalizing acc with
+  | nil => simp
+  | cons a t ih =>
+      rw [List.foldl_cons, ih]
+      simp only [List.length_append, List.length_cons, List.length_nil]
+      grind
+
+/-- A fold that only appends never changes an index already inside the accumulator. -/
+theorem getD_foldl_snoc_lt (g : List β → ι → β) (d : β) (l : List ι) (acc : List β)
+    (k : Nat) (hk : k < acc.length) :
+    (l.foldl (fun s a => s ++ [g s a]) acc).getD k d = acc.getD k d := by
+  induction l generalizing acc with
+  | nil => simp
+  | cons a t ih =>
+      rw [List.foldl_cons,
+        ih (acc ++ [g acc a]) (by rw [List.length_append]; grind),
+        List.getD_append _ _ _ _ hk]
+
+/-- The element at position `k` of the snoc-fold over an arbitrary list `l` is `g` applied to the
+fold of the length-`k` prefix and the `k`-th element. -/
+theorem getD_foldl_snoc_read (g : List β → ι → β) (d : β) (l : List ι) (k : Nat)
+    (hk : k < l.length) :
+    (l.foldl (fun s a => s ++ [g s a]) []).getD k d
+      = g ((l.take k).foldl (fun s a => s ++ [g s a]) []) (l[k]'hk) := by
+  have htake : l.take (k + 1) = l.take k ++ [l[k]'hk] := List.take_succ_eq_append_getElem hk
+  have hplen : ((l.take k).foldl (fun s a => s ++ [g s a]) []).length = k := by
+    rw [length_foldl_snoc, List.length_nil, List.length_take, Nat.zero_add,
+      Nat.min_eq_left (le_of_lt hk)]
+  calc
+    (l.foldl (fun s a => s ++ [g s a]) []).getD k d
+        = ((l.drop (k + 1)).foldl (fun s a => s ++ [g s a])
+            ((l.take (k + 1)).foldl (fun s a => s ++ [g s a]) [])).getD k d := by
+          conv_lhs => rw [show l = l.take (k + 1) ++ l.drop (k + 1) from
+            (List.take_append_drop _ _).symm]
+          rw [List.foldl_append]
+    _ = ((l.take (k + 1)).foldl (fun s a => s ++ [g s a]) []).getD k d := by
+          apply getD_foldl_snoc_lt
+          rw [length_foldl_snoc, List.length_nil, List.length_take, Nat.zero_add]
+          grind
+    _ = g ((l.take k).foldl (fun s a => s ++ [g s a]) []) (l[k]'hk) := by
+          rw [htake, List.foldl_append, List.foldl_cons, List.foldl_nil]
+          rw [List.getD_append_right _ _ _ _ (le_of_eq hplen), hplen, Nat.sub_self]
+          rfl
+
+end FoldSnoc
 
 /-! ## Cholesky: the column-building step
 

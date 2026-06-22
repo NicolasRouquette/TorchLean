@@ -34,6 +34,8 @@ import TorchLeanBlueprint.Guide.Ch4_Verification.ClassicalMLProofs
 import TorchLeanBlueprint.Guide.Ch4_Verification.ProbabilityAndGradients
 import TorchLeanBlueprint.Guide.Ch4_Verification.ScientificMLVerification
 import TorchLeanBlueprint.Guide.Ch4_Verification.FactorizationsCholeskyQR
+import TorchLeanBlueprint.Guide.Ch4_Verification.FactorizationsEigSVD
+import TorchLeanBlueprint.Guide.Ch4_Verification.GenSymEigWhitening
 import TorchLeanBlueprint.Guide.Ch4_Verification.Certificates
 import TorchLeanBlueprint.Guide.Ch4_Verification.FP32Soundness
 import TorchLeanBlueprint.Guide.Ch4_Verification.TwoStageWorkflows
@@ -233,6 +235,10 @@ into precise mathematical statements.
 {include 2 TorchLeanBlueprint.Guide.Ch4_Verification.ScientificMLVerification}
 
 {include 2 TorchLeanBlueprint.Guide.Ch4_Verification.FactorizationsCholeskyQR}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.FactorizationsEigSVD}
+
+{include 2 TorchLeanBlueprint.Guide.Ch4_Verification.GenSymEigWhitening}
 
 {include 2 TorchLeanBlueprint.Guide.Ch4_Verification.Certificates}
 

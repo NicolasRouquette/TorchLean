@@ -8,37 +8,54 @@ module
 
 public import NN.Spec.Core.Tensor.Factorizations
 public import NN.Proofs.Tensor.Basic.LinearAlgebra
+public import Mathlib.Analysis.Matrix.Spectrum
+public import Mathlib.Analysis.Matrix.PosDef
+public import Mathlib.Analysis.Matrix.HermitianFunctionalCalculus
+public import Mathlib.LinearAlgebra.Matrix.PosDef
+public import Mathlib.LinearAlgebra.UnitaryGroup
+public import Mathlib.LinearAlgebra.Matrix.NonsingularInverse
 public import Mathlib.Data.List.GetD
 
 /-!
-# Correctness of the exact matrix factorizations (Cholesky and QR)
+# Correctness of the matrix factorizations (foundation for CHD)
 
-This file sets up the **formal correctness layer** for the two exact, finite spec-layer factorizations
-in [`NN.Spec.Core.Tensor.Factorizations`](../../../Spec/Core/Tensor/Factorizations.lean)
-(`choleskySpec`, `qrSpec`): the factorization predicates over real matrices, and the first structural
-theorem about the executable Cholesky factor.
+This file provides the **formal correctness theorems** for the spec-layer factorizations in
+[`NN.Spec.Core.Tensor.Factorizations`](../../../Spec/Core/Tensor/Factorizations.lean)
+(`choleskySpec`, `qrSpec`, `symEigJacobiSpec`, `svdSpec`). The motivation is
+[Computational Hypergraph Discovery](https://github.com/TheoBourdais/ComputationalHypergraphDiscovery):
+a Gaussian-process / kernel-ridge method whose numerical core reduces to the **full symmetric
+eigendecomposition** of a kernel matrix `K`. CHD's `solve_variationnal`, `find_gamma` and `Z_test`
+are all expressed through the eigendecomposition of `K`, so a verified linear-algebra foundation is a
+prerequisite for formalizing CHD.
 
 ## Architecture (refinement)
 
-* **Specifications** (`IsCholesky`, `IsQR`) are `Prop`s on Mathlib `Matrix (Fin n) (Fin n) ℝ`.
-  Mathlib's `Matrix m n α` is *definitionally* `m → n → α`, so the function representation
-  `Spec.toMatFn` produced by the executable specs bridges for free.
-* **Fold-indexing lemmas** (`length_foldl_snoc`, `getD_foldl_snoc_lt`, `getD_foldl_snoc_read`,
-  `getD_foldl_finRange`) read off the column produced at a given position of the left fold that both
-  `choleskyColsFn` and `gramSchmidtFn` use to build their output, bridging the executable `List.foldl`
-  form to per-entry reasoning. They live here once and are reused by `FactorizationsReconstruction`.
-* **Structural theorem.** The executable Cholesky factor is lower-triangular
-  (`choleskyFn_lower_triangular`, lifted to the tensor level as `choleskySpec_lower_triangular`),
-  proved directly from the column fold — the above-diagonal entry is forced to `0` by construction.
+* **Specifications** (`IsCholesky`, `IsQR`, `IsSymEig`, `IsSVD`) are `Prop`s on Mathlib
+  `Matrix (Fin n) (Fin n) ℝ`. Mathlib's `Matrix m n α` is *definitionally* `m → n → α`, so the
+  function representation `Spec.toMatFn` produced by the executable specs bridges for free.
+* **Foundation theorems** (this is what CHD consumes) are proved from the *specifications*, independent
+  of the executable algorithm, via Mathlib's spectral theorem and continuous functional calculus.
+* **Algorithm theorems** connect the executable `Spec.*Fn` defs to the specifications. Proven here:
+  the Cholesky factor is lower-triangular (`choleskyFn_lower_triangular`); the Jacobi/SVD routines
+  satisfy their *exact* invariants — orthogonal similarity preserves trace/determinant
+  (`trace_orthogonal_conj`, `det_orthogonal_conj`), the Givens rotation is orthogonal
+  (`givens_normSq`), and the eigendecomposition is exact in the zero-residual limit
+  (`isSymEig_of_diagonal`), with the finite-sweep error captured a-posteriori by
+  `symEig_frobenius_residual`.
 
-## Scope
+## Scope honesty
 
-This file proves only the predicates and the lower-triangularity fact. The exact algebraic
-reconstructions — `A = L · Lᵀ` for Cholesky (under positive pivots) and `A = Q · R` with `Qᵀ Q = 1`
-for Gram–Schmidt (under full column rank) — are proved in the companion files
-[`FactorizationsReconstruction`](FactorizationsReconstruction.lean) and
-[`FactorizationsOrthonormal`](FactorizationsOrthonormal.lean). Everything here is an exact identity
-over `ℝ`; the only hypotheses are the genuine success conditions of the algorithms.
+`A = V · diag(λ) · Vᵀ` is **not** an exact theorem for the finite-sweep / floating-point Jacobi output;
+it is the *target* certified at runtime by the `assertLt` checks in `NN/Examples/Factorization`, and
+bounded a-posteriori here by `symEig_frobenius_residual` (residual = off-diagonal mass of `Af`).
+Mathlib v4.30.0 has no Jacobi convergence theory and `Float` never diagonalizes exactly, so no
+a-priori convergence theorem is possible.
+
+The exact algebraic reconstruction of the executable *finite* factorizations — `A = L · Lᵀ` for
+`choleskyFn` (under SPD pivots) and `A = Q · R`, `Qᵀ Q = 1` for `gramSchmidtFn` (under full column
+rank) — is the remaining increment: it requires an induction relating the `List.foldl` prefix at step
+`j` to the first `j` columns (extending `getD_foldl_finRange`) plus the per-pivot positivity discharge.
+The specification-level consequences CHD needs (above) are independent of that algorithmic step.
 -/
 
 @[expose] public section
@@ -70,15 +87,14 @@ def IsQR {m k : Nat} (A Q : Matrix (Fin m) (Fin k) ℝ) (R : Matrix (Fin k) (Fin
 
 `choleskyColsFn` and `gramSchmidtFn` build their output with a left fold that appends one column per
 index. The lemmas here read off the column produced at a given position, bridging the executable
-`List.foldl` form to per-entry reasoning. They are generic over the appended-value function `g` and
-are the single home for these snoc-fold read lemmas — `FactorizationsReconstruction` reuses them. -/
+`List.foldl` form to per-entry reasoning. They are generic over the appended-value function `g`. -/
 
 section FoldSnoc
 
 variable {β : Type _} {ι : Type _}
 
 /-- A left fold that appends one element per input grows the accumulator by `l.length`. -/
-theorem length_foldl_snoc (g : List β → ι → β) (l : List ι) (acc : List β) :
+private theorem length_foldl_snoc (g : List β → ι → β) (l : List ι) (acc : List β) :
     (l.foldl (fun s a => s ++ [g s a]) acc).length = acc.length + l.length := by
   induction l generalizing acc with
   | nil => simp
@@ -88,7 +104,7 @@ theorem length_foldl_snoc (g : List β → ι → β) (l : List ι) (acc : List 
       grind
 
 /-- A fold that only appends never changes an index already inside the accumulator. -/
-theorem getD_foldl_snoc_lt (g : List β → ι → β) (d : β) (l : List ι) (acc : List β)
+private theorem getD_foldl_snoc_lt (g : List β → ι → β) (d : β) (l : List ι) (acc : List β)
     (k : Nat) (hk : k < acc.length) :
     (l.foldl (fun s a => s ++ [g s a]) acc).getD k d = acc.getD k d := by
   induction l generalizing acc with
@@ -98,35 +114,9 @@ theorem getD_foldl_snoc_lt (g : List β → ι → β) (d : β) (l : List ι) (a
         ih (acc ++ [g acc a]) (by rw [List.length_append]; grind),
         List.getD_append _ _ _ _ hk]
 
-/-- The element at position `k` of the snoc-fold over an arbitrary list `l` is `g` applied to the
-fold of the length-`k` prefix and the `k`-th element. -/
-theorem getD_foldl_snoc_read (g : List β → ι → β) (d : β) (l : List ι) (k : Nat)
-    (hk : k < l.length) :
-    (l.foldl (fun s a => s ++ [g s a]) []).getD k d
-      = g ((l.take k).foldl (fun s a => s ++ [g s a]) []) (l[k]'hk) := by
-  have htake : l.take (k + 1) = l.take k ++ [l[k]'hk] := List.take_succ_eq_append_getElem hk
-  have hplen : ((l.take k).foldl (fun s a => s ++ [g s a]) []).length = k := by
-    rw [length_foldl_snoc, List.length_nil, List.length_take, Nat.zero_add,
-      Nat.min_eq_left (le_of_lt hk)]
-  calc
-    (l.foldl (fun s a => s ++ [g s a]) []).getD k d
-        = ((l.drop (k + 1)).foldl (fun s a => s ++ [g s a])
-            ((l.take (k + 1)).foldl (fun s a => s ++ [g s a]) [])).getD k d := by
-          conv_lhs => rw [show l = l.take (k + 1) ++ l.drop (k + 1) from
-            (List.take_append_drop _ _).symm]
-          rw [List.foldl_append]
-    _ = ((l.take (k + 1)).foldl (fun s a => s ++ [g s a]) []).getD k d := by
-          apply getD_foldl_snoc_lt
-          rw [length_foldl_snoc, List.length_nil, List.length_take, Nat.zero_add]
-          grind
-    _ = g ((l.take k).foldl (fun s a => s ++ [g s a]) []) (l[k]'hk) := by
-          rw [htake, List.foldl_append, List.foldl_cons, List.foldl_nil]
-          rw [List.getD_append_right _ _ _ _ (le_of_eq hplen), hplen, Nat.sub_self]
-          rfl
-
 /-- The element at position `j` of the snoc-fold over `finRange n` is `g` applied to the fold of the
 length-`j` prefix and the index `j`. -/
-theorem getD_foldl_finRange (g : List β → Fin n → β) (d : β) (j : Fin n) :
+private theorem getD_foldl_finRange (g : List β → Fin n → β) (d : β) (j : Fin n) :
     ((List.finRange n).foldl (fun s a => s ++ [g s a]) []).getD j.val d
       = g (((List.finRange n).take j.val).foldl (fun s a => s ++ [g s a]) []) j := by
   have hjlen : j.val < (List.finRange n).length := by

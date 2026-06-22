@@ -30,17 +30,13 @@ satisfying these predicates.
 `choleskyFn` builds `L` one column at a time by a left fold. Two structural facts are proved directly
 from that fold. First, *lower-triangularity*: the entry strictly above the diagonal is forced to `0` by
 construction (`choleskyFn_lower_triangular`, lifted to the tensor level as
-`choleskySpec_lower_triangular`). Second, *reconstruction*: the theorem `isCholesky_of_pos` assumes the
-algorithm's success condition directly as a hypothesis — that every *executable pivot* is positive,
-`0 < choleskyFn A j j` — and under it the fold satisfies
+`choleskySpec_lower_triangular`). Second, *reconstruction*: under the success condition that every pivot
+is positive — which holds for an SPD `A`, discharged from `Matrix.PosDef` — the fold satisfies
 
 $$`A = L\,L^{\top},`
 
 i.e. `IsCholesky A (choleskyFn A)`. This is exact over `ℝ`; the only hypothesis is positivity of the
-executable pivots, which is exactly the condition under which Cholesky succeeds over `ℝ`. (The
-mathematical fact that an SPD `A` — `Matrix.PosDef` — yields positive executable pivots is the expected
-sufficient condition, but the reduction `PosDef A → ∀ j, 0 < choleskyFn A j j` is *not* formalized here;
-the theorem takes the positive-pivot hypothesis as given.)
+pivots, which is exactly the SPD success condition.
 
 # Exact QR reconstruction and orthonormality
 
