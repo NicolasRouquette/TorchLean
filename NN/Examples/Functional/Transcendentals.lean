@@ -28,7 +28,10 @@ the closed form:
   defect class — a sign/factor error in a hand-coded Jacobian — that deriving the
   gradient by autograd eliminates.
 
-`#eval checkAll` runs at build time and fails the build on any regression.
+`checkAll` runs as a compiled executable — `lake exe transcendentals_check` — and
+exits non-zero on any regression. It is deliberately *not* an `#eval` check:
+autograd uses the native tape externs, which the interpreter cannot load (see the
+`main` entry point below).
 -/
 
 @[expose] public section

@@ -22,7 +22,9 @@ so reverse-mode `grad` / `jacrev` works through them unchanged. They live in the
 functional namespace alongside `square` and `mean`:
 
 - `nn.functional.exp` — elementwise `eˣ` (`torch.exp`).
-- `nn.functional.log` — elementwise `ln x` (`torch.log`).
+- `nn.functional.log` — elementwise `ln x` (`torch.log`). For real-valued
+  reasoning, assume positive inputs; it is the real natural log only on `x > 0`,
+  and `Float` behavior on nonpositive values (`nan` / `-inf`) follows the backend.
 - `nn.functional.scale x c` — multiply by a constant scalar, `c · x`.
 - `nn.functional.shift x c` — add a constant scalar, `x + c`.
 - `nn.functional.affine x c k` — the affine map `c · x + k`, the single most

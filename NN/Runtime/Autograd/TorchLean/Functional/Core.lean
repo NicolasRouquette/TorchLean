@@ -68,7 +68,12 @@ def exp {α : Type} [Context α] [DecidableEq Shape]
     {s : Shape} (x : RefTy (m := m) (α := α) s) : m (RefTy (m := m) (α := α) s) :=
   _root_.Runtime.Autograd.Torch.exp (m := m) (α := α) (s := s) x
 
-/-- Elementwise natural log `x ↦ ln x`.  PyTorch: `torch.log`. -/
+/-- Elementwise natural log `x ↦ ln x`.  PyTorch: `torch.log`.
+
+Domain: for real-valued reasoning, assume positive inputs — this is the real
+natural log only on `x > 0`.  At the runtime/`Float` boundary, nonpositive inputs
+follow backend behavior (e.g. `nan` / `-inf`) rather than a safe total
+real-valued log. -/
 def log {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {s : Shape} (x : RefTy (m := m) (α := α) s) : m (RefTy (m := m) (α := α) s) :=
