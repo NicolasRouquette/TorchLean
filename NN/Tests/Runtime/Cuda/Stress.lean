@@ -119,6 +119,91 @@ def runReleaseStress : IO Unit := do
   if Buffer.size b != 0 then
     throw <| IO.userError s!"release size reset: expected 0, got {Buffer.size b}"
 
+/--
+Build `k` distinct length-`n` buffers and force their allocation immediately.
+
+The fill value varies per `(salt, index)` for two reasons: within a call it stops the compiler from
+hoisting one shared `full` out of the inner loop, and across calls a distinct `salt` keeps the whole
+expression from being treated as loop-invariant (and hoisted out of the *caller's* loop) or CSE'd with
+another call site — either of which would allocate the buffers once, outside the arena under test. The
+returned element-count total is a forcing witness the caller checks.
+-/
+def buildArenaScratch (n : UInt32) (k : Nat) (salt : Nat) : Array Buffer × Nat :=
+  Id.run do
+    let mut held : Array Buffer := Array.mkEmpty k
+    for i in [0:k] do
+      held := held.push (Buffer.full n (1.0 + Float.ofNat (salt * k + i)))
+    let mut touched : Nat := 0
+    for b in held do
+      touched := touched + (Buffer.size b).toNat
+    return (held, touched)
+
+def runArenaStress : IO Unit := do
+  IO.println "== cuda arena scope stress =="
+
+  let n : UInt32 := 4096
+  let k : Nat := 64
+  let blocks : Nat := 4
+  let expectTouched := k * n.toNat
+  let base ← Buffer.allocatorStats
+  IO.println s!"  baseline:        {base.format}"
+
+  -- Reclaim path: `k` buffers are built and held live (never released) inside an arena, kept alive
+  -- across the scope exit, and reclaimed anyway. This is the case explicit `release` cannot reach: the
+  -- buffers stay GC-reachable for the whole scope, so only the arena can free them.
+  for blockIdx in [0:blocks] do
+    let before ← Buffer.allocatorStatsWithToken (UInt32.ofNat blockIdx)
+    Buffer.arenaEnter
+    let (held, touched) := buildArenaScratch n k blockIdx
+    if touched != expectTouched then
+      throw <| IO.userError s!"arena: scratch build under-allocated ({touched} vs {expectTouched})"
+    let inside ← Buffer.allocatorStatsWithToken (UInt32.ofNat (blockIdx + 100))
+    if inside.allocCount != before.allocCount + UInt64.ofNat k then
+      throw <| IO.userError
+        s!"arena: expected {k} in-scope allocations ({before.allocCount} → {inside.allocCount})"
+    if inside.freeCount != before.freeCount then
+      throw <| IO.userError
+        s!"arena: buffers freed before scope exit ({before.freeCount} → {inside.freeCount})"
+    -- Keep nothing: every in-scope buffer is reclaimed even though `held` still references them all.
+    Buffer.arenaExit #[]
+    -- Touch `held` *after* the exit so it stays live across it: this proves the ARENA did the freeing,
+    -- not reference-counted finalization (which cannot run while `held` is still referenced).
+    let heldGuard := held.size
+    let after ← Buffer.allocatorStatsWithToken (UInt32.ofNat (blockIdx + 200))
+    if heldGuard != k then
+      throw <| IO.userError s!"arena: held guard mismatch ({heldGuard} vs {k})"
+    if after.freeCount != before.freeCount + UInt64.ofNat k then
+      throw <| IO.userError
+        s!"arena: scope exit freed {after.freeCount - before.freeCount}, expected {k} live buffers"
+    if after.liveBytes != before.liveBytes then
+      throw <| IO.userError
+        s!"arena: live bytes not restored at scope exit ({before.liveBytes} → {after.liveBytes})"
+  IO.println s!"  reclaimed {k} live in-scope buffers across {blocks} arenas"
+
+  -- Promotion path: a kept buffer survives the scope and stays usable; the rest are reclaimed.
+  let before ← Buffer.allocatorStats
+  Buffer.arenaEnter
+  let keeper := Buffer.full n 2.0
+  -- Force `keeper`'s allocation inside the scope (so it is registered and then promoted on exit).
+  if Buffer.size keeper != n then
+    throw <| IO.userError "arena: keep-path keeper not allocated"
+  let (scratch, scratchTouched) := buildArenaScratch n k blocks
+  if scratchTouched != expectTouched then
+    throw <| IO.userError "arena: keep-path scratch build under-allocated"
+  Buffer.arenaExit #[keeper]
+  let scratchGuard := scratch.size
+  let after ← Buffer.allocatorStats
+  if scratchGuard != k then
+    throw <| IO.userError "arena: keep-path scratch guard mismatch"
+  if after.freeCount != before.freeCount + UInt64.ofNat k then
+    throw <| IO.userError
+      s!"arena keep: expected {k} frees, got {after.freeCount - before.freeCount}"
+  -- `keeper` was promoted out of the scope, so its data is intact: reducing it still sees `2.0`.
+  let keptSum := (Buffer.toFloatArray (Buffer.reduceSum keeper)).get! 0
+  let expectedSum := 2.0 * Float.ofNat n.toNat
+  Utils.assertApprox "arena kept-buffer survives scope" keptSum expectedSum (tol := 1e-1)
+  IO.println "  promoted buffer survived its arena"
+
 def runGradientAliasingStress : IO Unit := do
   IO.println "== CUDA tape gradient aliasing regression =="
 
@@ -237,6 +322,7 @@ def run : IO Unit := do
   IO.println "=== CUDA runtime stress suite ==="
   runRngStress
   runReleaseStress
+  runArenaStress
   runGradientAliasingStress
   runLargeBufferStress
   runMatmulStress

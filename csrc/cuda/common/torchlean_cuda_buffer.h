@@ -46,8 +46,9 @@ static inline uint32_t nat_to_u32_or_panic(b_lean_obj_arg o, const char* msg) {
 }
 
 typedef struct {
-  size_t size;  // number of float32 elements
-  float* data;  // device/host pointer (depending on build)
+  size_t size;       // number of float32 elements
+  float* data;       // device/host pointer (depending on build)
+  void* arena_reg;   // non-NULL while tracked by an open `withCudaArena` scope (see torchlean_cuda_arena.h)
 } torchlean_cuda_buffer;
 
 // Helpers implemented by `torchlean_cuda_tensor.cu` / `torchlean_cuda_tensor_stub.c`.
@@ -125,6 +126,12 @@ LEAN_EXPORT uint64_t torchlean_cuda_allocator_alloc_count(uint32_t u);
 LEAN_EXPORT uint64_t torchlean_cuda_allocator_free_count(uint32_t u);
 LEAN_EXPORT uint64_t torchlean_cuda_allocator_device_free_bytes(uint32_t u);
 LEAN_EXPORT uint64_t torchlean_cuda_allocator_device_total_bytes(uint32_t u);
+
+// Scoped device-memory arena (`withCudaArena`).  `enter` opens an allocation epoch; `exit` reclaims
+// every device buffer allocated in it except the `keep` array, which is promoted to the parent scope.
+// See `torchlean_cuda_arena.h` for the model.  Both are IO actions on the Lean side.
+LEAN_EXPORT lean_obj_res torchlean_cuda_arena_enter(lean_obj_arg world);
+LEAN_EXPORT lean_obj_res torchlean_cuda_arena_exit(b_lean_obj_arg keep, lean_obj_arg world);
 
 #ifdef __cplusplus
 }  // extern "C"
