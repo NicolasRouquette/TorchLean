@@ -50,11 +50,17 @@ def run : IO Unit := do
   | some "uaf" => Tests.Cuda.Stress.runArenaUseAfterFreeProbe
   | some "valid" => Tests.Cuda.Stress.runArenaValidPromotionProbe
   | _ =>
-    IO.println "== TorchLean: curated tests =="
-    Tests.Floats.run
-    Tests.Rationals.Suite.run
-    Tests.Cuda.run
-    IO.println "== TorchLean: all curated tests passed =="
+    -- Death-test child mode for the block-cache byte cap. A forked child (see
+    -- `Tests.Cuda.Stress.runCacheCapTest`) re-enters here with the cap fixed in its environment and
+    -- runs only the cache probe, then exits, so the parent can inspect the outcome.
+    match ← IO.getEnv "TORCHLEAN_CUDA_CACHE_PROBE" with
+    | some "cache-cap" => Tests.Cuda.Stress.runCacheCapProbe
+    | _ =>
+      IO.println "== TorchLean: curated tests =="
+      Tests.Floats.run
+      Tests.Rationals.Suite.run
+      Tests.Cuda.run
+      IO.println "== TorchLean: all curated tests passed =="
 
 def main (args : List String) : IO Unit := do
   match args with

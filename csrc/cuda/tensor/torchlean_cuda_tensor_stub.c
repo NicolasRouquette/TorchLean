@@ -177,6 +177,13 @@ LEAN_EXPORT uint64_t torchlean_cuda_allocator_device_total_bytes(uint32_t u) {
   return 0u;
 }
 
+// The CPU stub frees dropped buffers immediately and keeps no reuse cache, so there is nothing to
+// cap and no cached bytes to report.
+LEAN_EXPORT uint64_t torchlean_cuda_allocator_cache_bytes(uint32_t u) {
+  (void)u;
+  return 0u;
+}
+
 LEAN_EXPORT uint32_t torchlean_cuda_buffer_size(b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
   if (b->size > 0xFFFFFFFFULL) {
