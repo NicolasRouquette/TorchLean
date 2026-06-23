@@ -134,6 +134,7 @@ torchlean_cuda_buffer* torchlean_cuda_buffer_alloc(size_t n) {
   b->size = n;
   b->data = NULL;
   b->arena_reg = NULL;
+  b->arena_freed_depth = 0;
   if (n > 0) {
     b->data = (float*)malloc(n * sizeof(float));
     if (!b->data) {

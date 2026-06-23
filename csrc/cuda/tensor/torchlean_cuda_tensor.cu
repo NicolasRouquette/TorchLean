@@ -290,6 +290,7 @@ extern "C" torchlean_cuda_buffer* torchlean_cuda_buffer_alloc(size_t n) {
   b->size = n;
   b->data = NULL;
   b->arena_reg = NULL;
+  b->arena_freed_depth = 0;
   if (n > 0) {
     b->data = torchlean_cuda_take_cached_block(n);
   }

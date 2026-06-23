@@ -173,6 +173,9 @@ static inline void torchlean_arena_exit(torchlean_cuda_buffer** keep, size_t nke
       torchlean_cuda_buffer* b = r->b;  // struct still valid while alive
       b->arena_reg = NULL;              // detach before freeing the reg (finalizer-safe)
       (void)release_data(b);
+      if (torchlean_arena_debug_enabled()) {
+        b->arena_freed_depth = exited + 1;  // record the reclaiming epoch for the UAF detector
+      }
     }
     free(r);
   }
