@@ -8,6 +8,7 @@ module
 
 public import NN.Tests.Runtime.Rationals.AutogradEngineTest
 public import NN.Tests.Runtime.Rationals.MlpTest
+public import NN.Tests.Runtime.Rationals.ElementwiseDivTest
 
 /-!
 # Suite
@@ -29,6 +30,7 @@ namespace Suite
 /-- Unified Rational test entrypoint (called by `NN/Tests/Suite.lean`). -/
 def run : IO Unit := do
   Tests.Rationals.AutogradEngine.run
+  Tests.Rationals.ElementwiseDiv.run
   Tests.Rationals.run
 
 end Suite

@@ -115,6 +115,14 @@ def mul {α : Type} [Mul α] [DecidableEq Shape] {s : Shape}
   set t'
   pure id
 
+/-- StateT wrapper around `Tape.div`. PyTorch comparison: `torch.div(a, b)` / `a / b`. -/
+def div {α : Type} [Context α] [DecidableEq Shape] {s : Shape}
+  (aId bId : Nat) : TapeM α Nat := do
+  let t ← get
+  let (t', id) ← liftM (Tape.div (t := t) (s := s) aId bId)
+  set t'
+  pure id
+
 /-- StateT wrapper around `Tape.scale`. PyTorch comparison: `c * x` / `torch.mul(x, c)`. -/
 def scale {α : Type} [Mul α] [DecidableEq Shape] {s : Shape}
   (xId : Nat) (c : α) : TapeM α Nat := do

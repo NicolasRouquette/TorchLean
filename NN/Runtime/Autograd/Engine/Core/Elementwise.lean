@@ -80,6 +80,35 @@ def mul {α : Type} [Mul α] [DecidableEq Shape] {s : Shape}
     }
   pure (t.addNode node)
 
+/-- Elementwise division. PyTorch: `torch.div` / `/`. Backward is the ordinary quotient
+rule, valid for nonzero denominators: `∂(a/b)/∂a = 1/b`, `∂(a/b)/∂b = −a/b²` (mirrors the
+CUDA `div` node; negation reuses `subSpec (fill 0)` as `sub` does, so no `Neg α` is required).
+
+Domain: real calculus does not define the derivative of `a/b` at `b = 0`, so this backward is
+the genuine quotient rule only where `b ≠ 0`. The carrier's `/` (and hence `divSpec`) may
+totalize or be backend-dependent at `b = 0`, but no real-valued gradient is implied there.
+
+Requires `[Context α]` like the sibling `abs`/`sqrt`/`exp` nodes (its `divSpec` forward rides
+the carrier's `/`). -/
+def div {α : Type} [Context α] [DecidableEq Shape] {s : Shape}
+  (t : Tape α) (aId bId : Nat) : Result (Tape α × Nat) := do
+  let a ← requireValue (α:=α) (t:=t) (s:=s) aId
+  let b ← requireValue (α:=α) (t:=t) (s:=s) bId
+  let y := divSpec a b
+  let node : Node α :=
+    { name := some "div"
+      value := AnyTensor.mk y
+      requires_grad := true
+      parents := [aId, bId]
+      backward := fun dLdyAny => do
+        let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
+        let da : Tensor α s := divSpec dLdy b
+        let dLdyA : Tensor α s := mulSpec dLdy (divSpec a (mulSpec b b))
+        let db : Tensor α s := subSpec (fill (0 : α) s) dLdyA
+        pure [(aId, AnyTensor.mk da), (bId, AnyTensor.mk db)]
+    }
+  pure (t.addNode node)
+
 /-- Multiply a tensor by a scalar constant. PyTorch: `x * c` for Python scalar `c`. -/
 def scale {α : Type} [Mul α] [DecidableEq Shape] {s : Shape}
   (t : Tape α) (xId : Nat) (c : α) : Result (Tape α × Nat) := do
