@@ -130,6 +130,7 @@ def globalAvgPoolNCHW := pure.globalAvgPoolNCHW
 namespace functional
 export pure.functional
   (square checkpoint
+   exp log scale shift affine
    detach stopGrad
    addB mulB
    embedding mean

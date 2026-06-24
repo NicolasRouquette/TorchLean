@@ -185,6 +185,13 @@ lean_exe torchlean_lint where
 lean_exe torchlean where
   root := `NN.Examples.Models.Runner
 
+-- Self-checking positive/negative example for the functional transcendental +
+-- scalar-affine ops (`nn.functional.{exp,log,scale,shift,affine}`). Runs the
+-- autograd checks compiled; exits non-zero on any regression.
+--   `lake exe transcendentals_check`
+lean_exe transcendentals_check where
+  root := `NN.Examples.Functional.Transcendentals
+
 -- API documentation (HTML) via `lake build NN:docs`.
 require «doc-gen4» from git
   "https://github.com/leanprover/doc-gen4" @ "v4.31.0"

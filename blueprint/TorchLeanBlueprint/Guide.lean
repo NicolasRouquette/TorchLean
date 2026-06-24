@@ -13,6 +13,7 @@ import TorchLeanBlueprint.Guide.Ch2_Frontend.TrainingFromScratch
 import TorchLeanBlueprint.Guide.Ch2_Frontend.TorchLeanAPI
 import TorchLeanBlueprint.Guide.Ch2_Frontend.ExecutionModes
 import TorchLeanBlueprint.Guide.Ch2_Frontend.AutogradWalkthrough
+import TorchLeanBlueprint.Guide.Ch2_Frontend.ScientificForwardModels
 import TorchLeanBlueprint.Guide.Ch2_Frontend.RuntimeAndAutograd
 import TorchLeanBlueprint.Guide.Ch2_Frontend.PyTorchRoundtrip
 import TorchLeanBlueprint.Guide.Ch3_Backend.GraphsAndIR
@@ -135,6 +136,8 @@ verification.
 {include 2 TorchLeanBlueprint.Guide.Ch2_Frontend.ExecutionModes}
 
 {include 2 TorchLeanBlueprint.Guide.Ch2_Frontend.AutogradWalkthrough}
+
+{include 2 TorchLeanBlueprint.Guide.Ch2_Frontend.ScientificForwardModels}
 
 {include 2 TorchLeanBlueprint.Guide.Ch2_Frontend.RuntimeAndAutograd}
 
