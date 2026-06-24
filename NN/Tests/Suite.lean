@@ -42,11 +42,19 @@ def usage : String :=
     ]
 
 def run : IO Unit := do
-  IO.println "== TorchLean: curated tests =="
-  Tests.Floats.run
-  Tests.Rationals.Suite.run
-  Tests.Cuda.run
-  IO.println "== TorchLean: all curated tests passed =="
+  -- Death-test child modes for the arena use-after-free detector. A forked child (see
+  -- `Tests.Cuda.Stress.runArenaDetectorDeathTest`) re-enters here with `TORCHLEAN_ARENA_UAF_PROBE` set
+  -- and runs only the planted UAF (`uaf` — expected to panic under `TORCHLEAN_ARENA_DEBUG=1`) or a
+  -- valid promotion (`valid` — expected to be left alone), then exits, so the parent can inspect it.
+  match ← IO.getEnv "TORCHLEAN_ARENA_UAF_PROBE" with
+  | some "uaf" => Tests.Cuda.Stress.runArenaUseAfterFreeProbe
+  | some "valid" => Tests.Cuda.Stress.runArenaValidPromotionProbe
+  | _ =>
+    IO.println "== TorchLean: curated tests =="
+    Tests.Floats.run
+    Tests.Rationals.Suite.run
+    Tests.Cuda.run
+    IO.println "== TorchLean: all curated tests passed =="
 
 def main (args : List String) : IO Unit := do
   match args with
