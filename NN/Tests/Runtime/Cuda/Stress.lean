@@ -476,6 +476,103 @@ def runArenaDetectorDeathTest : IO Unit := do
     throw <| IO.userError s!"arena UAF detector: with the detector off the probe should exit cleanly (exit {off.exitCode})"
   IO.println "  control: detector OFF leaves the use-after-free undetected, as designed ✓"
 
+/--
+Block-cache byte-cap probe, the subject of `runCacheCapTest`. Runs in a forked child so the cap
+(`TORCHLEAN_CUDA_CACHE_CAP_BYTES`, read once natively) is fixed before the first cache operation.
+
+The child allocates `k` same-size blocks (the cache starts empty, so each is a fresh device alloc),
+then returns them all to the cache via `Buffer.release`. The total returned (8 MiB here) far exceeds
+the 1 MiB cap. It then reads `cacheBytes` from the allocator telemetry and asserts:
+
+* **always** (both backends) — `cacheBytes ≤ cap`: the cap is enforced (the CPU stub holds no cache,
+  so `cacheBytes = 0 ≤ cap` trivially);
+* **on CUDA, capped** — the cap is the *binding* constraint: the workload exceeds it, yet the cache
+  filled to within one block of it (`block ≤ cacheBytes` and `cacheBytes + block > cap`) rather than
+  growing to the full 8 MiB;
+* **on CUDA, control** (`cap = 0`, unset) — every returned block stays cached
+  (`cacheBytes = totalReturned`): the unbounded growth the cap exists to bound.
+
+Selected in a forked child by `TORCHLEAN_CUDA_CACHE_PROBE=cache-cap` (see `NN.Tests.run`). -/
+def runCacheCapProbe : IO Unit := do
+  IO.println "== cuda block-cache byte-cap probe =="
+  let capStr ← IO.getEnv "TORCHLEAN_CUDA_CACHE_CAP_BYTES"
+  let capBytes : UInt64 := (capStr.bind (·.toNat?)).map UInt64.ofNat |>.getD 0
+  let n : UInt32 := 65536                              -- 256 KiB per block (float32)
+  let blockBytes : UInt64 := UInt64.ofNat (n.toNat * 4)
+  let k : Nat := 32                                    -- 8 MiB of returns, far past a 1 MiB cap
+  let totalBytes : UInt64 := UInt64.ofNat (n.toNat * 4 * k)
+  let pre ← Buffer.allocatorStats
+  -- `deviceTotalBytes` comes from `cudaMemGetInfo`: nonzero on the CUDA build, 0 on the CPU stub.
+  let onCuda : Bool := pre.deviceTotalBytes != 0
+  -- Fresh child: the cache starts empty, so every block is a real device alloc, not a cache reuse.
+  let (held, touched) := buildArenaScratch n k 1
+  if touched != k * n.toNat then
+    throw <| IO.userError "cache-cap probe: scratch build under-allocated"
+  -- Return every block to the cache. Under the cap, returns past the cap free instead of caching.
+  let mut freed : Nat := 0
+  for b in held do
+    freed := freed + (Buffer.release b).toNat
+  if freed != k then
+    throw <| IO.userError s!"cache-cap probe: expected {k} releases, got {freed}"
+  let post ← Buffer.allocatorStats
+  IO.println s!"  cap={capBytes} returned={totalBytes} cacheBytes={post.cacheBytes} cuda={onCuda}"
+  if capBytes == 0 then
+    -- Control: no cap, so every returned block stays cached — the growth the cap bounds.
+    if onCuda && post.cacheBytes != totalBytes then
+      throw <| IO.userError
+        s!"cache-cap probe (control): uncapped cache held {post.cacheBytes}, expected {totalBytes}"
+  else
+    -- The cap is enforced on every backend (the stub keeps no cache, so cacheBytes = 0 ≤ cap).
+    if post.cacheBytes > capBytes then
+      throw <| IO.userError s!"cache-cap probe: cache exceeded cap ({post.cacheBytes} > {capBytes})"
+    if onCuda then
+      -- On CUDA the cap is the binding constraint: the workload exceeds it, yet the cache filled to
+      -- within one block of the cap instead of to the full 8 MiB.
+      if totalBytes ≤ capBytes then
+        throw <| IO.userError "cache-cap probe: workload did not exceed the cap (test misconfigured)"
+      if post.cacheBytes < blockBytes then
+        throw <| IO.userError s!"cache-cap probe: cache did not fill ({post.cacheBytes} < {blockBytes})"
+      if post.cacheBytes + blockBytes ≤ capBytes then
+        throw <| IO.userError
+          s!"cache-cap probe: cache under-filled below the cap ({post.cacheBytes} + {blockBytes} ≤ {capBytes})"
+  IO.println "  block-cache byte cap enforced ✓"
+
+/--
+Regression test for the device block-cache byte cap. Like the arena detector death test, the
+cap is read once natively, so it must be fixed before the process's first cache operation; the test
+therefore forks the suite binary (`/proc/self/exe`) per configuration (see `runCacheCapProbe`):
+
+* **capped** — `TORCHLEAN_CUDA_CACHE_CAP_BYTES=1048576` bounds an 8 MiB return workload to a 1 MiB
+  cache;
+* **control** — no cap, so the same workload caches the full 8 MiB (the unbounded growth the cap
+  fixes).
+
+Both children assert internally and exit non-zero on failure. Linux-only (uses `/proc/self/exe`). -/
+def runCacheCapTest : IO Unit := do
+  IO.println "== cuda block-cache byte-cap (fork test) =="
+  let self : System.FilePath := "/proc/self/exe"
+  if !(← self.pathExists) then
+    IO.println "  skipped: no /proc/self/exe (fork test is Linux-only)"
+    return
+  let fork (cap : Option String) : IO IO.Process.Output := do
+    let env := #[("TORCHLEAN_CUDA_CACHE_PROBE", some "cache-cap")]
+    let env := match cap with
+      | some c => env.push ("TORCHLEAN_CUDA_CACHE_CAP_BYTES", some c)
+      | none => env
+    IO.Process.output { cmd := self.toString, args := #[], env := env }
+  -- capped: a 1 MiB cap bounds 8 MiB of returns.
+  let capped ← fork (some "1048576")
+  if capped.exitCode != 0 then
+    throw <| IO.userError
+      s!"block-cache cap: capped child failed (exit {capped.exitCode}); stderr:\n{capped.stderr}"
+  IO.println "  capped: 8 MiB of returns bounded to a 1 MiB cache ✓"
+  -- control: with no cap the same returns all stay cached, the unbounded behaviour.
+  let control ← fork none
+  if control.exitCode != 0 then
+    throw <| IO.userError
+      s!"block-cache cap: control child failed (exit {control.exitCode}); stderr:\n{control.stderr}"
+  IO.println "  control: with no cap the full workload is cached, as designed ✓"
+
 def run : IO Unit := do
   IO.println "=== CUDA runtime stress suite ==="
   runRngStress
@@ -483,6 +580,7 @@ def run : IO Unit := do
   runLeakBoundStress
   runArenaStress
   runArenaDetectorDeathTest
+  runCacheCapTest
   runGradientAliasingStress
   runLargeBufferStress
   runMatmulStress

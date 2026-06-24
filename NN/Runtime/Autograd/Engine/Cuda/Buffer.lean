@@ -87,6 +87,9 @@ opaque allocatorDeviceFreeBytesRaw (u : UInt32) : UInt64
 @[extern "torchlean_cuda_allocator_device_total_bytes"]
 opaque allocatorDeviceTotalBytesRaw (u : UInt32) : UInt64
 
+@[extern "torchlean_cuda_allocator_cache_bytes"]
+opaque allocatorCacheBytesRaw (u : UInt32) : UInt64
+
 /--
 Snapshot of the CUDA buffer allocator.
 
@@ -94,6 +97,10 @@ Snapshot of the CUDA buffer allocator.
 and `deviceTotalBytes` come from `cudaMemGetInfo` in the CUDA build and are `0` in the CPU stub.
 Together they let long-running examples distinguish a TorchLean lifetime leak from broader CUDA
 memory pressure or fragmentation.
+
+`cacheBytes` is the device memory held in the buffer reuse cache — dropped buffers awaiting reuse,
+which are *not* counted in `liveBytes`. `TORCHLEAN_CUDA_CACHE_CAP_BYTES` bounds it; it is always `0`
+in the CPU stub, which keeps no cache.
 -/
 structure AllocatorStats where
   liveBytes : UInt64
@@ -102,6 +109,7 @@ structure AllocatorStats where
   freeCount : UInt64
   deviceFreeBytes : UInt64
   deviceTotalBytes : UInt64
+  cacheBytes : UInt64
 deriving Repr
 
 /--
@@ -118,7 +126,8 @@ def allocatorStatsWithToken (token : UInt32) : IO AllocatorStats := do
       allocCount := allocatorAllocCountRaw token
       freeCount := allocatorFreeCountRaw token
       deviceFreeBytes := allocatorDeviceFreeBytesRaw token
-      deviceTotalBytes := allocatorDeviceTotalBytesRaw token }
+      deviceTotalBytes := allocatorDeviceTotalBytesRaw token
+      cacheBytes := allocatorCacheBytesRaw token }
 
 /-- Read the current CUDA allocator counters. Prefer `allocatorStatsWithToken` in repeated loops. -/
 def allocatorStats : IO AllocatorStats :=
@@ -136,7 +145,8 @@ def AllocatorStats.format (s : AllocatorStats) : String :=
   " allocs=" ++ toString s.allocCount ++
   " frees=" ++ toString s.freeCount ++
   " cuda_free=" ++ mibString s.deviceFreeBytes ++
-  " cuda_total=" ++ mibString s.deviceTotalBytes
+  " cuda_total=" ++ mibString s.deviceTotalBytes ++
+  " cache=" ++ mibString s.cacheBytes
 
 /--
 Create a device buffer by copying from a host `FloatArray` (casts each element to float32).
