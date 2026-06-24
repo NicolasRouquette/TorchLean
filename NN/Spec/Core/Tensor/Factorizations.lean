@@ -16,7 +16,8 @@ This file provides **real**, shape-indexed reference implementations of the two 
 matrix factorizations that classical / scientific-ML models (Gaussian processes, kernel ridge
 regression, PCA, least squares) depend on, and which were previously missing from the spec layer:
 
-- `choleskySpec`   — Cholesky factorization `A = L · Lᵀ` (lower-triangular `L`), for SPD `A`.
+- `choleskySpec`   — Cholesky factorization `A = L · Lᵀ` (lower-triangular `L`), for matrices
+                     with positive executable Cholesky pivots.
 - `qrSpec`         — QR factorization `A = Q · R` via classical Gram–Schmidt
                      (`Q` has orthonormal columns, `R` upper-triangular).
 
