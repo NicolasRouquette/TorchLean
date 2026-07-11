@@ -132,6 +132,9 @@ opaque allocatorDeviceFreeBytesRaw (u : UInt32) : UInt64
 @[extern "torchlean_cuda_allocator_device_total_bytes"]
 opaque allocatorDeviceTotalBytesRaw (u : UInt32) : UInt64
 
+@[extern "torchlean_cuda_allocator_cache_bytes"]
+opaque allocatorCacheBytesRaw (u : UInt32) : UInt64
+
 /--
 Snapshot of the CUDA buffer allocator.
 
@@ -141,6 +144,10 @@ counters track the Lean external objects that own those payloads; in a steady wo
 `deviceTotalBytes` come from `cudaMemGetInfo` in the CUDA build and are `0` in the CPU stub.
 Together these fields distinguish payload leaks, wrapper-lifetime leaks, and broader CUDA memory
 pressure or fragmentation.
+
+`cacheBytes` is the device memory held in the buffer reuse cache — dropped buffers awaiting reuse,
+which are *not* counted in `liveBytes`. `TORCHLEAN_CUDA_CACHE_CAP_BYTES` bounds it; it is always `0`
+in the CPU stub, which keeps no cache.
 -/
 structure AllocatorStats where
   liveBytes : UInt64
@@ -153,6 +160,7 @@ structure AllocatorStats where
   wrapperFinalizeCount : UInt64
   deviceFreeBytes : UInt64
   deviceTotalBytes : UInt64
+  cacheBytes : UInt64
 deriving Repr
 
 /--
@@ -173,7 +181,8 @@ def allocatorStatsWithToken (token : UInt32) : IO AllocatorStats := do
       wrapperAllocCount := wrapperAllocCountRaw token
       wrapperFinalizeCount := wrapperFinalizeCountRaw token
       deviceFreeBytes := allocatorDeviceFreeBytesRaw token
-      deviceTotalBytes := allocatorDeviceTotalBytesRaw token }
+      deviceTotalBytes := allocatorDeviceTotalBytesRaw token
+      cacheBytes := allocatorCacheBytesRaw token }
 
 /-- Read the current CUDA allocator counters. Prefer `allocatorStatsWithToken` in repeated loops. -/
 def allocatorStats : IO AllocatorStats :=
@@ -195,7 +204,8 @@ def AllocatorStats.format (s : AllocatorStats) : String :=
   " wrappers_alloc=" ++ toString s.wrapperAllocCount ++
   " wrappers_finalized=" ++ toString s.wrapperFinalizeCount ++
   " cuda_free=" ++ mibString s.deviceFreeBytes ++
-  " cuda_total=" ++ mibString s.deviceTotalBytes
+  " cuda_total=" ++ mibString s.deviceTotalBytes ++
+  " cache=" ++ mibString s.cacheBytes
 
 /--
 Create a device buffer by copying from a host `FloatArray` (casts each element to float32).
