@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Floats.IEEEExec.Bridge.FP32.Compare
+public import NN.Floats.IEEEExec.Bridge.FP32.Ulp
 
 /-!
 Bridge lemmas between executable IEEE32 arithmetic and the FP32-facing API.
