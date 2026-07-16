@@ -9,6 +9,7 @@ module
 public import NN.Floats.FP32.Error
 public import NN.Floats.FP32.Notation
 public import NN.Floats.FP32.RuntimeApprox
+public import NN.Floats.FP32.Sterbenz
 import Mathlib.Algebra.Order.Algebra
 
 /-!
