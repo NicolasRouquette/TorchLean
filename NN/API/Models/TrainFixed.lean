@@ -26,7 +26,7 @@ Scope:
 - it is model-agnostic: callers supply the loss wrapper and optimizer constructor;
 - it is backend-agnostic: callers can use it on CPU or CUDA via `TorchLean.Options`.
 
-For dataset-backed training, use the `TorchLean.Trainer` facade exported by `NN` or the shared model-zoo
+For dataset-backed training, use the `TorchLean.Trainer` API exported by `NN` or the shared model-zoo
 loader helpers.
 -/
 

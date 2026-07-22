@@ -33,39 +33,39 @@ Short root names and training-log types used by `import NN`.
 
 namespace TorchLean
 
-@[inherit_doc Spec.Shape]
+/-- Public shape type used by tensors, layers, and verifier interfaces. -/
 abbrev Shape := Spec.Shape
 
-@[inherit_doc TorchLean.Sample.Supervised]
+/-- One supervised-learning observation containing an input and its target. -/
 abbrev SupervisedSample := TorchLean.Sample.Supervised
 
-@[inherit_doc NN.API.TorchLean.Options]
+/-- Runtime options selecting TorchLean's dtype, backend, and device. -/
 abbrev Options := NN.API.TorchLean.Options
 
-@[inherit_doc NN.API.TorchLean.TensorPack]
+/-- Heterogeneous, shape-indexed collection of tensors such as model parameters. -/
 abbrev TensorPack := NN.API.TorchLean.TensorPack
 
 namespace Training
 
-@[inherit_doc _root_.Runtime.Training.Curve]
+/-- Named sequence of scalar measurements collected during training. -/
 abbrev Curve := _root_.Runtime.Training.Curve
 
-@[inherit_doc _root_.Runtime.Training.TrainLog]
+/-- Per-run training history, including losses and user-defined metrics. -/
 abbrev TrainLog := _root_.Runtime.Training.TrainLog
 
-@[inherit_doc _root_.Runtime.Training.ExperimentLog]
+/-- Collection of training runs recorded as one experiment. -/
 abbrev ExperimentLog := _root_.Runtime.Training.ExperimentLog
 
-@[inherit_doc _root_.Runtime.Training.LogDestination]
+/-- Destination to which a training run writes its structured log. -/
 abbrev LogDestination := _root_.Runtime.Training.LogDestination
 
-@[inherit_doc _root_.Runtime.Training.MetricHistory]
+/-- Time series of named metric values accumulated during training. -/
 abbrev MetricHistory := _root_.Runtime.Training.MetricHistory
 
-@[inherit_doc _root_.Runtime.Autograd.Train.Dataset]
+/-- In-memory supervised dataset consumed by TorchLean training loops. -/
 abbrev Dataset := _root_.Runtime.Autograd.Train.Dataset
 
-@[inherit_doc _root_.Runtime.Autograd.Train.DataLoader]
+/-- Batched dataset iterator with explicit ordering and shuffle state. -/
 abbrev DataLoader := _root_.Runtime.Autograd.Train.DataLoader
 
 namespace MetricHistory

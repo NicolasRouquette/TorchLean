@@ -93,7 +93,7 @@ lake exe verify -- torchlean-ibp
 For the maintained examples:
 
 ```bash
-lake build NN.Examples.Zoo
+lake build NNExamples
 ```
 
 ## Use TorchLean From Another Lean Project
@@ -149,7 +149,7 @@ require TorchLean from "../TorchLean"
 
 - `NN.lean`: canonical umbrella import for model, tensor, data, training, verification,
   and proof workflows.
-- `NN/API`: the application facade exported by `import NN.API` and included by `import NN`.
+- `NN/API`: the application API exported by `import NN.API` and included by `import NN`.
 - `NN/Spec`: mathematical tensor, layer, model, and dynamical-system definitions.
 - `NN/Runtime`: executable autograd, optimizers, training loops, CUDA boundary,
   PyTorch import/export, and RL runtime support.

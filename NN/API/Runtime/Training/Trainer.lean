@@ -26,7 +26,7 @@ Usage note:
 
 If you are writing ordinary model code, prefer the `NN` umbrella:
 `import NN; open TorchLean; Trainer.new ...`. This namespace is the lower runtime
-layer underneath that facade, and it exposes lower-level controls for custom training loops.
+layer underneath that API, and it exposes lower-level controls for custom training loops.
 
 The intended workflow is:
 - pick a `Task` (regression / classification),
@@ -37,27 +37,27 @@ This API is backend-agnostic: the same code can run in `.eager` mode or via a co
 depending on the `backend` argument passed to `instantiate`.
 -/
 
-@[inherit_doc Supervised.SeqTask]
+/-- A supervised sequence-model task pairing a model with its loss and gradient computation. -/
 abbrev Task := Supervised.SeqTask
-@[inherit_doc Supervised.Runner]
+/-- Instantiated training state containing parameters, buffers, and the selected execution backend. -/
 abbrev Runner := Supervised.Runner
-@[inherit_doc Supervised.OptimizerConfig]
+/-- Optimizer selection and hyperparameters accepted by the supervised trainer. -/
 abbrev Optimizer := Supervised.OptimizerConfig
-@[inherit_doc Supervised.TrainConfig]
+/-- Shared epoch, batching, logging, and optimizer settings for in-memory training. -/
 abbrev TrainConfig := Supervised.TrainConfig
-@[inherit_doc Supervised.CudaMemWatchState]
+/-- Mutable CUDA-memory observation state used to report allocator growth during training. -/
 abbrev CudaMemWatchState := Supervised.CudaMemWatchState
-@[inherit_doc Supervised.LoaderTrainConfig]
+/-- Training configuration for streaming batches from a data loader. -/
 abbrev LoaderTrainConfig := Supervised.LoaderTrainConfig
-@[inherit_doc Supervised.TrainReport]
+/-- Aggregate losses, timings, and step counts returned by a completed training run. -/
 abbrev TrainReport := Supervised.TrainReport
-@[inherit_doc Supervised.Stepper]
+/-- Stateful single-batch training interface for applications that own the outer loop. -/
 abbrev Stepper := Supervised.Stepper
 
-@[inherit_doc Supervised.effectiveCudaMemWatch]
+/-- Resolve whether CUDA memory monitoring is enabled after applying configuration defaults. -/
 abbrev effectiveCudaMemWatch := Supervised.effectiveCudaMemWatch
 
-@[inherit_doc Supervised.reportCudaMemWatch]
+/-- Sample CUDA memory use, update the watch state, and emit a report when its policy requests one. -/
 abbrev reportCudaMemWatch := Supervised.reportCudaMemWatch
 
 /-- Lower-runtime regression task with mean-squared error loss by default. -/

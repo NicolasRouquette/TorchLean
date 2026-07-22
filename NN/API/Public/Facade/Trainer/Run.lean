@@ -11,7 +11,7 @@ public import NN.API.Public.Facade.Trainer.Core
 /-!
 # TorchLean Trainer Runtime Options
 
-Datasets, probes, runtime flag parsing, and per-training options for the public trainer facade.
+Datasets, probes, runtime flag parsing, and per-training options for the trainer API.
 -/
 
 @[expose] public section
@@ -272,7 +272,7 @@ end Custom
 
 end Implementation
 
-/-- Per-training-call options for the public trainer facade. -/
+/-- Per-training-call options for the trainer API. -/
 structure TrainOptions where
   /-- Number of optimizer updates. -/
   steps : Nat := 1

@@ -9,7 +9,7 @@ module
 public import NN.API.Public.Facade.NN
 
 /-!
-# TorchLean RL Runtime Facade
+# TorchLean RL Runtime API
 
 RL environment, algorithm, replay, PPO, Gymnasium, and training names.
 -/

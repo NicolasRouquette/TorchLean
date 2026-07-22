@@ -86,6 +86,7 @@ private theorem buildFrom_preserves_denotation
     (i : Nat) (st st' : State α inShape)
     (hNoMSE : NoMSELoss g)
     (hNoRawLog : NoRawLog g)
+    (hNoConcat : NoConcat g)
     (h : buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape) (i := i) st = .ok
       st') :
     ∀ x : Tensor α inShape,
@@ -116,12 +117,12 @@ private theorem buildFrom_preserves_denotation
     | error msg =>
         -- `buildFrom` cannot return `.ok` if `getNode` fails.
         have : False := by
-          simpa [hN, Except.instMonad, Except.bind, Except.pure] using hBuild
+          simp [hN] at hBuild
         cases this
     | ok n =>
         -- Reduce the successful `getNode` and eliminate the resulting `do`-binder.
         simp (config := { failIfUnchanged := false })
-          [hN, Except.instMonad, Except.bind, Except.pure] at hBuild
+          [hN] at hBuild
         let input : NN.IR.DVal α := NN.IR.DVal.mk (α := α) inShape x
         -- Tail correctness helper: wrap the recursive call so the termination side-goal is solved
         -- immediately at the call site.
@@ -137,9 +138,7 @@ private theorem buildFrom_preserves_denotation
           -- discharge from the `hi : i < g.nodes.size` step-case hypothesis.
           simpa [input] using
             (buildFrom_preserves_denotation (α := α) (g := g) (payload := payload) (inShape := inShape)
-              (i := i + 1) (st := st1) (st' := st') hNoMSE hNoRawLog hRec x)
-          all_goals
-            simpa using Nat.sub_succ_lt_self (a := g.nodes.size) (i := i) hi
+              (i := i + 1) (st := st1) (st' := st') hNoMSE hNoRawLog hNoConcat hRec x)
         -- Common tail step: unfold `denoteAllFrom` once, rewrite by the `evalAt` step result, then
         -- discharge the remaining tail via the recursive correctness lemma.
         have finish
@@ -262,6 +261,11 @@ private theorem buildFrom_preserves_denotation
                 (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride)
                 (padding := padding)
                 hN hk hi hBuild0 (fun st1 hRec => tail (st1 := st1) hRec)
+          | batchNorm2dNchwEval channels =>
+              exact buildFrom_denoteAllFrom_batchNorm2dNchwEval (α := α) (g := g)
+                (payload := payload) (gd := gd) (i := i) (st' := st') (x := x) (n := n)
+                (channels := channels) hN hk hi hBuild0
+                (fun st1 hRec => tail (st1 := st1) hRec)
           | relu =>
               exact buildFrom_denoteAllFrom_relu (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (n := n)
@@ -307,9 +311,8 @@ private theorem buildFrom_preserves_denotation
                 (gd := gd) (i := i) (st' := st') (x := x) (n := n) (s := s)
                 hN hk hi hBuild0 (fun st1 hRec => tail (st1 := st1) hRec)
           | concat axis =>
-              exact buildFrom_denoteAllFrom_concat_impossible (α := α) (g := g) (payload := payload)
-                (gd := gd) (i := i) (st' := st') (x := x) (n := n) (axis := axis)
-                hN hk hi hBuild0
+              have : False := (hNoConcat i n hN axis) hk
+              cases this
           | swap_first_two =>
               exact buildFrom_denoteAllFrom_swap_first_two (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (n := n)
@@ -327,7 +330,8 @@ private theorem buildFrom_preserves_denotation
     simp [hi] at h0
     cases h0
     unfold NN.IR.Graph.denoteAllFrom
-    simp [hi, Except.pure]
+    simp [hi]
+    rfl
 termination_by g.nodes.size - i
 decreasing_by
   simpa using Nat.sub_succ_lt_self (a := g.nodes.size) (i := i) hi
@@ -344,6 +348,7 @@ theorem execGraphOfIR_semantics_eq
     (g : NN.IR.Graph) (payload : Payload α) (exec : ExecGraphData α)
     (hNoMSE : NoMSELoss g)
     (hNoRawLog : NoRawLog g)
+    (hNoConcat : NoConcat g)
     (h : execGraphOfIR (α := α) g payload = .ok exec) :
     ∀ x : Tensor α exec.inShape,
       NN.IR.Graph.denoteAll (α := α) (g := g) (payload := payload)
@@ -356,7 +361,7 @@ theorem execGraphOfIR_semantics_eq
   cases hWF : g.checkWellFormed with
   | error msg =>
       have : False := by
-        simpa [hWF] using h
+        simp [hWF] at h
       cases this
   | ok _ =>
       simp [hWF] at h
@@ -364,23 +369,26 @@ theorem execGraphOfIR_semantics_eq
       cases hN0 : g.getNode 0 with
       | error msg =>
           have : False := by
-            simpa [hN0] using h
+            simp [hN0] at h
           cases this
       | ok n0 =>
           simp (config := { failIfUnchanged := false })
-            [hN0, Except.instMonad, Except.bind, Except.pure] at h
+            [hN0] at h
           -- Node 0 must be `.input` in the successful compilation path.
           cases hk0 : n0.kind
           case input =>
             -- Reduce `execGraphOfIR` to the `.input` branch.
             simp (config := { failIfUnchanged := false }) [hk0] at h
             -- Extract the successful `buildFrom` tail compilation.
-            cases hSt : buildFrom (α := α) (g := g) (payload := payload) (inShape := n0.outShape) (i
-              := 1)
-                (st := (⟨[], .nil⟩ : State α n0.outShape)) <;>
-              simp (config := { failIfUnchanged := false }) [hSt] at h
-            · cases h
-            · rename_i stFinal
+            cases hSt : buildFrom (α := α) (g := g) (payload := payload)
+                (inShape := n0.outShape) (i := 1)
+                (st := (⟨[], .nil⟩ : State α n0.outShape)) with
+            | error msg =>
+                have hImpossible : False := by
+                  simp [hSt] at h
+                exact False.elim hImpossible
+            | ok stFinal =>
+              simp [hSt] at h
               cases h
               intro x
               -- Rewrite the executable result in terms of `stFinal`.
@@ -400,7 +408,8 @@ theorem execGraphOfIR_semantics_eq
                     .ok (NN.IR.DVal.mk (α := α) n0.outShape x) := by
                 simp [NN.IR.Graph.evalAt, hN0, hk0, NN.IR.Graph.expectShape,
                   NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
-                  throw_eq_error, Except.instMonad, Except.bind, Except.pure]
+                  throw_eq_error]
+                rfl
               have hTail :
                   NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
                       (input := NN.IR.DVal.mk (α := α) n0.outShape x)
@@ -410,12 +419,12 @@ theorem execGraphOfIR_semantics_eq
                     denoteAllState (α := α) n0.outShape (st := (⟨[], .nil⟩ : State α n0.outShape)) x
                       =
                       #[NN.IR.DVal.mk (α := α) n0.outShape x] := by
-                  simpa using (denoteAllState_nil (α := α) (inShape := n0.outShape) x)
+                  simp
                 simpa [hInit] using
                   (buildFrom_preserves_denotation (α := α) (g := g) (payload := payload) (inShape :=
                     n0.outShape)
                       (i := 1) (st := (⟨[], .nil⟩ : State α n0.outShape)) (st' := stFinal)
-                      hNoMSE hNoRawLog hSt x)
+                      hNoMSE hNoRawLog hNoConcat hSt x)
               -- Now unfold `denoteAllFrom` at `i=0` and rewrite by `h0`/`hTail`.
               have hSize : 0 < g.nodes.size := by
                 -- If `g.nodes.size = 0`, `getNode 0` would be out of bounds.
@@ -423,21 +432,22 @@ theorem execGraphOfIR_semantics_eq
                 | zero =>
                     have : g.getNode 0 = Except.error s!"IR graph: node id out of bounds: {0}" := by
                       simp [NN.IR.Graph.getNode, NN.IR.Graph.getNode?, hs, throw, throwThe,
-                        MonadExceptOf.throw, Except.instMonad, Except.bind, Except.pure]
+                        MonadExceptOf.throw]
                     have : False := by
                       -- `hN0` contradicts the computed out-of-bounds error.
-                      simpa [this] using hN0
+                      simp [this] at hN0
                     cases this
                 | succ n =>
-                    simpa [hs] using Nat.succ_pos n
+                    simp
               -- With `0 < size`, the `if` guard in `denoteAllFrom` is true at `i=0`.
               unfold NN.IR.Graph.denoteAllFrom
-              simp [hSize, h0, hTail, hExec]
+              simp only [NN.IR.DVal.mk] at h0 hTail ⊢
+              rw [dif_pos hSize, h0, hExec]
+              simpa using hTail
           all_goals
             have : False := by
               -- Non-`.input` node0 kinds compile to an error, contradicting success.
-              simpa [hk0, throw_eq_error,
-                Except.instMonad, Except.bind, Except.pure] using h
+              simp [hk0, throw_eq_error] at h
             cases this
 
 

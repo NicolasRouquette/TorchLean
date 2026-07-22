@@ -286,14 +286,29 @@ generator also depends on an evolving environment or file cursor.
 
 At minimum, record:
 
-| Choice | Example |
-| --- | --- |
-| model initialization | trainer seed |
-| sample order | loader/shuffle seed |
-| source identity | file path and preferably content hash |
-| preprocessing | tokenizer, normalization, column split |
-| batch policy | size, shuffling, dropping, padding |
-| runtime | scalar semantics, backend, device |
+:::table +header
+*
+  * Choice
+  * Example
+*
+  * model initialization
+  * trainer seed
+*
+  * sample order
+  * loader/shuffle seed
+*
+  * source identity
+  * file path and preferably content hash
+*
+  * preprocessing
+  * tokenizer, normalization, column split
+*
+  * batch policy
+  * size, shuffling, dropping, padding
+*
+  * runtime
+  * scalar semantics, backend, device
+:::
 
 The CSV example uses `2026` for both model initialization and shuffling for convenience. They are
 conceptually separate choices and may be configured independently in a larger experiment.

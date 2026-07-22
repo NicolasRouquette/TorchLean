@@ -63,4 +63,4 @@ Supervised examples should keep the public path direct:
 
 That consistency matters because these files are the regression surface for the public API. If a
 backend or optimizer change forces ordinary supervised examples to know about implementation
-internals, the public facade probably needs cleanup.
+internals, the application API probably needs cleanup.

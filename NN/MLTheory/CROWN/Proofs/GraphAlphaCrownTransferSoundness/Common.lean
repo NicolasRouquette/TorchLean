@@ -10,6 +10,7 @@ public import NN.MLTheory.CROWN.Cert.AlphaBetaCROWN
 public import NN.MLTheory.CROWN.Cert.AlphaCROWN
 public import NN.MLTheory.CROWN.Proofs.GraphCertSoundness
 public import NN.MLTheory.CROWN.Proofs.GraphCrownCertSoundness
+public import NN.MLTheory.CROWN.Proofs.AlphaReLULowerBound
 public import NN.Proofs.Tensor.Basic
 import Mathlib.Tactic.Linarith
 
@@ -620,29 +621,6 @@ theorem encloses_linear_signSplit {m n : Nat}
 
 /-! ## ReLU relaxations used by α-CROWN -/
 
-lemma relu_ge_alpha_mul (a z : ℝ) (ha0 : 0 ≤ a) (ha1 : a ≤ 1) :
-    a * z ≤ Activation.Math.reluSpec (α := ℝ) z := by
-  by_cases hz : z ≤ 0
-  · have : a * z ≤ 0 := mul_nonpos_of_nonneg_of_nonpos ha0 hz
-    simpa [Activation.Math.reluSpec, max_eq_right hz] using this
-  · have hz' : 0 ≤ z := le_of_not_ge hz
-    have : a * z ≤ (1 : ℝ) * z := mul_le_mul_of_nonneg_right ha1 hz'
-    simpa [Activation.Math.reluSpec, max_eq_left hz', one_mul] using this
-
-lemma alphaRelaxLowerScalar_sound
-    (l u a x : ℝ) (hlx : l ≤ x) (hxu : x ≤ u) (ha0 : 0 ≤ a) (ha1 : a ≤ 1) :
-    let rp := alphaRelaxLowerScalar (α := ℝ) l u a
-    rp.slope * x + rp.bias ≤ Activation.Math.reluSpec (α := ℝ) x := by
-  unfold alphaRelaxLowerScalar
-  by_cases hu : u > 0
-  · by_cases hlpos : l > 0
-    · have hxpos : 0 < x := lt_of_lt_of_le hlpos hlx
-      have hxnonneg : 0 ≤ x := le_of_lt hxpos
-      simp [hu, hlpos, Activation.Math.reluSpec, max_eq_left hxnonneg]
-    · simp [hu, hlpos, relu_ge_alpha_mul (a := a) (z := x) ha0 ha1]
-  · have hxle : x ≤ 0 := le_trans hxu (le_of_not_gt hu)
-    simp [hu, Activation.Math.reluSpec, max_eq_right hxle]
-
 lemma relu_relax_scalar_upper_real_runtime
   (l u x : ℝ)
   (hlx : l ≤ x) (hxu : x ≤ u) :
@@ -755,7 +733,8 @@ lemma phaseRelaxLowerScalar_sound
   | unstable =>
       -- Reduce to α-CROWN's lower relaxation.
       simpa [phaseRelaxLowerScalar] using
-        (alphaRelaxLowerScalar_sound (l := l) (u := u) (a := a) (x := x) hlx hxu ha0 ha1)
+        (NN.MLTheory.CROWN.Proofs.alphaRelaxLowerScalar_sound
+          (lower := l) (upper := u) (alpha := a) (input := x) hlx hxu ha0 ha1)
 
 lemma phaseRelaxUpperScalar_sound
     (l u x : ℝ) (hlx : l ≤ x) (hxu : x ≤ u)

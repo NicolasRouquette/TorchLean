@@ -234,6 +234,33 @@ def inferMatmulOutShape (a b : Shape) : Except String Shape := do
   | _, _ =>
       throw s!"matmul: unsupported shapes: {repr a} · {repr b}"
 
+/-- Check that every concat parent has the expected rank. -/
+def checkConcatRanks (expected : Nat) : List Shape → Except String Unit
+  | [] => .ok ()
+  | shape :: shapes =>
+      if Spec.Shape.rank shape != expected then
+        throw <|
+          s!"concat: rank mismatch: expected {expected}, got {Spec.Shape.rank shape} ({repr shape})"
+      else
+        checkConcatRanks expected shapes
+
+/--
+Infer leading-axis concat after the first input has fixed the common tail and initial dimension.
+-/
+def inferConcatLeadingAxis (expectedTail : Shape) : Nat → List Shape → Except String Shape
+  | total, [] => .ok (.dim total expectedTail)
+  | total, shape :: shapes =>
+      match shape with
+      | .dim size tail =>
+          if tail != expectedTail then
+            throw <|
+              s!"concat: axis=0 expects matching tail shapes, got {repr expectedTail} and " ++
+                s!"{repr tail}"
+          else
+            inferConcatLeadingAxis expectedTail (total + size) shapes
+      | _ =>
+          throw s!"concat: axis=0 expects rank≥1 inputs, got {repr shape}"
+
 /--
 Infer the output shape for `concat` from the parent shapes.
 
@@ -257,9 +284,7 @@ def inferConcatOutShape (axis : Nat) (parents : List Shape) : Except String Shap
     | s :: _ => pure s
   checkAxisValid axis s0
   let r0 := Spec.Shape.rank s0
-  for s in parents do
-    if Spec.Shape.rank s != r0 then
-      throw s!"concat: rank mismatch: expected {r0}, got {Spec.Shape.rank s} ({repr s})"
+  checkConcatRanks r0 parents
 
   let rec go (axis : Nat) (shs : List Shape) : Except String Shape := do
     match axis, shs with
@@ -268,18 +293,7 @@ def inferConcatOutShape (axis : Nat) (parents : List Shape) : Except String Shap
     | 0, s :: rest =>
         match s with
         | .dim n0 tail0 =>
-            let mut total : Nat := n0
-            for t in rest do
-              match t with
-              | .dim n tail =>
-                  if tail != tail0 then
-                    throw <|
-                      s!"concat: axis=0 expects matching tail shapes, got {repr tail0} and " ++
-                        s!"{repr tail}"
-                  total := total + n
-              | _ =>
-                  throw s!"concat: axis=0 expects rank≥1 inputs, got {repr t}"
-            pure (.dim total tail0)
+            inferConcatLeadingAxis tail0 n0 rest
         | _ =>
             throw s!"concat: axis=0 expects rank≥1 inputs, got {repr s}"
     | Nat.succ _, [] =>

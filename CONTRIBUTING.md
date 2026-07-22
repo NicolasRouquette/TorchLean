@@ -32,7 +32,9 @@ Common targets:
 
 ```bash
 lake build NN
-DISABLE_EQUATIONS=1 lake build NN:docs
+lake build NNExamples
+lake build NNCI
+DISABLE_EQUATIONS=1 lake build TorchLeanDocs:docs
 lake exe verify -- list
 ```
 
@@ -87,7 +89,7 @@ Build API docs:
 
 ```bash
 rm -rf .lake/build/doc .lake/build/doc-data .lake/build/api-docs.db
-DISABLE_EQUATIONS=1 lake build NN:docs
+DISABLE_EQUATIONS=1 lake build TorchLeanDocs:docs
 ```
 
 `DISABLE_EQUATIONS=1` keeps DocGen focused on declaration types, docstrings, module docs, source
@@ -137,6 +139,24 @@ questions without guessing:
 
 Generated pages should be rebuilt from their sources. Do not hand-edit DocGen or Verso output in
 `home_page/docs` or `home_page/blueprint`.
+
+## Library, Example, Test, and CI Boundaries
+
+The default `NN` target is downstream-facing library code. It intentionally excludes `NN/Examples`,
+`NN/Tests`, `NN/CI`, documentation-only aggregates, and modules whose only job is to define an
+executable `main`. Use the matching Lake target when working on those surfaces:
+
+| Target | Owns |
+| --- | --- |
+| `NN` | reusable specifications, runtimes, APIs, proofs, and checkers |
+| `NNExamples` | runnable examples, model-zoo commands, and narrative demonstrations |
+| `NNTests` / `lake test` | test modules and the curated test executable |
+| `NNCI` | broad import checks that are useful in CI but unsuitable as downstream imports |
+| `TorchLeanDocs:docs` | the complete maintained documentation import surface |
+
+Reusable modules must not import an example, test, CI aggregate, or executable wrapper. Put reusable
+CLI parsing and behavior in a library module, and keep the global `main` in a small `*Main.lean`
+wrapper.
 
 ## Trust Boundaries
 

@@ -421,7 +421,7 @@ def supervisedNpySource
 Load paired `.npy` files as concrete `Float` supervised samples.
 
 This is useful for reporting, custom evaluation loops, and native kernels that need concrete
-`Float` tensors outside the public trainer facade.
+`Float` tensors outside the high-level trainer API.
 -/
 def loadSupervisedNpyFloatSamples
     (xPath yPath : System.FilePath) (n : Nat)

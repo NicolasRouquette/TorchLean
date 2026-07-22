@@ -122,13 +122,14 @@ def parseAlphaDecimal {α : Type} [Context α] (s : String) : Option α :=
 
 
 
-/-- Compute primitives u, duX, duY, d2uX, d2uY at the unique output node (id=5) for 1D/2D models.
-    Optionally, replace the `u`-interval with a tighter CROWN/DeepPoly bound. -/
+/-- Select interval-only, forward CROWN, or backward CROWN bounds for the PINN output value. -/
 inductive UBoundsMethod
   | ibp
   | crownFwd
   | crownBwd
 
+/-- Compute primitives u, duX, duY, d2uX, d2uY at the unique output node (id=5) for 1D/2D models.
+    Optionally, replace the `u`-interval with a tighter CROWN/DeepPoly bound. -/
 def computePrimsAt (g : Graph) (ps : ParamStore Float) (uMethod : UBoundsMethod := .ibp) (backend :
   Backend := .float) : IO Prims := do
   let outId := NN.Verification.PINN.SequentialPINNArch.graphOutputId g

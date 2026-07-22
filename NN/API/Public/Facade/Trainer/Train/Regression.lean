@@ -12,7 +12,7 @@ public import NN.API.Public.Facade.Trainer.Results
 /-!
 # TorchLean Regression Trainer Implementation
 
-Regression dataset training for the public trainer facade.
+Regression dataset training for the trainer API.
 -/
 
 @[expose] public section

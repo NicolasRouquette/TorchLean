@@ -10,7 +10,7 @@ public import NN.API.Public.Facade.Trainer
 public import NN.Examples.ModelZoo.Base
 
 /-!
-# TorchLean Model-Zoo Facade
+# TorchLean Model-Zoo API
 
 Flag and logging adapters used by runnable examples.
 

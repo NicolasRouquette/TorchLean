@@ -16,6 +16,7 @@ public import NN.Verification.TorchLean.Compile
 public import NN.Verification.TorchLean.CompileExec
 public import NN.Verification.TorchLean.Proved
 public import NN.Verification.Util.Json
+public import NN.Verification.Util.TextCursor
 public import NN.Verification.VNNComp
 public import NN.MLTheory.CROWN.Proofs.Overview
 
@@ -25,6 +26,9 @@ public import NN.MLTheory.CROWN.Proofs.Overview
 Import this file for TorchLean’s verification infrastructure: JSON utilities, certificate formats,
 ODE/PINN-style checkers, proof-backed certificate soundness, and the proof-backed TorchLean-to-IR
 forward compiler bridge.
+
+Their expression parsers share the fuel-bounded byte cursor and decimal scanners from
+`NN.Verification.Util.TextCursor`; each verifier keeps only its grammar and AST-specific logic.
 
 The compiler bridge is imported through `NN.Verification.TorchLean.Proved`, which contains both the
 compiler and its correctness theorems.

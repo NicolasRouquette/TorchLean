@@ -32,6 +32,7 @@ open NN.Verification.TorchLean
   - `outIdx g` is the return index of `g`, but expressed at the `finalSs g` context.
   -/
 
+  /-- Shape context available after evaluating every binding in a forward let-chain. -/
   def finalSs
       {α : Type} {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape} :
       FGraph α paramShapes inShape ss out → List Shape

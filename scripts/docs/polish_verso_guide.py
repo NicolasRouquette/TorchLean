@@ -3,7 +3,8 @@
 
 Verso owns the main HTML generation. TorchLean adds a thin local layer for the
 public guide: responsive figures, readable code blocks, external-link behavior,
-copy buttons, route arrows, and a low-overhead reading-progress indicator.
+copy buttons, responsive tables, stable KaTeX layout, route arrows, and a
+low-overhead reading-progress indicator.
 """
 
 from __future__ import annotations
@@ -97,7 +98,10 @@ body.tl-progress-mounted main [id] {
 }
 
 main .content-wrapper {
-  max-width: 980px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
 }
 
 main a[href^="http"]::after,
@@ -131,7 +135,7 @@ main :is(h1, h2, h3, h4, h5, h6) .tl-heading-anchor:hover {
 
 .prev-next-buttons {
   gap: 0.75rem;
-  margin: 0.8rem 0 1.7rem;
+  margin: 0.7rem 0 1rem;
 }
 
 .prev-next-buttons .local-button {
@@ -322,11 +326,22 @@ main details.bp_code_block > code.hl.lean.block {
   background: #eef8fb;
 }
 
-main :not(pre) > code {
+main :not(pre) > code:not(.math) {
   border: 1px solid rgba(32, 52, 71, 0.12);
   border-radius: 0.32em;
   background: rgba(15, 95, 143, 0.07);
   padding: 0.04em 0.22em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+main code.math {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
 }
 
 main table.tabular {
@@ -340,7 +355,7 @@ main table.tabular {
   overflow: hidden;
   background: #ffffff;
   box-shadow: 0 12px 30px rgba(25, 48, 73, 0.06);
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 main table.tabular th,
@@ -371,6 +386,10 @@ main table.tabular p {
   margin: 0.2rem 0;
 }
 
+main :is(p, li, dd, th, td, h1, h2, h3, h4, h5, h6, a) {
+  overflow-wrap: anywhere;
+}
+
 .tl-table-wrap {
   box-sizing: border-box;
   max-width: 100%;
@@ -381,12 +400,24 @@ main table.tabular p {
 }
 
 main .tl-table-wrap > table.tabular {
-  min-width: 42rem;
+  width: 100%;
+  min-width: 100%;
   margin: 0;
   box-shadow: none;
 }
 
-main .content-wrapper,
+main .tl-table-wrap.tl-table-wide > table.tabular {
+  min-width: 42rem;
+}
+
+main .tl-table-wrap.tl-table-very-wide > table.tabular {
+  min-width: 52rem;
+}
+
+.tl-table-hint {
+  display: none;
+}
+
 main section,
 .with-toc {
   min-width: 0;
@@ -394,26 +425,34 @@ main section,
   overflow-x: hidden;
 }
 
-.bp_math.display {
-  box-sizing: border-box;
-  contain: inline-size;
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0.45rem 0;
+main .content-wrapper {
+  min-width: 0;
+  overflow-x: hidden;
 }
 
-.katex-display {
+main p:has(> code.math.display) {
+  margin: 0.8rem 0 1rem;
+  text-align: center;
+}
+
+main code.math.display {
   box-sizing: border-box;
-  contain: inline-size;
   display: block;
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0.35rem 0;
+  padding: 0.3rem 0;
+}
+
+main code.math.display > .katex-display {
+  box-sizing: border-box;
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0.25rem 0.5rem;
 }
 
 mjx-container[display="true"] {
@@ -533,6 +572,10 @@ main p > img:only-child {
 }
 
 @media screen and (max-width: 700px) {
+  main h1 .permalink-widget {
+    display: none;
+  }
+
   header .header-title-wrapper {
     flex: 0 0 auto;
     min-width: auto;
@@ -611,8 +654,29 @@ main p > img:only-child {
     justify-content: space-between;
   }
 
-  main .tl-table-wrap > table.tabular {
-    min-width: 36rem;
+  main .tl-table-wrap.tl-table-wide > table.tabular {
+    min-width: 38rem;
+  }
+
+  main .tl-table-wrap.tl-table-very-wide > table.tabular {
+    min-width: 48rem;
+  }
+
+  .tl-table-hint {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    display: block;
+    box-sizing: border-box;
+    width: fit-content;
+    margin: 0.45rem 0.6rem 0;
+    padding: 0.22rem 0.5rem;
+    border: 1px solid rgba(15, 95, 143, 0.2);
+    border-radius: 999px;
+    background: #eef8fb;
+    color: var(--tl-accent-strong);
+    font-size: 0.72rem;
+    font-weight: 750;
   }
 }
 
@@ -903,6 +967,16 @@ TORCHLEAN_JS_BODY = r"""
       if (table.closest(".tl-table-wrap")) return;
       const wrap = document.createElement("div");
       wrap.className = "tl-table-wrap";
+      const firstRow = table.querySelector("tr");
+      const columns = firstRow ? firstRow.children.length : 0;
+      if (columns > 2) {
+        wrap.classList.add("tl-table-wide");
+        if (columns > 3) wrap.classList.add("tl-table-very-wide");
+        const hint = document.createElement("div");
+        hint.className = "tl-table-hint";
+        hint.textContent = "Scroll horizontally to see every column →";
+        wrap.appendChild(hint);
+      }
       table.parentNode.insertBefore(wrap, table);
       wrap.appendChild(table);
     });
@@ -964,6 +1038,18 @@ TORCHLEAN_JS_BODY = r"""
   }
 
 
+  function moveDisplayMathPunctuation() {
+    document.querySelectorAll("main code.math.display").forEach((math) => {
+      const tail = math.nextSibling;
+      if (!tail || tail.nodeType !== Node.TEXT_NODE) return;
+      const match = tail.nodeValue.match(/^([.,;:])(?=\s|$)/);
+      if (!match) return;
+      math.textContent = math.textContent.trimEnd() + match[1];
+      tail.nodeValue = tail.nodeValue.slice(match[1].length);
+    });
+  }
+
+
   function addHeadingAnchors() {
     document.querySelectorAll("main h1[id], main h2[id], main h3[id], main h4[id], main h5[id], main h6[id]").forEach((heading) => {
       if (heading.querySelector(".tl-heading-anchor")) return;
@@ -975,6 +1061,11 @@ TORCHLEAN_JS_BODY = r"""
       heading.appendChild(a);
     });
   }
+
+  // This deferred script runs after parsing but before DOMContentLoaded. Move
+  // sentence punctuation into display math before Verso's KaTeX listener runs,
+  // so it stays beside the equation instead of becoming a detached text line.
+  moveDisplayMathPunctuation();
 
   document.addEventListener("DOMContentLoaded", () => {
     mountGuideNav();
@@ -1025,7 +1116,7 @@ def inject_script(root: Path) -> None:
     script_re = re.compile(r'\s*<script defer src="[^"]*torchlean-guide-polish\.js(?:\?v=[^"]*)?"></script>\n?')
     # Verso emits a <base> tag on every generated page. A bare script URL is
     # therefore resolved relative to the guide root, even from nested pages.
-    tag = '    <script defer src="torchlean-guide-polish.js?v=20260706-nav"></script>\n'
+    tag = '    <script defer src="torchlean-guide-polish.js?v=20260721-rendering"></script>\n'
     for path in root.rglob("*.html"):
         html = path.read_text()
         if marker in html:
@@ -1035,7 +1126,9 @@ def inject_script(root: Path) -> None:
             continue
         if "</head>" not in html:
             continue
-        path.write_text(html.replace("  </head>", tag + "  </head>", 1))
+        # Extension-specific styles may leave the closing tag on the same line
+        # as `</style>`, so injection must not depend on surrounding whitespace.
+        path.write_text(html.replace("</head>", tag + "  </head>", 1))
 
 
 def rewrite_repository_links(root: Path) -> None:

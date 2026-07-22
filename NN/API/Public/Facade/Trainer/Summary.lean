@@ -12,7 +12,7 @@ public import NN.API.Public.Training
 /-!
 # TorchLean Trainer Summaries
 
-Small public report types returned by the high-level trainer facade.
+Small report types returned by the high-level trainer API.
 -/
 
 @[expose] public section

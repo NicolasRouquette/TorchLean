@@ -24,6 +24,7 @@ namespace NN
 namespace Backend
 namespace NativeCUDA
 
+/-- Build a checked native-CUDA capsule with explicit FFI, value, VJP, and layout contracts. -/
 def nativeCapsule
     (name : String) (op : BackendOp) (specName valueSummary vjpSummary : String)
     (vjpMode : VJPMode := .backendVJP) : KernelCapsule :=
@@ -57,6 +58,7 @@ def nativeCapsule
         reduction := .notApplicable }
     notes := "Native CUDA code is an FFI boundary; the capsule records the contract TorchLean checks." }
 
+/-- Build the standard native-CUDA capsule for a pointwise operation. -/
 def nativePointwiseCapsule (op : BackendOp) : KernelCapsule :=
   nativeCapsule
     s!"native_cuda.{op.name}"
@@ -65,6 +67,7 @@ def nativePointwiseCapsule (op : BackendOp) : KernelCapsule :=
     s!"Native CUDA `{op.name}` follows the pointwise tensor contract."
     s!"Native CUDA `{op.name}` VJP is checked through runtime autograd tests."
 
+/-- Build a native-CUDA reduction capsule with implementation-selected parallel reduction order. -/
 def nativeReductionCapsule (op : BackendOp) : KernelCapsule :=
   { nativeCapsule
     s!"native_cuda.{op.name}"
@@ -85,6 +88,7 @@ def nativeAccumulationCapsule (name : String) (op : BackendOp) (specName valueSu
   { nativeCapsule name op specName valueSummary vjpSummary vjpMode with
     numericalPolicy.reduction := .implementationDefined }
 
+/-- Build the standard native-CUDA capsule for a shape or layout transformation. -/
 def nativeViewCapsule (op : BackendOp) : KernelCapsule :=
   nativeCapsule
     s!"native_cuda.{op.name}"
@@ -93,6 +97,7 @@ def nativeViewCapsule (op : BackendOp) : KernelCapsule :=
     s!"Native CUDA `{op.name}` follows the explicit shape/layout contract."
     s!"Native CUDA `{op.name}` adjoint is checked through runtime gradient tests."
 
+/-- Build a native-CUDA forward-only capsule with no registered reverse derivative. -/
 def nativeForwardOnlyCapsule (op : BackendOp) (specName valueSummary : String) : KernelCapsule :=
   nativeCapsule
     s!"native_cuda.{op.name}"
@@ -102,6 +107,7 @@ def nativeForwardOnlyCapsule (op : BackendOp) (specName valueSummary : String) :
     s!"Native CUDA `{op.name}` is a forward-only capsule with no registered VJP."
     .none
 
+/-- Build a native-CUDA capsule for channel-first convolution or pooling. -/
 def nativeConvPoolCapsule (op : BackendOp) : KernelCapsule :=
   nativeCapsule
     s!"native_cuda.{op.name}"
@@ -142,22 +148,39 @@ def gelu : KernelCapsule :=
     "GELU forward follows the documented runtime approximation contract."
     "GELU VJP is checked through runtime autograd tests."
 
+/-- Native-CUDA pointwise addition. -/
 def add : KernelCapsule := nativePointwiseCapsule .add
+/-- Native-CUDA pointwise subtraction. -/
 def sub : KernelCapsule := nativePointwiseCapsule .sub
+/-- Native-CUDA pointwise multiplication. -/
 def mul : KernelCapsule := nativePointwiseCapsule .mul
+/-- Native-CUDA scalar multiplication. -/
 def scale : KernelCapsule := nativePointwiseCapsule .scale
+/-- Native-CUDA pointwise absolute value. -/
 def abs : KernelCapsule := nativePointwiseCapsule .abs
+/-- Native-CUDA pointwise square root. -/
 def sqrt : KernelCapsule := nativePointwiseCapsule .sqrt
+/-- Native-CUDA pointwise interval clamp. -/
 def clamp : KernelCapsule := nativePointwiseCapsule .clamp
+/-- Native-CUDA pointwise maximum. -/
 def max : KernelCapsule := nativePointwiseCapsule .max
+/-- Native-CUDA pointwise minimum. -/
 def min : KernelCapsule := nativePointwiseCapsule .min
+/-- Native-CUDA pointwise sigmoid. -/
 def sigmoid : KernelCapsule := nativePointwiseCapsule .sigmoid
+/-- Native-CUDA pointwise hyperbolic tangent. -/
 def tanh : KernelCapsule := nativePointwiseCapsule .tanh
+/-- Native-CUDA pointwise softplus. -/
 def softplus : KernelCapsule := nativePointwiseCapsule .softplus
+/-- Native-CUDA pointwise exponential. -/
 def exp : KernelCapsule := nativePointwiseCapsule .exp
+/-- Native-CUDA pointwise natural logarithm. -/
 def log : KernelCapsule := nativePointwiseCapsule .log
+/-- Native-CUDA pointwise reciprocal. -/
 def inv : KernelCapsule := nativePointwiseCapsule .inv
+/-- Native-CUDA guarded logarithm used by numerically defensive programs. -/
 def safeLog : KernelCapsule := nativePointwiseCapsule .safeLog
+/-- Native-CUDA log-softmax reduction and normalization. -/
 def logSoftmax : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.log_softmax"
@@ -175,23 +198,34 @@ def softmax : KernelCapsule :=
     "Softmax kernels follow the row/axis normalization contract."
     "Softmax VJPs are checked through runtime autograd tests."
 
+/-- Native-CUDA sum reduction. -/
 def reduceSum : KernelCapsule := nativeReductionCapsule .reduceSum
+/-- Native-CUDA arithmetic-mean reduction. -/
 def reduceMean : KernelCapsule := nativeReductionCapsule .reduceMean
 
+/-- Native-CUDA shape-preserving reshape view. -/
 def reshape : KernelCapsule := nativeViewCapsule .reshape
+/-- Native-CUDA axis permutation. -/
 def permute : KernelCapsule := nativeViewCapsule .permute
+/-- Native-CUDA tensor broadcasting. -/
 def broadcast : KernelCapsule := nativeViewCapsule .broadcast
+/-- Native-CUDA tensor concatenation. -/
 def concat : KernelCapsule := nativeViewCapsule .concat
+/-- Native-CUDA contiguous tensor slice. -/
 def slice : KernelCapsule := nativeViewCapsule .slice
+/-- Native-CUDA indexed gather. -/
 def gather : KernelCapsule := nativeViewCapsule .gather
+/-- Native-CUDA indexed scatter-add. -/
 def scatterAdd : KernelCapsule := nativeViewCapsule .scatterAdd
 
+/-- Native-CUDA seeded uniform-random tensor generation. -/
 def randUniform : KernelCapsule :=
   nativeForwardOnlyCapsule
     .randUniform
     "IR.randUniform"
     "Native CUDA deterministic random-uniform buffers follow the seeded runtime contract."
 
+/-- Native-CUDA seeded Bernoulli-mask generation. -/
 def bernoulliMask : KernelCapsule :=
   nativeForwardOnlyCapsule
     .bernoulliMask

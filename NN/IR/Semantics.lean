@@ -9,6 +9,8 @@ module
 public import NN.IR.Payload
 public import NN.Runtime.Context
 public import NN.Runtime.Autograd.TorchLean.Random
+public import NN.Spec.Core.Shape
+public import NN.Spec.Core.Tensor.Packed
 public import NN.Spec.Layers.Activation
 public import NN.Spec.Layers.Normalization
 public import NN.Spec.Layers.Pooling
@@ -74,7 +76,7 @@ This is a dependent pair `Σ s, Tensor α s`, which lets us store heterogeneousl
 values in one table while still recovering exact shapes when needed.
 -/
 abbrev DVal (α : Type) [Context α] : Type :=
-  Σ s : Shape, Tensor α s
+  Spec.PackedTensor α
 
 namespace DVal
 
@@ -91,56 +93,7 @@ end DVal
 
 namespace Graph
 
-/-!
-## Small proof-helpers used by evaluation
-
-The evaluator frequently needs evidence that an axis is valid or that a broadcast is legal so it can
-call the spec-layer operations, which are typed with these preconditions. We build these witnesses
-from runtime data (`Nat` axis values and shapes) using `Option`:
-
-- returning `none` means the IR node is ill-formed for the given shapes,
-- returning `some h` provides the witness needed to call the spec operator.
--/
-
-/--
-Build a witness that `axis` is a valid axis for shape `s`.
-
-Many spec-layer ops (e.g. reductions, `softmax`, `layernorm`) are typed with a `Shape.valid_axis`
-precondition. Since the IR stores axes as raw `Nat`, we reconstruct the witness at runtime.
-
-Returns `none` when `axis` is out of bounds.
--/
-def mkValidAxis? (axis : Nat) : (s : Shape) → Option (PLift (Shape.valid_axis axis s))
-  | .scalar => none
-  | .dim n rest =>
-      match axis, n with
-      | 0, Nat.succ k => some ⟨Shape.valid_axis.valid_zero (n := k) (s := rest)⟩
-      | 0, 0 => none
-      | Nat.succ a, Nat.succ k =>
-          (mkValidAxis? a rest).map (fun h =>
-            ⟨Shape.valid_axis.valid_succ (n := k) (s := rest) (k := a) h.down⟩)
-      | Nat.succ _, 0 => none
-
-/-- Return the index of the first occurrence of `x` in `xs` (or `none` if absent). -/
-def findIndex? (xs : List Nat) (x : Nat) : Option Nat :=
-  let rec go (i : Nat) : List Nat → Option Nat
-    | [] => none
-    | y :: ys => if y = x then some i else go (i + 1) ys
-  go 0 xs
-
-/-- Safe list indexing: `listGet? xs n` returns `some xs[n]` when in bounds. -/
-def listGet? {α : Type} : List α → Nat → Option α
-  | [], _ => none
-  | x :: _, 0 => some x
-  | _ :: xs, n + 1 => listGet? xs n
-
-/-- Swap the adjacent entries at positions `d` and `d+1` (no-op when out of range). -/
-def swapAt (xs : List Nat) (d : Nat) : List Nat :=
-  match xs, d with
-  | [], _ => []
-  | [x], _ => [x]
-  | x :: y :: rest, 0 => y :: x :: rest
-  | x :: rest, d + 1 => x :: swapAt rest d
+/-! ## Permutation lowering -/
 
 /--
 Compute a sequence of adjacent swaps that realizes a target permutation.
@@ -153,30 +106,18 @@ def swapDepthsForPerm (perm : List Nat) (r : Nat) : Except String (List Nat) := 
   let mut cur : List Nat := List.range r
   let mut swapsRev : List Nat := []
   for i in [0:r] do
-    match listGet? perm i with
+    match perm[i]? with
     | none => throw s!"permute: internal error: missing perm[{i}]"
     | some target =>
-        match findIndex? cur target with
+        match cur.findIdx? (· == target) with
         | none => throw s!"permute: internal error: target axis {target} not in current axes {cur}"
         | some j =>
             let mut k := j
             while k > i do
               swapsRev := (k - 1) :: swapsRev
-              cur := swapAt cur (k - 1)
+              cur := Spec.Shape.swapAdjacentAxes cur (k - 1)
               k := k - 1
   pure swapsRev.reverse
-
-/--
-Apply one adjacent-swap-at-depth to a dynamic tensor value.
-
-This is the execution-level building block used to implement `.permute` in terms of repeated
-adjacent swaps, reusing the spec tensor library's `swapAdjacentAtDepth`.
--/
-def applySwapDepth {α : Type} [Context α] (v : DVal α) (d : Nat) : DVal α :=
-  match v with
-  | ⟨s, t⟩ =>
-      let t' : Tensor α (s.swapAdjacentAtDepth d) := Tensor.swapAtDepthHelper (tensor := t) d
-      ⟨s.swapAdjacentAtDepth d, t'⟩
 
 /--
 Permute a dynamic tensor value according to `perm`.
@@ -190,7 +131,7 @@ def permuteDVal {α : Type} [Context α] (v : DVal α) (perm : List Nat) : Excep
   | none => throw s!"permute: invalid permutation {repr perm} for shape {repr sIn}"
   | some _ =>
       let swaps ← swapDepthsForPerm perm (Spec.Shape.rank sIn)
-      pure <| swaps.foldl (fun acc d => applySwapDepth (α := α) acc d) v
+      pure <| swaps.foldl (fun acc d => Spec.PackedTensor.swapAdjacentAtDepth acc d) v
 
 /-!
 ## Evaluation helpers
@@ -319,7 +260,29 @@ def evalConv2D {α : Type} [Context α] [DecidableEq Shape]
       let outShape : Shape := Shape.dim cfg.outC (Shape.dim outH (Shape.dim outW Shape.scalar))
       pure (DVal.mk (α := α) outShape y)
 
-/-- Evaluate eval-mode BatchNorm2d over an `N×C×H×W` tensor. -/
+/--
+Apply fixed-statistics BatchNorm2d to a batched channel-first tensor.
+
+The input shape records the batch, channel, height, and width axes. Naming the shared tensor
+operation independently of that layout notation keeps compiler and evaluator code concise while
+the type retains the exact contract.
+-/
+def batchNorm2dEvalTensor {α : Type} [Context α]
+    (cfg : BatchNorm2DNchwEvalParams α) {n h w : Nat}
+    (x : Tensor α (.dim n (.dim cfg.c (.dim h (.dim w .scalar))))) :
+    Tensor α (.dim n (.dim cfg.c (.dim h (.dim w .scalar)))) :=
+  Tensor.dim fun ni =>
+    Tensor.dim fun ci =>
+      Tensor.dim fun hi =>
+        Tensor.dim fun wi =>
+          match getAtSpec (getAtSpec (getAtSpec (getAtSpec x ni) ci) hi) wi,
+              getAtSpec cfg.gamma ci, getAtSpec cfg.beta ci,
+              getAtSpec cfg.mean ci, getAtSpec cfg.var ci with
+          | .scalar xv, .scalar gamma, .scalar beta, .scalar mean, .scalar var =>
+              let denom := MathFunctions.sqrt (max var (0 : α) + cfg.eps)
+              Tensor.scalar (((xv - mean) / denom) * gamma + beta)
+
+/-- Evaluate eval-mode BatchNorm2d over a batched channel-first tensor. -/
 def evalBatchNorm2DNchwEval {α : Type} [Context α] [DecidableEq Shape]
     (payload : Payload α) (id : Nat) (x : DVal α) : Except String (DVal α) := do
   match payload.batchNorm2dNchwEval? id with
@@ -331,16 +294,7 @@ def evalBatchNorm2DNchwEval {α : Type} [Context α] [DecidableEq Shape]
             let xT ← expectShape (α := α)
               (expected := .dim n (.dim cfg.c (.dim h (.dim w .scalar)))) x
             let y : Tensor α (.dim n (.dim cfg.c (.dim h (.dim w .scalar)))) :=
-              Tensor.dim fun ni =>
-                Tensor.dim fun ci =>
-                  Tensor.dim fun hi =>
-                    Tensor.dim fun wi =>
-                      match getAtSpec (getAtSpec (getAtSpec (getAtSpec xT ni) ci) hi) wi,
-                          getAtSpec cfg.gamma ci, getAtSpec cfg.beta ci,
-                          getAtSpec cfg.mean ci, getAtSpec cfg.var ci with
-                      | .scalar xv, .scalar gamma, .scalar beta, .scalar mean, .scalar var =>
-                          let denom := MathFunctions.sqrt (max var (0 : α) + cfg.eps)
-                          Tensor.scalar (((xv - mean) / denom) * gamma + beta)
+              batchNorm2dEvalTensor (α := α) cfg xT
             pure (DVal.mk (α := α) (.dim n (.dim cfg.c (.dim h (.dim w .scalar)))) y)
           else
             throw s!"IR eval: batch_norm2d_nchw_eval channel mismatch: input={c}, payload={cfg.c}"
@@ -364,23 +318,30 @@ def layernormPure {α : Type} [Context α]
   else
     throw s!"layernorm: seqLen must be > 0 (got {seqLen})"
 
+/--
+Decode a dynamic concat parent as a tensor with an existential leading dimension and the requested
+tail shape. This is the checked boundary shared by list-indexed concat evaluation and its proofs.
+-/
+def expectLeadingAxisInput {α : Type} [Context α]
+    (i : Nat) (rest : Shape) (value : DVal α) :
+    Except String (Sigma fun size => Tensor α (Shape.dim size rest)) := do
+  match value with
+  | ⟨Shape.dim size actualRest, tensor⟩ =>
+      if hRest : actualRest = rest then
+        let tensor' : Tensor α (Shape.dim size rest) := by
+          simpa [hRest] using tensor
+        pure ⟨size, tensor'⟩
+      else
+        throw <|
+          s!"IR eval: node {i}: concat: tail mismatch: {repr actualRest} vs {repr rest}"
+  | ⟨_, _⟩ =>
+      throw s!"IR eval: node {i}: concat expects rank≥1 parents, got {repr value.shape}"
+
 /-- Fold leading-axis concat over dynamic values that already share the same tail shape. -/
 def evalConcatLeadingAxisFold {α : Type} [Context α]
     (i : Nat) (nOut : Nat) (rest : Shape) (parents : List (DVal α)) :
     Except String (DVal α) := do
-  let toSigma (pv : DVal α) : Except String (Sigma fun n => Tensor α (Shape.dim n rest)) := do
-    match pv with
-    | ⟨Shape.dim nP restP, t⟩ =>
-        if hRest : restP = rest then
-          let t' : Tensor α (Shape.dim nP rest) := by
-            simpa [hRest] using t
-          pure ⟨nP, t'⟩
-        else
-          throw <|
-            s!"IR eval: node {i}: concat: tail mismatch: {repr restP} vs {repr rest}"
-    | ⟨_, _⟩ =>
-        throw s!"IR eval: node {i}: concat expects rank≥1 parents, got {repr pv.shape}"
-  let sigs ← parents.mapM toSigma
+  let sigs ← parents.mapM (expectLeadingAxisInput (α := α) i rest)
   match sigs with
   | [] =>
       throw s!"IR eval: node {i}: concat internal error"
@@ -780,7 +741,7 @@ def evalAt
             let pV := getParent pId
             let s := pV.shape
             let pT : Tensor α s := pV.tensor
-            match mkValidAxis? (axis := axis) s with
+            match Spec.Shape.validAxis? (axis := axis) s with
             | none =>
                 let msg :=
                   s!"IR eval: node {i}: reduce_sum invalid axis={axis}" ++
@@ -797,7 +758,7 @@ def evalAt
             let pV := getParent pId
             let s := pV.shape
             let pT : Tensor α s := pV.tensor
-            match mkValidAxis? (axis := axis) s with
+            match Spec.Shape.validAxis? (axis := axis) s with
             | none =>
                 let msg :=
                   s!"IR eval: node {i}: reduce_mean invalid axis={axis}" ++

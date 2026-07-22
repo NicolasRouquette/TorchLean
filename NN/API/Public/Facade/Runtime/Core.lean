@@ -18,7 +18,7 @@ public import NN.API.Public.Facade.Runtime.Text
 public import NN.API.Public.Facade.Runtime.Adapters
 
 /-!
-# TorchLean Public Facade Runtime Core
+# TorchLean Runtime API Core
 
-Import-only aggregator for focused runtime-facade modules.
+Import-only aggregator for focused runtime API modules.
 -/

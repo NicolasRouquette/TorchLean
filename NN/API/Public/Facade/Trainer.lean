@@ -14,7 +14,7 @@ public import NN.API.Public.Facade.Trainer.Train
 public import NN.API.Public.Facade.Trainer.Predict
 
 /-!
-# TorchLean Public Trainer Facade
+# TorchLean Trainer API
 
 Import entrypoint for the public training API:
 

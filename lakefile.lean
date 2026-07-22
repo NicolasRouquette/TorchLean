@@ -185,21 +185,45 @@ lean_lib NN where
   moreLinkObjs :=
     if cudaEnabled && libtorchEnabled then #[torchlean_libtorch_sdpa_so]
     else #[torchlean_libtorch_sdpa_stub]
-  -- `NN:docs` should document the whole maintained Lean surface, including examples and CLI
-  -- dispatchers. Keep tests out of this library surface; they build through `nn_tests_suite`.
-  roots := #[
-    `NN,
-    `NN.Examples.Zoo,
-    `NN.CI.SlowProofs,
-    `NN.Examples.Models.Runner,
-    `NN.Verification.CLI
-  ]
-
+  -- The reusable library has one canonical root. Examples, tests, CI aggregators, documentation,
+  -- and executable targets have separate targets below.
+  roots := #[`NN]
   globs := #[
     .one `NN,
-    .submodules `NN.Examples,
-    .submodules `NN.Verification
+    .submodules `NN.API,
+    .submodules `NN.Backend,
+    .submodules `NN.Core,
+    .submodules `NN.Floats,
+    .submodules `NN.GraphSpec,
+    .submodules `NN.IR,
+    .submodules `NN.MLTheory,
+    .submodules `NN.Proofs,
+    .submodules `NN.Runtime,
+    .submodules `NN.Spec,
+    .submodules `NN.Tensor,
+    .submodules `NN.Verification,
+    .submodules `NN.Widgets
   ]
+
+/-- Runnable and narrative examples, kept out of the reusable `NN` library target. -/
+lean_lib NNExamples where
+  roots := #[`NN.Examples.Zoo]
+  globs := #[.submodules `NN.Examples]
+
+/-- Test modules used by the curated native test runner. -/
+lean_lib NNTests where
+  roots := #[`NN.Tests.Suite]
+  globs := #[.submodules `NN.Tests]
+
+/-- Broad CI-only import aggregators. -/
+lean_lib NNCI where
+  roots := #[`NN.CI.All]
+  globs := #[.submodules `NN.CI]
+
+/-- Complete maintained API documentation surface. -/
+lean_lib TorchLeanDocs where
+  roots := #[`NN.Docs]
+  globs := #[.one `NN.Docs]
 
 /-- Build one native backend library for the current Lake configuration. -/
 private def buildNativeBackendLib (pkg : Package) (spec : NativeBackendLib) := do
@@ -258,7 +282,7 @@ extern_lib torchlean_cuda_tensor (pkg) :=
 
 -- Unified verification CLI registry: `lake exe verify -- <tool> [args...]`
 lean_exe verify where
-  root := `NN.Verification.CLI
+  root := `NN.Verification.Main
 
 -- Curated test suite runner (native executable).
 -- We run this via `lake exe nn_tests_suite` instead of `lean --run ...` because the Lean
@@ -295,7 +319,7 @@ lean_exe torchlean where
 lean_exe transcendentals_check where
   root := `NN.Examples.Functional.Transcendentals
 
--- API documentation (HTML) via `lake build NN:docs`.
+-- Complete API documentation (HTML) via `lake build TorchLeanDocs:docs`.
 require «doc-gen4» from git
   "https://github.com/leanprover/doc-gen4" @ "v4.32.0"
 

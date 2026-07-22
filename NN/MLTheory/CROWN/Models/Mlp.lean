@@ -27,7 +27,8 @@ This file is a compact implementation that sits on top of:
 - TorchLean’s typed tensor layer (`Spec.Tensor`).
 
 What is implemented:
-- Per-neuron ReLU linear relaxations derived from pre-activation bounds (`ReLU.relaxScalar*`).
+- Per-neuron ReLU linear relaxations derived from pre-activation bounds using the canonical
+  `Runtime.Ops.ReLU.relaxScalar` and `Runtime.Ops.ReLU.relaxScalarLower` definitions.
 - IBP forward rules for ReLU, sigmoid, tanh, and Leaky ReLU.
 - A two-layer ReLU MLP wrapper `TwoLayerMLP` with a simple end-to-end bounding API.
 
@@ -59,102 +60,9 @@ namespace NN.MLTheory.CROWN
 
 open _root_.Spec
 open _root_.Spec.Tensor
+open NN.MLTheory.CROWN.Runtime.Ops
 
 variable {α : Type} [Context α]
-
-/- ReLU relaxation parameters per neuron -/
-/--
-Parameters of a scalar linear relaxation used for bounding ReLU.
-
-Typical shape (for crossing intervals `l <= 0 < u`) is an upper line `y <= slope * x + bias` with
-`slope ∈ [0, 1]` and `bias >= 0`.
--/
-structure ReLURelax (α : Type) where
-  /-- Linear coefficient (often written `α` in the CROWN literature). -/
-  slope : α
-  /-- Constant offset (often written `β`). -/
-  bias  : α
-
-namespace ReLU
-
-/--
-Compute a standard (upper) linear relaxation for scalar ReLU on an interval `[l, u]`.
-
-This matches the classic CROWN/DeepPoly choice:
-- If `u <= 0`, ReLU is identically 0.
-- If `l >= 0`, ReLU is the identity.
-- If `l < 0 < u`, use the upper chord through `(l, 0)` and `(u, u)`.
--/
-def relaxScalar (l u : α) : ReLURelax α :=
-  if u > 0 then
-    if l > 0 then
-      { slope := 1, bias := 0 }
-    else
-      -- crossing zero: use upper line through (l,0),(u,u): y = α (x - l)
-      let denom := (u - l)
-      let αs := u / denom
-      let β := -αs * l
-      { slope := αs, bias := β }
-  else
-    { slope := 0, bias := 0 }
-
-/--
-Compute a basic (lower) linear relaxation for scalar ReLU on `[l, u]`.
-
-For the crossing case `l <= 0 < u`, we choose either:
-- `y >= 0` (slope 0), or
-- `y >= x` (slope 1),
-depending on which yields the tighter lower bound for the downstream objective.
--/
-def relaxScalarLower (l u : α) : ReLURelax α :=
-  if u > 0 then
-    if l > 0 then
-      { slope := 1, bias := 0 }
-    else
-      let slope := if u > (-l) then Numbers.one else Numbers.zero
-      { slope := slope, bias := 0 }
-  else
-    { slope := 0, bias := 0 }
-
-/-- Apply `relax_scalar` elementwise to vector bounds `(lo, hi)`. -/
-def relaxVector {n : Nat} (lo hi : Tensor α (.dim n .scalar)) : Tensor (ReLURelax α) (.dim n
-  .scalar) :=
-  match lo, hi with
-  | Tensor.dim l, Tensor.dim u =>
-    Tensor.dim (fun i => match l i, u i with
-      | Tensor.scalar li, Tensor.scalar ui => Tensor.scalar (relaxScalar li ui))
-
-/-- Apply `relax_scalar_lower` elementwise to vector bounds `(lo, hi)`. -/
-def relaxVectorLower {n : Nat} (lo hi : Tensor α (.dim n .scalar)) : Tensor (ReLURelax α) (.dim n
-  .scalar) :=
-  match lo, hi with
-  | Tensor.dim l, Tensor.dim u =>
-    Tensor.dim (fun i => match l i, u i with
-      | Tensor.scalar li, Tensor.scalar ui => Tensor.scalar (relaxScalarLower li ui))
-
-/--
-Propagate an affine form through ReLU using a fixed per-neuron relaxation.
-
-This is the "forward" DeepPoly-style propagation: given an affine bound on `z`, we produce an
-affine bound on `relu(z)` by scaling rows and adjusting the constant term.
--/
-def propagateAffine {inDim hidDim : Nat}
-  (relax : Tensor (ReLURelax α) (.dim hidDim .scalar))
-  (aff : AffineVec α inDim hidDim) : AffineVec α inDim hidDim :=
-  match relax, aff.A, aff.c with
-  | Tensor.dim r, Tensor.dim rows, Tensor.dim bias =>
-    let A' := Tensor.dim (fun i =>
-      match rows i, r i with
-      | Tensor.dim cols, Tensor.scalar rp =>
-        Tensor.dim (fun j =>
-          match cols j with
-          | Tensor.scalar aij => Tensor.scalar (aij * rp.slope)))
-    let c' := Tensor.dim (fun i =>
-      match bias i, r i with
-      | Tensor.scalar ci, Tensor.scalar rp => Tensor.scalar (rp.slope * ci + rp.bias))
-    { A := A', c := c' }
-
-end ReLU
 
 /-- Column-wise scaling of a matrix by a vector: scale each column `j` by `v[j]`. -/
 def matColScaleSpec
@@ -170,30 +78,14 @@ def matColScaleSpec
           | Tensor.scalar aij, Tensor.scalar vj => Tensor.scalar (aij * vj)))
 
 /-- Elementwise positive part of a matrix: replace negative entries by `0`. -/
-def matPosSpec {m n : Nat}
+abbrev matPosSpec {m n : Nat}
   (A : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim m (.dim n .scalar)) :=
-  match A with
-  | Tensor.dim rows =>
-    Tensor.dim (fun i =>
-      match rows i with
-      | Tensor.dim cols =>
-        Tensor.dim (fun j =>
-          match cols j with
-          | Tensor.scalar aij =>
-            Tensor.scalar (if aij > Numbers.zero then aij else Numbers.zero)))
+  IBP.matPos A
 
 /-- Elementwise negative part of a matrix: replace positive entries by `0`. -/
-def matNegSpec {m n : Nat}
+abbrev matNegSpec {m n : Nat}
   (A : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim m (.dim n .scalar)) :=
-  match A with
-  | Tensor.dim rows =>
-    Tensor.dim (fun i =>
-      match rows i with
-      | Tensor.dim cols =>
-        Tensor.dim (fun j =>
-          match cols j with
-          | Tensor.scalar aij =>
-            Tensor.scalar (if aij > Numbers.zero then Numbers.zero else aij)))
+  IBP.matNeg A
 
 /-- Extract the slope vector from a tensor of ReLU relaxations. -/
 def reluRelaxSlopeVec {n : Nat}
@@ -970,58 +862,6 @@ theorem ibp_linear_sound_real {m n : Nat}
                             -- `h1`/`h2`.
                             -- First, simplify the row/bias matches.
                             simp (config := { iota := true }) [hrow, hblo, hbhi, hbv]
-                            -- Now `Box.contains` at scalar shape is just a conjunction.
-                            have hLo :
-                                IBP.linear.match_1 (α:=ℝ)
-                                    (fun (s : Tensor ℝ Shape.scalar) => Tensor ℝ Shape.scalar)
-                                    (List.foldl
-                                      (fun acc j =>
-                                        AffineVec.evalOnBox.match_1 (α:=ℝ)
-                                          (fun (_acc _col _xlo _xhi : Tensor ℝ Shape.scalar) =>
-                                            Tensor ℝ Shape.scalar)
-                                          acc (cols j) (xlo j) (xhi j) (fun accv aij xlo xhi =>
-                                            Tensor.scalar
-                                              (BoundOps.addDown accv
-                                                (BoundOps.min2 (BoundOps.mulDown aij xlo)
-                                                  (BoundOps.mulDown aij xhi)))))
-                                      (Tensor.scalar 0) (List.finRange n))
-                                    (fun sv => Tensor.scalar (BoundOps.addDown sv bi_lo)) =
-                                  Tensor.scalar (BoundOps.addDown sumL bi_lo) := by
-                              simp (config := { iota := true }) [hFoldL]
-                            have hHi :
-                                IBP.linear.match_1 (α:=ℝ)
-                                    (fun (s : Tensor ℝ Shape.scalar) => Tensor ℝ Shape.scalar)
-                                    (List.foldl
-                                      (fun acc j =>
-                                        AffineVec.evalOnBox.match_1 (α:=ℝ)
-                                          (fun (_acc _col _xlo _xhi : Tensor ℝ Shape.scalar) =>
-                                            Tensor ℝ Shape.scalar)
-                                          acc (cols j) (xlo j) (xhi j) (fun accv aij xlo xhi =>
-                                            Tensor.scalar
-                                              (BoundOps.addUp accv
-                                                (BoundOps.max2 (BoundOps.mulUp aij xlo)
-                                                  (BoundOps.mulUp aij xhi)))))
-                                      (Tensor.scalar 0) (List.finRange n))
-                                    (fun sv => Tensor.scalar (BoundOps.addUp sv bi_hi)) =
-                                  Tensor.scalar (BoundOps.addUp sumU bi_hi) := by
-                              simp (config := { iota := true }) [hFoldU]
-                            have hVal :
-                                Tensor.map2Spec (fun x1 x2 : ℝ => x1 + x2)
-                                    (List.foldl
-                                      (fun acc k =>
-                                        Spec.matVecMulSpec.match_1 (α:=ℝ)
-                                          (fun (_acc _a _v : Tensor ℝ Shape.scalar) => Tensor ℝ
-                                            Shape.scalar)
-                                          acc (cols k) (xv k) (fun s ak vk => Tensor.scalar (s + ak
-                                            * vk)))
-                                      (Tensor.scalar 0) (List.finRange n))
-                                    (Tensor.scalar bi) =
-                                  Tensor.scalar (sumM + bi) := by
-                              simp (config := { iota := true }) [Tensor.map2Spec, hFoldM']
-                            have hLoS := congrArg Tensor.toScalar hLo
-                            have hHiS := congrArg Tensor.toScalar hHi
-                            have hValS := congrArg Tensor.toScalar hVal
-                            simp [Tensor.toScalar] at hLoS hHiS hValS
                             -- Finish the scalar containment goal via `Tensor.toScalar`.
                             have hcontains_scalar_iff (loT hiT yT : Tensor ℝ Shape.scalar) :
                                 Box.contains (α:=ℝ) { lo := loT, hi := hiT } yT ↔
@@ -1031,14 +871,11 @@ theorem ibp_linear_sound_real {m n : Nat}
                             apply (hcontains_scalar_iff _ _ _).2
                             constructor
                             · -- lower bound
-                              -- Rewrite `h1` into the exact scalar goal.
-                              have h1' := h1
-                              rw [← hLoS, ← hValS] at h1'
-                              simpa [Tensor.toScalar] using h1'
+                              rw [hFoldL, hFoldM']
+                              simpa [Tensor.map2Spec, Tensor.toScalar] using h1
                             · -- upper bound
-                              have h2' := h2
-                              rw [← hValS, ← hHiS] at h2'
-                              simpa [Tensor.toScalar] using h2'
+                              rw [hFoldM', hFoldU]
+                              simpa [Tensor.map2Spec, Tensor.toScalar] using h2
 
 /- Helper: soundness of IBP.relu over ℝ -/
 private theorem ibp_relu_sound_real {n : Nat}

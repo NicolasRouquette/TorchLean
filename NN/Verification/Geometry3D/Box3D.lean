@@ -676,6 +676,7 @@ def checkCert {α : Type} [OfNat α 0] [OfNat α 1] [Add α] [Sub α] [Mul α] [
     checkProjectedInImage cert &&
     checkBBoxEnclosesProjection cert
 
+/-- Acceptance by the image-size check yields the corresponding positive-size proposition. -/
 theorem checkPositiveImageSize_sound {α : Type} [OfNat α 0] [LT α]
     [DecidableRel (α := α) (· < ·)] {cert : BoxCameraCert α}
     (h : checkPositiveImageSize cert = true) :
@@ -683,6 +684,7 @@ theorem checkPositiveImageSize_sound {α : Type} [OfNat α 0] [LT α]
   simp [checkPositiveImageSize] at h
   exact h
 
+/-- Acceptance by the box-order check yields ordered horizontal and vertical endpoints. -/
 theorem checkBBoxOrdered_sound {α : Type} [OfNat α 0] [LE α]
     [DecidableRel (α := α) (· ≤ ·)] {cert : BoxCameraCert α}
     (h : checkBBoxOrdered cert = true) :
@@ -690,6 +692,7 @@ theorem checkBBoxOrdered_sound {α : Type} [OfNat α 0] [LE α]
   simp [checkBBoxOrdered] at h
   exact ⟨h.1.1, h.1.2, h.2⟩
 
+/-- Acceptance by the containment check places every claimed box edge inside the image. -/
 theorem checkBBoxInsideImage_sound {α : Type} [OfNat α 0] [LE α]
     [DecidableRel (α := α) (· ≤ ·)] {cert : BoxCameraCert α}
     (h : checkBBoxInsideImage cert = true) :
@@ -697,6 +700,7 @@ theorem checkBBoxInsideImage_sound {α : Type} [OfNat α 0] [LE α]
   simp [checkBBoxInsideImage] at h
   exact ⟨h.1.1.1, h.1.1.2, h.1.2, h.2⟩
 
+/-- Acceptance by the depth check proves that all eight projected corners are in front of the camera. -/
 theorem checkPositiveDepths_sound {α : Type} [OfNat α 0] [OfNat α 1] [Add α] [Mul α] [LT α]
     [DecidableRel (α := α) (· < ·)] {cert : BoxCameraCert α}
     (h : checkPositiveDepths cert = true) :
@@ -706,6 +710,7 @@ theorem checkPositiveDepths_sound {α : Type} [OfNat α 0] [OfNat α 1] [Add α]
     list_all_true_of_mem h (by simp)
   exact of_decide_eq_true hi
 
+/-- Acceptance by the projection check places every projected corner within the image rectangle. -/
 theorem checkProjectedInImage_sound {α : Type} [OfNat α 0] [OfNat α 1]
     [Add α] [Mul α] [Div α] [LE α] [DecidableRel (α := α) (· ≤ ·)]
     {cert : BoxCameraCert α} (h : checkProjectedInImage cert = true) :
@@ -718,6 +723,7 @@ theorem checkProjectedInImage_sound {α : Type} [OfNat α 0] [OfNat α 1]
     list_all_true_of_mem h (by simp)
   exact of_decide_eq_true hi
 
+/-- Acceptance by the enclosure check places every projected corner inside the claimed box tolerance. -/
 theorem checkBBoxEnclosesProjection_sound {α : Type} [OfNat α 1]
     [Add α] [Sub α] [Mul α] [Div α] [LE α] [DecidableRel (α := α) (· ≤ ·)]
     {cert : BoxCameraCert α} (h : checkBBoxEnclosesProjection cert = true) :
@@ -755,12 +761,14 @@ theorem checkCert_sound {α : Type} [OfNat α 0] [OfNat α 1] [Add α] [Sub α] 
 
 /-! ## Consequence theorems for verified artifacts -/
 
+/-- A verified artifact necessarily has positive image width and height. -/
 theorem Verified3DBox.positive_image_size {α : Type} [OfNat α 0] [OfNat α 1]
     [Add α] [Sub α] [Mul α] [Div α] [LE α] [LT α]
     {cert : BoxCameraCert α} (h : Verified3DBox cert) :
     0 < cert.width ∧ 0 < cert.height :=
   h.1
 
+/-- The claimed 2D bounding box of a verified artifact lies within its image dimensions. -/
 theorem Verified3DBox.bbox_inside_image {α : Type} [OfNat α 0] [OfNat α 1]
     [Add α] [Sub α] [Mul α] [Div α] [LE α] [LT α]
     {cert : BoxCameraCert α} (h : Verified3DBox cert) :
@@ -768,12 +776,14 @@ theorem Verified3DBox.bbox_inside_image {α : Type} [OfNat α 0] [OfNat α 1]
       0 ≤ ymin cert ∧ ymax cert ≤ cert.height :=
   h.2.2.1
 
+/-- Every corner of a verified artifact has positive camera-space depth. -/
 theorem Verified3DBox.corner_positive_depth {α : Type} [OfNat α 0] [OfNat α 1]
     [Add α] [Sub α] [Mul α] [Div α] [LE α] [LT α]
     {cert : BoxCameraCert α} (h : Verified3DBox cert) (i : Fin 8) :
     0 < certProjectZ cert i :=
   h.2.2.2.1 i
 
+/-- Every projected corner of a verified artifact lies within the image rectangle. -/
 theorem Verified3DBox.projected_corner_in_image {α : Type} [OfNat α 0] [OfNat α 1]
     [Add α] [Sub α] [Mul α] [Div α] [LE α] [LT α]
     {cert : BoxCameraCert α} (h : Verified3DBox cert) (i : Fin 8) :
@@ -781,6 +791,7 @@ theorem Verified3DBox.projected_corner_in_image {α : Type} [OfNat α 0] [OfNat 
       0 ≤ certProjectY cert i ∧ certProjectY cert i ≤ cert.height :=
   h.2.2.2.2.1 i
 
+/-- Every projected corner lies within the verified artifact's claimed box, up to its tolerance. -/
 theorem Verified3DBox.projected_corner_in_claimed_bbox {α : Type} [OfNat α 0] [OfNat α 1]
     [Add α] [Sub α] [Mul α] [Div α] [LE α] [LT α]
     {cert : BoxCameraCert α} (h : Verified3DBox cert) (i : Fin 8) :

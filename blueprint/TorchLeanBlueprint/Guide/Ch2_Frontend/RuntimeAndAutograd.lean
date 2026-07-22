@@ -21,12 +21,28 @@ This chapter identifies each artifact, its lifetime, and the claim it can suppor
 
 # Four Objects Commonly Called “The Graph”
 
-| Object | Purpose | Contains |
-| --- | --- | --- |
-| eager tape | reverse-mode execution | values, parents, local VJPs |
-| compiled derivative graph | repeated runtime execution | forward, JVP, VJP closures |
-| `NN.IR.Graph` | inspection and verification | explicit operation tags and payload references |
-| backend execution plan | provider selection | accepted capsules and audit metadata |
+:::table +header
+*
+  * Object
+  * Purpose
+  * Contains
+*
+  * eager tape
+  * reverse-mode execution
+  * values, parents, local VJPs
+*
+  * compiled derivative graph
+  * repeated runtime execution
+  * forward, JVP, VJP closures
+*
+  * `NN.IR.Graph`
+  * inspection and verification
+  * explicit operation tags and payload references
+*
+  * backend execution plan
+  * provider selection
+  * accepted capsules and audit metadata
+:::
 
 A fifth object, a CUDA Graph capture, is a device launch-replay mechanism. Selecting TorchLean's
 `.compiled` backend does not mean CUDA Graph capture.

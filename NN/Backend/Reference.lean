@@ -23,6 +23,7 @@ namespace NN
 namespace Backend
 namespace Reference
 
+/-- Build a checked portable CPU capsule with explicit value, VJP, shape, and layout contracts. -/
 def referenceCapsule
     (name : String) (op : BackendOp) (specName valueSummary vjpSummary : String)
     (vjpMode : VJPMode := .torchLeanTape) : KernelCapsule :=
@@ -56,6 +57,7 @@ def referenceCapsule
         reduction := .notApplicable }
     notes := "Reference/portable capsules are the cross-platform fallback, not the scaling path." }
 
+/-- Build the standard portable capsule for a pointwise operation. -/
 def referencePointwiseCapsule (op : BackendOp) : KernelCapsule :=
   referenceCapsule
     s!"reference.{op.name}"
@@ -64,6 +66,7 @@ def referencePointwiseCapsule (op : BackendOp) : KernelCapsule :=
     s!"Reference `{op.name}` follows the pointwise tensor contract."
     s!"TorchLean tape supplies the `{op.name}` VJP where differentiable."
 
+/-- Build a portable reduction capsule with deterministic left-to-right accumulation. -/
 def referenceReductionCapsule (op : BackendOp) : KernelCapsule :=
   { referenceCapsule
     s!"reference.{op.name}"
@@ -83,6 +86,7 @@ def referenceAccumulationCapsule (name : String) (op : BackendOp) (specName valu
   { referenceCapsule name op specName valueSummary vjpSummary with
     numericalPolicy.reduction := .fixedLeft }
 
+/-- Build the standard portable capsule for a shape or layout transformation. -/
 def referenceViewCapsule (op : BackendOp) : KernelCapsule :=
   referenceCapsule
     s!"reference.{op.name}"
@@ -91,6 +95,7 @@ def referenceViewCapsule (op : BackendOp) : KernelCapsule :=
     s!"Reference `{op.name}` follows the explicit shape/layout contract."
     s!"TorchLean tape supplies the `{op.name}` adjoint where differentiable."
 
+/-- Build a portable forward-only capsule with no registered reverse derivative. -/
 def referenceForwardOnlyCapsule (op : BackendOp) (specName valueSummary : String) : KernelCapsule :=
   referenceCapsule
     s!"reference.{op.name}"
@@ -100,6 +105,7 @@ def referenceForwardOnlyCapsule (op : BackendOp) (specName valueSummary : String
     s!"Reference `{op.name}` is a forward-only capsule with no registered VJP."
     .none
 
+/-- Build a portable capsule for channel-first convolution or pooling. -/
 def referenceConvPoolCapsule (op : BackendOp) : KernelCapsule :=
   referenceCapsule
     s!"reference.{op.name}"
@@ -131,24 +137,43 @@ def gelu : KernelCapsule :=
     "Reference GELU follows the documented runtime approximation contract."
     "TorchLean tape supplies the VJP."
 
+/-- Reference pointwise addition. -/
 def add : KernelCapsule := referencePointwiseCapsule .add
+/-- Reference pointwise subtraction. -/
 def sub : KernelCapsule := referencePointwiseCapsule .sub
+/-- Reference pointwise multiplication. -/
 def mul : KernelCapsule := referencePointwiseCapsule .mul
+/-- Reference scalar multiplication. -/
 def scale : KernelCapsule := referencePointwiseCapsule .scale
+/-- Reference pointwise absolute value. -/
 def abs : KernelCapsule := referencePointwiseCapsule .abs
+/-- Reference pointwise square root. -/
 def sqrt : KernelCapsule := referencePointwiseCapsule .sqrt
+/-- Reference pointwise interval clamp. -/
 def clamp : KernelCapsule := referencePointwiseCapsule .clamp
+/-- Reference pointwise maximum. -/
 def max : KernelCapsule := referencePointwiseCapsule .max
+/-- Reference pointwise minimum. -/
 def min : KernelCapsule := referencePointwiseCapsule .min
+/-- Reference pointwise sigmoid. -/
 def sigmoid : KernelCapsule := referencePointwiseCapsule .sigmoid
+/-- Reference pointwise hyperbolic tangent. -/
 def tanh : KernelCapsule := referencePointwiseCapsule .tanh
+/-- Reference pointwise softplus. -/
 def softplus : KernelCapsule := referencePointwiseCapsule .softplus
+/-- Reference pointwise exponential. -/
 def exp : KernelCapsule := referencePointwiseCapsule .exp
+/-- Reference pointwise natural logarithm. -/
 def log : KernelCapsule := referencePointwiseCapsule .log
+/-- Reference pointwise sine. -/
 def sin : KernelCapsule := referencePointwiseCapsule .sin
+/-- Reference pointwise cosine. -/
 def cos : KernelCapsule := referencePointwiseCapsule .cos
+/-- Reference pointwise reciprocal. -/
 def inv : KernelCapsule := referencePointwiseCapsule .inv
+/-- Reference guarded logarithm used by numerically defensive programs. -/
 def safeLog : KernelCapsule := referencePointwiseCapsule .safeLog
+/-- Reference log-softmax reduction and normalization. -/
 def logSoftmax : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.log_softmax"
@@ -166,23 +191,34 @@ def softmax : KernelCapsule :=
     "Reference softmax follows the row/axis normalization contract."
     "TorchLean tape supplies the VJP."
 
+/-- Reference sum reduction. -/
 def reduceSum : KernelCapsule := referenceReductionCapsule .reduceSum
+/-- Reference arithmetic-mean reduction. -/
 def reduceMean : KernelCapsule := referenceReductionCapsule .reduceMean
 
+/-- Reference shape-preserving reshape view. -/
 def reshape : KernelCapsule := referenceViewCapsule .reshape
+/-- Reference axis permutation. -/
 def permute : KernelCapsule := referenceViewCapsule .permute
+/-- Reference tensor broadcasting. -/
 def broadcast : KernelCapsule := referenceViewCapsule .broadcast
+/-- Reference tensor concatenation. -/
 def concat : KernelCapsule := referenceViewCapsule .concat
+/-- Reference contiguous tensor slice. -/
 def slice : KernelCapsule := referenceViewCapsule .slice
+/-- Reference indexed gather. -/
 def gather : KernelCapsule := referenceViewCapsule .gather
+/-- Reference indexed scatter-add. -/
 def scatterAdd : KernelCapsule := referenceViewCapsule .scatterAdd
 
+/-- Reference seeded uniform-random tensor generation. -/
 def randUniform : KernelCapsule :=
   referenceForwardOnlyCapsule
     .randUniform
     "IR.randUniform"
     "Reference deterministic random-uniform tensors follow the seeded spec/runtime contract."
 
+/-- Reference seeded Bernoulli-mask generation. -/
 def bernoulliMask : KernelCapsule :=
   referenceForwardOnlyCapsule
     .bernoulliMask

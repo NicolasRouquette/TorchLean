@@ -9,7 +9,7 @@ module
 public import NN.API.Public.Facade.NN
 
 /-!
-# TorchLean Supervised Runtime Facade
+# TorchLean Supervised Runtime API
 
 Supervised runtime names for manual code.
 -/

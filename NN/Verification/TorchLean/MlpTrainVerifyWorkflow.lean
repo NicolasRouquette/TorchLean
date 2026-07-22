@@ -66,6 +66,7 @@ def mkModel : nn.M (nn.Sequential xShape yShape) :=
     nn.linear hiddenDim outDim
   ]
 
+/-- Deterministically instantiate the workflow model from initialization seed zero. -/
 def model : nn.Sequential xShape yShape :=
   nn.run 0 mkModel
 

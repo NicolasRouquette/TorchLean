@@ -8,8 +8,9 @@ and Lyapunov/controller experiments.
 ## Main Files
 
 1. `Core.lean`: interval boxes (`Box`) and the basic affine form container (`AffineVec`).
-2. `Models/Mlp.lean`: vector-in/vector-out CROWN development for small MLP-style networks,
-   including ReLU relaxations, IBP bounds, and affine propagation.
+2. `Models/Mlp.lean`: vector-in/vector-out CROWN development for small MLP-style networks. It uses
+   the canonical executable ReLU relaxations from `Runtime/Ops.lean` together with its IBP bounds
+   and model-specific affine composition.
 3. `Graph.lean` and `Graph/`: graph-based LiRPA over TorchLean's op-tagged IR graphs. The graph
    engine stores per-node interval boxes, affine forms, parameter stores, and transfer state.
 4. `Operators.lean` and `Operators/`: transfer rules for ReLU-family activations, arithmetic,
@@ -17,9 +18,10 @@ and Lyapunov/controller experiments.
 5. `Cert/`: alpha-CROWN and alpha-beta-CROWN certificate data structures.
 6. `Proofs/`: theorem-backed pieces of the CROWN development, including graph-IBP theorems,
    graph-certificate soundness, alpha/beta ReLU scalar soundness, and transfer-rule soundness
-   interfaces.
-7. `Runtime/Ops.lean`: executable definitions used by the graph engine, kept separate from heavier
-   proof imports.
+   interfaces. `Proofs/AlphaReLULowerBound.lean` is the shared scalar lower-bound lemma used by
+   both alpha-CROWN and alpha/beta-CROWN proofs.
+7. `Runtime/Ops.lean`: the canonical executable ReLU relaxation definitions used by both the graph
+   engine and MLP development, kept separate from heavier proof imports.
 
 ## How To Read The Layering
 
@@ -74,9 +76,13 @@ graph claims.
 
 - `Graph/`: graph engine, backward propagation, and graph-level theorem statements.
 - `Operators/`: op-specific IBP and affine transfer rules.
-- `Propagation/`: specialized propagation routines such as backward or sign-split passes.
+- `Propagation/`: specialized propagation routines such as backward or sign-split passes. The
+  canonical `IBP.matPos`/`IBP.matNeg` weight decomposition lives in `Core.lean` and is shared by
+  interval and graph-CROWN linear rules.
 - `Cert/`: alpha/alpha-beta certificate structures.
 - `Lyapunov/`: controller and Lyapunov-oriented CROWN workflows, including the oracle boundary.
+  The two Lean-executed pipelines share compiled gradient search and loss-box verification through
+  `Lyapunov/TwoStage/CompiledLossAnalysis.lean` (`projectedGradientStep` and `checkLossBox`).
 - `Proofs/`: soundness theorems and proof layer overviews.
 - `Extras/`: optional helpers and proof toolboxes.
 - `Tactics/`: small tactic support for CROWN oracle-style workflows.

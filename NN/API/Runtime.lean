@@ -15,7 +15,7 @@ public import NN.API.Runtime.Module
 public import NN.API.Runtime.Training
 
 /-!
-# TorchLean Runtime Facade
+# TorchLean Runtime API
 
 `NN.API.Runtime` exposes the executable runtime API under `NN.API.TorchLean`: tensor
 primitives, functional ops, losses, optimizer configs, sequential model APIs, module execution,

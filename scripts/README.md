@@ -18,7 +18,6 @@ Everything is organized by purpose:
 - `verification/`: certificate producers and artifact-regeneration workflows.
 - `rl/`: optional reinforcement-learning bridge examples.
 - `sandbox/`: comparator/untrusted-Lean helper tooling.
-- `bug_zoo/`: small external-framework reproducers paired with checked BugZoo case studies.
 
 ### Build and Check Support
 
@@ -28,7 +27,6 @@ These scripts are used by the build, documentation, and local verification paths
 - `checks/example_regression.sh`
 - `checks/cuda_sanitize_tests.sh`
 - `checks/cuda_profile_tests.sh`
-- `checks/check_case_collisions.py`
 - `checks/repo_lint.py`
 - `checks/TorchLeanLint.lean`
 - `checks/dependency_audit.py`
@@ -66,8 +64,6 @@ Use the subfolder paths directly, for example
 These scripts support documented workflows outside the core build path:
 
 - `datasets/download_wikitext.py`
-- `bug_zoo/constant_norm_slice_repro.py`
-- `bug_zoo/layernorm_dim1_repro.py`
 - `rl/gymnasium_server.py`
 - `rl/export_gymnasium_rollout.py`
 - `rl/train_ppo_cartpole_sb3.py`
@@ -112,8 +108,6 @@ Generated locally:
 - `checks/cuda_sanitize_tests.sh`: CUDA sanitizer runner for the CUDA runtime test suite.
 - `checks/cuda_profile_tests.sh`: optional Nsight Systems / Nsight Compute wrapper for CUDA
   performance reports.
-- `checks/check_case_collisions.py`: CI guard for case-insensitive filesystem name
-  collisions.
 - `checks/repo_lint.py`: repository lint used by `lake lint`. It checks source hygiene, public API
   boundaries, import-only aggregators, fixed-rank names in public tensor/model APIs,
   trusted-axiom quarantine, public-example spellings, and module docstrings for `NN/` Lean files.
@@ -131,7 +125,6 @@ scripts/checks/example_regression.sh
 scripts/checks/cuda_profile_tests.sh --both
 python3 scripts/checks/repo_lint.py --fail-on-warn
 python3 scripts/checks/dependency_audit.py --markdown /tmp/torchlean_dependency_audit.md --fail-on-error
-python3 scripts/checks/check_case_collisions.py
 ```
 
 ## Data
@@ -163,8 +156,8 @@ python3 scripts/checks/check_case_collisions.py
   `blueprint/` package), dependency graph JSON, and homepage bundle.
 - `docs/polish_docgen.py`: post-processes DocGen HTML with the TorchLean landing page,
   navigation links, declaration legends, dependency-link rewrites, and site styling.
-- `docs/polish_verso_guide.py`: post-processes the Verso guide with responsive figures,
-  copy buttons, theorem cards, and asset wiring.
+- `docs/polish_verso_guide.py`: post-processes the Verso guide with responsive figures and tables,
+  stable KaTeX display layout, copy buttons, theorem cards, and asset wiring.
 
 `docs/build_site.sh` is the full site build: it rebuilds Lean modules, DocGen, the Verso guide,
 the dependency graph JSON, and the Jekyll site. To refresh only the graph artifact, run
@@ -192,13 +185,6 @@ used by TorchLean runtimes, and it is not a declaration-level proof-dependency e
 - `rl/export_gymnasium_rollout.py`: collects a Gymnasium rollout into TorchLean's JSON format.
 - `rl/train_ppo_cartpole_sb3.py`: Stable-Baselines3 CartPole baseline for comparing against the
   TorchLean PPO path.
-
-## BugZoo Reproducers
-
-- `bug_zoo/constant_norm_slice_repro.py`: PyTorch repro for the constant-slice normalization
-  contract checked in `NN/Examples/BugZoo/ConstantNormalizationSlice.lean`.
-- `bug_zoo/layernorm_dim1_repro.py`: PyTorch repro for the one-feature LayerNorm contract checked in
-  `NN/Examples/BugZoo/LayerNormDegenerateAxis.lean`.
 
 ## Verification Producers
 

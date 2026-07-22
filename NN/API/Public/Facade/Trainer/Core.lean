@@ -12,7 +12,7 @@ public import NN.API.Data
 public import NN.API.Public.Facade.Trainer.Summary
 
 /-!
-# TorchLean Public Trainer Facade
+# TorchLean Trainer API
 
 Public training starts from one handle:
 
@@ -188,7 +188,7 @@ Custom losses cover masked language-model objectives, physics residuals, and alg
 where the model is still an ordinary `TorchLean.nn.Sequential`, but the loss has task logic that does not fit
 a canned reduction. The boundary stays precise: the loss is a TorchLean program over
 `(prediction, target)`, so module construction and optimizer wiring remain inside the trainer
-facade.
+API.
 -/
 structure Custom (σ τ : Shape) where
   /-- The checked TorchLean model used by this trainer. -/

@@ -75,19 +75,24 @@ structure Prims where
   /-- d 2 u Y. -/
   d2uY : Option (Float × Float)
 
+/-- Add two closed Float intervals endpointwise. -/
 @[inline] def ivalAdd (a b : Float × Float) : Float × Float :=
   let (al, ah) := a; let (bl, bh) := b; (al + bl, ah + bh)
 
+/-- Subtract two closed Float intervals using outward endpoint selection. -/
 @[inline] def ivalSub (a b : Float × Float) : Float × Float :=
   let (al, ah) := a; let (bl, bh) := b; (al - bh, ah - bl)
 
+/-- Scale a closed Float interval, reversing endpoint order for negative coefficients. -/
 @[inline] def ivalScale (c : Float) (a : Float × Float) : Float × Float :=
   let (al, ah) := a
   if c ≥ 0.0 then (c * al, c * ah) else (c * ah, c * al)
 
+/-- Negate a closed Float interval by swapping and negating its endpoints. -/
 @[inline] def ivalNeg (a : Float × Float) : Float × Float :=
   let (al, ah) := a; (-ah, -al)
 
+/-- Bound the product of two Float intervals through the shared McCormick envelopes. -/
 @[inline] def ivalMul (a b : Float × Float) : Float × Float :=
   -- Use McCormick envelopes to bound u*v conservatively
   let (al, ah) := a; let (bl, bh) := b

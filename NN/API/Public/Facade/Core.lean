@@ -9,8 +9,8 @@ module
 public import NN.API.Public.Facade.Runtime
 
 /-!
-# TorchLean Public Facade Core
+# TorchLean Application API Core
 
 Aggregator for the root names, `nn`, runtime, module, optimizer, loss, text, RL, and related
-public namespaces used by the high-level trainer/data facade.
+namespaces used by the high-level trainer and data APIs.
 -/

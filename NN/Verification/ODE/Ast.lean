@@ -33,7 +33,7 @@ namespace NN.Verification.ODE
 
 open Spec
 
-/-!
+/--
 `Expr` is an AST for ODE right-hand sides `f(t,u)`.
 
 We cover the arithmetic and elementary functions needed by the ODE certificate format used in
@@ -56,7 +56,7 @@ inductive Expr where
   | log (a : Expr)
   deriving Repr
 
-/-!
+/--
 An evaluation environment for `Expr`.
 
 We interpret `t` and `u` as intervals `(lo,hi)`; everything evaluates to an interval.
@@ -191,7 +191,7 @@ Same strategy as `sin`: 1‑Lipschitz around the midpoint, clamped to `[-1, 1]`.
 
 end Ival
 
-/-!
+/--
 Interval evaluation for `Expr`.
 
 `evalWithFuel` uses a fuel parameter so the evaluator is total even for malformed/self-referential

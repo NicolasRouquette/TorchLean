@@ -20,22 +20,22 @@ namespace TorchLean
 
 namespace Verification
 
-@[inherit_doc NN.Verification.TorchLean.CompiledIR]
+/-- TorchLean program compiled to verifier IR together with its distinguished input node. -/
 abbrev CompiledIR := NN.Verification.TorchLean.CompiledIR
 
-@[inherit_doc NN.MLTheory.CROWN.FlatBox]
+/-- Flat lower and upper bounds consumed by IBP and CROWN. -/
 abbrev FlatBox := NN.MLTheory.CROWN.FlatBox
 
-@[inherit_doc NN.MLTheory.CROWN.Graph.ParamStore]
+/-- Per-node concrete values and interval data supplied to graph verification. -/
 abbrev ParamStore := NN.MLTheory.CROWN.Graph.ParamStore
 
-@[inherit_doc NN.MLTheory.CROWN.Graph.AffineCtx]
+/-- Dimensions identifying the input variables of a flattened affine bound. -/
 abbrev AffineCtx := NN.MLTheory.CROWN.Graph.AffineCtx
 
-@[inherit_doc NN.MLTheory.CROWN.Graph.FlatAffine]
+/-- One flattened affine form over the verifier input variables. -/
 abbrev FlatAffine := NN.MLTheory.CROWN.Graph.FlatAffine
 
-@[inherit_doc NN.MLTheory.CROWN.Graph.FlatAffineBounds]
+/-- Paired lower and upper flattened affine forms. -/
 abbrev FlatAffineBounds := NN.MLTheory.CROWN.Graph.FlatAffineBounds
 
 /--

@@ -8,6 +8,8 @@ module
 
 public import NN.MLTheory.CROWN.Graph.Core
 public import NN.IR.Payload
+public import NN.Spec.Core.Shape
+public import NN.Spec.Core.Tensor.Packed
 
 /-!
 Shared definitions for the graph CROWN engine.
@@ -320,29 +322,16 @@ def boxInv? (B : FlatBox α) : Option (FlatBox α) := do
 
 /-- Dynamic tensor value used while reshaping and permuting flattened boxes. -/
 abbrev FlatDVal (α : Type) [Context α] : Type :=
-  Σ s : Shape, Tensor α s
+  Spec.PackedTensor α
 
 /-- Shape projection for `FlatDVal`. -/
-def flatDValShape {α : Type} [Context α] (v : FlatDVal α) : Shape := v.1
+def flatDValShape {α : Type} [Context α] (v : FlatDVal α) : Shape :=
+  Spec.PackedTensor.shape v
 
 /-- Tensor projection for `FlatDVal`, preserving the dependent shape stored beside it. -/
 def flatDValTensor {α : Type} [Context α] (v : FlatDVal α) :
-    Tensor α (flatDValShape (α := α) v) := v.2
-
-/-- Return the position of `x` in a list, if present. -/
-def findIndex? (xs : List Nat) (x : Nat) : Option Nat :=
-  let rec go (i : Nat) : List Nat → Option Nat
-    | [] => none
-    | y :: ys => if y = x then some i else go (i + 1) ys
-  go 0 xs
-
-/-- Swap adjacent entries `d` and `d+1` in a list of axis ids. -/
-def swapAt (xs : List Nat) (d : Nat) : List Nat :=
-  match xs, d with
-  | [], _ => []
-  | [x], _ => [x]
-  | x :: y :: rest, 0 => y :: x :: rest
-  | x :: rest, d + 1 => x :: swapAt rest d
+    Tensor α (flatDValShape (α := α) v) :=
+  Spec.PackedTensor.tensor v
 
 /-- Decompose an axis permutation into adjacent swaps, rejecting invalid permutations. -/
 def swapDepthsForPerm? (perm : List Nat) (r : Nat) : Option (List Nat) :=
@@ -350,14 +339,14 @@ def swapDepthsForPerm? (perm : List Nat) (r : Nat) : Option (List Nat) :=
     if j ≤ i then
       (cur, swapsRev)
     else
-      bubbleLeft (swapAt cur (j - 1)) ((j - 1) :: swapsRev) i (j - 1)
+      bubbleLeft (Spec.Shape.swapAdjacentAxes cur (j - 1)) ((j - 1) :: swapsRev) i (j - 1)
   if perm.length = r && perm.all (fun d => d < r) then
     let rec go (i : Nat) (targets : List Nat) (cur : List Nat) (swapsRev : List Nat) :
         Option (List Nat) :=
       match targets with
       | [] => some swapsRev.reverse
       | target :: targets' =>
-          match findIndex? cur target with
+          match cur.findIdx? (· == target) with
           | none => none
           | some j =>
               let (cur', swapsRev') := bubbleLeft cur swapsRev i j
@@ -365,13 +354,6 @@ def swapDepthsForPerm? (perm : List Nat) (r : Nat) : Option (List Nat) :=
     go 0 perm (List.range r) []
   else
     none
-
-/-- Apply one adjacent-axis swap to a dynamic tensor value. -/
-def applySwapDepth {α : Type} [Context α] (v : FlatDVal α) (d : Nat) : FlatDVal α :=
-  match v with
-  | ⟨s, t⟩ =>
-      let t' : Tensor α (s.swapAdjacentAtDepth d) := Tensor.swapAtDepthHelper (tensor := t) d
-      ⟨s.swapAdjacentAtDepth d, t'⟩
 
 /-- Apply a full axis permutation to a dynamic tensor value when the permutation is valid. -/
 def permuteDVal? {α : Type} [Context α] (v : FlatDVal α) (perm : List Nat) :
@@ -382,7 +364,8 @@ def permuteDVal? {α : Type} [Context α] (v : FlatDVal α) (perm : List Nat) :
   | some _ =>
       match swapDepthsForPerm? perm (Spec.Shape.rank sIn) with
       | none => none
-      | some swaps => some <| swaps.foldl (fun acc d => applySwapDepth (α := α) acc d) v
+      | some swaps =>
+          some <| swaps.foldl (fun acc d => Spec.PackedTensor.swapAdjacentAtDepth acc d) v
 
 /-- Componentwise max bounds: `max(x,y)` over interval boxes. -/
 def boxMaxElem (B1 B2 : FlatBox α) : FlatBox α :=
@@ -466,18 +449,6 @@ def lastDimLen : Shape → Nat
   | .dim n .scalar => n
   | .dim _ rest => lastDimLen rest
 
-/-- Runtime witness that an axis is valid for a shape. -/
-def mkValidAxis? (axis : Nat) : (s : Shape) → Option (PLift (Shape.valid_axis axis s))
-  | .scalar => none
-  | .dim n rest =>
-      match axis, n with
-      | 0, Nat.succ k => some ⟨Shape.valid_axis.valid_zero (n := k) (s := rest)⟩
-      | 0, 0 => none
-      | Nat.succ a, Nat.succ k =>
-          (mkValidAxis? a rest).map (fun h => ⟨Shape.valid_axis.valid_succ (n := k) (s := rest) (k
-            := a) h.down⟩)
-      | Nat.succ _, 0 => none
-
 /-- Runtime witness that one shape can broadcast to another. -/
 def mkCanBroadcastTo? : (s₁ s₂ : Shape) → Option (Shape.CanBroadcastTo s₁ s₂)
   | s₁, s₂ =>
@@ -530,7 +501,7 @@ def ibpBroadcastTo (s₁ s₂ : Shape) (Xin : FlatBox α) : Option (FlatBox α) 
 /-- IBP rule for reducing a shaped box by summing along one axis. -/
 def ibpReduceSumAxis (axis : Nat) (Xin : FlatBox α) (s : Shape) : Option (FlatBox α) :=
   if h : Xin.dim = Spec.Shape.size s then
-    match mkValidAxis? (axis := axis) s with
+    match Spec.Shape.validAxis? (axis := axis) s with
     | none => none
     | some hAxis =>
         let hRed := Shape.proveReducibleAlong axis s hAxis.down
@@ -548,7 +519,7 @@ def ibpReduceSumAxis (axis : Nat) (Xin : FlatBox α) (s : Shape) : Option (FlatB
 /-- IBP rule for reducing a shaped box by averaging along one axis. -/
 def ibpReduceMeanAxis (axis : Nat) (Xin : FlatBox α) (s : Shape) : Option (FlatBox α) :=
   if h : Xin.dim = Spec.Shape.size s then
-    match mkValidAxis? (axis := axis) s with
+    match Spec.Shape.validAxis? (axis := axis) s with
     | none => none
     | some hAxis =>
         let hRed := Shape.proveReducibleAlong axis s hAxis.down

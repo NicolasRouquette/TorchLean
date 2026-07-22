@@ -9,7 +9,7 @@ module
 public import NN.API.Public.Facade.NN
 
 /-!
-# TorchLean Loss And Metrics Facade
+# TorchLean Loss and Metrics API
 
 Public loss reductions, losses, and metrics.
 -/

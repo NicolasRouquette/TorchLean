@@ -27,6 +27,53 @@ namespace Correctness
 
 namespace IRStep
 
+/-- Shape-changing unary operations with statically typed output tensors. -/
+inductive ShapeOperation : Shape → Shape → Type where
+  /-- Reshape between shapes with equal element counts. -/
+  | reshape (inShape outShape : Shape) (hsize : Spec.Shape.size inShape = Spec.Shape.size outShape) :
+      ShapeOperation inShape outShape
+  /-- Flatten a tensor to one dimension. -/
+  | flatten (s : Shape) : ShapeOperation s (.dim (Spec.Shape.size s) .scalar)
+  /-- Broadcast to a compatible target shape. -/
+  | broadcastTo (s₁ s₂ : Shape) (witness : Shape.CanBroadcastTo s₁ s₂)
+      (accepted : OpContracts.mkCanBroadcastTo? s₁ s₂ = some witness) : ShapeOperation s₁ s₂
+  /-- Sum every coordinate to a scalar. -/
+  | sum (s : Shape) : ShapeOperation s .scalar
+
+/-- IR opcode represented by a typed shape operation. -/
+def ShapeOperation.toOpKind {inShape outShape : Shape} :
+    ShapeOperation inShape outShape → OpKind
+  | .reshape _ _ _ => .reshape inShape outShape
+  | .flatten _ => .flatten inShape
+  | .broadcastTo _ _ _ _ => .broadcastTo inShape outShape
+  | .sum _ => .sum
+
+/-- Typed denotation of a shape operation. -/
+def ShapeOperation.denote
+    {α : Type} [Context α] {inShape outShape : Shape}
+    (op : ShapeOperation inShape outShape) (x : Tensor α inShape) : Tensor α outShape :=
+  match op with
+  | .reshape _ _ hsize => Tensor.reshapeSpec (α := α) x hsize
+  | .flatten _ => Tensor.flattenSpec (α := α) x
+  | .broadcastTo _ _ witness _ => Tensor.broadcastTo (α := α) witness x
+  | .sum _ => Tensor.scalar (Tensor.sumSpec (α := α) x)
+
+/-- Evaluate any typed shape operation in its canonical two-node graph. -/
+theorem evalAt_shapeOperation_eq
+    {α : Type} [Context α] [DecidableEq Shape]
+    {inShape outShape : Shape} (op : ShapeOperation inShape outShape)
+    (x : Tensor α inShape) :
+    Graph.evalAt (α := α) (g := unaryGraphOut op.toOpKind inShape outShape)
+        (payload := {})
+        (input := DVal.mk (α := α) inShape x)
+        (vals := #[DVal.mk (α := α) inShape x]) (i := 1)
+      =
+      Except.ok (DVal.mk (α := α) outShape (op.denote x)) := by
+  cases op <;>
+    simp_all [ShapeOperation.toOpKind, ShapeOperation.denote, Graph.evalAt, unaryGraphOut,
+      unaryNodeOut, Graph.getNode, Graph.getNode?, Graph.expectShape, Bind.bind, Except.bind,
+      Pure.pure, Except.pure]
+
 /-- Local IR semantics for `reshape` when the element counts match. -/
 theorem evalAt_reshape_eq
     {α : Type} [Context α] [DecidableEq Shape]
@@ -40,8 +87,7 @@ theorem evalAt_reshape_eq
       Except.ok
         (DVal.mk (α := α) outShape
           (Tensor.reshapeSpec (α := α) (s₁ := inShape) (s₂ := outShape) x hsize)) := by
-  simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
-    Graph.expectShape, hsize, Bind.bind, Except.bind, Pure.pure, Except.pure]
+  exact evalAt_shapeOperation_eq (.reshape inShape outShape hsize) x
 
 /-- Local IR semantics for `flatten`. -/
 theorem evalAt_flatten_eq
@@ -55,8 +101,7 @@ theorem evalAt_flatten_eq
       Except.ok
         (DVal.mk (α := α) (.dim (Spec.Shape.size s) .scalar)
           (Tensor.flattenSpec (α := α) (s := s) x)) := by
-  simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
-    Graph.expectShape, Bind.bind, Except.bind, Pure.pure, Except.pure]
+  exact evalAt_shapeOperation_eq (.flatten s) x
 
 /-- Local IR semantics for `broadcastTo` when the broadcast witness is accepted by the contract. -/
 theorem evalAt_broadcastTo_eq
@@ -71,8 +116,7 @@ theorem evalAt_broadcastTo_eq
       Except.ok
         (DVal.mk (α := α) s₂
           (Tensor.broadcastTo (α := α) (s₁ := s₁) (s₂ := s₂) cb x)) := by
-  simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
-    Graph.expectShape, hcb, Bind.bind, Except.bind, Pure.pure, Except.pure]
+  exact evalAt_shapeOperation_eq (.broadcastTo s₁ s₂ cb hcb) x
 
 /-- Local IR semantics for reduction to a scalar sum. -/
 theorem evalAt_sum_eq
@@ -85,8 +129,7 @@ theorem evalAt_sum_eq
       =
       Except.ok
         (DVal.mk (α := α) .scalar (Tensor.scalar (Tensor.sumSpec (α := α) x))) := by
-  simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
-    Bind.bind, Except.bind, Pure.pure, Except.pure]
+  exact evalAt_shapeOperation_eq (.sum s) x
 
 end IRStep
 

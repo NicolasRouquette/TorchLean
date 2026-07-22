@@ -57,30 +57,6 @@ def boundsConst (inputDim outDim : Nat) (lo hi : Tensor α (.dim outDim .scalar)
     loAff := { A := zA, c := lo }
     hiAff := { A := zA, c := hi } }
 
-/-- Positive part of a matrix, used for sign-splitting affine bounds through linear layers. -/
-def matPos {m n : Nat} (W : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim m (.dim n
-  .scalar)) :=
-  match W with
-  | .dim rows =>
-    Tensor.dim (fun i =>
-      match rows i with
-      | .dim cols =>
-        Tensor.dim (fun j =>
-          match cols j with
-          | .scalar w => Tensor.scalar (if w > 0 then w else 0)))
-
-/-- Negative part of a matrix, used with `matPos` to propagate lower and upper affine forms. -/
-def matNeg {m n : Nat} (W : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim m (.dim n
-  .scalar)) :=
-  match W with
-  | .dim rows =>
-    Tensor.dim (fun i =>
-      match rows i with
-      | .dim cols =>
-        Tensor.dim (fun j =>
-          match cols j with
-          | .scalar w => Tensor.scalar (if w > 0 then 0 else w)))
-
 /-- Materialize an affine vector so later graph passes do not accumulate deep tensor closures. -/
 def materializeAffineVec {inDim outDim : Nat} (a : AffineVec α inDim outDim) : AffineVec α
   inDim outDim :=
@@ -100,8 +76,8 @@ def propagateLinearBounds
     castAffineOut (α:=α) (n:=xB.inDim) (m:=xB.outDim) (m':=n) hout xB.hiAff
   let xLo := materializeAffineVec (α := α) (inDim := xB.inDim) (outDim := n) xLo
   let xHi := materializeAffineVec (α := α) (inDim := xB.inDim) (outDim := n) xHi
-  let Wpos := matPos (α:=α) (m:=m) (n:=n) W
-  let Wneg := matNeg (α:=α) (m:=m) (n:=n) W
+  let Wpos := IBP.matPos (α:=α) (m:=m) (n:=n) W
+  let Wneg := IBP.matNeg (α:=α) (m:=m) (n:=n) W
   let A_hi :=
     Tensor.materialize <|
       Tensor.addSpec (Spec.matMulSpec (α:=α) Wpos xHi.A) (Spec.matMulSpec (α:=α) Wneg xLo.A)

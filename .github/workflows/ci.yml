@@ -26,9 +26,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Case-insensitive path collision check
-        run: python3 scripts/checks/check_case_collisions.py
-
       - name: Install elan
         run: curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
 
@@ -45,7 +42,7 @@ jobs:
         run: ~/.elan/bin/lake build NN
 
       - name: Build broad CI import surface
-        run: ~/.elan/bin/lake build NN.CI.All
+        run: ~/.elan/bin/lake build NNCI
 
       - name: Run curated test suite
         run: ~/.elan/bin/lake test

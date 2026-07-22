@@ -10,7 +10,7 @@ public import NN.API.Public.Facade.NN
 public import NN.API.Public.Facade.Runtime.RL
 
 /-!
-# TorchLean Module Runtime Facade
+# TorchLean Module Runtime API
 
 Executable module operations for manual runtime and example code.
 -/

@@ -116,7 +116,7 @@ Train two regression trainers with an alternating Float sample stream.
 
 Public paired-model training path. A GAN is the motivating case: the generator receives one
 supervised warm-up sample per step, while the discriminator may receive both real and fake score
-samples. The facade owns the alternating optimizer mechanics and lets the example provide only the
+samples. The trainer API handles the alternating optimizer mechanics and lets the example provide only the
 domain-specific pieces:
 
 - `firstSampleAt step` for the first model,

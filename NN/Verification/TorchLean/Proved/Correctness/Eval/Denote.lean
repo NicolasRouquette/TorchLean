@@ -8,6 +8,7 @@ module
 
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.NodeShape
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.PayloadBridge
+public import NN.Verification.TorchLean.Proved.Correctness.Eval.Elementwise
 
 /-!
 # Compiled Forward Evaluation: SSA Denotation Agreement
@@ -237,227 +238,48 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               rfl
             simpa [hEvalNode] using hEvalAt
         | add a b =>
-            have ha : (vals[a.id]!).1 = mid₀ := by
-              simpa [DVal.shape] using
-                shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx := a) (s
-                  := mid₀)
-            have hb : (vals[b.id]!).1 = mid₀ := by
-              simpa [DVal.shape] using
-                shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx := b) (s
-                  := mid₀)
-            have hnKind : n.kind = .add := by
-              simp [compileNode, res, n]
-            have hnParents : n.parents = [a.id, b.id] := by
-              simp [compileNode, res, n]
-            have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
-            let ta : Tensor α mid₀ := ha ▸ (vals[a.id]!).snd
-            let tb : Tensor α mid₀ := hb ▸ (vals[b.id]!).snd
-            have hExpectA :
-                NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[a.id]!) = Except.ok ta :=
-                  by
-              simpa [ta] using expectShape_eq_ok (expected := mid₀) (v := vals[a.id]!) ha
-            have hExpectB :
-                NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[b.id]!) = Except.ok tb :=
-                  by
-              simpa [tb] using expectShape_eq_ok (expected := mid₀) (v := vals[b.id]!) hb
-            have hGetValA :
-                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals a = Except.ok ta
-                  := by
-              simpa [ta] using getVal_eq_ok_of_hShapes (vals := vals) (expected := mid₀) (idx := a) ha
-            have hGetValB :
-                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals b = Except.ok tb
-                  := by
-              simpa [tb] using getVal_eq_ok_of_hShapes (vals := vals) (expected := mid₀) (idx := b) hb
-            have hEvalAt :
-                NN.IR.Graph.evalAt (α := α)
-                    (g := cOut.graph)
-                    (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := DVal.mk (α := α) inShape x)
-                    (vals := vals) (i := id)
-                  =
-                Except.ok (DVal.mk (α := α) mid₀ (Tensor.addSpec (α := α) ta tb)) := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hnOut]
-              rw [hExpectA, hExpectB]
-              rfl
-            simpa [evalNode, hGetValA, hGetValB, DVal.mk, ta, tb, Except.bind, Except.pure, bind, pure] using hEvalAt
+            simpa [evalNode, IRStep.BinaryElementwiseOp.denote] using
+              IRStep.evalAt_binaryElementwise_of_getNode
+                (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .add a b cOut.graph
+              (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
+              hShapes hGetNode
+                (by simp [compileNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
+                (by simp [compileNode, res, n])
+                (by simp [compileNode, res, n])
         | sub a b =>
-            have ha : (vals[a.id]!).1 = mid₀ := by
-              simpa [DVal.shape] using
-                shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx := a) (s
-                  := mid₀)
-            have hb : (vals[b.id]!).1 = mid₀ := by
-              simpa [DVal.shape] using
-                shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx := b) (s
-                  := mid₀)
-            have hnKind : n.kind = .sub := by
-              simp [compileNode, res, n]
-            have hnParents : n.parents = [a.id, b.id] := by
-              simp [compileNode, res, n]
-            have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
-            let ta : Tensor α mid₀ := ha ▸ (vals[a.id]!).snd
-            let tb : Tensor α mid₀ := hb ▸ (vals[b.id]!).snd
-            have hExpectA :
-                NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[a.id]!) = Except.ok ta :=
-                  by
-              simpa [ta] using expectShape_eq_ok (expected := mid₀) (v := vals[a.id]!) ha
-            have hExpectB :
-                NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[b.id]!) = Except.ok tb :=
-                  by
-              simpa [tb] using expectShape_eq_ok (expected := mid₀) (v := vals[b.id]!) hb
-            have hGetValA :
-                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals a = Except.ok ta
-                  := by
-              simpa [ta] using getVal_eq_ok_of_hShapes (vals := vals) (expected := mid₀) (idx := a) ha
-            have hGetValB :
-                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals b = Except.ok tb
-                  := by
-              simpa [tb] using getVal_eq_ok_of_hShapes (vals := vals) (expected := mid₀) (idx := b) hb
-            have hEvalAt :
-                NN.IR.Graph.evalAt (α := α)
-                    (g := cOut.graph)
-                    (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := DVal.mk (α := α) inShape x)
-                    (vals := vals) (i := id)
-                  =
-                Except.ok (DVal.mk (α := α) mid₀ (Tensor.subSpec (α := α) ta tb)) := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hnOut]
-              rw [hExpectA, hExpectB]
-              rfl
-            simpa [evalNode, hGetValA, hGetValB, DVal.mk, ta, tb, Except.bind, Except.pure, bind, pure] using hEvalAt
+            simpa [evalNode, IRStep.BinaryElementwiseOp.denote] using
+              IRStep.evalAt_binaryElementwise_of_getNode
+                (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .sub a b cOut.graph
+              (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
+              hShapes hGetNode
+                (by simp [compileNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
+                (by simp [compileNode, res, n])
+                (by simp [compileNode, res, n])
         | mulElem a b =>
-            have ha : (vals[a.id]!).1 = mid₀ := by
-              simpa [DVal.shape] using
-                shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx := a) (s
-                  := mid₀)
-            have hb : (vals[b.id]!).1 = mid₀ := by
-              simpa [DVal.shape] using
-                shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx := b) (s
-                  := mid₀)
-            have hnKind : n.kind = .mul_elem := by
-              simp [compileNode, res, n]
-            have hnParents : n.parents = [a.id, b.id] := by
-              simp [compileNode, res, n]
-            have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
-            let ta : Tensor α mid₀ := ha ▸ (vals[a.id]!).snd
-            let tb : Tensor α mid₀ := hb ▸ (vals[b.id]!).snd
-            have hExpectA :
-                NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[a.id]!) = Except.ok ta :=
-                  by
-              simpa [ta] using expectShape_eq_ok (expected := mid₀) (v := vals[a.id]!) ha
-            have hExpectB :
-                NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[b.id]!) = Except.ok tb :=
-                  by
-              simpa [tb] using expectShape_eq_ok (expected := mid₀) (v := vals[b.id]!) hb
-            have hGetValA :
-                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals a = Except.ok ta
-                  := by
-              simpa [ta] using getVal_eq_ok_of_hShapes (vals := vals) (expected := mid₀) (idx := a) ha
-            have hGetValB :
-                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals b = Except.ok tb
-                  := by
-              simpa [tb] using getVal_eq_ok_of_hShapes (vals := vals) (expected := mid₀) (idx := b) hb
-            have hEvalAt :
-                NN.IR.Graph.evalAt (α := α)
-                    (g := cOut.graph)
-                    (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := DVal.mk (α := α) inShape x)
-                    (vals := vals) (i := id)
-                  =
-                Except.ok (DVal.mk (α := α) mid₀ (Tensor.mulSpec (α := α) ta tb)) := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hnOut]
-              rw [hExpectA, hExpectB]
-              rfl
-            simpa [evalNode, hGetValA, hGetValB, DVal.mk, ta, tb, Except.bind, Except.pure, bind, pure] using hEvalAt
+            simpa [evalNode, IRStep.BinaryElementwiseOp.denote] using
+              IRStep.evalAt_binaryElementwise_of_getNode
+                (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .mul a b cOut.graph
+              (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
+              hShapes hGetNode
+                (by simp [compileNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
+                (by simp [compileNode, res, n])
+                (by simp [compileNode, res, n])
         | relu xIdx =>
-            have hx : (vals[xIdx.id]!).1 = mid₀ := by
-              simpa [DVal.shape] using
-                shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx := xIdx)
-                  (s := mid₀)
-            have hnKind : n.kind = .relu := by
-              simp [compileNode, res, n]
-            have hnParents : n.parents = [xIdx.id] := by
-              simp [compileNode, res, n]
-            have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
-            let tx : Tensor α mid₀ := hx ▸ (vals[xIdx.id]!).snd
-            have hExpectX :
-                NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[xIdx.id]!) = Except.ok tx
-                  := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos hx]
-              rfl
-            have hGetValX :
-                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals xIdx = Except.ok
-                  tx := by
-              simpa [tx] using
-                getVal_eq_ok_of_hShapes (vals := vals) (expected := mid₀) (idx := xIdx) hx
-            have hEvalAt :
-                NN.IR.Graph.evalAt (α := α)
-                    (g := cOut.graph)
-                    (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := DVal.mk (α := α) inShape x)
-                    (vals := vals) (i := id)
-                  =
-                Except.ok (DVal.mk (α := α) mid₀ (Activation.reluSpec (α := α) tx)) := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hnOut]
-              rw [hExpectX]
-              rfl
-            simpa [evalNode, hGetValX, DVal.mk, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
+            simpa [evalNode, IRStep.UnaryElementwiseOp.denote] using
+              IRStep.evalAt_unaryElementwise_of_getNode
+                (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .relu xIdx cOut.graph
+                (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
+                hShapes hGetNode
+                (by simp [compileNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
+                (by simp [compileNode, res, n]) (by simp [compileNode, res, n])
         | exp xIdx =>
-            have hx : (vals[xIdx.id]!).1 = mid₀ := by
-              simpa [DVal.shape] using
-                shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx := xIdx)
-                  (s := mid₀)
-            have hnKind : n.kind = .exp := by
-              simp [compileNode, res, n]
-            have hnParents : n.parents = [xIdx.id] := by
-              simp [compileNode, res, n]
-            have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
-            let tx : Tensor α mid₀ := hx ▸ (vals[xIdx.id]!).snd
-            have hExpectX :
-                NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[xIdx.id]!) = Except.ok tx
-                  := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos hx]
-              rfl
-            have hGetValX :
-                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals xIdx = Except.ok
-                  tx := by
-              simpa [tx] using
-                getVal_eq_ok_of_hShapes (vals := vals) (expected := mid₀) (idx := xIdx) hx
-            have hEvalAt :
-                NN.IR.Graph.evalAt (α := α)
-                    (g := cOut.graph)
-                    (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := DVal.mk (α := α) inShape x)
-                    (vals := vals) (i := id)
-                  =
-                Except.ok (DVal.mk (α := α) mid₀ (Tensor.expSpec (α := α) tx)) := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hnOut]
-              rw [hExpectX]
-              rfl
-            simpa [evalNode, hGetValX, DVal.mk, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
+            simpa [evalNode, IRStep.UnaryElementwiseOp.denote] using
+              IRStep.evalAt_unaryElementwise_of_getNode
+                (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .exp xIdx cOut.graph
+                (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
+                hShapes hGetNode
+                (by simp [compileNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
+                (by simp [compileNode, res, n]) (by simp [compileNode, res, n])
         | log xIdx =>
             have hx : (vals[xIdx.id]!).1 = mid₀ := by
               simpa [DVal.shape] using
@@ -502,44 +324,13 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               rfl
             simpa [evalNode, hGetValX, DVal.mk, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
         | inv xIdx =>
-            have hx : (vals[xIdx.id]!).1 = mid₀ := by
-              simpa [DVal.shape] using
-                shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx := xIdx)
-                  (s := mid₀)
-            have hnKind : n.kind = .inv := by
-              simp [compileNode, res, n]
-            have hnParents : n.parents = [xIdx.id] := by
-              simp [compileNode, res, n]
-            have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
-            let tx : Tensor α mid₀ := hx ▸ (vals[xIdx.id]!).snd
-            have hExpectX :
-                NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[xIdx.id]!) = Except.ok tx
-                  := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos hx]
-              rfl
-            have hGetValX :
-                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals xIdx = Except.ok
-                  tx := by
-              simpa [tx] using
-                getVal_eq_ok_of_hShapes (vals := vals) (expected := mid₀) (idx := xIdx) hx
-            have hEvalAt :
-                NN.IR.Graph.evalAt (α := α)
-                    (g := cOut.graph)
-                    (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := DVal.mk (α := α) inShape x)
-                    (vals := vals) (i := id)
-                  =
-                Except.ok (DVal.mk (α := α) mid₀ (Tensor.invSpec (α := α) tx)) := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hnOut]
-              rw [hExpectX]
-              rfl
-            simpa [evalNode, hGetValX, DVal.mk, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
+            simpa [evalNode, IRStep.UnaryElementwiseOp.denote] using
+              IRStep.evalAt_unaryElementwise_of_getNode
+                (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .inv xIdx cOut.graph
+                (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
+                hShapes hGetNode
+                (by simp [compileNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
+                (by simp [compileNode, res, n]) (by simp [compileNode, res, n])
         | matmul2d m nDim p a b =>
             have ha : (vals[a.id]!).1 = .dim m (.dim nDim .scalar) := by
               simpa [DVal.shape] using

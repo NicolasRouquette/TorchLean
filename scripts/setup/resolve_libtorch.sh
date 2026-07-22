@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Validate a local LibTorch installation and record its resolved path for Lake.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

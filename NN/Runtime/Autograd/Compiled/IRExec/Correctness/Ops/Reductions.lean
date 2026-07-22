@@ -201,7 +201,7 @@ theorem buildFrom_denoteAllFrom_reduceSum
                   cases this
               | ok ip =>
                   simp (config := { failIfUnchanged := false }) [s, hIdx] at hBuild
-                  cases hAxis : NN.IR.Graph.mkValidAxis? (axis := axis) s with
+                  cases hAxis : Spec.Shape.validAxis? (axis := axis) s with
                   | none =>
                       exact False.elim <| throw_bind_ne_ok (h := (by simpa [s, hAxis] using hBuild))
                   | some hAxisPf =>
@@ -319,7 +319,7 @@ theorem buildFrom_denoteAllFrom_reduceMean
                   cases this
               | ok ip =>
                   simp (config := { failIfUnchanged := false }) [s, hIdx] at hBuild
-                  cases hAxis : NN.IR.Graph.mkValidAxis? (axis := axis) s with
+                  cases hAxis : Spec.Shape.validAxis? (axis := axis) s with
                   | none =>
                       exact False.elim <| throw_bind_ne_ok (h := (by simpa [s, hAxis] using hBuild))
                   | some hAxisPf =>

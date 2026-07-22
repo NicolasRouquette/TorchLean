@@ -9,7 +9,7 @@ module
 public import NN.API.Public.Facade.NN
 
 /-!
-# TorchLean Text Runtime Facade
+# TorchLean Text Runtime API
 
 Tokenizer, corpus, generation, and interactive text options.
 -/

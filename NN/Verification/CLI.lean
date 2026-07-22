@@ -285,22 +285,3 @@ def dispatch (args : List String) : IO Unit := do
           t.run rest
 
 end NN.Verification.CLI
-
-/-!
-`lake exe verify` executes the unqualified `main`.
-
-We keep the implementation namespaced and provide a thin root-level wrapper so the Lake executable
-entrypoint remains stable.
--/
-
-/--
-`lake exe verify` entry point.
-
-This entry point delegates to the unified dispatcher `NN.Verification.CLI.dispatch`.
--/
-def main (args : List String) : IO Unit :=
-  NN.Verification.CLI.dispatch args
-
-@[export lean_main]
-def exportedMain (args : List String) : IO Unit :=
-  main args

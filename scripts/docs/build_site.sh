@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Build the Lean library, generated documentation, guide, and website.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

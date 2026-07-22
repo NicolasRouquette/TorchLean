@@ -9,7 +9,7 @@ module
 public import NN.API.Public.Facade.NN
 
 /-!
-# TorchLean Runtime Tensor-Pack Facade
+# TorchLean Runtime Tensor-Pack API
 
 Public tensor-pack names used by runtime layer examples.
 -/

@@ -164,10 +164,17 @@ operations and edges. It may refer to parameters without carrying the full check
 
 Round-trip import therefore has two obligations:
 
-| Artifact | Checks |
-|---|---|
-| graph | operator subset, IDs, parents, shapes, attributes, input/output IDs |
-| state dictionary | key mapping, tensor shape, flat length, layout, finite values |
+:::table +header
+*
+  * Artifact
+  * Checks
+*
+  * graph
+  * operator subset, IDs, parents, shapes, attributes, input/output IDs
+*
+  * state dictionary
+  * key mapping, tensor shape, flat length, layout, finite values
+:::
 
 Run:
 

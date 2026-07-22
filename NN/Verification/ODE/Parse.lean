@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Verification.ODE.Ast
+public import NN.Verification.Util.TextCursor
 
 /-!
 # Parse
@@ -32,6 +33,7 @@ Exponentiation is expanded into repeated multiplication when `^ n` is given.
 namespace NN.Verification.ODE.Parse
 
 open NN.Verification.ODE
+open NN.Verification.Util
 
 /-!
 This parser is part of the executable ODE verifier.  We keep the grammar direct and hand-written so
@@ -48,33 +50,25 @@ Parser state for scanning a `String` by byte-position.
 
 We track the source string `s` and the current raw byte index `i`.
 -/
-structure State where
-  /-- Source text being parsed. -/
-  s : String
-  /-- Current raw byte offset in `s`. -/
-  i : String.Pos.Raw := 0
+abbrev State := TextCursor.Cursor
 
 /-- Peek at the current character, if any, without advancing. -/
-@[inline] def peek (st : State) : Option Char := String.Pos.Raw.get? st.s st.i
+@[inline] def peek (st : State) : Option Char := TextCursor.peek st
 /-- Advance the current position by one character. -/
-@[inline] def bump (st : State) : State := { st with i := String.Pos.Raw.next st.s st.i }
+@[inline] def bump (st : State) : State := TextCursor.bump st
 /-- A fuel budget derived from the remaining input length (used to guarantee termination). -/
-@[inline] def fuelOf (st : State) : Nat := (st.s.rawEndPos.byteIdx - st.i.byteIdx) + 1
+@[inline] def fuelOf (st : State) : Nat := TextCursor.remainingFuel st
 
 /- ASCII whitespace predicate used by `skipWs`. -/
 namespace Internal
 
 /-- Internal: ASCII whitespace predicate used by `skipWs`. -/
 def isWs (c : Char) : Bool :=
-  c = ' ' || c = '\t' || c = '\n'
+  TextCursor.isWhitespace c
 
 /-- Fuel-bounded whitespace skipping (implementation of `skipWs`). -/
-def skipWsFuel : Nat → State → State
-  | 0, st => st
-  | Nat.succ fuel, st =>
-    match peek st with
-    | some c => if isWs c then skipWsFuel fuel (bump st) else st
-    | none => st
+def skipWsFuel (fuel : Nat) (st : State) : State :=
+  TextCursor.skipWhileFuel isWs fuel st
 
 end Internal
 
@@ -86,13 +80,7 @@ namespace Internal
 
 /-- Internal: fuel-bounded implementation of `takeWhile`. -/
 def takeWhileFuel (fuel : Nat) (p : Char → Bool) (acc : String) (st : State) : String × State :=
-  match fuel with
-  | 0 => (acc, st)
-  | Nat.succ fuel =>
-    match peek st with
-    | some c =>
-      if p c then takeWhileFuel fuel p (acc.push c) (bump st) else (acc, st)
-    | none => (acc, st)
+  TextCursor.takeWhileFuel fuel p acc st
 
 end Internal
 
@@ -105,38 +93,12 @@ def takeWhile (p : Char → Bool) (acc : String) (st : State) : String × State 
   Internal.takeWhileFuel (fuelOf st) p acc st
 
 /-- Parse a signed decimal number without exponent, e.g. `-12.34`. -/
-def parseNumber (st : State) : Except String (Float × State) := do
-  let st0 := skipWs st
-  let (sgn, st1) :=
-    match peek st0 with
-    | some '-' => (-1.0, bump st0)
-    | _ => (1.0, st0)
-  let (intTxt, st2) := takeWhile (fun c => c.isDigit) "" st1
-  if intTxt = "" then
-    .error "expected number"
-  let intVal : Float :=
-    Float.ofNat (intTxt.toList.foldl (fun (acc : Nat) (c : Char) => acc * 10 + (c.toNat -
-      '0'.toNat)) 0)
-  let (fracVal, st3) :=
-    match peek st2 with
-    | some '.' =>
-      let st2' := bump st2
-      let (fracTxt, st2'') := takeWhile (fun c => c.isDigit) "" st2'
-      if fracTxt = "" then (0.0, st2'')
-      else
-        let num : Nat := fracTxt.toList.foldl (fun acc c => acc * 10 + (c.toNat - '0'.toNat)) 0
-        let den : Nat := Nat.pow 10 fracTxt.length
-        ((Float.ofNat num) / (Float.ofNat den), st2'')
-    | _ => (0.0, st2)
-  .ok (sgn * (intVal + fracVal), st3)
+def parseNumber (st : State) : Except String (Float × State) :=
+  TextCursor.parseFloat (fuelOf st) st
 
 /-- Parse a natural number (decimal digits) used for exponents `^ n`. -/
-def parseNat (st : State) : Except String (Nat × State) := do
-  let st0 := skipWs st
-  let (txt, st1) := takeWhile (fun c => c.isDigit) "" st0
-  if txt = "" then .error "expected natural number"
-  let n : Nat := txt.toList.foldl (fun acc c => acc * 10 + (c.toNat - '0'.toNat)) 0
-  .ok (n, st1)
+def parseNat (st : State) : Except String (Nat × State) :=
+  TextCursor.parseNat (fuelOf st) st
 
 /-- Parse an identifier consisting of letters/digits/underscore. -/
 def parseIdent (st : State) : Except String (String × State) := do
@@ -302,13 +264,13 @@ This is the user-facing entrypoint for the ODE verifier: it parses a string like
 `"sin(t) + u^2"` into an `Expr` (`NN.Verification.ODE.Ast.Expr`).
 -/
 def parseExpr (s : String) : Except String Expr :=
-  let st0 : State := { s := s }
+  let st0 : State := { source := s }
   -- Generous fuel: parsing depth is not proportional to input length in bytes.
   let fuel := (fuelOf st0) * 16 + 32
   match Internal.parseExprFuel fuel st0 with
   | .ok (e, st) =>
     let st' := skipWs st
-    if st'.i = st'.s.rawEndPos then .ok e else .error "trailing input"
+    if st'.position = st'.source.rawEndPos then .ok e else .error "trailing input"
   | .error msg => .error msg
 
 end NN.Verification.ODE.Parse

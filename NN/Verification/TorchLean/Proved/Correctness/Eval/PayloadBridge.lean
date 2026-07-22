@@ -375,9 +375,8 @@ theorem evalBatchNorm2DNchwEval_from_paramStore
       ({ c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps } :
         NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α) hStore,
     irBatchNorm2DNchwEvalOfGraphParams, Graph.expectShape,
-    batchNorm2dNchwEvalTensor, batchNorm2dNchwEvalScalar, Bind.bind, Except.bind,
+    batchNorm2dNchwEvalTensor, Bind.bind, Except.bind,
     Pure.pure, Except.pure]
-  rfl
 
 /-- Missing `ParamStore.batchNorm2dNchwEval` entries are rejected by BatchNorm evaluation. -/
 theorem evalBatchNorm2DNchwEval_missing_from_paramStore
@@ -636,10 +635,8 @@ theorem evalAt_batchNorm2dNchwEval_from_paramStore_of_getNode
       ({ c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps } :
         NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α) hStore,
     irBatchNorm2DNchwEvalOfGraphParams, hShapeFst, hParent,
-    batchNorm2dNchwEvalTensor, batchNorm2dNchwEvalScalar, shapeBNe_refl,
+    batchNorm2dNchwEvalTensor, shapeBNe_refl,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
-  funext ni
-  rfl
 
 /-- Missing BatchNorm ParamStore entries are rejected at any eval-mode NCHW BatchNorm node id. -/
 theorem evalAt_batchNorm2dNchwEval_missing_from_paramStore_of_getNode

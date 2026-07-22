@@ -220,13 +220,26 @@ $$`
 
 Each line has its own hypotheses and failure modes:
 
-| Relation | Typical obligation |
-|---|---|
-| source to IR | compiler covers every source constructor used |
-| IR to executable graph | graph is well formed and satisfies fragment predicates |
-| VJP to derivative | local backward laws and analytic domain conditions |
-| rounded to real | finite values and an explicit error budget |
-| gradient to update | optimizer state and update equation match the intended algorithm |
+:::table +header
+*
+  * Relation
+  * Typical obligation
+*
+  * source to IR
+  * compiler covers every source constructor used
+*
+  * IR to executable graph
+  * graph is well formed and satisfies fragment predicates
+*
+  * VJP to derivative
+  * local backward laws and analytic domain conditions
+*
+  * rounded to real
+  * finite values and an explicit error budget
+*
+  * gradient to update
+  * optimizer state and update equation match the intended algorithm
+:::
 
 A theorem about the whole workflow composes these relations. A report about a workflow should say
 which rows are proved, which were checked for one artifact, and which cross a named backend

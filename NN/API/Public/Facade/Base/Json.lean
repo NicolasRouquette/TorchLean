@@ -9,7 +9,7 @@ module
 public import NN.API.Json
 
 /-!
-# TorchLean JSON Facade
+# TorchLean JSON API
 
 Small JSON operations used by public artifact and interop examples.
 -/

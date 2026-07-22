@@ -10,7 +10,7 @@ open TorchLean
 
 User-facing declarations should live in their canonical `TorchLean.*` namespace when practical.
 For example, the lightweight module `NN.API.CLI` now defines its parsers directly under
-`TorchLean.CLI`; the facade adds only the distinct IO conveniences. Lean's `export` command helps
+`TorchLean.CLI`; the application API adds only the distinct IO conveniences. Lean's `export` command helps
 unqualified lookup after a namespace is opened, but it does not create a qualified declaration such
 as `TorchLean.Shape.scalar`. An `abbrev` is therefore still required where the stable qualified API
 bridges a declaration owned by an internal namespace. The API ownership check reports those
@@ -106,7 +106,7 @@ That is why public code should prefer names like:
 - CUDA flags on the command line when native execution is selected.
 
 Do not introduce public names that encode arity or implementation details. If an implementation
-layer needs an internal helper, keep it internal and give the public facade a model-level name.
+layer needs an internal helper, keep it internal and give the application API a model-level name.
 
 The comparison to PyTorch's `torch.compile` is the right public analogy: compiling should be a
 property of the model or trainer path, not a second mathematical forward function. TorchLean differs
@@ -127,14 +127,14 @@ inference, and no-gradient inference should not be taught as separate public ent
 backend is a choice in `Options`/trainer configuration; it is not a new public mathematical
 operation.
 
-When an example needs lower-level control, use the runtime facade deliberately:
+When an example needs lower-level control, use the runtime API deliberately:
 
 - `TorchLean.Module.*` for manually instantiated modules and custom losses.
 - `TorchLean.Runtime.*` for scalar/backend options and runtime plumbing.
 - `TorchLean.Data.*` for shape-checked loaders and batch streams.
 - `TorchLean.Verification.*` for certificate/checker entrypoints.
 
-If a feature needs to appear in ordinary tutorials, add it through this public facade instead of
+If a feature needs to appear in ordinary tutorials, add it through this application API instead of
 teaching users an implementation path under `NN/Runtime`.
 
 ## Folder Rule

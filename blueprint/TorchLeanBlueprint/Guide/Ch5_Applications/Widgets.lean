@@ -53,20 +53,60 @@ So a widget can make a proof obligation visible, but it does not replace the pro
 shows a bad shape, we fix the graph or the compiler. If a CROWN view shows loose bounds, we improve
 the bound pass or certificate.
 
-| Widget | Object inspected | Main question |
-|---|---|---|
-| `#tensor_view` | typed tensor | what values and shape? |
-| `#ir_view` | `NN.IR.Graph` | what nodes and parents? |
-| `#shape_infer_view` | graph shape inference | where is the shape mismatch? |
-| `#ir_exec_trace_view` | IR execution | what did each node compute? |
-| `#float32_view` | `IEEE32Exec` | what are the bits? |
-| `#crown_view` | verifier state | where are the bounds? |
-| `#tape_trace_view` | autograd tape | how did gradients flow? |
-| `#train_log_view` | training log | did metrics move? |
-| `#train_log_file_view` | JSON training log | what did a command write? |
-| `#gpt2_train_log_file_view` | GPT log with prompts/samples | what prompt and generated sample were recorded? |
-| `#rl_boundary_rollout_file_view` | RL boundary artifact | which transition fields passed or failed the contract? |
-| `#pytorch_translate_file` | PyTorch source snippet | what TorchLean sketch does the editor assistant infer? |
+:::table +header
+*
+  * Widget
+  * Object inspected
+  * Main question
+*
+  * `#tensor_view`
+  * typed tensor
+  * what values and shape?
+*
+  * `#ir_view`
+  * `NN.IR.Graph`
+  * what nodes and parents?
+*
+  * `#shape_infer_view`
+  * graph shape inference
+  * where is the shape mismatch?
+*
+  * `#ir_exec_trace_view`
+  * IR execution
+  * what did each node compute?
+*
+  * `#float32_view`
+  * `IEEE32Exec`
+  * what are the bits?
+*
+  * `#crown_view`
+  * verifier state
+  * where are the bounds?
+*
+  * `#tape_trace_view`
+  * autograd tape
+  * how did gradients flow?
+*
+  * `#train_log_view`
+  * training log
+  * did metrics move?
+*
+  * `#train_log_file_view`
+  * JSON training log
+  * what did a command write?
+*
+  * `#gpt2_train_log_file_view`
+  * GPT log with prompts/samples
+  * what prompt and generated sample were recorded?
+*
+  * `#rl_boundary_rollout_file_view`
+  * RL boundary artifact
+  * which transition fields passed or failed the contract?
+*
+  * `#pytorch_translate_file`
+  * PyTorch source snippet
+  * what TorchLean sketch does the editor assistant infer?
+:::
 
 # How Widgets Fit Application Workflows
 

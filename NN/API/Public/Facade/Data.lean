@@ -9,7 +9,7 @@ module
 public import NN.API.Public.Facade.Data.Core
 
 /-!
-# TorchLean Public Data Facade Entrypoint
+# TorchLean Data API Entrypoint
 
 Import-only entrypoint for dataset constructors, checkpoint operations, sample constructors, and
 dot-notation model summaries. Definitions live in `NN.API.Public.Facade.Data.Core`.

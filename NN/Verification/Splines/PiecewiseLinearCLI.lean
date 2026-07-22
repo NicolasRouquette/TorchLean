@@ -47,12 +47,15 @@ namespace NN.Verification.Splines.PiecewiseLinearCLI
 open Lean
 open Json
 
+/-- Repository-relative path of the bundled piecewise-linear certificate. -/
 def defaultCertPath : String :=
   "NN/Examples/Verification/Splines/piecewise_linear_cert.json"
 
+/-- Repository-relative path of the Julia certificate producer. -/
 def defaultJuliaScript : String :=
   "scripts/verification/splines/fit_piecewise_linear.jl"
 
+/-- Help text for the piecewise-linear certificate command. -/
 def usage : String :=
   String.intercalate "\n" [
     "Usage:",

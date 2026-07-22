@@ -9,8 +9,8 @@ module
 public import NN.API.Public.Facade.Runtime.Core
 
 /-!
-# TorchLean Public Facade Runtime Entrypoint
+# TorchLean Runtime API Entrypoint
 
-Import-only entrypoint for autograd, module, optimizer, loss, text, diffusion, SSL, and RL facade
+Import-only entrypoint for autograd, module, optimizer, loss, text, diffusion, SSL, and RL API
 namespaces. Definitions live in `NN.API.Public.Facade.Runtime.Core`.
 -/

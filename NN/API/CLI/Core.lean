@@ -11,7 +11,7 @@ public import Lean.Data.Json.Parser
 /-!
 # TorchLean CLI Parsers
 
-Pure command-line parsers shared by examples, verification tools, and public facade helpers. The
+Pure command-line parsers shared by examples, verification tools, and application API helpers. The
 definitions live directly under `TorchLean.CLI`; `NN.API.CLI` is the lightweight import path.
 
 This module stays independent of tensors and runtime modules so lightweight artifact checkers can

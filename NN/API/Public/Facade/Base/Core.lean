@@ -14,7 +14,7 @@ public import NN.API.Public.Facade.Base.Tensor
 public import NN.API.Public.Facade.Base.Json
 
 /-!
-# TorchLean Public Facade Base Core
+# TorchLean Base API Core
 
-Import-only aggregator for the focused root-facade modules.
+Import-only aggregator for the focused base API modules.
 -/

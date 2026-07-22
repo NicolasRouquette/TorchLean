@@ -276,16 +276,45 @@ floating refinement obligations.
 
 A verification report should make the following boundary visible:
 
-| Evidence | Established in current source | Not established by that evidence |
-|---|---|---|
-| `runForwardIR_eq_evalForward` | typed proved-program and IR evaluator agree | arbitrary frontend or native runtime agreement |
-| `runIBP?_encloses_evalGraphRec` | proof-side real IBP encloses proof-side real semantics | every executable IBP implementation |
-| `cert_encloses_semantics` | enclosure from exact local IBP and semantic hypotheses | that a JSON/Float checker supplied those hypotheses |
-| `alphaCrown_transfer_sound` / `alphaBetaCrown_transfer_sound` | exact real local affine transfer soundness | approximate artifact-checker acceptance |
-| CROWN node checker returns `true` | artifact intervals contain the authoritative `IEEE32Exec` IBP trace and affine entries exactly match a sequential `IEEE32Exec` replay | exact-real CROWN soundness |
-| alpha-beta leaf checker succeeds | represented boxes and witness fields pass structural/numeric checks | network-bound provenance or root coverage |
-| numerical range check plus IEEE replay | stored trace and one reference execution pass executable checks | real semantic enclosure without `CheckedRealExecution` |
-| FP32 approximation theorem | rounded-real output is within its stated budget | native IEEE behavior without finite refinement |
+:::table +header
+*
+  * Evidence
+  * Established in current source
+  * Not established by that evidence
+*
+  * `runForwardIR_eq_evalForward`
+  * typed proved-program and IR evaluator agree
+  * arbitrary frontend or native runtime agreement
+*
+  * `runIBP?_encloses_evalGraphRec`
+  * proof-side real IBP encloses proof-side real semantics
+  * every executable IBP implementation
+*
+  * `cert_encloses_semantics`
+  * enclosure from exact local IBP and semantic hypotheses
+  * that a JSON/Float checker supplied those hypotheses
+*
+  * `alphaCrown_transfer_sound` / `alphaBetaCrown_transfer_sound`
+  * exact real local affine transfer soundness
+  * approximate artifact-checker acceptance
+*
+  * CROWN node checker returns `true`
+  * artifact intervals contain the authoritative `IEEE32Exec` IBP trace and affine entries exactly
+    match a sequential `IEEE32Exec` replay
+  * exact-real CROWN soundness
+*
+  * alpha-beta leaf checker succeeds
+  * represented boxes and witness fields pass structural/numeric checks
+  * network-bound provenance or root coverage
+*
+  * numerical range check plus IEEE replay
+  * stored trace and one reference execution pass executable checks
+  * real semantic enclosure without `CheckedRealExecution`
+*
+  * FP32 approximation theorem
+  * rounded-real output is within its stated budget
+  * native IEEE behavior without finite refinement
+:::
 
 The ledger is the practical rule for reading the rest of the chapter: tests catch regressions,
 checkers reject malformed evidence, contracts state obligations, and theorems prove propositions.

@@ -14,7 +14,7 @@ public import NN.API.Public.Facade.NN.Layers
 public import NN.API.Public.Facade.NN.Models
 
 /-!
-# TorchLean Public Facade NN Core
+# TorchLean Neural-Network API Core
 
-Import-only aggregator for focused `TorchLean.nn` facade modules.
+Import-only aggregator for focused `TorchLean.nn` API modules.
 -/

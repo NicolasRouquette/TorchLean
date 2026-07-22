@@ -77,7 +77,7 @@ main_components:
       - NN.lean
       - NN/API
     description: >
-      Public facade for model, tensor, data, runtime, and training workflows.
+      Application API for model, tensor, data, runtime, and training workflows.
   specifications:
     files:
       - NN/Spec

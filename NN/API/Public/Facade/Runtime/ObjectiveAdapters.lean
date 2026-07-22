@@ -9,7 +9,7 @@ module
 public import NN.API.Public.Facade.NN
 
 /-!
-# TorchLean SSL And Diffusion Facade
+# TorchLean SSL and Diffusion API
 
 Self-supervised and diffusion objective adapters exposed by the `NN` umbrella.
 -/

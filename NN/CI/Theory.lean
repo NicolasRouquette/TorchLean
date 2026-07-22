@@ -31,6 +31,7 @@ public import NN.MLTheory.CROWN.Operators.Conv
 public import NN.MLTheory.CROWN.Operators.Slice
 public import NN.MLTheory.CROWN.Operators.Trigonometric
 public import NN.MLTheory.CROWN.Proofs.AlphaBetaReLUScalarSoundness
+public import NN.MLTheory.CROWN.Proofs.AlphaReLULowerBound
 public import NN.MLTheory.CROWN.Proofs.Distillation
 public import NN.MLTheory.CROWN.Proofs.GraphAlphaCrownTransferSoundness
 public import NN.MLTheory.CROWN.Proofs.GraphCertSoundness

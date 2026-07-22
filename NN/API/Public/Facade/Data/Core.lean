@@ -14,7 +14,7 @@ public import NN.API.Public.Facade.Data.Checkpoint
 public import NN.API.Public.Facade.Data.DotInfo
 
 /-!
-# TorchLean Public Data Facade
+# TorchLean Data API
 
 Import-only aggregator for public data, sample, checkpoint, and model-info modules.
 -/

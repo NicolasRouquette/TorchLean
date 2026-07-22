@@ -93,8 +93,49 @@ def binaryGraph (kind : OpKind) (s : Shape) : Graph :=
       binaryNode kind s
     ] }
 
+/-- A node consuming every preceding entry of a shape array, in order. -/
+def variadicNodeOut (kind : OpKind) (parentShapes : Array Shape) (outShape : Shape) : NN.IR.Node :=
+  { id := parentShapes.size
+    parents := List.range parentShapes.size
+    kind := kind
+    outShape := outShape }
+
+/--
+Graph fixture for an arbitrary-arity evaluator theorem: one input node per parent shape followed by
+a node whose parent ids are the complete preceding range.
+-/
+def variadicGraphOut (kind : OpKind) (parentShapes : Array Shape) (outShape : Shape) : Graph :=
+  { nodes := (parentShapes.mapIdx fun i shape =>
+      { id := i, parents := [], kind := .input, outShape := shape }).push
+      (variadicNodeOut kind parentShapes outShape) }
+
+/-- Reading every valid array index in order reconstructs the array's list representation. -/
+theorem range_map_getElem!_eq_toList {β : Type} [Inhabited β] (values : Array β) :
+    (List.range values.size).map (fun i => values[i]!) = values.toList := by
+  apply List.ext_getElem
+  · simp
+  · intro i hRange hList
+    have hi : i < values.size := by simpa using hRange
+    simp [getElem!_pos values i hi, Array.getElem_toList]
+
+/-- The final node of a variadic evaluator fixture is its variadic operation node. -/
+@[simp] theorem variadicGraphOut_getNode
+    (kind : OpKind) (parentShapes : Array Shape) (outShape : Shape) :
+    (variadicGraphOut kind parentShapes outShape).getNode parentShapes.size =
+      .ok (variadicNodeOut kind parentShapes outShape) := by
+  let inputNodes : Array NN.IR.Node := parentShapes.mapIdx fun i shape =>
+    { id := i, parents := [], kind := OpKind.input, outShape := shape }
+  have hSize : inputNodes.size = parentShapes.size := by simp [inputNodes]
+  change ({ nodes := inputNodes.push (variadicNodeOut kind parentShapes outShape) } : Graph).getNode
+      parentShapes.size = .ok (variadicNodeOut kind parentShapes outShape)
+  rw [← hSize]
+  simp [Graph.getNode, Graph.getNode?, variadicNodeOut,
+    Bind.bind, Except.bind, Pure.pure, Except.pure]
+  exact hSize.symm
+
 end IRStep
 
+/-- Evaluate a typed forward let-chain while accumulating every intermediate dynamic value. -/
 def evalFGraphVals
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}

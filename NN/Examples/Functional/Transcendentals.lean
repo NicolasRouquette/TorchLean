@@ -148,7 +148,7 @@ def checkAll : IO Unit := do
 
 end NN.Examples.Functional.Transcendentals
 
-/-- Compiled entry point.  Autograd uses the native runtime, so this runs as a
-compiled `lean_exe` (`lake exe transcendentals_check`), not via `#eval` (the
-interpreter cannot load the native tape externs). -/
+/-- Compiled entry point. Autograd uses the native runtime, so this runs as a compiled `lean_exe`
+(`lake exe transcendentals_check`), not via `#eval` (the interpreter cannot load native tape
+externs). -/
 def main : IO Unit := NN.Examples.Functional.Transcendentals.checkAll

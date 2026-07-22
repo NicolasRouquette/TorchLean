@@ -180,7 +180,7 @@ def trainDatasetWithSelectedRunnerCore {σ τ : Shape} {β : Type} {α : Type}
 Shared cross-entropy training core for already-parsed runtime settings.
 
 CLI commands may select the scalar type before calling into the public trainer. This entrypoint
-keeps that path inside the facade instead of exposing manual module calls to examples.
+keeps that path inside the trainer API instead of exposing manual module calls to examples.
 -/
 def trainDatasetWithRunConfigCore {σ τ : Shape} {β : Type}
     (trainer : CrossEntropy σ τ) (run : RunConfig) (data : Dataset σ τ)

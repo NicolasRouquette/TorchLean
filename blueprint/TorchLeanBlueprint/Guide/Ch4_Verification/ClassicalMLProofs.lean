@@ -286,11 +286,24 @@ prefix length in the checked statement is exactly the causal boundary.
 
 The three developments establish different kinds of structure:
 
-| Development | Proved object | Not established by that theorem |
-|---|---|---|
-| Hopfield | finite real-valued energy and cyclic asynchronous dynamics | floating execution or arbitrary update schedules |
-| ReLU approximation | existence of real MLP parameters with uniform error | training convergence or binary32 error |
-| Mamba/S4 | prefix preservation of spec-level list runners | equality with a particular fused scan kernel |
+:::table +header
+*
+  * Development
+  * Proved object
+  * Not established by that theorem
+*
+  * Hopfield
+  * finite real-valued energy and cyclic asynchronous dynamics
+  * floating execution or arbitrary update schedules
+*
+  * ReLU approximation
+  * existence of real MLP parameters with uniform error
+  * training convergence or binary32 error
+*
+  * Mamba/S4
+  * prefix preservation of spec-level list runners
+  * equality with a particular fused scan kernel
+:::
 
 The Hopfield example executes over `Rat`; the energy theorem is stated over `ℝ`. The Mamba
 causality theorem works over an abstract `Context`, but a runtime refinement theorem is still

@@ -273,14 +273,43 @@ run.
 
 # A Practical Selection Table
 
-| Goal | Scalar | Mode | Profile |
-| --- | --- | --- | --- |
-| inspect ordinary training | `Float` | eager | CPU |
-| replay a supported fixed graph | `Float` | compiled | CPU |
-| run native GPU training | `Float` | eager | CUDA |
-| inspect binary32 reference behavior | `IEEE32Exec` | eager | CPU |
-| use external attention forward | `Float` | eager | LibTorch-enabled CUDA |
-| verify/export an operation graph | semantic context | IR evaluator | no trainer profile |
+:::table +header
+*
+  * Goal
+  * Scalar
+  * Mode
+  * Profile
+*
+  * inspect ordinary training
+  * `Float`
+  * eager
+  * CPU
+*
+  * replay a supported fixed graph
+  * `Float`
+  * compiled
+  * CPU
+*
+  * run native GPU training
+  * `Float`
+  * eager
+  * CUDA
+*
+  * inspect binary32 reference behavior
+  * `IEEE32Exec`
+  * eager
+  * CPU
+*
+  * use external attention forward
+  * `Float`
+  * eager
+  * LibTorch-enabled CUDA
+*
+  * verify/export an operation graph
+  * semantic context
+  * IR evaluator
+  * no trainer profile
+:::
 
 The final row is deliberately outside the trainer modes. Lowering a model to `NN.IR.Graph` creates
 an inspectable semantic artifact, not another high-performance runtime switch.

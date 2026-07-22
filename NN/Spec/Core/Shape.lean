@@ -362,6 +362,14 @@ abbrev ndim (s : Shape) : Nat := rank s
 /-- PyTorch-style name for `Spec.Shape.size` ("numel"). -/
 abbrev numel (s : Shape) : Nat := size s
 
+/-- Swap adjacent entries in an axis-ordering list, leaving invalid positions unchanged. -/
+def swapAdjacentAxes (axes : List Nat) (depth : Nat) : List Nat :=
+  match axes, depth with
+  | [], _ => []
+  | [axis], _ => [axis]
+  | first :: second :: rest, 0 => second :: first :: rest
+  | first :: rest, depth + 1 => first :: swapAdjacentAxes rest depth
+
 /-- Permute axes of a shape using a runtime permutation list (0-based). Returns `none` if invalid.
   -/
 def permute? (s : Shape) (perm : List Nat) : Option Shape :=
@@ -428,6 +436,23 @@ resolution in downstream code.
 inductive valid_axis : Nat → Shape → Prop
 | valid_zero {n s} : valid_axis 0 (.dim (n+1) s)
 | valid_succ {n s k} (h : valid_axis k s) : valid_axis (k+1) (.dim (n+1) s)
+
+/--
+Return evidence that `axis` addresses a positive dimension of `s`.
+
+Executable consumers use this to recover the proposition required by typed tensor operations from
+a raw runtime axis. Invalid axes, including axes into zero-sized dimensions, return `none`.
+-/
+def validAxis? (axis : Nat) : (s : Shape) → Option (PLift (valid_axis axis s))
+  | .scalar => none
+  | .dim n rest =>
+      match axis, n with
+      | 0, Nat.succ k => some ⟨valid_axis.valid_zero (n := k) (s := rest)⟩
+      | 0, 0 => none
+      | Nat.succ a, Nat.succ k =>
+          (validAxis? a rest).map (fun h =>
+            ⟨valid_axis.valid_succ (n := k) (s := rest) (k := a) h.down⟩)
+      | Nat.succ _, 0 => none
 
 /-- Typeclass wrapper for `valid_axis` so common axis proofs can be inferred. -/
 class valid_axis_inst (axis : Nat) (s : Shape) where

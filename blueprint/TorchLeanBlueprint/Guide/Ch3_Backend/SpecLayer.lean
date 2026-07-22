@@ -188,13 +188,26 @@ point by a set of possible inputs, then bound every intermediate tensor.
 The type parameter `α` determines what the symbols `+`, `*`, `max`, `exp`, and division mean.
 TorchLean reuses the tensor structure at several scalar interpretations:
 
-| Scalar | Meaning |
-|---|---|
-| `ℝ` | exact real arithmetic used for mathematical statements |
-| `FP32` | finite binary32-grid values with a rounded-real proof model |
-| `IEEE32Exec` | executable binary32 bit patterns, including signed zero, infinity, and NaN |
-| interval contexts | sets of possible values, with outward enclosure operations |
-| runtime `Float` | Lean's native executable floating-point value |
+:::table +header
+*
+  * Scalar
+  * Meaning
+*
+  * `ℝ`
+  * exact real arithmetic used for mathematical statements
+*
+  * `FP32`
+  * finite binary32-grid values with a rounded-real proof model
+*
+  * `IEEE32Exec`
+  * executable binary32 bit patterns, including signed zero, infinity, and NaN
+*
+  * interval contexts
+  * sets of possible values, with outward enclosure operations
+*
+  * runtime `Float`
+  * Lean's native executable floating-point value
+:::
 
 Writing one polymorphic definition is not a proof that these interpretations agree. For example,
 

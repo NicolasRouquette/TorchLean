@@ -41,7 +41,8 @@ abbrev State (α : Type) (inShape : Shape) : Type :=
 /--
 Build a typed runtime index (`Idx`) for a numeric IR parent id.
 
-The compiled runtime context is typed by a list of shapes `[inShape] ++ ss`. `mkIdx` checks that:
+The compiled runtime context is typed by `[inShape] ++ ss`, matching `GraphData`'s input-plus-node
+context representation. `mkIdx` checks that:
 - `id` is in bounds, and
 - the context shape at that position matches the expected shape `s`.
 
@@ -61,6 +62,16 @@ def mkIdx [DecidableEq Shape]
         s!"IRExec: shape mismatch at id={id}: expected {Shape.pretty s}, got {Shape.pretty got}"
   else
     exact .error s!"IRExec: invalid id={id} for ctxLen={ctxShapes.length}"
+
+/--
+Read a tensor from the single-input IR execution context using a checked parent index.
+
+Keeping the context spelling `[inShape] ++ ss` explicit prevents dependent elaboration from
+normalizing the singleton append differently at compiler and correctness-proof call sites.
+-/
+def getIRValue {α : Type} {inShape : Shape} {ss : List Shape} {s : Shape}
+    (ctx : TList α ([inShape] ++ ss)) (idx : Idx ([inShape] ++ ss) s) : Tensor α s :=
+  getIdx (α := α) (xs := ctx) idx
 
 /--
 Construct a `NodeData` for forward execution only.

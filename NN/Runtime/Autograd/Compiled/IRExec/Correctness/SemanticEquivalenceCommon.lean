@@ -66,15 +66,15 @@ theorem denoteAllState_nil {α : Type} [Context α]
 attribute [grind =] denoteAllState_nil
 
 /--
-Relate the IR permutation lowering (`applySwapDepth` folded over swap depths) to `applySwapsTensor`.
+Relate the packed-tensor permutation lowering to `applySwapsTensor`.
 
 This is used to connect `NN.IR.Graph.permuteDVal` to the runtime implementation used by the
 compiler-generated node.
 -/
-theorem applySwapsTensor_eq_foldl_applySwapDepth
+theorem applySwapsTensor_eq_foldl_swapAdjacentAtDepth
     {α : Type} [Context α] {s : Shape} (t : Tensor α s) (swaps : List Nat) :
-    (swaps.foldl (fun acc d => NN.IR.Graph.applySwapDepth (α := α) acc d) (NN.IR.DVal.mk (α := α) s
-      t)) =
+    (swaps.foldl (fun acc d => Spec.PackedTensor.swapAdjacentAtDepth acc d)
+      (NN.IR.DVal.mk (α := α) s t)) =
       NN.IR.DVal.mk (α := α) (swapShapeBySwaps s swaps)
         (applySwapsTensor (α := α) (s := s) (swaps := swaps) t) := by
   induction swaps generalizing s t with
@@ -84,7 +84,7 @@ theorem applySwapsTensor_eq_foldl_applySwapDepth
       -- Expand one swap step on both sides, then use the induction hypothesis at the updated
       -- shape.  The explicit `change` keeps this proof stable across small simplifier changes.
       change
-        (ds.foldl (fun acc d => NN.IR.Graph.applySwapDepth (α := α) acc d)
+        (ds.foldl (fun acc d => Spec.PackedTensor.swapAdjacentAtDepth acc d)
             (NN.IR.DVal.mk (α := α) (s.swapAdjacentAtDepth d)
               (Tensor.swapAtDepthHelper (tensor := t) d))) =
           NN.IR.DVal.mk (α := α) (swapShapeBySwaps (s.swapAdjacentAtDepth d) ds)
@@ -109,13 +109,14 @@ theorem permuteDVal_eq_applySwapsTensor
   -- Unfold `permuteDVal`, then rewrite by the permutation witness and swap computation.
   unfold NN.IR.Graph.permuteDVal
   simp [NN.IR.DVal.shape, NN.IR.DVal.mk, hPerm, hSwaps]
-  -- Reduce the foldl over `applySwapDepth` to the recursive `applySwapsTensor`.
+  -- Reduce the fold over packed adjacent swaps to the recursive `applySwapsTensor`.
   simpa [NN.IR.DVal.mk] using
-    (applySwapsTensor_eq_foldl_applySwapDepth (α := α) (s := sIn) (t := t) (swaps := swaps))
+    (applySwapsTensor_eq_foldl_swapAdjacentAtDepth
+      (α := α) (s := sIn) (t := t) (swaps := swaps))
 
 -- `permuteDVal_eq_applySwapsTensor` carries extra witness parameters (`expected`, `swaps`) that are
 -- not uniquely determined from the left-hand side, so it cannot be registered as a `grind` rule.
-attribute [grind =] applySwapsTensor_eq_foldl_applySwapDepth
+attribute [grind =] applySwapsTensor_eq_foldl_swapAdjacentAtDepth
 
 /--
 Semantic equivalence lemma for a compilation step after the typed `nodeData` has been built.

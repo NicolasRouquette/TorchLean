@@ -1422,9 +1422,10 @@ theorem alphaCrown_transfer_sound
                                       Activation.Math.reluSpec (α := ℝ) zi := by
                                   -- Use the scalar α-relaxation soundness on the true
                                   -- pre-activation value.
-                                  have := alphaRelaxLowerScalar_sound (l := li) (u := ui) (a := ai)
-                                    (x := zi)
-                                    (hlx := hzIlo) (hxu := hzIhi) (ha0 := hai0) (ha1 := hai1)
+                                  have := NN.MLTheory.CROWN.Proofs.alphaRelaxLowerScalar_sound
+                                    (lower := li) (upper := ui) (alpha := ai) (input := zi)
+                                    (lowerBound := hzIlo) (upperBound := hzIhi)
+                                    (alphaNonnegative := hai0) (alphaAtMostOne := hai1)
                                   simpa [li, ui, zi, ai] using this
                                 have hlo :
                                     toVec (boundsEvalAt (α := ℝ) bout x').lo i ≤
@@ -1742,9 +1743,10 @@ theorem alphaCrown_transfer_sound
                                         (alphaRelaxLowerScalar (α := ℝ) li ui ai).bias
                                       ≤
                                       Activation.Math.reluSpec (α := ℝ) zi := by
-                                  have := alphaRelaxLowerScalar_sound (l := li) (u := ui) (a := ai)
-                                    (x := zi)
-                                    (hlx := hzIlo) (hxu := hzIhi) (ha0 := hai0) (ha1 := hai1)
+                                  have := NN.MLTheory.CROWN.Proofs.alphaRelaxLowerScalar_sound
+                                    (lower := li) (upper := ui) (alpha := ai) (input := zi)
+                                    (lowerBound := hzIlo) (upperBound := hzIhi)
+                                    (alphaNonnegative := hai0) (alphaAtMostOne := hai1)
                                   simpa [li, ui, zi, ai] using this
                                 have hlo :
                                     toVec (boundsEvalAt (α := ℝ) bout x').lo i ≤

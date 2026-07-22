@@ -86,7 +86,7 @@ jobs:
       - name: Build project API documentation
         run: |
           rm -rf .lake/build/doc-data .lake/build/api-docs.db
-          DISABLE_EQUATIONS=1 ~/.elan/bin/lake -R -Kenv=dev build NN:docs
+          DISABLE_EQUATIONS=1 ~/.elan/bin/lake -R -Kenv=dev build TorchLeanDocs:docs
       
       - name: Detect homepage folder
         id: check_home_page

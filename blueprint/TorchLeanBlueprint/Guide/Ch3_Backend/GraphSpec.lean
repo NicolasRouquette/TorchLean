@@ -254,10 +254,23 @@ MLP.
 
 The two GraphSpec syntaxes are related but not identical:
 
-| Form | Best use | Sharing | Parameter representation |
-|---|---|---|---|
-| `Graph ps σ τ` | readable layer chains | no explicit fan-out | type-indexed list `ps` |
-| `DAG.Model ps ins τ` | residual and multi-input models | explicit variables and `let1` | typed model environment |
+:::table +header
+*
+  * Form
+  * Best use
+  * Sharing
+  * Parameter representation
+*
+  * `Graph ps σ τ`
+  * readable layer chains
+  * no explicit fan-out
+  * type-indexed list `ps`
+*
+  * `DAG.Model ps ins τ`
+  * residual and multi-input models
+  * explicit variables and `let1`
+  * typed model environment
+:::
 
 A sequential graph can be lowered structurally into a DAG model. This does not require a numerical
 theorem because the conversion also comes with a theorem relating the relevant pure interpretation.

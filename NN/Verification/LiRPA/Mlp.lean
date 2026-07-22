@@ -37,6 +37,7 @@ open NN.MLTheory.CROWN
 open _root_.Spec
 open _root_.Spec.Tensor
 
+/-- Four-node `3 → 4 → 2` ReLU MLP graph used by the compact LiRPA certificate example. -/
 def buildGraph : Graph :=
   let inputNode : Node := { id := 0, parents := [], kind := .input, outShape := .dim 3 .scalar }
   let hiddenLinearNode : Node := { id := 1, parents := [0], kind := .linear, outShape := .dim 4 .scalar }
@@ -44,6 +45,7 @@ def buildGraph : Graph :=
   let outputLinearNode : Node := { id := 3, parents := [2], kind := .linear, outShape := .dim 2 .scalar }
   { nodes := #[inputNode, hiddenLinearNode, reluNode, outputLinearNode] }
 
+/-- Deterministic Float weights and biases for both linear nodes in `buildGraph`. -/
 def seedParamsFloat : ParamStore Float :=
   let hiddenWeight : Tensor Float (.dim 4 (.dim 3 .scalar)) :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (1 + (i.val + j.val)))))
@@ -64,6 +66,7 @@ def seedParamsFloat : ParamStore Float :=
         ({ m := 2, n := 4, w := outputWeight, b := outputBias }) }
   withOutputLayer
 
+/-- Add the example's natural input box of radius `eps` to a parameter store. -/
 def seedInputFloat (ps : ParamStore Float) (eps : Float) : ParamStore Float :=
   NN.Verification.LiRPA.seedNaturalInputBox 0 3 eps ps
 

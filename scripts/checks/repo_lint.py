@@ -39,7 +39,7 @@ ALLOWED_AXIOMS = {
     "NN/Runtime/Autograd/Engine/Cuda/Trusted.lean": {"instNonemptyBuffer"},
 }
 
-# Narrow allowlist for linter suppressions that are noisy in facade files but do
+# Narrow allowlist for linter suppressions that are noisy in API entrypoint files but do
 # not weaken proofs. Keep this list small and review each addition.
 ALLOWED_LINTER_SUPPRESSION_FILES = {
     "NN/Tensor/API.lean",
@@ -261,7 +261,7 @@ PUBLIC_GUIDE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"\btrain\.\*"),
-        "public guides should teach the `Trainer` facade, not `train.*`.",
+        "public guides should teach the `Trainer` API, not `train.*`.",
     ),
     (
         re.compile(r"\btrain\.stepEpochLR\b"),
@@ -398,7 +398,7 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"\bTrainer\.(Regression|Classifier|CrossEntropy|Custom)(\.|\b)"),
-        "public examples should stay on the unified `Trainer` facade, not specialized trainer implementation handles.",
+        "public examples should stay on the unified `Trainer` API, not specialized trainer implementation handles.",
     ),
     (
         re.compile(r"\bstructure\s+RunConfig\b"),
@@ -446,7 +446,7 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"\bNN\.API\."),
-        "public examples should go through the `TorchLean` facade, not fully-qualified `NN.API.*` implementation paths.",
+        "public examples should go through the `TorchLean` API, not fully-qualified `NN.API.*` implementation paths.",
     ),
     (
         re.compile(r"IO\.println\s+\"model\s*="),
@@ -1131,7 +1131,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                 r"\b(?:SequentialModel|ModelBuilder|modelParamShapes|LossReduction)\b|"
                 r"\bTorchLean\.ParamTensors\b|\bNN\.API\.TensorPack\b"
             ),
-            "removed facade alias found; use the owning `nn`, `Module`, `Loss`, or `TensorPack` API.",
+            "removed API alias found; use the canonical `nn`, `Module`, `Loss`, or `TensorPack` name.",
         ),
         (re.compile(r"\bby\s+omega\b"), "`omega` is banned in TorchLean; prefer `linarith`/`nlinarith`/`grind` or small arithmetic lemmas."),
         (re.compile(r"^\s*omega\b", flags=re.MULTILINE), "`omega` is banned in TorchLean; prefer `linarith`/`nlinarith`/`grind` or small arithmetic lemmas."),
@@ -1334,7 +1334,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                         path,
                         line,
                         col,
-                        "`NN.API.Public.Facade.Base.Core` must stay an import-only aggregator; put base facade implementation in `NN.API.Public.Facade.Base.*` modules.",
+                        "`NN.API.Public.Facade.Base.Core` must stay an import-only aggregator; put base API implementation in `NN.API.Public.Facade.Base.*` modules.",
                     )
                 )
 
@@ -1348,7 +1348,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                         path,
                         line,
                         col,
-                        "`NN.API.Public.Facade.Runtime.Core` must stay an import-only aggregator; put runtime facade implementation in `NN.API.Public.Facade.Runtime.*` modules.",
+                        "`NN.API.Public.Facade.Runtime.Core` must stay an import-only aggregator; put runtime API implementation in `NN.API.Public.Facade.Runtime.*` modules.",
                     )
                 )
 
@@ -1362,7 +1362,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                         path,
                         line,
                         col,
-                        "`NN.API.Public.Facade.NN.Core` must stay an import-only aggregator; put NN facade implementation in `NN.API.Public.Facade.NN.*` modules.",
+                        "`NN.API.Public.Facade.NN.Core` must stay an import-only aggregator; put neural-network API implementation in `NN.API.Public.Facade.NN.*` modules.",
                     )
                 )
 
@@ -1376,7 +1376,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                         path,
                         line,
                         col,
-                        "`NN.API.Public.Facade.Data.Core` must stay an import-only aggregator; put data facade implementation in `NN.API.Public.Facade.Data.*` modules.",
+                        "`NN.API.Public.Facade.Data.Core` must stay an import-only aggregator; put data API implementation in `NN.API.Public.Facade.Data.*` modules.",
                     )
                 )
 
@@ -1412,21 +1412,21 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                     "`NN.API.Public` must not re-export `NN.API.Public.Training`; use `TorchLean.Trainer` for ordinary code and import the advanced training module explicitly when needed.",
                 )
             )
-        is_trainer_facade = (
+        is_trainer_api = (
             rel == "NN/API/Public/Facade/Trainer.lean"
             or rel.startswith("NN/API/Public/Facade/Trainer/")
         )
         is_training_entrypoint = rel == "NN/API/Public/Training.lean"
         if re.search(
             r"^\s*public\s+import\s+NN\.API\.Public\.Training\s*$", masked, flags=re.MULTILINE
-        ) and not (is_trainer_facade or is_training_entrypoint):
+        ) and not (is_trainer_api or is_training_entrypoint):
             findings.append(
                 Finding(
                     "ERROR",
                     path,
                     None,
                     None,
-                    "`NN.API.Public.Training` should only be imported by the Trainer facade; keep the callback-heavy training layer out of broad public facade imports.",
+                    "`NN.API.Public.Training` should only be imported by the Trainer API; keep the callback-heavy training layer out of broad application API imports.",
                 )
             )
 

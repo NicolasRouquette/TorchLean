@@ -123,13 +123,26 @@ training engines.
 
 The common runtime parser recognizes:
 
-| Flag | Current meaning |
-|---|---|
-| `--device auto|cpu|cuda|...` | requested execution device |
-| `--dtype float|ieee754exec` | scalar runtime, where the command supports it |
-| `--backend eager|compiled` | eager autograd or proof-linked compiled host path where supported |
-| `--seed N` | explicit random seed |
-| `--show-backend` | print selected backend capsules |
+:::table +header
+*
+  * Flag
+  * Current meaning
+*
+  * `--device auto|cpu|cuda|...`
+  * requested execution device
+*
+  * `--dtype float|ieee754exec`
+  * scalar runtime, where the command supports it
+*
+  * `--backend eager|compiled`
+  * eager autograd or proof-linked compiled host path where supported
+*
+  * `--seed N`
+  * explicit random seed
+*
+  * `--show-backend`
+  * print selected backend capsules
+:::
 
 The parser also accepts names such as `rocm`, `metal`, `wasm`, `tpu`, `trainium`, `custom`, and
 `external`. They are planning targets in the current registry, not completed runtimes. Requesting
@@ -336,7 +349,7 @@ After a fresh clone or a substantial local change, run these commands sequential
 
 ```
 lake build
-lake build NN.Examples.Zoo
+lake build NNExamples
 lake exe torchlean quickstart_tensors
 lake exe torchlean quickstart_autograd
 lake exe torchlean quickstart_mlp --device cpu --steps 20 --seed 2026
@@ -346,14 +359,29 @@ lake exe verify -- torchlean-ibp
 
 They answer different questions:
 
-| Command | Question |
-|---|---|
-| `lake build` | does the project elaborate and link? |
-| `lake build NN.Examples.Zoo` | do the curated examples elaborate? |
-| tensor/autograd quickstarts | do small executable values and derivatives behave as expected? |
-| MLP training | does a complete optimizer path run? |
-| numerical certificate | are positive and negative certificate cases handled? |
-| TorchLean IBP | does model lowering and bound propagation complete? |
+:::table +header
+*
+  * Command
+  * Question
+*
+  * `lake build`
+  * does the project elaborate and link?
+*
+  * `lake build NNExamples`
+  * do the curated examples elaborate?
+*
+  * tensor/autograd quickstarts
+  * do small executable values and derivatives behave as expected?
+*
+  * MLP training
+  * does a complete optimizer path run?
+*
+  * numerical certificate
+  * are positive and negative certificate cases handled?
+*
+  * TorchLean IBP
+  * does model lowering and bound propagation complete?
+:::
 
 For CUDA changes, follow with CUDA-specific builds and runtime checks. For external tools, prepare
 their dependencies separately. No single green command subsumes all of these boundaries.

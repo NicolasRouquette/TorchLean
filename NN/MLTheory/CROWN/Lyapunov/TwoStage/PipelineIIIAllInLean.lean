@@ -12,6 +12,7 @@ public import NN.API.Public.TensorPack
 public import NN.MLTheory.CROWN.Core
 public import NN.MLTheory.CROWN.Graph
 public import NN.MLTheory.CROWN.Lyapunov.TwoStage.Core
+public import NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis
 public import NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils
 public import NN.Runtime.Autograd.TorchLean.Autodiff
 public import NN.Runtime.Autograd.TorchLean.Backend
@@ -108,65 +109,6 @@ def moduleDef (width : Nat) : TorchLean.Module.ScalarModuleDef (paramShapes widt
   { initParams := initParamsF width
     loss := Core.lossProgram width }
 
-abbrev lossΓ (width : Nat) : List Shape := paramShapes width ++ [xShape]
-
-/--
-One PGD step on the input `x` using a *compiled* loss graph.
-
-We differentiate only w.r.t. `x` (parameters are treated as constants during the PGD inner loop),
-then clamp to the training box `[-rad, rad]^2`.
--/
-def pgdStepCompiled
-    (width : Nat)
-    (cLoss : _root_.Runtime.Autograd.Torch.CompiledScalar α (lossΓ width))
-    (params : NN.API.TorchLean.TensorPack α (paramShapes width))
-    (x : Tensor α xShape) : Tensor α xShape :=
-  let args : NN.API.TorchLean.TensorPack α (lossΓ width) :=
-    _root_.Proofs.Autograd.Algebra.TList.append (α := α)
-      (ss₁ := paramShapes width) (ss₂ := [xShape]) params (.cons x .nil)
-  let gAll : NN.API.TorchLean.TensorPack α (lossΓ width) :=
-    _root_.Runtime.Autograd.Torch.CompiledScalar.backward (α := α) (Γ := lossΓ width) cLoss args
-  let gx : NN.API.TorchLean.TensorPack α [xShape] :=
-    (_root_.Proofs.Autograd.Algebra.TList.splitAppend (α := α)
-      (ss₁ := paramShapes width) (ss₂ := [xShape]) gAll).2
-  let .cons g .nil := gx
-  let x' := Tensor.addSpec x (Tensor.scaleSpec g pgdStepSize)
-  clampStateVector (-rad) rad x'
-
--- Lean 4.32's native-code optimizer needs more than the default budget for this compiled graph.
-set_option maxHeartbeats 1000000 in
-/--
-Final post-check: compile the TorchLean loss to the shared verifier IR, then run IBP and CROWN
-over a small box around the origin.
--/
-def checkBox (width : Nat) (params : NN.API.TorchLean.TensorPack α (paramShapes width)) (eps : α :=
-  epsCheck) : IO Unit := do
-  IO.println "Stage 2 check: IBP + CROWN on the scalar loss over a small box"
-  let compiled ←
-    match NN.Verification.TorchLean.compileForward
-          (α := α) (paramShapes := paramShapes width) (inShape := xShape) (outShape := Shape.scalar)
-          (lossProg width (β := α)) params with
-    | .ok c => pure c
-    | .error e => throw <| IO.userError e
-
-  IO.println s!"compiled IR nodes: {compiled.graph.nodes.size}"
-
-  let x0 : Tensor α xShape := Spec.zeros (α := α) xShape
-  let xB : FlatBox α := NN.MLTheory.CROWN.FlatBox.lInfBall (α := α) x0 eps
-  let ps : ParamStore α := compiled.seedInputBox xB
-
-  let ibp := runIBP (α := α) compiled.graph ps
-  let outB ← compiled.outputBoxOrThrow ibp
-  IO.println s!"[IBP] scalar loss box dim={outB.dim}"
-
-  match NN.MLTheory.CROWN.Graph.outputBoxCROWN? compiled.graph ps xB
-      compiled.inputId compiled.outputId xDim with
-  | .ok outB =>
-      IO.println s!"[CROWN] loss lo = {pretty outB.lo}"
-      IO.println s!"[CROWN] loss hi = {pretty outB.hi}"
-  | .error msg =>
-      IO.println s!"[CROWN] {msg}"
-
 /-- Main entrypoint for the all-in-Lean pipeline (width is a parameter; CLI default is
   `defaultWidth`). -/
 def run (width : Nat) (args : List String) : IO Unit := do
@@ -207,7 +149,8 @@ def run (width : Nat) (args : List String) : IO Unit := do
     let params ← tr.getParams
     let mut x := x0
     for _k in [0:pgdSteps] do
-      x := pgdStepCompiled width cLoss params x
+      x := CompiledLossAnalysis.projectedGradientStep
+        width cLoss params x pgdStepSize rad
     let xs : NN.API.TorchLean.TensorPack α [xShape] := tensorpack! x
     let lossFound := _root_.Runtime.Autograd.Torch.scalarOf (←
       _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr xs)
@@ -215,7 +158,7 @@ def run (width : Nat) (args : List String) : IO Unit := do
     IO.println s!"[stage2] round {round}: loss={lossFound}"
 
   let params ← tr.getParams
-  checkBox width params (eps := epsCheck)
+  CompiledLossAnalysis.checkLossBox width params epsCheck
 
 /-- Default hidden width used by the Pipeline III all-in-Lean workflow. -/
 def defaultWidth : Nat := 100

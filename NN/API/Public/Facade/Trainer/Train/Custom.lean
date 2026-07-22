@@ -12,7 +12,7 @@ public import NN.API.Public.Facade.Trainer.Results
 /-!
 # TorchLean Custom-Loss Trainer Implementation
 
-Custom checked supervised-loss training for the public trainer facade.
+Custom checked supervised-loss training for the trainer API.
 -/
 
 @[expose] public section

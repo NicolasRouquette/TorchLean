@@ -326,11 +326,28 @@ can change without silently changing the model's mathematical interface.
 
 The three applications stress different parts of TorchLean:
 
-| Application | Structural pressure | External boundary | Primary artifact |
-|---|---|---|---|
-| CharGPT | causal windows, heads, depth, token IDs | CUDA kernels and corpus file | checkpoint, validation log, generated text |
-| ResNet / ViT | residual joins or patch-token layout | CIFAR arrays and selected runtime | classification loss log |
-| FNO | field shape, retained Fourier modes | dataset preparation and cuFFT on CUDA | train/test loss and prediction CSV |
+:::table +header
+*
+  * Application
+  * Structural pressure
+  * External boundary
+  * Primary artifact
+*
+  * CharGPT
+  * causal windows, heads, depth, token IDs
+  * CUDA kernels and corpus file
+  * checkpoint, validation log, generated text
+*
+  * ResNet / ViT
+  * residual joins or patch-token layout
+  * CIFAR arrays and selected runtime
+  * classification loss log
+*
+  * FNO
+  * field shape, retained Fourier modes
+  * dataset preparation and cuFFT on CUDA
+  * train/test loss and prediction CSV
+:::
 
 The next two chapters add stochastic state. In generative modeling and reinforcement learning, the
 network is only one part of the run, so schedules, samplers, environments, and rollout data matter

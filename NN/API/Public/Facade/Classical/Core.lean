@@ -14,7 +14,7 @@ public import NN.Spec.Models
 User-facing names for TorchLean's classical and statistical model definitions.
 
 The implementations remain in `NN.Spec.Models`, where their mathematical definitions and proofs
-can refer to them directly. This facade gives application code a consistent path without creating
+can refer to them directly. This API gives application code a consistent path without creating
 a second implementation. Neural-network constructors live under `TorchLean.nn.models`; these
 models live under `TorchLean.classical`.
 

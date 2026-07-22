@@ -163,13 +163,26 @@ computed interval really encloses `denote` for this graph.
 
 The guide uses the following vocabulary throughout:
 
-| Evidence | What it establishes |
-| --- | --- |
-| a successful run | one execution produced a value |
-| a parser or shape check | an artifact satisfies a structural predicate |
-| a certificate replay | an artifact satisfies the checker's acceptance predicate |
-| a soundness theorem | the accepted predicate implies a semantic proposition |
-| a backend assumption | an external implementation is being trusted to meet a stated contract |
+:::table +header
+*
+  * Evidence
+  * What it establishes
+*
+  * a successful run
+  * one execution produced a value
+*
+  * a parser or shape check
+  * an artifact satisfies a structural predicate
+*
+  * a certificate replay
+  * an artifact satisfies the checker's acceptance predicate
+*
+  * a soundness theorem
+  * the accepted predicate implies a semantic proposition
+*
+  * a backend assumption
+  * an external implementation is being trusted to meet a stated contract
+:::
 
 # Fast Kernels Still Belong
 

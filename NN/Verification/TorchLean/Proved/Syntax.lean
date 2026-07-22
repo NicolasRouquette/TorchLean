@@ -31,10 +31,12 @@ open _root_.Spec.Tensor
 open NN.IR
 
 -- Make projection out of dynamic values definitional for `simp` in correctness proofs.
+/-- Projecting the tensor from a freshly constructed dynamic value is definitionally exact. -/
 @[simp] theorem dval_tensor_mk
     {α : Type} [Context α] {s : Shape} (t : Tensor α s) :
     DVal.tensor (α := α) (⟨s, t⟩ : DVal α) = t := rfl
 
+/-- Shape checking succeeds for a dynamic value constructed with the expected shape tag. -/
 @[simp] theorem graph_expectShape_mk
     {α : Type} [Context α] [DecidableEq Shape] {s : Shape} (t : Tensor α s) :
     Graph.expectShape (α := α) (expected := s) (DVal.mk (α := α) s t) = .ok t := by

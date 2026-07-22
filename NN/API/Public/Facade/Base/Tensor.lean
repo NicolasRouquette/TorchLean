@@ -49,71 +49,71 @@ end rand
 
 namespace Shape
 
-@[inherit_doc Spec.Shape.scalar]
+/-- Scalar shape with no tensor dimensions. -/
 abbrev scalar := Spec.Shape.scalar
 
-@[inherit_doc Spec.Shape.size]
+/-- Number of scalar entries represented by a shape. -/
 abbrev size := Spec.Shape.size
 
-@[inherit_doc Spec.Shape.toList]
+/-- Dimensions of a shape in outermost-to-innermost order. -/
 abbrev toList := Spec.Shape.toList
 
-@[inherit_doc NN.Tensor.shapeOfDims]
+/-- Construct a shape from its outermost-to-innermost dimensions. -/
 abbrev ofDims := NN.Tensor.shapeOfDims
 
 end Shape
 
 namespace Tensor
 
-@[inherit_doc NN.Tensor.vector]
+/-- Construct a length-indexed vector tensor from a function on indices. -/
 abbrev vector := NN.Tensor.vector
 
-@[inherit_doc NN.Tensor.ofList]
+/-- Check a flat list against `dims` and reshape it into the corresponding tensor. -/
 abbrev ofList {α : Type} (dims : List Nat) (xs : List α) :
     Except String (Spec.Tensor α (Shape.ofDims dims)) :=
   NN.Tensor.ofList dims xs
 
-@[inherit_doc NN.Tensor.float32Vector]
+/-- Construct an executable IEEE32 vector from ordinary `Float` values. -/
 abbrev float32Vector := NN.Tensor.float32Vector
 
-@[inherit_doc NN.Tensor.print]
+/-- Print a tensor using the scalar type's registered display implementation. -/
 abbrev print {α : Type} [NN.Tensor.DTypeName α] [NN.Tensor.TensorPrintable α]
     {s : Shape} (t : Spec.Tensor α s) : IO Unit :=
   NN.Tensor.print t
 
-@[inherit_doc Spec.vectorFromList]
+/-- Convert a list to a vector whose shape records the list length. -/
 abbrev vectorFromList {α : Type} (xs : List α) :
     Spec.Tensor α (.dim xs.length .scalar) :=
   Spec.vectorFromList xs
 
-@[inherit_doc Spec.matrixFromRows]
+/-- Convert rectangular list rows into a shape-indexed matrix tensor. -/
 abbrev matrixFromRows {α : Type} [Inhabited α] (xss : List (List α)) :=
   Spec.matrixFromRows xss
 
-@[inherit_doc Spec.fill]
+/-- Fill every scalar position of a shape with one value. -/
 abbrev fill {α : Type} (value : α) (s : Shape) : Spec.Tensor α s :=
   Spec.fill value s
 
-@[inherit_doc Spec.pretty]
+/-- Render a shape-indexed tensor as a compact human-readable string. -/
 abbrev pretty {α : Type} [ToString α] {s : Shape} (t : Spec.Tensor α s) : String :=
   Spec.pretty t
 
-@[inherit_doc Spec.Tensor.vecGet]
+/-- Read one element from a vector tensor at a bounded index. -/
 abbrev vecGet {α : Type} {n : Nat} (x : Spec.Tensor α (.dim n .scalar)) (i : Fin n) : α :=
   Spec.Tensor.vecGet x i
 
-@[inherit_doc Spec.Tensor.toScalar]
+/-- Extract the value stored in a scalar tensor. -/
 abbrev toScalar {α : Type} (t : Spec.Tensor α .scalar) : α :=
   Spec.Tensor.toScalar t
 
-@[inherit_doc Spec.Tensor]
+/-- Public shorthand for TorchLean's shape-indexed tensor family. -/
 abbrev T := Spec.Tensor
 
-@[inherit_doc Spec.mapTensor]
+/-- Apply a scalar function pointwise while preserving the tensor shape. -/
 abbrev map {α β : Type} {s : Shape} (f : α → β) (x : Tensor.T α s) : Tensor.T β s :=
   Spec.mapTensor f x
 
-@[inherit_doc NN.API.Common.castTensor]
+/-- Convert a `Float` tensor pointwise with an explicitly supplied scalar cast. -/
 abbrev castFloat {α : Type} (cast : Float → α) {s : Shape} (t : Tensor.T Float s) :
     Tensor.T α s :=
   NN.API.Common.castTensor cast t
@@ -156,7 +156,7 @@ end Tensor
 
 namespace Semantics
 
-@[inherit_doc NN.API.Semantics.relu]
+/-- Scalar rectified-linear activation used by public model definitions. -/
 abbrev relu {α : Type} [Zero α] [Max α] (x : α) : α :=
   NN.API.Semantics.relu x
 

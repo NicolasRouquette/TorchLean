@@ -37,30 +37,6 @@ variable {α : Type} [Context α]
 
 namespace IBP
 
-/-- Positive part of a weight matrix: `W⁺ = max(W, 0)` (elementwise). -/
-def matPos {m n : Nat}
-    (W : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim m (.dim n .scalar)) :=
-  match W with
-  | .dim rows =>
-      Tensor.dim (fun i =>
-        match rows i with
-        | .dim cols =>
-            Tensor.dim (fun j =>
-              match cols j with
-              | .scalar w => Tensor.scalar (if w > 0 then w else 0)))
-
-/-- Negative part of a weight matrix: `W⁻ = min(W, 0)` (elementwise). -/
-def matNeg {m n : Nat}
-    (W : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim m (.dim n .scalar)) :=
-  match W with
-  | .dim rows =>
-      Tensor.dim (fun i =>
-        match rows i with
-        | .dim cols =>
-            Tensor.dim (fun j =>
-              match cols j with
-              | .scalar w => Tensor.scalar (if w > 0 then 0 else w)))
-
 /-- Linear IBP bounds computed via sign-splitting (`W⁺/W⁻`). -/
 def linearSignSplit {m n : Nat}
     (W : Tensor α (.dim m (.dim n .scalar)))

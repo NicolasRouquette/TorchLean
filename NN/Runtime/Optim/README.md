@@ -21,7 +21,7 @@ named optimizer to the projected gradient.
 
 ## Public API
 
-Most users should reach standard trainer optimizers through the public facade:
+Most users should reach standard trainer optimizers through the application API:
 
 ```lean
 import NN
@@ -49,7 +49,7 @@ The proof layer optimizer interface lives in `NN/MLTheory/Optimization/Optimizer
 new optimizer is added, the intended pattern is:
 
 1. define the pure state and update equation here;
-2. expose it through the public optimizer facade if it is user-facing;
+2. expose it through the optimizer API if it is user-facing;
 3. register it as a `TensorOptimizer` in the theory layer;
 4. prove the algebraic laws or reduction facts that make the optimizer reusable in larger proofs.
 

@@ -256,11 +256,24 @@ residual.
 
 There are three objects in play:
 
-| Object | Scalar | Guarantee |
-|---|---|---|
-| `IsCholesky`, `IsQR` | `ℝ` | exact algebraic specification |
-| `choleskySpec`, `qrQSpec`, `qrRSpec` in the proofs | `ℝ` | exact reconstruction under pivot hypotheses |
-| factorization examples | `Float` | executable residual checks on concrete matrices |
+:::table +header
+*
+  * Object
+  * Scalar
+  * Guarantee
+*
+  * `IsCholesky`, `IsQR`
+  * `ℝ`
+  * exact algebraic specification
+*
+  * `choleskySpec`, `qrQSpec`, `qrRSpec` in the proofs
+  * `ℝ`
+  * exact reconstruction under pivot hypotheses
+*
+  * factorization examples
+  * `Float`
+  * executable residual checks on concrete matrices
+:::
 
 The `Float` output is evidence that the executable definitions behave as expected on those inputs.
 It is not the proof of `A = LLᵀ` or `QᵀQ = I`; machine arithmetic cannot generally satisfy those

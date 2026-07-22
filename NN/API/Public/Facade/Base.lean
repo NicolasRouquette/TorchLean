@@ -9,7 +9,7 @@ module
 public import NN.API.Public.Facade.Base.Core
 
 /-!
-# TorchLean Public Facade Base Entrypoint
+# TorchLean Base API Entrypoint
 
 Import-only entrypoint for root names plus verification, CLI, runtime, tensor, and operation
 namespaces used by `import NN`. Definitions live in

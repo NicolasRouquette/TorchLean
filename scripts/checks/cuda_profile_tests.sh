@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Profile the native CUDA test suite with NVIDIA profiling tools.
 set -euo pipefail
 
 usage() {

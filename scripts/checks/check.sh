@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Run the standard local build, test, and lint checks.
 set -euo pipefail
 
 usage() {

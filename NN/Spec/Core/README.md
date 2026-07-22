@@ -12,10 +12,13 @@ interpretation, and allowed operations are part of the object being specified.
 - `Context.lean`: the `Context` typeclass for scalar backends: algebraic operations, comparisons,
   casts, and the small amount of structure needed by specs.
 - `Scalar.lean`: scalar helpers and instances used across the spec layer.
-- `Shape.lean`: the `Shape` datatype, axis validity, well-formedness, and broadcasting evidence
-  such as `CanBroadcastTo`.
+- `Shape.lean`: the `Shape` datatype, runtime axis validation (`validAxis?`), axis-permutation
+  planning (`swapAdjacentAxes`), well-formedness, and broadcasting evidence such as
+  `CanBroadcastTo`.
 - `Tensor/`: the core tensor datatype plus constructors, vector helpers, linear algebra, and
   factorizations.
+- `Tensor/Packed.lean`: shape-tagged tensors used when an evaluator must store tensors of different
+  shapes together; it also provides the canonical packed adjacent-axis swap.
 - `Tensor.lean`: umbrella import for the core tensor API.
 - `TensorOps.lean`: elementwise maps and pointwise tensor operations.
 - `TensorReductionShape.lean` and `TensorReductionShape/`: reductions, reshape/flatten/unflatten,

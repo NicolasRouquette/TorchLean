@@ -32,6 +32,7 @@ namespace IRStep
 def singletonAt {β : Type} (id : Nat) (x : β) : Nat → Option β :=
   fun j => if j = id then some x else none
 
+/-- Looking up the defining index of a singleton table returns its stored value. -/
 @[simp]
 theorem singletonAt_self {β : Type} (id : Nat) (x : β) :
     singletonAt id x id = some x := by

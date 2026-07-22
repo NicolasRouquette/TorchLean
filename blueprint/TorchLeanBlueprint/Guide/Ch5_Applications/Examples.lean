@@ -320,7 +320,7 @@ Source:
 Before changing public examples, build the curated umbrella:
 
 ```
-lake build NN.Examples.Zoo
+lake build NNExamples
 ```
 
 That checks elaboration across the example tree. It does not execute every long-running model or

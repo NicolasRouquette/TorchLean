@@ -9,7 +9,7 @@ module
 public import NN.API.Public.Facade.NN
 
 /-!
-# TorchLean Adapter Facade
+# TorchLean Adapter API
 
 Parameter-efficient adapter operations exposed by the `NN` umbrella.
 

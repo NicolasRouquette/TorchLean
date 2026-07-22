@@ -54,6 +54,7 @@ def mkModel : nn.M (nn.Sequential xShape yShape) :=
     nn.linear hidDim outDim
   ]
 
+/-- Deterministically instantiate `mkModel` from initialization seed zero. -/
 def model : nn.Sequential xShape yShape :=
   nn.run 0 mkModel
 

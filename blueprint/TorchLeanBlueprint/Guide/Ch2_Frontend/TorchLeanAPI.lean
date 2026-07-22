@@ -25,15 +25,32 @@ lower import is appropriate.
 
 The main public namespaces are:
 
-| Namespace | Responsibility |
-| --- | --- |
-| `Tensor`, `Shape` | shape-indexed values and constructors |
-| `nn` | layers, blocks, model families, functional operations |
-| `Data` | datasets, loaders, batching, text and checkpoint helpers |
-| `Trainer` | configuration, training, reports, prediction, manual loops |
-| `optim` | optimizer configuration |
-| `autograd` | function and model derivatives |
-| `classical` | classical and statistical model APIs |
+:::table +header
+*
+  * Namespace
+  * Responsibility
+*
+  * `Tensor`, `Shape`
+  * shape-indexed values and constructors
+*
+  * `nn`
+  * layers, blocks, model families, functional operations
+*
+  * `Data`
+  * datasets, loaders, batching, text and checkpoint helpers
+*
+  * `Trainer`
+  * configuration, training, reports, prediction, manual loops
+*
+  * `optim`
+  * optimizer configuration
+*
+  * `autograd`
+  * function and model derivatives
+*
+  * `classical`
+  * classical and statistical model APIs
+:::
 
 The lowercase `nn.linear`, `nn.relu`, and `optim.adam` names are the canonical public spellings.
 Internal implementation namespaces may be longer because they distinguish specification, runtime,
@@ -290,14 +307,29 @@ should not depend on an internal tape constructor.
 
 These objects may all refer to the same architecture:
 
-| Object | What it says |
-| --- | --- |
-| model declaration | layer structure and shapes |
-| trainer run | one runtime configuration executed |
-| `NN.IR.Graph` | explicit operation data |
-| backend audit | provider and evidence choices |
-| theorem | exactly one Lean proposition under hypotheses |
-| certificate | accepted external claim plus checker theorem |
+:::table +header
+*
+  * Object
+  * What it says
+*
+  * model declaration
+  * layer structure and shapes
+*
+  * trainer run
+  * one runtime configuration executed
+*
+  * `NN.IR.Graph`
+  * explicit operation data
+*
+  * backend audit
+  * provider and evidence choices
+*
+  * theorem
+  * exactly one Lean proposition under hypotheses
+*
+  * certificate
+  * accepted external claim plus checker theorem
+:::
 
 The public API makes the common path concise without collapsing these meanings.
 

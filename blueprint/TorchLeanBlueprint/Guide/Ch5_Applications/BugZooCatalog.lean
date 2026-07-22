@@ -75,18 +75,41 @@ would have made the original kind of bug harder to miss.
 
 Some representative contract shapes:
 
-| Example | Contract shape |
-|---|---|
-| Attention mask | $`j>i\Rightarrow A_{ij}=0` |
-| Batch invariance | $`\operatorname{select}(\operatorname{mapBatch}(f,X),i)=f(X_i)` |
-| Tokenizer boundary | token ids inhabit `Fin vocabSize` |
-| KV cache | appended key/value appears at the final slot |
-| Float boundary | runtime Float32 agrees with `IEEE32Exec` under a named agreement |
-| Compiler boundary | target output equals source output |
-| Stable loss | logits path uses log-softmax semantics |
-| Ignored labels | inactive labels contribute zero |
-| LayerNorm degenerate axis | zero-variance normalization follows an explicit epsilon policy |
-| 3D projection | camera projection exposes depth and denominator preconditions |
+:::table +header
+*
+  * Example
+  * Contract shape
+*
+  * Attention mask
+  * $`j>i\Rightarrow A_{ij}=0`
+*
+  * Batch invariance
+  * $`\operatorname{select}(\operatorname{mapBatch}(f,X),i)=f(X_i)`
+*
+  * Tokenizer boundary
+  * token ids inhabit `Fin vocabSize`
+*
+  * KV cache
+  * appended key/value appears at the final slot
+*
+  * Float boundary
+  * runtime Float32 agrees with `IEEE32Exec` under a named agreement
+*
+  * Compiler boundary
+  * target output equals source output
+*
+  * Stable loss
+  * logits path uses log-softmax semantics
+*
+  * Ignored labels
+  * inactive labels contribute zero
+*
+  * LayerNorm degenerate axis
+  * zero-variance normalization follows an explicit epsilon policy
+*
+  * 3D projection
+  * camera projection exposes depth and denominator preconditions
+:::
 
 # The Examples
 

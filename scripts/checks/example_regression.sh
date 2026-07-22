@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Exercise the documented command-line examples as a regression suite.
 set -euo pipefail
 
 usage() {

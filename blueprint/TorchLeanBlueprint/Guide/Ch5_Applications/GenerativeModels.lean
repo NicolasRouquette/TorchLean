@@ -329,15 +329,32 @@ the mathematical development is under
 
 The generative stack is strongest when its claims remain compositional:
 
-| Result | Meaning |
-|---|---|
-| training loss decreased | one executable optimization run completed |
-| PPM or JSON was written | a runtime artifact was produced at the named path |
-| `forwardGaussian_isGaussian` | the formal affine Gaussian law is Gaussian |
-| sampler Lipschitz theorem | the mathematical step satisfies the stated bound under its hypotheses |
-| KL nonnegativity | the formal diagonal-Gaussian KL term is nonnegative |
-| nearest-code theorem | the selected finite code minimizes the stated squared-distance objective |
-| backend capsule | the run records the provider and evidence level of accelerated operations |
+:::table +header
+*
+  * Result
+  * Meaning
+*
+  * training loss decreased
+  * one executable optimization run completed
+*
+  * PPM or JSON was written
+  * a runtime artifact was produced at the named path
+*
+  * `forwardGaussian_isGaussian`
+  * the formal affine Gaussian law is Gaussian
+*
+  * sampler Lipschitz theorem
+  * the mathematical step satisfies the stated bound under its hypotheses
+*
+  * KL nonnegativity
+  * the formal diagonal-Gaussian KL term is nonnegative
+*
+  * nearest-code theorem
+  * the selected finite code minimizes the stated squared-distance objective
+*
+  * backend capsule
+  * the run records the provider and evidence level of accelerated operations
+:::
 
 The table also suggests the next useful integrations: a stochastic VAE trainer tied to the formal
 ELBO, a VQ-VAE command with a learned codebook, and graph-level numerical certificates for

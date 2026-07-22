@@ -61,7 +61,7 @@ CI populates these via `.github/workflows/blueprint.yml`. To reproduce that loca
 ```bash
 cd ..
 rm -rf .lake/build/doc .lake/build/doc-data .lake/build/api-docs.db
-DISABLE_EQUATIONS=1 lake build NN:docs
+DISABLE_EQUATIONS=1 lake build TorchLeanDocs:docs
 rm -rf home_page/docs
 cp -r .lake/build/doc home_page/docs
 find home_page/docs -name "*.trace" -delete

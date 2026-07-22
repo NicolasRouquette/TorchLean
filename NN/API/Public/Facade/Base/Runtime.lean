@@ -21,22 +21,22 @@ namespace TorchLean
 
 namespace Runtime
 
-@[inherit_doc NN.API.DType]
+/-- Public runtime scalar-format selection used by command-line options. -/
 abbrev DType := NN.API.DType
 
 namespace DType
 
-@[inherit_doc NN.API.DType.float]
+/-- Native Lean `Float` execution. -/
 abbrev float := NN.API.DType.float
 
-@[inherit_doc NN.API.DType.real]
+/-- Exact real-number semantics intended for specifications and proofs. -/
 abbrev real := NN.API.DType.real
 
-@[inherit_doc NN.API.DType.float32]
+/-- Executable IEEE32 semantics configured by rounding and transcendental options. -/
 abbrev float32 (cfg : NN.API.Float32Config := {}) : DType :=
   NN.API.DType.float32 cfg
 
-@[inherit_doc NN.API.DType.complex]
+/-- Complex execution whose real components use the selected IEEE32 configuration. -/
 abbrev complex (cfg : NN.API.Float32Config := {}) : DType :=
   NN.API.DType.complex cfg
 
@@ -51,7 +51,7 @@ backend. These classes stay under `TorchLean.Runtime` so the root namespace can 
 models, data, and training.
 -/
 
-/-
+/--
 Executable scalar support for TorchLean examples.
 
 Use this when an example chooses a scalar backend or writes code that is polymorphic over the
@@ -72,49 +72,49 @@ abbrev TensorScalar := _root_.Context
 
 export NN.API.TorchLean (Ops RefTy Program)
 
-@[inherit_doc _root_.Runtime.Autograd.Torch.Backend]
+/-- Runtime execution strategy: eager evaluation or compiled graph execution. -/
 abbrev Backend := _root_.Runtime.Autograd.Torch.Backend
 
 namespace Backend
 
-@[inherit_doc _root_.Runtime.Autograd.Torch.Backend.eager]
+/-- Execute operations immediately while constructing the autograd tape. -/
 abbrev eager : Backend := _root_.Runtime.Autograd.Torch.Backend.eager
 
-@[inherit_doc _root_.Runtime.Autograd.Torch.Backend.compiled]
+/-- Compile the captured program before executing it. -/
 abbrev compiled : Backend := _root_.Runtime.Autograd.Torch.Backend.compiled
 
 end Backend
 
-@[inherit_doc NN.Backend.Device]
+/-- Physical or logical device selected for runtime execution. -/
 abbrev Device := NN.Backend.Device
 
 namespace Device
 
-@[inherit_doc NN.Backend.Device.cpu]
+/-- Portable CPU execution. -/
 abbrev cpu : Device := NN.Backend.Device.cpu
 
-@[inherit_doc NN.Backend.Device.cuda]
+/-- Native NVIDIA CUDA execution. -/
 abbrev cuda : Device := NN.Backend.Device.cuda
 
-@[inherit_doc NN.Backend.Device.rocm]
+/-- AMD ROCm device selector. -/
 abbrev rocm : Device := NN.Backend.Device.rocm
 
-@[inherit_doc NN.Backend.Device.metal]
+/-- Apple Metal device selector. -/
 abbrev metal : Device := NN.Backend.Device.metal
 
-@[inherit_doc NN.Backend.Device.wasm]
+/-- WebAssembly runtime selector. -/
 abbrev wasm : Device := NN.Backend.Device.wasm
 
-@[inherit_doc NN.Backend.Device.tpu]
+/-- Google TPU device selector. -/
 abbrev tpu : Device := NN.Backend.Device.tpu
 
-@[inherit_doc NN.Backend.Device.trainium]
+/-- AWS Trainium device selector. -/
 abbrev trainium : Device := NN.Backend.Device.trainium
 
-@[inherit_doc NN.Backend.Device.custom]
+/-- User-registered device provider. -/
 abbrev custom : Device := NN.Backend.Device.custom
 
-@[inherit_doc NN.Backend.Device.external]
+/-- Execution delegated to an external runtime provider. -/
 abbrev external : Device := NN.Backend.Device.external
 
 /--
@@ -126,7 +126,7 @@ def parse (value : String) : Except String Device :=
 
 end Device
 
-@[inherit_doc NN.API.Runtime.ofFloat]
+/-- Embed a Lean `Float` into the runtime-selected scalar representation. -/
 def ofFloat {α : Type} [TorchLean.Runtime.Scalar α] (x : Float) : α :=
   NN.API.Runtime.ofFloat x
 
@@ -143,10 +143,10 @@ def runFloat
     (printOk : Bool := true) : IO UInt32 :=
   NN.API.Common.runFloat exeName args banner k printOk
 
-@[inherit_doc NN.API.Common.runCudaFloat]
+/-- Parse runtime flags and execute a callback on the native CUDA `Float` path. -/
 abbrev runCudaFloat := NN.API.Common.runCudaFloat
 
-@[inherit_doc NN.API.Common.runCudaEagerFloat]
+/-- Parse runtime flags and execute a callback on the eager CUDA `Float` path. -/
 abbrev runCudaEagerFloat := NN.API.Common.runCudaEagerFloat
 
 /--

@@ -105,7 +105,7 @@ lake exe verify -- torchlean-mlp-workflow --dtype float
 
 These commands compile or build small TorchLean models, attach input regions, and run native bound
 passes over the graph-shaped object. Use them when changing graph lowering, bound propagation,
-compiled execution, or the public verification facade.
+compiled execution, or the verification API.
 
 Run a compact PINN certificate and residual-expression check:
 

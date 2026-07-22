@@ -209,11 +209,24 @@ arithmetic came from custom code or a vendor library.
 
 There are three useful configurations for an operation:
 
-| Forward | Backward | TorchLean owns |
-|---|---|---|
-| TorchLean native | TorchLean native VJP | graph, tape, value/VJP rules, native boundary |
-| external fast kernel | TorchLean VJP | graph, tape, backward semantics; external forward boundary |
-| external autograd | external autograd | only the surrounding contract and imported gradients |
+:::table +header
+*
+  * Forward
+  * Backward
+  * TorchLean owns
+*
+  * TorchLean native
+  * TorchLean native VJP
+  * graph, tape, value/VJP rules, native boundary
+*
+  * external fast kernel
+  * TorchLean VJP
+  * graph, tape, backward semantics; external forward boundary
+*
+  * external autograd
+  * external autograd
+  * only the surrounding contract and imported gradients
+:::
 
 The middle row is the preferred scaling direction when practical. An external provider computes a
 fast forward value, but the wrapper still records a TorchLean tape node and applies TorchLean's

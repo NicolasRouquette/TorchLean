@@ -205,13 +205,26 @@ valid, and it does not certify the code that produced the file.
 
 These tensors have the same shape and different semantics:
 
-| Tensor element | Meaning |
-| --- | --- |
-| `Float` | executable host floating point |
-| `Rat` or `ℚ` | executable exact rationals |
-| `Real` or `ℝ` | proof-level exact reals |
-| `TorchLean.Floats.F32 .ieee754Exec` | executable bit-level binary32 |
-| `TorchLean.Floats.F32 .fp32` | finite rounded-real binary32 proof model |
+:::table +header
+*
+  * Tensor element
+  * Meaning
+*
+  * `Float`
+  * executable host floating point
+*
+  * `Rat` or `ℚ`
+  * executable exact rationals
+*
+  * `Real` or `ℝ`
+  * proof-level exact reals
+*
+  * `TorchLean.Floats.F32 .ieee754Exec`
+  * executable bit-level binary32
+*
+  * `TorchLean.Floats.F32 .fp32`
+  * finite rounded-real binary32 proof model
+:::
 
 The public trainer has a `dtype` option, but it is selecting a scalar interpretation, not adding a
 decorative field to an untyped buffer. Executable trainer paths reject `.real` and the

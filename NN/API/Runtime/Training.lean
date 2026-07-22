@@ -14,5 +14,5 @@ public import NN.API.Runtime.Training.Trainer
 # Runtime Supervised Training
 
 This umbrella exports supervised tasks and runners, dataset and loader loops, stateful steppers, the
-public `Trainer` facade, and the low-level imperative session interface.
+high-level `Trainer` API, and the low-level imperative session interface.
 -/

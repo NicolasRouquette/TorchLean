@@ -56,6 +56,15 @@ def InputsEnclosed (g : Graph) (ps : ParamStore ℝ) (inputs : Std.HashMap Nat V
     (g.nodes[id]!).kind = .input →
       ∃ B v, ps.inputBoxes[id]? = some B ∧ inputs[id]? = some v ∧ EnclosesBox B v
 
+/-- A topologically earlier parent fits every node-indexed array with graph-sized storage. -/
+theorem parent_lt_array_size
+    {β : Type} {g : Graph} (entries : Array β)
+    (hSize : entries.size = g.nodes.size) (htopo : TopoSorted g)
+    {id parent : Nat} (hid : id < g.nodes.size) (hparent : parent ∈ (g.nodes[id]!).parents) :
+    parent < entries.size := by
+  rw [hSize]
+  exact lt_trans (htopo id hid parent hparent) hid
+
 /-!
 ### The enclosure theorem
 
@@ -168,12 +177,10 @@ theorem cert_encloses_semantics
               -- With no parents, `certStepNode?` is `none`, contradicting `some B`.
               simp [certStepNode?, hkKind, hparents] at hcertStep
           | cons p1 _ =>
-              have hp1c : p1 < cert.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hcertSz] using this
-              have hp1v : p1 < vals.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hvalsSz] using this
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
               have hcertStep' : some B = getBox? cert p1 := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' : some v = getVal? vals p1 := by
@@ -217,21 +224,17 @@ theorem cert_encloses_semantics
                   simp [certStepNode?, hkKind, hparents] at hcertStep
               | cons p2 _ =>
                   -- From the certificate step: B = box_add Bp1 Bp2.
-                  have hp1c : p1 < cert.size := by
-                    have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                    simpa [hcertSz] using this
-                  have hp2c : p2 < cert.size := by
-                    have : p2 < g.nodes.size := lt_trans (htopo k hk p2 (by simp [hparents])) hk
-                    simpa [hcertSz] using this
+                  have hp1c : p1 < cert.size :=
+                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                  have hp2c : p2 < cert.size :=
+                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
                   have hcertStep' := by
                       simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
                   -- From the semantics step: v = x + y (and dims match).
-                  have hp1v : p1 < vals.size := by
-                    have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                    simpa [hvalsSz] using this
-                  have hp2v : p2 < vals.size := by
-                    have : p2 < g.nodes.size := lt_trans (htopo k hk p2 (by simp [hparents])) hk
-                    simpa [hvalsSz] using this
+                  have hp1v : p1 < vals.size :=
+                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                  have hp2v : p2 < vals.size :=
+                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
                   have hvalStep' := by
                       simpa [evalNode?, hkKind, hparents] using (Eq.symm hvalStep)
                   -- Extract concrete parent boxes/values (they must exist since this node produced
@@ -391,18 +394,14 @@ theorem cert_encloses_semantics
               | nil =>
                   simp [certStepNode?, hkKind, hparents] at hcertStep
               | cons p2 _ =>
-                  have hp1c : p1 < cert.size := by
-                    have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                    simpa [hcertSz] using this
-                  have hp2c : p2 < cert.size := by
-                    have : p2 < g.nodes.size := lt_trans (htopo k hk p2 (by simp [hparents])) hk
-                    simpa [hcertSz] using this
-                  have hp1v : p1 < vals.size := by
-                    have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                    simpa [hvalsSz] using this
-                  have hp2v : p2 < vals.size := by
-                    have : p2 < g.nodes.size := lt_trans (htopo k hk p2 (by simp [hparents])) hk
-                    simpa [hvalsSz] using this
+                  have hp1c : p1 < cert.size :=
+                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                  have hp2c : p2 < cert.size :=
+                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                  have hp1v : p1 < vals.size :=
+                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                  have hp2v : p2 < vals.size :=
+                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
                   have hcertStep' := by
                       simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
                   have hvalStep' := by
@@ -595,18 +594,14 @@ theorem cert_encloses_semantics
               | nil =>
                   simp [certStepNode?, hkKind, hparents] at hcertStep
               | cons p2 _ =>
-                  have hp1c : p1 < cert.size := by
-                    have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                    simpa [hcertSz] using this
-                  have hp2c : p2 < cert.size := by
-                    have : p2 < g.nodes.size := lt_trans (htopo k hk p2 (by simp [hparents])) hk
-                    simpa [hcertSz] using this
-                  have hp1v : p1 < vals.size := by
-                    have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                    simpa [hvalsSz] using this
-                  have hp2v : p2 < vals.size := by
-                    have : p2 < g.nodes.size := lt_trans (htopo k hk p2 (by simp [hparents])) hk
-                    simpa [hvalsSz] using this
+                  have hp1c : p1 < cert.size :=
+                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                  have hp2c : p2 < cert.size :=
+                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                  have hp1v : p1 < vals.size :=
+                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                  have hp2v : p2 < vals.size :=
+                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
                   have hcertStep' := by
                     simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
                   have hvalStep' := by
@@ -755,12 +750,10 @@ theorem cert_encloses_semantics
           | nil =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
           | cons p1 _ =>
-              have hp1c : p1 < cert.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hcertSz] using this
-              have hp1v : p1 < vals.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hvalsSz] using this
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -857,12 +850,10 @@ theorem cert_encloses_semantics
           | nil =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
           | cons p1 _ =>
-              have hp1c : p1 < cert.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hcertSz] using this
-              have hp1v : p1 < vals.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hvalsSz] using this
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -933,12 +924,10 @@ theorem cert_encloses_semantics
           | nil =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
           | cons p1 _ =>
-              have hp1c : p1 < cert.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hcertSz] using this
-              have hp1v : p1 < vals.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hvalsSz] using this
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -1007,12 +996,10 @@ theorem cert_encloses_semantics
           | nil =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
           | cons p1 _ =>
-              have hp1c : p1 < cert.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hcertSz] using this
-              have hp1v : p1 < vals.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hvalsSz] using this
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -1083,12 +1070,10 @@ theorem cert_encloses_semantics
           | nil =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
           | cons p1 _ =>
-              have hp1c : p1 < cert.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hcertSz] using this
-              have hp1v : p1 < vals.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hvalsSz] using this
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -1158,12 +1143,10 @@ theorem cert_encloses_semantics
           | nil =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
           | cons p1 _ =>
-              have hp1c : p1 < cert.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hcertSz] using this
-              have hp1v : p1 < vals.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hvalsSz] using this
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
               -- Certificate step delegates to `ibp_linear`.
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
@@ -1275,12 +1258,10 @@ theorem cert_encloses_semantics
           | nil =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
           | cons p1 _ =>
-              have hp1c : p1 < cert.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hcertSz] using this
-              have hp1v : p1 < vals.size := by
-                have : p1 < g.nodes.size := lt_trans (htopo k hk p1 (by simp [hparents])) hk
-                simpa [hvalsSz] using this
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by

@@ -129,14 +129,36 @@ at machine learning.
 
 The correspondence is useful when reading either library:
 
-| Mathematical role | Flocq vocabulary | TorchLean vocabulary |
-| --- | --- | --- |
-| radix power `βᵉ` | `bpow` | `neuralBpow` |
-| mantissa/exponent value | `F2R`-style representation | `NeuralFloat`, `neuralToReal` |
-| exponent policy | `fexp` | `fexp` with `NeuralValidExp` |
-| representable grid | `generic_format` | `neuralGenericFormat` |
-| fixed, unbounded, gradual formats | `FIX`, `FLX`, `FLT` | `FIXExp`, `FLXExp`, `FLTExp` |
-| rounding to the grid | `round` | `neuralRound` |
+:::table +header
+*
+  * Mathematical role
+  * Flocq vocabulary
+  * TorchLean vocabulary
+*
+  * radix power `βᵉ`
+  * `bpow`
+  * `neuralBpow`
+*
+  * mantissa/exponent value
+  * `F2R`-style representation
+  * `NeuralFloat`, `neuralToReal`
+*
+  * exponent policy
+  * `fexp`
+  * `fexp` with `NeuralValidExp`
+*
+  * representable grid
+  * `generic_format`
+  * `neuralGenericFormat`
+*
+  * fixed, unbounded, gradual formats
+  * `FIX`, `FLX`, `FLT`
+  * `FIXExp`, `FLXExp`, `FLTExp`
+*
+  * rounding to the grid
+  * `round`
+  * `neuralRound`
+:::
 
 The `neural` prefix is not claiming that floating-point arithmetic is unique to neural networks.
 It marks TorchLean's generic floating layer and avoids colliding with Lean's host `Float`. The
@@ -480,14 +502,29 @@ the one attached to each operation.
 
 Use the smallest layer that states the claim accurately:
 
-| Question | Representation |
-| --- | --- |
-| Which values lie on a radix/precision grid? | `NeuralFloat` formats |
-| How does a declared format round exact real arithmetic? | `NF` |
-| What is the finite binary32 rounded-real error? | `FP32` |
-| What bits and IEEE exceptional cases result? | `IEEE32Exec` |
-| Does an interval enclose an operation? | directed `IEEE32Exec` or proved interval rounders |
-| What did CPU, CUDA, or LibTorch execute? | runtime result plus an explicit bridge or boundary |
+:::table +header
+*
+  * Question
+  * Representation
+*
+  * Which values lie on a radix/precision grid?
+  * `NeuralFloat` formats
+*
+  * How does a declared format round exact real arithmetic?
+  * `NF`
+*
+  * What is the finite binary32 rounded-real error?
+  * `FP32`
+*
+  * What bits and IEEE exceptional cases result?
+  * `IEEE32Exec`
+*
+  * Does an interval enclose an operation?
+  * directed `IEEE32Exec` or proved interval rounders
+*
+  * What did CPU, CUDA, or LibTorch execute?
+  * runtime result plus an explicit bridge or boundary
+:::
 
 The table is also a useful debugging guide. If a theorem is cluttered with NaN cases while the
 algorithm assumes a finite path, move up to `FP32`. If a proof needs the sign of zero or an exception

@@ -33,6 +33,7 @@ These lemmas are infrastructure: they should not encode op-specific logic. Per-o
 - `NoMSELoss`: side condition for semantic equivalence theorems over fragments that exclude `.mse_loss`.
 - `NoRawLog`: side condition for theorem statements that do not yet carry the positivity
   precondition required by raw real `log`.
+- `NoConcat`: side condition for the concat branch not yet connected to end-to-end preservation.
 - `dValsOfCtx_*`: typed-context to IR-array bridge lemmas.
 - `denoteAllState_*` helpers: semantic equivalence bridges between compiled state and IR denotation tables.
 
@@ -102,6 +103,16 @@ epsilon-protected `safe_log` operator when a graph needs unconditional execution
 -/
 def NoRawLog (g : NN.IR.Graph) : Prop :=
   ∀ i n, g.getNode i = .ok n → n.kind ≠ .log
+
+/--
+Core semantic equivalence side condition: the IR graph contains no `.concat` nodes.
+
+`IRExec.buildFrom` executes concat, including nonzero-axis permutation lowering, but the current
+end-to-end proof does not yet relate that branch to `NN.IR.Graph.evalAt`. Keeping this limitation as
+an explicit theorem hypothesis avoids presenting runtime support as a proved compiler fragment.
+-/
+def NoConcat (g : NN.IR.Graph) : Prop :=
+  ∀ i n, g.getNode i = .ok n → ∀ axis, n.kind ≠ .concat axis
 
 /--
 If a `do`-chain begins with `throw`, it cannot produce an `.ok` result.
@@ -311,6 +322,64 @@ attribute [grind =] dValsOfCtx_cast dValsOfCtx_snoc Graph.expectShape_mk Graph.e
   throw_eq_error array_getElem_proof_irrel array_getElem!_eq_getElem
   dValsOfCtx_getElem! dValsOfCtx_getIdx
 
+/-- Well-typed operands for either matrix-matrix or batched matrix multiplication. -/
+inductive MatmulOperands (α : Type) [Context α] where
+  /-- Two rank-two matrices with matching inner dimensions. -/
+  | matrices {m n p : Nat}
+      (left : Tensor α (.dim m (.dim n .scalar)))
+      (right : Tensor α (.dim n (.dim p .scalar)))
+  /-- Two rank-three matrix batches with matching batch and inner dimensions. -/
+  | batches {batch m n p : Nat}
+      (left : Tensor α (.dim batch (.dim m (.dim n .scalar))))
+      (right : Tensor α (.dim batch (.dim n (.dim p .scalar))))
+
+namespace MatmulOperands
+
+/-- Package the left typed operand as a dynamic IR value. -/
+def leftDVal {α : Type} [Context α] : MatmulOperands α → NN.IR.DVal α
+  | .matrices left _ => NN.IR.DVal.mk _ left
+  | .batches left _ => NN.IR.DVal.mk _ left
+
+/-- Package the right typed operand as a dynamic IR value. -/
+def rightDVal {α : Type} [Context α] : MatmulOperands α → NN.IR.DVal α
+  | .matrices _ right => NN.IR.DVal.mk _ right
+  | .batches _ right => NN.IR.DVal.mk _ right
+
+/-- Evaluate a well-typed operand pair with the matching tensor specification. -/
+def resultDVal {α : Type} [Context α] : MatmulOperands α → NN.IR.DVal α
+  | .matrices left right => NN.IR.DVal.mk _ (Spec.matMulSpec left right)
+  | .batches left right => NN.IR.DVal.mk _ (Tensor.bmmSpec left right)
+
+/-- Retag the typed multiplication result with an equal graph-declared output shape. -/
+def resultAtShape {α : Type} [Context α] (operands : MatmulOperands α)
+    (outShape : Shape) (shapeEq : operands.resultDVal.shape = outShape) : NN.IR.DVal α :=
+  NN.IR.DVal.mk outShape (shapeEq ▸ operands.resultDVal.tensor)
+
+end MatmulOperands
+
+/--
+`NN.IR.Graph.evalAt` agrees with the typed matrix-multiplication specification for both supported
+operand ranks. Rank compatibility is carried by `MatmulOperands`, so the evaluator proof is stated
+once instead of duplicating its graph and parent-value reasoning for `mm` and `bmm`.
+-/
+theorem evalAt_matmul_ok
+    {α : Type} [Context α] [DecidableEq Shape]
+    (g : NN.IR.Graph) (payload : Payload α) (input : NN.IR.DVal α) (vals : Array (NN.IR.DVal α))
+    (i : Nat) (n : NN.IR.Node) (aId bId : Nat) (operands : MatmulOperands α)
+    (hN : g.getNode i = .ok n) (hk : n.kind = .matmul) (hp : n.parents = [aId, bId])
+    (hGetA : vals[aId]! = operands.leftDVal)
+    (hGetB : vals[bId]! = operands.rightDVal)
+    (hOut : operands.resultDVal.shape = n.outShape) :
+    NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload) (input := input)
+        (vals := vals) (i := i) =
+      .ok (operands.resultAtShape n.outShape hOut) := by
+  cases operands <;>
+    simp only [MatmulOperands.leftDVal, MatmulOperands.rightDVal,
+      MatmulOperands.resultDVal, MatmulOperands.resultAtShape,
+      NN.IR.DVal.mk, NN.IR.DVal.shape, NN.IR.DVal.tensor] at hGetA hGetB hOut ⊢ <;>
+    simp [NN.IR.Graph.evalAt, hN, hk, hp, hGetA, hGetB, hOut, throw_eq_error,
+      NN.IR.DVal.mk, NN.IR.DVal.shape, NN.IR.DVal.tensor]
+
 /--
 `NN.IR.Graph.evalAt` for a `.matmul` node specialized to 2D matrix multiply.
 
@@ -331,8 +400,11 @@ theorem evalAt_matmul_mm_ok
       i) =
       .ok (NN.IR.DVal.mk (α := α) n.outShape
         (hOut ▸ Spec.matMulSpec (α := α) (m := m) (n := nDim) (p := p) aT bT)) := by
-  simp [NN.IR.Graph.evalAt, hN, hk, hp, hGetA, hGetB, hOut, throw_eq_error,
-    NN.IR.DVal.mk, NN.IR.DVal.shape, NN.IR.DVal.tensor]
+  simpa [MatmulOperands.leftDVal, MatmulOperands.rightDVal,
+    MatmulOperands.resultDVal, MatmulOperands.resultAtShape, NN.IR.DVal.shape,
+    NN.IR.DVal.tensor] using
+    (evalAt_matmul_ok (α := α) g payload input vals i n aId bId
+      (.matrices aT bT) hN hk hp hGetA hGetB hOut)
 
 /--
 `NN.IR.Graph.evalAt` for a `.matmul` node specialized to batched matmul (`bmm`).
@@ -359,11 +431,36 @@ theorem evalAt_matmul_bmm_ok
       .ok (NN.IR.DVal.mk (α := α) n.outShape
         (hOut ▸ Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := nDim) (p := p) aT bT)) :=
           by
-    simp [NN.IR.Graph.evalAt, hN, hk, hp, hGetA, hGetB, hOut, throw_eq_error,
-      NN.IR.DVal.mk, NN.IR.DVal.shape, NN.IR.DVal.tensor]
+    simpa [MatmulOperands.leftDVal, MatmulOperands.rightDVal,
+      MatmulOperands.resultDVal, MatmulOperands.resultAtShape, NN.IR.DVal.shape,
+      NN.IR.DVal.tensor] using
+      (evalAt_matmul_ok (α := α) g payload input vals i n aId bId
+        (.batches aT bT) hN hk hp hGetA hGetB hOut)
+
+/-- The two axis reductions supported by compiled IR semantic equivalence. -/
+inductive AxisReductionKind where
+  | sum
+  | mean
+
+/-- Convert a compiled axis-reduction case to its IR operation kind. -/
+def AxisReductionKind.toOpKind (operation : AxisReductionKind) (axis : Nat) : NN.IR.OpKind :=
+  match operation with
+  | .sum => .reduceSum axis
+  | .mean => .reduceMean axis
+
+/-- Typed denotation of a compiled axis-reduction case. -/
+def AxisReductionKind.denote
+    {β : Type} [Context β] {shape : Shape}
+    (operation : AxisReductionKind) (axis : Nat) (tensor : Tensor β shape)
+    (axisValid : Shape.valid_axis axis shape) : Tensor β (Tensor.shapeAfterSum shape axis) :=
+  match operation with
+  | .sum => Tensor.reduceSum (α := β) (s := shape) axis tensor
+      (Shape.proveReducibleAlong axis shape axisValid)
+  | .mean => Tensor.reduceMean (α := β) (s := shape) axis tensor
+      (Shape.proveReducibleAlong axis shape axisValid)
 
 /--
-`NN.IR.Graph.evalAt` for a `.reduceSum axis` node, specialized to a well-typed success case.
+`NN.IR.Graph.evalAt` for either axis-reduction node in a well-typed success case.
 
 This helper records the exact `Tensor.reduceSum` term produced by the IR evaluator once:
 - the parent has the expected shape `s`,
@@ -372,20 +469,21 @@ This helper records the exact `Tensor.reduceSum` term produced by the IR evaluat
 
 The final cast to `n.outShape` comes from the `evalAt` "shape-tag normalization" step.
 -/
-theorem evalAt_reduceSum_ok
+theorem evalAt_axisReduction_ok
     {α : Type} [Context α] [DecidableEq Shape]
+    (operation : AxisReductionKind)
     (g : NN.IR.Graph) (payload : Payload α) (input : NN.IR.DVal α) (vals : Array (NN.IR.DVal α))
     (i : Nat) (n : NN.IR.Node) (pId : Nat) (axis : Nat)
     (s : Shape) (pT : Tensor α s) (hAxisPf : PLift (Shape.valid_axis axis s))
-    (hN : g.getNode i = .ok n) (hk : n.kind = .reduceSum axis) (hp : n.parents = [pId])
+    (hN : g.getNode i = .ok n) (hk : n.kind = operation.toOpKind axis)
+    (hp : n.parents = [pId])
     (hGet : vals[pId]! = NN.IR.DVal.mk (α := α) s pT)
-    (hAxis : NN.IR.Graph.mkValidAxis? (axis := axis) s = some hAxisPf)
+    (hAxis : Spec.Shape.validAxis? (axis := axis) s = some hAxisPf)
     (hOut : Spec.Tensor.shapeAfterSum s axis = n.outShape) :
     NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload) (input := input) (vals := vals) (i :=
       i) =
       .ok (NN.IR.DVal.mk (α := α) n.outShape
-        (hOut ▸ Tensor.reduceSum (α := α) (s := s) axis pT
-          (Shape.proveReducibleAlong axis s hAxisPf.down))) := by
+        (hOut ▸ operation.denote axis pT hAxisPf.down)) := by
   have hShape : vals[pId]!.fst = s := by
     simpa [NN.IR.DVal.mk] using congrArg Sigma.fst hGet
   have hTensorHeq : HEq vals[pId]!.snd pT := by
@@ -393,9 +491,27 @@ theorem evalAt_reduceSum_ok
     simp [NN.IR.DVal.mk]
   cases hShape
   have hTensor : vals[pId]!.snd = pT := eq_of_heq hTensorHeq
-  -- Unfold to the `.reduceSum` branch and discharge the runtime checks (axis validity + outShape).
-  simp [NN.IR.Graph.evalAt, hN, hk, hp, throw_eq_error, hAxis, hOut, hTensor,
-    Pure.pure, Except.pure]
+  cases operation <;>
+    simp [AxisReductionKind.toOpKind, AxisReductionKind.denote, NN.IR.Graph.evalAt,
+      hN, hk, hp, throw_eq_error, hAxis, hOut, hTensor, Pure.pure, Except.pure]
+
+/-- `evalAt_axisReduction_ok` specialized to summation. -/
+theorem evalAt_reduceSum_ok
+    {α : Type} [Context α] [DecidableEq Shape]
+    (g : NN.IR.Graph) (payload : Payload α) (input : NN.IR.DVal α) (vals : Array (NN.IR.DVal α))
+    (i : Nat) (n : NN.IR.Node) (pId : Nat) (axis : Nat)
+    (s : Shape) (pT : Tensor α s) (hAxisPf : PLift (Shape.valid_axis axis s))
+    (hN : g.getNode i = .ok n) (hk : n.kind = .reduceSum axis) (hp : n.parents = [pId])
+    (hGet : vals[pId]! = NN.IR.DVal.mk (α := α) s pT)
+    (hAxis : Spec.Shape.validAxis? (axis := axis) s = some hAxisPf)
+    (hOut : Spec.Tensor.shapeAfterSum s axis = n.outShape) :
+    NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload) (input := input) (vals := vals) (i :=
+      i) =
+      .ok (NN.IR.DVal.mk (α := α) n.outShape
+        (hOut ▸ Tensor.reduceSum (α := α) (s := s) axis pT
+          (Shape.proveReducibleAlong axis s hAxisPf.down))) := by
+  exact evalAt_axisReduction_ok .sum g payload input vals i n pId axis s pT hAxisPf
+    hN hk hp hGet hAxis hOut
 
 /--
 `NN.IR.Graph.evalAt` for a `.reduceMean axis` node, specialized to a well-typed success case.
@@ -409,22 +525,15 @@ theorem evalAt_reduceMean_ok
     (s : Shape) (pT : Tensor α s) (hAxisPf : PLift (Shape.valid_axis axis s))
     (hN : g.getNode i = .ok n) (hk : n.kind = .reduceMean axis) (hp : n.parents = [pId])
     (hGet : vals[pId]! = NN.IR.DVal.mk (α := α) s pT)
-    (hAxis : NN.IR.Graph.mkValidAxis? (axis := axis) s = some hAxisPf)
+    (hAxis : Spec.Shape.validAxis? (axis := axis) s = some hAxisPf)
     (hOut : Spec.Tensor.shapeAfterSum s axis = n.outShape) :
     NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload) (input := input) (vals := vals) (i :=
       i) =
       .ok (NN.IR.DVal.mk (α := α) n.outShape
         (hOut ▸ Tensor.reduceMean (α := α) (s := s) axis pT
           (Shape.proveReducibleAlong axis s hAxisPf.down))) := by
-  have hShape : vals[pId]!.fst = s := by
-    simpa [NN.IR.DVal.mk] using congrArg Sigma.fst hGet
-  have hTensorHeq : HEq vals[pId]!.snd pT := by
-    rw [hGet]
-    simp [NN.IR.DVal.mk]
-  cases hShape
-  have hTensor : vals[pId]!.snd = pT := eq_of_heq hTensorHeq
-  simp [NN.IR.Graph.evalAt, hN, hk, hp, throw_eq_error, hAxis, hOut, hTensor,
-    Pure.pure, Except.pure]
+  exact evalAt_axisReduction_ok .mean g payload input vals i n pId axis s pT hAxisPf
+    hN hk hp hGet hAxis hOut
 
 /-- Repackage a compiled `State` as an `ExecGraphData` so we can call its evaluator helpers. -/
 def execOfState {α : Type} (inShape : Shape) (st : State α inShape) : ExecGraphData α :=

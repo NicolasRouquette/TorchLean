@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.TorchLean.Functional.Core
+public import NN.Spec.Core.Shape
 
 @[expose] public section
 
@@ -216,21 +217,6 @@ def hasDupLabels (xs : List Label) : Bool :=
     | x :: xs => if seen.contains x then true else go (x :: seen) xs
   go [] xs
 
-/-- Find the first index of a label (like `List.findIdx?`, but returning an `Option Nat`). -/
-def findIndex? (xs : List Label) (x : Label) : Option Nat :=
-  let rec go (i : Nat) : List Label → Option Nat
-    | [] => none
-    | y :: ys => if y == x then some i else go (i + 1) ys
-  go 0 xs
-
-/-- Swap adjacent elements at position `d` (used to implement permutations via adjacent swaps). -/
-def swapAt {α : Type} (xs : List α) (d : Nat) : List α :=
-  match xs, d with
-  | [], _ => []
-  | [x], _ => [x]
-  | x :: y :: rest, 0 => y :: x :: rest
-  | x :: rest, d + 1 => x :: swapAt rest d
-
 /--
 Convert a permutation of axes into a sequence of adjacent swaps.
 
@@ -242,7 +228,7 @@ def swapDepthsForPerm? (perm : List Nat) (r : Nat) : Option (List Nat) :=
     if j ≤ i then
       (cur, swapsRev)
     else
-      bubbleLeft (swapAt cur (j - 1)) ((j - 1) :: swapsRev) i (j - 1)
+      bubbleLeft (Spec.Shape.swapAdjacentAxes cur (j - 1)) ((j - 1) :: swapsRev) i (j - 1)
   if perm.length = r && perm.all (fun d => d < r) then
     let rec go (i : Nat) (targets : List Nat) (cur : List Nat) (swapsRev : List Nat) :
         Option (List Nat) :=
@@ -861,7 +847,7 @@ def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
       let targetOrder := fullLabels.filter (fun l => labsIn.contains l)
       let mut perm : List Nat := []
       for l in targetOrder do
-        match Einsum.findIndex? labsIn l with
+        match labsIn.findIdx? (· == l) with
         | none => failure
         | some i => perm := perm ++ [i]
       let swaps : List Nat ←
@@ -945,7 +931,7 @@ def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
       let outCanon : List Label := outLabels ++ extras
       let mut cur : Σ s : Shape, RefTy (m := m) (α := α) s := out0
       for l in extras do
-        let some baseIdx := Einsum.findIndex? outLabels l | failure
+        let some baseIdx := outLabels.findIdx? (· == l) | failure
         let d := Einsum.dimFindD dimMap l 1
         let sReshape : Shape := Shape.appendDim cur.fst 1
         have hSz : Spec.Shape.size cur.fst = Spec.Shape.size sReshape := by

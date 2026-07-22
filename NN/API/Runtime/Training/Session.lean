@@ -30,7 +30,7 @@ namespace ScalarTrainer
 Re-export of the low-level imperative scalar trainer interface.
 
 This exposes `forwardT`/`backwardT`/`stepT` from `Runtime.Autograd.TorchLean.ScalarTrainer`.
-Use the higher-level `TorchLean.Trainer` facade unless a file needs these lower-level training hooks.
+Use the higher-level `TorchLean.Trainer` API unless a file needs these lower-level training hooks.
 -/
 export _root_.Runtime.Autograd.TorchLean.ScalarTrainer (forwardT backwardT stepT)
 end ScalarTrainer

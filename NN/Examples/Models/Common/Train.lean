@@ -14,7 +14,7 @@ public import NN.Examples.ModelZoo
 
 Example-side command runners for built-in model-zoo entries.
 
-The public trainer facade owns `Trainer.new`, `trainer.train`, and trained prediction handles. This
+The trainer API provides `Trainer.new`, `trainer.train`, and trained prediction handles. This
 file owns repository command plumbing: parse model-zoo flags, check local files, run training, and
 print the standard summary.
 -/

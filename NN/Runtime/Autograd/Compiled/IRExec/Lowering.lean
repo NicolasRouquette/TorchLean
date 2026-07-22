@@ -374,7 +374,7 @@ def buildFrom
               let pNode ← g.getNode pId
               let s := pNode.outShape
               let ip ← parentIdx pId s
-              match NN.IR.Graph.mkValidAxis? (axis := axis) s with
+              match Spec.Shape.validAxis? (axis := axis) s with
               | none =>
                   throw s!"IRExec: node {i}: reduce_sum invalid axis={axis} for shape {repr s}"
               | some hAxis =>
@@ -397,7 +397,7 @@ def buildFrom
               let pNode ← g.getNode pId
               let s := pNode.outShape
               let ip ← parentIdx pId s
-              match NN.IR.Graph.mkValidAxis? (axis := axis) s with
+              match Spec.Shape.validAxis? (axis := axis) s with
               | none =>
                   throw s!"IRExec: node {i}: reduce_mean invalid axis={axis} for shape {repr s}"
               | some hAxis =>
@@ -516,15 +516,18 @@ def buildFrom
                   -- checks that the parent has exactly that input shape, and `hOut` checks the
                   -- declared output shape below.
                   let expectedIn : Shape := .dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))
+                  let _ ←
+                    OpContracts.inferConv2dCHWOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
+                      cfg.padding expectedIn
                   let ix ← parentIdx xId expectedIn
                   let outH : Nat := Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding
                   let outW : Nat := Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding
                   let expected : Shape := .dim cfg.outC (.dim outH (.dim outW .scalar))
                   if hOut : expected = τ then
                     let forward := fun ctx : TList α ([inShape] ++ ss) =>
-                      let x := getIdx (α := α) (xs := ctx) ix
+                      let x := getIRValue (α := α) (ctx := ctx) ix
                       let y : Tensor α expected := Spec.conv2dSpec (α := α) (layer := cfg.spec)
-                        (input := x)
+                          (input := x)
                       hOut ▸ y
                     pure <| fwd forward
                   else
@@ -546,20 +549,9 @@ def buildFrom
                         let ix ← parentIdx xId expected
                         if hOut : expected = τ then
                           let forward := fun ctx : TList α ([inShape] ++ ss) =>
-                            let x := getIdx (α := α) (xs := ctx) ix
+                            let x := getIRValue (α := α) (ctx := ctx) ix
                             let y : Tensor α expected :=
-                              Tensor.dim fun ni =>
-                                Tensor.dim fun ci =>
-                                  Tensor.dim fun hi =>
-                                    Tensor.dim fun wi =>
-                                      match getAtSpec (getAtSpec (getAtSpec (getAtSpec x ni) ci)
-                                          hi) wi, getAtSpec cfg.gamma ci, getAtSpec cfg.beta ci,
-                                          getAtSpec cfg.mean ci, getAtSpec cfg.var ci with
-                                      | .scalar xv, .scalar gamma, .scalar beta, .scalar mean,
-                                        .scalar var =>
-                                          let denom := MathFunctions.sqrt
-                                            (max var (0 : α) + cfg.eps)
-                                          Tensor.scalar (((xv - mean) / denom) * gamma + beta)
+                              NN.IR.Graph.batchNorm2dEvalTensor (α := α) cfg x
                             hOut ▸ y
                           pure <| fwd forward
                         else
@@ -956,7 +948,7 @@ def buildFrom
                     let forward := fun ctx : TList α ([inShape] ++ ss) =>
                       let y : Tensor α (.dim nDim (.dim m rest)) :=
                         Tensor.swapFirstTwoSpec (α := α) (m := m) (n := nDim) (s := rest)
-                          (getIdx (α := α) (xs := ctx) ip)
+                          (getIRValue (α := α) (ctx := ctx) ip)
                       Tensor.castShape y hτ.symm
                     pure <| fwd forward
                 | _ =>
@@ -973,7 +965,7 @@ def buildFrom
                     let forward := fun ctx : TList α ([inShape] ++ ss) =>
                       let y : Tensor α (.dim a (.dim c (.dim b .scalar))) :=
                         Tensor.transpose3DLastTwoSpec (α := α) (a := a) (b := b) (c := c)
-                          (getIdx (α := α) (xs := ctx) ip)
+                          (getIRValue (α := α) (ctx := ctx) ip)
                       Tensor.castShape y hτ.symm
                     pure <| fwd forward
                 | _ =>

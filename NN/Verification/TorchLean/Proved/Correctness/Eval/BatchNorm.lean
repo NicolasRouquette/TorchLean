@@ -40,21 +40,15 @@ def batchNorm2dNchwEvalScalar {α : Type} [Context α]
   let denom := MathFunctions.sqrt (max var (0 : α) + eps)
   (((x - mean) / denom) * gamma + beta)
 
-/-- The NCHW tensor obtained by applying `batchNorm2dNchwEvalScalar` channel-wise. -/
+/-- Proof-facing wrapper around the canonical IR BatchNorm tensor semantics. -/
 def batchNorm2dNchwEvalTensor {α : Type} [Context α]
     {n c h w : Nat}
     (gamma beta mean var : Tensor α (.dim c .scalar))
     (eps : α)
     (x : Tensor α (.dim n (.dim c (.dim h (.dim w .scalar))))) :
     Tensor α (.dim n (.dim c (.dim h (.dim w .scalar)))) :=
-  Tensor.dim fun ni =>
-    Tensor.dim fun ci =>
-      Tensor.dim fun hi =>
-        Tensor.dim fun wi =>
-          match getAtSpec (getAtSpec (getAtSpec (getAtSpec x ni) ci) hi) wi,
-              getAtSpec gamma ci, getAtSpec beta ci, getAtSpec mean ci, getAtSpec var ci with
-          | .scalar xv, .scalar g, .scalar b, .scalar m, .scalar v =>
-              Tensor.scalar (batchNorm2dNchwEvalScalar (α := α) xv g b m v eps)
+  Graph.batchNorm2dEvalTensor (α := α)
+    { c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps } x
 
 /--
 Coordinate-level semantics for `Graph.evalBatchNorm2DNchwEval`.
@@ -80,9 +74,8 @@ theorem evalBatchNorm2DNchwEval_eq_nchw_formula
         (DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
           (batchNorm2dNchwEvalTensor (α := α) gamma beta mean var eps x)) := by
   simp [Graph.evalBatchNorm2DNchwEval, singletonBatchNorm2DNchwEvalPayload, Graph.expectShape,
-    batchNorm2dNchwEvalTensor, batchNorm2dNchwEvalScalar, Bind.bind, Except.bind, Pure.pure,
+    batchNorm2dNchwEvalTensor, Bind.bind, Except.bind, Pure.pure,
     Except.pure]
-  rfl
 
 /-- Local IR semantics for payload-backed eval-mode NCHW BatchNorm. -/
 theorem evalAt_batchNorm2dNchwEval_eq
@@ -107,9 +100,8 @@ theorem evalAt_batchNorm2dNchwEval_eq
           (batchNorm2dNchwEvalTensor (α := α) gamma beta mean var eps x)) := by
   simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
     Graph.evalBatchNorm2DNchwEval, singletonBatchNorm2DNchwEvalPayload, Graph.expectShape,
-    batchNorm2dNchwEvalTensor, batchNorm2dNchwEvalScalar, shapeBNe_refl,
+    batchNorm2dNchwEvalTensor, shapeBNe_refl,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
-  rfl
 
 /-- Missing BatchNorm payloads are rejected before any tensor computation happens. -/
 theorem evalBatchNorm2DNchwEval_missing_payload

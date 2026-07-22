@@ -32,6 +32,7 @@ open _root_.Spec
 open _root_.Spec.Tensor
 open TorchLean.Floats
 open NN.MLTheory.CROWN
+open NN.MLTheory.CROWN.Runtime.Ops
 
 /- Rounding choice (can be made configurable per phase) -/
 variable {β : NeuralRadix} {fexp : ℤ → ℤ}

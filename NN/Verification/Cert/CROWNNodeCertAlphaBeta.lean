@@ -98,7 +98,7 @@ def parseBetaVec? (dim : Nat) (j : Json) : IO (Option (Array Int)) := do
         throw <| IO.userError s!"Invalid beta[i]: expected int array length {dim}"
   | _ => throw <| IO.userError "Invalid beta[i]: expected null or int array"
 
-/-!
+/--
 `AlphaBetaCROWNNodeCertificate` is the in-memory representation of an alpha/beta-CROWN node
 certificate read from JSON.
 

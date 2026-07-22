@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Run the native CUDA test suite under NVIDIA sanitizers.
 set -euo pipefail
 
 usage() {

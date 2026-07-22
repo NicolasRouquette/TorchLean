@@ -14,7 +14,7 @@ public import NN.Examples.ModelZoo
 
 Small command-line parsers shared by the first-tour examples.
 
-These are example utilities, not part of the public training facade. User code should still start from
+These are example utilities, not part of the training API. User code should still start from
 `Trainer.new` and `trainer.train`; this file only keeps repeated
 quickstart flag parsing out of the tutorial bodies.
 -/

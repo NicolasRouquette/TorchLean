@@ -24,11 +24,13 @@ precise internal dependency.
 
 - `Graph.lean`: graph syntax, node ids, op tags, arity conventions, and topological well formedness.
 - `OpContracts.lean`: shared shape arithmetic for ops such as concat, matmul, pooling, conv, and
-  axis-moving utilities.
+  axis-moving utilities. Concat rank checks and leading-axis output inference are list-indexed
+  rather than duplicated by parent count.
 - `Infer.lean`: the single source of truth for declared-output-shape validation.
 - `Check.lean`: public validation wrappers and proposition-level `WellFormed` / `WellShaped` names.
 - `Semantics.lean`: denotational evaluator into spec-layer tensor operations with explicit payloads,
-  plus the scoped `IR` notation for graph denotation.
+  including the checked `Graph.expectLeadingAxisInput` boundary used by list-indexed concat, plus
+  the scoped `IR` notation for graph denotation.
 - `Pretty.lean`: readable text and GraphViz renderers for debugging.
 
 ## Relationship To `NN.GraphSpec`

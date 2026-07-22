@@ -65,7 +65,7 @@ export Internal
   (Linear Embedding LearnedPositionalEmbedding SinusoidalPositionalEncoding RoPE
    Conv Pool LayerNorm RMSNorm ChannelNorm MultiheadAttention)
 
-@[inherit_doc Internal.globalAvgPool]
+/-- Build global average pooling over the supplied nonempty spatial dimensions without consuming a seed. -/
 def globalAvgPool (leading : Spec.Shape := .scalar) {d channels : Nat}
     (spatial : Vector Nat d) (spatialNonzero : ∀ i : Fin d, spatial.get i ≠ 0) :
     rand.SeedM (Sequential
@@ -140,54 +140,54 @@ def withSeedPair {α : Type 2} (k : Nat → Nat → α) : M α :=
     let (b, st'') := rand.SeedStream.next st'
     (k a b, st'')
 
-@[inherit_doc Internal.relu]
+/-- Build an elementwise ReLU layer without consuming an initialization seed. -/
 def relu {s : Spec.Shape} : M (Sequential s s) :=
   lift (Internal.relu (s := s))
 
-@[inherit_doc Internal.silu]
+/-- Build an elementwise SiLU layer without consuming an initialization seed. -/
 def silu {s : Spec.Shape} : M (Sequential s s) :=
   lift (Internal.silu (s := s))
 
-@[inherit_doc Internal.gelu]
+/-- Build an elementwise GELU layer without consuming an initialization seed. -/
 def gelu {s : Spec.Shape} : M (Sequential s s) :=
   lift (Internal.gelu (s := s))
 
-@[inherit_doc Internal.sigmoid]
+/-- Build an elementwise sigmoid layer without consuming an initialization seed. -/
 def sigmoid {s : Spec.Shape} : M (Sequential s s) :=
   lift (Internal.sigmoid (s := s))
 
-@[inherit_doc Internal.tanh]
+/-- Build an elementwise hyperbolic-tangent layer without consuming an initialization seed. -/
 def tanh {s : Spec.Shape} : M (Sequential s s) :=
   lift (Internal.tanh (s := s))
 
-@[inherit_doc Internal.softmax]
+/-- Build a softmax layer over a tensor shape without consuming an initialization seed. -/
 def softmax {s : Spec.Shape} : M (Sequential s s) :=
   lift (Internal.softmax (s := s))
 
-@[inherit_doc Internal.sum]
+/-- Build a reduction that sums every tensor entry to a scalar. -/
 def sum {s : Spec.Shape} : M (Sequential s Spec.Shape.scalar) :=
   lift (Internal.sum (s := s))
 
-@[inherit_doc Internal.flatten]
+/-- Build a layer that flattens the entire input shape into one vector. -/
 def flatten {s : Spec.Shape} : M (Sequential s (.dim (Spec.Shape.size s) .scalar)) :=
   lift (Internal.flatten (s := s))
 
-@[inherit_doc Internal.flattenBatch]
+/-- Build a layer that preserves the batch axis while flattening each example. -/
 def flattenBatch {n : Nat} {s : Spec.Shape} :
     M (Sequential (.dim n s) (.dim n (.dim (Spec.Shape.size s) .scalar))) :=
   lift (Internal.flattenBatch (n := n) (s := s))
 
-@[inherit_doc Internal.maxPool]
+/-- Build max pooling over arbitrary spatial rank using the supplied pooling configuration. -/
 def maxPool (leading : Spec.Shape := .scalar) {d channels : Nat} (spatial : Vector Nat d)
     (cfg : Pool d) :=
   lift (Internal.maxPool leading (channels := channels) spatial cfg)
 
-@[inherit_doc Internal.avgPool]
+/-- Build average pooling over arbitrary spatial rank using the supplied pooling configuration. -/
 def avgPool (leading : Spec.Shape := .scalar) {d channels : Nat} (spatial : Vector Nat d)
     (cfg : Pool d) :=
   lift (Internal.avgPool leading (channels := channels) spatial cfg)
 
-@[inherit_doc Internal.linear]
+/-- Build an affine layer, consuming independent seeds for its weight and bias initializers. -/
 def linear (inDim outDim : Nat) (pfx : Spec.Shape := Spec.Shape.scalar) :
     M (Sequential (pfx.appendDim inDim) (pfx.appendDim outDim)) :=
   withSeedPair (fun seedW seedB =>
@@ -214,7 +214,7 @@ def linear (inDim outDim : Nat) (seedWeight seedBias : Nat)
 
 end deterministic
 
-@[inherit_doc Internal.rnn]
+/-- Build a seeded recurrent neural network over a fixed sequence length. -/
 def rnn (seqLen inputSize hiddenSize : Nat) :
     M (Sequential
       (.dim seqLen (.dim inputSize .scalar))
@@ -222,7 +222,7 @@ def rnn (seqLen inputSize hiddenSize : Nat) :
   withSeedPair (fun seedW seedB =>
     Internal.rnn seqLen inputSize hiddenSize seedW seedB)
 
-@[inherit_doc Internal.gru]
+/-- Build a seeded gated recurrent unit over a fixed sequence length. -/
 def gru (seqLen inputSize hiddenSize : Nat) :
     M (Sequential
       (.dim seqLen (.dim inputSize .scalar))
@@ -230,7 +230,7 @@ def gru (seqLen inputSize hiddenSize : Nat) :
   withSeedPair (fun seedW seedB =>
     Internal.gru seqLen inputSize hiddenSize seedW seedB)
 
-@[inherit_doc Internal.mamba]
+/-- Build a seeded Mamba-style state-space sequence layer. -/
 def mamba (seqLen inputSize hiddenSize : Nat) :
     M (Sequential
       (.dim seqLen (.dim inputSize .scalar))
@@ -238,7 +238,7 @@ def mamba (seqLen inputSize hiddenSize : Nat) :
   withSeedPair (fun seedW seedB =>
     Internal.mamba seqLen inputSize hiddenSize seedW seedB)
 
-@[inherit_doc Internal.lstm]
+/-- Build a seeded long short-term memory layer over a fixed sequence length. -/
 def lstm (seqLen inputSize hiddenSize : Nat) :
     M (Sequential
       (.dim seqLen (.dim inputSize .scalar))
@@ -246,7 +246,7 @@ def lstm (seqLen inputSize hiddenSize : Nat) :
   withSeedPair (fun seedW seedB =>
     Internal.lstm seqLen inputSize hiddenSize seedW seedB)
 
-@[inherit_doc Internal.conv]
+/-- Build an arbitrary-rank convolution, allocating separate kernel and bias seeds. -/
 def conv (leading : Spec.Shape := .scalar) {d inChannels : Nat} (spatial : Vector Nat d)
     (cfg : Conv d) [NeZero inChannels] :
     M (Sequential
@@ -259,7 +259,7 @@ def conv (leading : Spec.Shape := .scalar) {d inChannels : Nat} (spatial : Vecto
     by
       simpa [cfg'] using Internal.conv leading (inChannels := inChannels) spatial cfg')
 
-@[inherit_doc Internal.batchNorm]
+/-- Build batch normalization with seeded scale and offset parameters. -/
 def batchNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
     (spatial : Vector Nat d) (cfg : ChannelNorm := {})
     [NeZero (Spec.Shape.size leading)] [NeZero channels]
@@ -271,7 +271,7 @@ def batchNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
     Internal.batchNorm leading spatial
       { cfg with seedGamma := seedGamma, seedBeta := seedBeta })
 
-@[inherit_doc Internal.instanceNorm]
+/-- Build instance normalization with seeded scale and offset parameters. -/
 def instanceNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
     (spatial : Vector Nat d) (cfg : ChannelNorm := {})
     [NeZero (Spec.Shape.size leading)] [NeZero channels]
@@ -283,7 +283,7 @@ def instanceNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
     Internal.instanceNorm leading spatial
       { cfg with seedGamma := seedGamma, seedBeta := seedBeta })
 
-@[inherit_doc Internal.groupNorm]
+/-- Build group normalization after checking the positive group count and channel divisibility. -/
 def groupNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
     (spatial : Vector Nat d) (groups : Nat) (hGroups : groups > 0)
     (hGroupsLe : channels >= groups) (hDiv : channels % groups = 0)
@@ -296,13 +296,13 @@ def groupNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
     Internal.groupNorm leading spatial groups hGroups hGroupsLe hDiv
       { cfg with seedGamma := seedGamma, seedBeta := seedBeta })
 
-@[inherit_doc Internal.embedding]
+/-- Build an embedding lookup layer from a freshly seeded embedding table. -/
 def embedding (vocab embedDim : Nat) (cfg : Embedding := {}) {pfx : Spec.Shape} :
     M (Sequential (pfx.appendDim vocab) (pfx.appendDim embedDim)) :=
   withSeed (fun seedW =>
     Internal.embedding vocab embedDim { cfg with seedW := seedW } (pfx := pfx))
 
-@[inherit_doc Internal.sinusoidalPositionalEncoding]
+/-- Build deterministic sinusoidal positional encoding for a batched sequence. -/
 def sinusoidalPositionalEncoding {batch seqLen embedDim : Nat}
     (cfg : SinusoidalPositionalEncoding := {}) :
     M (Sequential
@@ -311,7 +311,7 @@ def sinusoidalPositionalEncoding {batch seqLen embedDim : Nat}
   lift <|
     Internal.sinusoidalPositionalEncoding (batch := batch) (seqLen := seqLen) (embedDim := embedDim) cfg
 
-@[inherit_doc Internal.rope]
+/-- Build deterministic rotary positional encoding for multi-head sequence features. -/
 def rope {batch numHeads seqLen headDim : Nat} (cfg : RoPE := {}) :
     M (Sequential
       (.dim batch (.dim numHeads (.dim seqLen (.dim headDim .scalar))))
@@ -319,7 +319,7 @@ def rope {batch numHeads seqLen headDim : Nat} (cfg : RoPE := {}) :
   lift <|
     Internal.rope (batch := batch) (numHeads := numHeads) (seqLen := seqLen) (headDim := headDim) cfg
 
-@[inherit_doc Internal.learnedPositionalEmbedding]
+/-- Build learned positional embeddings from a freshly allocated parameter seed. -/
 def learnedPositionalEmbedding {batch seqLen embedDim : Nat} (cfg : LearnedPositionalEmbedding := {}) :
     M (Sequential
       (.dim batch (.dim seqLen (.dim embedDim .scalar)))
@@ -328,7 +328,7 @@ def learnedPositionalEmbedding {batch seqLen embedDim : Nat} (cfg : LearnedPosit
     Internal.learnedPositionalEmbedding (batch := batch) (seqLen := seqLen) (embedDim := embedDim)
       { cfg with seedPos := seedPos })
 
-@[inherit_doc Internal.layerNorm]
+/-- Build layer normalization with independently seeded scale and offset parameters. -/
 def layerNorm {batch seqLen embedDim : Nat} [NeZero seqLen] [NeZero embedDim] :
     M (Sequential
       (.dim batch (.dim seqLen (.dim embedDim .scalar)))
@@ -337,7 +337,7 @@ def layerNorm {batch seqLen embedDim : Nat} [NeZero seqLen] [NeZero embedDim] :
     Internal.layerNorm (batch := batch) (seqLen := seqLen) (embedDim := embedDim)
       { seedGamma := seedGamma, seedBeta := seedBeta })
 
-@[inherit_doc Internal.multiheadAttention]
+/-- Build seeded multi-head self-attention with an optional fixed attention mask. -/
 def multiheadAttention {batch n dModel : Nat} [NeZero n]
     (cfg : MultiheadAttention)
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
@@ -348,7 +348,7 @@ def multiheadAttention {batch n dModel : Nat} [NeZero n]
     Internal.multiheadAttention (batch := batch) (n := n) (dModel := dModel)
       { cfg with seedW := seedW } (mask := mask))
 
-@[inherit_doc blocks.transformerEncoderBlock]
+/-- Build one seeded transformer encoder block, optionally applying a fixed attention mask. -/
 def transformerEncoderBlock {batch n dModel : Nat} [NeZero n] [NeZero dModel]
     (cfg : blocks.TransformerEncoderBlock)
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
@@ -360,7 +360,7 @@ def transformerEncoderBlock {batch n dModel : Nat} [NeZero n] [NeZero dModel]
     blocks.transformerEncoderBlock (batch := batch) (n := n) (dModel := dModel) cfg'
       (mask := mask))
 
-@[inherit_doc blocks.transformerEncoderStack]
+/-- Build a seeded stack of transformer encoder blocks with an optional attention mask. -/
 def transformerEncoderStack {batch n dModel : Nat} [NeZero n] [NeZero dModel]
     (cfg : blocks.TransformerEncoderStack)
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
@@ -372,7 +372,7 @@ def transformerEncoderStack {batch n dModel : Nat} [NeZero n] [NeZero dModel]
     blocks.transformerEncoderStack (batch := batch) (n := n) (dModel := dModel) cfg'
       (mask := mask))
 
-@[inherit_doc Internal.dropout]
+/-- Build dropout with a fresh deterministic mask seed from the builder stream. -/
 def dropout {s : Spec.Shape} (p : Float) : M (Sequential s s) :=
   withSeed (fun seed =>
     Internal.dropout (s := s) p (seed := seed))

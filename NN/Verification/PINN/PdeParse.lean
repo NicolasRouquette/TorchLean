@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Verification.PINN.PdeAst
+public import NN.Verification.Util.TextCursor
 
 /-!
 # PdeParse
@@ -41,42 +42,35 @@ References:
 namespace NN.Verification.PINN.PdeParse
 
 open NN.Verification.PINN.PdeAst
+open NN.Verification.Util
 
 /-- Parser state for the hand-written PDE expression parser. -/
-structure State where
-  /-- Input string being parsed. -/
-  s : String
-  /-- Current raw byte position in `s`. -/
-  i : String.Pos.Raw := 0
+abbrev State := TextCursor.Cursor
 
-@[inline] def eof (st : State) : Bool := st.i ≥ st.s.rawEndPos
+/-- Whether the PDE parser cursor has reached the end of its source text. -/
+@[inline] def eof (st : State) : Bool := TextCursor.atEnd st
 
-@[inline] def peek (st : State) : Option Char := String.Pos.Raw.get? st.s st.i
+/-- Inspect the current PDE source character without advancing. -/
+@[inline] def peek (st : State) : Option Char := TextCursor.peek st
 
-@[inline] def bump (st : State) : State := { st with i := String.Pos.Raw.next st.s st.i }
+/-- Advance the PDE parser cursor by one character. -/
+@[inline] def bump (st : State) : State := TextCursor.bump st
 
+/-- Recursion budget with additional headroom for the mutually recursive PDE grammar. -/
 @[inline] def fuelOf (st : State) : Nat :=
   -- `fuel` is a recursion budget (not a token count). Even very small inputs like "u"
   -- require several mutually-recursive descent steps, so we scale the remaining-byte
   -- budget by a small constant and add a fixed headroom.
-  let remaining := (st.s.rawEndPos.byteIdx - st.i.byteIdx) + 1
+  let remaining := TextCursor.remainingFuel st
   16 + 8 * remaining
 
 /-- Whitespace predicate used by the PDE expression parser. -/
 def isWs (c : Char) : Bool :=
-  c = ' ' || c = '\t' || c = '\n'
+  TextCursor.isWhitespace c
 
 /-- Skip whitespace with an explicit recursion budget. -/
-def skipWsFuel : Nat → State → State
-  | 0, st => st
-  | Nat.succ fuel, st =>
-    match peek st with
-    | some c =>
-      if isWs c then
-        skipWsFuel fuel (bump st)
-      else
-        st
-    | none => st
+def skipWsFuel (fuel : Nat) (st : State) : State :=
+  TextCursor.skipWhileFuel isWs fuel st
 
 /-- Skip whitespace from the current parser state. -/
 def skipWs (st : State) : State :=
@@ -84,57 +78,19 @@ def skipWs (st : State) : State :=
 
 /-- Consume characters satisfying `p`, accumulating into `acc`, with explicit fuel. -/
 def takeWhileFuel (fuel : Nat) (p : Char → Bool) (acc : String) (st : State) : String × State :=
-  match fuel with
-  | 0 => (acc, st)
-  | Nat.succ fuel =>
-    match peek st with
-    | some c =>
-      if p c then
-        takeWhileFuel fuel p (acc.push c) (bump st)
-      else
-        (acc, st)
-    | none => (acc, st)
+  TextCursor.takeWhileFuel fuel p acc st
 
 /-- Consume characters satisfying `p`, accumulating into `acc`. -/
 def takeWhile (p : Char → Bool) (acc : String) (st : State) : String × State :=
   takeWhileFuel (fuelOf st) p acc st
 
 /-- Parse a signed decimal number without exponent, e.g. `-12.34`. -/
-def parseNumber (st : State) : Except String (Float × State) := do
-  let st0 := skipWs st
-  -- sign
-  let (sgn, st1) :=
-    match peek st0 with
-    | some '-' => (-1.0, bump st0)
-    | _ => (1.0, st0)
-  -- integer part (at least one digit)
-  let (intTxt, st2) := takeWhile (fun c => c.isDigit) "" st1
-  if intTxt = "" then .error "expected number"
-  let intVal : Float :=
-    Float.ofNat (intTxt.toList.foldl (fun (acc : Nat) (c : Char) => acc * 10 + (c.toNat -
-      '0'.toNat)) 0)
-  -- optional fractional part
-  let (fracVal, st3) :=
-    match peek st2 with
-    | some '.' =>
-      let st2' := bump st2
-      let (fracTxt, st2'') := takeWhile (fun c => c.isDigit) "" st2'
-      if fracTxt = "" then (0.0, st2'')
-      else
-        let num : Nat := fracTxt.toList.foldl (fun acc c => acc * 10 + (c.toNat - '0'.toNat)) 0
-        let den : Nat := (Nat.pow 10 fracTxt.length)
-        let fv : Float := (Float.ofNat num) / (Float.ofNat den)
-        (fv, st2'')
-    | _ => (0.0, st2)
-  .ok (sgn * (intVal + fracVal), st3)
+def parseNumber (st : State) : Except String (Float × State) :=
+  TextCursor.parseFloat (fuelOf st) st
 
 /-- Parse a natural number at the current parser state. -/
-def parseNat (st : State) : Except String (Nat × State) := do
-  let st0 := skipWs st
-  let (txt, st1) := takeWhile (fun c => c.isDigit) "" st0
-  if txt = "" then .error "expected natural number"
-  let n : Nat := txt.toList.foldl (fun acc c => acc * 10 + (c.toNat - '0'.toNat)) 0
-  .ok (n, st1)
+def parseNat (st : State) : Except String (Nat × State) :=
+  TextCursor.parseNat (fuelOf st) st
 
 /-- Parse an identifier used for environment lookup. -/
 def parseIdent (st : State) : Except String (String × State) := do
@@ -256,7 +212,7 @@ def parseExprCore (env : String → Option Float) (st : State) : Except String (
 
 /-- Entry point: parse a string to Expr using `env` for identifiers. -/
 def parseExpr (env : String → Option Float) (s : String) : Except String Expr :=
-  match parseExprCore env { s := s } with
+  match parseExprCore env { source := s } with
   | .ok (e, st) =>
       let st := skipWs st
       if eof st then

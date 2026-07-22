@@ -133,7 +133,7 @@ theorem buildFrom_denoteAllFrom_linear
                     have hGet :
                         vals0[xId]! =
                           NN.IR.DVal.mk (α := α) expectedIn (getIdx (α := α) (xs := ctx) ix) := by
-                      simpa [vals0, ctx, expectedIn] using
+                      simpa [vals0, ctx, expectedIn, getIRValue] using
                         (denoteAllState_get_mkIdx (inShape := inShape) (ss := ss)
                           (gd := gd) (x := x) (pid := xId) (s := expectedIn) (idx := ix) hIdx)
                     have hEval :
@@ -215,6 +215,20 @@ theorem buildFrom_denoteAllFrom_conv2d
           | some cfg =>
               simp [hp, hConv] at hBuild
               let expectedIn : Shape := .dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))
+              have hInferExists :
+                  ∃ inferred,
+                    NN.IR.OpContracts.inferConv2dCHWOutShape cfg.inC cfg.outC cfg.kH cfg.kW
+                        cfg.stride cfg.padding expectedIn = .ok inferred := by
+                cases hInfer :
+                    NN.IR.OpContracts.inferConv2dCHWOutShape cfg.inC cfg.outC cfg.kH cfg.kW
+                      cfg.stride cfg.padding expectedIn with
+                | error msg =>
+                    have : False := by
+                      simpa [expectedIn, hInfer] using hBuild
+                    exact False.elim this
+                | ok inferred => exact ⟨inferred, rfl⟩
+              obtain ⟨inferred, hInfer⟩ := hInferExists
+              simp [expectedIn, hInfer] at hBuild
               -- Use the same shape argument as the `buildFrom` branch so `simp [hIdx]` can fire.
               cases hIdx : mkIdx (inShape := inShape) (ss := ss) xId expectedIn with
               | error msg =>
@@ -244,7 +258,7 @@ theorem buildFrom_denoteAllFrom_conv2d
                     simp (config := { failIfUnchanged := false }) [expected, hOut] at hBuild
                     let nodeData : NodeData α Unit ([inShape] ++ ss) n.outShape :=
                       mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := n.outShape) (fun ctx =>
-                        let x := getIdx (α := α) (xs := ctx) ix
+                        let x := getIRValue (α := α) (ctx := ctx) ix
                         let y : Tensor α expected :=
                           Spec.conv2dSpec (α := α) (layer := cfg.spec) (input := x)
                         hOut ▸ y)
@@ -255,7 +269,8 @@ theorem buildFrom_denoteAllFrom_conv2d
                       simpa [st1, nodeData] using hBuild
                     have hGet :
                         vals0[xId]! =
-                          NN.IR.DVal.mk (α := α) expectedIn (getIdx (α := α) (xs := ctx) ix) := by
+                          NN.IR.DVal.mk (α := α) expectedIn
+                            (getIdx (α := α) (xs := ctx) ix) := by
                       simpa [vals0, ctx, expectedIn] using
                         (denoteAllState_get_mkIdx (inShape := inShape) (ss := ss)
                           (gd := gd) (x := x) (pid := xId) (s := expectedIn) (idx := ix) hIdx)
@@ -269,15 +284,14 @@ theorem buildFrom_denoteAllFrom_conv2d
                       have hCastX :=
                         dval_snd_cast_of_eq_mk (α := α) (v := vals0[xId]!)
                           (s := expectedIn) (t := getIdx (α := α) (xs := ctx) ix) hGet
-                      simp [NN.IR.Graph.evalConv2D, hConv, NN.IR.Graph.expectShape, hGet, hCastX]
+                      simp [NN.IR.Graph.evalConv2D, hConv, hInfer, NN.IR.Graph.expectShape, hGet,
+                        hCastX]
                       -- After inlining `evalConv2D`, `evalAt` checks the computed `outShape` against the
                       -- declared `n.outShape`. Use `hOut` to collapse the mismatch branch.
                       have hOutBool : (expected != n.outShape) = false :=
                         shape_bne_eq_false_of_eq (s := expected) (t := n.outShape) hOut
-                      -- First eliminate the boolean `!=` guard, then normalize the remaining shape cast.
-                      simp (config := { failIfUnchanged := false }) [hOutBool]
-                      -- `simp` above unfolded the computed shape expression; restate our equalities in that
-                      -- form to make the final produced-shape check reduce.
+                      -- Restate the equalities in the evaluator's unfolded shape form so the final
+                      -- produced-shape check reduces without a dependent rewrite.
                       have hOut0 :
                           Shape.dim cfg.outC
                               (Shape.dim (Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding)
@@ -293,9 +307,11 @@ theorem buildFrom_denoteAllFrom_conv2d
                                 n.outShape) =
                               false := by
                         simpa [expected] using hOutBool
-                      simp (config := { failIfUnchanged := false }) [hOutBool0]
-                      rw [dif_pos hOut0]
-                      simp [nodeData, expected]
+                      simp (config := { failIfUnchanged := false }) [hOutBool0,
+                        NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk]
+                      simp [hOut0, nodeData, expected, expectedIn, getIRValue, NN.IR.DVal.shape,
+                        NN.IR.DVal.tensor, NN.IR.DVal.mk]
+                      congr 1
                     have hStep :
                         denoteAllState (α := α) inShape st1 x =
                           vals0.push (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
@@ -512,30 +528,6 @@ theorem buildFrom_denoteAllFrom_flatten
 
 set_option linter.unnecessarySimpa false in
 set_option linter.unusedSimpArgs false in
-/-- The `.concat axis` IR node is not compiled by `buildFrom`, so successful compilation is impossible. -/
-theorem buildFrom_denoteAllFrom_concat_impossible
-    {α : Type} [Context α] [DecidableEq Shape]
-    (g : NN.IR.Graph) (payload : Payload α) {inShape : Shape} {ss : List Shape}
-    (gd : GraphData α Unit [inShape] ss) (i : Nat) (st' : State α inShape)
-    (x : Tensor α inShape) (n : NN.IR.Node)
-    (axis : Nat)
-    (hN : g.getNode i = .ok n) (hk : n.kind = .concat axis) (hi : i < g.nodes.size)
-    (hBuild :
-      buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
-        (i := i) (st := (⟨ss, gd⟩ : State α inShape)) = .ok st') :
-    NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := NN.IR.DVal.mk (α := α) inShape x)
-      (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
-      .ok (denoteAllState (α := α) inShape st' x) := by
-  -- `buildFrom` does not implement `.concat`, so the successful compilation hypothesis is contradictory.
-  unfold buildFrom at hBuild
-  -- The `.concat` branch reduces to `throw`, so it cannot return `.ok st'`.
-  have hBuild' := hBuild
-  simp [hi, hN, hk, throw_eq_error, Except.instMonad, Except.bind, Except.pure] at hBuild'
-  cases hBuild'
-
-set_option linter.unnecessarySimpa false in
-set_option linter.unusedSimpArgs false in
 /-- Semantic-preservation lemma for `.swap_first_two` lowering. -/
 theorem buildFrom_denoteAllFrom_swap_first_two
     {α : Type} [Context α] [DecidableEq Shape]
@@ -577,73 +569,59 @@ theorem buildFrom_denoteAllFrom_swap_first_two
       | nil =>
           -- Reduce the parent-list match inside `buildFrom` now that we are in the 1-parent branch.
           simp [hp] at hBuild
-          cases hτ : n.outShape with
-          | scalar =>
-              -- The compiler rejects rank-0 `outShape`, so successful compilation is impossible.
-              have : False := by
-                simpa [hτ, throw_eq_error, Except.instMonad, Except.bind, Except.pure] using hBuild
-              exact False.elim this
-          | dim nDim sTail =>
-              cases sTail with
-              | scalar =>
-                  -- The compiler rejects rank-1 `outShape`, so successful compilation is impossible.
-                  have : False := by
-                    simpa [hτ, throw_eq_error, Except.instMonad, Except.bind, Except.pure] using hBuild
-                  exact False.elim this
-              | dim m rest =>
-                  -- Rewrite `n.outShape` to a constructor so the `buildFrom`-internal `match hτ : n.outShape` reduces.
-                  rw [hτ] at hBuild
-                  simp (config := { failIfUnchanged := false }) at hBuild
-                  let expectedIn : Shape := .dim m (.dim nDim rest)
-                  cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId expectedIn with
-                  | error msg =>
-                      -- If the parent id/shape check fails, `buildFrom` returns `.error _`, contradicting `.ok`.
-                      have : False := by
-                        have hBuild' := hBuild
-                        simp [Bind.bind, Except.bind, hIdx] at hBuild'
-                        cases hBuild'
-                      exact False.elim this
-                  | ok ip =>
-                      simp [Bind.bind, Except.bind, hIdx] at hBuild
-                      let nodeData : NodeData α Unit ([inShape] ++ ss) n.outShape :=
-                        mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := n.outShape) (fun ctx =>
-                          let y : Tensor α (.dim nDim (.dim m rest)) :=
-                            Tensor.swapFirstTwoSpec (α := α) (m := m) (n := nDim) (s := rest)
-                              (getIdx (α := α) (xs := ctx) ip)
-                          Tensor.castShape y hτ.symm)
-                      let st1 : State α inShape := ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
-                      have hRec :
-                          buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
-                            (i := i + 1) st1 = .ok st' := by
-                        simpa [st1, nodeData] using hBuild
-                      have hGet :
-                          vals0[pId]! =
-                            NN.IR.DVal.mk (α := α) expectedIn (getIdx (α := α) (xs := ctx) ip) := by
-                        simpa [vals0, ctx, expectedIn] using
-                          (denoteAllState_get_mkIdx (inShape := inShape) (ss := ss)
-                            (gd := gd) (x := x) (pid := pId) (s := expectedIn) (idx := ip) hIdx)
-                      have hEval :
-                          NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
-                              (input := input) (vals := vals0) (i := i) =
-                            .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                        -- Stage the simp calls to keep normalization localized to the `.swap_first_two` branch.
-                        simp [NN.IR.Graph.evalAt, hN, hk, hp]
-                        have hCastP :=
-                          dval_snd_cast_of_eq_mk (α := α) (v := vals0[pId]!)
-                            (s := expectedIn) (t := getIdx (α := α) (xs := ctx) ip) hGet
-                        simp [hτ, hGet, NN.IR.Graph.expectShape, expectedIn, nodeData, Pure.pure, Except.pure,
-                          hCastP, Tensor.eqRec_eq_cast_shape]
-                      have hStep :
-                          denoteAllState (α := α) inShape st1 x =
-                            vals0.push (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                        simpa [vals0, st1, nodeData, ctx] using
-                          (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss) (τ := n.outShape)
-                            (gd := gd) (nodeData := nodeData) (x := x))
-                      have hTail := ih st1 hRec
-                      exact buildFrom_denoteAllFrom_finish (α := α) (g := g) (payload := payload)
-                        (i := i) (x := x) (hi := hi) (τ := n.outShape)
-                        (nodeData := nodeData) (st1 := st1) (st' := st')
-                        (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval hStep
+          split at hBuild
+          next nDim m rest hτ =>
+            let expectedIn : Shape := .dim m (.dim nDim rest)
+            cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId expectedIn with
+            | error msg =>
+                have : False := by
+                  simpa [expectedIn, hIdx] using hBuild
+                exact False.elim this
+            | ok ip =>
+                simp [expectedIn, hIdx] at hBuild
+                let nodeData : NodeData α Unit ([inShape] ++ ss) n.outShape :=
+                  mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := n.outShape) (fun ctx =>
+                    let y : Tensor α (.dim nDim (.dim m rest)) :=
+                      Tensor.swapFirstTwoSpec (α := α) (m := m) (n := nDim) (s := rest)
+                        (getIRValue (α := α) (ctx := ctx) ip)
+                    Tensor.castShape y hτ.symm)
+                let st1 : State α inShape := ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
+                have hRec :
+                    buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
+                      (i := i + 1) st1 = .ok st' := by
+                  simpa [st1, nodeData] using hBuild
+                have hGet :
+                    vals0[pId]! = NN.IR.DVal.mk (α := α) expectedIn
+                      (getIdx (α := α) (xs := ctx) ip) := by
+                  simpa [vals0, ctx, expectedIn] using
+                    (denoteAllState_get_mkIdx (inShape := inShape) (ss := ss)
+                      (gd := gd) (x := x) (pid := pId) (s := expectedIn) (idx := ip) hIdx)
+                have hEval :
+                    NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
+                        (input := input) (vals := vals0) (i := i) =
+                      .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
+                  simp [NN.IR.Graph.evalAt, hN, hk, hp]
+                  have hCastP :=
+                    dval_snd_cast_of_eq_mk (α := α) (v := vals0[pId]!)
+                      (s := expectedIn) (t := getIdx (α := α) (xs := ctx) ip) hGet
+                  simp [hτ, hGet, NN.IR.Graph.expectShape, expectedIn, nodeData, getIRValue,
+                    Pure.pure, Except.pure, hCastP, Tensor.eqRec_eq_cast_shape]
+                have hStep :
+                    denoteAllState (α := α) inShape st1 x =
+                      vals0.push (NN.IR.DVal.mk (α := α) n.outShape
+                        (nodeData.forward ctx ())) := by
+                  simpa [vals0, st1, nodeData, ctx] using
+                    (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss)
+                      (τ := n.outShape) (gd := gd) (nodeData := nodeData) (x := x))
+                have hTail := ih st1 hRec
+                exact buildFrom_denoteAllFrom_finish (α := α) (g := g) (payload := payload)
+                  (i := i) (x := x) (hi := hi) (τ := n.outShape)
+                  (nodeData := nodeData) (st1 := st1) (st' := st')
+                  (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval hStep
+          next hτ =>
+            have : False := by
+              simpa [throw_eq_error, Except.instMonad, Except.bind, Except.pure] using hBuild
+            exact False.elim this
 
 set_option linter.unnecessarySimpa false in
 set_option linter.unusedSimpArgs false in
@@ -689,82 +667,61 @@ theorem buildFrom_denoteAllFrom_transpose3dLastTwo
       | nil =>
           -- Reduce the parent-list match inside `buildFrom` now that we are in the 1-parent branch.
           simp [hp] at hBuild
-          cases hτ : n.outShape with
-          | scalar =>
-              have : False := by
-                simpa [hτ, throw_eq_error, Except.instMonad, Except.bind, Except.pure] using hBuild
-              exact False.elim this
-          | dim a sTail =>
-              cases sTail with
-              | scalar =>
-                  have : False := by
-                    simpa [hτ, throw_eq_error, Except.instMonad, Except.bind, Except.pure] using hBuild
-                  exact False.elim this
-              | dim c sTail2 =>
-                  cases sTail2 with
-                  | scalar =>
-                      have : False := by
-                        simpa [hτ, throw_eq_error, Except.instMonad, Except.bind, Except.pure] using hBuild
-                      exact False.elim this
-                  | dim b sTail3 =>
-                      cases sTail3 with
-                      | dim _ _ =>
-                          have : False := by
-                            simpa [hτ, throw_eq_error, Except.instMonad, Except.bind, Except.pure] using hBuild
-                          exact False.elim this
-                      | scalar =>
-                          simp (config := { failIfUnchanged := false }) [hτ] at hBuild
-                          let expectedIn : Shape := .dim a (.dim b (.dim c .scalar))
-                          cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId expectedIn with
-                          | error msg =>
-                              -- If the parent id/shape check fails, `buildFrom` returns `.error _`, contradicting `.ok`.
-                              have : False := by
-                                have hBuild' := hBuild
-                                simp [Bind.bind, Except.bind, hIdx] at hBuild'
-                                cases hBuild'
-                              exact False.elim this
-                          | ok ip =>
-                              simp [Bind.bind, Except.bind, hIdx] at hBuild
-                              let nodeData : NodeData α Unit ([inShape] ++ ss) n.outShape :=
-                                mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := n.outShape) (fun ctx =>
-                                  let y : Tensor α (.dim a (.dim c (.dim b .scalar))) :=
-                                    Tensor.transpose3DLastTwoSpec (α := α) (a := a) (b := b) (c := c)
-                                      (getIdx (α := α) (xs := ctx) ip)
-                                  Tensor.castShape y hτ.symm)
-                              let st1 : State α inShape :=
-                                ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
-                              have hRec :
-                                  buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
-                                      (i := i + 1) st1 = .ok st' := by
-                                simpa [st1, nodeData] using hBuild
-                              have hGet :
-                                  vals0[pId]! =
-                                    NN.IR.DVal.mk (α := α) expectedIn (getIdx (α := α) (xs := ctx) ip) := by
-                                simpa [vals0, ctx, expectedIn] using
-                                  (denoteAllState_get_mkIdx (inShape := inShape) (ss := ss)
-                                    (gd := gd) (x := x) (pid := pId) (s := expectedIn) (idx := ip) hIdx)
-                              have hEval :
-                                  NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
-                                      (input := input) (vals := vals0) (i := i) =
-                                    .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                                -- Stage simp so we only normalize the `.transpose3dLastTwo` branch.
-                                simp [NN.IR.Graph.evalAt, hN, hk, hp]
-                                have hCastP :=
-                                  dval_snd_cast_of_eq_mk (α := α) (v := vals0[pId]!)
-                                    (s := expectedIn) (t := getIdx (α := α) (xs := ctx) ip) hGet
-                                simp [hτ, throw_eq_error, hGet, expectedIn, NN.IR.Graph.expectShape,
-                                  nodeData, Pure.pure, Except.pure, hCastP, Tensor.eqRec_eq_cast_shape]
-                              have hStep :
-                                  denoteAllState (α := α) inShape st1 x =
-                                    vals0.push (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                                simpa [vals0, st1, nodeData, ctx] using
-                                (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss) (τ := n.outShape)
-                                  (gd := gd) (nodeData := nodeData) (x := x))
-                              have hTail := ih st1 hRec
-                              exact buildFrom_denoteAllFrom_finish (α := α) (g := g) (payload := payload)
-                                (i := i) (x := x) (hi := hi) (τ := n.outShape)
-                                (nodeData := nodeData) (st1 := st1) (st' := st')
-                                (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval hStep
+          split at hBuild
+          next a c b hτ =>
+            let expectedIn : Shape := .dim a (.dim b (.dim c .scalar))
+            cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId expectedIn with
+            | error msg =>
+                have : False := by
+                  simpa [expectedIn, hIdx] using hBuild
+                exact False.elim this
+            | ok ip =>
+                simp [expectedIn, hIdx] at hBuild
+                let nodeData : NodeData α Unit ([inShape] ++ ss) n.outShape :=
+                  mkFwdNode (α := α) (Γ := [inShape] ++ ss) (τ := n.outShape) (fun ctx =>
+                    let y : Tensor α (.dim a (.dim c (.dim b .scalar))) :=
+                      Tensor.transpose3DLastTwoSpec (α := α) (a := a) (b := b) (c := c)
+                        (getIRValue (α := α) (ctx := ctx) ip)
+                    Tensor.castShape y hτ.symm)
+                let st1 : State α inShape :=
+                  ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
+                have hRec :
+                    buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
+                        (i := i + 1) st1 = .ok st' := by
+                  simpa [st1, nodeData] using hBuild
+                have hGet :
+                    vals0[pId]! = NN.IR.DVal.mk (α := α) expectedIn
+                      (getIdx (α := α) (xs := ctx) ip) := by
+                  simpa [vals0, ctx, expectedIn] using
+                    (denoteAllState_get_mkIdx (inShape := inShape) (ss := ss)
+                      (gd := gd) (x := x) (pid := pId) (s := expectedIn) (idx := ip) hIdx)
+                have hEval :
+                    NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
+                        (input := input) (vals := vals0) (i := i) =
+                      .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
+                  simp [NN.IR.Graph.evalAt, hN, hk, hp]
+                  have hCastP :=
+                    dval_snd_cast_of_eq_mk (α := α) (v := vals0[pId]!)
+                      (s := expectedIn) (t := getIdx (α := α) (xs := ctx) ip) hGet
+                  simp [hτ, throw_eq_error, hGet, expectedIn, NN.IR.Graph.expectShape,
+                    nodeData, getIRValue, Pure.pure, Except.pure, hCastP,
+                    Tensor.eqRec_eq_cast_shape]
+                have hStep :
+                    denoteAllState (α := α) inShape st1 x =
+                      vals0.push (NN.IR.DVal.mk (α := α) n.outShape
+                        (nodeData.forward ctx ())) := by
+                  simpa [vals0, st1, nodeData, ctx] using
+                    (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss)
+                      (τ := n.outShape) (gd := gd) (nodeData := nodeData) (x := x))
+                have hTail := ih st1 hRec
+                exact buildFrom_denoteAllFrom_finish (α := α) (g := g) (payload := payload)
+                  (i := i) (x := x) (hi := hi) (τ := n.outShape)
+                  (nodeData := nodeData) (st1 := st1) (st' := st')
+                  (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval hStep
+          next hτ =>
+            have : False := by
+              simpa [throw_eq_error, Except.instMonad, Except.bind, Except.pure] using hBuild
+            exact False.elim this
 
 end Compiled
 end Autograd

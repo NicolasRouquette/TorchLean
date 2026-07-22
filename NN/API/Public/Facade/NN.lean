@@ -9,7 +9,7 @@ module
 public import NN.API.Public.Facade.NN.Core
 
 /-!
-# TorchLean Public Facade NN Entrypoint
+# TorchLean Neural-Network API Entrypoint
 
 Import-only entrypoint for user-facing `TorchLean.nn` model, layer, summary, and parameter-pack
 APIs. Definitions live in `NN.API.Public.Facade.NN.Core`.
