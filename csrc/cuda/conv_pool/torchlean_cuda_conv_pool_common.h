@@ -22,9 +22,15 @@ static inline uint32_t outDim(uint32_t in, uint32_t k, uint32_t stride, uint32_t
   if (stride == 0) {
     lean_internal_panic("torchlean_cuda_conv_pool: stride must be > 0");
   }
-  // TorchLean spec uses Nat subtraction (truncated at 0).
+  if (k == 0) {
+    return 0;
+  }
+  // Invalid geometry has no windows; do not turn saturated subtraction into a phantom window.
   uint64_t inPad = (uint64_t)in + 2ull * (uint64_t)padding;
-  uint64_t numer = (inPad >= (uint64_t)k) ? (inPad - (uint64_t)k) : 0ull;
+  if (inPad < (uint64_t)k) {
+    return 0;
+  }
+  uint64_t numer = inPad - (uint64_t)k;
   uint64_t out = numer / (uint64_t)stride + 1ull;
   if (out > (uint64_t)UINT32_MAX) {
 #if defined(__CUDACC__)
@@ -36,17 +42,32 @@ static inline uint32_t outDim(uint32_t in, uint32_t k, uint32_t stride, uint32_t
   return (uint32_t)out;
 }
 
+// N-D pooling follows `Spec.poolOutSpatialPad`: empty inputs and padding beyond half the kernel
+// are invalid axes, even when the generic sliding-window formula would produce a positive length.
+static inline uint32_t poolOutDim(uint32_t in, uint32_t k, uint32_t stride, uint32_t padding) {
+  if (in == 0 || k == 0 || padding > k / 2u) {
+    return 0;
+  }
+  return outDim(in, k, stride, padding);
+}
+
 static inline uint32_t outDimTranspose(uint32_t in, uint32_t k, uint32_t stride, uint32_t padding) {
+  if (stride == 0) {
+    lean_internal_panic("torchlean_cuda_conv_pool: stride must be > 0");
+  }
+  if (in == 0 || k == 0) {
+    return 0;
+  }
   // TorchLean spec uses Nat subtraction (truncated at 0):
-  //   out = (in - 1) * stride - 2 * padding + k
-  uint64_t t = (in > 0) ? ((uint64_t)(in - 1) * (uint64_t)stride) : 0ull;
+  //   out = ((in - 1) * stride + k) - 2 * padding
+  // Addition must precede the saturated subtraction.
+  uint64_t t = (uint64_t)(in - 1) * (uint64_t)stride + (uint64_t)k;
   uint64_t sub = 2ull * (uint64_t)padding;
   if (t >= sub) {
     t -= sub;
   } else {
     t = 0ull;
   }
-  t += (uint64_t)k;
   if (t > (uint64_t)UINT32_MAX) {
 #if defined(__CUDACC__)
     lean_internal_panic("torchlean_cuda_conv_pool: outDimTranspose overflow");
@@ -57,6 +78,8 @@ static inline uint32_t outDimTranspose(uint32_t in, uint32_t k, uint32_t stride,
   return (uint32_t)t;
 }
 
+// Validate after the ABI's binary64-to-binary32 conversion: a finite nonzero Lean `Float` may
+// overflow to infinity or underflow to zero when passed to a float32 kernel.
 static inline float checked_smoothmax_beta(double beta, const char* msg) {
   const float betaF = (float)beta;
   if (!isfinite(betaF) || betaF == 0.0f) {
@@ -73,8 +96,8 @@ static inline void read_u32_array(b_lean_obj_arg arrObj, uint32_t* out, int n, c
     lean_internal_panic(msg);
   }
   for (int i = 0; i < n; ++i) {
-    uint32_t d = nat_to_u32_or_oob(lean_array_get_core(arrObj, (size_t)i));
-    if (d == UINT32_MAX) {
+    uint32_t d = 0;
+    if (!nat_to_u32_checked(lean_array_get_core(arrObj, (size_t)i), &d)) {
       lean_internal_panic(msg);
     }
     out[i] = d;
@@ -93,6 +116,12 @@ static inline int read_rank_checked(b_lean_obj_arg arrObj, const char* msg) {
 }
 
 static inline size_t prod_u32(const uint32_t* dims, int n) {
+  // Match Nat product: any zero axis makes the product zero, regardless of axis order.
+  for (int i = 0; i < n; ++i) {
+    if (dims[i] == 0u) {
+      return 0;
+    }
+  }
   size_t p = 1;
   for (int i = 0; i < n; ++i) {
     p = checked_mul_size(p, (size_t)dims[i], "torchlean_cuda_conv_pool: dimension product overflow");

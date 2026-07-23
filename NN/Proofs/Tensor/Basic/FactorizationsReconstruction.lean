@@ -326,7 +326,7 @@ theorem choleskySpec_reconstruction (A : Spec.Tensor ℝ (.dim n (.dim n .scalar
 /-! ## QR (classical Gram–Schmidt): exact reconstruction `A = Q · R`
 
 `gramSchmidtFn` threads a `GSState` that snocs a column onto *both* the `Q`-list and the `R`-list at
-each index. Crucially the appended values depend only on the `Q`-history (`st.qs`), never on the
+each index. The appended values depend only on the `Q`-history (`st.qs`), never on the
 `R`-history, so the `Q`-list is itself a single-list snoc-fold (`gs_proj_qs`) and the `R`-list is the
 `Q`-prefix-indexed tail `rTail`. -/
 

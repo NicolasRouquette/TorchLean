@@ -50,7 +50,7 @@ $$`
 f(x_0,x_1)=\frac{x_0^2+x_1^2}{2}.
 `
 
-In the public functional API:
+In the `autograd.func` API:
 
 ```
 import NN.API
@@ -95,6 +95,11 @@ def example : IO Unit := do
 The observed values match the hand calculation. That is a useful executable check. A theorem that
 the autograd transform is correct for every input requires the semantic proof layer described
 later; one agreeing sample is not that theorem.
+
+At a nonsmooth point, “the derivative” also needs a convention. ReLU at zero, max ties, and similar
+operations have runtime VJP rules even where a classical Fréchet derivative does not exist. A
+correctness theorem must either exclude those points or state the selected generalized derivative;
+shape-correct gradient output alone does not settle that question.
 
 # Why A VJP Is The Primitive Reverse Operation
 
@@ -370,8 +375,10 @@ third additionally needs a runtime refinement or an explicit backend boundary. A
 use floating-point rounding and a different reduction tree even when it implements the same formal
 VJP equation.
 
-The public `autograd.func` helpers execute the compiled derivative machinery directly. Trainer
-eager/compiled selection and native capsule selection are separate runtime surfaces.
+The `autograd.func` helpers execute the compiled derivative machinery directly. Trainer
+eager/compiled selection and native capsule selection are separate runtime choices. Primals,
+cotangents, parameters, and returned derivatives follow the scalar contract described in
+*Tensors And Shapes*.
 
 # Inspect The Tape In VS Code
 
@@ -418,12 +425,13 @@ autograd.model.jvpParams
 autograd.model.hvpParams
 ```
 
-The next runtime chapter explains which graph or tape each call constructs and why the canonical
-verification IR is a different artifact.
+The next page applies the same machinery to a scientific equation where a wrong derivative sign is
+easy to see. The runtime chapter after it then explains which graph or tape each call constructs
+and why the canonical verification IR is a different artifact.
 
 References:
 
-- [`NN/API/Public/Autograd/Core.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Public/Autograd/Core.lean);
+- [NN/API/Public/Autograd/Core.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Public/Autograd/Core.lean);
 - Baydin et al.,
   [Automatic Differentiation in Machine Learning](https://arxiv.org/abs/1502.05767);
 - [PyTorch autograd reference](https://docs.pytorch.org/docs/stable/autograd.html).

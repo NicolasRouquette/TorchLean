@@ -4,8 +4,8 @@ This folder provides generic rounded arithmetic over `ℝ`. It is the reusable l
 TorchLean's proof-oriented floating-point models: precision metadata, exponent formats, rounding
 modes, rounded scalar values, and small error lemmas.
 
-The folder deliberately does not commit to a particular executable kernel. It is for proofs about
-rounded arithmetic as a mathematical object. Executable binary32 behavior lives in
+This layer models rounded arithmetic independently of any executable kernel. Executable binary32
+behavior lives in
 `NN/Floats/IEEEExec/`; CUDA, ATen/libtorch, and native runtime behavior are separate trust-boundary
 topics.
 
@@ -63,12 +63,20 @@ A useful mental model is:
 - runtime floats: what the backend actually computed, subject to the runtime boundary documented in
   `TRUST_BOUNDARIES.md`.
 
-For a fixed grid with spacing `step`, `neuralRoundAtScale` applies any valid integer rounding rule
-without introducing a second format semantics. `NN.Floats.Quantization` builds scalar affine
+For a fixed grid with positive spacing `step`, `neuralRoundAtScale` applies any valid integer
+rounding rule without introducing a second format semantics. The positivity proof prevents the
+totalized real division at a zero or negative scale from masquerading as a rounding operation.
+`NN.Floats.Quantization` builds scalar affine
 quantizers from that rounding theory, using a positive scale, zero point, and bounded integer code
 interval; `NN.Spec.Quantization` supplies the tensor lift. The theorem
 `neuralRoundAtScale_nearestEven_after_odd_binary_extra` proves that round-to-odd on a sufficiently
 fine binary intermediate avoids nearest-even double rounding on the final grid.
+
+Likewise, FLX, FLT, and FTZ require a positive radix-digit precision. Code receiving an integer
+configuration should call `NeuralFormatPrecision.ofInt?` and use the checked value's exponent
+selector. The lower exponent `emin` may be any integer; it is a location on the radix grid, not a
+scale or precision. The raw exponent formulas are retained for theorem statements, while generic
+rounding remains gated by `NeuralValidExp`.
 
 `NF` deliberately permits direct construction from a real because comparison and approximation
 proofs sometimes need values that are not on the grid. Use `NF.ofReal` for rounded values and carry

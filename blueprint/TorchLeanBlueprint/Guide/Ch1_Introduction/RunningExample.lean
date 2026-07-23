@@ -17,8 +17,8 @@ $$`y(x_1,x_2)
   =0.8\,\operatorname{ReLU}(x_1+x_2)
    -0.4\,\operatorname{ReLU}(x_2-x_1)+0.2`
 
-on a grid in `[-1,1]^2`. This target is a useful first case for three reasons. It is nonlinear, so a
-single affine layer cannot solve it. It is built from ReLUs, so a small ReLU network can represent it
+on a grid in `[-1,1]^2`. This target is a useful first case for three reasons. Its nonlinearity rules
+out a single affine layer, while its ReLU form lets a small ReLU network represent it
 without approximation-theory distractions. Finally, its two-dimensional input lets us inspect every
 shape and parameter without pages of indices.
 
@@ -49,7 +49,7 @@ length-two tensor to a length-one tensor. The hidden width `8` is checked throug
 first linear layer produces length eight, ReLU preserves the shape, and the second linear layer
 expects length eight.
 
-The model returns a one-element tensor rather than a scalar because the public layer API treats the
+The model returns a one-element tensor rather than a scalar because the shape-indexed layer API treats the
 output feature dimension uniformly. A dataset target must therefore have shape `[1]`, not shape `[]`
 and not shape `[batch]`.
 
@@ -108,7 +108,7 @@ start asking it.
 
 # Training It
 
-The public trainer combines the model, task, optimizer, seed, and runtime choices:
+The trainer combines the model, task, optimizer, seed, and runtime choices:
 
 ```
 def trainer :=
@@ -139,9 +139,9 @@ target=0.200000
 prediction(after)=[0.210239]
 ```
 
-The exact log also includes intermediate losses and the prediction before training. We will keep
-this seed and configuration fixed throughout the guide so later chapters are talking about the same
-run.
+The exact log also includes intermediate losses and the prediction before training. Whenever we
+return to `quickstart_mlp`, we keep this seed and configuration fixed; later chapters also introduce
+smaller purpose-built variants.
 
 # What Happens During One Step
 
@@ -173,6 +173,10 @@ The repository contains four views of this step:
 - optimizer contracts for SGD, momentum, and AdamW-style updates.
 
 That gives us a running program, an ideal derivative, and a way to discuss the gap between them.
+
+Running the model once with host `Float` and once with `IEEE32Exec` compares the two homogeneous
+interpretations described in the tensor chapter. This matters when reading a checkpoint or backend
+report: the scalar choice belongs to the run.
 
 # Changing The Device
 
@@ -215,6 +219,10 @@ The result is a `CompiledIR Float` containing:
 - the payload store used by parameterized operations;
 - the distinguished input node;
 - the distinguished output node.
+
+`CompiledIR Float` makes the scalar choice visible. The underlying operation graph records shapes
+and operation tags, while this compiled artifact and its payload use the scalar type selected for
+the run.
 
 For this MLP, the graph has an input, two linear operations, a ReLU, and an output path determined by
 the compiler's lowering. Each node records its parents and output shape. The parameter store carries

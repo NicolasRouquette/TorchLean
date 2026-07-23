@@ -54,7 +54,7 @@ theorem generic_format_FIX_iff (emin : ℤ) (x : ℝ) :
 
 /-- A nonnegative radix power agrees with the corresponding natural-number power. -/
 theorem neuralBpow_eq_natPow (p : ℤ) (hp : 0 ≤ p) :
-    neuralBpow β p = (β.base ^ p.natAbs : ℕ) := by
+    neuralBpow β p = (β.base ^ p.toNat : ℕ) := by
   obtain ⟨n, rfl⟩ := Int.eq_ofNat_of_zero_le hp
   simp [neuralBpow, NeuralRadix.toReal]
 
@@ -72,7 +72,7 @@ theorem FLXFormat_of_generic (prec : ℤ) (hprec : 0 < prec) (x : ℝ)
     dsimp [m]
     rw [hn]
     simp
-  refine ⟨{ mantissa := m, exponent := e }, ?_, ?_⟩
+  refine ⟨hprec, { mantissa := m, exponent := e }, ?_, ?_⟩
   · unfold neuralGenericFormat at hx
     change x = (m : ℝ) * neuralBpow β e
     exact hx
@@ -117,7 +117,7 @@ theorem generic_of_FLXFormat (prec : ℤ) (hprec : 0 < prec) (x : ℝ)
     (hx : FLXFormat (β := β) prec x) :
     @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) x := by
   letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
-  obtain ⟨f, hxf, hmant⟩ := hx
+  obtain ⟨_, f, hxf, hmant⟩ := hx
   by_cases hm0 : f.mantissa = 0
   · have hx0 : x = 0 := by simp [hxf, neuralToReal, hm0]
     rw [hx0]
@@ -173,7 +173,7 @@ theorem FLTFormat_of_generic (emin prec : ℤ) (hprec : 0 < prec) (x : ℝ)
     dsimp [m]
     rw [hn]
     simp
-  refine ⟨{ mantissa := m, exponent := e }, ?_, ?_, ?_⟩
+  refine ⟨hprec, { mantissa := m, exponent := e }, ?_, ?_, ?_⟩
   · unfold neuralGenericFormat at hx
     change x = (m : ℝ) * neuralBpow β e
     exact hx
@@ -223,7 +223,7 @@ theorem generic_of_FLTFormat (emin prec : ℤ) (hprec : 0 < prec) (x : ℝ)
     (hx : FLTFormat (β := β) emin prec x) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) x := by
   letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
-  obtain ⟨f, hxf, hmant, hexp⟩ := hx
+  obtain ⟨_, f, hxf, hmant, hexp⟩ := hx
   by_cases hm0 : f.mantissa = 0
   · have hx0 : x = 0 := by simp [hxf, neuralToReal, hm0]
     rw [hx0]

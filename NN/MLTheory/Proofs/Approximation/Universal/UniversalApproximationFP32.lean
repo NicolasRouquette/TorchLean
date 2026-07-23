@@ -603,9 +603,9 @@ used by the executable approximation theorems.
 /--
 Triangle bound combining real approximation error with FP32 rounding error.
 
-The theorem is pointwise: it does not construct the approximating hinge parameters, it simply says
-that once a real hinge network is close to `f`, the rounded FP32 network is close up to the
-certified rounding budget.
+The theorem is pointwise. Given a real hinge network close to `f`, it bounds the rounded FP32
+network by the real approximation error plus the certified rounding budget; it does not construct
+the hinge parameters.
 -/
   lemma hinge_fun_total_abs_error_le {n : ℕ} (f : ℝ → ℝ) (t c : Fin n → FP32) (b x : FP32) :
     |f x.val - (hingeFunFp32 t c b x).val| ≤

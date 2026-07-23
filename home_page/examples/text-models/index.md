@@ -83,8 +83,8 @@ def mkSampleFromTokenIds (toks : List Nat) : SupervisedSample Float σ τ :=
   Data.causalLmOneHotSample (α := Float) batch seqLen vocab toks (padId := 32)
 ```
 
-The tutorial value is the absence of hidden dataloader convention: a supervised example is
-literally a pair of typed tensors.
+The tutorial keeps the dataloader convention visible: a supervised example is a pair of typed
+tensors.
 
 <a id="gpt-2"></a>
 

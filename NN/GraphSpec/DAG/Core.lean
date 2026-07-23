@@ -175,7 +175,7 @@ def tget {α : Type} : {ss : List Shape} → TList α ss → (i : Fin ss.length)
       -- We use `Fin.cases` rather than pattern-matching on `⟨0, _⟩` / `⟨Nat.succ _, _⟩`.
       --
       -- This makes evaluation/`simp` behave well even when indices are produced by numeric notation
-      -- (which may elaborate via `OfNat` rather than literally as `Fin.mk`).
+      -- (which may elaborate via `OfNat` rather than directly as `Fin.mk`).
       Fin.cases
         (motive := fun i : Fin (s :: ss).length => Spec.Tensor α ((s :: ss).get i))
         (by simpa using x)

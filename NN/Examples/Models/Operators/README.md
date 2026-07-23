@@ -1,8 +1,7 @@
 # Operator-Learning Examples
 
-This folder contains scientific ML operator-learning commands. These examples differ from ordinary
-supervised examples because the target is a learned map between functions or fields, not just a
-fixed-dimensional classifier.
+This folder contains scientific ML operator-learning commands. Their target is a learned map
+between functions or fields, rather than a fixed-dimensional classifier.
 
 ## Files
 

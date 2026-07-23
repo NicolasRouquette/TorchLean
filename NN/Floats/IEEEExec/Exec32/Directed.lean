@@ -132,7 +132,14 @@ def addDown (x y : IEEE32Exec) : IEEE32Exec :=
         y
       else
         match toDyadic? x, toDyadic? y with
-        | some dx, some dy => roundDyadicDown (addDyadic dx dy)
+        | some dx, some dy =>
+            let exact := addDyadic dx dy
+            if exact.mant == 0 then
+              -- IEEE roundTowardNegative gives an exact cancelling sum the sign of -0. Same-sign
+              -- zero addition retains that common sign.
+              if dx.sign || dy.sign then negZero else posZero
+            else
+              roundDyadicDown exact
         | _, _ => canonicalNaN
 
 /-- `addUp x y` is a float32 upper bound for the exact real sum (when finite). -/
@@ -209,9 +216,10 @@ def mulUp (x y : IEEE32Exec) : IEEE32Exec :=
 /--
 `fmaDown x y z` computes the exact value `x * y + z` and rounds once toward `-∞`.
 
-This is a directed fused multiply-add: the product is not rounded before the addition.  The
-special-value cases agree with `fma`; finite inputs are converted to exact dyadics and passed to
-`roundDyadicDown` only after the product and sum have been formed.
+This is a directed fused multiply-add: the product is not rounded before the addition. The
+special-value cases agree with `fma`; finite inputs are converted to exact dyadics, and each
+nonzero exact product-plus-sum is passed once to `roundDyadicDown`. Exact cancellation bypasses the
+generic rounder and returns the signed zero required by round-toward-negative.
 -/
 def fmaDown (x y z : IEEE32Exec) : IEEE32Exec :=
   match chooseNaN3 x y z with
@@ -236,7 +244,11 @@ def fmaDown (x y z : IEEE32Exec) : IEEE32Exec :=
               { sign := Bool.xor dx.sign dy.sign
                 mant := dx.mant * dy.mant
                 exp := dx.exp + dy.exp }
-            roundDyadicDown (addDyadic prod dz)
+            let exact := addDyadic prod dz
+            if exact.mant == 0 then
+              if prod.sign || dz.sign then negZero else posZero
+            else
+              roundDyadicDown exact
         | _, _, _ => canonicalNaN
 
 /--

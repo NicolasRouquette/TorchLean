@@ -73,13 +73,12 @@ shared semantics path described below.
 The website combines generated API docs, the Verso guide, import/dependency graphs, and a small
 Jekyll site.
 
-TorchLean treats generated Lean docs as the primary documentation surface, in the same spirit as
-mathlib:
+TorchLean treats generated Lean docs as the primary documentation, in the same spirit as mathlib:
 
 - every `NN/` Lean file should have a module docstring (`/-! ... -/`);
 - module docstrings should say what the file defines, name the main declarations, and tell readers
   which import to use;
-- public API declarations should have either a direct docstring or `@[inherit_doc ...]`;
+- exported API declarations should have either a direct docstring or `@[inherit_doc ...]`;
 - trust/proof status belongs in the module docstring when a file crosses runtime, CUDA, Python,
   certificate, or solver boundaries;
 - generated DocGen links should be real links. If dependency pages are pruned from the TorchLean
@@ -116,15 +115,15 @@ tools.
 
 ## When A Feature Needs Docs
 
-Most nontrivial TorchLean changes should update more than one surface. Use this map before opening a
-PR:
+Most nontrivial TorchLean changes should update more than one kind of documentation. Use this map
+before opening a PR:
 
-| Change | Documentation surface |
+| Change | Update |
 | --- | --- |
-| Public API name, trainer option, data loader, or optimizer | declaration docstrings, `NN/API/README.md`, quickstart/example docs if user-facing |
+| API name, trainer option, data loader, or optimizer | declaration docstrings, `NN/API/README.md`, quickstart/example docs if user-facing |
 | New runtime backend, CUDA kernel, ATen/libtorch path, or FFI hook | module docstring, `TRUST_BOUNDARIES.md`, CUDA/runtime docs, focused regression check |
 | New graph/IR operator | `NN/IR/README.md`, shape/semantics docstrings, runtime/proof/checker coverage note |
-| New model-family example | `NN/Examples/Models/.../README.md`, command help, website example page if it is public-facing |
+| New model-family example | `NN/Examples/Models/.../README.md`, command help, website example page when relevant |
 | New verifier or certificate format | `NN/Verification/README.md`, artifact schema docs, example README, trust-boundary note |
 | New theorem family | module docstring, `NN/Proofs` or `NN/MLTheory` README, runnable example/checker pointer |
 | New dataset or external producer | `THIRD_PARTY_NOTICES.md`, data/conversion docs, provenance note |
@@ -144,15 +143,15 @@ Generated pages should be rebuilt from their sources. Do not hand-edit DocGen or
 
 The default `NN` target is downstream-facing library code. It intentionally excludes `NN/Examples`,
 `NN/Tests`, `NN/CI`, documentation-only aggregates, and modules whose only job is to define an
-executable `main`. Use the matching Lake target when working on those surfaces:
+executable `main`. Use the matching Lake target when working on those areas:
 
-| Target | Owns |
+| Target | Contains |
 | --- | --- |
 | `NN` | reusable specifications, runtimes, APIs, proofs, and checkers |
 | `NNExamples` | runnable examples, model-zoo commands, and narrative demonstrations |
 | `NNTests` / `lake test` | test modules and the curated test executable |
 | `NNCI` | broad import checks that are useful in CI but unsuitable as downstream imports |
-| `TorchLeanDocs:docs` | the complete maintained documentation import surface |
+| `TorchLeanDocs:docs` | the complete maintained documentation import |
 
 Reusable modules must not import an example, test, CI aggregate, or executable wrapper. Put reusable
 CLI parsing and behavior in a library module, and keep the global `main` in a small `*Main.lean`
@@ -229,6 +228,10 @@ python3 scripts/checks/repo_lint.py
 Project conventions:
 
 - Prefer small modules with minimal imports.
+- Keep top-level `NN/API/*.lean` files as import entrypoints and put definitions in focused modules
+  below them.
+- Keep fixed-arity and implementation-specific helper names internal; exported operations should
+  use model-level names.
 - Add module docstrings and docstrings for user-facing definitions, structures, and theorems.
 - Split expensive proofs into named lemmas instead of relying on huge `simp` or `aesop` calls.
 - Keep executable examples and proof code separate when they have different trust assumptions.

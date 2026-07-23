@@ -40,6 +40,13 @@ def u32 (n : Nat) : Result UInt32 :=
 def numelU32 (s : Shape) : Result UInt32 :=
   AnyBuffer.numelU32 s
 
+/-- Reject shape metadata containing a dimension outside the CUDA `UInt32` ABI. -/
+def validateU32Dimensions (opName : String) (dims : Array Nat) : Result Unit := do
+  for dim in dims do
+    let encoded := UInt32.ofNat dim
+    if encoded.toNat != dim then
+      throw s!"autograd: cuda: {opName}: dimension does not fit in UInt32"
+
 /--
 Fold all leading axes into a row count and keep the last axis as the column count.
 
@@ -75,16 +82,21 @@ def sigmoidBuf (x : Buffer) (n : UInt32) : Buffer :=
   Buffer.releaseThen ones <| Buffer.releaseThen negx <|
     Buffer.releaseThen ex <| Buffer.releaseThen denom y
 
-/-- Hyperbolic tangent implemented as `(exp(2x)-1)/(exp(2x)+1)`. -/
+/--
+Hyperbolic tangent implemented as `2 * sigmoid(2x) - 1`.
+
+Unlike `(exp(2x)-1)/(exp(2x)+1)`, this form does not produce `∞/∞` and hence `NaN` for a
+large positive finite input. It also saturates to `±1` in both tails using the existing CUDA
+primitive-buffer operations.
+-/
 def tanhBuf (x : Buffer) (n : UInt32) : Buffer :=
-  let ones := Buffer.full n 1.0
   let twoX := Buffer.scale x 2.0
-  let e2x := Buffer.exp twoX
-  let num := Buffer.sub e2x ones
-  let den := Buffer.add e2x ones
-  let y := Buffer.div num den
-  Buffer.releaseThen ones <| Buffer.releaseThen twoX <| Buffer.releaseThen e2x <|
-    Buffer.releaseThen num <| Buffer.releaseThen den y
+  let sigmoidTwoX := sigmoidBuf twoX n
+  let twiceSigmoid := Buffer.scale sigmoidTwoX 2.0
+  let ones := Buffer.full n 1.0
+  let y := Buffer.sub twiceSigmoid ones
+  Buffer.releaseThen twoX <| Buffer.releaseThen sigmoidTwoX <|
+    Buffer.releaseThen twiceSigmoid <| Buffer.releaseThen ones y
 
 /-- Numerically stable softplus: `max(x,0) + log(1 + exp(-abs(x)))`. -/
 def softplusBuf (x : Buffer) (n : UInt32) : Buffer :=

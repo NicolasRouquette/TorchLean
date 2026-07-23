@@ -30,8 +30,8 @@ namespace Metrics
 
 /-- Index of the maximum entry in a length-`n` vector, if `n > 0`.
 
-This is a small evaluation helper (not differentiable). It is written against `Tensor` directly so
-it can be used with multiple scalar types.
+This small, nondifferentiable evaluation helper is written against `Tensor` so it can be used with
+multiple scalar types.
 -/
 def argmax? {α : Type} [LT α] [DecidableRel ((· > ·) : α → α → Prop)]
     {n : Nat} (y : Tensor α (.dim n .scalar)) : Option (Fin n) :=

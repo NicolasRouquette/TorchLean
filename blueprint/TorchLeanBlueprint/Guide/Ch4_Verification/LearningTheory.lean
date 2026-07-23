@@ -8,13 +8,13 @@ tag := "learning-theory"
 %%%
 
 Learning theory belongs in TorchLean because many ML claims become mathematical before they become
-experimental. A training script can compute a loss curve, run an attack, add a private optimizer, or
-fit a ridge regression model. The guarantee, however, usually lives in a predicate: privacy,
-robustness, stability, convergence, or a finite precision bridge from an ideal theorem to executable
-arithmetic.
+experimental. A training script can compute a loss curve, run an attack, add a differentially
+private training mechanism, or fit a ridge regression model. The guarantee usually lives in a
+predicate: privacy, robustness, stability, convergence, or a finite-precision bridge from an ideal
+theorem to executable arithmetic.
 
-Learning-theory support is not a single certificate checker. It names the predicates that appear in
-learning theory papers and makes them usable beside models, runtimes, and verification artifacts.
+TorchLean names those predicates and makes them usable beside models, runtimes, and verification
+artifacts. No single certificate checker covers all of learning theory.
 The recurring pattern is:
 
 - state a mathematical predicate such as privacy, robustness, or stability;
@@ -101,6 +101,11 @@ The reference point is the standard DP event inequality from Dwork, McSherry, Ni
 (TCC 2006). TorchLean's current definitions name the property and closure rules; they are not a
 claim that a particular optimizer is DP-SGD. A DP-SGD theorem would still need the sampling,
 clipping, noise calibration, and composition accounting hypotheses.
+
+In particular, no privacy budget should be inferred from the presence of the DP namespace. The
+current source supplies the semantic target and closure laws; it does not contain a runtime privacy
+accountant, a Gaussian-mechanism calibration theorem, or an end-to-end theorem for a training
+command. Those are separate implementation and proof obligations.
 
 # Robustness: Spec Versus Runtime
 
@@ -319,6 +324,10 @@ The second theorem is a finite-evaluation bridge: if the executable expression e
 its real interpretation agrees with the proof-level FP32 expression. That is not a stability theorem
 by itself. It is one bridge that can be composed with a stability theorem when the remaining
 rounded-arithmetic error bounds have also been supplied.
+
+This example is a useful model for reading every runtime diagnostic on the page: first identify the
+ideal predicate, then the executable quantity, then the theorem that relates them. If the third
+piece is absent, the executable result remains a diagnostic even when its value looks favorable.
 
 # Reading A Learning-Theory Result
 

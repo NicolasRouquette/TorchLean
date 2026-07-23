@@ -242,28 +242,27 @@ theorem neuralNearestEven_roundOdd_binary_extra (extra : ℕ) (x : ℝ) :
 /--
 Round-to-odd on a finer binary grid prevents nearest-even double rounding on a coarser grid.
 
-The coarse grid has spacing `step`; the intermediate grid is finer by `extra + 2` binary digits.
-The theorem is independent of any particular floating-point exponent format, so it also applies to
-fixed-point and affine-quantization grids. The nonzero hypothesis excludes the degenerate grid with
-spacing zero.
+The coarse grid has positive spacing `step`; the intermediate grid is finer by `extra + 2` binary
+digits. The theorem is independent of any particular floating-point exponent format, so it also
+applies to fixed-point and affine-quantization grids.
 -/
 theorem neuralRoundAtScale_nearestEven_after_odd_binary_extra
-    (extra : ℕ) (step x : ℝ) (hstep : step ≠ 0) :
-    neuralRoundAtScale neuralNearestEven step
+    (extra : ℕ) (step x : ℝ) (hstep : 0 < step) :
+    neuralRoundAtScale neuralNearestEven step hstep
         (neuralRoundAtScale neuralOddRound
-          (step / (2 : ℝ) ^ (extra + 2)) x) =
-      neuralRoundAtScale neuralNearestEven step x := by
+          (step / (2 : ℝ) ^ (extra + 2)) (div_pos hstep (by positivity)) x) =
+      neuralRoundAtScale neuralNearestEven step hstep x := by
   let K : ℝ := (2 : ℝ) ^ (extra + 2)
   have hK : K ≠ 0 := by
     dsimp [K]
     positivity
   have hinput : x / (step / K) = (x / step) * K := by
-    field_simp
+    field_simp [ne_of_gt hstep]
   have hnormalize :
       (neuralOddRound (x / (step / K)) : ℝ) * (step / K) / step =
         (neuralOddRound ((x / step) * K) : ℝ) / K := by
     rw [hinput]
-    field_simp
+    field_simp [ne_of_gt hstep]
   unfold neuralRoundAtScale
   rw [show (2 : ℝ) ^ (extra + 2) = K by rfl]
   rw [hnormalize, neuralNearestEven_roundOdd_binary_extra extra (x / step)]

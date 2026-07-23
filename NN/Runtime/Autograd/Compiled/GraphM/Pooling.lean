@@ -120,8 +120,9 @@ N-D smooth max pooling (log-sum-exp surrogate) on a single sample tensor (no bat
 PyTorch comparison: there is no direct primitive; this is a differentiable approximation to
 max pooling.
 
-Forward-mode status: implemented. The JVP is the softmax-weighted tangent of the
-log-sum-exp pooling window.
+Forward-mode status: implemented. The JVP is the softmax-weighted tangent of the log-sum-exp
+pooling window. Executable graphs require a finite, nonzero `beta` and at least one spatial
+dimension.
 -/
 def smoothMaxPool {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {Γ : List Shape} {d C : Nat}
@@ -129,6 +130,12 @@ def smoothMaxPool {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {hKernel : ∀ i : Fin d, kernel.get i ≠ 0}
   (x : Var (Shape.ofList (C :: inSpatial.toList))) (beta : α) :
   MWith α Δ Γ (Var (Shape.ofList (C :: (Spec.poolOutSpatialPad inSpatial kernel stride padding).toList))) := do
+  -- `Context` has no generic `isFinite`; supported executable scalars self-subtract to zero exactly
+  -- when finite, so this probe rejects NaN and infinities without adding a stronger scalar class.
+  if beta == 0 || !(beta - beta == 0) then
+    throw "compiled GraphM: smooth_max_pool requires finite nonzero beta"
+  if d = 0 then
+    throw "compiled GraphM: smooth_max_pool requires at least one spatial dimension"
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : (∀ i : Fin d, stride.get i ≠ 0) then
@@ -246,13 +253,17 @@ Smooth (soft) max-pooling, controlled by `beta`.
 This is a differentiable approximation to max-pooling.
 
 Forward-mode status: implemented. The JVP is the softmax-weighted tangent of the
-log-sum-exp pooling window.
+log-sum-exp pooling window. Executable graphs require a finite, nonzero `beta`.
 -/
 def smoothMaxPool2d {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {Γ : List Shape} {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : Var (.dim inC (.dim inH (.dim inW .scalar)))) (beta : α) :
   MWith α Δ Γ (Var (.dim inC (.dim (Shape.slidingWindowOutDim inH kH stride 0)
     (.dim (Shape.slidingWindowOutDim inW kW stride 0) .scalar)))) := do
+  -- `Context` has no generic `isFinite`; supported executable scalars self-subtract to zero exactly
+  -- when finite, so this probe rejects NaN and infinities without adding a stronger scalar class.
+  if beta == 0 || !(beta - beta == 0) then
+    throw "compiled GraphM: smooth_max_pool2d requires finite nonzero beta"
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then

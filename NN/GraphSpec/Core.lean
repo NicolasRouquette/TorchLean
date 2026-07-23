@@ -13,7 +13,7 @@ import Mathlib.Algebra.Order.Algebra
 /-!
 # Sequential GraphSpec
 
-This file defines the **sequential authoring surface** for GraphSpec.
+This file defines GraphSpec's **sequential syntax**.
 
 The important design decision is:
 
@@ -21,7 +21,7 @@ The important design decision is:
 - `Graph ps σ τ` is compact syntax for the common special case where the model is just a chain
   of layers.
 
-So `Graph` is not a competing graph IR. It is a compact way to write:
+`Graph` is compact chain syntax over the canonical DAG representation:
 
 ```lean
 Linear >>> ReLU >>> Linear

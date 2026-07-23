@@ -39,15 +39,17 @@ def seed_input_box(eps: float = 0.1) -> tuple[list[list[list[float]]], list[list
 
 
 def ibp_conv2d_preact(kernel, bias, lo, hi) -> tuple[list[list[list[float]]], list[list[list[float]]]]:
-    """Compute pre-activation interval bounds for the convolution output."""
-    # Compute pre-activation bounds y_lo/hi[outC][outH][outW]
-    ylo = [[[0.0 for _ in range(outW)] for _ in range(outH)] for _ in range(outC)]
-    yhi = [[[0.0 for _ in range(outW)] for _ in range(outH)] for _ in range(outC)]
+    """Compute convolution bounds through the same flattened affine matrix used by Lean.
+
+    Materializing structural zeros is intentional: Lean checks this graph as an ordinary dense
+    linear node, and its host-Float bound operations widen even a zero product.  A sparse convolution
+    loop would therefore produce a different certificate despite denoting the same exact map.
+    """
+
+    matrix = [[0.0 for _ in range(nIn)] for _ in range(nConv)]
     for oc in range(outC):
         for i in range(outH):
             for j in range(outW):
-                acc_lo = 0.0
-                acc_hi = 0.0
                 for ic in range(inC):
                     for di in range(kH):
                         for dj in range(kW):
@@ -57,14 +59,28 @@ def ibp_conv2d_preact(kernel, bias, lo, hi) -> tuple[list[list[list[float]]], li
                                 ii = pi - padding
                                 jj = pj - padding
                                 if 0 <= ii < inH and 0 <= jj < inW:
-                                    xlo = lo[ic][ii][jj]
-                                    xhi = hi[ic][ii][jj]
-                                    a = kernel[oc][ic][di][dj]
-                                    products = [a * xlo, a * xhi]
-                                    acc_lo += min(products)
-                                    acc_hi += max(products)
-                ylo[oc][i][j] = acc_lo + bias[oc]
-                yhi[oc][i][j] = acc_hi + bias[oc]
+                                    row = (oc * outH + i) * outW + j
+                                    col = (ic * inH + ii) * inW + jj
+                                    matrix[row][col] = kernel[oc][ic][di][dj]
+
+    flat_lo = [lo[ic][i][j] for ic in range(inC) for i in range(inH) for j in range(inW)]
+    flat_hi = [hi[ic][i][j] for ic in range(inC) for i in range(inH) for j in range(inW)]
+    flat_bias = [bias[oc] for oc in range(outC) for _ in range(outH * outW)]
+    flat_ylo, flat_yhi = affine_interval(matrix, flat_bias, flat_lo, flat_hi)
+    ylo = [
+        [
+            [flat_ylo[(oc * outH + i) * outW + j] for j in range(outW)]
+            for i in range(outH)
+        ]
+        for oc in range(outC)
+    ]
+    yhi = [
+        [
+            [flat_yhi[(oc * outH + i) * outW + j] for j in range(outW)]
+            for i in range(outH)
+        ]
+        for oc in range(outC)
+    ]
     return ylo, yhi
 
 

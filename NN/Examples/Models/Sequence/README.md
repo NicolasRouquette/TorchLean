@@ -34,8 +34,8 @@ They test different pieces of the stack.
   reloading through `gpt2_saved`.
 - `text_gpt2` is the larger corpus trainer. It can use raw byte tokens or GPT-2 BPE tokenizer files
   and is intended for CUDA-backed runs.
-- `gpt_adder` is not a language dataset. It is a controlled next-token task for checking whether
-  sequence models, optimizers, and generation plumbing behave on a tiny symbolic curriculum.
+- `gpt_adder` uses a controlled arithmetic next-token task to check sequence models, optimizers,
+  and generation plumbing on a tiny symbolic curriculum.
 
 ## Token And Artifact Boundaries
 

@@ -112,11 +112,10 @@ There is a revealing variation. Try:
 ```
 
 Lean rejects this with a `dependsOnNoncomputable` error. The width uses `Nat.ceil` on mathematical
-real numbers, so it is a proof-level construction rather than a compiled numerical routine. This
-is not a defect in the approximation theorem. It is the boundary between an existence proof over
-exact reals and an executable parameter-selection program. A runtime tool could compute the same
-formula from rational inputs, but that would be a separate executable definition with a refinement
-theorem.
+real numbers, so it is a proof-level construction rather than a compiled numerical routine. The
+error marks the boundary between an existence proof over exact reals and an executable
+parameter-selection program. A runtime tool could compute the same formula from rational inputs,
+but that would be a separate executable definition with a refinement theorem.
 
 # From Real Parameters To Binary32
 
@@ -158,9 +157,10 @@ rounding model and proves a pointwise bound of the form
 $$`|f(x)-H_{\mathrm{FP32}}(x)|
   < \varepsilon+\operatorname{hingeFunErrorBound}(x).`
 
-`FP32` is convenient for error analysis because values are represented by reals rounded to the
-finite binary32 grid. `IEEE32Exec` is the explicit bit-level model with signed zero, subnormals,
-infinities, and NaNs. A proof in the former is not silently promoted to the latter.
+`FP32` is convenient for error analysis because values are represented by reals rounded at
+binary32 precision with gradual underflow and no upper exponent cutoff. `IEEE32Exec` is the
+explicit bit-level model with overflow, signed zero, subnormals, infinities, and NaNs. A proof in
+the former is not silently promoted to the latter.
 
 # Exact Finite Interval Images
 
@@ -238,6 +238,15 @@ complementary:
   level.
 
 # What The Result Buys
+
+Two endpoints complete the implemented path beyond the scalar hinge construction. The
+[two-layer IEEE32Exec approximation API](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Proofs/Approximation/Universal/UniversalApproximationIEEE32ExecTwoLayerMlp.lean)
+packages representation, parameter-rounding, and executable-rounding error in
+`relu_twoLayerMlp_ieee32exec_threeTerm`. For finite interval semantics, the
+[constant-target API](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Proofs/Approximation/FloatInterval/ConstantTarget.lean)
+proves `exactIntervalImage_constant`: a finite constant has the exact singleton interval image.
+The latter is a useful base case for certificate composition, not a claim that an arbitrary
+nonconstant network has an exact interval image.
 
 After these layers are composed, one can make a statement with all errors visible:
 

@@ -279,7 +279,7 @@ tape (inputs and intermediates). The following definition and theorems connect t
 proved backpropagation semantics.
 -/
 
-/-- A "full" backpropagation that returns gradients for *all* values (`Γ ++ ss`), not just `Γ`. -/
+/-- A "full" backpropagation that returns gradients for every value in `Γ ++ ss`. -/
 def backpropAllCtx {α : Type} {Δ : Type} [CommSemiring α]
   {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d : Δ)
   (seed : TList α (Γ ++ ss)) :
@@ -300,7 +300,7 @@ def backpropAllCtx {α : Type} {Δ : Type} [CommSemiring α]
         (TList.snoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) gradsPrev seedOut)
 
 /--
-“Full” backpropagation for `GraphData` that returns gradients for *all* values (`Γ ++ ss`), not just
+“Full” backpropagation for `GraphData` that returns gradients for every value in `Γ ++ ss`, including
   inputs.
 
 This is the `GraphData`-analogue of `backpropAllCtx` above. We keep both definitions because:

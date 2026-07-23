@@ -60,15 +60,14 @@ Those routes are intentionally different producers with one consumer contract. O
 are shapes inferred by the shared op contracts, which payloads are required, and what denotation does
 the graph have in the spec layer?
 
-## What The IR Is Not
+## Role And Scope
 
-The IR is not a second user-facing model API. Users should not write large models directly as
-`Node` arrays unless the point is to test a checker, exporter, or compiler pass. Ordinary models
-should be written through `TorchLean.nn`, `Trainer`, or `GraphSpec`, then lowered.
+The IR gives the runtime, checkers, exporters, and compiler passes one graph object to share. Write
+ordinary models through `TorchLean.nn`, `Trainer`, or `GraphSpec`, then lower them. Construct `Node`
+arrays directly only when testing an IR consumer.
 
-The IR is also not a promise that every runtime backend has the same proof status. It gives
-different subsystems one graph object to talk about. Proofs, tests, and trust-boundary statements
-then say how a particular runtime, compiler fragment, or certificate checker relates to that graph.
+Each runtime backend retains its own proof status. Proofs, tests, and trust-boundary statements say
+how a particular runtime, compiler fragment, or certificate checker relates to the shared graph.
 
 ## Current Consumers
 

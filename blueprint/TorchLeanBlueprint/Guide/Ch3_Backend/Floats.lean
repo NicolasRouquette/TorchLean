@@ -22,13 +22,13 @@ open TorchLean.Floats
 ```
 
 That import does not bring in tensors, model definitions, autograd, CUDA, certificate checkers, or
-external numerical tools. It provides the generic format and rounding theory, the finite binary32
-model, executable IEEE binary32 arithmetic, proved interval rounders, and scalar affine
+external numerical tools. It provides the generic format and rounding theory, the binary32-precision
+rounded-real model, executable IEEE binary32 arithmetic, proved interval rounders, and scalar affine
 quantization. Narrower imports such as `NN.Floats.NeuralFloat`, `NN.Floats.FP32`,
 `NN.Floats.IEEEExec`, and `NN.Floats.Interval` are useful when a file needs only one layer.
 
 Connections to the rest of TorchLean point in the other direction. `NN.Spec.Quantization` lifts the
-scalar quantizer to shape-indexed tensors. `NN.Proofs.RuntimeApprox.FP32` connects finite binary32
+scalar quantizer to shape-indexed tensors. `NN.Proofs.RuntimeApprox.FP32` connects rounded-real FP32
 semantics to runtime-approximation proofs. Arb-based transcendental checks are optional and require
 the explicit import `NN.Floats.Arb`. The numerical core therefore remains usable without adopting
 TorchLean's model or runtime APIs.
@@ -97,7 +97,7 @@ format and rounding theory
         ↓
 rounded-real arithmetic
         ↓
-finite binary32 specialization
+binary32-precision rounded-real specialization
         ↓
 executable IEEE bit patterns
         ↓
@@ -224,6 +224,12 @@ Three standard policies explain most uses:
   values receive `prec` digits, while values near zero stay on the fixed subnormal grid
   `β^emin`.
 
+Precision must be positive. The raw integer formulas remain useful inside symbolic theorem
+statements, where positivity is carried as a hypothesis. Code reading a format configuration uses
+`NeuralFormatPrecision.ofNat?` or `NeuralFormatPrecision.ofInt?`; the checked value supplies valid
+FLX, FLT, and FTZ exponent selectors. Thus zero and negative inputs are rejected instead of being
+silently reinterpreted through an absolute value.
+
 It helps to see this on a toy system. Take radix two, precision three, and minimum exponent `-4`.
 Between `1` and `2`, three-bit numbers are spaced by `1/4`:
 
@@ -317,7 +323,7 @@ pleasant to state, while the type still fixes the format and rounding rule. `NF.
 real into the format. The low-level constructor is available for approximation relations, so
 theorems that need a genuine grid value ask for `NF.IsRepresentable`.
 
-# `FP32`: The Finite Rounded-Real Specialization
+# `FP32`: The Binary32-Precision Rounded-Real Specialization
 
 `FP32` is the specialization
 
@@ -327,10 +333,12 @@ abbrev FP32 : Type :=
 ```
 
 where `rnd32` is nearest-even. It is the right model for a theorem whose intended reading is
-"perform this real operation and round it to the finite binary32 grid." The aliases `round32`,
-`ulp32`, and `eps32` expose the rounder, local spacing, and half-ULP scale directly over `ℝ`.
+"perform this real operation and round it at binary32 precision with gradual underflow." Its
+exponent policy has no upper cutoff, so it is not the finite set of IEEE bit patterns. The aliases
+`round32`, `ulp32`, and `eps32` expose the rounder, local spacing, and half-ULP scale directly over
+`ℝ`.
 
-The word *finite* matters. `FP32` omits:
+That separation is deliberate. `FP32` omits:
 
 - NaN and positive or negative infinity;
 - signed zero and NaN payloads;
@@ -341,6 +349,20 @@ That makes `FP32` the convenient layer for ordinary forward-error analysis. A th
 layer can compare the exact dot product with a sequence of rounded operations without splitting
 every line into finite, infinite, and NaN cases. When exceptional values matter, we move down one
 level to `IEEE32Exec`.
+
+# Total Operations Still Need Domain Hypotheses
+
+`NF` and `FP32` use Lean's total real operations internally. Real division by zero and square root
+or logarithm outside their usual analytical domains therefore do not produce IEEE exceptions, and
+the rounded-real format has no upper exponent bound that models overflow to infinity. These choices
+keep algebraic definitions total; they do not turn invalid-domain calculations into faithful IEEE
+executions.
+
+Accordingly, an IEEE correspondence theorem states finiteness, nonzero-denominator, domain, and
+no-overflow hypotheses where needed. At the bit level, `IEEE32Exec.toReal?` returns `none` for NaN
+and infinity. The convenience projection `toReal` maps those encodings to zero and should be used
+only under a finiteness hypothesis; interval work that includes infinities uses the extended-real
+semantics instead.
 
 # `IEEE32Exec`: Bits And Exceptional Behavior
 
@@ -393,6 +415,11 @@ Transcendentals have a different status from basic arithmetic because IEEE 754 d
 one correctly rounded bit pattern for every elementary function. TorchLean provides deterministic
 wrappers and approximation contracts; the runtime chapter explains how a concrete `libm`,
 `libdevice`, or LibTorch implementation can be related to them.
+
+Deterministic is not synonymous with correctly rounded. The executable transcendental kernels are
+algorithms with explicit special-value behavior; a numerical claim needs a range-specific error or
+interval contract for the particular function. The small Taylor bounds in the rules library do not
+by themselves certify every executable `sin`, `cos`, or `tanh` input.
 
 # Following One Addition Through The Layers
 
@@ -482,8 +509,10 @@ storage without changing these scalar theorems.
 # From Lean Semantics To A Training Run
 
 Lean's runtime `Float32`, C and CUDA `float`, cuBLAS reductions, and LibTorch tensors are the values
-used to run a model quickly. `RuntimeFloat32MatchesIEEE32Exec` is the bridge interface for Lean's
-runtime type: an instance supplies bit-level agreement with the executable reference.
+used to run a model quickly. `RuntimeFloat32FiniteMatchesIEEE32Exec` is the bridge interface for
+Lean's runtime type: an instance supplies bit-level agreement with the executable reference when
+inputs and results are finite, and classification agreement for special values. It does not assume
+that the runtime preserves a particular NaN payload.
 
 Native providers follow the same pattern. A kernel capsule names:
 
@@ -495,7 +524,7 @@ Native providers follow the same pattern. A kernel capsule names:
 
 The capsule makes the selected numerical story available to the graph-level error analysis. A
 provider may come with a proved bridge, a checked guard, parity evidence, or an explicit external
-assumption. Those evidence levels were defined in the introduction, so later reports can simply name
+assumption. Those evidence levels were defined in the introduction, so later reports can name
 the one attached to each operation.
 
 # Choosing The Right Representation
@@ -513,7 +542,7 @@ Use the smallest layer that states the claim accurately:
   * How does a declared format round exact real arithmetic?
   * `NF`
 *
-  * What is the finite binary32 rounded-real error?
+  * What is the binary32-precision rounded-real error?
   * `FP32`
 *
   * What bits and IEEE exceptional cases result?

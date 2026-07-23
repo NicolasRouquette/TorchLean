@@ -34,12 +34,12 @@ How this file fits with the runtime and API:
 - `NN.Runtime.Autograd.TorchLean.Optim` lifts those equations to runtime parameter lists; and
 - `NN.API.Runtime` exposes ergonomic `optim.sgd`, `optim.adam`, and related configuration helpers.
 
-With this separation, the formula appears once while runtime adapters and public API
+With this separation, the formula appears once while runtime adapters and API
 configuration can evolve independently around it.
 
 Why each optimizer has its own `State` structure:
 - Lean structures do not inherit from one another the way Python classes do.
-- More importantly, optimizer state is not uniform: SGD stores only `lr`, momentum SGD stores a
+- Optimizer state is not uniform: SGD stores only `lr`, momentum SGD stores a
   buffer, Adam/AdamW store two moment buffers and a step counter, Adadelta stores gradient/update
   EMAs, Muon carries an orthogonalization backend, and GaLore-style projected updates carry a
   projection backend.

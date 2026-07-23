@@ -17,107 +17,83 @@ open Verso.Genre.Manual.InlineLean
 tag := "widgets"
 %%%
 
-Widgets are the human inspection layer of TorchLean. They do not define semantics and they do not
-prove theorems. They let a reader see the Lean objects that the semantics and theorems are about:
-tensors, IR graphs, shape inference results, Float32 bit patterns, CROWN bounds, autograd tapes,
-gradients, and training logs.
+Suppose a verifier returns a much wider interval than expected. The value you need is already in
+Lean, but it is buried in a graph record, a vector of node states, and several shape tags. Printing
+the entire term would answer everything except the question you actually have: *at which node did
+the bound become wide?*
 
-The [widgets source](https://github.com/lean-dojo/TorchLean/tree/main/NN/Widgets/) is collected by `NN.Widgets`. Import that module
-when you want only the widget layer; `import NN` includes it as part of the broad main library
-umbrella.
+That is the job of a widget. It renders an existing Lean object in the Infoview so that its relevant
+structure is visible: tensor entries, graph parents, inferred shapes, Float32 fields, affine bounds,
+tape gradients, or metric curves. It does not give that object a second meaning, and a convincing
+picture is not a theorem.
 
-Formal artifacts are hard to debug because they are often large, nested, and invisible: graph
-nodes, tensor shapes, interval boxes, affine forms, tape cotangents, Float32 bit patterns. Widgets
-make those artifacts visible inside the same editor where the theorem or checker lives.
+The [widget modules](https://github.com/lean-dojo/TorchLean/tree/main/NN/Widgets/) are collected by
+`NN.Widgets`. Import that module when a scratch file needs the inspection tools together; the
+broader `import NN` also brings them into a larger development.
 
-# What Widgets Are For
+# An Inspection Loop
 
-Widgets are for looking carefully at Lean objects while you work. They are not a separate semantic
-layer, so TorchLean keeps the meaning of "execute this" explicit:
+Start with the question, not with the widget name. If the question is “why is this output wrong?”,
+inspect the graph and then its evaluation trace. If it is “why is verification inconclusive?”, look
+at interval widths. If training stopped moving, compare the tape, accumulated gradients, and metric
+log before changing the optimizer.
 
-- Widgets that inspect tensors are read-only formatted views of concrete values (they do not change
-  the underlying data).
-- Widgets that *run* something (IR evaluation, backprop traces) are running a specific computation defined in Lean
-  semantics (for example `NN.IR.Semantics` for the IR with named operations, or `Runtime.Autograd.Engine` for the
-  tape engine).
+A productive session has four small moves:
 
-This keeps assumptions visible:
+1. Keep the value that matters as a named Lean definition or as an artifact at an explicit path.
+2. Run the evaluator or checker whose semantics the eventual claim uses.
+3. Put the corresponding widget beside that value and find the first surprising node, field, or
+   step.
+4. Change the definition or producer, elaborate again, and let the checker close the argument
+   instead of trusting the picture.
 
-- An execution trace widget is an evaluator defined in Lean stepping through the chosen semantics.
-- A theorem still requires a proof about the same semantics the widget executes.
+Read-only views such as `#tensor_view` format a value without changing it. Trace views execute a
+specific Lean computation: `#ir_exec_trace_view` steps through `NN.IR.Semantics`, while
+`#tape_trace_view` follows the autograd engine's reverse pass. The interpretation is therefore
+explicit. A theorem about that same interpretation is still a separate proof.
 
-The intended workflow is simple: a widget renders a Lean object under a chosen Lean interpretation.
-It should not invent a new meaning that the proof and checker layers cannot see.
-
-So a widget can make a proof obligation visible, but it does not replace the proof. If a graph view
-shows a bad shape, we fix the graph or the compiler. If a CROWN view shows loose bounds, we improve
-the bound pass or certificate.
+Here is the short lookup table; the sections below turn each row into a working example.
 
 :::table +header
 *
-  * Widget
-  * Object inspected
-  * Main question
+  * When the question is about…
+  * Start with
+  * What it exposes
 *
-  * `#tensor_view`
-  * typed tensor
-  * what values and shape?
+  * tensor values or representation
+  * `#tensor_view`, `#tensor_stats_view`, `#float32_view`
+  * entries, shape, summaries, or binary32 fields
 *
-  * `#ir_view`
-  * `NN.IR.Graph`
-  * what nodes and parents?
+  * graph structure or execution
+  * `#ir_view`, `#shape_infer_view`, `#ir_exec_trace_view`
+  * parents, declared/inferred shapes, and intermediate values
 *
-  * `#shape_infer_view`
-  * graph shape inference
-  * where is the shape mismatch?
+  * a rewrite
+  * `#graph_rewrite_view`
+  * source and result graphs side by side
 *
-  * `#ir_exec_trace_view`
-  * IR execution
-  * what did each node compute?
+  * verifier precision
+  * `#crown_view`, `#bounds_tightness_view`
+  * node bounds, affine state, and interval widths
 *
-  * `#float32_view`
-  * `IEEE32Exec`
-  * what are the bits?
+  * gradients
+  * `#tape_grads_view`, `#tape_trace_view`, `#runtime_ctx_view`
+  * tape structure, reverse steps, and accumulated gradients
 *
-  * `#crown_view`
-  * verifier state
-  * where are the bounds?
+  * a completed run
+  * `#train_log_view` or a file-backed log view
+  * metrics, notes, prompts, samples, policies, or transitions
 *
-  * `#tape_trace_view`
-  * autograd tape
-  * how did gradients flow?
-*
-  * `#train_log_view`
-  * training log
-  * did metrics move?
-*
-  * `#train_log_file_view`
-  * JSON training log
-  * what did a command write?
-*
-  * `#gpt2_train_log_file_view`
-  * GPT log with prompts/samples
-  * what prompt and generated sample were recorded?
-*
-  * `#rl_boundary_rollout_file_view`
-  * RL boundary artifact
-  * which transition fields passed or failed the contract?
-*
+  * a PyTorch sketch
   * `#pytorch_translate_file`
-  * PyTorch source snippet
-  * what TorchLean sketch does the editor assistant infer?
+  * an editor-assistant translation, not an importer proof
 :::
 
 # How Widgets Fit Application Workflows
 
-Application examples tend to produce artifacts rather than just values in memory:
-
-- GPT examples write training logs with prompt and generated-text notes.
-- PPO examples write reward curves, policy/path artifacts, and boundary traces.
-- Verification examples produce graph and bound states.
-- PyTorch interop examples produce imported/exported source or IR.
-
-Widgets make those artifacts pleasant to inspect inside Lean:
+Some values live only while a file elaborates; others are written by a command and inspected later.
+The distinction matters. A graph or tape definition can sit immediately above its view. A GPT or
+PPO run instead writes a named artifact, which a later Lean file reads:
 
 ```
 #train_log_file_view "data/model_zoo/cnn_trainlog.json"
@@ -126,10 +102,16 @@ Widgets make those artifacts pleasant to inspect inside Lean:
 #pytorch_translate_file "NN/Examples/Quickstart/pytorch_translator_mlp.py"
 ```
 
-The command that produced the file remains part of the claim. A file-backed widget is only as
-meaningful as the artifact path and producer command it is paired with.
+Keep the producer command beside a file-backed view in a comment or experiment note. The renderer
+can tell you what the file says, but it cannot recover where the file came from. When the artifact
+has a checker, check it first and then inspect the accepted object.
 
 # Tensor Viewer
+
+Begin with values whose layout is unmistakable. `rankThreeGrid` writes its three indices into the
+hundreds, tens, and units places, so a transposed or flattened axis is visible at a glance. The two
+floating-point vectors then show a different problem: decimal printing may look the same even when
+the underlying scalar semantics differ.
 
 ```
 open Spec
@@ -247,6 +229,12 @@ def samplePayload : NN.IR.Payload Float :=
 #ir_exec_trace_view sampleGraph, samplePayload, sampleInput
 ```
 
+Read these three views in order. The graph view says node `2` depends on the input and constant. The
+shape view checks that all three declared length-two vectors agree with inference. The trace should
+then end at `[0.85, 0.05]`, because it adds `[0.25, 0.25]` to `[0.60, -0.20]`. If the final value is
+wrong, the trace gives you the first intermediate value to compare; if elaboration never reaches
+the trace, the shape view gives you the structural failure instead.
+
 # Float32 Bit Layout Viewer
 
 ```
@@ -269,6 +257,11 @@ def qnan32 : IEEE32Exec :=
 
 end Float32Demo
 ```
+
+`one32` should show sign `0`, exponent field `127`, and a zero fraction. The quiet NaN has the
+all-ones exponent and a nonzero fraction, so the classification remains visible even though it has
+no ordinary real value. The round views answer a separate question: which binary32 bit pattern is
+chosen when a binary64 `Float` such as decimal one tenth crosses the scalar boundary?
 
 # Verification (IBP/CROWN State)
 
@@ -326,6 +319,11 @@ def samplePropState :
 #bounds_tightness_view sampleGraphCROWN, samplePropState
 ```
 
+For this graph, adding the exact constant `0.25` shifts `[-1,1]` to `[-0.75,1.25]` without changing
+the interval width. The tightness view should therefore report width two at both the input and
+output. In a larger network, the first unexpected jump in width is usually more informative than
+the final loose bound.
+
 # Autograd (Tape + Gradients)
 
 TorchLean's eager autograd engine records a computation graph into a `Tape` and can run
@@ -362,6 +360,11 @@ def sampleTape : Tape Float :=
 -- use the step by step reverse pass trace:
 #tape_trace_view sampleTape, 3
 ```
+
+The recorded scalar is `a*b+b` at `a=2` and `b=3`, so the value is nine and both derivatives are
+three. That closed form gives the trace a human-sized oracle: if a gradient is absent or differs,
+inspect the first reverse step where the contribution from multiplication or addition failed to
+arrive.
 
 # Training Dashboards
 
@@ -440,7 +443,7 @@ def sampleCtx : Runtime.RuntimeContext Float :=
 
 This view is good for comparing:
 
-- the public training API,
+- the training API,
 - the eager autograd tape,
 - and the actual runtime registry that stores values and accumulated gradients.
 
@@ -542,6 +545,10 @@ show the corresponding producers.
 `#runtime_ctx_view` is different: it renders the live runtime registry and accumulated gradients.
 Use it when a training step failed before writing a log and the question is which variables reached
 the runtime context.
+
+File-backed views parse and render the artifact at the named path. A successful visualization does
+not authenticate its producer or strengthen the artifact's checker claim. When validity matters,
+run the corresponding checker first and use the widget to inspect the same accepted file.
 
 # Keep The Object Close
 

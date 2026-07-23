@@ -117,10 +117,10 @@ private lemma signBit_eq_testBit31 (x : IEEE32Exec) :
 
 This is the only fact about `neg` we need in the `±∞` case of `toEReal_neg_of_isNaN_eq_false`.
 -/
-private lemma signBit_neg_of_isNaN_eq_false (x : IEEE32Exec) (hnan : isNaN x = false) :
+private lemma signBit_neg_of_isNaN_eq_false (x : IEEE32Exec) (_hnan : isNaN x = false) :
     signBit (neg x) = (!signBit x) := by
   have hnegBits : (neg x).bits = x.bits ^^^ signMask := by
-    simp [IEEE32Exec.neg, hnan, ofBits]
+    simp [IEEE32Exec.neg, ofBits]
   have hNeg : signBit (neg x) = (neg x).bits.toNat.testBit 31 :=
     signBit_eq_testBit31 (x := neg x)
   have hOrig : signBit x = x.bits.toNat.testBit 31 :=
@@ -709,18 +709,24 @@ theorem toEReal_addDown_le (x y : IEEE32Exec) (hx : isFinite x = true) (hy : isF
           have hchoose : chooseNaN2 x y = none := chooseNaN2_none_of_not_isNaN x y hxNaN hyNaN
           have hxInf : isInf x = false := isInf_eq_false_of_toDyadic?_some (hx := hdx)
           have hyInf : isInf y = false := isInf_eq_false_of_toDyadic?_some (hx := hdy)
-          have hadd :
-              addDown x y = roundDyadicDown (addDyadic dx dy) := by
-            simp [addDown, hchoose, hxInf, hyInf, hdx, hdy]
+          let exact := addDyadic dx dy
           have hsum :
-              (dyadicToReal (addDyadic dx dy) : EReal) = ((toReal x + toReal y : ℝ) : EReal) := by
+              (dyadicToReal exact : EReal) = ((toReal x + toReal y : ℝ) : EReal) := by
             -- exactness of dyadic addition + decode of operands
-            simp [dyadicToReal_addDyadic_exact (a := dx) (b := dy), toReal_eq, hdx, hdy]
-          have hle :
-              toEReal (roundDyadicDown (addDyadic dx dy)) ≤ (dyadicToReal (addDyadic dx dy) : EReal)
-                :=
-            toEReal_roundDyadicDown_le (d := addDyadic dx dy)
-          simpa [hadd, hsum] using hle
+            simp [exact, dyadicToReal_addDyadic_exact (a := dx) (b := dy), toReal_eq, hdx, hdy]
+          by_cases hzero : exact.mant = 0
+          · have hadd :
+                addDown x y = if dx.sign || dy.sign then negZero else posZero := by
+              simp [addDown, hchoose, hxInf, hyInf, hdx, hdy, exact, hzero]
+            rw [← hsum]
+            cases hs : (dx.sign || dy.sign) <;>
+              simp [hadd, hs, dyadicToReal, hzero, directed_toEReal_posZero,
+                directed_toEReal_negZero]
+          · have hadd : addDown x y = roundDyadicDown exact := by
+              simp [addDown, hchoose, hxInf, hyInf, hdx, hdy, exact, hzero]
+            have hle : toEReal (roundDyadicDown exact) ≤ (dyadicToReal exact : EReal) :=
+              toEReal_roundDyadicDown_le (d := exact)
+            simpa [hadd, hsum] using hle
 
 /--
 Upper-endpoint soundness for `addUp` on finite inputs:
@@ -996,15 +1002,23 @@ theorem toEReal_fmaDown_le (x y z : IEEE32Exec)
     { sign := Bool.xor dx.sign dy.sign
       mant := dx.mant * dy.mant
       exp := dx.exp + dy.exp }
-  have hfma : fmaDown x y z = roundDyadicDown (addDyadic prod dz) := by
-    simp [fmaDown, hchoose, hxInf, hyInf, hzInf, hdx, hdy, hdz, prod]
-  have hle := toEReal_roundDyadicDown_le (d := addDyadic prod dz)
+  let exact := addDyadic prod dz
   have hexactE :
-      (dyadicToReal (addDyadic prod dz) : EReal) =
+      (dyadicToReal exact : EReal) =
         ((toReal x * toReal y + toReal z : ℝ) : EReal) := by
     apply congrArg
-    simpa [prod] using hexact
-  simpa [hfma, hexactE] using hle
+    simpa [exact, prod] using hexact
+  by_cases hzero : exact.mant = 0
+  · have hfma : fmaDown x y z = if prod.sign || dz.sign then negZero else posZero := by
+      simp [fmaDown, hchoose, hxInf, hyInf, hzInf, hdx, hdy, hdz, exact, prod, hzero]
+    rw [← hexactE]
+    cases hs : (prod.sign || dz.sign) <;>
+      simp [hfma, hs, dyadicToReal, hzero, directed_toEReal_posZero,
+        directed_toEReal_negZero]
+  · have hfma : fmaDown x y z = roundDyadicDown exact := by
+      simp [fmaDown, hchoose, hxInf, hyInf, hzInf, hdx, hdy, hdz, exact, prod, hzero]
+    have hle := toEReal_roundDyadicDown_le (d := exact)
+    simpa [hfma, hexactE] using hle
 
 /-- `fmaUp` is an upper bound for exact fused multiply-add on finite inputs. -/
 theorem toEReal_fmaUp_ge (x y z : IEEE32Exec)

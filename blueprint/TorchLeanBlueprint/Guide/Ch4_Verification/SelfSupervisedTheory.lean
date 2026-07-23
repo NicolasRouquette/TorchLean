@@ -108,7 +108,7 @@ $$`\ell\!\left(
   \operatorname{predict}(\operatorname{context},i)
 \right).`
 
-Summing over `targetIdxs` gives `predictiveLoss`. The full finite objective is simply
+Summing over `targetIdxs` gives `predictiveLoss`. The full finite objective is
 
 $$`L_{\mathrm{SSL}}
 =L_{\mathrm{predictive}}+L_{\mathrm{geometry}}.`
@@ -218,8 +218,8 @@ TorchLean uses a finite pairwise coordinate-spread summary:
 $$`\operatorname{spread}_j(z)
 =\sum_i\sum_k(z_{ij}-z_{kj})^2.`
 
-This is not the sample variance or standard deviation from the VICReg paper; it is an unnormalized
-finite spread with the key property needed here: collapsed representations have zero spread in
+This unnormalized finite spread differs from the sample variance or standard deviation in the
+VICReg paper. It captures the property needed here: collapsed representations have zero spread in
 every coordinate.
 
 For floor `γ`, the guard is
@@ -304,6 +304,11 @@ It does not establish:
 The architecture is nevertheless useful. A runtime bridge can map tensor masks, encoder outputs,
 and loss reductions into the finite contract. Once that bridge exists, the list and collapse
 theorems do not need to be reproved.
+
+The maintained `mae` application is one such runtime neighbor, but not yet that bridge: it performs
+deterministic patch masking and Float reconstruction training. Its mask construction, tensor
+reduction, and stopped-gradient choices must be related explicitly to `maskedLoss` before the exact
+list identities on this page become theorems about that command.
 
 The objective shapes are motivated by MAE (He et al.), VICReg (Bardes, Ponce, and LeCun), Barlow
 Twins (Zbontar et al.), and joint-embedding predictive architectures. The Lean statements are

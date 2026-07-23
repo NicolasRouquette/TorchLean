@@ -29,11 +29,9 @@ endpoints:
 - `add` uses `addDown` / `addUp`,
 - `sub` uses `subDown` / `subUp`, where `subDown x y = addDown x (neg y)` and similarly for `subUp`.
 
-We work in `EReal` so that later pipelines can compose these lemmas with the multiplication/division
-soundness lemmas (which are naturally overflow-aware). In the finite-input regime considered here,
-addition/subtraction themselves cannot overflow to `±∞`, but phrasing the result in `EReal` keeps
-  the
-API uniform.
+We work in `EReal` because finite binary32 inputs can still overflow under addition or subtraction.
+The extended-real endpoints record those infinite results directly and let these lemmas compose
+with the multiplication/division soundness layer without a separate no-overflow hypothesis.
 
 Standards alignment (informal):
 - IEEE 754-2019 defines binary32 arithmetic and special values (NaN/Inf/signed zero).

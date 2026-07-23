@@ -108,6 +108,18 @@ def run : IO Unit := do
   Utils.assertTensorApprox (s := s) "elementwise backward dA" dA_cuda dA_cpu (tol := 2e-3)
   Utils.assertTensorApprox (s := s) "elementwise backward dB" dB_cuda dB_cpu (tol := 2e-3)
 
+  -- The former exp(2x) quotient produced infinity divided by infinity at +100.
+  let tailShape : Shape := shape![2]
+  let tails : Tensor Float tailShape := tensorOfList! [2] [100.0, -100.0]
+  let tailTape0 : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
+  let (tailTape1, tailsId) := Runtime.Autograd.Cuda.Tape.leaf
+    (t := tailTape0) (Utils.tensorToAnyBuffer tails) (name := some "tanh tails")
+  let (tailTape2, tanhId) ← Utils.okOrThrow <|
+    Runtime.Autograd.Cuda.Tape.tanh (t := tailTape1) (s := tailShape) tailsId
+  let gotTails ← Utils.cudaValue (s := tailShape) tailTape2 tanhId
+  let expectedTails : Tensor Float tailShape := tensorOfList! [2] [1.0, -1.0]
+  Utils.assertTensorApprox (s := tailShape) "tanh finite tails" gotTails expectedTails
+
 end Elementwise
 end Cuda
 end Tests

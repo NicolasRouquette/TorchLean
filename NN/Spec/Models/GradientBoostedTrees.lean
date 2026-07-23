@@ -137,7 +137,7 @@ def decisionTreeBatchedForwardSpecN {batch maxDepth nFeatures : Nat}
 /--
 Forward pass for a gradient boosted ensemble on a single input.
 
-This simply accumulates `initial_prediction + learning_rate * sum(tree_i(x))`.
+This computes `initial_prediction + learning_rate * sum(tree_i(x))`.
 -/
 def gradientBoostedTreesForwardSpec {nTrees maxDepth nFeatures : Nat}
   (model : GradientBoostedTreesSpec α nTrees maxDepth)
@@ -178,7 +178,7 @@ def treePredictionGradSpec {maxDepth nFeatures : Nat}
   (_input : Tensor α (.dim nFeatures .scalar))
   (grad_output : α) :
   α :=
-  -- For decision trees, the gradient is simply the gradient of the output
+  -- For decision trees, the gradient is the gradient of the output
   -- since trees are piecewise constant functions
   grad_output
 

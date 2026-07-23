@@ -121,6 +121,21 @@ def getTensor {α : Type} [DecidableEq Shape] {s : Shape}
 def set (ps : ParamTable α) (id : Nat) (value : Runtime.AnyTensor α) : ParamTable α :=
   ps.map (fun p => if p.id = id then { p with value := value } else p)
 
+/--
+Build the set of parameter identifiers, rejecting duplicate ids.
+
+Optimizer buffers and gradients are keyed by `id`, so accepting two table entries with the same id
+would make both entries consume one gradient and mutate one shared optimizer state.
+-/
+def checkedIdSet (ps : ParamTable α) : Result (Std.HashMap Nat Unit) := do
+  let mut ids : Std.HashMap Nat Unit := {}
+  for p in ps do
+    if ids.contains p.id then
+      throw (tagError "optim" s!"duplicate param id {p.id}")
+    else
+      ids := ids.insert p.id ()
+  pure ids
+
 end ParamTable
 
 /-!
@@ -237,17 +252,25 @@ structure ParamGroup (α : Type) [Context α] where
 Full optimizer state used by the training loop.
 
 This mirrors PyTorch's optimizer state:
-- a global step counter,
+- a global optimizer-call counter,
 - hyperparameter groups,
-- and per-parameter state buffers keyed by parameter id (`Nat`).
+- per-parameter Adam steps, and
+- per-parameter state buffers keyed by parameter id (`Nat`).
 -/
 structure OptimizerState (α : Type) [Context α] where
   /-- Which update rule to apply on `step`. -/
   kind : OptimizerKind
   /-- Parameter groups (hyperparameters + membership). -/
   groups : List (ParamGroup α)
-  /-- Global step counter (increments once per `step`). -/
+  /-- Global optimizer-call counter (increments once per `step`, including sparse steps). -/
   step : Nat := 0
+  /--
+  Number of gradient-bearing Adam/AdamW updates applied to each parameter.
+
+  Adam bias correction is parameter-local: a parameter whose gradient is absent does not advance
+  its moment step. Keeping this separate from `step` is necessary for sparse or conditional models.
+  -/
+  parameterSteps : Std.HashMap Nat Nat := {}
   /-- Momentum buffer (SGD with momentum / Nesterov), keyed by parameter id. -/
   momentum_buf : Std.HashMap Nat (Runtime.AnyTensor α) := {}
   /-- Adam first-moment estimate, keyed by parameter id. -/
@@ -270,6 +293,8 @@ structure OptimStateDict (α : Type) [Context α] where
   kind : OptimizerKind
   /-- Global optimizer step at the time the snapshot was taken. -/
   step : Nat
+  /-- Per-parameter Adam/AdamW moment steps used for bias correction. -/
+  parameterSteps : List (Nat × Nat) := []
   /-- Parameter groups, including scheduler state and hyperparameters. -/
   groups : List (ParamGroup α)
   /-- Momentum buffers keyed by parameter id. -/
@@ -295,6 +320,7 @@ PyTorch analogy: this is the "export" step for `state_dict()`.
 def toStateDict (opt : OptimizerState α) : OptimStateDict α :=
   { kind := opt.kind
   , step := opt.step
+  , parameterSteps := opt.parameterSteps.toList
   , groups := opt.groups
   , momentum_buf := opt.momentum_buf.toList
   , m := opt.m.toList
@@ -311,6 +337,7 @@ PyTorch analogy: this is the "import" step for `load_state_dict(...)`.
 def ofStateDict (d : OptimStateDict α) : OptimizerState α :=
   { kind := d.kind
   , step := d.step
+  , parameterSteps := Std.HashMap.ofList d.parameterSteps
   , groups := d.groups
   , momentum_buf := Std.HashMap.ofList d.momentum_buf
   , m := Std.HashMap.ofList d.m
@@ -366,15 +393,19 @@ def addWeightDecay {s : Shape}
   addSpec grad (scaleSpec param weight_decay)
 
 /--
-Convert the training-loop Adam step number into the canonical optimizer state's previous step.
+Recover the previous Adam step for one parameter.
 
-The public training helper receives the step being applied (`1` for the first Adam/AdamW update).
-`NN.Runtime.Optim.Optimizers` stores the previous step in the state and increments internally.
-For direct calls with `t = 0`, we still return `0` so the helper stays total and behaves like a
-first update rather than constructing a negative predecessor.
+New states record this counter explicitly. The moment-buffer fallback preserves sensible behavior
+when loading a state dictionary created before per-parameter counters were stored.
 -/
-def adamPreviousStep (t : Nat) : Nat :=
-  if t = 0 then 0 else t - 1
+def previousAdamStep
+    (parameterSteps : Std.HashMap Nat Nat)
+    (moment1 moment2 : Std.HashMap Nat (Runtime.AnyTensor α))
+    (globalStep id : Nat) : Nat :=
+  match parameterSteps.get? id with
+  | some t => t
+  | none =>
+      if moment1.contains id || moment2.contains id then globalStep else 0
 
 /--
 Update each group's learning rate from its scheduler (if present) and advance the scheduler state.
@@ -415,6 +446,7 @@ Inputs:
 - `grads` maps parameter ids to gradients (as produced by autograd).
 
 Behavior:
+- rejects duplicate parameter ids, overlapping groups, and group ids absent from the parameter table,
 - applies LR schedulers (if configured) per group,
 - shape-checks gradients and state buffers against each parameter,
 - updates per-parameter state buffers (momentum / Adam m,v / accumulators),
@@ -424,9 +456,14 @@ def step
   (opt : OptimizerState α)
   (params : ParamTable α)
   (grads : Std.HashMap Nat (Runtime.AnyTensor α)) : Result (OptimizerState α × ParamTable α) := do
+  let parameterIds ← ParamTable.checkedIdSet params
   let groups' := updateGroupSchedulers opt.groups
   let gmap <- groupMap groups'
+  for (id, _) in gmap.toList do
+    if !parameterIds.contains id then
+      throw (tagError "optim" s!"param group references unknown id {id}")
   let tNext := opt.step + 1
+  let mut parameterSteps := opt.parameterSteps
   let mut momentum_buf := opt.momentum_buf
   let mut m := opt.m
   let mut v := opt.v
@@ -457,18 +494,22 @@ def step
                 _root_.Optim.SGD.update (α := α) (s := pval.s) state param gradWD
               updated := { p with value := AnyTensor.mk param' } :: updated
           | .momentum =>
+              let firstUpdate := !momentum_buf.contains p.id
               let v0 := getOrInit momentum_buf p.id pval
               let v0t ← castState "optim" p.id v0 pval
               let gradWD := addWeightDecay param grad g.weight_decay
-              let gradDamped := scaleSpec gradWD (1 - g.dampening)
+              -- PyTorch initializes a momentum buffer from the first raw gradient. Dampening is
+              -- applied only once a buffer already exists.
+              let gradForBuffer :=
+                if firstUpdate then gradWD else scaleSpec gradWD (1 - g.dampening)
               let momentumState : _root_.Optim.MomentumSGD.State α pval.s :=
                 { lr := g.lr, momentum := g.momentum, buf := v0t }
               let (momentumState', paramClassic) :=
                 _root_.Optim.MomentumSGD.update (α := α) (s := pval.s)
-                  momentumState param gradDamped
+                  momentumState param gradForBuffer
               let updateDir :=
                 if g.nesterov then
-                  addSpec gradDamped (scaleSpec momentumState'.buf g.momentum)
+                  addSpec gradWD (scaleSpec momentumState'.buf g.momentum)
                 else
                   momentumState'.buf
               let param' :=
@@ -507,6 +548,7 @@ def step
               let m0t ← castState "optim" p.id m0 pval
               let v0t ← castState "optim" p.id v0 pval
               let gradWD := addWeightDecay param grad g.weight_decay
+              let previousStep := previousAdamStep parameterSteps m v opt.step p.id
               let state : _root_.Optim.Adam.State α pval.s :=
                 { lr := g.lr
                   beta1 := g.beta1
@@ -514,11 +556,12 @@ def step
                   epsilon := g.epsilon
                   m := m0t
                   v := v0t
-                  t := adamPreviousStep tNext }
+                  t := previousStep }
               let (state', param') :=
                 _root_.Optim.Adam.update (α := α) (s := pval.s) state param gradWD
               let m' := state'.m
               let v' := state'.v
+              parameterSteps := parameterSteps.insert p.id state'.t
               m := m.insert p.id (AnyTensor.mk (Tensor.materialize m'))
               v := v.insert p.id (AnyTensor.mk (Tensor.materialize v'))
               updated := { p with value := AnyTensor.mk (Tensor.materialize param') } :: updated
@@ -527,6 +570,7 @@ def step
               let v0 := getOrInit v p.id pval
               let m0t ← castState "optim" p.id m0 pval
               let v0t ← castState "optim" p.id v0 pval
+              let previousStep := previousAdamStep parameterSteps m v opt.step p.id
               let state : _root_.Optim.AdamW.State α pval.s :=
                 { lr := g.lr
                   beta1 := g.beta1
@@ -535,11 +579,12 @@ def step
                   weight_decay := g.weight_decay
                   m := m0t
                   v := v0t
-                  t := adamPreviousStep tNext }
+                  t := previousStep }
               let (state', param') :=
                 _root_.Optim.AdamW.update (α := α) (s := pval.s) state param grad
               let m' := state'.m
               let v' := state'.v
+              parameterSteps := parameterSteps.insert p.id state'.t
               m := m.insert p.id (AnyTensor.mk (Tensor.materialize m'))
               v := v.insert p.id (AnyTensor.mk (Tensor.materialize v'))
               updated := { p with value := AnyTensor.mk (Tensor.materialize param') } :: updated
@@ -565,6 +610,7 @@ def step
     { kind := opt.kind
     , groups := groups'
     , step := tNext
+    , parameterSteps := parameterSteps
     , momentum_buf := momentum_buf
     , m := m
     , v := v

@@ -116,9 +116,9 @@ theorem runtimeFloat32_toRef_eq_bridge (x : Float32) :
 /--
 Abstract result bits for native CUDA scalar primitives.
 
-This deliberately does not claim that CUDA has been proved correct in Lean. It provides an explicit comparison point where
-the FFI/runtime implementation can be compared against the `IEEE32Exec` reference, one result bit
-pattern at a time. Vector/tensor kernels lift this elementwise, except reductions whose order must
+This structure provides a bit-by-bit comparison point between the FFI/runtime implementation and
+the `IEEE32Exec` reference. It makes no claim that Lean proves the CUDA implementation correct.
+Vector and tensor kernels lift the comparison elementwise, except for reductions whose order must
 also be specified.
 -/
 structure NativePrimitiveBits where

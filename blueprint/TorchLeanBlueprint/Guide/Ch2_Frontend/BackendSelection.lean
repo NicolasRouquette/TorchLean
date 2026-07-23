@@ -7,7 +7,7 @@ open Verso.Genre Manual
 tag := "backend-selection"
 %%%
 
-The previous page selected CPU, CUDA, or an optional provider from the public API. Now we can look
+The previous page selected CPU, CUDA, or an optional provider through the runtime API. Now we can look
 at the less visible question: when a graph asks for matrix multiplication, attention, or a
 reduction, how does TorchLean decide which implementation is allowed to answer?
 
@@ -205,7 +205,18 @@ small Lean theorem:
 This theorem says exactly what the policy function does: it accepts precisely when the audit has no
 failures. The evidence inside that audit is what carries the kernel-specific argument.
 
-# Public Configuration
+The maintained CUDA wrappers also perform concrete checks at the FFI boundary. Convolution and
+pooling validate rank and dimension conversion, nonzero strides, representable element counts,
+buffer lengths, and operation-specific domains such as finite nonzero smooth-max `β` after
+conversion to Float32. The C/CUDA boundary repeats critical size and overflow checks. These guards
+prevent malformed launches; they complement rather than replace a mathematical value-refinement
+argument.
+
+Capsule selection follows the run's scalar semantics, while a native capsule may separately state
+that its device storage is Float32. The mixed-precision distinction is described once in
+*TorchLean And PyTorch*; choosing another provider does not alter it.
+
+# Runtime Configuration
 
 The model API stays independent of these implementation details:
 
@@ -222,7 +233,7 @@ let compiledTrainer := trainerFor .compiled
 ```
 
 Device and provider selection live in runtime configuration and command-line options. Backend
-selection does not change the model's public forward function. This is similar to the separation
+selection leaves the model's forward function unchanged, much like the separation
 between calling a PyTorch model and wrapping it with `torch.compile`: compilation changes
 execution, not the mathematical intention of the model.
 
@@ -243,9 +254,9 @@ checked, or proved.
 
 # Where To Continue
 
-Read [Execution Modes and Runners](Runtime___-Autograd___-and-Interop/Execution-Modes-and-Runners/)
-for the public runtime API. Read
-[GPU and CUDA Boundaries](Floating-Point-and-Native-Boundaries/GPU-and-CUDA-Boundaries/)
+Read [Choosing How A Model Runs](Runtime___-Autograd___-and-Interop/Choosing-How-A-Model-Runs/)
+for the runtime API. Read
+[From A Tensor Operation To A GPU Kernel](Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/)
 for the native implementation details. The
 [Installation page](https://lean-dojo.github.io/TorchLean/installation/) lists platform commands and
 the profiles currently wired into the repository.

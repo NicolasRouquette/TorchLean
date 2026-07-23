@@ -40,7 +40,7 @@ native GPU runtime path and checks that the CUDA backend is available. Theorem
 statements that mention CUDA cite the native-runtime boundary in
 `TRUST_BOUNDARIES.md` instead of treating a kernel launch as Lean proof evidence.
 
-The public code shape is:
+Application code looks like this:
 
 ```lean
 import NN.API
@@ -165,7 +165,7 @@ require TorchLean from "../TorchLean"
 - `NN/Verification`: certificate checkers and CLI workflows.
 - `NN/Examples`: quickstarts, model zoo commands, widgets, bundled verification assets,
   and interoperability workflows.
-- `blueprint/TorchLeanBlueprint/Guide`: source for the public guide.
+- `blueprint/TorchLeanBlueprint/Guide`: source for the guide.
 - `home_page`: project website sources.
 
 ## Current Capabilities
@@ -174,8 +174,8 @@ The same rule applies across the tree: name the object, name the artifact, and n
 
 - **Training and runtime.** `Trainer.new` supports supervised tasks, scalar/backend choices,
   trained handles, prediction, logs, typed step streams, generated or file-backed batches, and
-  optional CUDA-backed Float32 runtime paths. Public code should look like one trainer with selected
-  backend options, not one public forward method per backend.
+  optional CUDA-backed Float32 runtime paths. Application code uses one trainer with selected
+  backend options instead of one forward method per backend.
 - **Graphs and compiler fragments.** TorchLean models can be lowered to a shared IR. A first-order
   forward fragment has Lean-side compiler-correctness theorems, and coverage grows operation by
   operation. GraphSpec describes typed architectures above the lower-level op-tagged DAG consumed by

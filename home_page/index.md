@@ -40,6 +40,7 @@ usemathjax: true
   <div class="home-actions" aria-label="Primary links">
     <a class="primary-link" href="{{ '/blueprint/Introduction/' | relative_url }}">Start reading</a>
     <a class="secondary-link" href="{{ '/examples/' | relative_url }}">View examples</a>
+    <a class="secondary-link" href="{{ '/performance/' | relative_url }}">Build performance</a>
     <a class="secondary-link" href="https://arxiv.org/abs/2602.22631">Read the paper</a>
   </div>
 </section>

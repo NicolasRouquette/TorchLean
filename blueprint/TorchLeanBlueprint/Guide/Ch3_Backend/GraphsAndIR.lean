@@ -127,6 +127,12 @@ It also creates an ABI obligation. If the payload at node 1 contains a `[3, 4]` 
 node claims output shape `[5]`, the graph structure is unchanged but evaluation must fail. A
 payload is not trusted merely because its key exists.
 
+The shared `NN.IR.Payload` currently has typed records for constants, linear weights and bias,
+convolution parameters, and eval-mode NCHW BatchNorm parameters. Other operations obtain their
+values from parent edges. Adding a new payload-backed operation requires coordinated changes to the
+payload type, shape inference, denotation, import/export adapters, and every runtime or verifier
+that claims to support it.
+
 # A Heterogeneous Value Table
 
 During evaluation, node 0 stores a vector, nodes 1 and 2 store `[5]`, node 3 stores `[3]`, and nodes
@@ -211,6 +217,20 @@ Change `concat axis=1` to an out-of-range axis in the source
 [`IRAxisOps.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/DeepDives/IRAxisOps.lean).
 Shape inference rejects the node before evaluation.
 
+# Executable IR Coverage And Proof Coverage
+
+`Runtime.Autograd.Compiled.IRExec` lowers the current IR vocabulary operation by operation,
+including elementwise arithmetic, seeded masks, broadcasting, reductions, rank-two and limited
+rank-three matmul, linear and convolution payloads, pooling, normalization, reshape/permutation,
+concat, and scalar MSE. Lowering remains allowed to reject a shape or axis that its runtime builder
+cannot represent.
+
+The recursive semantic-equivalence theorem is narrower than the executable lowering. Its named
+side conditions are `NoRawLog`, `NoMSELoss`, and `NoConcat`. Per-operation lemmas live under
+`NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops`; the end-to-end theorem is in
+`Correctness.SemanticEquivalence`. This separation lets the executable path grow without silently
+expanding the theorem statement.
+
 # Pure Denotation
 
 `NN.IR.Graph.denote` folds over the node array using the spec operations and a scalar `Context α`.
@@ -223,6 +243,9 @@ The same structural graph can therefore be interpreted at:
 
 The graph is the same data, but the meaning of arithmetic changes with `α`. The equality of two
 interpretations is never automatic.
+
+`DVal α` varies the shape while retaining the scalar contract introduced in *Tensors And Shapes*.
+The PyTorch comparison discusses the separate mixed-precision question.
 
 For the six-node example:
 

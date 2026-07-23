@@ -15,16 +15,13 @@ $$`\forall x\in X,\qquad f_y(x)-f_j(x)>0.`
 
 That single formula hides most of the engineering. We need to know which model `f` denotes, how
 `X` was represented, how the output bounds were obtained, and whether the arithmetic was exact or
-rounded. TorchLean therefore keeps apart four objects that are often compressed into the word
-"certificate":
+rounded. TorchLean therefore refuses to make the word "certificate" carry the whole argument by
+itself. There is a graph with an exact meaning, a theorem explaining why a bound procedure encloses
+that meaning, a finite artifact or checker run, and, when the checker is meant to feed the theorem, a
+bridge from acceptance to the theorem's hypotheses. Only their composition yields the final claim.
 
-1. the exact graph semantics and mathematical property;
-2. a bound-propagation theorem over those semantics;
-3. an executable checker or imported artifact;
-4. a bridge proving that accepted executable evidence satisfies the theorem's hypotheses.
-
-Only their composition yields the final claim. We begin with a complete executable run, then open
-it layer by layer.
+We begin with a network small enough to work out on paper. That lets us compare the printed result
+with the mathematics before opening the general theorem stack.
 
 # A Complete Robustness Run
 
@@ -57,14 +54,16 @@ at most `-1.8`. Consequently,
 
 $$`\inf_{x\in X}(f_0(x)-f_1(x))\ge 1.8-(-1.8)=3.6>0.`
 
-The printed `true` is useful, but it is not itself the theorem. To turn the run into a proof, we
-must connect the following statements:
+For this example there is no mystery hidden in those numbers. Each input coordinate lies in
+`[0.9,1.1]`; the first layer adds them, so its preactivation lies in `[1.8,2.2]`. That interval is
+strictly positive, hence ReLU is the identity throughout the box. The output weights are `1` and
+`-1`, giving logits in `[1.8,2.2]` and `[-2.2,-1.8]`. The margin is twice the hidden value and lies
+in `[3.6,4.4]`. IBP is exact on this tiny path because the ReLU phase never changes.
 
-1. the compiled graph denotes the source model;
-2. the bound propagation encloses the graph denotation on `X`;
-3. the positive lower margin implies the classification property;
-4. if the claim concerns native Float32 execution, the native path refines the arithmetic used in
-   the proof.
+The printed `true` is useful, but it is not itself the theorem. To turn the run into a proof, we
+must connect the compiled graph to the source model, the propagated boxes to the graph denotation,
+and the positive lower margin to the classification property. A claim about native Float32 needs
+one more link: that native execution refines the arithmetic used in the proof.
 
 This distinction is practical. If the model compiler changes, obligation 1 is the place to look.
 If a new activation is added to CROWN, obligation 2 changes. If the deployment claim concerns
@@ -76,27 +75,30 @@ The verifier operates on the canonical `NN.IR.Graph`. An interval or affine form
 relative to a denotation of that same graph, parameter store, and input box. A compiler theorem is
 therefore part of a source-model claim.
 
-TorchLean has two relevant forward correspondences:
+TorchLean has two relevant forward correspondences. The typed first-order
+[proved forward fragment](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/TorchLean/Proved/Public.lean)
+compiles `NN.Verification.TorchLean.Proved.Program` values. Its constructors cover constants,
+parameters, arithmetic, ReLU, `exp`, `log`, inverse, matrix products, reshapes and permutations,
+last-axis softmax, 2D LayerNorm, linear and convolution layers, and MSE loss.
+`compileForward_wellFormed` proves structural well-formedness, while
+`runForwardIR_eq_evalForward` proves equality with the typed program evaluator.
 
-- The typed first-order
-  [proved forward fragment](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/TorchLean/Proved/Public.lean)
-  compiles `NN.Verification.TorchLean.Proved.Program` values. Its constructors cover constants,
-  parameters, arithmetic, ReLU, `exp`, `log`, inverse, matrix products, reshapes and permutations,
-  last-axis softmax, 2D LayerNorm, linear and convolution layers, and MSE loss.
-  `compileForward_wellFormed` proves structural well-formedness, while
-  `runForwardIR_eq_evalForward` proves equality with the typed program evaluator.
-- `execGraphOfIR_semantics_eq` proves that a successful lowering from canonical IR to Lean's
-  executable autograd `ExecGraphData` preserves denotation for every input, under `NoMSELoss` and
-  `NoRawLog`.
+The second correspondence starts from canonical IR rather than the typed source language.
+`execGraphOfIR_semantics_eq` proves that a successful lowering to Lean's executable autograd
+`ExecGraphData` preserves denotation for every input, under `NoMSELoss`, `NoRawLog`, and
+`NoConcat`.
 
 Both are Lean semantic equalities over an abstract scalar `Context`. They are not statements that a
 PyTorch module, CUDA kernel, or vendor library agrees with the graph. General API compilation also
 does not inherit the typed-fragment theorem merely because it returns the same IR type.
 
 ```
+import NN.Verification.TorchLean.Proved
+import NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence
+
 #check NN.Verification.TorchLean.Proved.compileForward_wellFormed
 #check NN.Verification.TorchLean.Proved.runForwardIR_eq_evalForward
-#check NN.Runtime.Autograd.Compiled.IRExec.Correctness.execGraphOfIR_semantics_eq
+#check Runtime.Autograd.Compiled.execGraphOfIR_semantics_eq
 ```
 
 # IBP
@@ -140,7 +142,7 @@ executable `Graph.runIBP` path.
 
 The robustness command above begins with fixed parameters so the arithmetic is easy to inspect.
 The MLP workflow exercises a longer path: train a `2 -> 100 -> 1` model with the compiled backend,
-lower the trained model, and run public IBP over a small input box.
+lower the trained model, and run the maintained IBP implementation over a small input box.
 
 ```
 lake exe verify -- torchlean-mlp-workflow
@@ -154,11 +156,11 @@ Training with backend=Runtime.Autograd.Torch.Backend.compiled, device=cpu
 dataset size = 3
 mean_loss(before) = 4.751697
 mean_loss(after) = 0.834089
-Checking public IBP bounds on a small input box
+Checking IBP bounds on a small input box
 IBP nodes=20 output_dim=1 lo=[1.524955] hi=[1.826789]
 ```
 
-The loss decrease is a runtime observation. The final interval is a bound produced by the public
+The loss decrease is a runtime observation. The final interval is a bound produced by the
 IBP implementation. A theorem about the trained model additionally needs the exact parameter
 store used in compilation and a soundness bridge for this executable bound path. Keeping those
 claims separate prevents a successful training log from being mistaken for a robustness proof.
@@ -256,6 +258,29 @@ This yields three distinct uses of "certificate":
 
 The certificate chapter runs the leaf checker, changes a witness so that it must fail, and explains
 which stronger artifact would be needed to obtain root-region soundness.
+
+## Other Maintained Checkers
+
+The verifier registry includes several implemented families that exercise different semantic
+objects:
+
+- `lirpa-mlp`, `lirpa-cnn`, `lirpa-attention`, `lirpa-gru`, and `lirpa-encoder` replay their
+  corresponding finite LiRPA JSON formats. Acceptance is specific to each format and supported
+  operator fragment.
+- `camera-box3d-cert` checks a camera/3D-box artifact. Its
+  [`Box3D`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/Geometry3D/Box3D.lean)
+  implementation includes interval-operation soundness lemmas and `checkCert_sound`, connecting a
+  successful pure check to the stated projection, positive-depth, and image/bounding-box guards.
+- `vnncomp-mnistfc` parses the supported VNN-COMP-style MNIST-FC suite and runs the in-repo bound
+  workflow. This is support for that declared suite, not for every VNN-LIB/ONNX benchmark.
+- `digits` and `digits-train-certify` run the prepared sklearn-digits robustness paths; one checks
+  supplied weights and the other trains before compiling and reporting bounds.
+- the three `twostage-*` commands implement the Lyapunov workflows described in the two-stage
+  chapter, with distinct external-oracle, hybrid, and all-in-Lean boundaries.
+
+`lake exe verify -- list` is the authoritative command inventory. A successful run establishes the
+acceptance predicate or reported computation documented for that command; it does not merge these
+heterogeneous formats into one global verification theorem.
 
 # Floating-Point Boundary
 

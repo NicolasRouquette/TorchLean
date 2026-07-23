@@ -101,7 +101,7 @@ def batchNorm2dNchwEvalBias (cfg : BatchNorm2DNchwEvalParams α) (ci : Fin cfg.c
 Build the exact diagonal affine form for eval-mode BatchNorm2d over an `N×C×H×W` tensor.
 
 The IR stores the channel parameters in the node payload. The spatial dimensions come from the
-checked parent shape, so malformed shapes simply do not produce a verifier transfer rule.
+checked parent shape, so malformed shapes produce no verifier transfer rule.
 -/
 def batchNorm2dNchwEvalLinear? (parentShape : Shape)
     (cfg : BatchNorm2DNchwEvalParams α) : Option (LinParams α) :=

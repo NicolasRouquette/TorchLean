@@ -21,8 +21,8 @@ The key warning paper is:
   IEEE S&P Workshops 2020.
   https://doi.org/10.1109/SPW50608.2020.00058
 
-TorchLean's response is not to pretend Lean's runtime `Float32` is transparent. It is opaque to the
-Lean kernel. So we expose the trust boundary as a typeclass: if the runtime `Float32` primitive
+Lean's runtime `Float32` is opaque to the kernel. TorchLean exposes that trust boundary as a
+typeclass: if the runtime `Float32` primitive
 matches the bit-level `IEEE32Exec` operation, we may rewrite runtime arithmetic into the executable
 IEEE-754 model and then use the internal floating-point theorems.
 
@@ -46,16 +46,20 @@ Floating-point deployment semantics are either modeled by `IEEE32Exec` or isolat
 obligation.
 -/
 theorem runtimeFloat32_add_rewrites_to_ieee32
-    [RuntimeFloat32MatchesIEEE32Exec] (a b : _root_.Float32) :
+    [RuntimeFloat32FiniteMatchesIEEE32Exec] (a b : _root_.Float32)
+    (ha : Float32.isFinite a = true) (hb : Float32.isFinite b = true)
+    (hr : Float32.isFinite (a + b) = true) :
     toIEEE32Exec (a + b) =
       IEEE32Exec.add (toIEEE32Exec a) (toIEEE32Exec b) :=
-  RuntimeFloat32MatchesIEEE32Exec.toIEEE32Exec_add a b
+  RuntimeFloat32FiniteMatchesIEEE32Exec.toIEEE32Exec_add a b ha hb hr
 
 /-- The same boundary is available for division, where invalid-domain bugs often surface first. -/
 theorem runtimeFloat32_div_rewrites_to_ieee32
-    [RuntimeFloat32MatchesIEEE32Exec] (a b : _root_.Float32) :
+    [RuntimeFloat32FiniteMatchesIEEE32Exec] (a b : _root_.Float32)
+    (ha : Float32.isFinite a = true) (hb : Float32.isFinite b = true)
+    (hr : Float32.isFinite (a / b) = true) :
     toIEEE32Exec (a / b) =
       IEEE32Exec.div (toIEEE32Exec a) (toIEEE32Exec b) :=
-  RuntimeFloat32MatchesIEEE32Exec.toIEEE32Exec_div a b
+  RuntimeFloat32FiniteMatchesIEEE32Exec.toIEEE32Exec_div a b ha hb hr
 
 end NN.Examples.BugZoo.FloatBoundary

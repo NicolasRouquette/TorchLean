@@ -252,8 +252,9 @@ abbrev τ : Shape :=
 /--
 Compact GPT-2-style model with the real GPT-2 BPE tokenizer path.
 
-This is not OpenAI GPT-2-small. It is a TorchLean-native Transformer whose tokenizer comes from
-GPT-2 BPE files and whose output head uses a local projection of the observed corpus ids.
+This TorchLean-native Transformer reads GPT-2 BPE tokenizer files and uses a local output
+projection over the corpus ids it observes. Its architecture and scale differ from OpenAI
+GPT-2-small.
 -/
 def model : nn.M (nn.Sequential σ τ) :=
   nn.models.causalTransformerOneHot cfg

@@ -45,9 +45,8 @@ namespace Float32Interval
 /--
 Closed interval with runtime `Float32` endpoints.
 
-This is a *baseline*, not the verified interval implementation. Operations use ordinary runtime
-`Float32` arithmetic and therefore do not provide outward-rounding guarantees. It is useful in examples
-because it shows exactly why `IEEE32Exec.Interval32` exists.
+This baseline uses ordinary runtime `Float32` arithmetic and provides no outward-rounding
+guarantee. Examples compare it with the verified `IEEE32Exec.Interval32` implementation.
 -/
 structure IntervalF32 where
   /-- Lower endpoint. -/

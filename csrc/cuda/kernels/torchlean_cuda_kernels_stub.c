@@ -943,6 +943,8 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_gather_vec(b_lean_obj_arg VObj, u
   torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(K);
   for (size_t j = 0; j < K; ++j) {
     b_lean_obj_res idxNat = lean_array_get_core(IdxObj, j);
+    // The checked conversion accepts the full UInt32 domain, including UINT32_MAX, and rejects
+    // larger boxed naturals instead of confusing the maximum value with an error sentinel.
     uint32_t i =
         nat_to_u32_or_panic(idxNat, "torchlean_cuda_buffer_gather_vec_stub: bad index Nat");
     out->data[j] = (i < n) ? v->data[(size_t)i] : 0.0f;

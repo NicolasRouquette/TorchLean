@@ -38,7 +38,7 @@ The runner currently exposes these model and workflow commands:
 Use `lake exe torchlean --help` for the current command list and example invocations. Runtime flags
 such as `--device cpu`, `--device cuda`, `--dtype`, and `--backend` can appear before or after the command name.
 
-For a compact public-surface regression pass, run:
+For a compact application-level regression pass, run:
 
 ```bash
 scripts/checks/example_regression.sh --skip-help

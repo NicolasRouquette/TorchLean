@@ -7,13 +7,13 @@ open Verso.Genre Manual
 tag := "examples"
 %%%
 
-The examples in this chapter form a progression. The first prints typed values. The second
-differentiates a concrete linear map. The third trains a small network. The fourth lowers a model
-to the verification IR and propagates an input box. The final example checks a numerical
-certificate with explicit binary32 semantics.
+This chapter follows a small model from the first value we can print to an artifact we can check.
+We begin by asking what a tensor contains, then watch derivatives flow, train two deliberately small
+models, lower a graph for verification, and finally replay numerical evidence. The last lab crosses
+an external-tool boundary and shows the limits of what accepting an imported graph establishes.
 
-Run them in order the first time. Each introduces one new object while keeping the earlier ones
-visible.
+Run the labs in order the first time. Each keeps the previous objects in view, so a tensor never
+disappears behind the words “training run” and a successful command never silently becomes a proof.
 
 # Lab One: A Tensor Has A Shape And A Scalar Meaning
 
@@ -138,9 +138,8 @@ steps=20 loss0=0.761530 loss1=0.459876
 predict(heldout) = [0.012967]
 ```
 
-The per-step loss at step zero is not the dataset mean. It is the loss for the first streamed
-sample. Reading the two as the same statistic would be a subtle reporting error; the labels keep
-them distinct.
+The step-zero loss belongs to the first streamed sample, while `mean_loss` covers the dataset.
+Their labels prevent those two statistics from being confused.
 
 ## Change The Numerical Meaning
 
@@ -177,7 +176,52 @@ generalization bound.
 Source:
 [`SimpleMlpTrain.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Quickstart/SimpleMlpTrain.lean).
 
-# Lab Four: Lower A Model And Bound Its Output
+# Lab Four: Learn From Data You Can See
+
+Before introducing files, downloads, or preprocessing scripts, it helps to train once on a dataset
+small enough to draw on paper. TorchLean's band samples are single-channel `4 × 4` images. Class
+zero contains a vertical band; class one contains a horizontal band. Three offsets per class make
+the six training examples.
+
+Run the compact classifier:
+
+```
+lake exe torchlean quickstart_cnn \
+  --device cpu --steps 2 --batch 2 --seed 2026
+```
+
+The current run ends with:
+
+```
+dataset size = 3
+mean_loss(before) = 0.689656
+mean_loss(after) = 0.685960
+steps=2 loss0=0.689656 loss1=0.685960
+vertical-1 expected=0 = [[0.125427, -0.069819],
+                         [0.125427, -0.069819]]
+```
+
+Why does a six-image dataset report size three? `--batch 2` packs the samples into three batches.
+The final line repeats the same probe twice to form a batch and prints two logits per copy. The
+first logit is larger in this run, so the probe's predicted class is the expected vertical class.
+That is a useful sanity check, not an accuracy theorem.
+
+The reusable definitions in
+[`NN.API.Samples.Bands`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Samples/Bands.lean)
+separate rendering from training. `renderBand` constructs one image from an axis, offset, and
+thickness; `dataset` combines any list of class descriptions and offsets; `train` and `probes` cast
+the concrete `Float` images into a supported scalar context. The quickstart uses the canonical
+four-by-four data through `Data.Bands.dataset`.
+
+This tiny problem removes dataset provenance and parser behavior from the experiment, which makes
+it good for debugging model construction, batching, loss, and optimization. It does not tell us how
+the same CNN behaves on natural images. The CIFAR case studies earlier in this part address that
+different question.
+
+Source:
+[`SimpleCnnTrain.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Quickstart/SimpleCnnTrain.lean).
+
+# Lab Five: Lower A Model And Bound Its Output
 
 The previous labs evaluated one concrete input at a time. Interval bound propagation starts from an
 input box
@@ -242,7 +286,7 @@ lake exe verify -- list
 The implementation of this path is reachable from
 [`NN/Verification/CLI.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/CLI.lean).
 
-# Lab Five: Replay A Numerical Certificate
+# Lab Six: Replay A Numerical Certificate
 
 The numerical-certificate example moves from an in-memory bound result to a checked artifact. Run:
 
@@ -287,7 +331,17 @@ The certificate uses outward-rounded `IEEE32Exec` ranges and can replay concrete
 bit-level interpreter. A native runtime remains a separate provider whose agreement requires the
 appropriate backend evidence.
 
-# Lab Six: An External Graph Producer
+To inspect the scalar boundary behind that certificate, also run:
+
+```
+lake exe torchlean float32_modes
+```
+
+It contrasts proof-level rounding, executable IEEE binary32 behavior, and native-runtime agreement
+on finite, exceptional, and non-associative examples. It is a semantics demonstration; the
+numerical-certificate command is the separate graph-level checker.
+
+# Lab Seven: An External Graph Producer
 
 TorchLean can ask PyTorch to export model graphs and then parse the resulting artifact:
 
@@ -317,7 +371,7 @@ Source:
 
 # Building The Example Suite
 
-Before changing public examples, build the curated umbrella:
+Before changing maintained examples, build the curated umbrella:
 
 ```
 lake build NNExamples

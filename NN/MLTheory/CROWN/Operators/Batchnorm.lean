@@ -105,7 +105,7 @@ def ibpBatchnorm (params : BatchNormParams α)
     { lo := outLo, hi := outHi }
 
 /-- Affine bounds for BatchNorm propagation.
-    Since BN is itself affine, we simply compose the affine forms:
+    Since BN is affine, compose the affine forms:
     If prev = A_prev * x_in + c_prev and BN = scale * · + offset
     Then composed = scale * (A_prev * x_in + c_prev) + offset
                   = diag(scale) * A_prev * x_in + (scale * c_prev + offset)

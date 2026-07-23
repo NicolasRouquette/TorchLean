@@ -84,15 +84,20 @@ def meanSpec : ∀ {s : Shape}, Tensor α s → α
       let sum := (List.finRange n).foldl (fun acc i => acc + meanSpec (values i)) 0
       sum / ↑n
 
-/-- Variance of all elements (population variance, divides by `n`). -/
+/-- Variance of all scalar leaves (population variance, divides by the total leaf count).
+
+For a higher-rank tensor this centers every entry around the tensor-wide mean. In particular, it
+does not collapse each outer slice to its mean before measuring dispersion.
+-/
 def varianceSpec : ∀ {s : Shape}, Tensor α s → α
   | .scalar, Tensor.scalar _ => 0
-  | .dim n _, Tensor.dim values =>
-      let m := meanSpec (Tensor.dim values)
-      let sum_sq_diff := (List.finRange n).foldl (fun acc i =>
-        let diff := meanSpec (values i) - m
-        acc + diff * diff) 0
-      sum_sq_diff / ↑n
+  | .dim _ _, Tensor.dim values =>
+      let t := Tensor.dim values
+      let m := meanSpec t
+      let sumSqDiff := tensorFoldlSpec (fun acc x =>
+        let diff := x - m
+        acc + diff * diff) 0 t
+      sumSqDiff / ↑(countSpec t)
 
 -- Shape-level bookkeeping for reductions that drop one axis.
 /-- Output shape after summing along `axis` (drops that dimension). -/
@@ -346,7 +351,11 @@ def reduceSumSquared {n s} (axis : Nat) (t : Tensor α (.dim n s)) (h : Shape.re
     Tensor α (shapeAfterSum (.dim n s) axis) :=
   reduceSum axis (mapSpec (fun x => x * x) t) h
 
-/-- Variance-reduction along a given axis (population variance, divides by `n`). -/
+/-- Variance-reduction along a given axis (population variance, divides by `n`).
+
+The reduced axis is centered first and squared second. This two-pass arrangement avoids the
+catastrophic cancellation of `E[X²] - E[X]²` when values are large but tightly clustered.
+-/
 def reduceVar
   {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.reducibleAlong axis s) :
   Tensor α (shapeAfterSum s axis) :=
@@ -356,19 +365,13 @@ def reduceVar
   | .dim n inner =>
     match axis with
     | 0 =>
-      -- Reducing along the first axis
-      -- Compute E[X²] - E[X]² directly without broadcasting
-      --
       -- PyTorch analogy: `torch.var(x, dim=0, unbiased=False)` (population variance).
       let mean := reduceMean 0 t h
-      let mean_squared := mapSpec (fun x => x * x) mean
-
-      -- Compute E[X²] by first squaring, then taking mean
-      let squares := mapSpec (fun x => x * x) t
-      let mean_of_squares := reduceMean 0 squares h
-
-      -- Variance = E[X²] - E[X]²
-      subSpec mean_of_squares mean_squared
+      match t with
+      | Tensor.dim slices =>
+        let centered := Tensor.dim (fun i => subSpec (slices i) mean)
+        let squared := mapSpec (fun x => x * x) centered
+        reduceMean 0 squared h
 
     | Nat.succ k =>
       -- Reducing along axis k+1 in the inner dimensions

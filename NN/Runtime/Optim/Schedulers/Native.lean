@@ -297,6 +297,7 @@ Get the learning rate for the warmup-then-cosine schedule at the current step.
 
 - During warmup, LR increases linearly from `0` to `initial_lr`.
 - After warmup, LR follows a cosine anneal over the remaining steps.
+- At and after `total_steps`, LR remains at `0` instead of beginning another cosine period.
 
 PyTorch analogy: a common Transformer schedule, often implemented by composing warmup with cosine
   decay.
@@ -304,6 +305,8 @@ PyTorch analogy: a common Transformer schedule, often implemented by composing w
 def WarmupCosineScheduler.getLr (scheduler : WarmupCosineScheduler α) : α :=
   if scheduler.totalSteps = 0 then
     scheduler.initialLr
+  else if scheduler.currentStep >= scheduler.totalSteps then
+    0
   else if scheduler.currentStep < scheduler.warmupSteps then
     if scheduler.warmupSteps = 0 then
       scheduler.initialLr

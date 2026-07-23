@@ -91,17 +91,24 @@ theorem toEReal_addDown_le_add_le_addUp_of_isFinite (x y : IEEE32Exec)
           have : False := by simp [hy] at this
           exact this.elim
       | some dy =>
+          let exact := addDyadic dx dy
           have hadd :
-              add x y = roundDyadicToIEEE32 (addDyadic dx dy) := by
-            simp [IEEE32Exec.add, hdx, hdy]
-          have haddDown :
-              addDown x y = roundDyadicDown (addDyadic dx dy) := by
-            simp [IEEE32Exec.addDown, hchoose, hxInf, hyInf, hdx, hdy]
+              add x y = roundDyadicToIEEE32 exact := by
+            simp [IEEE32Exec.add, hdx, hdy, exact]
           have haddUp :
-              addUp x y = roundDyadicUp (addDyadic dx dy) := by
-            simp [IEEE32Exec.addUp, hchoose, hxInf, hyInf, hdx, hdy]
-          simpa [hadd, haddDown, haddUp] using
-            (toEReal_roundDyadicDown_le_roundDyadicToIEEE32_le_roundDyadicUp (d := addDyadic dx dy))
+              addUp x y = roundDyadicUp exact := by
+            simp [IEEE32Exec.addUp, hchoose, hxInf, hyInf, hdx, hdy, exact]
+          by_cases hzero : exact.mant = 0
+          · have haddDown :
+                addDown x y = if dx.sign || dy.sign then negZero else posZero := by
+              simp [IEEE32Exec.addDown, hchoose, hxInf, hyInf, hdx, hdy, exact, hzero]
+            cases hs : (dx.sign || dy.sign) <;>
+              simp [hadd, haddDown, haddUp, hs, roundDyadicToIEEE32, roundDyadicUp, hzero,
+                directed_toEReal_posZero, directed_toEReal_negZero]
+          · have haddDown : addDown x y = roundDyadicDown exact := by
+              simp [IEEE32Exec.addDown, hchoose, hxInf, hyInf, hdx, hdy, exact, hzero]
+            simpa [hadd, haddDown, haddUp] using
+              (toEReal_roundDyadicDown_le_roundDyadicToIEEE32_le_roundDyadicUp (d := exact))
 
 /-!
 ## Multiplication sandwich

@@ -2,16 +2,16 @@ import VersoManual
 
 open Verso.Genre Manual
 
-#doc (Manual) "Three Complete Model Runs" =>
+#doc (Manual) "Three End-to-End Case Studies" =>
 %%%
 tag := "model-examples-deep-dive"
 %%%
 
-This chapter runs three applications far enough to inspect the objects that move through
+This chapter follows three case studies far enough to inspect the objects that move through
 TorchLean. The first is a character-level Transformer, where sequence length, masking, and
-generation matter. The second compares residual and patch-token vision models on the same prepared
-dataset. The third is a Fourier neural operator, where the important boundary is the spectral
-kernel rather than an image or token representation.
+generation matter. The second compares two runs, residual and patch-token vision models, on the same
+prepared dataset. The third is a Fourier neural operator, where the important boundary is the
+spectral kernel rather than an image or token representation.
 
 The commands below were run against the current checkout. The displayed losses are deterministic
 for the stated seeds and one-example datasets, but they are not performance benchmarks. Their
@@ -94,10 +94,10 @@ $$`j>i\quad\Longrightarrow\quad
 \operatorname{attentionWeight}_{i,j}=0.`
 
 The source of the shared architecture is
-[`NN/API/Models/Gpt2.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Gpt2.lean).
+[NN/API/Models/Gpt2.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Gpt2.lean).
 The corpus split, configuration presets, evaluation loop, generation, and checkpoint handling are
 in
-[`NN/Examples/Models/Sequence/CharGpt.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Sequence/CharGpt.lean).
+[NN/Examples/Models/Sequence/CharGpt.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Sequence/CharGpt.lean).
 
 ## Make The Run Your Own
 
@@ -141,7 +141,7 @@ program or with a pretrained GPT-2 checkpoint.
 
 ResNet and ViT consume the same prepared CIFAR arrays but impose different structure on them. The
 examples make that difference visible while sharing the same trainer, optimizer, loss, and runtime
-surface.
+options.
 
 ```
 python3 scripts/datasets/download_example_data.py --cifar10
@@ -204,7 +204,7 @@ The conversion
 $$`B\times D\times H'\times W'
 \longrightarrow B\times N\times D`
 
-is an explicit layer in the public ViT model. It is not a hidden `view` whose correctness depends on
+is an explicit layer in the reusable ViT model. It is not a hidden `view` whose correctness depends on
 remembering which axis currently stores channels.
 
 ## A Useful Comparison
@@ -238,7 +238,7 @@ from sampled initial conditions. Each training pair is
 
 $$`u_0(x_i)\longmapsto u_T(x_i),\qquad i=0,\ldots,31.`
 
-Prepare the public dataset:
+Prepare the dataset:
 
 ```
 python3 NN/Examples/Data/prepare_fno1d_burgers.py \
@@ -295,7 +295,7 @@ y=\mathcal F^{-1}(\widehat y).`
 A pointwise linear branch is added before the activation. The command uses grid `N=32`, width `8`,
 eight retained modes on each side, and one spectral residual block.
 
-The public
+The reusable
 [`FNO constructor`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/FNO.lean)
 states the grid and mode constraints independently of the backend. The
 [`Burgers application`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Operators/Fno1dBurgers.lean)
@@ -322,9 +322,9 @@ dataset remain the same, but the numerical provider changes. This is precisely t
 comparison for which backend capsules are useful: provider, reduction policy, layout, and evidence
 can change without silently changing the model's mathematical interface.
 
-# Reading The Three Runs
+# Reading The Case Studies
 
-The three applications stress different parts of TorchLean:
+The four application runs stress different parts of TorchLean:
 
 :::table +header
 *
@@ -352,6 +352,11 @@ The three applications stress different parts of TorchLean:
 The next two chapters add stochastic state. In generative modeling and reinforcement learning, the
 network is only one part of the run, so schedules, samplers, environments, and rollout data matter
 as much as the architecture.
+
+Checkpoint and dataset files in these runs are runtime artifacts, not proof objects. Loading one
+checks its declared schema and dimensions where the command implements those checks; it does not
+establish provenance, reproduce the optimizer history, or prove that two files with the same shape
+encode the same model or dataset.
 
 # References
 

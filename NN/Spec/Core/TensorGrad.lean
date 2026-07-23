@@ -26,9 +26,8 @@ They are defined at the spec layer so they can be used both:
 
 Why clipping utilities belong in the spec layer:
 
-- Gradient clipping is part of the *algorithmic definition* of many training loops, not just an
-  implementation detail. If we want to reason about "the training step we ran", we need clipping
-  to be part of the pure model of that step.
+- Gradient clipping is part of the *algorithmic definition* of many training loops. To reason about
+  "the training step we ran," clipping must be part of the pure model of that step.
 - We also want to reuse the same clipping logic across scalar backends: `Float` for executable runs,
   and proof-friendly scalars (`ℝ`, `NF`, etc.) for theorems and approximation statements.
 

@@ -60,7 +60,7 @@ $$`B\times(C+1)\times S
 \longrightarrow
 B\times C\times S.`
 
-The public constructor
+The reusable constructor
 [`nn.models.epsConvNet`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Diffusion.lean)
 is parameterized by arbitrary spatial rank. The runnable command instantiates two spatial axes and
 uses four `1 × 1` convolutions. A stronger residual same-resolution denoiser also exists in the API,
@@ -97,10 +97,12 @@ The theorem
 NN.MLTheory.Generative.Diffusion.forwardGaussian_isGaussian
 ```
 
-proves that the affine transformation of a Gaussian used by `forwardGaussian` is again Gaussian,
-with the corresponding mean and covariance. It is a theorem about a probability law. It is not a
-proof that the runtime RNG produced independent standard-normal bits, nor that a trained denoiser
-matches the exact score.
+proves that the affine transformation used by `forwardGaussian` is again Gaussian. The sibling
+`forwardNoising` development in
+*Probability and Local Gradient Proofs* packages the same affine-Gaussian recipe more generally and
+adds a Markov kernel, although there is not yet a theorem rewriting one definition into the other.
+These are theorems about probability laws, not evidence that the runtime RNG produced independent
+standard-normal bits or that a trained denoiser matches the exact score.
 
 # Reverse Sampling
 
@@ -139,9 +141,10 @@ The sampler theory in
 [`NN.MLTheory.Generative.Diffusion.Samplers`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Generative/Diffusion/Samplers.lean)
 proves local facts such as
 `eulerStep_l2_lipschitz_of_rhs_lipschitz` and contraction results for composed DDIM or
-probability-flow Euler steps under explicit hypotheses. Those theorems reason about mathematical
-step maps. They do not establish FID, perceptual quality, learned-score accuracy, or end-to-end
-equivalence of a CUDA run.
+probability-flow Euler steps under explicit hypotheses. Their scope is the mathematical step map.
+FID, perceptual quality, learned-score accuracy, CUDA equivalence, and the connection between the
+native random generator and the formal Gaussian measure remain separate questions. Seeds and
+explicit noise tensors make the command replayable without silently answering those questions.
 
 ## Two Useful Variations
 
@@ -154,6 +157,11 @@ cost from network cost.
 
 # Autoencoders Before Latent Probability
 
+Diffusion made time and noise explicit. A plain autoencoder is a useful reset: remove the schedule
+and sampler, keep only an encoder, a latent vector, a decoder, and a reconstruction loss. Once that
+baseline is clear, the extra probability law in a VAE and the finite codebook in a VQ-VAE are much
+easier to locate.
+
 The plain autoencoder is the smallest reconstruction baseline:
 
 $$`x
@@ -161,7 +169,7 @@ $$`x
 \xrightarrow{\mathrm{decoder}}\widehat x,\qquad
 L_{\mathrm{recon}}=\|x-\widehat x\|_2^2.`
 
-The public vector model is
+The reusable vector model is
 
 ```
 dataDim -> hiddenDim -> latentDim -> hiddenDim -> dataDim
@@ -219,8 +227,8 @@ The theory also contains coordinatewise reparameterization laws.
 
 The current executable is intentionally narrower. Its output contains a reconstruction followed by
 latent mean and log-variance proxy channels, and its supervised target asks for the image plus zero
-latent proxies. It trains that target with MSE; it does not sample `z=μ+σε` and optimize a complete
-Monte Carlo ELBO.
+latent proxies. It trains that target with MSE. Thus a runnable VAE-shaped network sits beside proved
+objective facts, while end-to-end stochastic variational inference remains future work.
 
 ```
 lake exe torchlean vae --device cpu \
@@ -238,10 +246,6 @@ mean_loss(after) = 0.140895
 steps=1 loss0=0.142191 loss1=0.140895
 torchlean vae: ok
 ```
-
-The honest combined statement is therefore: TorchLean has a runnable VAE-shaped network and proved
-algebraic and distributional facts for the VAE objective, but the current command is not yet an
-end-to-end proved stochastic variational-inference implementation.
 
 # Finite Codebooks In VQ-VAE
 
@@ -264,10 +268,9 @@ The theory module
 proves `vqvae_loss_eq_weightedThreeTerm` and
 `nearestCode_minimizes_quantization_loss` for the stated finite codebook predicate.
 
-The current `vqvae` command is again a compact reconstruction proxy with a narrow `tanh`
-bottleneck. It does not execute a learned discrete codebook lookup or straight-through estimator.
-The theorem and the runtime example occupy adjacent parts of the intended architecture; they should
-not be described as one completed proof.
+The current `vqvae` command is a compact reconstruction proxy with a narrow `tanh` bottleneck. The
+learned discrete lookup and straight-through estimator are not part of that path, so the theorem and
+runtime example cover adjacent pieces of the intended architecture rather than one completed proof.
 
 # Two Networks In The GAN Example
 
@@ -293,9 +296,8 @@ uses two trainers, but it chooses a stable warm-up:
 - the generator maps deterministic latent noise toward one CIFAR minibatch;
 - the discriminator separates that minibatch from deterministic noise images.
 
-It exercises generator state, discriminator state, two optimizers, and combined logging. It is not
-a full alternating adversarial recipe in which the discriminator consumes the generator's latest
-samples.
+It exercises generator state, discriminator state, two optimizers, and combined logging. A full
+alternating recipe would additionally feed the generator's latest samples to the discriminator.
 
 ```
 lake exe torchlean gan --device cpu --n-total 1 --steps 1
@@ -317,8 +319,8 @@ $$`L_{\mathrm{MAE}}
 \|\widehat x_i-x_i\|_2^2.`
 
 The self-supervised theory proves finite-patch identities such as `maeLoss_append`,
-`maeLoss_reverse`, and `exactReconstruction_identity`. These are exact objective facts. They do not
-prove that a learned representation transfers to downstream tasks.
+`maeLoss_reverse`, and `exactReconstruction_identity`. Their scope is the exact objective;
+downstream representation transfer remains an empirical question.
 
 The executable source is
 [`NN/Examples/Models/Generative/Mae.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Generative/Mae.lean);
@@ -356,9 +358,10 @@ The generative stack is strongest when its claims remain compositional:
   * the run records the provider and evidence level of accelerated operations
 :::
 
-The table also suggests the next useful integrations: a stochastic VAE trainer tied to the formal
-ELBO, a VQ-VAE command with a learned codebook, and graph-level numerical certificates for
-diffusion steps.
+Read each row at its own scale. A lower loss says something about one run; a theorem says something
+about every object satisfying its hypotheses; a backend capsule records how a runtime operation was
+provided. Combining them requires an explicit bridge, not a more enthusiastic description of the
+sample image.
 
 # References
 

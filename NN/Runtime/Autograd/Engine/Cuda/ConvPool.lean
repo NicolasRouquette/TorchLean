@@ -189,8 +189,10 @@ opaque torchleanAvgPoolBwdCuda
 /--
 Float32 smooth max-pool2d (log-sum-exp surrogate) forward.
 
-This matches `Spec.smooth_max_pool2d_spec` for `Float`:
-`y = log(sum(exp(beta*x))) / beta` computed per window, with `beta ≠ 0`.
+This matches `Spec.smoothMaxPool2dSpec` for `Float`:
+`y = pivot + log(sum(exp(beta*(x-pivot)))) / beta` computed per window, with finite
+`beta ≠ 0`. The pivot maximizes `beta*x` without first forming that potentially overflowing
+product.
 -/
 @[extern "torchlean_cuda_smooth_maxpool2d_fwd"]
 opaque torchleanSmoothMaxPool2dFwdCuda
@@ -200,22 +202,31 @@ opaque torchleanSmoothMaxPool2dFwdCuda
 /--
 Float32 smooth max-pool2d backward: returns `dInput`.
 
-VJP matches `Spec.smooth_max_pool2d_backward_spec` for `Float`:
-`dx += dOut * exp(beta*x)/sum(exp(beta*x))` within each window.
+VJP matches `Spec.smoothMaxPool2dBackwardSpec` for `Float`, using the same shifted softmax weights
+within each window.
 -/
 @[extern "torchlean_cuda_smooth_maxpool2d_bwd"]
 opaque torchleanSmoothMaxPool2dBwdCuda
     (input gradOutput : @& Buffer) (beta : Float)
     (inC inH inW kH kW stride padding : UInt32) : Buffer
 
-/-- Float32 N-D smooth max-pooling forward (channels preserved). -/
+/--
+Float32 N-D smooth max-pooling forward with channels preserved.
+
+The native implementation requires finite nonzero `beta` and uses a maximum input pivot for
+positive `beta` or a minimum input pivot for negative `beta`, matching the two-dimensional path.
+-/
 @[extern "torchlean_cuda_smooth_maxpool_fwd"]
 opaque torchleanSmoothMaxPoolFwdCuda
     (input : @& Buffer) (beta : Float)
     (inSpatial kernel stride padding : @& Array Nat)
     (inC : UInt32) : Buffer
 
-/-- Float32 N-D smooth max-pooling backward: returns `dInput`. -/
+/--
+Float32 N-D smooth max-pooling backward, returning `dInput`.
+
+It shares the forward operation's finite nonzero-`beta` contract and sign-aware max/min input pivot.
+-/
 @[extern "torchlean_cuda_smooth_maxpool_bwd"]
 opaque torchleanSmoothMaxPoolBwdCuda
     (input gradOutput : @& Buffer) (beta : Float)

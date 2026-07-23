@@ -53,9 +53,8 @@ structure Tensor (α : Type) (shape : List Nat) where
 /--
 Product of dimensions for a runtime shape list.
 
-This is the runtime analogue of `Spec.Shape.size` for `Spec.Shape`.
-We keep it as a `def` (not just a local `let`) because it appears everywhere
-`shape_valid` is constructed or rewritten.
+This is the runtime analogue of `Spec.Shape.size` for `Spec.Shape`. It is a reusable `def` because
+it appears wherever `shape_valid` is constructed or rewritten.
 -/
 def shapeProd (shape : List Nat) : Nat := shape.foldl (· * ·) 1
 

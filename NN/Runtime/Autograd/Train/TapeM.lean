@@ -107,9 +107,9 @@ def meanScalarOverArray {a b : Type}
 /--
 Mean reduction for a `Dataset`.
 
-This is the natural bridge from `Train.Dataset` batches to a scalar loss node. It does not shuffle,
-batch, or otherwise mutate the dataset; it simply materializes the current dataset order as a list
-and delegates to `meanScalarOver`.
+This is the natural bridge from `Train.Dataset` batches to a scalar loss node. It materializes the
+current dataset order as a list and delegates to `meanScalarOver`, without shuffling, batching, or
+mutating the dataset.
 -/
 def meanScalarOverDataset {a b : Type}
   [Add a] [Mul a] [Div a] [One a] [Coe Nat a] [DecidableEq Shape]

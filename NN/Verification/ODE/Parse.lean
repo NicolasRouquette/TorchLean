@@ -16,15 +16,16 @@ Hand-rolled parser for ODE RHS expressions.
 
 Grammar (informal):
   expr   := term (('+' | '-') term)*
-  term   := factor (('*' | '/') factor)*
-  factor := unary ('^' nat)?
-  unary  := '-' unary | primary
+  term   := unary (('*' | '/') unary)*
+  unary  := '-' unary | factor
+  factor := primary ('^' nat)?
   primary:= number | 't' | 'u' | ident '(' expr ')' | ident | '(' expr ')'
 
 Supported unary functions: sin, cos, exp, log.
 Supported identifiers: pi.
 
-Exponentiation is expanded into repeated multiplication when `^ n` is given.
+Exponentiation is expanded into repeated multiplication when `^ n` is given; `x^0` is one.
+Exponentiation binds more tightly than unary minus, so `-u^2` means `-(u^2)`.
 -/
 
 @[expose] public section
@@ -161,7 +162,7 @@ mutual
     match fuel with
     | 0 => .error "parser: out of fuel"
     | Nat.succ fuel =>
-      let (f, st1) ← parseFactorFuel fuel st
+      let (f, st1) ← parseUnaryFuel fuel st
       let rec loop (fuel : Nat) (acc : Expr) (st : State) : Except String (Expr × State) := do
         match fuel with
         | 0 => .ok (acc, st)
@@ -169,33 +170,35 @@ mutual
           let st' := skipWs st
           match peek st' with
           | some '*' =>
-            let (f2, st2) ← parseFactorFuel fuel (bump st')
+            let (f2, st2) ← parseUnaryFuel fuel (bump st')
             loop fuel (.mul acc f2) st2
           | some '/' =>
-            let (f2, st2) ← parseFactorFuel fuel (bump st')
+            let (f2, st2) ← parseUnaryFuel fuel (bump st')
             loop fuel (.div acc f2) st2
           | _ => .ok (acc, st')
       loop fuel f st1
 
-  /-- Parse a `factor` (unary with optional exponentiation), with an explicit fuel budget. -/
+  /-- Parse a primary expression with optional natural-number exponentiation. -/
   def parseFactorFuel (fuel : Nat) (st : State) : Except String (Expr × State) := do
     match fuel with
     | 0 => .error "parser: out of fuel"
     | Nat.succ fuel =>
-      let (unary0, st1) ← parseUnaryFuel fuel st
+      let (base, st1) ← parsePrimaryFuel fuel st
       let st1' := skipWs st1
       match peek st1' with
       | some '^' =>
         let (n, st2) ← parseNat (bump st1')
-        if n ≤ 1 then
-          .ok (unary0, st2)
+        if n = 0 then
+          .ok (.const 1.0, st2)
+        else if n = 1 then
+          .ok (base, st2)
         else
           let rec powMul (base : Expr) (k : Nat) (acc : Expr) : Expr :=
             match k with
             | 0 => acc
             | Nat.succ m => powMul base m (.mul acc base)
-          .ok (powMul unary0 (n - 1) unary0, st2)
-      | _ => .ok (unary0, st1')
+          .ok (powMul base (n - 1) base, st2)
+      | _ => .ok (base, st1')
 
   /-- Parse a `unary` (leading negations), with an explicit fuel budget. -/
   def parseUnaryFuel (fuel : Nat) (st : State) : Except String (Expr × State) := do
@@ -208,7 +211,7 @@ mutual
         let (e, st1) ← parseUnaryFuel fuel (bump st')
         .ok (.neg e, st1)
       | _ =>
-        parsePrimaryFuel fuel st'
+        parseFactorFuel fuel st'
 
   /-- Parse a `primary` atom (number/variable/function-call/parentheses), with an explicit fuel
     budget. -/
@@ -225,7 +228,7 @@ mutual
         | some ')' => .ok (e, bump st2)
         | _ => .error "expected ')'"
       | some c =>
-        if c.isDigit || c = '-' then
+        if c.isDigit || c = '.' then
           let (v, st1) ← parseNumber st'
           .ok (.const v, st1)
         else if c = 't' then

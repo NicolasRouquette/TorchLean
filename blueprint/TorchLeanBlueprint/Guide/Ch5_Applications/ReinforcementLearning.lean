@@ -50,6 +50,9 @@ lake exe torchlean ppo_gridworld --device cpu \
 The current checkout produces:
 
 ```
+[TorchLean] dtype: Float (Lean `Float`, trusted runtime semantics)
+[TorchLean] backend: Runtime.Autograd.Torch.Backend.eager
+[TorchLean] device: cpu
 torchlean ppo_gridworld: PPO on Lean-native GridWorld (4x4, horizon=64) (device=cpu)
   env: pure Lean dynamics + boundary contract check + formal MDP validity proof available
   eval(step=0) avg_return=-0.400000
@@ -75,6 +78,42 @@ The implementation is
 [`NN/Examples/Models/RL/PPOGridWorld.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/RL/PPOGridWorld.lean).
 The pure environment is
 [`NN.Spec.RL.Envs.GridWorld`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Spec/RL/Envs/GridWorld.lean).
+
+# One Actor, Two Views Of A Batch
+
+The GridWorld command does not hide its actor and critic inside the training loop. It starts with a
+small reusable configuration:
+
+```
+def modelCfg : nn.models.PPOActorCriticConfig :=
+  { obsDim := 16, hiddenDim := 32, nActions := 4 }
+```
+
+[`NN.API.Models.PPO`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/PPO.lean)
+then builds a two-layer `tanh` MLP for each role. The actor ends in four action logits; the critic
+ends in one value. Both constructors preserve a caller-supplied prefix shape, so the same model
+description has two useful views:
+
+:::table +header
+*
+  * Prefix
+  * Actor shape
+  * Critic shape
+*
+  * one observation
+  * `16 -> 4`
+  * `16 -> 1`
+*
+  * rollout of 64 observations
+  * `64 × 16 -> 64 × 4`
+  * `64 × 16 -> 64 × 1`
+:::
+
+The prefix belongs to the sequential model's input and output shapes rather than an implicit
+broadcast convention. GridWorld, CartPole, and Pong RAM reuse these constructors with different
+observation and action dimensions; environment collection and boundary checks remain outside the
+model helper. This separation is why the same actor definition can score one state during rollout
+and a full horizon during optimization without introducing a second, loosely related network.
 
 # What Enters A Rollout
 
@@ -164,8 +203,16 @@ The ratio, clipping, return, and advantage computations also have checked binary
 They use the executable `IEEE32Exec` semantics and return `Except String ...`, so a NaN, infinity,
 or failed finite-path precondition is visible rather than entering the update silently.
 
-These helpers establish properties of selected scalar recurrences. They do not prove that every
-native CUDA operation in the whole PPO training loop refines the bit-level interpreter.
+These helpers establish properties of selected scalar recurrences; whole-loop CUDA refinement is a
+larger claim.
+
+The corresponding proof bridge is split between
+[`Floats.IEEE32Exec`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RL/Floats/IEEE32Exec.lean)
+and
+[`Floats.CheckedRuntime`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RL/Floats/CheckedRuntime.lean).
+The first states finite-path equalities for discounted backups and TD residuals; the second uses
+the checked wrappers to discharge those finite-result premises. Together they cover those selected
+recurrences, not a numerical error theorem for the whole PPO loop.
 
 # Bellman Operators And Fixed Points
 
@@ -193,9 +240,14 @@ contains the named results `bellmanPolicy_contraction`,
 `bellmanOptimality_contraction`, `bellmanPolicy_fixedPoint_unique`, and
 `bellmanOptimality_fixedPoint_unique`.
 
-These are real dynamic-programming theorems. They do not prove PPO convergence: PPO updates a
-parameterized stochastic policy using sampled finite trajectories, which is a different
-mathematical object.
+These are real dynamic-programming theorems. PPO convergence concerns a different object: a
+parameterized stochastic policy updated from sampled finite trajectories.
+
+For explicitly finite state and action spaces,
+[`FiniteStochasticMDP`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RL/FiniteStochasticMDP.lean)
+also proves monotonicity, contraction, uniqueness of policy and optimality fixed points, and
+geometric iterate-error bounds. The finiteness and discount hypotheses are part of those theorem
+statements; they are not inferred from a simulator run.
 
 # External Environments
 
@@ -296,6 +348,12 @@ establishes structural facts about empty buffers, zero capacity, size growth, an
 capacity. Those are small theorems with a useful job: later DQN reasoning need not assume that the
 storage layer preserved its own capacity invariant.
 
+The
+[`DQN algebra proof`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RL/Algorithms/DQN.lean)
+adds exact real identities for target-network soft updates, including the zero/one mixing endpoints
+and `softUpdateScalar_sub_target_real`. It proves the scalar recurrence, not correctness of replay
+sampling, Q-network optimization, or a complete DQN agent.
+
 # Hands-On Checks
 
 ## Inspect The Artifacts
@@ -347,6 +405,9 @@ TorchLean currently provides:
 - explicit checks for external observations, actions, rewards, and episode flags;
 - checked binary32 helpers for selected return, advantage, and PPO scalar formulas;
 - Bellman contraction and fixed-point theorems for named MDP objects;
+- finite-state policy/optimality iteration error bounds;
+- finite-path IEEE32Exec and checked-runtime bridges for selected backup and TD formulas;
+- real-algebra target-network update laws for DQN;
 - structural proofs for environment and replay components.
 
 The Bellman results cover the named MDP objects, while the PPO commands exercise the training

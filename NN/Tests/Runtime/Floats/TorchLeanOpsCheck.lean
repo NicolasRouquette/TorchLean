@@ -415,6 +415,20 @@ def checkLossSemantics : IO Unit := do
     (Spec.attentionScaleDenom (α := Float) 0) 1
 
 def checkCorrectedMathematicalSpecs : IO Unit := do
+  let matrix : Tensor Float (.dim 2 (.dim 2 .scalar)) :=
+    tensorOfList! [2, 2] [0, 2, 4, 6]
+  assertApprox "tensor-wide population variance"
+    (Spec.Tensor.varianceSpec matrix) 5
+
+  let clustered : Tensor Float (.dim 2 .scalar) :=
+    tensorOfList! [2] [1.0e12, 1.0e12 + 1]
+  let clusteredVariance := Spec.Tensor.reduceVar 0 clustered Spec.Shape.reducibleAlong.head
+  assertApprox "centered population variance"
+    (scalarVal clusteredVariance) 0.25 1e-8
+
+  assertApprox "softplus large positive input"
+    (Activation.Math.softplusSpec (1000 : Float)) 1000 1e-10
+
   let dropoutInput : Tensor Float (.dim 2 .scalar) := tensorOfList! [2] [3, -4]
   let dropoutOutput := Spec.dropoutInferenceSpec (p := 0.75) dropoutInput
   assertApprox "evaluation dropout is identity[0]"

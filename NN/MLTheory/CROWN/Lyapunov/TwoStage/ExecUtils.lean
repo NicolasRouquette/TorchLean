@@ -20,8 +20,8 @@ float32). To keep the workflows reproducible, we provide:
 - a deterministic sampler `UInt64 → (x ∈ [-rad, rad]^2)` that does not use `Float` anywhere, and
 - a simple clamp routine for keeping PGD samples inside the training box.
 
-This file is not part of the abstract CROWN theory. It is the executable support layer that lets
-the TwoStage pipelines run end-to-end under the same scalar semantics used by the verifier.
+This executable support layer lets the TwoStage pipelines run end-to-end under the verifier's
+scalar semantics. The abstract CROWN theory does not depend on it.
 -/
 
 @[expose] public section

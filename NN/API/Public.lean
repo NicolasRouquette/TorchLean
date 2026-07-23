@@ -41,6 +41,6 @@ Import `NN.API.Public` only when extending this implementation layer. Applicatio
 
 The callback-heavy training namespace lives in `NN.API.Public.Training`. It is deliberately not
 re-exported from this umbrella module: ordinary code should get training through `TorchLean.Trainer`,
-while files that truly need callback runners should import the advanced training
+while files that need callback runners should import the advanced training
 module explicitly.
 -/

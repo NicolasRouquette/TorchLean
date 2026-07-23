@@ -34,9 +34,9 @@ open TorchLean
 ```
 
 `import NN.API` loads the focused application interface: tensors, model builders, datasets,
-optimizers, and the public trainer. It does not import every proof or backend-internal module.
+optimizers, and the high-level trainer. It does not import every proof or backend-internal module.
 
-Most public names live in the `TorchLean` namespace. `open TorchLean` lets us write `Tensor.T`,
+Most application-facing names live in the `TorchLean` namespace. `open TorchLean` lets us write `Tensor.T`,
 `nn.linear`, and `Trainer.new` instead of prefixing each name with `TorchLean.`. Lower-case `nn` and
 `optim` are namespaces, not Python objects.
 
@@ -195,8 +195,8 @@ Lean prints:
 6
 ```
 
-The shape is not merely a runtime array attached to a tensor. It also indexes the tensor's type, so
-a function can require that two tensors share exactly the same shape.
+The shape indexes the tensor's type as well as its runtime array, so a function can require that two
+tensors share exactly the same shape.
 
 # Shape Errors Appear While The Model Is Built
 
@@ -258,6 +258,19 @@ Lean finds the `ToString Nat` implementation automatically and prints `"7, 7"`. 
 classes to request scalar operations, runtime conversion support, decidable shape equality, and
 printing behavior without fixing every program to one scalar type.
 
+# One Type Per Evaluation
+
+A declaration such as
+
+```
+def preserveShape {α : Type} (x : Tensor.T α (shape![2])) := x
+```
+
+can be instantiated once with `Float`, once with `Rat`, and once with
+`TorchLean.Floats.IEEE32Exec`. Within any one instantiation, both the input and output use the same
+`α`. *Tensors And Shapes* develops the consequence for a whole run, while *TorchLean And PyTorch*
+discusses mixed precision directly.
+
 # Programs And Propositions Are Different Values
 
 A definition that returns data can compute:
@@ -306,7 +319,7 @@ def printIncrement (n : Nat) : IO Unit := do
   IO.println s!"next = {increment n}"
 ```
 
-The `do` block sequences effectful actions. Public training, checkpoint access, subprocesses, and
+The `do` block sequences effectful actions. Training sessions, checkpoint access, subprocesses, and
 native runtime calls use `IO`. Pure shape calculations and mathematical specifications do not.
 
 You can run an `IO` definition at compile time while experimenting:

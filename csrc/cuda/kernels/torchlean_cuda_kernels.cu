@@ -692,6 +692,8 @@ __global__ void hard_masked_softmax_by_row_f32(const float* scores, const float*
     __syncthreads();
   }
   const float rowMax = sdata[0];
+  // Every thread must load the maximum before the shared buffer is reused for the sum reduction.
+  __syncthreads();
 
   float z = 0.0f;
   if (rowMax != -INFINITY) {
@@ -2118,8 +2120,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_broadcast_to(b_lean_ob
   size_t inSize = 1;
   for (size_t i = 0; i < rankIn; ++i) {
     b_lean_obj_res dNat = lean_array_get_core(InDimsObj, i);
-    uint32_t d = nat_to_u32_or_oob(dNat);
-    if (d == UINT32_MAX) {
+    uint32_t d = 0;
+    if (!nat_to_u32_checked(dNat, &d)) {
       lean_internal_panic("torchlean_cuda_buffer_broadcast_to: inDims contains big Nat");
     }
     h.inDims[i] = d;
@@ -2129,8 +2131,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_broadcast_to(b_lean_ob
   size_t outSize = 1;
   for (size_t i = 0; i < rankOut; ++i) {
     b_lean_obj_res dNat = lean_array_get_core(OutDimsObj, i);
-    uint32_t d = nat_to_u32_or_oob(dNat);
-    if (d == UINT32_MAX) {
+    uint32_t d = 0;
+    if (!nat_to_u32_checked(dNat, &d)) {
       lean_internal_panic("torchlean_cuda_buffer_broadcast_to: outDims contains big Nat");
     }
     h.outDims[i] = d;
@@ -2244,8 +2246,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_from_broadcast(
 
   size_t inSize = 1;
   for (size_t i = 0; i < rankIn; ++i) {
-    uint32_t d = nat_to_u32_or_oob(lean_array_get_core(InDimsObj, i));
-    if (d == UINT32_MAX) {
+    uint32_t d = 0;
+    if (!nat_to_u32_checked(lean_array_get_core(InDimsObj, i), &d)) {
       lean_internal_panic("torchlean_cuda_buffer_reduce_from_broadcast: inDims contains big Nat");
     }
     h.inDims[i] = d;
@@ -2254,8 +2256,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_from_broadcast(
   }
   size_t outSize = 1;
   for (size_t i = 0; i < rankOut; ++i) {
-    uint32_t d = nat_to_u32_or_oob(lean_array_get_core(OutDimsObj, i));
-    if (d == UINT32_MAX) {
+    uint32_t d = 0;
+    if (!nat_to_u32_checked(lean_array_get_core(OutDimsObj, i), &d)) {
       lean_internal_panic("torchlean_cuda_buffer_reduce_from_broadcast: outDims contains big Nat");
     }
     h.outDims[i] = d;
@@ -2393,8 +2395,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_swap_adjacent_at_depth
   uint32_t hDims[kMaxRank];
   size_t total = 1;
   for (size_t i = 0; i < rank; ++i) {
-    uint32_t d = nat_to_u32_or_oob(lean_array_get_core(DimsObj, i));
-    if (d == UINT32_MAX) {
+    uint32_t d = 0;
+    if (!nat_to_u32_checked(lean_array_get_core(DimsObj, i), &d)) {
       lean_internal_panic("torchlean_cuda_buffer_swap_adjacent_at_depth: dims contains big Nat");
     }
     hDims[i] = d;
@@ -2454,8 +2456,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_sum_axis(
   uint32_t hDims[kMaxRank];
   size_t inSize = 1;
   for (size_t i = 0; i < rank; ++i) {
-    uint32_t d = nat_to_u32_or_oob(lean_array_get_core(DimsObj, i));
-    if (d == UINT32_MAX) {
+    uint32_t d = 0;
+    if (!nat_to_u32_checked(lean_array_get_core(DimsObj, i), &d)) {
       lean_internal_panic("torchlean_cuda_buffer_reduce_sum_axis: dims contains big Nat");
     }
     hDims[i] = d;

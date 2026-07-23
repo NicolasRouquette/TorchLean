@@ -256,7 +256,7 @@ def optimizerLR : OptimizerConfig → Float
 Resolve the learning rate to use at a given training step.
 
 If a scheduler is present, it takes precedence over the optimizer's baked-in base learning rate.
-Otherwise this simply returns `optimizerLR cfg`.
+Otherwise it returns `optimizerLR cfg`.
 -/
 def stepLR (scheduler : Option API.TorchLean.Schedulers.Config) (cfg : OptimizerConfig)
     (step : Nat) : Float :=

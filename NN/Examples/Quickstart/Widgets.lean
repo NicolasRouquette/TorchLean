@@ -14,8 +14,8 @@ public import NN.API
 /-!
 # Quickstart: Widgets
 
-TorchLean widgets are editor-side inspection tools. They are not part of the runtime semantics and
-they do not change proofs; they simply render the values you already have in Lean.
+TorchLean widgets are editor-side inspection tools. They render values already present in Lean
+without changing runtime semantics or proofs.
 
 Try these commands in the editor:
 
@@ -68,10 +68,8 @@ def tinyTrainLog : Training.TrainLog :=
     notes := #["editor-only visualization; runtime training logs use the same schema"] }
 
 /-!
-The commands below are ordinary Lean commands that render editor panels through ProofWidgets. They
-do not alter the definitions above and they are not part of any proof. This is why widgets are safe
-to keep in introductory examples: deleting the commands leaves the same tensors, graphs, logs, and
-Python source files behind.
+The commands below render editor panels through ProofWidgets. Deleting them leaves the same
+tensors, graphs, logs, Python source files, and proofs behind.
 -/
 
 #tensor_view vector

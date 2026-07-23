@@ -25,7 +25,7 @@ Design choices:
 - These wrappers are **stateless** modules: they pick a canonical initial hidden/state (all zeros).
   `NNModuleSpec` remains a pure `forward`; more stateful variants can be built at the layer-spec
   level if needed.
-- The exported `forward` returns the *full output sequence* (not just the final hidden state),
+- The exported `forward` returns the *full output sequence*, including every intermediate state,
   matching common encoder usage.
 
 If you think in PyTorch: these are the `nn.RNN`/`nn.LSTM`/`nn.GRU` "return the full output sequence"

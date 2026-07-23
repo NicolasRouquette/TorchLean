@@ -230,22 +230,73 @@ def cosh (x : IEEE32Exec) : IEEE32Exec :=
         let half : IEEE32Exec := ofBits 0x3F000000
         mul (add (exp x) (exp (neg x))) half
 
-/-- Deterministic `tanh` (no delegation to `Float`): stable form `tanh x = s*(1 -
-  2/(exp(2*|x|)+1))`. -/
+/--
+Deterministic `tanh` without host `Float` delegation.
+
+For `|x| ≤ 1/4`, the degree-nine Taylor polynomial
+
+`x * (2835 - 945*x² + 378*x⁴ - 153*x⁶ + 62*x⁸) / 2835`
+
+is evaluated as one exact dyadic rational and rounded only at the end. This avoids cancellation and
+preserves every tiny binary32 input, including the minimum subnormal. Larger finite inputs use the
+bounded identity `1 - 2/(exp(2|x|)+1)`. The outer branch is clamped to the shared boundary value
+because the two independently rounded approximations can otherwise reverse adjacent outputs at the
+switch.
+-/
 def tanh (x : IEEE32Exec) : IEEE32Exec :=
+  let tanhTaylorSmall (x : IEEE32Exec) : IEEE32Exec :=
+    match toDyadic? x with
+    | none => canonicalNaN
+    | some dx =>
+        let multiply (a b : Dyadic) : Dyadic :=
+          { sign := Bool.xor a.sign b.sign
+            mant := a.mant * b.mant
+            exp := a.exp + b.exp }
+        let ofInt (c : Int) : Dyadic :=
+          { sign := c < 0, mant := c.natAbs, exp := 0 }
+        let z := multiply dx dx
+        -- Horner evaluation of `62*z⁴ - 153*z³ + 378*z² - 945*z + 2835`.
+        let p := addDyadic (multiply (ofInt 62) z) (ofInt (-153))
+        let p := addDyadic (multiply p z) (ofInt 378)
+        let p := addDyadic (multiply p z) (ofInt (-945))
+        let p := addDyadic (multiply p z) (ofInt 2835)
+        let numerator := multiply dx p
+        if numerator.mant == 0 then
+          if numerator.sign then negZero else posZero
+        else
+          match numerator.exp with
+          | .ofNat shift =>
+              roundRatToIEEE32 numerator.sign (Nat.shiftLeft numerator.mant shift) 2835
+          | .negSucc shift =>
+              roundRatToIEEE32 numerator.sign numerator.mant (2835 * pow2 (shift + 1))
   match chooseNaN1 x with
   | some nan => nan
   | none =>
       if isInf x then
         if signBit x then ofBits 0xBF800000 else ofBits 0x3F800000
-  else
+      else if isZero x then
+        x
+      else
         let one : IEEE32Exec := ofBits 0x3F800000
         let two : IEEE32Exec := ofBits 0x40000000
-        let s : Bool := signBit x
         let ax : IEEE32Exec := abs x
-        let e : IEEE32Exec := exp (add ax ax)
-        let tpos : IEEE32Exec := sub one (div two (add e one))
-        if s then neg tpos else tpos
+        let quarter : IEEE32Exec := ofBits 0x3E800000
+        match compare ax quarter with
+        | some .lt =>
+            tanhTaylorSmall x
+        | some .eq =>
+            tanhTaylorSmall x
+        | _ =>
+            let s : Bool := signBit x
+            let e : IEEE32Exec := exp (add ax ax)
+            let raw : IEEE32Exec := sub one (div two (add e one))
+            -- Nearest binary32 value of the once-rounded Taylor approximation at `1/4`.
+            let tanhAtQuarter : IEEE32Exec := ofBits 0x3E7ACBF5
+            let tpos : IEEE32Exec :=
+              match compare raw tanhAtQuarter with
+              | some .lt => tanhAtQuarter
+              | _ => raw
+            if s then neg tpos else tpos
 
 namespace Trig
 
@@ -258,9 +309,10 @@ twiddle factors. Delegating to the host `Float` implementation makes results pla
 
 We implement `sin`/`cos` purely inside Lean:
 
-1. scale the input down by a power of two so `|y| < 1/2`,
-2. approximate `sin y` and `cos y` by exact Taylor partial sums (degree 13 / 12),
-3. scale back up using `m` applications of the double-angle formulas.
+1. reduce the exact binary32 input by a 256-bit fixed-point approximation of `pi/2`, obtaining a
+   quadrant and a remainder in approximately `[-pi/4, pi/4]`,
+2. approximate the sine and cosine of that remainder by exact Taylor partial sums (degree 13 / 12),
+3. restore the quadrant using exact sign changes and swaps.
 
 This is **deterministic** and uses only the IEEE32Exec kernel ops (`roundRatToIEEE32`, `add/mul/sub`,
 etc.). We do not claim correctly-rounded libm behavior; reproducible execution is the contract.
@@ -358,34 +410,36 @@ def sinCosTaylorSmall (y : Dyadic) : IEEE32Exec × IEEE32Exec :=
   let c : IEEE32Exec := roundDyadicDivNat cosNum cosDen
   (s, c)
 
-@[inline] def doubleAngle (sc : IEEE32Exec × IEEE32Exec) : IEEE32Exec × IEEE32Exec :=
-  let s := sc.1
-  let c := sc.2
-  let two : IEEE32Exec := ofBits 0x40000000
-  let ss := mul s s
-  let cc := mul c c
-  let sc' := mul s c
-  let s' := mul two sc'
-  let c' := sub cc ss
-  (s', c')
+/-- Precision used for trigonometric argument reduction. It exceeds the binary32 exponent range. -/
+def reductionScale : Nat := 256
 
-def iterDoubleAngle : Nat → (IEEE32Exec × IEEE32Exec) → (IEEE32Exec × IEEE32Exec)
-  | 0, sc => sc
-  | n + 1, sc => iterDoubleAngle n (doubleAngle sc)
+/-- `reductionScale` as an integer. -/
+def reductionScaleInt : Int := Int.ofNat reductionScale
 
-@[inline] def sinCosPow2 (y : Dyadic) (m : Nat) : IEEE32Exec × IEEE32Exec :=
-  iterDoubleAngle m (sinCosTaylorSmall y)
+/-- `round((pi / 2) * 2^256)`, used for deterministic Payne–Hanek-style quadrant reduction. -/
+def halfPiFixed : Int :=
+  181885788445883162140117471388864931326696688664196214979386075558969447233093
 
+/-- Exact conversion of any binary32 dyadic to the trigonometric fixed-point scale. -/
+def reductionFixedOfDyadic (d : Dyadic) : Int :=
+  let signedMant : Int := if d.sign then -(Int.ofNat d.mant) else Int.ofNat d.mant
+  Transcendentals.shiftPow2EvenInt signedMant (d.exp + reductionScaleInt)
+
+/-- Convert a signed trigonometric fixed-point remainder back to a dyadic. -/
+def reductionFixedToDyadic (x : Int) : Dyadic :=
+  { sign := x < 0, mant := Int.natAbs x, exp := -reductionScaleInt }
+
+/-- Reduce an exact finite binary32 dyadic to one quadrant and evaluate the small-angle kernels. -/
 def sinCosScaled (dx : Dyadic) : IEEE32Exec × IEEE32Exec :=
-  -- Scale down so `|y| < 1/2`, approximate there, then scale back up with double angles.
-  let k : Int := (Int.ofNat (Nat.log2 dx.mant)) + dx.exp
-  let m : Nat :=
-    match k + 2 with
-    | .ofNat n => n
-    | .negSucc _ => 0
-  let y : Dyadic :=
-    { sign := dx.sign, mant := dx.mant, exp := dx.exp - (Int.ofNat m) }
-  sinCosPow2 y m
+  let xFixed := reductionFixedOfDyadic dx
+  let quadrant := Transcendentals.roundQuotEvenInt xFixed halfPiFixed
+  let remainder := xFixed - quadrant * halfPiFixed
+  let sc := sinCosTaylorSmall (reductionFixedToDyadic remainder)
+  match quadrant % 4 with
+  | 0 => sc
+  | 1 => (sc.2, neg sc.1)
+  | 2 => (neg sc.1, neg sc.2)
+  | _ => (neg sc.2, sc.1)
 
 /-- Joint deterministic `sin`/`cos` computation for `IEEE32Exec`. -/
 def sinCos (x : IEEE32Exec) : IEEE32Exec × IEEE32Exec :=

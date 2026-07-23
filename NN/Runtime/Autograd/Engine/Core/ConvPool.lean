@@ -225,11 +225,19 @@ def avgPool {α : Type} [Context α] [DecidableEq Shape]
 
 /--
 N-D smooth max pooling (log-sum-exp surrogate) for channels-first tensors `(C, spatial...)`.
+
+The executable tape requires a finite, nonzero `beta`. Finiteness is checked through the scalar
+arithmetic contract: finite scalar backends satisfy `beta - beta == 0`, whereas IEEE NaN and
+infinity do not. At least one spatial dimension is required, matching the native runtime contract.
 -/
 def smoothMaxPool {α : Type} [Context α] [DecidableEq Shape]
   {d C : Nat} {inSpatial kernel stride padding : Vector Nat d}
   {hKernel : ∀ i : Fin d, kernel.get i ≠ 0}
   (t : Tape α) (xId : Nat) (beta : α) : Result (Tape α × Nat) := do
+  if beta == 0 || !(beta - beta == 0) then
+    throw "autograd: smooth_max_pool requires finite nonzero beta"
+  if d = 0 then
+    throw "autograd: smooth_max_pool requires at least one spatial dimension"
   let x ← requireValue (α:=α) (t:=t)
     (s:=Shape.ofList (C :: inSpatial.toList)) xId
   if hStride : (∀ i : Fin d, stride.get i ≠ 0) then
@@ -321,10 +329,13 @@ def maxPool2dPad {α : Type} [Context α] [DecidableEq Shape]
 Smooth approximation of max-pooling (softmax pooling).
 
 This is not a standard PyTorch primitive; it is useful for differentiable relaxations.
+The executable tape requires a finite, nonzero `beta`.
 -/
 def smoothMaxPool2d {α : Type} [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (t : Tape α) (xId : Nat) (beta : α) : Result (Tape α × Nat) := do
+  if beta == 0 || !(beta - beta == 0) then
+    throw "autograd: smooth_max_pool2d requires finite nonzero beta"
   let x ← requireValue (α:=α) (t:=t)
     (s:=.dim inC (.dim inH (.dim inW .scalar))) xId
   if hStride : stride ≠ 0 then

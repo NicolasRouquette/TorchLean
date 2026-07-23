@@ -525,6 +525,24 @@ theorem gelu_deriv_correct (x : ℝ) :
   simpa [u, two, three, pi, sqrt_two_over_pi, coeff, tanh_term, sech_term, inner_deriv,
     Activation.Math.tanhSpec] using hdiv.congr_deriv hderiv
 
+/-- The branch-stable real softplus specification is extensionally `log (1 + exp x)`. -/
+private theorem softplus_spec_eq_log_one_add_exp (x : ℝ) :
+    Activation.Math.softplusSpec (α := ℝ) x = Real.log (1 + Real.exp x) := by
+  simp only [Activation.Math.softplusSpec, MathFunctions.log, MathFunctions.exp]
+  split_ifs with hx
+  · have hexp : Real.exp x ≠ 0 := ne_of_gt (Real.exp_pos x)
+    have hinner : (1 : ℝ) + Real.exp (-x) ≠ 0 := by positivity
+    calc
+      x + Real.log (1 + Real.exp (-x)) =
+          Real.log (Real.exp x) + Real.log (1 + Real.exp (-x)) := by rw [Real.log_exp]
+      _ = Real.log (Real.exp x * (1 + Real.exp (-x))) :=
+        (Real.log_mul hexp hinner).symm
+      _ = Real.log (1 + Real.exp x) := by
+        congr 1
+        rw [mul_add, mul_one, ← Real.exp_add]
+        simp [add_comm]
+  · rfl
+
 /--
 Correctness of the softplus derivative spec.
 
@@ -532,7 +550,12 @@ PyTorch correspondence: `torch.nn.functional.softplus`.
 -/
 theorem softplus_deriv_correct (x : ℝ) :
     HasDerivAt Activation.Math.softplusSpec (Activation.Math.softplusDerivSpec x) x := by
-  unfold Activation.Math.softplusSpec Activation.Math.softplusDerivSpec
+  have softplus_eq_log_exp : Activation.Math.softplusSpec (α := ℝ) =
+      fun y : ℝ => Real.log (1 + Real.exp y) := by
+    funext y
+    exact softplus_spec_eq_log_one_add_exp y
+  rw [softplus_eq_log_exp]
+  unfold Activation.Math.softplusDerivSpec
   -- derivative of `log (1 + exp x)`
   have hx0 : (1 : ℝ) + Real.exp x ≠ 0 := by
     have : 0 < (1 : ℝ) + Real.exp x := by linarith [Real.exp_pos x]
@@ -610,8 +633,8 @@ theorem safe_log_deriv_correct (x ε : ℝ) (hε : 0 < ε) :
       have hpos : 0 ≤ Activation.Math.softplusSpec x := by
         -- `1 ≤ 1 + exp x`, and `log` is monotone on `(0,∞)`
         have h1 : (1 : ℝ) ≤ 1 + Real.exp x := by linarith [Real.exp_pos x]
-        simpa [Activation.Math.softplusSpec, MathFunctions.log, MathFunctions.exp] using
-          (Real.log_nonneg h1)
+        rw [softplus_spec_eq_log_one_add_exp]
+        exact Real.log_nonneg h1
       linarith
     exact ne_of_gt this
   have h_comp := (Real.hasDerivAt_log hx0).comp x h_inner

@@ -7,7 +7,9 @@ open Verso.Genre Manual
 tag := "cli"
 %%%
 
-TorchLean uses two command dispatchers:
+The first command-line decision is simpler than the number of examples suggests. Ask whether you
+want to *run a model or demonstration* or *check a verification claim*. TorchLean gives those jobs
+separate dispatchers:
 
 ```
 lake exe torchlean <example> [flags...]
@@ -15,7 +17,9 @@ lake exe verify -- <tool> [args...]
 ```
 
 The first runs examples, training applications, data checks, and numerical deep dives. The second
-runs verifiers and certificate checkers. Small source-local programs can also be executed directly:
+runs verifiers and certificate checkers. Keeping them separate makes a successful training command
+harder to confuse with acceptance of a certificate. Small source-local programs can also be
+executed directly:
 
 ```
 lake env lean --run NN/Examples/Quickstart/TensorBasics.lean
@@ -24,11 +28,12 @@ lake env lean --run NN/Examples/Quickstart/TensorBasics.lean
 The dispatch tables are ordinary Lean definitions:
 
 - [`NN.Examples.Models.Runner`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Runner.lean)
-  owns the `torchlean` subcommands;
+  routes the `torchlean` subcommands;
 - [`NN.Verification.CLI`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/CLI.lean)
-  owns the `verify` tools.
+  routes the `verify` tools.
 
-When this chapter and the executable disagree, the executable is authoritative.
+Treat this chapter as a guided map. The help printed by your checkout is the final word on names and
+flags, because it is generated from the executable you are about to run.
 
 # Discovering Commands
 
@@ -152,9 +157,9 @@ Most full model applications call the native `Float` trainer. They accept `--dty
 Some quickstarts and numerical workflows are scalar-polymorphic and accept `--dtype ieee754exec`.
 The command decides; the presence of a name in the shared parser does not imply universal support.
 
-Likewise, `--backend compiled` is not a generic CUDA graph mode. It selects the proof-linked
-compiled host path for commands that implement that interpretation. CUDA-only specialized
-applications may require eager execution.
+`--backend compiled` selects the proof-linked host path for commands that implement that
+interpretation. It does not request a generic CUDA graph mode; CUDA-only specialized applications
+may require eager execution.
 
 # CPU And CUDA Builds
 
@@ -185,8 +190,9 @@ lake -R -K cuda=true exe torchlean quickstart_mlp \
 ```
 
 The printed capsules name the operation, provider, layouts, numerical policy, forward and backward
-ownership, and evidence level. Device selection answers “where did this run?”; capsule reporting
-answers the more precise question “which implementation was selected for each operation?”
+implementation responsibility, and evidence level. Device selection answers “where did this
+run?”; capsule reporting answers the more precise question “which implementation was selected for
+each operation?”
 
 # Command-Specific Flags
 
@@ -259,7 +265,7 @@ Parsers return the unconsumed argument list, and `checkNoArgs` closes the loop.
 
 # Preparing Data
 
-The small public downloader prepares the common datasets:
+The small dataset downloader prepares the common datasets:
 
 ```
 python3 scripts/datasets/download_example_data.py \
@@ -342,6 +348,21 @@ lake exe verify -- camera-box3d-cert path/to/camera-cert.json
 
 A checker accepts only its declared schema and semantic fragment. It does not retroactively verify
 the external process that produced the artifact.
+
+The current registry is broader than those representative commands. Its families are:
+
+- LiRPA artifacts: `lirpa-mlp`, `lirpa-cnn`, `lirpa-attention`, `lirpa-gru`, `lirpa-encoder`;
+- scientific and geometry checkers: `camera-box3d-cert`, `pinn-cert`, `pinn-cli`,
+  `pinn-dataset-check`, `spline-cert`, `ode`;
+- TorchLean graph workflows: `torchlean-robustness`, `torchlean-ibp`,
+  `torchlean-transformer-ibp`, `torchlean-crown-ops`, `torchlean-mlp-workflow`;
+- robustness suites: `margin-cert`, `digits`, `digits-train-certify`, `vnncomp-mnistfc`;
+- imported and two-stage evidence: `abcrown-leaf`, `twostage-pythononly-certgen`,
+  `twostage-hybrid-van-stage2`, `twostage-torchlean-cegis-van`.
+
+`lake exe verify -- all` runs only entries whose registry record sets `includeInAll := true`.
+Interactive, externally dependent, or long-running tools are intentionally excluded, so a green
+`all` run is not evidence that every line printed by `list` was executed.
 
 # A Practical Validation Sequence
 

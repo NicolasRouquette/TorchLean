@@ -30,7 +30,7 @@ TorchLean exposes a **single API** with two execution backends selected at const
   and
   then executes via `Runtime.Autograd.Torch.Internal.SessionIR`.
 
-Importantly, *the user-facing `Session` API is the same*: each op dispatches through `Session.impl`.
+Both backends use the same `Session` API; each operation dispatches through `Session.impl`.
 
 ## Typical Training Loop (PyTorch Analogy)
 

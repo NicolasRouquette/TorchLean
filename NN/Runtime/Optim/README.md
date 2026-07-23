@@ -36,10 +36,10 @@ Adadelta. Optimizer-adjacent extension points use explicit runtime names:
 
 - `optim.runtimeMuon` is the runtime Muon optimizer. It requires an orthogonalization backend
   because the backend output is part of the mathematical update.
-- `optim.galore.projectedSGD` is the public GaLore-style projected-gradient path. The projection is
+- `optim.galore.projectedSGD` is the GaLore-style projected-gradient path. The projection is
   explicit, and the optimizer applied after projection is still named.
 
-The exact public names live under `NN/API/Public/Facade/Runtime/Optim.lean`,
+The exact API names live under `NN/API/Public/Facade/Runtime/Optim.lean`,
 `TorchLean.optim` and `NN/API/TorchLean/Schedulers.lean`. Runtime implementation
 files should stay focused on the update equations and state transitions.
 

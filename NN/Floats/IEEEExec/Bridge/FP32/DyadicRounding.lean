@@ -30,7 +30,7 @@ factor the refinement into two steps:
 2. apply float32 rounding.
 
 `addDyadic` is our exact step (it aligns exponents, adds signed mantissas, and normalizes), and the
-the lemmas below show that its real interpretation is literally real addition.
+the lemmas below show that its real interpretation is exactly real addition.
 -/
 
 noncomputable def signedMant (sign : Bool) (m : Nat) : Int :=

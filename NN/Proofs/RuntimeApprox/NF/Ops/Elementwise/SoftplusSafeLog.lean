@@ -82,6 +82,24 @@ def softplusR (xR : R) : R :=
   let yR : R := (1 : R) + MathFunctions.exp xR
   safeLogR (β := β) (fexp := fexp) (rnd := rnd) (ε := (1 : ℝ)) yR
 
+/-- The stable real softplus branches agree with the positive `log (1 + exp x)` target. -/
+private theorem softplus_spec_eq_log_one_add_exp (x : ℝ) :
+    Activation.Math.softplusSpec (α := ℝ) x = Real.log (1 + Real.exp x) := by
+  simp only [Activation.Math.softplusSpec, MathFunctions.log, MathFunctions.exp]
+  split_ifs with hx
+  · have hexp : Real.exp x ≠ 0 := ne_of_gt (Real.exp_pos x)
+    have hinner : (1 : ℝ) + Real.exp (-x) ≠ 0 := by positivity
+    calc
+      x + Real.log (1 + Real.exp (-x)) =
+          Real.log (Real.exp x) + Real.log (1 + Real.exp (-x)) := by rw [Real.log_exp]
+      _ = Real.log (Real.exp x * (1 + Real.exp (-x))) :=
+        (Real.log_mul hexp hinner).symm
+      _ = Real.log (1 + Real.exp x) := by
+        congr 1
+        rw [mul_add, mul_one, ← Real.exp_add]
+        simp [add_comm]
+  · rfl
+
 /--
 Forward approximation bound for `softplus` in `NF`.
 
@@ -189,7 +207,8 @@ compose the scalar bounds for `exp`, `+`, and `safeLog`.
         simp [NFBackend.safeLog, hy_ge]
       _ = Real.log ((1 : ℝ) + Real.exp x) := by
         simp [y]
-      _ = Activation.Math.softplusSpec (α := ℝ) x := rfl
+      _ = Activation.Math.softplusSpec (α := ℝ) x :=
+        (softplus_spec_eq_log_one_add_exp x).symm
 
   -- `softplusR` is exactly `safeLogR 1 (1 + exp xR)`.
   simpa [oneR, softplusR, yR, hsimp, softplusBoundScalar, addHatSoftplus,
@@ -271,11 +290,10 @@ private lemma sigmoid_spec_le_one (x : ℝ) :
 private lemma softplus_spec_nonneg (x : ℝ) :
     0 ≤ Activation.Math.softplusSpec (α := ℝ) x := by
   -- `softplus(x) = log(1 + exp(x)) ≥ 0`.
-  unfold Activation.Math.softplusSpec
-  simp [Proofs.mathfunc_exp_eq_rexp]
   have h1 : (1 : ℝ) ≤ (1 : ℝ) + Real.exp x := by
     linarith [Real.exp_pos x]
-  simpa [MathFunctions.log] using (Real.log_nonneg h1)
+  rw [softplus_spec_eq_log_one_add_exp]
+  exact Real.log_nonneg h1
 
 /--
 `safe_log_spec` is `(1/ε)`-Lipschitz for `ε > 0`.

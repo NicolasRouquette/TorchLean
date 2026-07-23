@@ -1447,8 +1447,8 @@ def generateCheckedWith (registry : GraphRangeRegistry) (profile : BackendProfil
 
 /-- Execute a graph under `IEEE32Exec` and check all intermediate tensors against the certificate.
 
-This is a reference replay path, not the high-throughput training engine. It gives imported runtime
-artifacts a bit-level oracle while the backend audit records the capsules and numerical policies
+This reference replay path gives imported runtime artifacts a bit-level oracle. The backend audit
+records the capsules and numerical policies
 selected when the graph is replanned. The audit is not runtime provenance and does not prove that
 those kernels produced the imported values.
 -/

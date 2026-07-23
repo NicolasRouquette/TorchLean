@@ -34,7 +34,7 @@ Executable examples that exercise this infrastructure live under `NN/Examples/`.
 | precision-parametric rounding and ULP facts | `NeuralFloat` / `NF` |
 | the mantissa and exponent produced by a rounding operation | `Calc`, specialized through `FP32` when appropriate |
 | interval enclosures with directed endpoints | `Interval` |
-| high-precision external enclosure evidence | `Arb`, with the oracle boundary named |
+| high-precision external enclosure evidence | `Arb`, with the oracle boundary named and its exact rational endpoints enclosed by proved directed rounders |
 | CUDA, LibTorch, or Lean runtime `Float` | a runtime bridge or `TRUST_BOUNDARIES.md` assumption |
 
 This distinction is part of the correctness story. A theorem over `FP32` does not become a CUDA
@@ -124,8 +124,9 @@ The bridge files then connect the executable bit model to that result:
   with the finite refinement theorems, phrased using `toReal?`.
 - `NN/Floats/IEEEExec/Bridge/Expressions.lean`: a compact scalar AST + a whole-expression refinement theorem.
 - `NN/Floats/IEEEExec/Bridge/ERealTotal.lean`: an `EReal`-valued semantics that distinguishes `+∞` and `-∞`.
-- `NN/Floats/IEEEExec/Bridge/RuntimeFloat32.lean`: an assumption based bridge from Lean's runtime
-  `Init.Float32` to `IEEE32Exec`, at the bit level.
+- `NN/Floats/IEEEExec/Bridge/RuntimeFloat32.lean`: an assumption-based bridge from Lean's runtime
+  `Init.Float32` to `IEEE32Exec`. Exact bit agreement covers finite inputs and finite results;
+  classification is stated for all values because runtime NaN payload propagation is opaque.
 
 The standard rounding choices are available through `NeuralRoundingMode`: nearest-even,
 toward-zero, toward-positive, and toward-negative. The lower-level function-valued API remains the
@@ -139,7 +140,8 @@ IEEE exception indicators. Underflow uses tininess after rounding and is raised 
 tiny result; this policy is part of the Lean definition rather than inherited from the host.
 
 `neuralRoundAtScale` supplies the common fixed-grid operation used by affine quantization and
-fixed-point arguments. The round-to-odd theorem in `NeuralFloat/Rounding/Odd.lean` shows that a
+fixed-point arguments and requires a proof that the grid step is positive. The round-to-odd theorem
+in `NeuralFloat/Rounding/Odd.lean` shows that a
 sufficiently fine binary intermediate prevents nearest-even double rounding on an arbitrary
 coarser grid.
 

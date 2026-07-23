@@ -12,21 +12,20 @@ Start with the same MLP:
 $$`F_\theta:[2]\to[1]`
 
 Its type stays `[2] → [1]` whether it runs eagerly on the CPU, through a compiled graph, or with
-native CUDA kernels. We can therefore change the runtime one choice at a time without rebuilding
-the architecture.
+native CUDA kernels. We can therefore keep the architecture, seed, and data fixed while changing
+one runtime choice at a time.
 
-TorchLean separates four choices:
+There are four independent questions. Which scalar operations give meaning to the numbers? Is the
+forward/loss program recorded once or rebuilt eagerly? Which device and providers carry out its
+primitive operations? Is the runner training or evaluating? Treating these as separate questions
+is useful: moving to CUDA should not silently turn dropout from training behavior into evaluation
+behavior, and selecting binary32 should not secretly choose another model architecture.
 
-1. scalar semantics;
-2. eager or compiled execution;
-3. device/provider profile;
-4. training or evaluation mode.
-
-The easiest way to understand the choices is to run them.
+The experiments below answer each question by asking the runner what it actually did.
 
 # Ask The Runner
 
-The example runner documents the current surface:
+The example runner documents the flags it currently accepts:
 
 ```
 lake exe torchlean --help
@@ -38,7 +37,7 @@ For one command:
 lake exe torchlean quickstart_mlp --help
 ```
 
-The common flags are:
+The quickstart's common flags are:
 
 ```
 --dtype float|ieee754exec
@@ -47,6 +46,9 @@ The common flags are:
 --seed N
 --show-backend
 ```
+
+The canonical executable names are `float` and `ieee754exec`; the shared parser also accepts the
+older `float32` and `ieee32` aliases. Individual commands may support only one of these choices.
 
 The parser knows more device names than the current runtime implements. CPU and CUDA have maintained
 profiles today; the other names reserve a clean place for future providers. Asking for one of them
@@ -79,12 +81,9 @@ are required.
 On CPU, the maintained profile selects portable reference capsules. The report lets you verify that
 the requested CPU path actually ran.
 
-Use eager mode when:
-
-- operation structure depends on runtime values;
-- inspecting a tape or provider selection;
-- executing the broadest dynamic frontend;
-- using the maintained CUDA runtime.
+Eager mode is the natural starting point when operation structure depends on runtime values, when
+you want to inspect the tape or provider choices, or when you are using the maintained CUDA
+runtime. It also accepts more dynamic frontend programs than the fixed compiled recorder.
 
 # Experiment 2: CPU Compiled
 
@@ -125,7 +124,7 @@ The CUDA profile selects native capsules for supported operations. The report na
 permutation, matrix multiplication, broadcasting, addition, ReLU, and MSE providers as they are
 first used.
 
-CUDA currently requires host `Float` at the public module boundary. The native tensors use
+CUDA currently requires host `Float` at the TorchLean module boundary. The native tensors use
 device-side Float32 storage and operations according to their capsules. This is a runtime boundary,
 not an identification of Lean `Float`, mathematical `FP32`, and CUDA `float`.
 
@@ -146,8 +145,14 @@ lake exe torchlean quickstart_mlp \
 This uses TorchLean's explicit bit-level `IEEE32Exec` scalar model. It is intentionally slower and
 best used for small reference runs and numerical experiments.
 
-The proof-oriented finite `FP32` model and exact `Real` live in theorem statements rather than the
-IO trainer. The floating-point chapter shows how those views connect.
+The proof-oriented `FP32` model and exact `Real` live in theorem statements rather than the IO
+trainer. `FP32` rounds on reals using binary32 precision and gradual-underflow parameters, but it
+does not model overflow, NaN, infinity, or signed zero. The floating-point chapter shows how the
+finite/no-overflow bridge to `IEEE32Exec` is stated.
+
+The lower dtype dispatcher also recognizes executable complex binary32. The high-level trainer
+currently rejects it because prediction has no Float readback path. All supported selections follow
+the one-scalar-per-run contract from *Tensors And Shapes*.
 
 # The Same Choices In Lean
 
@@ -179,13 +184,10 @@ declaration.
 
 # Why Device Is Part Of A Profile
 
-A device choice affects more than memory location. The profile also carries:
-
-- provider preference;
-- assurance policy;
-- requested VJP ownership;
-- target operating system and architecture;
-- capsule modules available to the planner.
+A device choice affects more than memory location. The associated profile says which providers the
+planner should prefer, which evidence policy a capsule must satisfy, and whether TorchLean or the
+provider owns each VJP. It also records the target operating system and architecture together with
+the capsule modules available in this build.
 
 Selecting only `.cuda` while retaining CPU provider assumptions would be an inconsistent
 configuration. `RunConfig.withDevice` therefore installs a maintained profile as one value or
@@ -228,19 +230,17 @@ A fixed compiled graph needs operation structure and shapes known when recording
 reads token values and changes the graph structure while constructing it, the current `GraphM`
 compiler cannot represent that program as one fixed replay.
 
-The correct response is not to coerce the values into a graph and hope. Either:
-
-- keep that control flow in eager mode;
-- represent the choice as a supported tensor operation;
-- compile separate static branches behind an explicit runtime choice.
+The correct response is not to coerce the values into a graph and hope. Keep genuinely dynamic
+control flow in eager mode, represent the choice as a supported tensor operation, or compile
+separate static branches and choose between them explicitly at runtime.
 
 Unsupported compiled operations are rejected.
 
 # Selecting A LibTorch Provider
 
-LibTorch is not a third execution mode. It is an optional provider inside an eager backend profile.
-The maintained bridge currently accelerates scaled-dot-product attention forward while TorchLean
-retains its tape and local backward ownership.
+LibTorch is an optional provider inside an eager backend profile. The maintained bridge currently
+accelerates scaled-dot-product attention forward while TorchLean retains its tape and local
+backward ownership.
 
 Surrounding operations may still use native CUDA or reference capsules. Provider selection is
 per semantic operation.
@@ -261,12 +261,9 @@ lake exe torchlean quickstart_mlp \
 on the current checkout. The target name is parsed, but profile selection rejects it. This confirms
 that a future platform vocabulary is not reported as working implementation.
 
-Likewise:
-
-- CUDA requested in a CPU-only build fails;
-- compiled mode with non-CPU profile fails;
-- proof-only scalar semantics in IO fail;
-- an operation with no admissible capsule fails planning or execution.
+The same rule covers other unsupported combinations. CUDA in a CPU-only build, compiled mode with a
+non-CPU profile, proof-only scalar semantics in `IO`, and an operation with no admissible capsule
+all fail rather than changing the requested configuration behind the caller's back.
 
 These failures protect benchmark provenance. “Requested GPU” must never become an unreported CPU
 run.
@@ -334,6 +331,6 @@ Without this information, two loss curves may be incomparable even when both are
 
 Sources:
 
-- [`NN/API/Runtime/Module.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Runtime/Module.lean);
-- [`Core/Types.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Torch/Core/Types.lean);
-- [`Core/Trainer.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Torch/Core/Trainer.lean).
+- [NN/API/Runtime/Module.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Runtime/Module.lean);
+- [Core/Types.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Torch/Core/Types.lean);
+- [Core/Trainer.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Torch/Core/Trainer.lean).

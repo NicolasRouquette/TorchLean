@@ -34,8 +34,10 @@ incur a rounding error at each step (Higham/Goldberg style).
 
 Trust boundary:
 - `NF`/`NeuralFloat` are proof-relevant *Lean models* of rounded arithmetic (built on `ℝ`).
-- Instantiating `NF` with IEEE single parameters + round-to-nearest-even models the **finite**
-  fragment of IEEE-754 binary32 (subnormals/rounding via `fexp`, but no NaN/Inf).
+- Instantiating `NF` with IEEE single parameters + round-to-nearest-even models domain-valid,
+  finite, no-overflow arithmetic with binary32's precision and gradual-underflow grid. The format
+  has no upper exponent bound, and Mathlib's real division, square root, and logarithm are totalized;
+  exceptional IEEE behavior belongs to `IEEE32Exec`.
 - Correspondence to hardware float32 / Lean's builtin `Float` is not proved in this file; that
   connection is an external assumption/interface boundary (or requires a separate verified kernel).
 -/
@@ -127,6 +129,16 @@ noncomputable instance : Mul (NF β fexp rnd) where
 noncomputable instance : Div (NF β fexp rnd) where
   div a b := ofReal (β := β) (fexp := fexp) (rnd := rnd) (a.val / b.val)
 
+/-- Checked rounded division. Unlike the totalized `Div` instance, this rejects a zero divisor. -/
+noncomputable def checkedDiv (a b : NF β fexp rnd) : Option (NF β fexp rnd) :=
+  if b.val = 0 then none else some (a / b)
+
+omit [NeuralValidRnd rnd] in
+/-- Checked division rejects exactly the zero-divisor case. -/
+@[simp] theorem checkedDiv_eq_none_iff (a b : NF β fexp rnd) :
+    checkedDiv a b = none ↔ b.val = 0 := by
+  simp [checkedDiv]
+
 /--
 Boolean equality on `NF` values (semantic equality of reals).
 
@@ -152,19 +164,66 @@ noncomputable instance : Min (NF β fexp rnd) where
 noncomputable instance : Max (NF β fexp rnd) where
   max x y := if x ≥ y then x else y
 
-/--
-Exponentiation, rounded back to the grid.
+/-- Natural exponentiation evaluated in `ℝ` and rounded once onto the target grid. -/
+noncomputable def powNat (a : NF β fexp rnd) (n : Nat) : NF β fexp rnd :=
+  ofReal (β := β) (fexp := fexp) (rnd := rnd) (a.val ^ n)
 
-We define `a^b` via `exp(b * log a)` when `a > 0`. If `a ≤ 0` we return `0` to keep the operation
-total in `ℝ`. (In practical ML code this is usually guarded or avoided; here we prefer a total
-spec-level function over partiality.)
+/-- Natural powers have unambiguous real semantics for every base. -/
+noncomputable instance : Pow (NF β fexp rnd) Nat where
+  pow := powNat
+
+/--
+Positive-base real exponentiation, evaluated as `exp (b * log a)` and rounded once.
+
+The positivity proof is part of the API so negative bases and `0^0` cannot silently acquire an
+arbitrary totalized value.
 -/
-noncomputable instance : Pow (NF β fexp rnd) (NF β fexp rnd) where
-  pow a b :=
-    if a.val > 0 then
-      ofReal (β := β) (fexp := fexp) (rnd := rnd) (Real.exp (b.val * Real.log a.val))
+noncomputable def positiveRealPow (a b : NF β fexp rnd) (_ha : 0 < a.val) : NF β fexp rnd :=
+  ofReal (β := β) (fexp := fexp) (rnd := rnd) (Real.exp (b.val * Real.log a.val))
+
+/--
+Checked real exponentiation.
+
+Positive bases accept every real exponent. Negative bases accept integer exponents, including
+negative integer exponents. Zero uses the usual natural-power convention for nonnegative integer
+exponents, maps positive noninteger exponents to zero, and rejects negative exponents. Thus the
+remaining rejected case is a negative base with a noninteger exponent. Natural powers can also use
+`powNat` directly.
+-/
+noncomputable def checkedRealPow (a b : NF β fexp rnd) : Option (NF β fexp rnd) := by
+  classical
+  exact
+    if ha : 0 < a.val then
+      some (positiveRealPow a b ha)
+    else if hi : ∃ z : ℤ, b.val = z then
+      let z := Classical.choose hi
+      if hz : 0 ≤ z then
+        some (ofReal (β := β) (fexp := fexp) (rnd := rnd) (a.val ^ z.toNat))
+      else if a.val = 0 then
+        none
+      else
+        some (ofReal (β := β) (fexp := fexp) (rnd := rnd) ((a.val ^ (-z).toNat)⁻¹))
+    else if a.val = 0 then
+      -- The logarithmic formula is unavailable at zero, but `0 ^ b = 0` is unambiguous for `b > 0`.
+      if 0 < b.val then
+        some (ofReal (β := β) (fexp := fexp) (rnd := rnd) 0)
+      else
+        none
     else
-      ofReal (β := β) (fexp := fexp) (rnd := rnd) 0
+      none
+
+omit [NeuralValidRnd rnd] in
+/-- On a positive base, checked exponentiation is the ordinary positive real-power formula. -/
+theorem checkedRealPow_of_pos (a b : NF β fexp rnd) (ha : 0 < a.val) :
+    checkedRealPow a b = some (positiveRealPow a b ha) := by
+  simp [checkedRealPow, ha, positiveRealPow]
+
+omit [NeuralValidRnd rnd] in
+/-- A positive noninteger exponent of zero uses the unambiguous real value zero. -/
+theorem checkedRealPow_zero_of_pos_not_int (a b : NF β fexp rnd) (ha : a.val = 0)
+    (hb : 0 < b.val) (hni : ¬ ∃ z : ℤ, b.val = z) :
+    checkedRealPow a b = some (ofReal (β := β) (fexp := fexp) (rnd := rnd) 0) := by
+  simp [checkedRealPow, ha, hb, hni]
 
 /--
 Common math functions lifted to `NF` by “evaluate in `ℝ`, then round”.
@@ -183,6 +242,32 @@ noncomputable instance : MathFunctions (NF β fexp rnd) where
   pi      := ofReal (β := β) (fexp := fexp) (rnd := rnd) Real.pi
   cos  x := ofReal (β := β) (fexp := fexp) (rnd := rnd) (Real.cos x.val)
   sin  x := ofReal (β := β) (fexp := fexp) (rnd := rnd) (Real.sin x.val)
+
+/-- Checked rounded square root; negative inputs are rejected instead of using real totalization. -/
+noncomputable def checkedSqrt (x : NF β fexp rnd) : Option (NF β fexp rnd) :=
+  if 0 ≤ x.val then
+    some (ofReal (β := β) (fexp := fexp) (rnd := rnd) (Real.sqrt x.val))
+  else
+    none
+
+omit [NeuralValidRnd rnd] in
+/-- Checked square root rejects exactly the negative inputs. -/
+@[simp] theorem checkedSqrt_eq_none_iff (x : NF β fexp rnd) :
+    checkedSqrt x = none ↔ ¬0 ≤ x.val := by
+  simp [checkedSqrt]
+
+/-- Checked rounded logarithm; zero and negative inputs are rejected. -/
+noncomputable def checkedLog (x : NF β fexp rnd) : Option (NF β fexp rnd) :=
+  if 0 < x.val then
+    some (ofReal (β := β) (fexp := fexp) (rnd := rnd) (Real.log x.val))
+  else
+    none
+
+omit [NeuralValidRnd rnd] in
+/-- Checked logarithm rejects exactly the nonpositive inputs. -/
+@[simp] theorem checkedLog_eq_none_iff (x : NF β fexp rnd) :
+    checkedLog x = none ↔ ¬0 < x.val := by
+  simp [checkedLog]
 
 /-- Numeric constants for NF via rounded reals. -/
 noncomputable instance : Numbers (NF β fexp rnd) where

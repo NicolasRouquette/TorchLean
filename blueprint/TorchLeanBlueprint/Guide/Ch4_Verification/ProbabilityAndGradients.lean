@@ -7,7 +7,7 @@ open Verso.Genre Manual
 tag := "probability-and-gradients"
 %%%
 
-Large model proofs are rarely proved in one piece. A diffusion theorem needs a reusable statement
+Large-model proofs are rarely completed in one piece. A diffusion theorem needs a reusable statement
 about affine images of Gaussian noise. An autograd theorem needs the derivative of each primitive.
 A linear-layer proof needs to agree on whether weights are stored by input or output coordinate.
 TorchLean keeps these local facts small enough to use independently.
@@ -41,6 +41,15 @@ $$`x_t=\sqrt{\bar\alpha_t}\,x_0
 The schedule is not built into the probability theorem. The theorem layer accepts arbitrary `a`
 and `b`; a diffusion model chooses them elsewhere.
 
+There is a closely related definition in the generative-model development:
+`NN.MLTheory.Generative.Diffusion.forwardGaussian`. Both definitions scale a standard Gaussian and
+translate it by a scaled clean state, but they live at different levels. `forwardNoising` works
+over an arbitrary finite-dimensional real inner-product
+space and also supplies a Markov-kernel wrapper; `forwardGaussian` is specialized to Euclidean
+space and records the Gaussian-closure theorem used by the diffusion chapter. TorchLean does not
+currently contain a bridge theorem identifying the two measures, so downstream proofs should use
+the declaration their hypotheses actually mention.
+
 The definition
 [`forwardNoising`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Probability/DiffusionForward.lean)
 is a measure obtained by two pushforwards:
@@ -67,8 +76,8 @@ Because affine images of finite-dimensional Gaussian measures are Gaussian, Math
   forwardNoising (E := E) a b x Set.univ = 1
 ```
 
-A diffusion process needs transitions that compose, not just one measure for each starting point.
-`forwardKernel a b : Kernel E E` packages the same operation as a Markov kernel. The bridge theorem
+A diffusion process needs composable transitions in addition to a measure for each starting point.
+`forwardKernel a b : Kernel E E` packages the operation as a Markov kernel. The bridge theorem
 
 ```
 lemma forwardKernel_apply (a b : ℝ) (x : E) :
@@ -266,6 +275,13 @@ example :
 Both examples compile without goals. Now replace `2` by `0` in the ReLU example. Lean asks for
 `0 ≠ 0`, which cannot be proved. A runtime autograd system may choose a subgradient convention at
 the kink, as PyTorch does, but that convention is not an ordinary `HasDerivAt` theorem.
+
+The same audit rule applies to the less visible domains. A theorem for raw `log` needs positivity;
+one for reciprocal or division needs a nonzero denominator; square-root differentiation needs a
+strictly positive point. Epsilon-protected `safe_log` and safe-division operations are different
+functions, not licenses to drop those hypotheses from the raw functions. When composing a graph,
+the local domain facts must be established at the actual saved forward values used by the reverse
+rule.
 
 # How The Pieces Compose
 

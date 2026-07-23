@@ -107,11 +107,39 @@ based on log-sum-exp over each pooling window:
 This is the standard log-sum-exp surrogate and is intended for `β ≠ 0`.
 -/
 
+namespace Private
+
+/--
+Choose the input-space pivot whose scaled value `beta * pivot` is maximal.
+
+Selecting a maximum for positive `beta` and a minimum for negative `beta` avoids forming
+`beta * x` before the log-sum-exp shift, which matters when both operands are large finite
+floating-point values.
+-/
+def smoothMaxPivotStep (beta current candidate : α) : α :=
+  if beta > 0 then Max.max current candidate else Min.min current candidate
+
+/-- Input-space pivot for a nonempty two-dimensional smooth-max window. -/
+def smoothMaxPool2dPivot {kH kW : Nat} (hH : kH ≠ 0) (hW : kW ≠ 0)
+    (beta : α) (window : Tensor α (Shape.dim kH (Shape.dim kW Shape.scalar))) : α :=
+  let i0 : Fin kH := ⟨0, Nat.pos_of_ne_zero hH⟩
+  let j0 : Fin kW := ⟨0, Nat.pos_of_ne_zero hW⟩
+  let first := Tensor.toScalar (getAtSpec (getAtSpec window i0) j0)
+  (List.finRange kH).foldl (fun rowPivot i =>
+    (List.finRange kW).foldl (fun pivot j =>
+      smoothMaxPivotStep beta pivot (Tensor.toScalar (getAtSpec (getAtSpec window i) j)))
+      rowPivot) first
+
+end Private
+
 /--
 Smooth max-pooling (single-channel) using a log-sum-exp surrogate.
 
 This is useful in proof settings that want a differentiable alternative to `max_pool2d_spec`.
-For large `beta`, the output approaches hard max pooling.
+For large positive `beta`, the output approaches hard max pooling; for large negative `beta`, it
+approaches hard min pooling. The implementation selects an unscaled input-space pivot—a maximum
+for positive `beta` and a minimum for negative `beta`—so it need not form `beta * x` before the
+log-sum-exp shift.
 -/
 def smoothMaxPool2dSpec {kH kW inH inW stride : ℕ} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   {hStride : stride ≠ 0}
@@ -122,9 +150,10 @@ def smoothMaxPool2dSpec {kH kW inH inW stride : ℕ} {h1 : kH ≠ 0} {h2 : kW �
   Tensor.dim (fun i =>
     Tensor.dim (fun j =>
       let window := extractWindow kW kH input (i.val * layer.stride) (j.val * layer.stride)
+      let pivot := Private.smoothMaxPool2dPivot h1 h2 beta window
       let expWindow :=
         mapSpec (s := Shape.dim kH (Shape.dim kW Shape.scalar))
-          (fun x => MathFunctions.exp (beta * x)) window
+          (fun x => MathFunctions.exp (beta * (x - pivot))) window
       have instH : Shape.valid_axis_inst 0 (Shape.dim kH (Shape.dim kW Shape.scalar)) :=
         Shape.validAxisInstZeroAlt h1
       have instW : Shape.valid_axis_inst 0 (Shape.dim kW Shape.scalar) :=
@@ -138,7 +167,7 @@ def smoothMaxPool2dSpec {kH kW inH inW stride : ℕ} {h1 : kH ≠ 0} {h2 : kW �
       match sumAll with
       | Tensor.scalar s =>
           let invTemp : α := 1 / beta
-          Tensor.scalar (MathFunctions.log s * invTemp)))
+          Tensor.scalar (pivot + MathFunctions.log s * invTemp)))
 
 /-- Smooth max-pooling (multi-channel): apply `smooth_max_pool2d_spec` per channel. -/
 def smoothMaxPool2dMultiSpec {kH kW inH inW inC stride : ℕ} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
@@ -166,9 +195,10 @@ def smoothMaxPool2dJvpSpec {kH kW inH inW stride : ℕ} {h1 : kH ≠ 0} {h2 : kW
     Tensor.dim (fun j =>
       let window := extractWindow kW kH input (i.val * layer.stride) (j.val * layer.stride)
       let tangentWindow := extractWindow kW kH tangent (i.val * layer.stride) (j.val * layer.stride)
+      let pivot := Private.smoothMaxPool2dPivot h1 h2 beta window
       let expWindow :=
         mapSpec (s := Shape.dim kH (Shape.dim kW Shape.scalar))
-          (fun x => MathFunctions.exp (beta * x)) window
+          (fun x => MathFunctions.exp (beta * (x - pivot))) window
       let weighted :=
         map2Spec (fun e dx => e * dx) expWindow tangentWindow
       have instH : Shape.valid_axis_inst 0 (Shape.dim kH (Shape.dim kW Shape.scalar)) :=

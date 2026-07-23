@@ -76,7 +76,7 @@ proof data carried by each node.
 
 The objects to track are:
 
-- `TensorPack`: public typed tensor payloads indexed by a list of shapes; internally, the
+- `TensorPack`: typed tensor payloads indexed by a list of shapes; internally, the
   autograd algebra still has a small context datatype with the same shape-indexed structure.
 - `Idx`: pointer into a context, carrying the needed proof data.
 - `NodeData`: forward, JVP, and VJP data for one local operation.
@@ -285,7 +285,7 @@ training run connects to that statement through a finite-precision bridge, which
 approximation and to the
 [runtime approximation proof API](https://github.com/lean-dojo/TorchLean/tree/main/NN/Proofs/RuntimeApprox/).
 
-# Model Surfaces: Attention, Transformers, And Recurrent Cells
+# Model Coverage: Attention, Transformers, And Recurrent Cells
 
 The autograd APIs for model blocks give theorem entry points for selected fragments rather than a claim
 that every modern model is fully verified end to end. We built them to show how the algebra scales
@@ -294,17 +294,34 @@ to the shapes users care about while keeping boundaries explicit.
 Representative theorem entry points:
 
 - [NN.Proofs.Autograd.Tape.Ops.Attention.ScaledDotProduct API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Attention/ScaledDotProduct.lean)
+- [masked scaled-dot-product attention API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Attention/MaskedScaledDotProduct.lean)
+- [masked multi-head attention API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Attention/MaskedMultiHeadSelfAttention.lean)
 - [NN.Proofs.Autograd.Tape.Ops.Attention.MultiHeadSelfAttention API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Attention/MultiHeadSelfAttention.lean)
+- [convolution Fréchet-derivative API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Conv/FDeriv.lean)
+- [embedding gather-rows API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Embedding/GatherRows.lean)
+- [LayerNorm API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Norm/LayerNorm.lean) and
+  [channel-first BatchNorm API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Norm/BatchNormChannelFirst.lean)
 - [NN.Proofs.Autograd.Tape.Ops.Transformer.PostNorm API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Transformer/PostNorm.lean)
 - [NN.Proofs.Autograd.Tape.Ops.Transformer.ResidualAttention API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Transformer/ResidualAttention.lean)
 - [NN.Proofs.Autograd.Tape.Ops.Transformer.FeedForward API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Transformer/FeedForward.lean)
+- [Transformer encoder-block API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Transformer/EncoderBlock.lean) and
+  [decoder-block API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Transformer/DecoderBlock.lean)
 - [NN.Proofs.Autograd.Tape.Ops.Recurrent.ElmanCell API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Recurrent/ElmanCell.lean)
+
+Loss-node proofs are maintained separately for binary cross entropy with logits, cross entropy,
+KL divergence, MSE, and NLL under
+[`Tape/Nodes/Losses`](https://github.com/lean-dojo/TorchLean/tree/main/NN/Proofs/Autograd/Tape/Nodes/Losses).
+Coverage is theorem-by-theorem: the existence of an operator proof does not imply that every
+runtime registration, backend kernel, mask convention, or whole-model unroll has been connected to
+it.
 
 For attention, the named theorem
 `backprop_eq_adjoint_fderiv_scaledDotProduct` states the desired attention theorem directly: the
 graph reverse pass for scaled dot product attention agrees with the adjoint derivative of the
-forward attention map. Multi head attention and residual attention then package that structure at a
-wider interface.
+forward attention map. The masked theorem uses the hard-mask semantics named by its hypotheses;
+`backprop_eq_adjoint_fderiv_maskedScaledDotProduct` must not be transferred to a finite additive-bias
+mask without a separate equivalence result. Multi-head attention and residual attention then
+package that structure at a wider interface.
 
 For Transformer post-norm blocks, the post-norm API contains several theorem layers:
 

@@ -49,6 +49,55 @@ namespace TorchLean.Floats
 variable {β : NeuralRadix}
 
 /--
+A positive number of radix digits for FLX, FLT, and FTZ formats.
+
+Raw exponent functions remain available for algebraic proofs, but callers accepting an integer
+configuration should first use `NeuralFormatPrecision.ofInt?`.  This prevents a zero or negative
+precision from being silently reinterpreted through an absolute-value conversion.
+-/
+structure NeuralFormatPrecision where
+  /-- Number of radix digits retained by the format. -/
+  digits : ℕ
+  /-- A floating-point precision has at least one radix digit. -/
+  digits_pos : 0 < digits
+  deriving DecidableEq, Repr
+
+namespace NeuralFormatPrecision
+
+/-- Convert a proof-carrying format precision to the integer parameter used by exponent formulas. -/
+def toInt (precision : NeuralFormatPrecision) : ℤ := precision.digits
+
+/-- Check a natural-number precision at a configuration boundary. -/
+def ofNat? (digits : ℕ) : Option NeuralFormatPrecision :=
+  if h : 0 < digits then some ⟨digits, h⟩ else none
+
+/-- Check an integer precision, rejecting zero and every negative value. -/
+def ofInt? (digits : ℤ) : Option NeuralFormatPrecision :=
+  if h : 0 < digits then
+    some ⟨digits.toNat, by
+      have hcast : (digits.toNat : ℤ) = digits := Int.toNat_of_nonneg h.le
+      have : (0 : ℤ) < (digits.toNat : ℤ) := by simpa [hcast] using h
+      exact_mod_cast this⟩
+  else none
+
+/-- A checked precision remains positive after conversion to the integer exponent parameter. -/
+@[simp] theorem toInt_pos (precision : NeuralFormatPrecision) : 0 < precision.toInt := by
+  change (0 : ℤ) < (precision.digits : ℤ)
+  exact_mod_cast precision.digits_pos
+
+/-- Natural precision validation fails exactly at zero. -/
+@[simp] theorem ofNat?_eq_none_iff (digits : ℕ) :
+    ofNat? digits = none ↔ digits = 0 := by
+  simp [ofNat?]
+
+/-- Integer precision validation fails exactly for nonpositive inputs. -/
+@[simp] theorem ofInt?_eq_none_iff (digits : ℤ) :
+    ofInt? digits = none ↔ digits ≤ 0 := by
+  simp [ofInt?]
+
+end NeuralFormatPrecision
+
+/--
 `FIX_exp emin` is the simplest exponent-selection function: it always returns the same exponent.
 
 This is the Flocq “FIX” family. It is useful when you want to reason about values living on a
@@ -120,6 +169,29 @@ abbrev flxValidExp (prec : ℤ) (h : 0 < prec) : NeuralValidExp (FLXExp prec) wh
       · linarith
       · intros l hl; exfalso; linarith [h, H]
 
+/-- `FLXExp prec` satisfies the generic exponent axioms exactly when `prec` is positive. -/
+theorem neuralValidExp_FLX_iff (prec : ℤ) : NeuralValidExp (FLXExp prec) ↔ 0 < prec := by
+  constructor
+  · intro hvalid
+    by_contra hprec
+    have hnonpos : prec ≤ 0 := le_of_not_gt hprec
+    have hsecond := (hvalid.flocq_valid 0).2 (by simp [FLXExp]; linarith)
+    have := hsecond.1
+    simp [FLXExp] at this
+    linarith
+  · exact flxValidExp prec
+
+namespace NeuralFormatPrecision
+
+/-- The unbounded exponent selector associated with a checked precision. -/
+def flxExp (precision : NeuralFormatPrecision) : ℤ → ℤ := FLXExp precision.toInt
+
+/-- A checked precision automatically discharges the FLX exponent-validity obligation. -/
+instance flxExpValid (precision : NeuralFormatPrecision) : NeuralValidExp precision.flxExp :=
+  flxValidExp precision.toInt precision.toInt_pos
+
+end NeuralFormatPrecision
+
 
 abbrev flxMonotoneExp (prec : ℤ) : NeuralMonotoneExp (FLXExp prec) where
   monotone := by
@@ -137,7 +209,13 @@ Heuristically: there exists a mantissa/exponent pair with mantissa bounded by th
 `x = m * β^e`.
 -/
 def FLXFormat (prec : ℤ) (x : ℝ) : Prop :=
-  ∃ f : NeuralFloat β, x = neuralToReal f ∧ Int.natAbs f.mantissa < β.base ^ prec.natAbs
+  0 < prec ∧
+    ∃ f : NeuralFloat β, x = neuralToReal f ∧ Int.natAbs f.mantissa < β.base ^ prec.toNat
+
+/-- Nonpositive precision is rejected by the explicit FLX format predicate. -/
+theorem not_FLXFormat_of_nonpos (prec : ℤ) (hprec : prec ≤ 0) (x : ℝ) :
+    ¬FLXFormat (β := β) prec x := by
+  simp [FLXFormat, not_lt_of_ge hprec]
 
 /-- The unbounded FLX exponent function has no negligible exponent. -/
 theorem neuralNegligibleExp_FLX (prec : ℤ) (hprec : 0 < prec) :
@@ -207,6 +285,34 @@ abbrev fltValidExp (emin prec : ℤ) (h : 0 < prec) : NeuralValidExp (FLTExp emi
             dsimp [FLTExp]
             exact max_eq_right hle
 
+/-- `FLTExp emin prec` satisfies the exponent axioms exactly for positive precision. -/
+theorem neuralValidExp_FLT_iff (emin prec : ℤ) : NeuralValidExp (FLTExp emin prec) ↔ 0 < prec := by
+  constructor
+  · intro hvalid
+    by_contra hprec
+    have hnonpos : prec ≤ 0 := le_of_not_gt hprec
+    have hk : emin ≤ FLTExp emin prec emin := by simp [FLTExp]
+    have hnext := ((hvalid.flocq_valid emin).2 hk).1
+    have hlower : FLTExp emin prec (FLTExp emin prec emin + 1) ≥
+        FLTExp emin prec emin + 1 := by
+      apply le_max_of_le_left
+      linarith
+    linarith
+  · exact fltValidExp emin prec
+
+namespace NeuralFormatPrecision
+
+/-- The gradual-underflow exponent selector associated with a checked precision. -/
+def fltExp (precision : NeuralFormatPrecision) (emin : ℤ) : ℤ → ℤ :=
+  FLTExp emin precision.toInt
+
+/-- A checked precision automatically discharges the gradual-underflow validity obligation. -/
+instance fltExpValid (precision : NeuralFormatPrecision) (emin : ℤ) :
+    NeuralValidExp (precision.fltExp emin) :=
+  fltValidExp emin precision.toInt precision.toInt_pos
+
+end NeuralFormatPrecision
+
 
 abbrev fltBoundedExpGrowth (emin prec : ℤ) :
     NeuralBoundedExpGrowth (FLTExp emin prec) where
@@ -259,8 +365,14 @@ This version includes:
   scale, depending on the choice of `emin` and rounding).
 -/
 def FLTFormat (emin prec : ℤ) (x : ℝ) : Prop :=
-  ∃ f : NeuralFloat β, x = neuralToReal f ∧
-    Int.natAbs f.mantissa < β.base ^ prec.natAbs ∧ emin ≤ f.exponent
+  0 < prec ∧
+    ∃ f : NeuralFloat β, x = neuralToReal f ∧
+      Int.natAbs f.mantissa < β.base ^ prec.toNat ∧ emin ≤ f.exponent
+
+/-- Nonpositive precision is rejected by the explicit FLT format predicate. -/
+theorem not_FLTFormat_of_nonpos (emin prec : ℤ) (hprec : prec ≤ 0) (x : ℝ) :
+    ¬FLTFormat (β := β) emin prec x := by
+  simp [FLTFormat, not_lt_of_ge hprec]
 
 /-- FLT has a negligible-exponent witness at `emin`. -/
 theorem exists_neuralNegligibleExp_FLT (emin prec : ℤ) :

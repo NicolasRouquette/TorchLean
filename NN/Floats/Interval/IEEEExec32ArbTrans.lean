@@ -8,6 +8,7 @@ module
 
 public import Mathlib.Data.Rat.Floor
 public import NN.Floats.Arb.Oracle
+public import NN.Floats.IEEEExec.DirectedRoundingSoundness.Division
 public import NN.Floats.Interval.IEEEExec32
 
 /-!
@@ -28,15 +29,15 @@ For transcendentals (`exp/log/tanh/sqrt/...`) the situation is different:
 This file implements a pragmatic “sound route” for interval endpoints of transcendentals:
 
 1. Call the Arb oracle (`NN/Floats/Arb`) to obtain a **rigorous real enclosure** `[L,U] ⊇ f([a,b])`.
-2. Convert `L,U : ℚ` to **float32 endpoints** by rounding outward to the `IEEE32Exec` grid:
-   - lower endpoint: round toward `-∞` (using `roundDyadicDown`),
-   - upper endpoint: round toward `+∞` (using `roundDyadicUp`).
+2. Convert `L,U : ℚ` directly to **float32 endpoints** with the proved rational rounders:
+   - lower endpoint: `roundRatDown`,
+   - upper endpoint: `roundRatUp`.
 
 Trust boundary:
 - The enclosure `[L,U]` is an **oracle claim** from Arb/python-flint; Arb is the external trusted
   producer for that real enclosure.
-- The rounding-to-float32 step is in-Lean and (for dyadic rounding) proved sound in
-  `NN/Floats/IEEEExec/DirectedRoundingSoundness.lean`.
+- The exact-rational-to-float32 step is in Lean and its enclosure inequalities are proved in
+  `NN/Floats/IEEEExec/DirectedRoundingSoundness/Division.lean`.
 
 The result is useful when you want executable float32 endpoints *and* a clearly delineated source
 of transcendental soundness (Arb).
@@ -64,45 +65,51 @@ open TorchLean.Floats
 
 namespace IEEE32Exec
 
-/-! ## Outward rounding from `ℚ` to `IEEE32Exec` -/
+/-! ## Proved outward rounding from `ℚ` to `IEEE32Exec` -/
 
-/--
-A rational view of `2^k`.
+/-- Proved outward rounding down of an exact rational to a binary32 endpoint. -/
+def roundRatQDown (q : Rat) : IEEE32Exec :=
+  roundRatDown (q.num < 0) q.num.natAbs q.den
 
-This is a small helper used to implement `ratToDyadicDown`/`ratToDyadicUp`.
--/
-def pow2Rat (k : Nat) : Rat :=
-  Rat.ofInt (Int.ofNat (pow2 k))
+/-- Proved outward rounding up of an exact rational to a binary32 endpoint. -/
+def roundRatQUp (q : Rat) : IEEE32Exec :=
+  roundRatUp (q.num < 0) q.num.natAbs q.den
 
-/--
-Approximate a rational `q` from below by a dyadic with denominator `2^k`:
+/-- Rewrite a rational cast into the signed numerator/positive-denominator form used by the
+directed rational rounders. -/
+private theorem rat_cast_eq_signed (q : Rat) :
+    (q : ℝ) = if q.num < 0 then -((q.num.natAbs : ℝ) / (q.den : ℝ))
+      else (q.num.natAbs : ℝ) / (q.den : ℝ) := by
+  rw [Rat.cast_def]
+  split_ifs with h
+  · simp [abs_of_neg h]
+    ring
+  · have hn : 0 ≤ q.num := le_of_not_gt h
+    simp [abs_of_nonneg hn]
 
-`d = floor(q * 2^k) * 2^{-k}`.
--/
-def ratToDyadicDown (q : Rat) (k : Nat) : Dyadic :=
-  let m : Int := ⌊q * pow2Rat k⌋
-  { sign := m < 0
-    mant := Int.natAbs m
-    exp := - (Int.ofNat k) }
+/-- The lower rational endpoint conversion is an `EReal` lower bound. -/
+theorem toEReal_roundRatQDown_le (q : Rat) :
+    toEReal (roundRatQDown q) ≤ ((q : ℝ) : EReal) := by
+  rw [rat_cast_eq_signed]
+  by_cases h : q.num < 0
+  · simpa [roundRatQDown, h, EReal.coe_div, EReal.coe_neg] using
+      (toEReal_roundRatDown_le (sign := q.num < 0) (num := q.num.natAbs)
+        (den := q.den) q.den_nz)
+  · simpa [roundRatQDown, h, EReal.coe_div] using
+      (toEReal_roundRatDown_le (sign := q.num < 0) (num := q.num.natAbs)
+        (den := q.den) q.den_nz)
 
-/--
-Approximate a rational `q` from above by a dyadic with denominator `2^k`:
-
-`d = ceil(q * 2^k) * 2^{-k}`.
--/
-def ratToDyadicUp (q : Rat) (k : Nat) : Dyadic :=
-  let m : Int := ⌈q * pow2Rat k⌉
-  { sign := m < 0
-    mant := Int.natAbs m
-    exp := - (Int.ofNat k) }
-
-/-- Outward rounding down of a rational to the float32 grid (via a dyadic approximation). -/
-def roundRatQDown (q : Rat) (k : Nat := 200) : IEEE32Exec :=
-  roundDyadicDown (ratToDyadicDown q k)
-
-/-- Outward rounding up of a rational to the float32 grid (via a dyadic approximation). -/
-def roundRatQUp (q : Rat) (k : Nat := 200) : IEEE32Exec :=
-  roundDyadicUp (ratToDyadicUp q k)
+/-- The upper rational endpoint conversion is an `EReal` upper bound. -/
+theorem toEReal_roundRatQUp_ge (q : Rat) :
+    ((q : ℝ) : EReal) ≤ toEReal (roundRatQUp q) := by
+  rw [rat_cast_eq_signed]
+  by_cases h : q.num < 0
+  · simpa [roundRatQUp, h, EReal.coe_div, EReal.coe_neg] using
+      (toEReal_roundRatUp_ge (sign := q.num < 0) (num := q.num.natAbs)
+        (den := q.den) q.den_nz)
+  · simpa [roundRatQUp, h, EReal.coe_div] using
+      (toEReal_roundRatUp_ge (sign := q.num < 0) (num := q.num.natAbs)
+        (den := q.den) q.den_nz)
 
 /-! ## Arb-backed interval endpoints for transcendentals -/
 
@@ -142,38 +149,33 @@ Compute an `IEEE32Exec.Interval32` enclosure for a transcendental unary `func` b
 - getting a real enclosure `[L,U]` from Arb,
 - rounding endpoints outward to the binary32 grid.
 
-`dyadicBits` controls the internal dyadic approximation used when rounding rationals to float32;
-it can be increased if you want the outward rounding to be closer to the Arb bounds.
+The exact rational endpoints are passed directly to the proved directed-rational interface. Its
+internal fixed-point quotient enclosure may be conservative, but the wrapper inequalities above
+cover the complete conversion and there is no caller-selected approximation scale.
 -/
-def arbUnary (func : String) (X : Interval32) (precBits digits : Nat := 200) (dyadicBits : Nat :=
-  200) :
-    IO Interval32 := do
+def arbUnary (func : String) (X : Interval32) (precBits digits : Nat := 200) : IO Interval32 := do
   let (L, U) ← arbBounds func X (precBits := precBits) (digits := digits)
-  let lo32 := roundRatQDown L dyadicBits
-  let hi32 := roundRatQUp U dyadicBits
+  let lo32 := roundRatQDown L
+  let hi32 := roundRatQUp U
   pure ⟨lo32, hi32⟩
 
 /-- Arb-backed `tanh` enclosure for `Interval32` (oracle + outward rounding to float32 endpoints).
   -/
-@[inline] def tanhArb (X : Interval32) (precBits digits : Nat := 200) (dyadicBits : Nat := 200) : IO
-  Interval32 :=
-  arbUnary "tanh" X (precBits := precBits) (digits := digits) (dyadicBits := dyadicBits)
+@[inline] def tanhArb (X : Interval32) (precBits digits : Nat := 200) : IO Interval32 :=
+  arbUnary "tanh" X (precBits := precBits) (digits := digits)
 
 /-- Arb-backed `exp` enclosure for `Interval32` (oracle + outward rounding to float32 endpoints). -/
-@[inline] def expArb (X : Interval32) (precBits digits : Nat := 200) (dyadicBits : Nat := 200) : IO
-  Interval32 :=
-  arbUnary "exp" X (precBits := precBits) (digits := digits) (dyadicBits := dyadicBits)
+@[inline] def expArb (X : Interval32) (precBits digits : Nat := 200) : IO Interval32 :=
+  arbUnary "exp" X (precBits := precBits) (digits := digits)
 
 /-- Arb-backed `log` enclosure for `Interval32` (oracle + outward rounding to float32 endpoints). -/
-@[inline] def logArb (X : Interval32) (precBits digits : Nat := 200) (dyadicBits : Nat := 200) : IO
-  Interval32 :=
-  arbUnary "log" X (precBits := precBits) (digits := digits) (dyadicBits := dyadicBits)
+@[inline] def logArb (X : Interval32) (precBits digits : Nat := 200) : IO Interval32 :=
+  arbUnary "log" X (precBits := precBits) (digits := digits)
 
 /-- Arb-backed `sqrt` enclosure for `Interval32` (oracle + outward rounding to float32 endpoints).
   -/
-@[inline] def sqrtArb (X : Interval32) (precBits digits : Nat := 200) (dyadicBits : Nat := 200) : IO
-  Interval32 :=
-  arbUnary "sqrt" X (precBits := precBits) (digits := digits) (dyadicBits := dyadicBits)
+@[inline] def sqrtArb (X : Interval32) (precBits digits : Nat := 200) : IO Interval32 :=
+  arbUnary "sqrt" X (precBits := precBits) (digits := digits)
 
 end Interval32
 

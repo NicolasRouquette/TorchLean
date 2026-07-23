@@ -233,8 +233,8 @@ def parsePiecewisePolyCertificate (j : Json) : IO PiecewisePolyCertificate := do
 /--
 Check a piecewise-polynomial certificate **exactly** over `Rat`.
 
-This is the smallest checker core for this format: it uses exact rational arithmetic (no
-tolerances), so a passing check means the certificate’s equalities are literally true as stated.
+This is the smallest checker core for this format: it uses exact rational arithmetic with no
+tolerances, so a passing check means the certificate's equalities hold exactly as stated.
 -/
 def checkCertificateRat (cert : PiecewisePolyCertificate) : IO Unit := do
   let n := cert.n

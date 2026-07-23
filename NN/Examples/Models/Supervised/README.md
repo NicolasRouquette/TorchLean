@@ -61,6 +61,6 @@ Supervised examples should keep the public path direct:
 - run through `Trainer.new`, `trainer.predict`, `trainer.train`, and the trained handle;
 - keep manual runtime hooks out of the tutorial path unless the example explicitly explains why.
 
-That consistency matters because these files are the regression surface for the public API. If a
+That consistency matters because these files exercise the application API. If a
 backend or optimizer change forces ordinary supervised examples to know about implementation
 internals, the application API probably needs cleanup.

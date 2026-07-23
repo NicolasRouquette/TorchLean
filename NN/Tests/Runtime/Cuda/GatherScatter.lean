@@ -202,12 +202,49 @@ def runScatterRow : IO Unit := do
   Utils.assertTensorApprox (s := sX) "scatter_add_row dx" dxCuda dxCpu (tol := 1e-6)
   Utils.assertTensorApprox (s := shape![cols]) "scatter_add_row dv" dvCuda dvCpu (tol := 1e-6)
 
+/-- Runtime natural indices outside the CUDA ABI must return a Lean error, not enter the FFI. -/
+def runOversizedIndexChecks : IO Unit := do
+  IO.println "== oversized gather index validation =="
+
+  let x : Tensor Float (shape![2]) := tensorOfList! [2] [1.0, 2.0]
+  let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
+  let (t1c, xIdc) :=
+    Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
+  let largestRepresentableIndex : Nat := (0xFFFFFFFF : UInt32).toNat
+  let (maxIndexTape, maxIndexId) ← Utils.okOrThrow
+    (Runtime.Autograd.Cuda.Tape.gatherScalarNat
+      (t := t1c) (n := 2) xIdc largestRepresentableIndex)
+  let maxIndexValue ← Utils.cudaValue (s := Shape.scalar) maxIndexTape maxIndexId
+  Utils.assertApprox "gather_scalar_nat UInt32.max totalization"
+    (Tensor.toScalar maxIndexValue) 0.0 0.0
+
+  let oversizedIndex := UInt32.size
+  match Runtime.Autograd.Cuda.Tape.gatherScalarNat
+      (t := t1c) (n := 2) xIdc oversizedIndex with
+  | .ok _ => throw <| IO.userError "gather_scalar_nat accepted an index larger than UInt32"
+  | .error _ => pure ()
+
+  let indices : Tensor Nat (shape![1]) := tensorOfList! [1] [oversizedIndex]
+  match Runtime.Autograd.Cuda.Tape.gatherVecNat
+      (t := t1c) (n := 2) (k := 1) xIdc indices with
+  | .ok _ => throw <| IO.userError "gather_vec_nat accepted an index larger than UInt32"
+  | .error _ => pure ()
+
+  let matrix : Tensor Float (shape![1, 2]) := tensorOfList! [1, 2] [1.0, 2.0]
+  let (t2c, matrixIdc) :=
+    Runtime.Autograd.Cuda.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer matrix)
+  match Runtime.Autograd.Cuda.Tape.gatherRowsNat
+      (t := t2c) (rows := 1) (cols := 2) (k := 1) matrixIdc indices with
+  | .ok _ => throw <| IO.userError "gather_rows_nat accepted an index larger than UInt32"
+  | .error _ => pure ()
+
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: gather/scatter ==="
   runGatherVec
   runScatterVec
   runGatherRows
   runScatterRow
+  runOversizedIndexChecks
 
 end GatherScatter
 end Cuda

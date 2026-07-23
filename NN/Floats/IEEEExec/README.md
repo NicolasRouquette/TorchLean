@@ -48,7 +48,9 @@ Bridge files connect these on the finite, no overflow path:
 - `Bridge/ERealTotal.lean`: an `EReal` interpretation that distinguishes `+∞` and `-∞` while
   representing NaN as `none`.
 - `Bridge/RuntimeFloat32.lean`: an assumption-based interface relating Lean runtime `Float32` to
-  `IEEE32Exec`. The runtime is opaque to the kernel, so this cannot be proved internally.
+  `IEEE32Exec`. Exact bit agreement is restricted to finite inputs and finite results. Classification
+  laws cover all values, while NaN payload propagation remains outside the contract because the
+  runtime is opaque to the kernel.
 
 ## How To Use It
 

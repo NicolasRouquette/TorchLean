@@ -569,7 +569,9 @@ __global__ void smoothmaxpool2d_fwd_kernel(const float* input, float* output,
   int oh = (int)(t0 % (size_t)outH);
   int c = (int)(t0 / (size_t)outH);
 
-  float maxScaled = -INFINITY;
+  // Work in input space: max for positive beta and min for negative beta both maximize beta*v,
+  // without first forming the potentially overflowing product.
+  float pivot = (beta > 0.0f) ? -INFINITY : INFINITY;
   for (int ky = 0; ky < kH; ++ky) {
     int ih = oh * stride + ky - padding;
     for (int kx = 0; kx < kW; ++kx) {
@@ -579,7 +581,7 @@ __global__ void smoothmaxpool2d_fwd_kernel(const float* input, float* output,
         size_t inIdx = ((size_t)c * (size_t)inH + (size_t)ih) * (size_t)inW + (size_t)iw;
         v = input[inIdx];
       }
-      maxScaled = fmaxf(maxScaled, beta * v);
+      pivot = (beta > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
     }
   }
 
@@ -593,11 +595,11 @@ __global__ void smoothmaxpool2d_fwd_kernel(const float* input, float* output,
         size_t inIdx = ((size_t)c * (size_t)inH + (size_t)ih) * (size_t)inW + (size_t)iw;
         v = input[inIdx];
       }
-      sumExp += expf(beta * v - maxScaled);
+      sumExp += expf(beta * (v - pivot));
     }
   }
 
-  output[idx] = (maxScaled + logf(sumExp)) / beta;
+  output[idx] = pivot + logf(sumExp) / beta;
 }
 
 __global__ void smoothmaxpool2d_bwd_kernel(const float* input, const float* gradOutput, float* dInput,
@@ -615,7 +617,8 @@ __global__ void smoothmaxpool2d_bwd_kernel(const float* input, const float* grad
   int oh = (int)(t0 % (size_t)outH);
   int c = (int)(t0 / (size_t)outH);
 
-  float maxScaled = -INFINITY;
+  // Use the same input-space pivot as the forward kernel so its softmax weights stay finite.
+  float pivot = (beta > 0.0f) ? -INFINITY : INFINITY;
   for (int ky = 0; ky < kH; ++ky) {
     int ih = oh * stride + ky - padding;
     for (int kx = 0; kx < kW; ++kx) {
@@ -625,7 +628,7 @@ __global__ void smoothmaxpool2d_bwd_kernel(const float* input, const float* grad
         size_t inIdx = ((size_t)c * (size_t)inH + (size_t)ih) * (size_t)inW + (size_t)iw;
         v = input[inIdx];
       }
-      maxScaled = fmaxf(maxScaled, beta * v);
+      pivot = (beta > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
     }
   }
 
@@ -639,7 +642,7 @@ __global__ void smoothmaxpool2d_bwd_kernel(const float* input, const float* grad
         size_t inIdx = ((size_t)c * (size_t)inH + (size_t)ih) * (size_t)inW + (size_t)iw;
         v = input[inIdx];
       }
-      sumExp += expf(beta * v - maxScaled);
+      sumExp += expf(beta * (v - pivot));
     }
   }
 
@@ -653,7 +656,7 @@ __global__ void smoothmaxpool2d_bwd_kernel(const float* input, const float* grad
       if (iw < 0 || iw >= inW) continue;
       size_t inIdx = ((size_t)c * (size_t)inH + (size_t)ih) * (size_t)inW + (size_t)iw;
       float v = input[inIdx];
-      float e = expf(beta * v - maxScaled);
+      float e = expf(beta * (v - pivot));
       float w = e / sumExp;
       atomicAdd(&dInput[inIdx], g * w);
     }
@@ -664,7 +667,7 @@ __global__ void smoothmaxpool2d_bwd_kernel(const float* input, const float* grad
 //
 // This matches smoothmaxpool2d_bwd_kernel semantics, including:
 // - padding-as-zero in the window
-// - log-sum-exp stabilization via maxScaled
+// - log-sum-exp stabilization via an input-space pivot
 // - no gradient flowing to padding elements
 __global__ void smoothmaxpool2d_bwd_det_kernel(const float* input, const float* gradOutput, float* dInput,
                                               int inC, int inH, int inW,
@@ -701,8 +704,8 @@ __global__ void smoothmaxpool2d_bwd_det_kernel(const float* input, const float* 
         const int kxSelf = iw + padding - (int)ow * stride;
         if (kxSelf < 0 || kxSelf >= kW) continue;
 
-        // Recompute (maxScaled, sumExp) for this output window.
-        float maxScaled = -INFINITY;
+        // Recompute the input-space pivot and shifted exponential sum for this output window.
+        float pivot = (beta > 0.0f) ? -INFINITY : INFINITY;
         for (int ky = 0; ky < kH; ++ky) {
           int candH = (int)oh * stride + ky - padding;
           for (int kx = 0; kx < kW; ++kx) {
@@ -712,7 +715,7 @@ __global__ void smoothmaxpool2d_bwd_det_kernel(const float* input, const float* 
               size_t inIdx = ((size_t)c * (size_t)inH + (size_t)candH) * (size_t)inW + (size_t)candW;
               v = input[inIdx];
             }
-            maxScaled = fmaxf(maxScaled, beta * v);
+            pivot = (beta > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
           }
         }
 
@@ -726,11 +729,11 @@ __global__ void smoothmaxpool2d_bwd_det_kernel(const float* input, const float* 
               size_t inIdx = ((size_t)c * (size_t)inH + (size_t)candH) * (size_t)inW + (size_t)candW;
               v = input[inIdx];
             }
-            sumExp += expf(beta * v - maxScaled);
+            sumExp += expf(beta * (v - pivot));
           }
         }
 
-        const float w = expf(beta * vSelf - maxScaled) / sumExp;
+        const float w = expf(beta * (vSelf - pivot)) / sumExp;
         const size_t outIdx = ((size_t)c * (size_t)outH + (size_t)oh) * (size_t)outW + (size_t)ow;
         acc += gradOutput[outIdx] * w;
       }
@@ -1357,7 +1360,8 @@ __global__ void smoothmaxpoolnd_fwd_kernel(const float* input, float* output,
   uint32_t outCoord[kMaxRank];
   decode_spatial_index(spatialIdx, outSpatial, rank, outCoord);
 
-  float maxScaled = -INFINITY;
+  // Choose the extremum in input space before multiplying by beta; this avoids beta*v overflow.
+  float pivot = (beta > 0.0f) ? -INFINITY : INFINITY;
   uint32_t kCoord[kMaxRank];
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
     decode_spatial_index(kIdx, kSpatial, rank, kCoord);
@@ -1378,7 +1382,7 @@ __global__ void smoothmaxpoolnd_fwd_kernel(const float* input, float* output,
     if (inBounds) {
       v = input[inIdx];
     }
-    maxScaled = fmaxf(maxScaled, beta * v);
+    pivot = (beta > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
   }
 
   float sumExp = 0.0f;
@@ -1401,10 +1405,10 @@ __global__ void smoothmaxpoolnd_fwd_kernel(const float* input, float* output,
     if (inBounds) {
       v = input[inIdx];
     }
-    sumExp += expf(beta * v - maxScaled);
+    sumExp += expf(beta * (v - pivot));
   }
 
-  output[idx] = (maxScaled + logf(sumExp)) / beta;
+  output[idx] = pivot + logf(sumExp) / beta;
 }
 
 __global__ void smoothmaxpoolnd_bwd_kernel(const float* input, const float* gradOutput, float* dInput,
@@ -1428,7 +1432,8 @@ __global__ void smoothmaxpoolnd_bwd_kernel(const float* input, const float* grad
   uint32_t outCoord[kMaxRank];
   decode_spatial_index(spatialIdx, outSpatial, rank, outCoord);
 
-  float maxScaled = -INFINITY;
+  // Match the N-D forward path's input-space shift when recomputing gradient weights.
+  float pivot = (beta > 0.0f) ? -INFINITY : INFINITY;
   uint32_t kCoord[kMaxRank];
   for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
     decode_spatial_index(kIdx, kSpatial, rank, kCoord);
@@ -1449,7 +1454,7 @@ __global__ void smoothmaxpoolnd_bwd_kernel(const float* input, const float* grad
     if (inBounds) {
       v = input[inIdx];
     }
-    maxScaled = fmaxf(maxScaled, beta * v);
+    pivot = (beta > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
   }
 
   float sumExp = 0.0f;
@@ -1472,7 +1477,7 @@ __global__ void smoothmaxpoolnd_bwd_kernel(const float* input, const float* grad
     if (inBounds) {
       v = input[inIdx];
     }
-    sumExp += expf(beta * v - maxScaled);
+    sumExp += expf(beta * (v - pivot));
   }
 
   const float g = gradOutput[idx];
@@ -1494,7 +1499,7 @@ __global__ void smoothmaxpoolnd_bwd_kernel(const float* input, const float* grad
     if (!inBounds) continue;
 
     const float v = input[inIdx];
-    const float e = expf(beta * v - maxScaled);
+    const float e = expf(beta * (v - pivot));
     const float w = e / sumExp;
     atomicAdd(&dInput[inIdx], g * w);
   }
@@ -1580,8 +1585,8 @@ __global__ void smoothmaxpoolnd_bwd_det_kernel(const float* input, const float* 
       }
       const size_t goIdx = (size_t)c * outSpatialSize + outIdx;
 
-      // Recompute (maxScaled, sumExp) for this output window.
-      float maxScaled = -INFINITY;
+      // Recompute the input-space pivot and shifted exponential sum for this output window.
+      float pivot = (beta > 0.0f) ? -INFINITY : INFINITY;
       for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
         decode_spatial_index(kIdx, kSpatial, rank, kCoord);
 
@@ -1602,7 +1607,7 @@ __global__ void smoothmaxpoolnd_bwd_det_kernel(const float* input, const float* 
         if (inBounds) {
           v = input[inIdx];
         }
-        maxScaled = fmaxf(maxScaled, beta * v);
+        pivot = (beta > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
       }
 
       float sumExp = 0.0f;
@@ -1626,10 +1631,10 @@ __global__ void smoothmaxpoolnd_bwd_det_kernel(const float* input, const float* 
         if (inBounds) {
           v = input[inIdx];
         }
-        sumExp += expf(beta * v - maxScaled);
+        sumExp += expf(beta * (v - pivot));
       }
 
-      const float w = expf(beta * vSelf - maxScaled) / sumExp;
+      const float w = expf(beta * (vSelf - pivot)) / sumExp;
       acc += gradOutput[goIdx] * w;
     }
   }
@@ -2531,7 +2536,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool_fwd(
     if (hStride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_maxpool_fwd: stride dims must be > 0");
     }
-    hOutSpatial[ax] = outDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
+    hOutSpatial[ax] = poolOutDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(hInSpatial, rank);
@@ -2601,7 +2606,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool_bwd(
     if (hStride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_maxpool_bwd: stride dims must be > 0");
     }
-    hOutSpatial[ax] = outDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
+    hOutSpatial[ax] = poolOutDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(hInSpatial, rank);
@@ -2687,7 +2692,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_avgpool_fwd(
     if (hStride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_avgpool_fwd: stride dims must be > 0");
     }
-    hOutSpatial[ax] = outDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
+    hOutSpatial[ax] = poolOutDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(hInSpatial, rank);
@@ -2756,7 +2761,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_avgpool_bwd(
     if (hStride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_avgpool_bwd: stride dims must be > 0");
     }
-    hOutSpatial[ax] = outDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
+    hOutSpatial[ax] = poolOutDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(hInSpatial, rank);
@@ -2841,7 +2846,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_fwd(
     if (hStride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_smooth_maxpool_fwd: stride dims must be > 0");
     }
-    hOutSpatial[ax] = outDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
+    hOutSpatial[ax] =
+        poolOutDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(hInSpatial, rank);
@@ -2914,7 +2920,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
     if (hStride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_smooth_maxpool_bwd: stride dims must be > 0");
     }
-    hOutSpatial[ax] = outDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
+    hOutSpatial[ax] =
+        poolOutDim(hInSpatial[ax], hKSpatial[ax], hStride[ax], hPadding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(hInSpatial, rank);

@@ -30,7 +30,7 @@ layer stays focused on ergonomics:
 - Shapes live in the type when the program asks for a static tensor: constructors like `vector`
   remember `xs.length` in the result type.
 - If you see `Tensor Float _`, the `_` asks Lean to infer the shape from the right hand side.
-- When you truly need dynamic shapes, use `ofList` (runtime dims + runtime length check) or
+- When you need dynamic shapes, use `ofList` (runtime dims + runtime length check) or
   `DynTensor` (store the shape as data instead of in the type).
 - For constants, `tensorOfList!` and `tensorF!` trade a bit of macro expansion for cleaner literal code.
 - `tensor!` accepts nested bracket syntax and flattens in row-major order, which is handy for

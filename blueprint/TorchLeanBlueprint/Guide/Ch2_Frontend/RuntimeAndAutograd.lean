@@ -7,7 +7,7 @@ open Verso.Genre Manual
 tag := "runtime-autograd"
 %%%
 
-The previous chapter used one public call:
+The earlier autograd walkthrough used one high-level call:
 
 ```
 autograd.model.valueAndGradParamsScalar ...
@@ -98,7 +98,7 @@ This is why TorchLean's autograd proofs have two layers:
 - primitive derivative facts;
 - global tape/traversal soundness.
 
-The theorem is about their composition, not just a table of formulas.
+The theorem covers the composition of the primitive derivative facts with the tape traversal.
 
 # Inspect An Eager Tape
 
@@ -132,7 +132,7 @@ Compiled execution records the model's scalar loss once in a typed graph-buildin
 forward behavior and derivative behavior used for JVPs and VJPs. Each training step supplies current
 parameters and inputs and replays the graph.
 
-This avoids reconstructing the same high-level program on every step. The public method remains
+This avoids reconstructing the same high-level program on every step. The trainer method remains
 `train`; the backend choice changes execution without introducing a second model API.
 
 The current compiled trainer is CPU-only. Asking for a non-CPU compiled run is rejected. That
@@ -141,6 +141,10 @@ failure is preferable to printing “compiled” while silently using another pa
 Compiled execution is distinct from `NN.IR.Graph` for an important reason: compiled nodes may carry
 Lean functions implementing behavior, whereas a verification/import/export IR needs explicit,
 inspectable operation tags and serializable payload references.
+
+Both paths follow the homogeneous-scalar contract from *Tensors And Shapes*: a compiled program is
+parameterized by one `α`, while an IR denotation receives one `Payload α` and produces values over
+that same `α`.
 
 # The Canonical IR
 
@@ -217,13 +221,19 @@ Suppose the planner accepts a native CUDA matmul capsule. The executor must stil
 An accepted plan describes admissible execution. It is not a receipt showing that the launch
 completed.
 
+Native wrappers still validate concrete storage before trusting a launch result. Maintained CUDA
+convolution and pooling paths check dimension conversion, zero strides, element-count overflow,
+input/output buffer lengths, and operation domains before or across the FFI. These checks turn bad
+runtime inputs into errors and protect memory; they do not prove that a valid kernel's numeric value
+refines the real specification.
+
 Conversely, a native launch can succeed while violating an undeclared numerical assumption. This is
 why capsule metadata includes contraction, reduction, subnormal, and rounding policies rather than
 only a function pointer.
 
 # Runtime Parameter Storage
 
-A model parameter pack is heterogeneous:
+A model parameter pack contains differently shaped tensors that share one scalar type `α`:
 
 ```
 [weight1 : Tensor α [8,2],
@@ -232,7 +242,7 @@ A model parameter pack is heterogeneous:
  bias2   : Tensor α [1]]
 ```
 
-The public type preserves this dependent list. Runtime registries sometimes need to iterate over
+The parameter-pack type preserves this dependent list. Runtime registries sometimes need to iterate over
 parameters by name or identifier, so they package each tensor existentially with its shape.
 
 This is not erasing shape information. It moves the shape from a compile-time index of the whole
@@ -266,7 +276,7 @@ by the backward rule; it should not resample a different mask during reverse tra
 This distinction becomes important for checkpointing. Saving parameters without RNG, optimizer, and
 loader state can reproduce inference but not necessarily the next training update.
 
-# Public Autograd Surfaces
+# Autograd Interfaces
 
 Function-level calls:
 
@@ -346,9 +356,10 @@ component. It identifies which artifact and which boundary must explain the mism
 The eager tape explains one execution. The compiled graph accelerates repeated differentiation. The
 canonical IR makes operation structure inspectable. The backend plan records provider choices.
 
-TorchLean keeps all four because they solve different problems. The next chapters define the
-specification and canonical IR precisely, then relate runtime approximation and verification claims
-to those objects.
+TorchLean keeps all four because they solve different problems. Before defining the canonical IR,
+we will cross one more concrete boundary: a named parameter payload moving between PyTorch and
+Lean. The graph chapters then give that exchanged computation an inspectable semantics and relate
+runtime approximation and verification claims to it.
 
 References:
 

@@ -13,10 +13,10 @@ public import NN.Backend.Types
 
 A backend capsule is TorchLean's unit of delegation to fast code.
 
-The capsule does not prove the foreign implementation. It records the contract TorchLean expects
-from that implementation: which op it implements, which spec it refines, what layout and shape
+The capsule records the contract TorchLean expects from a foreign implementation: which operation
+it implements, which spec it refines, what layout and shape
 conventions are assumed, how the value/VJP claims are justified, and what trust level the planner
-must account for.
+must account for. The contract does not prove the implementation.
 -/
 
 @[expose] public section

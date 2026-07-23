@@ -35,7 +35,7 @@ bugs that the small examples never reached.
 Model code now starts with `import NN`. There is no second convenience namespace sitting in front
 of the real library: the old `NN.Library` and `NN.Entrypoint.*` shells are gone, and focused imports
 such as `NN.Spec`, `NN.Runtime`, `NN.Floats`, and `NN.Verification` lead directly to the modules that
-own those declarations. The model zoo is still part of TorchLean; only its forwarding facades were
+own those declarations. The model zoo is still part of TorchLean; only its forwarding import modules were
 removed.
 
 We also broke up several files that had become difficult to navigate. Training, data handling,

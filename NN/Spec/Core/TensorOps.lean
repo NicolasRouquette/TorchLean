@@ -21,7 +21,7 @@ Naming convention:
 
 ## Domain / smoothness notes
 
-Some ops are inherently domain-sensitive or non-smooth:
+Some operations are domain-sensitive or non-smooth:
 
 - `sqrt_spec` uses `sqrt (max x 0)` to stay total on ordered rings.
 - `log_spec` is total as a function call, but analytic properties require positivity assumptions.

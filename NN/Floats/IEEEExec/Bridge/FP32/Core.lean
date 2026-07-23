@@ -116,7 +116,7 @@ theorem dyadicToReal_neg (d : Dyadic) :
   by_cases hs : d.sign <;> simp [dyadicToReal, hs]
 
 
-/-- `signBit (ofBits b)` is literally the 31st bit of `b` (at the nat level). -/
+/-- `signBit (ofBits b)` is exactly the 31st bit of `b` at the natural-number level. -/
 lemma signBit_ofBits_eq_testBit31 (b : UInt32) :
     signBit (ofBits b) = Nat.testBit b.toNat 31 := by
   classical
@@ -218,7 +218,7 @@ theorem toDyadic?_neg_of_toDyadic?_some (x : IEEE32Exec) {d : Dyadic}
 /--
 On finite values, `toReal` respects `IEEE32Exec.neg`.
 
-We phrase this as an equality on `toReal` for convenience, but the proof fundamentally uses the
+We phrase this as an equality on `toReal` for convenience, but the proof uses the
 finiteness witness `toDyadic? x = some d`.
 -/
 theorem toReal_neg_eq_neg (x : IEEE32Exec) {d : Dyadic}
@@ -336,7 +336,7 @@ theorem toReal_neuralGenericFormat_of_isFinite (x : IEEE32Exec)
     · have hdecode :
           toDyadic? x = some { sign := signBit x, mant := 0, exp := 0 } := by
         simp [toDyadic?, hnan, hinf, he, hf]
-      refine ⟨{ mantissa := 0, exponent := 0 }, ?_, by norm_num [binaryRadix], by norm_num⟩
+      refine ⟨by norm_num, { mantissa := 0, exponent := 0 }, ?_, by norm_num [binaryRadix], by norm_num⟩
       rw [toReal_eq, hdecode]
       simp [dyadicToReal, neuralToReal]
     · let m : Int :=
@@ -346,7 +346,7 @@ theorem toReal_neuralGenericFormat_of_isFinite (x : IEEE32Exec)
           toDyadic? x =
             some { sign := signBit x, mant := (fracField x).toNat, exp := -149 } := by
         simp [toDyadic?, hnan, hinf, he, hf]
-      refine ⟨{ mantissa := m, exponent := -149 }, ?_, ?_, le_rfl⟩
+      refine ⟨by norm_num, { mantissa := m, exponent := -149 }, ?_, ?_, le_rfl⟩
       · rw [toReal_eq, hdecode]
         by_cases hs : signBit x <;> simp [dyadicToReal, neuralToReal, m, hs]
       · have hfrac := fracField_toNat_lt_pow2_23 x
@@ -363,7 +363,7 @@ theorem toReal_neuralGenericFormat_of_isFinite (x : IEEE32Exec)
             mant := pow2 23 + (fracField x).toNat
             exp := Int.ofNat (expField x).toNat - 150 } := by
       simp [toDyadic?, hnan, hinf, he]
-    refine ⟨{
+    refine ⟨by norm_num, {
       mantissa := m
       exponent := Int.ofNat (expField x).toNat - 150 }, ?_, ?_, ?_⟩
     · rw [toReal_eq, hdecode]

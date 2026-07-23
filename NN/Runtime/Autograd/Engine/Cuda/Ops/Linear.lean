@@ -77,7 +77,7 @@ Shapes:
 
 The low-level buffer primitive owns the numerical contract and VJP:
 `rfft(x)` is unnormalized, the inverse is normalized, and the backward kernels include the
-half-spectrum adjoint factors for real FFTs. This tape node simply records those three parent
+half-spectrum adjoint factors for real FFTs. This tape node records those three parent
 dependencies and checks the runtime shapes before calling the native kernels.
 -/
 def spectralConv1dRfft {grid width modes : Nat}

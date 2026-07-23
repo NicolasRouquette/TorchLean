@@ -133,8 +133,9 @@ def sliceLeadingAxisRange {n : Nat} {s : Shape} (t : Tape) (xId : Nat) (start le
 /-!
 ## Gather / scatter (host Nat indices)
 
-Indices are non-differentiable and remain on the host. Kernels totalize out-of-bounds indices as
-documented in `NN.Runtime.Autograd.Engine.Cuda.Kernels`.
+Indices are non-differentiable and remain on the host. Kernels totalize representable out-of-bounds
+indices as documented in `NN.Runtime.Autograd.Engine.Cuda.Kernels`; the tape wrappers reject
+natural numbers outside the `UInt32` ABI before entering native code.
 -/
 
 /-- Gather a scalar from a 1D vector using a compile-time index. -/
@@ -183,6 +184,8 @@ def gatherRow {rows cols : Nat} (t : Tape) (xId : Nat) (i : Fin rows) : Result (
 /-- Gather a scalar from a 1D vector using a runtime `Nat` index (totalized by the kernel). -/
 def gatherScalarNat {n : Nat} (t : Tape) (xId : Nat) (i : Nat) : Result (Tape × Nat) := do
   let n32 ← u32 n
+  if (UInt32.ofNat i).toNat != i then
+    throw "autograd: cuda: gather_scalar_nat: index does not fit in UInt32"
   let one32 : UInt32 := 1
   let indices : Array Nat := #[i]
   let x ← requireValue (t := t) xId (.dim n .scalar)
@@ -214,6 +217,9 @@ def gatherVecNat {n k : Nat} (t : Tape) (xId : Nat) (idx : Tensor Nat (.dim k .s
   let n32 ← u32 n
   let k32 ← u32 k
   let indices := natTensorToIndexArray (k := k) idx
+  for i in indices do
+    if (UInt32.ofNat i).toNat != i then
+      throw "autograd: cuda: gather_vec_nat: index does not fit in UInt32"
   let x ← requireValue (t := t) xId (.dim n .scalar)
   let y := Buffer.gatherVec x n32 indices k32
   let node : Node :=
@@ -238,6 +244,9 @@ def gatherRowsNat {rows cols k : Nat} (t : Tape) (xId : Nat)
   let cols32 ← u32 cols
   let k32 ← u32 k
   let indices := natTensorToIndexArray (k := k) idx
+  for i in indices do
+    if (UInt32.ofNat i).toNat != i then
+      throw "autograd: cuda: gather_rows_nat: index does not fit in UInt32"
   let x ← requireValue (t := t) xId (.dim rows (.dim cols .scalar))
   let y := Buffer.gatherRows x rows32 cols32 indices k32
   let node : Node :=

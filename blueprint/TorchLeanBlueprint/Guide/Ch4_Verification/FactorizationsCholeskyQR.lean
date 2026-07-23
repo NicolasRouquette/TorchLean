@@ -285,6 +285,15 @@ proof definitions are clean finite functions and folds. A replacement implementa
 evaluation practical, but its equality to the proof definition must be established separately or
 listed as trusted runtime code.
 
+For an audit, the reconstruction identities are collected in
+[`FactorizationsReconstruction`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Tensor/Basic/FactorizationsReconstruction.lean),
+while the orthonormal-column statements are in
+[`FactorizationsOrthonormal`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Tensor/Basic/FactorizationsOrthonormal.lean).
+The executable definitions themselves remain in
+[`Tensor.Factorizations`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Spec/Core/Tensor/Factorizations.lean).
+Keeping those three roles separate makes it clear whether a cited result is a definition, an exact
+real identity, or evidence from a concrete Float run.
+
 # What Remains
 
 The exact reconstruction developments are substantial, but they are not a complete verified
@@ -298,6 +307,6 @@ numerical linear algebra package. The most useful next theorems are:
 
 The exact identities follow the standard mathematics in Golub and Van Loan’s *Matrix
 Computations*. The distinction between exact factorization and floating-point stability follows
-Higham’s *Accuracy and Stability of Numerical Algorithms*. TorchLean currently proves the former
-for its real specifications and tests concrete instances of the latter; it does not conflate the
-two.
+Higham’s *Accuracy and Stability of Numerical Algorithms*. TorchLean proves exact reconstruction
+for its real specifications and tests concrete `Float` residuals; it does not yet prove stability
+bounds.

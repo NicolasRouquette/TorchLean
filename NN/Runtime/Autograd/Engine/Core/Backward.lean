@@ -67,7 +67,7 @@ Reverse-mode backpropagation producing a dense array of optional gradients.
 - When multiple paths contribute to the same node, we sum gradients via `AnyTensor.add`.
 
 This is loosely analogous to PyTorch's autograd engine walking the dynamic graph and accumulating
-`.grad` for leaf tensors, but we keep gradients for every node id, not just leaves. That makes the
+`.grad` for leaf tensors, but we keep gradients for every node id rather than leaves alone. That makes the
 runtime easier to debug and gives proof-bridge code direct access to intermediate cotangents.
 
 Reference (PyTorch): https://pytorch.org/docs/stable/notes/autograd.html
@@ -107,8 +107,8 @@ def backwardDense {α : Type} [Add α] [DecidableEq Shape]
 /--
 Internal helper: like `addGradDense`, but assumes the gradient array is total (no `Option`).
 
-This is used by the proof-friendly variants (`backwardDenseFrom*`, `backwardDenseAll`) that keep
-an explicit zero tensor for nodes that do not receive gradients.
+This is used by the proof-friendly `backwardDenseFrom*` variants, which start from an explicit
+gradient tensor for every node.
 -/
 def addGradAll
   {α : Type} [Add α] [DecidableEq Shape]
@@ -195,28 +195,20 @@ def backwardDenseFrom {α : Type} [Add α] [DecidableEq Shape]
 
 /-- Reverse-mode accumulation that returns a dense gradient array for every node id.
 
-This differs from `backwardDense`: instead of leaving entries as `none` until they are reached,
-it initializes a zero gradient tensor for each node. This matches the proof-level tape model
-where gradients are explicit (zero for unused nodes).
+Propagation uses `backwardDense`, so local VJP closures run only for nodes reached from `outId`.
+The optional result is then totalized with explicit zero tensors for disconnected nodes. Keeping
+that distinction matters at singular forward values: applying a disconnected VJP to a synthetic
+zero cotangent can manufacture `NaN` through expressions such as `0 * (1 / 0)`, even though the
+mathematical gradient of the selected output with respect to that node is zero.
 -/
 def backwardDenseAll {α : Type} [Add α] [Zero α] [DecidableEq Shape]
   (t : Tape α) (outId : Nat) (seed : Runtime.AnyTensor α) :
   Result (Array (Runtime.AnyTensor α)) := do
-  let outNode ← match t.getNode? outId with
-    | some n => pure n
-    | none => throw "autograd: invalid output id"
-  if h : seed.s = outNode.value.s then
-    let seed' : Runtime.AnyTensor α := AnyTensor.materialize
-      { s := outNode.value.s, t := Tensor.castShape seed.t h }
-    let mut grads : Array (Runtime.AnyTensor α) :=
-      t.nodes.map (fun node => AnyTensor.mk (fill (0 : α) node.value.s))
-    if hout : outId < grads.size then
-      grads := grads.set outId seed' (h := hout)
-    else
-      throw "autograd: invalid output id"
-    backwardDenseFrom (t := t) grads
-  else
-    throw "autograd: seed gradient shape mismatch for output"
+  let reached ← backwardDense (t := t) outId seed
+  pure <| t.nodes.mapIdx fun id node =>
+    match reached[id]? with
+    | some (some grad) => grad
+    | _ => AnyTensor.mk (fill (0 : α) node.value.s)
 
 /--
 Convert the optional dense gradient array returned by `backwardDense` into a sparse `HashMap`.

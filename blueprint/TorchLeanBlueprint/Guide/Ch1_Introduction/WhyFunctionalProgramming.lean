@@ -98,6 +98,9 @@ These are the first weight matrix, first bias, second weight matrix, and second 
 part of the forward program's type. `nn.initParams initialized` returns the corresponding initial
 payload; a trained runtime owns a later payload with the same shape list.
 
+The model is polymorphic in its scalar type, while one execution uses a single `α` for the parameter
+pack and activations. The tensor chapter gives the full homogeneous-scalar contract.
+
 Try changing the hidden width from `4` to `6` in both linear layers. The printed parameter shapes
 become:
 
@@ -112,7 +115,7 @@ composition and the dependent shape type catch the disagreement at the model bou
 # Initialization Is A Pure State Computation
 
 The linear layers need random initial weights. Rather than reading an unnamed global generator,
-public layer constructors return `nn.M`, a deterministic state computation over a seed stream.
+layer constructors return `nn.M`, a deterministic state computation over a seed stream.
 
 ```
 def firstBuild := nn.run 2026 model
@@ -131,7 +134,7 @@ initial parameter values. TorchLean can therefore state separately:
 - which parameter payload is currently used;
 - whether a theorem concerns the initial or trained payload.
 
-The public trainer accepts either the builder or an already initialized model:
+The trainer accepts either the builder or an already initialized model:
 
 ```
 def fromBuilder :=
@@ -142,7 +145,7 @@ def fromValue :=
 ```
 
 In the first definition, `Trainer.new` uses `2026` to run the builder. In the second, the model is
-already built, so the seed does not reinitialize it. This behavior is implemented by the public
+already built, so the seed does not reinitialize it. This behavior is implemented by the
 `Trainer.ToModel` instances rather than by inspecting the value at runtime.
 
 # An Optimizer Is A State Transition
@@ -193,6 +196,9 @@ The performance runtime need not allocate a fresh high-level tree for every upda
 uniquely owned Lean arrays, mutate references inside `IO`, or update native device buffers. The
 functional rule says what the update means. The runtime implementation decides how to realize it.
 
+The parameter, gradient, and optimizer-state tensors follow the scalar choice already made for the
+run; optimizer state does not introduce a second hidden dtype policy.
+
 # Mode Is An Argument, Not Background Knowledge
 
 Some layers denote different functions during training and evaluation. Dropout samples a mask in
@@ -220,13 +226,12 @@ def normalizeSketch
       (x - next.value, next)
 ```
 
-This is not TorchLean's BatchNorm formula; it is the shape of the dependency. The actual
+The example shows the dependency shape rather than TorchLean's BatchNorm formula. The actual
 `LayerDef.forward` receives a `Mode`, and `LayerDef.updateBuffers` optionally returns updated
 parameter or buffer tensors. `nn.programWithMode` and `nn.updateBuffers` compose that behavior
 through a sequential model.
 
-This is not purity for purity's sake. It lets a graph export or theorem say whether it describes
-`.train` or `.eval`, instead of leaving the reader to guess.
+Explicit state lets a graph export or theorem say whether it describes `.train` or `.eval`.
 
 # Effects Still Have A Home
 
@@ -248,7 +253,7 @@ TorchLean uses the same separation for training:
 
 - model construction and initialization are pure seed-state computations;
 - the model's mathematical operations have pure interpretations;
-- public training is an `IO` session with mutable parameters, optimizer state, tapes, and buffers;
+- training is an `IO` session with mutable parameters, optimizer state, tapes, and buffers;
 - checkers consume stable Lean data;
 - theorems state what accepted data implies.
 

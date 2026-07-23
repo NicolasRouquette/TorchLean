@@ -13,6 +13,42 @@ from pathlib import Path
 from typing import Any
 
 
+def round_down(x: float) -> float:
+    """Move one binary64 value toward negative infinity, matching Lean's host-Float bounds."""
+
+    return math.nextafter(x, -math.inf)
+
+
+def round_up(x: float) -> float:
+    """Move one binary64 value toward positive infinity, matching Lean's host-Float bounds."""
+
+    return math.nextafter(x, math.inf)
+
+
+def add_down(x: float, y: float) -> float:
+    """Add two host floats and widen the result downward by one representable value."""
+
+    return round_down(x + y)
+
+
+def add_up(x: float, y: float) -> float:
+    """Add two host floats and widen the result upward by one representable value."""
+
+    return round_up(x + y)
+
+
+def mul_down(x: float, y: float) -> float:
+    """Multiply two host floats and widen the result downward by one representable value."""
+
+    return round_down(x * y)
+
+
+def mul_up(x: float, y: float) -> float:
+    """Multiply two host floats and widen the result upward by one representable value."""
+
+    return round_up(x * y)
+
+
 def centered_box(center: list[float], eps: float) -> tuple[list[float], list[float]]:
     """Return the interval box `[center - eps, center + eps]` coordinatewise."""
 
@@ -25,20 +61,23 @@ def affine_interval(
     lo: list[float],
     hi: list[float],
 ) -> tuple[list[float], list[float]]:
-    """Propagate interval bounds through `weights @ x + bias`."""
+    """Propagate bounds using the same outward-rounded operation order as Lean's IBP linear rule.
+
+    The zero accumulator, every coefficient (including structural zeros), and the final bias are
+    processed in exactly the order used by `IBP.linear`.  Skipping a zero coefficient would still
+    change a host-Float result because every primitive deliberately widens by one binary64 value.
+    """
 
     out_lo: list[float] = []
     out_hi: list[float] = []
     for row, b in zip(weights, bias):
-        lo_i = b
-        hi_i = b
+        lo_i = 0.0
+        hi_i = 0.0
         for a, x_lo, x_hi in zip(row, lo, hi):
-            p = a * x_lo
-            q = a * x_hi
-            lo_i += min(p, q)
-            hi_i += max(p, q)
-        out_lo.append(lo_i)
-        out_hi.append(hi_i)
+            lo_i = add_down(lo_i, min(mul_down(a, x_lo), mul_down(a, x_hi)))
+            hi_i = add_up(hi_i, max(mul_up(a, x_lo), mul_up(a, x_hi)))
+        out_lo.append(add_down(lo_i, b))
+        out_hi.append(add_up(hi_i, b))
     return out_lo, out_hi
 
 

@@ -18,7 +18,7 @@ Design intent:
 
 - Scalar definitions live under `Activation.Math` (functions `α → α`).
 - Tensor-level definitions are almost always the scalar function mapped pointwise via `map_spec`.
-- Where the math is inherently *non-pointwise* (notably `softmax`), we provide a shape-aware
+- Where the math is *non-pointwise* (notably `softmax`), we provide a shape-aware
   implementation plus an explicit backward/VJP.
 
 PyTorch mental model:
@@ -80,7 +80,7 @@ def reluSpec {α : Type} [Zero α] [Max α] (x : α) : α :=
 PyTorch analogy: autograd picks a subgradient at `x = 0`; our spec commits to a concrete one to
 make "the derivative" a pure function.
 
-The `DecidableRel (· > ·)` constraint reflects that this definition literally branches on `x > 0`.
+The `DecidableRel (· > ·)` constraint reflects that this definition branches on `x > 0`.
 -/
 def reluDerivSpec {α : Type} [Zero α] [One α] [LT α] [DecidableRel ((· > ·) : α → α → Prop)] (x :
   α) : α :=
@@ -227,14 +227,21 @@ def swishDerivSpec (x : α) : α :=
   let s := sigmoidSpec x
   s + x * s * (1 - s)
 
-/-- Softplus:
+/-- Softplus, evaluated without a large positive exponential:
 
 `softplus(x) = log(1 + exp(x))`.
+
+The positive branch uses the equivalent expression `x + log(1 + exp(-x))`; this keeps finite
+floating-point inputs finite when `exp(x)` itself would overflow. The operation remains the
+one-argument, unit-scale softplus used throughout TorchLean.
 
 PyTorch analogy: `torch.nn.functional.softplus`.
 -/
 def softplusSpec (x : α) : α :=
-  MathFunctions.log (1 + MathFunctions.exp x)
+  if x > 0 then
+    x + MathFunctions.log (1 + MathFunctions.exp (-x))
+  else
+    MathFunctions.log (1 + MathFunctions.exp x)
 
 /-- Derivative of softplus:
 
@@ -418,6 +425,25 @@ def logSoftmaxSpec : {s : Shape} → Tensor α s → Tensor α s
   | .dim n .scalar, t => logSoftmaxVecSpec (α := α) (n := n) t
   | .dim n inner, Tensor.dim f =>
       Tensor.dim (fun i : Fin n => logSoftmaxSpec (s := inner) (f i))
+
+/-- Forward-mode JVP for last-axis log-softmax.
+
+If `y = log_softmax(x)`, then each last-axis slice has directional derivative
+
+`dy = dx - replicate(⟨exp(y), dx⟩)`.
+
+Unlike the VJP below, the subtracted scalar is replicated uniformly across the slice; the
+softmax probabilities occur only inside the dot product. Taking the already-computed output `y`
+also avoids recomputing the stable forward pass.
+-/
+def logSoftmaxJvpSpec : {s : Shape} → Tensor α s → Tensor α s → Tensor α s
+  | .scalar, _y, _dx => Tensor.scalar 0
+  | .dim _n .scalar, y, dx =>
+      let probs := expSpec y
+      let directionalMean : α := dotSpec probs dx
+      subSpec dx (replicate (Tensor.scalar directionalMean))
+  | .dim n inner, Tensor.dim yF, Tensor.dim dF =>
+      Tensor.dim (fun i : Fin n => logSoftmaxJvpSpec (s := inner) (yF i) (dF i))
 
 /-- Backward/VJP for last-axis log-softmax.
 

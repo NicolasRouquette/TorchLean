@@ -278,8 +278,8 @@ def smoothMaxPool : KernelCapsule :=
     "native_cuda.smooth_max_pool"
     .smoothMaxPool
     "Spec.smoothMaxPool"
-    "Smooth max pooling follows the generic window contract."
-    "Smooth-max-pooling VJP is checked by CUDA runtime coverage."
+    "Smooth max pooling uses finite nonzero beta and stable max/min-shifted window weights."
+    "Forward and VJP stability are checked against the reference runtime at overflow-scale inputs."
 
 /-- Native CUDA average pooling. -/
 def avgPool : KernelCapsule :=

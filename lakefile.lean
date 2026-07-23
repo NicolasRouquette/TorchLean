@@ -132,6 +132,13 @@ private def nativeIncludeArgs (pkg : Package) : Array String :=
     "-I", (pkg.dir / "csrc/cuda/conv_pool").toString
   ]
 
+/-- Track project-owned native headers so a header-only edit invalidates every dependent object. -/
+private def nativeHeaderDeps (pkg : Package) : SpawnM (Job Unit) := do
+  let isHeader := fun path : FilePath => path.extension == some "h"
+  let common ← inputDir (pkg.dir / "csrc/cuda/common") true isHeader
+  let convPool ← inputDir (pkg.dir / "csrc/cuda/conv_pool") true isHeader
+  pure <| common.mix convPool
+
 /-- Resolve LibTorch; caches `.lake/build/libtorch.path`. -/
 private def libtorchResolveJob (pkg : Package) : SpawnM (Job FilePath) := do
   let stamp := pkg.buildDir / "libtorch.path"
@@ -148,10 +155,12 @@ private def libtorchResolveJob (pkg : Package) : SpawnM (Job FilePath) := do
 private def buildLibtorchSDPASo (pkg : Package) := do
   let lean ← getLeanInstall
   let _ ← libtorchResolveJob pkg
+  let headerDeps ← nativeHeaderDeps pkg
   let lt := libtorchHome pkg
   let cppJob ← inputFile (pkg.dir / "csrc/cuda/kernels/torchlean_libtorch_sdpa.cpp") false
   let cppO := pkg.buildDir / "torchlean_libtorch_sdpa.o"
   let cppOJob ← buildO cppO cppJob (libtorchCppCompileArgs pkg lean lt) #[] "c++"
+    (pure headerDeps.getTrace)
   let soFile := pkg.buildDir / nameToSharedLib "torchlean_libtorch_sdpa"
   cppOJob.mapM fun o => do
     let art ← buildArtifactUnlessUpToDate soFile (ext := sharedLibExt) (restore := true) do
@@ -228,6 +237,7 @@ lean_lib TorchLeanDocs where
 /-- Build one native backend library for the current Lake configuration. -/
 private def buildNativeBackendLib (pkg : Package) (spec : NativeBackendLib) := do
   let lean ← getLeanInstall
+  let headerDeps ← nativeHeaderDeps pkg
   let includeArgs := nativeIncludeArgs pkg
   let libFile := pkg.buildDir / nameToStaticLib spec.stem
   if cudaEnabled then
@@ -238,14 +248,14 @@ private def buildNativeBackendLib (pkg : Package) (spec : NativeBackendLib) := d
         "-I", lean.includeDir.toString,
         "-I", s!"{cudaHome}/include",
         "-c", "--std=c++17", "-O2", "-Xcompiler", "-fPIC"
-      ] ++ includeArgs) #[] "nvcc"
+      ] ++ includeArgs) #[] "nvcc" (pure headerDeps.getTrace)
     buildStaticLib libFile #[oJob]
   else
     let srcJob ← inputFile (pkg.dir / spec.stubSrc) false
     let oFile := pkg.buildDir / s!"{spec.stem}_stub.o"
     let oJob ← buildO oFile srcJob
       (#["-I", lean.includeDir.toString] ++ includeArgs ++ #["-O2", "-fPIC"])
-      #[] "cc"
+      #[] "cc" (pure headerDeps.getTrace)
     buildStaticLib libFile #[oJob]
 
 /-- Native backend for `torchlean_dgemm_cuda`: CUDA+cuBLAS when `-K cuda=true`, else C stub. -/

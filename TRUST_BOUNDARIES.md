@@ -67,8 +67,9 @@ make those assumptions visible.
 
 Important examples include:
 
-- `TorchLean.Floats.IEEE754.Float32Bridge.RuntimeFloat32MatchesIEEE32Exec`, the runtime contract
-  that Lean `Float32` primitives match the executable IEEE32 model at the bit level.
+- `TorchLean.Floats.IEEE754.Float32Bridge.RuntimeFloat32FiniteMatchesIEEE32Exec`, the runtime
+  contract for bit-level agreement on finite inputs and finite results, plus classification
+  agreement for special values. NaN payload propagation is deliberately not assumed.
 - `NN.MLTheory.CROWN.Graph.CrownCertSoundness.CrownTransferSound`, the transfer-rule soundness
   assumption used by graph-CROWN certificate theorems for backend/oracle-dependent relaxations.
 - `NN.MLTheory.Proofs.UniversalApproximation.FloatIntervalApprox.OpsExact.Sound`, the local
@@ -86,6 +87,9 @@ Important examples include:
 
 - Files under `csrc/cuda/` are trusted FFI code. Lean checks shape metadata around calls, but kernel
   memory safety, launch behavior, and numerical behavior are outside Lean's proof kernel.
+- Shape-erased tape inputs must match their native buffer length, and dimensions, indices, and
+  output element counts must fit the CUDA `UInt32` ABI before FFI calls. Native geometry checks
+  repeat critical guards; these are executable checks, not proofs of the kernels.
 - `csrc/cuda/tensor/torchlean_cuda_tensor.cu` stores CUDA buffers as float32 and converts Lean `Float`
   values to/from float32 at the buffer boundary.
 - CUDA externs borrow Lean buffers, arrays, and float arrays passed as inputs. Their Lean
@@ -217,8 +221,8 @@ Use the float layers as follows:
   or JSON artifacts. TorchLean can parse and replay those artifacts, but PyTorch training itself is
   not part of Lean's trusted kernel.
 - The optional Julia wrapper `NN/Runtime/External/Julia.lean` follows the same pattern. It resolves
-  `TORCHLEAN_JULIA` when set, otherwise falls back to `julia` on `PATH`, and compiles even when Julia
-  is not installed. It is intended for “untrusted producer, Lean checker” workflows such as the
+  `TORCHLEAN_JULIA` when set, otherwise falls back to `julia` on `PATH`, and does not require Julia
+  at compile time. It supports “untrusted producer, Lean checker” workflows such as the
   piecewise-polynomial spline certificate workflow (producer scripts under `scripts/verification/splines/`,
   bundled fixtures under `NN/Examples/Verification/Splines/`).
 - A Julia-produced spline or PINN artifact is trusted only after a Lean checker validates the small

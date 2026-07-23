@@ -7,17 +7,16 @@ open Verso.Genre Manual
 tag := "external-tools-and-ffi"
 %%%
 
-TorchLean does not require every useful program to be rewritten in Lean. PyTorch can capture a
-model, an interval library can propose a numerical enclosure, and a CUDA kernel can compute a
-tensor. The engineering question is not whether external code exists; it is what Lean learns when
-that code returns.
+PyTorch can capture a model, an interval library can propose a numerical enclosure, and a CUDA
+kernel can compute a tensor. TorchLean records what Lean learns when each external program returns.
 
 There are two main boundaries:
 
 - a *subprocess* exchanges files, standard output, or JSON with another executable;
 - an *FFI call* invokes a linked native symbol and may exchange opaque memory handles.
 
-Both can be used safely. They have different failure modes and support different proof stories.
+Both can be used with explicit validation and named trust boundaries. They have different failure
+modes and support different proof stories.
 
 # A Subprocess Is An Untrusted Producer
 
@@ -124,7 +123,7 @@ This division is intentional:
 
 ```
 PyTorch module
-   ↓ external capture, trusted as a producer
+   ↓ external capture, treated as an untrusted producer
 FX/value graph
    ↓ explicit JSON schema
 Lean parser
@@ -136,7 +135,9 @@ TorchLean analysis
 
 The container-valued FX layer matters. `nn.MultiheadAttention` returns a tuple of attention output
 and attention weights. Treating every FX node as a tensor loses that fact. TorchLean first retains
-tuple shape metadata, then lowers only supported tensor projections.
+tuple shape metadata, then lowers only supported tensor projections. The producer is free to do a
+complicated capture; the Lean side believes only the smaller document that its parser and graph
+checks actually recognize.
 
 # Rejection Is Part Of The Interface
 
@@ -202,6 +203,18 @@ Parity tests on random inputs are excellent engineering evidence for that assump
 find transposes, axis errors, missing biases, and mask inversions. They do not universally quantify
 over every parameter and input.
 
+# ONNX Uses The Same Checked Ingress
+
+`NN.Runtime.PyTorch.Export.ONNX` emits a Python adapter for a conservative static-shape ONNX
+fragment. The producer handles elementwise operations, rank-two/limited batched matmul, reductions,
+softmax, reshape/flatten, concat, selected transposes, `Gemm`, inference BatchNorm, and ungrouped,
+undilated convolution with the layouts represented by the current IR. It writes the same
+`torchlean.ir.v1` document consumed by `Import.PyTorch.TorchExport.parseGraph`.
+
+ONNX protobuf parsing and shape inference therefore remain outside Lean. Lean checks the smaller IR
+artifact it receives. Graph initializers and payload-backed nodes still need a matching payload
+import; a well-shaped convolution node by itself does not contain authenticated weights.
+
 # Native FFI Calls Have A Different Risk
 
 A subprocess returns copied bytes owned by Lean after parsing. A native symbol can allocate,
@@ -225,6 +238,20 @@ opaque releaseWithToken
 The type `Buffer` is opaque. Lean code cannot forge its internal pointer, but the C implementation
 still determines whether allocation, copying, finalization, and release are correct.
 
+The shape-erased tape therefore does not trust a shape tag by itself. Before a buffer reaches a
+shape-indexed kernel, `AnyBuffer.validate` checks that every axis and the total element count fit the
+CUDA `UInt32` ABI and that the native buffer has exactly that many elements. Convolution and pooling
+wrappers additionally reject zero strides and oversized dimension arrays, validate input, kernel,
+and output spatial products independently, and check the returned native output length. Runtime
+natural-number gather indices accept the full `UInt32` range and reject larger values before
+conversion. These checks turn malformed runtime values into ordinary Lean errors; they do not prove
+that a correctly sized native kernel implements its specification.
+
+The `@&` annotation marks a borrowed Lean object. Native code may inspect such an argument during
+the call but must not retain or decrement it. Native translation units repeat critical length and
+geometry checks because an FFI declaration is still a trusted boundary. The file-to-symbol map is
+documented in `NN.Runtime.Autograd.Engine.Cuda.NativeSources`.
+
 # Why The IO Token Exists
 
 An external declaration that appears pure may be common-subexpression eliminated or reused by Lean
@@ -246,8 +273,7 @@ Release has the same issue. `releaseIO` uses a token and is called only at an ow
 where no alias will be used again. The native finalizer remains safe after explicit release because
 the implementation nulls the pointer.
 
-This is not merely performance plumbing. A stale alias after release is a memory-safety bug that
-the tensor's shape type cannot detect.
+A stale alias after release is a memory-safety bug that the tensor's shape type cannot detect.
 
 # Workspaces And Backward
 
@@ -296,7 +322,7 @@ and soundness theorem should stay small enough to audit.
 
 # Evidence Is Field-Specific
 
-A useful boundary report may honestly say:
+A useful boundary report may say:
 
 - *shape:* proved by a typed constructor;
 - *layout:* guarded by length and row-major checks;

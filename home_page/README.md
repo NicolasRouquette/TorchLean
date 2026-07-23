@@ -7,6 +7,7 @@ public site:
 - Verso guide (built from the `blueprint/` Lake package) under `/blueprint/`
 - Curated runnable examples under `/examples/` (a maintained Jekyll page)
 - Dependency and import graph pages under `/graphs/` and `/importgraph/`
+- CI timing history under `/performance/`
 - Status/update notes under `/updates/`
 
 The source of truth is split deliberately. Edit the source that owns the idea, then rebuild the
@@ -20,6 +21,7 @@ generated output:
 | Guide | `blueprint/TorchLeanBlueprint/Guide/**/*.lean` |
 | API reference | `NN/**/*.lean` module docstrings and declaration docstrings |
 | Graph pages | `home_page/graphs/index.md`, `scripts/checks/dependency_audit.py`, generated graph JSON |
+| Performance page | `home_page/performance/index.md`, site CSS |
 | CUDA page | `home_page/cuda/index.md` plus the guide's CUDA/trust-boundary chapters |
 | Trust/provenance claims | `TRUST_BOUNDARIES.md`, `THIRD_PARTY_NOTICES.md`, relevant checker README |
 

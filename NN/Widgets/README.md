@@ -11,7 +11,7 @@ Widgets matter because formal artifacts are hard to debug when they are invisibl
 tensor shape, affine bound, Float32 bit pattern, tape cotangent, or training log is much easier to
 understand when it appears next to the Lean code that produced it.
 
-## Import Surface
+## Imports
 
 Use the umbrella entrypoint for normal work:
 

@@ -62,7 +62,7 @@ mse_loss: native_cuda.mse_loss
   provider=native-cuda trust=checked vjp=backend-vjp
 ```
 
-This output is worth reading closely. The public model contains two *linear layers*, but the runtime
+This output is worth reading closely. The model description contains two *linear layers*, but the runtime
 decomposes them into reshape, permutation, matrix multiplication, broadcast, and addition. Capsules
 describe the operations that actually crossed a backend boundary, not only the layer names in
 source code.
@@ -89,9 +89,14 @@ conditions they can observe:
 
 - the session really targets CUDA;
 - the selected capsule implements the requested operation;
-- the buffer is live and allocated on the expected device;
 - flat lengths match the logical shapes;
-- ranks, axes, and operation-specific dimensions are supported.
+- every shape axis, runtime index, and element count fits the `UInt32` CUDA ABI;
+- ranks, axes, strides, and operation-specific dimensions are supported.
+
+Shape-erased values, output seeds, and supplied gradients pass through `AnyBuffer.validate` before
+shape-derived indexing. Convolution and pooling also check spatial products independently, so a
+zero channel dimension cannot hide an overflowing spatial shape. Their forward wrappers validate
+the native output length immediately after the FFI returns, before storing the result on the tape.
 
 Those checks prevent many ABI and memory errors. They do not prove that a CUDA thread computes the
 correct arithmetic expression.
@@ -160,6 +165,12 @@ executed operation
   the native symbol actually called
 ```
 
+`BackendProfile.acceptGraph` exposes an `AcceptedGraphPlan` only after planning, lowering, and the
+assurance gate accept every obligation. This is still not a hardware probe: a profile target
+declares build capabilities, while CUDA session creation separately calls
+`Cuda.Buffer.requireNativeRuntime` to distinguish native CUDA, a native build with no visible GPU,
+and the host-memory parity stubs.
+
 This separation catches two bad failure modes:
 
 1. a registry entry cannot silently claim that an unavailable library is executable;
@@ -204,6 +215,21 @@ handwritten matrix kernel because it chooses algorithms specialized for dimensio
 GPU generation. It is also a larger external trust boundary. The capsule should identify the
 provider and numerical policy precisely enough that “native CUDA” does not hide whether the
 arithmetic came from custom code or a vendor library.
+
+# Maintained CUDA Operations
+
+The eager CUDA tape currently covers elementwise arithmetic and activations, reductions and
+broadcasting, shape transforms, gather/scatter, dense and batched matrix multiplication,
+normalization and softmax, two-dimensional and N-dimensional convolution/transposed convolution,
+max/average/smooth-max pooling, fused attention, and fused spectral convolution. Backward rules are
+recorded as tape nodes rather than delegated to an invisible global autograd engine. Lower-level
+kernels additionally expose packed real FFT and selective-scan entrypoints used by focused
+runtime paths and tests.
+
+This list does not mean every TorchLean operation has a CUDA implementation. Provider-aware
+wrappers reject unsupported capsules and shapes; they do not copy a tensor to CPU and continue
+silently. The native source map in `NN.Runtime.Autograd.Engine.Cuda.NativeSources` identifies the
+Lean declarations and corresponding files under `csrc/cuda`.
 
 # Forward Values And Backward Ownership
 
@@ -314,6 +340,22 @@ $$`a+(b+c).`
 A mathematically equivalent reduction tree can therefore produce different final bits. Numerical
 certificates must use an error model or an exact policy strong enough for the claim; shape safety
 alone is insufficient.
+
+# Deterministic Reduction Mode
+
+For reproducibility experiments, the CUDA buffer runtime can replace supported atomic reductions
+with fixed-order implementations:
+
+```
+let enabled :=
+  Runtime.Autograd.Cuda.Buffer.setDeterministicReductionsChecked true
+```
+
+The environment variable `TORCHLEAN_CUDA_DETERMINISTIC_REDUCTIONS=1` selects the same mode before
+startup. Coverage includes scalar/axis/broadcast reductions, gather/scatter accumulation, and the
+pooling backward kernels. It does not make seeded RNG unnecessary, force cuBLAS to a universal
+bitwise contract, or prove equality across GPU models. `getDeterministicReductions` reports the
+active setting so a training log can record it.
 
 # What The Tests Establish
 

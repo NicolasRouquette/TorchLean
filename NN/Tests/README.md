@@ -44,7 +44,7 @@ still reaches that object on representative cases.
 | Rational runtime | exact small scalar checks that avoid floating-point noise |
 | CUDA runtime | matmul, reductions, views, broadcast, gather/scatter, attention, convolution/pooling, deterministic reductions, and stress checks |
 | Verification-facing runtime | PINN residual paths, TorchLean-to-IR execution checks, and small certificate-style command paths |
-| Public command surface | registered `torchlean` and `verify` commands, flags, output shapes, and artifact paths |
+| Commands | registered `torchlean` and `verify` commands, flags, output shapes, and artifact paths |
 
 When adding a runtime feature, add a small test near the boundary that can fail loudly before a large
 model run silently changes meaning.
@@ -71,7 +71,7 @@ scripts/checks/cuda_sanitize_tests.sh --all-tools
 ```
 
 The sanitizer harness is intentionally Lean driven: it checks the CUDA kernels through the same FFI
-surface used by TorchLean training and inference.
+calls used by TorchLean training and inference.
 
 ## When To Add A Test
 

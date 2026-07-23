@@ -2,6 +2,7 @@
 
 #include <lean/lean.h>
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -22,24 +23,23 @@ extern "C" {
 // This is a trusted boundary. The Lean layer can prove shape-level contracts around these calls, but
 // it cannot inspect C pointer lifetimes or CUDA runtime behavior.
 
-// Convert a Lean `Nat` to `uint32_t`, treating non-scalars / large values as out-of-bounds.
-//
-// In Lean's C runtime, small naturals are represented as tagged scalars; non-scalars are treated
-// as out-of-bounds.
-static inline uint32_t nat_to_u32_or_oob(b_lean_obj_arg o) {
+// Convert a Lean `Nat` to `uint32_t`. In Lean's C runtime, values in this range are represented as
+// tagged scalars; boxed or larger naturals fail the conversion.
+static inline bool nat_to_u32_checked(b_lean_obj_arg o, uint32_t* out) {
   if (!lean_is_scalar(o)) {
-    return UINT32_MAX;
+    return false;
   }
   const size_t v = lean_unbox(o);
   if (v > (size_t)UINT32_MAX) {
-    return UINT32_MAX;
+    return false;
   }
-  return (uint32_t)v;
+  *out = (uint32_t)v;
+  return true;
 }
 
 static inline uint32_t nat_to_u32_or_panic(b_lean_obj_arg o, const char* msg) {
-  uint32_t v = nat_to_u32_or_oob(o);
-  if (v == UINT32_MAX) {
+  uint32_t v = 0;
+  if (!nat_to_u32_checked(o, &v)) {
     lean_internal_panic(msg);
   }
   return v;

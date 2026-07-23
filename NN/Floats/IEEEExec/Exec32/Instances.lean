@@ -26,9 +26,9 @@ namespace IEEE32Exec
 instance : ToString IEEE32Exec where
   toString x := toString (toFloat x)
 
-/-- Coerce naturals to binary32 by converting through Lean's `Float` and re-encoding. -/
+/-- Coerce a natural number by rounding that exact integer directly to binary32. -/
 instance : Coe Nat IEEE32Exec where
-  coe n := ofFloat (Float.ofNat n)
+  coe n := roundDyadicToIEEE32 { sign := false, mant := n, exp := 0 }
 
 /--
 Numeral literals for `IEEE32Exec`.
@@ -37,8 +37,8 @@ This allows writing:
 - `(1 : IEEE32Exec)`
 - `(42 : IEEE32Exec)`
 
-The interpretation is `Nat → Float (binary64) → IEEE32Exec` via `ofFloat`, i.e. it rounds the exact
-integer to the nearest representable float32 (which is exact for small enough integers).
+The conversion uses the exact dyadic `n · 2⁰` and rounds once to nearest-even binary32. Avoiding an
+intermediate binary64 value prevents double rounding for large numerals.
 -/
 instance (n : Nat) : OfNat IEEE32Exec n :=
   ⟨(n : IEEE32Exec)⟩
@@ -69,25 +69,42 @@ instance : Div IEEE32Exec where
 /--
 Exponentiation instance.
 
-This is a *deterministic* executable choice, not a claim about correctly-rounded `pow`:
-we implement a small set of IEEE-like special cases and handle integer exponents exactly enough to
-avoid the most common footguns (negative bases, `0^0`, `1^∞`, etc.). For general non-integer
-exponents we fall back to `exp (b * log a)` on positive bases.
+This is a *deterministic* executable choice, not a claim about correctly-rounded `pow`.
+
+The value-level special cases follow the conventions used by common tensor runtimes:
+
+- `x^(±0) = 1`, including a NaN base;
+- `1^y = 1` for finite, infinite, and quiet-NaN exponents (a signaling NaN still propagates);
+- an infinite exponent is classified from `|x|` relative to `1`;
+- `(-∞)^y` has magnitude `+∞` for positive finite `y` and `+0` for negative finite `y`,
+  with the usual signed result retained when `y` is an integer.
+
+Finite negative bases accept integer exponents. For a general non-integer exponent on a positive
+base, the implementation falls back to `exp (b * log a)`.
 -/
 instance : Pow IEEE32Exec IEEE32Exec where
   pow a b :=
     -- `x^0 = 1` even if `x` is NaN/Inf (common `pow` convention; also avoids `∞*0 = NaN`).
     if isZero b then
       (1 : IEEE32Exec)
+    -- Common `pow` semantics retain `1` for a quiet-NaN exponent. Keep signaling NaNs on the
+    -- ordinary propagation path because this value-only interface has no separate invalid flag.
+    else if compare a (1 : IEEE32Exec) = some .eq && !isSNaN b then
+      (1 : IEEE32Exec)
     else
       match chooseNaN2 a b with
       | some nan => nan
       | none =>
-          -- `1^y = 1` for all non-NaN `y` (including `±Inf`).
-          if compare a (1 : IEEE32Exec) = some .eq then
-            (1 : IEEE32Exec)
-          else if compare b (1 : IEEE32Exec) = some .eq then
+          if compare b (1 : IEEE32Exec) = some .eq then
             a
+          else if isInf b then
+            -- For an infinite exponent the sign of a finite negative base is immaterial: only
+            -- whether `|a|` is below, equal to, or above one controls the limiting magnitude.
+            match compare (abs a) (1 : IEEE32Exec) with
+            | some .lt => if signBit b then posInf else posZero
+            | some .eq => (1 : IEEE32Exec)
+            | some .gt => if signBit b then posZero else posInf
+            | none => canonicalNaN
           else
             let intOfDyadic? (d : Dyadic) : Option Int :=
               if d.mant == 0 then
@@ -154,9 +171,17 @@ instance : Pow IEEE32Exec IEEE32Exec where
                     | some .lt => posInf
                     | _ => posZero
             | some .lt =>
-                -- Negative base: only defined for integer exponents over ℝ.
+                -- A finite negative base is real-valued only at integer exponents. Infinity has
+                -- the standard limiting magnitude for every finite nonzero exponent.
                 match intOfIEEE? b with
-                | none => canonicalNaN
+                | none =>
+                    if isInf a then
+                      match compare b posZero with
+                      | some .lt => posZero
+                      | some .gt => posInf
+                      | _ => canonicalNaN
+                    else
+                      canonicalNaN
                 | some n =>
                     let mag := powIntDet a n
                     if oddInt n then neg (abs mag) else abs mag

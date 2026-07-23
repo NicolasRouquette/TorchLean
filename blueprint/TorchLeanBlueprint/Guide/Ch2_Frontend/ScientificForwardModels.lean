@@ -61,9 +61,9 @@ f'(0.5)=-1.6e^{-1}.
 The derivative is negative. Dropping the `-2` factor or flipping its sign is an easy implementation
 mistake if forward and backward formulas are maintained separately.
 
-# The Public Functional Primitives
+# Functional Tensor Primitives
 
-The current `nn.functional` surface includes:
+The currently implemented `nn.functional` primitives include:
 
 ```
 exp x
@@ -211,6 +211,12 @@ actual alternatives are:
 The guard is part of the model. It must appear in the theorem and runtime contract rather than
 living only in a comment.
 
+There is also a specification distinction to keep visible. Mathlib's real `log` and `sqrt` are
+total functions, and the rounded-real `NF`/`FP32` operations inherit that totalization. They do not
+produce IEEE NaN or infinity for invalid inputs. Scientific theorems should therefore state the
+positive-domain hypotheses they mean, while executable IEEE behavior belongs to `IEEE32Exec` or a
+named runtime contract.
+
 # Multiple Inputs
 
 A scientific equation may use parameters and observations:
@@ -223,7 +229,7 @@ One clean representation is a typed input pack or a tensor whose final axis has 
 order. The choice must be explicit because the shape `[3]` alone does not tell us whether coordinate
 zero means `a`, `b`, or `x`.
 
-The public functional namespace does not pretend to export every indexing operation. For a
+The functional tensor namespace does not export every indexing operation. For a
 multi-feature program, use the implemented gather/projection operation at the appropriate layer or
 define a typed pack. Writing nonexistent `index1d` syntax in documentation would produce an example
 that cannot run.
@@ -291,6 +297,11 @@ In floating point, evaluating the two sides may round differently and may overfl
 paths. A theorem about the real identity is not a theorem about either evaluation order.
 Transcendental implementations also come from host libraries, CUDA `libdevice`, LibTorch, or
 TorchLean reference code; agreement needs a stated approximation or refinement contract.
+
+TorchLean's executable `IEEE32Exec` transcendental functions are deterministic definitions, but
+they do not currently carry a universal correctly-rounded contract. In particular, a small
+derivative regression such as `exp(-2x)` supports that tested point and code path; it does not
+establish global accuracy for `exp`, `log`, `sin`, or `cos` over all finite bit patterns.
 
 # Continue The Experiment
 

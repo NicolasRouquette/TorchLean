@@ -123,8 +123,10 @@ model only under a named assumption.
 
 ```lean
 theorem runtimeFloat32_add_rewrites_to_ieee32
-    [RuntimeFloat32MatchesIEEE32Exec] (a b : _root_.Float32) :
-    toIEEE32Exec (a + b) = IEEE32Exec.add (toIEEE32Exec a) (toIEEE32Exec b)
+    [RuntimeFloat32FiniteMatchesIEEE32Exec] (a b : _root_.Float32)
+    (ha : Float32.isFinite a = true) (hb : Float32.isFinite b = true)
+    (hr : Float32.isFinite (Float32.add a b) = true) :
+    toIEEE32Exec (Float32.add a b) = IEEE32Exec.add (toIEEE32Exec a) (toIEEE32Exec b)
 ```
 
 Those are the statement shapes Bug Zoo makes routine.

@@ -76,7 +76,7 @@ A PyTorch `nn.Module` registers parameter objects. Calling `model(x)` reads the 
 fields. An optimizer mutates those parameters, usually through gradient fields populated by
 autograd.
 
-TorchLean's public model description contains parameter shapes, initialization tensors, gradient
+TorchLean's model description contains parameter shapes, initialization tensors, gradient
 flags, and a forward program. The forward program receives the *live parameter payload* explicitly.
 Initialization and execution are therefore related but distinguishable:
 
@@ -138,7 +138,7 @@ for x, y in loader:
     optimizer.step()
 ```
 
-TorchLean's public trainer packages the same lifecycle:
+TorchLean's trainer packages the same lifecycle:
 
 ```
 def trainer :=
@@ -156,7 +156,7 @@ possibly device buffers. TorchLean does not force a large GPU training loop to a
 tensor tree at every step. The semantic interfaces remain explicit while the execution engine uses
 mutation and ownership where performance requires it.
 
-The public call returns a trained result whose prediction closures refer to the trained runner.
+The `train` call returns a trained result whose prediction closures refer to the trained runner.
 Lower-level manual APIs expose parameter tensors and individual forward, backward, and optimizer
 steps when verification or research code needs them.
 
@@ -193,9 +193,8 @@ These names are easy to mix up. LibTorch is PyTorch's C++ distribution. ATen is 
 operator layer used inside PyTorch. Beneath an ATen operation there may still be another library:
 cuBLAS for matrix multiplication, cuDNN for convolution, or a fused attention implementation.
 
-Calling LibTorch therefore does not mean that TorchLean has handed over the entire model. It means a
-particular operation crossed an FFI boundary. The maintained scaled-dot-product-attention path works
-like this:
+Calling LibTorch sends a particular operation across an FFI boundary while TorchLean retains the
+model. The maintained scaled-dot-product-attention path works like this:
 
 1. TorchLean owns the model and current parameter tensors.
 2. TorchLean asks LibTorch for the attention forward value.
@@ -220,7 +219,7 @@ An IR node contains an operation tag, parent ids, and an output shape. Parameter
 live in payload stores. `NN.IR.Semantics` defines how supported nodes are interpreted over a scalar
 domain.
 
-The public verification compiler can lower supported initialized models and parameter payloads to
+The verification compiler can lower supported initialized models and parameter payloads to
 this IR. A separate first-order source language under `NN.Verification.TorchLean.Proved` has an
 end-to-end compiler-correctness theorem. They share an IR target, but the theorem applies to the
 proved source fragment, not automatically to every model accepted by the broader executable
@@ -263,7 +262,8 @@ TorchLean names several numerical meanings:
 
 - real-valued specifications for ideal mathematics;
 - `NF`, a configurable rounded-real arithmetic;
-- `FP32`, the finite binary32-sized rounded-real specialization;
+- `FP32`, a rounded-real specialization with binary32 precision and gradual underflow, but without
+  an upper exponent bound or IEEE special values;
 - `IEEE32Exec`, an executable bit-level binary32 model;
 - runtime CPU, CUDA, and LibTorch representations.
 
@@ -271,8 +271,26 @@ The generic layer was influenced by Flocq's separation of formats from rounding 
 `IEEE32Exec` is TorchLean's executable Lean reference for binary32. The floating-point chapters
 derive these layers from examples and show how they reconnect to a runtime.
 
-This extra structure is not needed to train every model. It is needed when the conclusion depends on
-the difference between the exact equation and the executable result.
+Training can proceed without this extra structure. Claims that compare an exact equation with an
+executable result need it.
+
+# Mixed Precision Is A Current Difference
+
+PyTorch tensors carry dtype at runtime, and operators define promotion, casting, and autocast
+behavior. It is therefore natural for one PyTorch graph to combine integer tokens, FP8 or FP16
+activations, BF16 weights, and FP32 accumulation.
+
+TorchLean's numeric tensor type is `Tensor.T α s`. A current model execution and an
+`NN.IR.Semantics` evaluation select one numeric `α` for parameters, activations, intermediates, and
+outputs. The same model can be instantiated under another `α`, but two numeric nodes do not carry
+independent dtype indices. Boolean masks and integer indexing data use dedicated interfaces; they
+do not amount to general numeric dtype promotion.
+
+Consequently, choosing executable binary32 or complex binary32 changes the scalar interpretation
+of a whole supported run. It does not reproduce PyTorch autocast or mixed-precision master weights.
+A faithful mixed FP8/BF16/FP16/FP32 graph will require explicit dtype-indexed values, cast and
+quantize nodes, promotion rules, accumulation dtypes, and backend contracts for each conversion.
+Until then, numerical claims should describe the homogeneous scalar semantics that actually ran.
 
 # What TorchLean Adds
 

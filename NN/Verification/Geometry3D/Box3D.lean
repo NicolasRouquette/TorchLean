@@ -87,9 +87,9 @@ interval:
 
 `[a,b] / [c,d] = [a/d, b/c]` when `0 ≤ a` and `0 < c`.
 
-This is the perspective-division primitive.  A pinhole projection is not just affine camera
-arithmetic; it also divides homogeneous pixel numerators by positive depth.  Keeping this operation
-separate makes the trust boundary explicit: an exporter may provide interval enclosures for
+This is the perspective-division primitive. A pinhole projection combines affine camera arithmetic
+with division of homogeneous pixel numerators by positive depth. Keeping this operation separate
+makes the trust boundary explicit: an exporter may provide interval enclosures for
 `u_num`, `v_num`, and `z`, and Lean proves the quotient enclosure is sound.
 -/
 def divNonnegByPosInterval {α : Type} [Div α] (num den : ScalarInterval α) :

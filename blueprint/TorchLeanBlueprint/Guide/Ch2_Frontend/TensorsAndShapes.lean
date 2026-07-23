@@ -53,7 +53,7 @@ The canonical specification type is:
 
 $$`\operatorname{Spec.Tensor}\;\alpha\;s`.
 
-The public spelling is `Tensor.T α s`. The first parameter is the scalar type and the second is the
+The application-facing spelling is `Tensor.T α s`. The first parameter is the scalar type and the second is the
 shape. A shape is recursively built from:
 
 ```
@@ -80,10 +80,10 @@ def matrixShape : Shape := shape![3, 2]
 def rankFourShape : Shape := shape![8, 3, 32, 32]
 ```
 
-`rankFourShape` is not an “image shape” at the type level. It is an ordinary rank-four tensor.
-NCHW, NHWC, sequence, and feature conventions belong to operations and models, not to separate
-tensor datatypes. This is why the same tensor core can represent language tokens, PDE grids,
-volumetric data, batched matrices, or an unusual scientific coordinate system.
+At the type level, `rankFourShape` is an ordinary rank-four tensor. NCHW, NHWC, sequence, and
+feature conventions come from operations and models rather than separate tensor datatypes. The
+same tensor core can therefore represent language tokens, PDE grids, volumetric data, batched
+matrices, or an unusual scientific coordinate system.
 
 # Literals Prove Their Own Shape
 
@@ -132,8 +132,8 @@ def v : Tensor.T Float (shape![4]) :=
 ```
 
 In scalar-polymorphic runtime code, `tensorF! cast dims values` authors constants as `Float` and
-maps a supplied `Float → α` conversion over them. The conversion is visible because changing scalar
-semantics is not merely changing storage metadata.
+maps a supplied `Float → α` conversion over them. The conversion remains visible because scalar
+semantics affect more than storage metadata.
 
 # Indexing Is Total
 
@@ -223,12 +223,16 @@ These tensors have the same shape and different semantics:
   * executable bit-level binary32
 *
   * `TorchLean.Floats.F32 .fp32`
-  * finite rounded-real binary32 proof model
+  * rounded-real binary32-precision proof model; no upper exponent bound or IEEE special values
+*
+  * `TorchLean.Complex (TorchLean.Floats.F32 .ieee754Exec)`
+  * executable complex scalar with binary32 real and imaginary components
 :::
 
-The public trainer has a `dtype` option, but it is selecting a scalar interpretation, not adding a
+The trainer has a `dtype` option, but it is selecting a scalar interpretation, not adding a
 decorative field to an untyped buffer. Executable trainer paths reject `.real` and the
-noncomputable `.fp32` proof mode. The executable binary32 constructor is:
+noncomputable `.fp32` proof mode; the high-level trainer also currently rejects complex execution
+because prediction has no host-`Float` readback path. The executable binary32 constructor is:
 
 ```
 def x32 :
@@ -238,6 +242,18 @@ def x32 :
 
 The decimal source literal `0.1` is converted to a binary32 bit pattern. The floating-point chapter
 explains why the printed decimal and the stored mathematical value are not identical.
+
+# One Scalar Type Per Tensor And Run
+
+`Tensor.T α s` is homogeneous: it cannot place an `Int`, FP16 value, and FP32 value in different
+entries. Current model programs and `NN.IR.Semantics` likewise select one numeric `α` for learned
+parameters, activations, and outputs. Scalar polymorphism means the same definition can be run
+again at another `α`; it does not provide per-node promotion or autocast.
+
+The executable complex choice is also one scalar type, not a mixed pair of tensor dtypes. Integer
+indices and boolean masks have dedicated operation interfaces, but a PyTorch-style graph mixing
+FP8/BF16/FP16/FP32 numeric tensors will need an explicitly dtype-indexed graph and cast rules that
+the current API does not yet claim to implement.
 
 # Linear Layers Preserve Prefix Dimensions
 
@@ -256,8 +272,9 @@ shape![batch, 2]       -> shape![batch, 8]
 shape![batch, time, 2] -> shape![batch, time, 8]
 ```
 
-The prefix is not hard-coded as “batch” or “time.” It is any leading shape. This permits one linear
-definition to work for single examples, minibatches, sequences, and higher-rank collections.
+Any leading shape can serve as the prefix; it need not mean “batch” or “time.” One linear
+definition therefore works for single examples, minibatches, sequences, and higher-rank
+collections.
 
 Now try changing the second linear layer in the quickstart MLP from `nn.linear 8 1` to
 `nn.linear 7 1` without changing the preceding layer. The sequential model no longer composes:
@@ -281,7 +298,7 @@ does not prove layout agreement, so backend capsules record layout requirements 
 
 `Spec.Tensor` is a nested total function, a representation chosen for definitions and proofs.
 Runtime CPU and CUDA code uses arrays, native storage, or device buffers. These are not competing
-public tensor systems; they are two representations with an explicit bridge.
+tensor systems; they are two representations with an explicit bridge.
 
 The deep-dive file
 [`Tensors/Basic.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/DeepDives/Tensors/Basic.lean)
@@ -338,9 +355,9 @@ without saying which property was established.
 The next chapter turns shape maps into layers and model architectures. The most useful sources to
 keep nearby are:
 
-- [`NN/Tensor/API.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Tensor/API.lean) for
+- [NN/Tensor/API.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Tensor/API.lean) for
   constructors and operations;
-- [`NN/Spec/Core/Tensor.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Spec/Core/Tensor.lean)
+- [NN/Spec/Core/Tensor.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Spec/Core/Tensor.lean)
   for the recursive specification representation;
-- [`NN/Proofs/Tensor/Basic.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Tensor/Basic.lean)
+- [NN/Proofs/Tensor/Basic.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Tensor/Basic.lean)
   for flattening, unflattening, and algebraic laws.

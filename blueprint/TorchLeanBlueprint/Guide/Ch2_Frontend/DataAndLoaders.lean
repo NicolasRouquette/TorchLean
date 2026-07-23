@@ -15,9 +15,9 @@ TorchLean treats loading as a boundary. Parsing and dimension checks happen befo
 a typed training sample. Once the boundary succeeds, the training loop does not need to ask on
 every step whether a row had the right number of columns.
 
-# The Public Dataset Type
+# The Dataset Type
 
-The public type is:
+The trainer-facing type is:
 
 ```
 Trainer.Dataset inputShape targetShape
@@ -25,7 +25,8 @@ Trainer.Dataset inputShape targetShape
 
 It describes one training item. The scalar type is intentionally absent. Its `build` field
 materializes a concrete dataset after the trainer chooses `Float`, `IEEE32Exec`, or another
-supported executable scalar.
+supported executable scalar. Materialization chooses one scalar type for every numeric input and
+target in that run; it is not a per-column dtype schema.
 
 This lets the same Float-authored data feed several scalar runtimes while keeping the conversion
 visible at materialization. It also means a proof-level real tensor is not accidentally passed to
@@ -197,6 +198,87 @@ text helpers make integer tokens and window construction explicit. A tokenizer f
 mapping should be stored with the run because changing it changes the meaning of every integer in
 the dataset.
 
+## GPT-2 Byte-Level BPE Files
+
+`NN.API.Text.Bpe` loads the conventional GPT-2 tokenizer pair directly in Lean:
+
+- `vocab.json` is a flat JSON object from byte-escaped token spellings to natural-number ids;
+- `merges.txt` gives one adjacent symbol pair per non-comment line. File order determines rank, and
+  a lower rank is applied first.
+
+The two files form one artifact: using a vocabulary with a merge table from a different tokenizer
+can change token boundaries or leave a merged piece absent from the vocabulary. Pass both paths and
+record both files, preferably with content hashes, alongside a run. A malformed vocabulary or a
+missing file produces an error. The current merge parser skips malformed non-comment lines, so a
+successful load alone is not a complete integrity check for an untrusted `merges.txt`.
+
+Encoding has four visible stages. It applies the GPT-2 pre-tokenizer, converts each fragment's UTF-8
+bytes through GPT-2's reversible byte-to-Unicode table, repeatedly applies the best-ranked adjacent
+merge, and finally looks up every piece in `vocab.json`. `Gpt2Bpe.encode` returns an error when a
+piece has no id. `Gpt2Bpe.decode?` performs the inverse vocabulary lookup and byte decoding, and
+reports an unknown id or invalid UTF-8 rather than inventing text.
+
+Here is a direct round-trip from the repository root after placing a matching tokenizer pair at the
+shown paths:
+
+```
+import NN.API.Text.Bpe
+open NN.API.text
+
+def inspectBpe : IO Unit := do
+  let tok ← Gpt2Bpe.load
+    "data/real/gpt2/vocab.json"
+    "data/real/gpt2/merges.txt"
+  match Gpt2Bpe.encode tok "naïve café" with
+  | .error e => throw <| IO.userError e
+  | .ok ids =>
+      IO.println s!"ids = {repr ids}"
+      match Gpt2Bpe.decode? tok ids with
+      | .error e => throw <| IO.userError e
+      | .ok decoded => IO.println s!"decoded = {decoded}"
+```
+
+`decodeD` and the generic-tokenizer adapter are intended for display and convenience: they collapse
+decode or encode failures to empty output. Use the error-reporting `encode` and `decode?` functions
+at an artifact-validation boundary.
+
+## Unicode Is Part Of The Tokenizer Version
+
+GPT-2 pre-tokenization distinguishes Unicode letters, numbers, whitespace, contractions, and other
+symbols. `NN.API.Text.Unicode` supplies checked-in Unicode 15.1 category ranges for `L*` and `N*`
+plus the Unicode `White_Space` set. Tokenization therefore does not silently inherit an operating
+system regex engine, but the checked-in tables are still a semantic dependency: category changes
+between Unicode versions can change segmentation. Record the TorchLean revision as well as the BPE
+files when exact reproducibility matters.
+
+## Run The Maintained BPE Trainer
+
+First prepare the example corpus, then run the CUDA trainer with both tokenizer paths:
+
+```
+python3 scripts/datasets/download_example_data.py --tiny-shakespeare
+
+lake -R -K cuda=true exe torchlean text_gpt2 --device cuda \
+  --data-file data/real/text/tiny_shakespeare.txt \
+  --bpe-vocab data/real/gpt2/vocab.json \
+  --bpe-merges data/real/gpt2/merges.txt \
+  --allow-small-data --max-chars 20000 --steps 1 \
+  --prompt "First Citizen:" --generate 0
+```
+
+The data script prepares the corpus; it does not supply the tokenizer pair. The command prints BPE
+loading progress, a first shifted token window, and before/after loss. Both BPE flags are required
+together. Omitting both selects the runner's byte-token path instead.
+
+This runner is CUDA-only. It does not load OpenAI or Hugging Face model weights. Its BPE mode trains
+a randomly initialized TorchLean Transformer with batch size two, a one-token context, and a local
+projection of at most 512 observed GPT-2 ids; ids outside that retained set map to the local fallback
+id. It exercises real file parsing, tokenization, shifted-window construction, training, and decode
+plumbing, but it is neither GPT-2-small nor evidence of checkpoint-level tokenizer equivalence.
+
+That completes the text-specific detour. The rest of the chapter returns to a question shared by
+numeric, image, and text datasets: what a batch means and when it is materialized.
+
 # Two Meanings Of “Batch Size”
 
 The distinction here is important.
@@ -207,14 +289,18 @@ The distinction here is important.
 
 ```
 def batched :
-    Trainer.Dataset (shape![5, 2]) (shape![5, 1]) :=
-  Data.batchDataset 5 xorData
+    Trainer.Dataset (shape![2, 2]) (shape![2, 1]) :=
+  Data.batchDataset 2 xorData
     (shuffle := true)
     (seed := 42)
 ```
 
-The model must accept `[5,2]` and return `[5,1]`. One forward/backward operation processes the whole
+The model must accept `[2,2]` and return `[2,1]`. One forward/backward operation processes the whole
 tensor minibatch.
+
+Using batch size five for this four-row XOR dataset would produce no typed batches because
+`Data.batchDataset` defaults to `dropLast := true`. Choosing two here makes both batches full and
+keeps the example executable.
 
 ## Groups of unbatched samples
 
@@ -243,7 +329,7 @@ last item.
 
 # Materialized Loaders And Epoch State
 
-The public `Trainer.Dataset` delays scalar choice. Lower-level manual code may already own a
+`Trainer.Dataset` delays scalar choice. Lower-level manual code may already own a
 materialized:
 
 ```
@@ -260,7 +346,7 @@ This functional state transition makes data order reproducible. There is no hidd
 position depends on unrelated code.
 
 Use the lower loader API for a custom epoch loop. Ordinary model training should prefer
-`Data.batchDataset`, `Data.tabularCsvDataset`, or another public constructor.
+`Data.batchDataset`, `Data.tabularCsvDataset`, or another dataset constructor.
 
 # Generated Streams
 
@@ -342,5 +428,8 @@ Sources:
 
 - [`NN/API/Data/README.md`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Data/README.md);
 - [`NN/Examples/Data/README.md`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Data/README.md);
+- [`Bpe.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Text/Bpe.lean);
+- [`Unicode.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Text/Unicode.lean);
+- [`TextGpt2.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Sequence/TextGpt2.lean);
 - [`Npy.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Data/Loaders/Npy.lean);
 - [`Cifar10Images.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Data/Loaders/Cifar10Images.lean).

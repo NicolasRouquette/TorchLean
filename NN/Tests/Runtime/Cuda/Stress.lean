@@ -188,6 +188,98 @@ def runGradientAliasingStress : IO Unit := do
   let expected : Tensor Float s := tensorOfList! [4] [2.0, 2.0, 2.0, 2.0]
   Utils.assertTensorApprox (s := s) "add backward duplicate-parent gradient" dx expected
 
+/-- Shape-erased CUDA entrypoints must reject malformed native lengths before launching kernels. -/
+def runMalformedBufferValidationStress : IO Unit := do
+  IO.println "== malformed CUDA buffer validation =="
+
+  let vectorShape : Shape := shape![4]
+  let shortBuffer ← Buffer.fullIO 3 1.0
+  let malformed : Cuda.AnyBuffer := { s := vectorShape, buf := shortBuffer }
+  match Cuda.AnyBuffer.validate malformed with
+  | .ok _ =>
+      throw <| IO.userError "AnyBuffer.validate accepted a native buffer shorter than its shape"
+  | .error _ => pure ()
+
+  let (malformedTape, malformedId) := Cuda.Tape.empty.leaf malformed
+  match Cuda.Tape.sum (t := malformedTape) (s := vectorShape) malformedId with
+  | .ok _ =>
+      throw <| IO.userError "CUDA tape accepted a malformed leaf buffer"
+  | .error _ => pure ()
+  discard <| Buffer.releaseIO shortBuffer
+
+  let scalarBuffer ← Buffer.fullIO 1 2.0
+  let singleElementValue : Cuda.AnyBuffer := { s := Shape.scalar, buf := scalarBuffer }
+  let (scalarTape, scalarId) := Cuda.Tape.empty.leaf singleElementValue
+  let badSeedBuffer ← Buffer.fullIO 2 1.0
+  let badSeed : Cuda.AnyBuffer := { s := Shape.scalar, buf := badSeedBuffer }
+  match Cuda.Tape.backwardDenseAll scalarTape scalarId badSeed with
+  | .ok _ =>
+      throw <| IO.userError "dense CUDA backward accepted a wrong-length output seed"
+  | .error _ => pure ()
+  discard <| Buffer.releaseIO badSeedBuffer
+
+  let sparseSeedBuffer ← Buffer.fullIO 2 1.0
+  let sparseSeed : Cuda.AnyBuffer := { s := Shape.scalar, buf := sparseSeedBuffer }
+  let sparseRejected ←
+    try
+      discard <| Cuda.Tape.backwardSparse scalarTape scalarId sparseSeed (fun _ => true)
+      pure false
+    catch _ => pure true
+  unless sparseRejected do
+    throw <| IO.userError "sparse CUDA backward accepted a wrong-length output seed"
+  discard <| Buffer.releaseIO scalarBuffer
+
+  let vectorBuffer ← Buffer.fullIO 4 2.0
+  let vectorValue : Cuda.AnyBuffer := { s := vectorShape, buf := vectorBuffer }
+  let (vectorTape, _vectorId) := Cuda.Tape.empty.leaf vectorValue
+  let shortGradBuffer ← Buffer.fullIO 3 0.0
+  let shortGrad : Cuda.AnyBuffer := { s := vectorShape, buf := shortGradBuffer }
+  match Cuda.Tape.backwardDenseFrom vectorTape #[shortGrad] with
+  | .ok _ =>
+      throw <| IO.userError "dense CUDA backward accepted a malformed initial gradient"
+  | .error _ => pure ()
+  discard <| Buffer.releaseIO shortGradBuffer
+  discard <| Buffer.releaseIO vectorBuffer
+
+  let oversized : Cuda.AnyBuffer :=
+    { s := .dim UInt32.size .scalar, buf := Buffer.zeros 0 }
+  match Cuda.AnyBuffer.validate oversized with
+  | .ok _ =>
+      throw <| IO.userError "AnyBuffer.validate accepted a shape whose numel exceeds UInt32"
+  | .error _ => pure ()
+
+  let hiddenOversizedAxis : Cuda.AnyBuffer :=
+    { s := Shape.ofList [0, UInt32.size], buf := Buffer.zeros 0 }
+  match Cuda.AnyBuffer.validate hiddenOversizedAxis with
+  | .ok _ =>
+      throw <| IO.userError
+        "AnyBuffer.validate accepted an oversized axis hidden by a zero-sized axis"
+  | .error _ => pure ()
+
+/-- A disconnected reciprocal at zero must keep explicit CUDA dense gradients finite and zero. -/
+def runDisconnectedDenseGradientStress : IO Unit := do
+  IO.println "== disconnected CUDA dense gradient =="
+
+  let scalarShape : Shape := Shape.scalar
+  let zero : Tensor Float scalarShape := Tensor.scalar 0.0
+  let output : Tensor Float scalarShape := Tensor.scalar 3.0
+  let t0 : Cuda.Tape := Cuda.Tape.empty
+  let (t1, xId) := Cuda.Tape.leaf (t := t0) (Utils.tensorToAnyBuffer zero) (name := some "x")
+  let (t2, outId) :=
+    Cuda.Tape.leaf (t := t1) (Utils.tensorToAnyBuffer output) (name := some "output")
+  let (t3, invId) ← Utils.okOrThrow <|
+    Cuda.Tape.inv (t := t2) (s := scalarShape) xId
+  let seed : Cuda.AnyBuffer := { s := scalarShape, buf := Buffer.full 1 1.0 }
+  let grads ← Utils.okOrThrow <| Cuda.Tape.backwardDenseAll (t := t3) outId seed
+  unless grads.size = t3.nodes.size do
+    throw <| IO.userError "disconnected CUDA dense gradient: result length mismatch"
+  let xGrad := Tensor.toScalar (← Utils.cudaGrad (s := scalarShape) grads xId)
+  let invGrad := Tensor.toScalar (← Utils.cudaGrad (s := scalarShape) grads invId)
+  unless xGrad.isFinite && xGrad == 0.0 do
+    throw <| IO.userError s!"disconnected CUDA reciprocal input: expected finite zero, got {xGrad}"
+  unless invGrad.isFinite && invGrad == 0.0 do
+    throw <| IO.userError s!"disconnected CUDA reciprocal output: expected finite zero, got {invGrad}"
+
 def runSparseLifetimeStress : IO Unit := do
   IO.println "== repeated sparse-backward ownership =="
 
@@ -321,6 +413,8 @@ def run : IO Unit := do
   runReleaseStress
   runWrapperLifetimeStress
   runGradientAliasingStress
+  runMalformedBufferValidationStress
+  runDisconnectedDenseGradientStress
   runSparseLifetimeStress
   runLargeBufferStress
   runMatmulStress

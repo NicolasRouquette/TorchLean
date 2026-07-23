@@ -60,7 +60,7 @@ X : (n × inDim)
                                               └─ mean over nodes ─→ y : (outDim)
 ```
 
-Backward follows this structure literally:
+Backward mirrors this structure:
 - "mean nodes" broadcasts the `outDim` gradient back to `n×outDim` and scales by `1/n`,
 - each GCN layer uses the matrix-calculus rules in `Spec.gcn_layer_backward_spec`,
 - ReLU gates gradients by `ReLU'`.

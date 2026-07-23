@@ -12,18 +12,19 @@ state, and execution devices are attached later. This separation is useful even 
 theorem: the architecture can be inspected without allocating parameters, and the same model can
 be initialized twice with different seeds or interpreted by different runtimes.
 
-We will build three examples:
+We will build three complete architectures:
 
 1. a `2 → 8 → 1` regression MLP;
 2. a small convolutional classifier;
 3. a transformer encoder block.
 
 They use the same layer-composition mechanism. The differences are in their shapes and operations,
-not in a new model universe for each application.
+not in a new model universe for each application. We then use masking and a low-rank adapter to show
+how the same tensor contracts extend those architectures.
 
 # A Layer Is A Checked Shape Map
 
-The public layer type is:
+The layer type is:
 
 ```
 nn.LayerDef inputShape outputShape
@@ -116,6 +117,10 @@ $$`8\cdot2+8+1\cdot8+1=33`.
 Parameter order is part of the typed model interface. A pack with the two bias tensors exchanged
 does not match the expected dependent list.
 
+The dependent pack records a list of shapes and follows the homogeneous-scalar rule developed in
+*Tensors And Shapes*. Executing the model at another `α` reuses the architecture without changing
+the ordered parameter layout.
+
 # Make A Shape Error On Purpose
 
 Change the final layer to:
@@ -154,7 +159,7 @@ def trainer (seed : Nat) :=
       seed := seed }
 ```
 
-Constructing this value does not yet train. It records:
+Constructing this value records the training configuration:
 
 - the model builder;
 - the task and loss convention;
@@ -187,7 +192,7 @@ Sequential: [2] -> [1], layers=3, params=33
 ```
 
 This is a useful design loop. Change `hidden` to `2`, `16`, and `64`; predict the parameter count
-before asking Lean. Then insert another hidden `linear` and `relu` pair. The public input and output
+before asking Lean. Then insert another hidden `linear` and `relu` pair. The external input and output
 stay `[2] → [1]`, while the internal shape chain and parameter payload grow.
 
 # Prefix Shapes Give Batches For Free
@@ -209,7 +214,7 @@ def batchedModel {batch : Nat} :
 ```
 
 Nothing in `nn.linear` calls the prefix “batch.” It could equally be `[time]`, `[batch,time]`, or a
-higher-rank collection. The operation's contract is simply:
+higher-rank collection. The operation's contract is:
 
 $$`
 [\ldots,\mathrm{inFeatures}]
@@ -238,7 +243,7 @@ $$`
 [\mathrm{batch},\mathrm{channels},\mathrm{length}].
 `
 
-The public `nn.conv` constructor handles both. Pooling is rank-generic for the same reason. A helper
+The `nn.conv` constructor handles both. Pooling is rank-generic for the same reason. A helper
 such as `nn.models.cnn` composes convolution, activation, pooling, flattening, and classification,
 but the component layers remain ordinary checked maps.
 
@@ -280,7 +285,7 @@ $$`
 [\mathrm{batch},\mathrm{sequenceLength},d_{\mathrm{model}}].
 `
 
-The public block constructor is:
+The block constructor is:
 
 ```
 nn.transformerEncoderBlock
@@ -343,6 +348,91 @@ FNO model, exported prediction, and Lean-checkable residual artifact fit togethe
 
 The practical rule is: a model helper should remove repetitive construction, not invent a private
 tensor type or execution engine.
+
+# A Masked Model Still Needs An Honest Target
+
+Self-supervised learning changes the training problem more than it changes the tensor foundation.
+Imagine eight consecutive sensor readings. We want the model to see alternating two-value blocks
+and reconstruct the readings that were hidden:
+
+```
+import NN.API
+open TorchLean
+
+def signal : Tensor.T Float (shape![8]) :=
+  tensor! [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+
+def maskedSignal : Tensor.T Float (shape![8]) :=
+  ssl.blockMask #v[8] #v[some 2] 2 0 signal
+
+#eval Tensor.pretty maskedSignal
+```
+
+The result is:
+
+```
+"[0.000000, 0.000000, 3.000000, 4.000000, 0.000000, 0.000000, 7.000000, 8.000000]"
+```
+
+`some 2` divides the participating axis into blocks of width two. The period `2` and offset `0`
+hide block indices congruent to zero modulo two, hence the first and third blocks. An axis marked
+`none` is left out of the block index; an image policy such as
+`#v[none, some 4, some 4]` therefore repeats the same 4-by-4 spatial mask across channels.
+
+For training, `ssl.blockMaeSample` pairs a masked batch with a row-major prefix of the original,
+unmasked batch. The reconstruction width appears in the target shape, and Lean requires a proof
+that the requested prefix fits. This makes the masking convention and reconstruction target part
+of the sample rather than an agreement hidden between a data loader and a decoder.
+
+The mask is deterministic. In the typed `blockMask` call, the policy and tensor ranks already
+agree by construction. A zero period or zero block width hides nothing; the lower-level coordinate
+helpers likewise treat a rank mismatch or out-of-bounds coordinate as visible rather than sampling
+a fallback mask. Randomized mask selection should choose the period/offset or another explicit mask
+from recorded generator state. The coordinate theorems `NN.API.ssl.blockMask_hidden_scalar_eq_zero` and
+`NN.API.ssl.blockMask_visible_scalar_eq_input` then describe exactly what the executable
+transformation did.
+
+# Add A Low-Rank Linear Adapter Explicitly
+
+Masks change which data reaches the model. A low-rank adapter instead changes a parameterized
+projection without replacing its base weight.
+
+`NN.API` also exports the LoRA tensor helpers as `TorchLean.Adapters.LoRA`. They use the row-batch
+convention: an input of shape `[batch,inDim]` multiplies a base weight of shape
+`[inDim,outDim]` on the right. An adapter stores
+
+$$`
+A:\operatorname{Tensor}\;\alpha\;[\mathrm{inDim},\mathrm{rank}],
+\qquad
+B:\operatorname{Tensor}\;\alpha\;[\mathrm{rank},\mathrm{outDim}],
+`
+
+and contributes `scale * (A * B)` to the base weight. For example, this function applies a
+rank-two adapter to a batch of four eight-dimensional inputs:
+
+```
+import NN.API
+open TorchLean
+
+def adaptedProjection
+    (x : Spec.Tensor Float (.dim 4 (.dim 8 .scalar)))
+    (base : Spec.Tensor Float (.dim 8 (.dim 16 .scalar)))
+    (A : Spec.Tensor Float (.dim 8 (.dim 2 .scalar)))
+    (B : Spec.Tensor Float (.dim 2 (.dim 16 .scalar))) :
+    Spec.Tensor Float (.dim 4 (.dim 16 .scalar)) :=
+  let adapter : Adapters.LoRA.Params Float 8 2 16 := { A := A, B := B }
+  Adapters.LoRA.linear x base adapter (0.5 : Float)
+```
+
+Use `Adapters.LoRA.delta adapter scale` to inspect only the scaled low-rank update, or
+`Adapters.LoRA.effectiveWeight base adapter scale` to construct the combined weight. Keeping
+`scale` explicit supports the usual `alpha / rank` choice as well as scheduled or experimental
+scales.
+
+These are pure tensor definitions, not yet a trainer-integrated LoRA workflow. They do not insert
+an adapter into an `nn.Sequential`, initialize its factors, freeze the base weight, or tell an
+optimizer to update only `A` and `B`. A training experiment must currently wire those choices into
+its parameter pack and forward/loss program explicitly.
 
 # The Task Belongs To The Trainer
 

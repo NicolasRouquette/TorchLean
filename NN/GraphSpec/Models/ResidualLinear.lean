@@ -57,7 +57,7 @@ The layout is exactly:
 - `W : Mat d d`
 - `b : Vec d`
 
-The skip path is parameter-free; it simply reuses the input `x`.
+The parameter-free skip path reuses the input `x`.
 -/
 abbrev ResidualLinearParams (d : Nat) : List Shape :=
   [.dim d (.dim d .scalar), .dim d .scalar]

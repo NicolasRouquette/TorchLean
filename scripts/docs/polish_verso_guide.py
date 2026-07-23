@@ -1131,6 +1131,26 @@ def inject_script(root: Path) -> None:
         path.write_text(html.replace("</head>", tag + "  </head>", 1))
 
 
+def repair_generated_table_css(root: Path) -> None:
+    """Correct two inert table-style typos in the generated Verso page headers.
+
+    Keeping this repair in the post-build pass avoids modifying the pinned Verso dependency and
+    makes future right-aligned tables valid without changing the current table layout.
+    """
+    replacements = {
+        "margin-left auto;": "margin-left: auto;",
+        "table.tabular td > p:last-child, table.tabular th > p:first-child":
+            "table.tabular td > p:last-child, table.tabular th > p:last-child",
+    }
+    for path in root.rglob("*.html"):
+        original = path.read_text()
+        repaired = original
+        for old, new in replacements.items():
+            repaired = repaired.replace(old, new)
+        if repaired != original:
+            path.write_text(repaired)
+
+
 def rewrite_repository_links(root: Path) -> None:
     """Turn repository-relative links into public API or source links.
 
@@ -1406,6 +1426,7 @@ def main() -> int:
         css = css[:idx].rstrip()
     css_path.write_text(css.rstrip() + TORCHLEAN_CSS)
     write_js(args.guide)
+    repair_generated_table_css(args.guide)
     rewrite_repository_links(args.guide)
     add_fragment_aliases(args.guide)
     remove_stale_search_shards(args.guide)

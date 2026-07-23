@@ -53,7 +53,7 @@ For example, an alpha-beta-CROWN leaf artifact represents one exported terminal 
 bounds, thresholds, labels, and the witness comparison represented by the schema. A full producer
 claim additionally needs provenance for the external branch-and-bound run that generated the leaf.
 
-## Graph Engine And Proof Surface
+## Graph Engine And Proofs
 
 The graph engine works over `NN.IR.Graph` node ids and payload stores. A typical workflow creates or
 imports a graph, attaches an input box, computes per-node IBP boxes, and then propagates affine

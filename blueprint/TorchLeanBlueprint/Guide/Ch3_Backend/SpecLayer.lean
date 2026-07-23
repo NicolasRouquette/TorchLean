@@ -18,7 +18,7 @@ formulas live as Lean definitions.
 
 The distinction is important because executable ML code changes form constantly. A linear layer
 may be evaluated by a nested Lean function, a CPU loop, cuBLAS, or an ATen kernel. The specification
-does not try to imitate those implementations. It gives them a common statement to implement.
+gives all of those implementations one statement to satisfy.
 
 # The Tensor Behind The Formula
 
@@ -36,7 +36,7 @@ This is not a claim that CUDA stores a matrix as nested Lean functions. Native r
 contiguous buffers. The specification chooses the representation that makes mathematical reasoning
 clear; a layout contract is needed when an implementation flattens that value into memory.
 
-The public aliases hide most of the recursive spelling:
+The exported aliases hide most of the recursive spelling:
 
 ```
 import NN.Spec.Layers.Linear
@@ -77,7 +77,7 @@ At coordinate `i`, this means
 $$`y_i=b_i+\sum_{j=0}^{\mathrm{inDim}-1}W_{ij}x_j.`
 
 The backward specification receives an upstream cotangent
-$g=\partial L/\partial y$ and returns
+$`g=\partial L/\partial y` and returns
 
 $$`
 \frac{\partial L}{\partial W}=g\,x^\mathsf{T},\qquad
@@ -149,7 +149,7 @@ heldout x=(0.25,-0.75), target=0.2, prediction(after)=[0.210239]
 The command executes runtime tensors and an autograd tape; it does not evaluate `twoLayerMlp` by
 reducing the pure Lean definition above. The connection is made operation by operation:
 
-1. the public `nn.linear` builder fixes the same parameter shapes;
+1. the `nn.linear` builder fixes the same parameter shapes;
 2. its forward program emits the runtime linear operation;
 3. the graph interpreter assigns `.linear` the `linearSpec` denotation;
 4. the VJP proof identifies the selected backward rule with `linearBackwardSpec`;
@@ -168,15 +168,15 @@ W_2=\begin{bmatrix}0.8&-0.4\end{bmatrix},
 \quad b_2=0.2.
 `
 
-For $x=(0.25,-0.75)$,
+For $`x=(0.25,-0.75)`,
 
 $$`
 W_1x=(-0.5,-1),\qquad
 \operatorname{ReLU}(W_1x)=(0,0),
 `
 
-so the exact-real output is $0.2$. Change only the first bias to $0.6$. The first hidden
-preactivation becomes $0.1$, and the output becomes
+so the exact-real output is $`0.2`. Change only the first bias to $`0.6`. The first hidden
+preactivation becomes $`0.1`, and the output becomes
 
 $$`0.8(0.1)+0.2=0.28.`
 
@@ -197,7 +197,7 @@ TorchLean reuses the tensor structure at several scalar interpretations:
   * exact real arithmetic used for mathematical statements
 *
   * `FP32`
-  * finite binary32-grid values with a rounded-real proof model
+  * binary32-precision, gradual-underflow rounded-real values with no upper exponent cutoff
 *
   * `IEEE32Exec`
   * executable binary32 bit patterns, including signed zero, infinity, and NaN
@@ -218,6 +218,26 @@ is a clean real-valued formula. A binary32 implementation introduces rounding in
 subtraction, exponential approximation, summation, and division. A CUDA reduction may also choose
 a different summation tree. The later floating-point and runtime-approximation chapters state the
 conditions under which one interpretation encloses or approximates another.
+
+# The Implemented Specifications
+
+The spec layer is broader than the running MLP. `NN.Spec.Layers` contains typed meanings for
+linear algebra, convolution and transposed convolution, two-dimensional and N-dimensional pooling,
+activations and losses, normalization, dropout, embeddings, recurrent cells, selective scan, and
+scaled dot-product attention. Model definitions under `NN.Spec.Models` compose these operations
+into families such as CNNs, transformers, recurrent networks, and state-space models.
+
+That inventory is a semantics inventory, not a runtime support matrix. An operation can have a pure
+definition before it has an eager tape rule, a compiled lowering, a CUDA kernel, or an end-to-end
+correctness theorem. The relevant runtime and compiler chapters name those smaller supported
+fragments explicitly.
+
+# Shape Indices And Scalar Types
+
+The shape index `s` and scalar parameter `α` answer different questions. `Tensor α s` fixes both for
+one value, and `Graph.denote` follows the homogeneous-scalar contract from *Tensors And Shapes*.
+The later IR chapter uses “heterogeneous” only for a table of differently shaped values, not for a
+mixed-dtype graph.
 
 # Conventions That Must Be In The Definition
 
@@ -276,7 +296,7 @@ is equal to the hand-written two-layer specification. Its conclusion is about tw
 It does not mention the eager tape, CUDA, or an imported checkpoint, so it should not be reported as
 a proof of those objects.
 
-That scope is not a weakness. It is the first exact link in a longer chain, and it prevents later
-engineering layers from silently changing what “the MLP” means.
+That theorem supplies the first exact link in a longer chain and prevents later engineering layers
+from silently changing what “the MLP” means.
 
 The next chapter turns these formulas into typed architectures with explicit parameter layouts.

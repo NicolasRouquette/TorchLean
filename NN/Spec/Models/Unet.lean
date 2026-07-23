@@ -297,7 +297,7 @@ def UNet2Spec.forward
 
   -- The `h_*` equalities are there for one reason: many of the layer specs compute output shapes
   -- with explicit arithmetic (matching PyTorch's formulas), and we sometimes want to treat a
-  -- "shape-preserving" conv as literally returning `(C,inH,inW)`. These equalities are how we
+  -- "shape-preserving" conv as returning exactly `(C,inH,inW)`. These equalities are how we
   -- rewrite between the computed shape and the intended shape.
 
   -- Down block 1 (spatial preserved because conv is 3x3, stride=1, padding=1).

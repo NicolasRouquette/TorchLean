@@ -35,10 +35,10 @@ executable kernel itself has no dependency on tensors, models, or runtime code.
 IEEE-754 does not specify implementations for transcendental functions (`exp`, `tanh`, ...). In
 practice those are provided by `libm` (or vendor math libraries) and vary across platforms.
 
-We provide deterministic implementations for a few transcendentals in Lean so examples can
-run without delegating to the host runtime. For the remaining ones, we may still delegate to Lean's
-`Float` (binary64) and round back to binary32. These functions are executable and stable, but they
-are **not** claimed to be correctly rounded or to match any particular hardware/libm.
+The transcendental operations in this namespace use deterministic, pure Lean algorithms so examples
+do not delegate to the host math library. Their formulas, range reduction, and rounding path are
+fixed by the source. They are **not** claimed to be correctly rounded or to match a particular
+hardware or `libm`; each proved or tested accuracy statement remains an explicit contract.
 
 ## References
 
@@ -264,15 +264,18 @@ IEEE-754 special cases:
   else
     ofBits (x.bits - 1)
 
-/-- Flip the sign bit (works for finite/Inf/NaN, and distinguishes ±0). -/
-@[inline] def neg (x : IEEE32Exec) : IEEE32Exec :=
-  let b := if isNaN x then (x.bits ||| quietBit) else x.bits
-  ofBits (b ^^^ signMask)
+/--
+Flip only the sign bit.
 
-/-- Clear the sign bit. -/
+IEEE sign-bit operations do not quiet signaling NaNs: their exponent, payload, and quiet/signaling
+classification are preserved. Arithmetic operations quiet an sNaN when they consume it.
+-/
+@[inline] def neg (x : IEEE32Exec) : IEEE32Exec :=
+  ofBits (x.bits ^^^ signMask)
+
+/-- Clear only the sign bit, preserving every NaN payload bit and its quiet/signaling class. -/
 @[inline] def abs (x : IEEE32Exec) : IEEE32Exec :=
-  let b := x.bits &&& (~~~signMask)
-  if isNaN x then ofBits (b ||| quietBit) else ofBits b
+  ofBits (x.bits &&& (~~~signMask))
 
 
 end IEEE32Exec

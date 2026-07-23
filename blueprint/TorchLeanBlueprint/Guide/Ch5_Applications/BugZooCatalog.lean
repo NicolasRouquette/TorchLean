@@ -7,9 +7,11 @@ open Verso.Genre Manual
 tag := "bugzoo-catalog"
 %%%
 
-BugZoo starts from failures that have appeared in frameworks, compilers, deployment tools, and LLM
-serving systems. Each file asks a narrow question: what object or proposition would have made the
-intended behavior explicit before the failure reached production?
+Imagine reviewing a causal-attention optimization. The output shape is right, the benchmark is
+faster, and several sampled prompts look normal. The missing question is semantic: can any future
+token receive attention weight? BugZoo begins at moments like this. It takes failures seen in
+frameworks, compilers, deployment tools, and serving systems and asks what small object or
+proposition would have made the intended behavior explicit before the failure reached production.
 
 The [BugZoo catalog API](https://github.com/lean-dojo/TorchLean/tree/main/NN/Examples/BugZoo/) and
 [BugZoo overview](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/BugZoo/README.md) focus on the TorchLean fragment itself:
@@ -17,9 +19,10 @@ once a computation enters a typed TorchLean spec, shape changes, masks, token bo
 choices, stateful normalization parameters, and backend semantics become named objects that can be
 checked.
 
-Every BugZoo file is small for a reason. A tiny theorem is often a better public contract than a
-large example. It lets us say "this is the exact thing we checked" beside the paper or issue from the
-real world that motivated the example.
+Every file is small for a reason. A theorem such as “strict-future attention weight is zero” is
+easier to reuse and harder to overstate than a large demo that merely happens to produce plausible
+tokens. The motivating incident explains why the contract matters; the Lean declaration says
+exactly what was checked.
 
 # Compile The Catalog
 
@@ -31,6 +34,11 @@ lake env lean NN/Examples/BugZoo/All.lean
 
 A successful command is silent. It means every definition and theorem in the catalog elaborated;
 it does not mean that every external framework implementation satisfies those contracts.
+
+`All.lean` is also the completeness boundary for the maintained catalog: an example file not
+imported there is not covered by this compile command. The contracts describe TorchLean reference
+objects; external framework conformance requires a separate importer, refinement theorem, or
+explicit assumption.
 
 For a more interactive pass, create `BugZooAudit.lean`:
 
@@ -167,11 +175,10 @@ corner case that is easy to dismiss into a reduction contract.
 [PyTorch issue #75181](https://github.com/pytorch/pytorch/issues/75181) reported an `ignore_index`
 case where all labels were ignored and the result was `nan`.
 
-The TorchLean lesson is not "we copied every branch of a framework kernel." TorchLean exposes the
-policy. `labelContribution false loss = 0` states that ignored labels contribute no scalar loss, and
-the example's helper for empty reductions names one possible policy for the all ignored case. That
-matters because the bug is not in the idea of ignoring labels; it is in letting the empty active set
-pass through an unnamed backend reduction.
+TorchLean exposes the policy instead of copying every branch of a framework kernel.
+`labelContribution false loss = 0` states that ignored labels contribute no scalar loss, and the
+example's helper for empty reductions names one policy for the all-ignored case. The bug appears
+when an empty active set reaches an unnamed backend reduction.
 
 The policy is the definition:
 
@@ -260,12 +267,13 @@ reduction order. The example cites
 TorchLean's answer is explicit modeling. `IEEE32Exec` is the executable bit level float32 model.
 Runtime `Float32` primitives are not transparent to the Lean kernel, so the theorem
 `runtimeFloat32_add_rewrites_to_ieee32` requires the named assumption
-`RuntimeFloat32MatchesIEEE32Exec`. We built that friction on purpose. If a proof uses the
+`RuntimeFloat32FiniteMatchesIEEE32Exec`, together with finite-input and finite-result hypotheses.
+We built that friction on purpose. If a proof uses the
 float32 model, the boundary says where runtime conformance entered.
 
 The boundary is therefore visible in the theorem shape:
 
-$$`\operatorname{RuntimeFloat32MatchesIEEE32Exec}
+$$`\operatorname{RuntimeFloat32FiniteMatchesIEEE32Exec}
 \quad\Longrightarrow\quad
 \operatorname{runtimeAdd}(x,y)
 =
@@ -311,7 +319,7 @@ implementation accidentally assumes positive variance, a constant slice can prod
 zero, `NaN`, or a backend-specific branch.
 
 The contract is the same discipline used throughout BugZoo: name the slice, name the variance, and
-name the epsilon-protected normalization result. A future optimized kernel can then be tested or
+name the epsilon-protected normalization result. An optimized kernel can then be tested or
 proved against the reference object.
 
 ## Batch Invariance
@@ -385,16 +393,21 @@ The TorchLean response is to expose projection preconditions and the safe divisi
 verified perception or control argument should not inherit an unspoken "all points have valid
 positive depth" assumption from preprocessing code.
 
-# What The Catalog Changes
+# Use A Contract In A Real Review
 
-The entries turn recurring implementation mistakes into small contracts:
+Return to the causal-attention optimization from the opening. Start with the reference theorem in
+`AttentionMask`: for every query row, a strict-future key has exactly zero weight. If the optimized
+path changes layouts, use the shape and broadcast examples to make that rearrangement explicit. If
+it crosses into a native compiler or float kernel, the compiler and Float32 examples show the two
+additional obligations: preserve the source computation and state where runtime arithmetic is
+assumed to match the reference semantics.
 
-- shape bugs become typed shapes and explicit broadcast evidence;
-- unstable losses become named stable specs and operators with explicit domains;
-- mask bugs become theorems that future positions have exactly zero weight;
-- state bugs become explicit arguments;
-- tokenizer and cache bugs become import or append contracts;
-- compiler and float bugs become semantic preservation or runtime conformance boundaries.
+Now test both sides of the boundary. A past or current token should be able to contribute; a future
+token must not. A fully blocked row should follow the declared zero-row policy instead of producing
+an accidental `NaN`. Compile `All.lean` after adding the focused example so the maintained catalog
+actually imports it.
 
-That is the useful scale for a new entry: one recognizable failure, one explicit contract, and one
-runnable example that breaks when the contract is violated.
+The result is narrower and auditable: one recognizable failure becomes an explicit contract, one
+negative control, and one visible conformance obligation. The same pattern turns unstable losses
+into domain-aware specs, state bugs into explicit arguments, tokenizer and cache mistakes into
+import or append contracts, and wrong code into a semantic-preservation question.

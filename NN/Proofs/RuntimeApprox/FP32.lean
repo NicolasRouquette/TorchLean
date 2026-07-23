@@ -31,7 +31,7 @@ We repackage those bounds so downstream proofs can use the uniform `≈[t]` voca
 Two small conventions show up everywhere below:
 
 * We use an **absolute-only tolerance** `ApproxTol.absOnly eps`.
-  That means `x ≈[absOnly eps] y` is literally the usual bound `|y - x| ≤ eps`
+  That means `x ≈[absOnly eps] y` is exactly the usual bound `|y - x| ≤ eps`
   (see `approxR_absOnly_iff`). This matches the shape of our `FP32` theorems.
 
 * The `FP32` “epsilon” is **value-dependent**: `eps = ulp(exact) / 2 = eps₃₂(exact)`.

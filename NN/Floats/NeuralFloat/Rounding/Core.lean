@@ -89,11 +89,12 @@ class NeuralValidRndToNearest (rnd : ℝ → ℤ) : Prop extends NeuralValidRnd 
 /--
 Round `x` to the integer grid with spacing `step`.
 
-This fixed-scale operation is the common core of fixed-point arithmetic and affine
-quantization. Unlike `neuralRound`, the scale is supplied explicitly rather than chosen from the
-magnitude of `x` by an exponent format.
+This fixed-scale operation is the common core of fixed-point arithmetic and affine quantization.
+Unlike `neuralRound`, the scale is supplied explicitly rather than chosen from the magnitude of
+`x` by an exponent format. Requiring positivity prevents a zero scale from silently turning the
+operation into the constant-zero map through totalized real division.
 -/
-noncomputable def neuralRoundAtScale (rnd : ℝ → ℤ) (step x : ℝ) : ℝ :=
+noncomputable def neuralRoundAtScale (rnd : ℝ → ℤ) (step : ℝ) (_hstep : 0 < step) (x : ℝ) : ℝ :=
   (rnd (x / step) : ℝ) * step
 
 -- Instance for floor rounding
@@ -606,7 +607,12 @@ theorem neural_error_bound_ulp (rnd : ℝ → ℤ) [NeuralValidRndToNearest rnd]
 
 /-- The four standard rounding-direction attributes used by the generic float model. -/
 inductive NeuralRoundingMode where
-  /-- Round to the nearest representable value, resolving a tie toward an even mantissa. -/
+  /--
+  Round to the nearest value, resolving a tie toward an even integer at the selected scale.
+
+  Under the usual Flocq conditions (in particular, excluding the precision-one even-radix corner
+  case), this agrees with the familiar even canonical-significand description.
+  -/
   | nearestEven
   /-- Round toward zero. -/
   | towardZero

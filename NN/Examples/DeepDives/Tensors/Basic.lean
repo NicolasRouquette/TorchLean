@@ -97,8 +97,8 @@ def firstRowAsArray : TensorArray.Tensor Float [3] :=
 /-!
 Widget lane for the row-extraction example.
 
-These `meta` declarations mirror the ordinary definitions above. They are not the
-recommended programming style; they simply make the bridge computation executable for ProofWidgets.
+These `meta` declarations mirror the ordinary definitions above so ProofWidgets can execute the
+bridge computation. Use the ordinary definitions in application code.
 -/
 meta def matrixSpecView : Spec.Tensor Float (listToShape [2, 3]) :=
   toTensor (TensorArray.ofArray #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0] [2, 3] (by simp))

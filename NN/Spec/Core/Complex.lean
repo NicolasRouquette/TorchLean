@@ -23,9 +23,9 @@ To avoid changing mathlib’s global behavior (and to support runtime-friendly b
 `TorchLean.Complex α := α × α` with fields `re` and `im`.
 
 The provided `Context` instance is designed to be:
-- good enough for TorchLean’s tensor/model surface (arithmetic + common transcendental functions),
+- sufficient for TorchLean's tensor and model operations (arithmetic and common transcendental functions),
 - runtime-friendly when `α` is runtime-friendly, and
-- conservative for the few operations that are fundamentally about angles/branches (`log`, `sqrt`):
+- conservative for operations whose meaning depends on angles or branches (`log`, `sqrt`):
   we pick a simple real-part-based approximation that is exact on real inputs (imag part `0`).
 
 This is *not* meant to be a full replacement for complex analysis; for deep analytic theorems, use

@@ -54,6 +54,10 @@ private lemma mkBits_toNat (sign : Bool) (exp frac : Nat) (hexp : exp < 256) (hf
         32))
     simpa [hMod32] using this
   have hExp_mod : exp % 4294967296 = exp := Nat.mod_eq_of_lt hExp_lt32
+  have hExpMask : exp &&& expAllOnes.toNat = exp := by
+    have hmask : expAllOnes.toNat = 2 ^ 8 - 1 := by decide
+    rw [hmask]
+    exact nat_and_two_pow_sub_one_eq_self (by simpa using hexp)
 
   have hFracField : ((UInt32.ofNat frac) &&& fracMask).toNat = frac := by
     calc
@@ -88,10 +92,10 @@ private lemma mkBits_toNat (sign : Bool) (exp frac : Nat) (hexp : exp < 256) (hf
     have hSign : ((1 : UInt32) <<< (UInt32.ofNat 31)).toNat = 2 ^ 31 := by
       simp [UInt32.toNat_shiftLeft]
     simp [mkBits, hs', UInt32.toNat_or, hFracField, UInt32.toNat_shiftLeft, UInt32.toNat_ofNat,
-      hMod32, hExp_mod, hShift_mod]
+      hMod32, hExp_mod, hExpMask, hShift_mod]
   · have hs' : sign = false := by simpa using hs
     simp [mkBits, hs', UInt32.toNat_or, hFracField, UInt32.toNat_shiftLeft, UInt32.toNat_ofNat,
-      hMod32, hExp_mod, hShift_mod]
+      hMod32, hExp_mod, hExpMask, hShift_mod]
 
 private lemma nat_extract_fracField (sign : Bool) (exp frac : Nat)
     (_hexp : exp < 256) (hfrac : frac < 2 ^ 23) :

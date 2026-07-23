@@ -19,8 +19,8 @@ Why assumptions are necessary:
 to the Lean kernel, so (inside Lean) we cannot prove that the runtime implementation coincides
 bit-for-bit with any particular float32 specification.
 
-We package the intended connection as a typeclass interface. If you (or your trusted runtime) can
-discharge the assumptions that the runtime `Float32` primitives match the executable kernel
+We package the finite-result connection as a typeclass interface. If you (or your trusted runtime)
+can discharge the assumptions that finite runtime `Float32` primitives match the executable kernel
 `IEEE32Exec` bit-for-bit, then you can:
 
 1) execute with `Float32` (runtime),
@@ -65,28 +65,41 @@ clean *interface* that you can assume/provide:
   `FP32` rounding-on-`ℝ` model on the finite/no-overflow path (`Bridge/FP32.lean`,
   `Bridge/FP32Total.lean`, and `Bridge/Expressions.lean`).
 
-We keep this separation because it makes the trust boundary explicit: the only “axioms” are the
-bit-level runtime correctness assumptions below.
+NaN payloads are deliberately outside the exact-bit contract: Lean runtimes may canonicalize them,
+whereas `IEEE32Exec` preserves a deterministic payload. Classification fields below still relate
+NaN, infinity, and finiteness for every runtime value.
 -/
 
 /-! ## External correctness assumptions -/
 
-/-- Assumption package relating Lean's runtime `Float32` primitives to `IEEE32Exec`. -/
-class RuntimeFloat32MatchesIEEE32Exec : Prop where
-  toBits_ofBits : ∀ b : UInt32, (Float32.ofBits b).toBits = b
-  ofBits_toBits : ∀ x : _root_.Float32, Float32.ofBits x.toBits = x
+/--
+Assumption package relating the finite-result part of Lean's runtime `Float32` primitives to
+`IEEE32Exec`. Exact NaN payload agreement is intentionally not required.
+-/
+class RuntimeFloat32FiniteMatchesIEEE32Exec : Prop where
+  toBits_ofBits_of_isFinite : ∀ b : UInt32,
+    IEEE32Exec.isFinite (IEEE32Exec.ofBits b) = true → (Float32.ofBits b).toBits = b
 
-  add_bits : ∀ a b : _root_.Float32,
+  add_bits_of_isFinite : ∀ a b : _root_.Float32,
+    Float32.isFinite a = true → Float32.isFinite b = true →
+    Float32.isFinite (Float32.add a b) = true →
     (Float32.add a b).toBits = (IEEE32Exec.add (toIEEE32Exec a) (toIEEE32Exec b)).bits
-  sub_bits : ∀ a b : _root_.Float32,
+  sub_bits_of_isFinite : ∀ a b : _root_.Float32,
+    Float32.isFinite a = true → Float32.isFinite b = true →
+    Float32.isFinite (Float32.sub a b) = true →
     (Float32.sub a b).toBits = (IEEE32Exec.sub (toIEEE32Exec a) (toIEEE32Exec b)).bits
-  mul_bits : ∀ a b : _root_.Float32,
+  mul_bits_of_isFinite : ∀ a b : _root_.Float32,
+    Float32.isFinite a = true → Float32.isFinite b = true →
+    Float32.isFinite (Float32.mul a b) = true →
     (Float32.mul a b).toBits = (IEEE32Exec.mul (toIEEE32Exec a) (toIEEE32Exec b)).bits
-  div_bits : ∀ a b : _root_.Float32,
+  div_bits_of_isFinite : ∀ a b : _root_.Float32,
+    Float32.isFinite a = true → Float32.isFinite b = true →
+    Float32.isFinite (Float32.div a b) = true →
     (Float32.div a b).toBits = (IEEE32Exec.div (toIEEE32Exec a) (toIEEE32Exec b)).bits
-  neg_bits : ∀ a : _root_.Float32,
+  neg_bits_of_isFinite : ∀ a : _root_.Float32, Float32.isFinite a = true →
     (Float32.neg a).toBits = (IEEE32Exec.neg (toIEEE32Exec a)).bits
-  sqrt_bits : ∀ a : _root_.Float32,
+  sqrt_bits_of_isFinite : ∀ a : _root_.Float32,
+    Float32.isFinite a = true → Float32.isFinite (Float32.sqrt a) = true →
     (Float32.sqrt a).toBits = (IEEE32Exec.sqrt (toIEEE32Exec a)).bits
 
   isNaN_bits : ∀ a : _root_.Float32,
@@ -98,9 +111,9 @@ class RuntimeFloat32MatchesIEEE32Exec : Prop where
 
 /-! ## Derived bit-level refinement lemmas -/
 
-namespace RuntimeFloat32MatchesIEEE32Exec
+namespace RuntimeFloat32FiniteMatchesIEEE32Exec
 
-variable [RuntimeFloat32MatchesIEEE32Exec]
+variable [RuntimeFloat32FiniteMatchesIEEE32Exec]
 
 /-!
 ## Derived lemmas (rewriting runtime to executable)
@@ -114,7 +127,7 @@ These are the lemmas you use to “turn a runtime evaluation into an `IEEE32Exec
 -/
 
 -- `IEEE32Exec` stores a `UInt32` bit pattern; equality is extensional on `.bits`.
-omit [RuntimeFloat32MatchesIEEE32Exec] in
+omit [RuntimeFloat32FiniteMatchesIEEE32Exec] in
 private theorem bits_inj {x y : IEEE32Exec} (h : x.bits = y.bits) : x = y := by
   cases x
   cases y
@@ -125,54 +138,72 @@ private theorem bits_inj {x y : IEEE32Exec} (h : x.bits = y.bits) : x = y := by
 -- downstream code is written; the assumptions are stated in terms of `Float32.add`, etc.
 /-- Rewrite runtime float32 addition into executable `IEEE32Exec.add`. -/
 theorem toIEEE32Exec_add (a b : _root_.Float32) :
+    Float32.isFinite a = true → Float32.isFinite b = true →
+    Float32.isFinite (Float32.add a b) = true →
     toIEEE32Exec (Float32.add a b) = IEEE32Exec.add (toIEEE32Exec a) (toIEEE32Exec b) := by
+  intro ha hb hr
   apply bits_inj
   simpa [toIEEE32Exec, IEEE32Exec.ofBits] using
-    (RuntimeFloat32MatchesIEEE32Exec.add_bits (a := a) (b := b))
+    (RuntimeFloat32FiniteMatchesIEEE32Exec.add_bits_of_isFinite (a := a) (b := b) ha hb hr)
 
 /-- Rewrite runtime float32 subtraction into executable `IEEE32Exec.sub` (value-level form). -/
 theorem toIEEE32Exec_sub (a b : _root_.Float32) :
+    Float32.isFinite a = true → Float32.isFinite b = true →
+    Float32.isFinite (Float32.sub a b) = true →
     toIEEE32Exec (Float32.sub a b) = IEEE32Exec.sub (toIEEE32Exec a) (toIEEE32Exec b) := by
+  intro ha hb hr
   apply bits_inj
   simpa [toIEEE32Exec, IEEE32Exec.ofBits] using
-    (RuntimeFloat32MatchesIEEE32Exec.sub_bits (a := a) (b := b))
+    (RuntimeFloat32FiniteMatchesIEEE32Exec.sub_bits_of_isFinite (a := a) (b := b) ha hb hr)
 
 /-- Rewrite runtime float32 multiplication into executable `IEEE32Exec.mul` (value-level form). -/
 theorem toIEEE32Exec_mul (a b : _root_.Float32) :
+    Float32.isFinite a = true → Float32.isFinite b = true →
+    Float32.isFinite (Float32.mul a b) = true →
     toIEEE32Exec (Float32.mul a b) = IEEE32Exec.mul (toIEEE32Exec a) (toIEEE32Exec b) := by
+  intro ha hb hr
   apply bits_inj
   simpa [toIEEE32Exec, IEEE32Exec.ofBits] using
-    (RuntimeFloat32MatchesIEEE32Exec.mul_bits (a := a) (b := b))
+    (RuntimeFloat32FiniteMatchesIEEE32Exec.mul_bits_of_isFinite (a := a) (b := b) ha hb hr)
 
 /-- Rewrite runtime float32 division into executable `IEEE32Exec.div` (value-level form). -/
 theorem toIEEE32Exec_div (a b : _root_.Float32) :
+    Float32.isFinite a = true → Float32.isFinite b = true →
+    Float32.isFinite (Float32.div a b) = true →
     toIEEE32Exec (Float32.div a b) = IEEE32Exec.div (toIEEE32Exec a) (toIEEE32Exec b) := by
+  intro ha hb hr
   apply bits_inj
   simpa [toIEEE32Exec, IEEE32Exec.ofBits] using
-    (RuntimeFloat32MatchesIEEE32Exec.div_bits (a := a) (b := b))
+    (RuntimeFloat32FiniteMatchesIEEE32Exec.div_bits_of_isFinite (a := a) (b := b) ha hb hr)
 
 /-- Rewrite runtime float32 negation into executable `IEEE32Exec.neg` (value-level form). -/
-theorem toIEEE32Exec_neg (a : _root_.Float32) :
+theorem toIEEE32Exec_neg (a : _root_.Float32) (ha : Float32.isFinite a = true) :
     toIEEE32Exec (Float32.neg a) = IEEE32Exec.neg (toIEEE32Exec a) := by
   apply bits_inj
   simpa [toIEEE32Exec, IEEE32Exec.ofBits] using
-    (RuntimeFloat32MatchesIEEE32Exec.neg_bits (a := a))
+    (RuntimeFloat32FiniteMatchesIEEE32Exec.neg_bits_of_isFinite (a := a) ha)
 
 /-- Rewrite runtime float32 square root into executable `IEEE32Exec.sqrt` (value-level form). -/
 theorem toIEEE32Exec_sqrt (a : _root_.Float32) :
+    Float32.isFinite a = true → Float32.isFinite (Float32.sqrt a) = true →
     toIEEE32Exec (Float32.sqrt a) = IEEE32Exec.sqrt (toIEEE32Exec a) := by
+  intro ha hr
   apply bits_inj
   simpa [toIEEE32Exec, IEEE32Exec.ofBits] using
-    (RuntimeFloat32MatchesIEEE32Exec.sqrt_bits (a := a))
+    (RuntimeFloat32FiniteMatchesIEEE32Exec.sqrt_bits_of_isFinite (a := a) ha hr)
 
-/-- Converting an `IEEE32Exec` value to runtime `Float32` and back returns the original bits. -/
-theorem toIEEE32Exec_ofIEEE32Exec (x : IEEE32Exec) :
+/-- Converting a finite `IEEE32Exec` value to runtime `Float32` and back preserves its bits. -/
+theorem toIEEE32Exec_ofIEEE32Exec (x : IEEE32Exec) (hx : IEEE32Exec.isFinite x = true) :
     toIEEE32Exec (ofIEEE32Exec x) = x := by
   apply bits_inj
+  have hxBits : IEEE32Exec.isFinite (IEEE32Exec.ofBits x.bits) = true := by
+    have hwrap : IEEE32Exec.ofBits x.bits = x := by cases x; rfl
+    rw [hwrap]
+    exact hx
   simpa [toIEEE32Exec, ofIEEE32Exec, IEEE32Exec.ofBits] using
-    (RuntimeFloat32MatchesIEEE32Exec.toBits_ofBits (b := x.bits))
+    (RuntimeFloat32FiniteMatchesIEEE32Exec.toBits_ofBits_of_isFinite (b := x.bits) hxBits)
 
-end RuntimeFloat32MatchesIEEE32Exec
+end RuntimeFloat32FiniteMatchesIEEE32Exec
 
 end Float32Bridge
 

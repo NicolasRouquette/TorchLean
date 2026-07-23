@@ -32,9 +32,8 @@ Where this sits in TorchLean:
 - `NN.Runtime.Autograd.*` executes programs, tracks parameters, manages tapes/sessions, dispatches
   CUDA kernels, handles RNG, and compiles graphs.
 
-This file does not mirror every runtime method one-for-one. It is the reusable adapter layer for
-operations whose input-gradient VJP is naturally expressed as a single
-`OpSpec`. Larger multi-input/parameterized layers (convolution, attention, batchnorm, pooling, RNG)
+This file adapts operations whose input-gradient VJP is naturally expressed as a single `OpSpec`.
+Larger multi-input or parameterized layers (convolution, attention, batchnorm, pooling, RNG)
 still have precise specs and runtime implementations, but their full backward state usually belongs
 in layer/runtime code rather than in this compact unary interface.
 

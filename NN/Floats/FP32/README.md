@@ -20,7 +20,8 @@ values, use `TorchLean.Floats.IEEE754.IEEE32Exec` from `NN/Floats/IEEEExec/`.
 - `Core.lean`: canonical binary32 configuration (`fexp32`, `rnd32`) and the `FP32` type alias.
 - `Notation.lean`: aliases over `ℝ` for the model, including `round32`, `ulp32`, and `eps32`.
 - `Error.lean`: per-operation absolute error bounds.
-- `RuntimeApprox.lean`: error bounds restated through the generic tolerance relation `≈[t]`.
+- `NN/Proofs/RuntimeApprox/FP32.lean`: error bounds restated through the generic tolerance relation
+  `≈[t]`.
 - `Sterbenz.lean`: exact subtraction for nearby representable binary32 values.
 
 Interval enclosures live in `NN/Floats/Interval/FP32.lean` and are imported by `NN.Floats.FP32`.

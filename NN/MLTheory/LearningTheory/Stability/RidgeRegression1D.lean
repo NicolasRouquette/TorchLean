@@ -15,7 +15,7 @@ The core real-analysis theorem lives in:
 
 - `NN.MLTheory.LearningTheory.Stability.RidgeRegression1D.Real`
 
-We keep this short umbrella module so downstream code can simply:
+This short umbrella module lets downstream code write:
 
 `import NN.MLTheory.LearningTheory.Stability.RidgeRegression1D`
 
@@ -27,5 +27,4 @@ The executable float32 development is separate (to avoid pulling in float semant
 -/
 
 @[expose] public section
-
 

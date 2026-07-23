@@ -37,13 +37,13 @@ still runs on real data and real devices. The proof modules state and prove math
 the specifications, graph translations, interval bounds, floating-point envelopes, optimizer
 updates, and verification checkers.
 
-## Execution Surfaces
+## Execution Paths
 
 | Area | Role |
 | --- | --- |
 | `Autograd/Engine` | The small eager reverse-mode tape, closest to the local backward rules for primitive tensor operations. |
 | `Autograd/Compiled` | Graph/IR execution that runs through the same runtime values instead of becoming a detached interpreter. |
-| `Autograd/TorchLean` | The TorchLean-native runtime used by the public trainer, layer functions, tensor packs, backend options, and scalar modes. |
+| `Autograd/TorchLean` | The TorchLean-native runtime used by the trainer, layer functions, tensor packs, backend options, and scalar modes. |
 | `Autograd/Torch` | Lower-level imperative sessions and linked-session machinery used for PyTorch interop and compiled sessions. |
 | `Autograd/Train` | Deterministic datasets, step streams, loaders, losses, training loops, evaluation helpers, and optimizer integration. |
 | `Optim` | Executable optimizer equations and scheduler utilities. Public optimizer names are re-exported through `TorchLean.optim`. |
@@ -78,9 +78,8 @@ The names separate intent from implementation.
 | ATen/libtorch provider | Use selected PyTorch/ATen kernels as fast numeric providers only when TorchLean still records the corresponding graph/tape node and owns the backward rule. |
 | PyTorch/Julia/Gymnasium bridges | Exchange data with external systems when the example needs a comparison target, imported weights, a simulator, or a runtime environment. |
 
-The compiled path is not a different mathematical model. It is a different execution path for the
-same TorchLean object, which is why compiled/eager equivalence checks and graph-correctness modules
-matter.
+The compiled path runs the same TorchLean model through its graph/IR representation. Compiled/eager
+equivalence checks and graph-correctness modules connect that execution path to the original object.
 
 The ATen/libtorch direction follows the same rule. For no-grad inference, an external provider can
 return a value under an explicit agreement assumption. For training, TorchLean cannot hand the whole

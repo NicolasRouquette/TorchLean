@@ -55,14 +55,14 @@ fixed bit width. It is the same tie-breaking policy as IEEE round-to-nearest-eve
 /--
 Construct a raw binary32 bit-pattern from fields.
 
-`mkBits sign exp frac` places:
+`mkBits sign exp frac` places the low bits of each supplied field:
 - `sign` in bit 31,
-- `exp` in bits 30..23 (8 bits),
+- the low 8 bits of `exp` in bits 30..23,
 - `frac` in bits 22..0 (masked to 23 bits).
 -/
 @[inline] def mkBits (sign : Bool) (exp : Nat) (frac : Nat) : UInt32 :=
   let s : UInt32 := if sign then (1 : UInt32) <<< 31 else 0
-  let e : UInt32 := (UInt32.ofNat exp) <<< 23
+  let e : UInt32 := ((UInt32.ofNat exp) &&& expAllOnes) <<< 23
   let f : UInt32 := (UInt32.ofNat frac) &&& fracMask
   s ||| e ||| f
 

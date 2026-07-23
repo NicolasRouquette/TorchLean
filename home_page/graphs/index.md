@@ -6,6 +6,7 @@ title: Graphs
   <a class="primary-link" href="{{ '/importgraph/' | relative_url }}">Open interactive graph</a>
   <a class="secondary-link" href="{{ '/graphs/dependency-audit.html' | relative_url }}">Read audit summary</a>
   <a class="secondary-link" href="{{ '/graphs/dependency-audit.json' | relative_url }}">Download JSON</a>
+  <a class="secondary-link" href="{{ '/performance/' | relative_url }}">View build performance</a>
 </div>
 
 TorchLean uses the word graph in three different places, and the distinction matters.

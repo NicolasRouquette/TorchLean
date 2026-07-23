@@ -252,7 +252,8 @@ def smoothMaxPool2dBackwardSpec {kH kW inH inW stride : ℕ} {h1 : kH ≠ 0} {h2
   Image inH inW α :=
   -- This is the VJP of the log-sum-exp surrogate:
   --   smooth_max(x) = (1/beta) * log(sum(exp(beta*x))).
-  -- The gradient distributes `grad_output` proportionally to `exp(beta*x)` inside each window.
+  -- The gradient distributes `grad_output` using algebraically equivalent shifted softmax
+  -- weights, avoiding overflow in `exp(beta*x)`.
   let input_grad_init : Image inH inW α := createZeroImage inH inW
   let outH := Shape.slidingWindowOutDim inH kH stride 0
   let outW := Shape.slidingWindowOutDim inW kW stride 0
@@ -260,9 +261,10 @@ def smoothMaxPool2dBackwardSpec {kH kW inH inW stride : ℕ} {h1 : kH ≠ 0} {h2
   (List.finRange outH).foldl (fun acc_grad (out_i : Fin outH) =>
     (List.finRange outW).foldl (fun acc_grad_inner (out_j : Fin outW) =>
       let window := extractWindow kW kH input (out_i.val * stride) (out_j.val * stride)
+      let pivot := Private.smoothMaxPool2dPivot h1 h2 beta window
       let expWindow :=
         mapSpec (s := Shape.dim kH (Shape.dim kW Shape.scalar))
-          (fun x => MathFunctions.exp (beta * x)) window
+          (fun x => MathFunctions.exp (beta * (x - pivot))) window
       have instH : Shape.valid_axis_inst 0 (Shape.dim kH (Shape.dim kW Shape.scalar)) :=
         Shape.validAxisInstZeroAlt h1
       have instW : Shape.valid_axis_inst 0 (Shape.dim kW Shape.scalar) :=

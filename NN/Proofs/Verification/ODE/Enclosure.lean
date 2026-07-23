@@ -300,8 +300,8 @@ theorem localEnclosure_fromClampedDynamics
 Local unclamping theorem.
 
 Once the local enclosure proves `uL(t) ≤ u(t) ≤ uU(t)`, the clamp is definitionally equal to `u(t)`.
-So a solution of the clamped ODE is not merely enclosed; it also solves the original ODE on the
-same interval. This is the exact real-analysis contract that interval/PINN certificate producers
+A solution of the clamped ODE is therefore enclosed and solves the original ODE on the same
+interval. This is the exact real-analysis contract that interval/PINN certificate producers
 must establish before TorchLean can claim a verified ODE solve.
 -/
 theorem localSolutionEnclosed_fromClampedDynamics

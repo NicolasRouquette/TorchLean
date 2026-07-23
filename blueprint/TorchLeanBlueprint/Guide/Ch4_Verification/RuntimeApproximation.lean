@@ -10,8 +10,8 @@ tag := "runtime-approximation"
 A theorem over the reals and a claim about execution are different statements. Runtime
 approximation is the layer that connects them.
 
-The basic claim is not equality. It is a tolerance statement: after interpreting the runtime value
-in the spec domain, it lies within an explicit error budget of the ideal value:
+The basic claim bounds the interpreted runtime value within an explicit tolerance of the ideal
+value:
 
 $$`\operatorname{toSpec}(y_{\mathrm{run}})\approx_\varepsilon y_{\mathrm{spec}}`
 
@@ -136,6 +136,23 @@ If `x_run` is within `eps_x` of `x_real`, and `y_run` is within `eps_y` of `y_re
 multiplication lemma supplies a bound for `z_run` versus `z_real`. The graph theorem then lets that
 new bound feed the next node.
 
+It is worth doing that local estimate once by hand. Writing the interpreted runtime inputs as
+`x + dx` and `y + dy`,
+
+$$`
+(x+dx)(y+dy)-xy=x\,dy+y\,dx+dx\,dy.
+`
+
+Hence input uncertainty alone contributes at most
+
+$$`|x|\,\varepsilon_y+|y|\,\varepsilon_x
+  +\varepsilon_x\varepsilon_y.`
+
+If `x = 2`, `y = 3`, `eps_x = 0.01`, and `eps_y = 0.02`, this part of the budget is `0.0702`.
+The local rule then adds the rounding error of the multiplication itself. The number is not meant
+as a universal tolerance; it shows why the graph carries operand scale and incoming error rather
+than attaching one unexplained epsilon to every multiplication.
+
 # Backward Graph Approximation
 
 Backward approximation is developed in the
@@ -166,7 +183,7 @@ The bridge file
 connects the runtime approximation graph shape back to the autograd algebra graph.
 
 This bridge is structural. The runtime approximation layer uses the same
-shape-indexed tensor-context idea that the public API exposes as `TensorPack`, so the conversion is
+shape-indexed tensor-context idea that the typed API exposes as `TensorPack`, so the conversion is
 not a semantic reinterpretation. The file defines `toNodeData` and `toGraphData`, then proves:
 
 - `evalRuntime_of_toGraphData`;
@@ -324,8 +341,8 @@ A safe division example has three pieces: the mathematical value is a guarded di
 value is computed by `safeDivR eps xR yR`, and the theorem states that the runtime value
 approximates the guarded spec value under the declared tolerance.
 
-The theorem is not about arbitrary division at `y = 0`. It uses a guarded operation because the
-proof should match the stable programming pattern users ought to deploy.
+The theorem covers guarded division, including the declared behavior at `y = 0`, so the proof
+matches the stable programming pattern users ought to deploy.
 
 ## Reductions And Softmax: Where Error Budgets Grow
 
@@ -340,7 +357,7 @@ lemmas in
 #check Proofs.RuntimeApprox.NFBackend.approxT_reduce_sum_by_column_2d
 ```
 
-The row-sum theorem is not just "sum is close to sum." It accounts for the number of accumulated
+The row-sum theorem accounts for the number of accumulated
 terms and for the same row/column indexing used by the executable reducer. That is the sort of
 detail that matters for LayerNorm, attention logits, pooled features, and minibatch losses.
 
@@ -380,7 +397,7 @@ builds scaled dot-product attention from matrix multiplication, scaling, stable 
 second matrix multiplication. A hard attention mask is semantic: blocked entries have zero
 softmax numerator. It is not represented by adding a large finite negative constant, which would
 change the function for sufficiently large logits. Backend capsules must therefore advertise a
-matching mask convention before their output can inherit this theorem. The public masked theorem
+matching mask convention before their output can inherit this theorem. The masked theorem
 `approxT_scaledDotProductAttention_masked` consumes `HardMaskedRowsEvidence`; the canonical
 inverse-square-root scale theorem also requires a positive feature dimension and a square-root
 margin. These are conditional NF approximation theorems, not proofs for arbitrary fused attention
@@ -432,7 +449,7 @@ that the relation survives one update. `NumericalStepContract.run_approx` proves
 finite-run result once for every optimizer satisfying that interface.
 
 The concrete [NF optimizer proofs](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/Optimizers.lean)
-use the public optimizer equations directly:
+use the optimizer equations directly:
 
 - SGD propagates learning-rate, gradient, and parameter error;
 - momentum SGD additionally propagates the momentum-buffer error;
@@ -557,7 +574,7 @@ $$`\|\operatorname{toSpec}(g_{\mathrm{run}})-g_{\mathrm{spec}}\|_\infty
 \le \varepsilon_g.`
 
 Suppose the current parameters and learning rate have errors `epsilon_p` and `epsilon_lr`. For SGD,
-the two executions perform the same public equation in their respective scalar systems,
+the two executions perform the same equation in their respective scalar systems,
 
 $$`p' = p-\eta g.`
 
@@ -576,6 +593,11 @@ square root, form the adaptive learning rate, apply decoupled decay, and subtrac
 below every exact corrected second moment and checks that the rounded error remains smaller than
 the square-root and denominator margins. The optimizer theorem remains the same; only the local
 contract's validity evidence is richer than SGD's.
+
+These proofs describe numerical recurrences for explicit states. They do not automatically cover
+the native trainer's parameter lookup, mutable moment-buffer allocation, per-parameter clocks, or
+checkpoint restore. Those runtime mechanisms must be shown to instantiate the same state and step
+relation before `NumericalStepContract.run_approx` can be cited for a concrete training process.
 
 # Runtime Approximation APIs
 

@@ -57,6 +57,21 @@ abbrev rnd : ℝ → ℤ := TorchLean.Floats.rnd32
 abbrev toSpec : R → ℝ :=
   _root_.Proofs.RuntimeApprox.NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)
 
+/-- Explicit expression for the propagated infinity-norm error of an FP32 linear layer. -/
+def linearErrorBudget {inDim outDim : Nat}
+    (epsW epsb epsx : ℝ) (WR : LinearSpec R inDim outDim)
+    (xR : Tensor R (.dim inDim .scalar)) : ℝ :=
+  linfNorm
+    (Proofs.RuntimeApprox.NFBackend.addBoundTensor
+      (β := β) (fexp := fexp) (rnd := rnd) (s := Shape.dim outDim .scalar)
+      (linfNorm
+        (Proofs.RuntimeApprox.NFBackend.matVecMulBoundTensor
+          (β := β) (fexp := fexp) (rnd := rnd) (m := outDim) (n := inDim)
+          epsW epsx WR.weights xR))
+      epsb
+      (Spec.matVecMulSpec (α := R) WR.weights xR)
+      WR.bias)
+
 /--
 Forward error bound for a linear layer `y = Wx + b` under the `FP32` rounding semantics.
 
@@ -64,9 +79,8 @@ Inputs:
 - `hW`, `hb`, and `hx` say the runtime weights, bias, and input approximate their real-spec
   counterparts.
 
-Output:
-- an explicit existential error budget `eps` such that the whole FP32 linear-layer result
-  approximates the real-spec linear-layer result.
+The conclusion exposes `linearErrorBudget`, rather than hiding the propagated quantity behind an
+existential. It combines the matrix-vector product budget with the final rounded bias addition.
 
 This is the base layer theorem used by the MLP and CROWN/IBP FP32 wrappers.
 -/
@@ -77,13 +91,12 @@ theorem approxT_linear_fp32 {inDim outDim : Nat}
     (hW : approxT (α := R) (toSpec := toSpec) WS.weights WR.weights epsW)
     (hb : approxT (α := R) (toSpec := toSpec) WS.bias WR.bias epsb)
     (hx : approxT (α := R) (toSpec := toSpec) xS xR epsx) :
-    ∃ eps : ℝ,
-      approxT (α := R) (toSpec := toSpec)
-        (Spec.linearSpec (α := ℝ) WS xS)
-        (Spec.linearSpec (α := R) WR xR)
-        eps := by
+    approxT (α := R) (toSpec := toSpec)
+      (Spec.linearSpec (α := ℝ) WS xS)
+      (Spec.linearSpec (α := R) WR xR)
+      (linearErrorBudget epsW epsb epsx WR xR) := by
   -- The linear layer factors into matvec followed by bias addition. Each operation already has
-  -- an NF-backend approximation theorem; this theorem simply specializes and composes them for
+  -- an NF-backend approximation theorem; this theorem specializes and composes them for
   -- the concrete FP32 rounding model.
   have hmv :=
     Proofs.RuntimeApprox.NFBackend.approxT_mat_vec_mul_spec
@@ -103,19 +116,7 @@ theorem approxT_linear_fp32 {inDim outDim : Nat}
           epsW epsx WR.weights xR))
       (epsy := epsb)
       hmv hb
-  let eps : ℝ :=
-    linfNorm
-      (Proofs.RuntimeApprox.NFBackend.addBoundTensor
-        (β := β) (fexp := fexp) (rnd := rnd) (s := Shape.dim outDim .scalar)
-        (linfNorm
-          (Proofs.RuntimeApprox.NFBackend.matVecMulBoundTensor
-            (β := β) (fexp := fexp) (rnd := rnd) (m := outDim) (n := inDim)
-            epsW epsx WR.weights xR))
-        epsb
-        (Spec.matVecMulSpec (α := R) WR.weights xR)
-        WR.bias)
-  refine ⟨eps, ?_⟩
-  simpa [eps, Spec.linearSpec] using hadd
+  simpa [linearErrorBudget, Spec.linearSpec] using hadd
 
 end
 

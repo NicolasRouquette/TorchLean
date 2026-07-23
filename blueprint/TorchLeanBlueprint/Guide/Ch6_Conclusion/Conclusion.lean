@@ -7,7 +7,7 @@ open Verso.Genre Manual
 tag := "conclusion"
 %%%
 
-We began with a two-input regression model:
+We began with a two-input regression model small enough to fit on one line:
 
 $$`
 F_\theta(x)
@@ -15,24 +15,29 @@ F_\theta(x)
 W_2\operatorname{ReLU}(W_1x+b_1)+b_2.
 `
 
-It became several related objects:
+At first it was tempting to call that one object “the model.” By the end of the guide, the formula
+had acquired a shape-checked declaration, seeded parameters, an autograd tape, a lowered operation
+graph, several scalar interpretations, a backend plan, and verification evidence. A training run
+gave us values; a theorem spoke about a mathematical object; a certificate connected a particular
+checker result to a proposition.
 
-- a shape-checked model declaration;
-- a seeded parameter pack;
-- an executable training run;
-- an eager tape or compiled derivative graph;
-- a canonical operation IR;
-- a real-valued specification;
-- a rounded or executable floating-point interpretation;
-- a backend plan and capsule audit;
-- a verification target or checked certificate.
+None of those views replaces the others. The useful part of TorchLean is the trail between them:
 
-The objects remain separate because they answer separate questions. Their value comes from the
-explicit maps between them.
+```
+typed model
+  -> initialized parameters
+  -> executable graph and derivatives
+  -> explicit scalar and backend semantics
+  -> verifier input
+  -> checked proposition
+```
+
+When that trail is intact, a surprising result has somewhere concrete to investigate. When a link
+is missing, saying that “the model is verified” only hides the missing work.
 
 # Reproduce The Path
 
-These commands retrace the central examples:
+If you want to feel that trail rather than merely read about it, run these commands in order:
 
 ```
 lake exe torchlean quickstart_tensors
@@ -45,25 +50,52 @@ lake exe torchlean float32_modes
 lake exe torchlean numerical_certificate
 ```
 
-Together they show:
+The first three stay close to concrete tensors: print them, differentiate a linear map, and train a
+small network. `graphspec` and `one_semantic_universe` then show why lowering matters: the same
+operation graph can be evaluated for values or interpreted for bounds. `float32_modes` separates
+host arithmetic from executable binary32 semantics, and `numerical_certificate` finishes with a
+graph-level checker that also rejects deliberately malformed evidence.
 
-1. one shape-indexed tensor API at several scalar semantics;
-2. explicit VJPs, Jacobians, Hessians, and parameter gradients;
-3. a complete training and prediction run;
-4. structured model lowering;
-5. one IR interpreted for values and interval bounds;
-6. host Float versus executable binary32 forward/backward behavior;
-7. a graph-level numerical certificate workflow.
+A successful line of output is therefore a waypoint, not the end of the argument. It tells us which
+artifact exists and which question we can ask next.
 
-Successful output is not the end of the argument. It tells us which artifact to inspect next.
+# Validate The Layer You Depend On
+
+The small demonstrations above explain individual ideas. Before relying on a larger change, use the
+validation command that reaches the relevant boundary:
+
+```
+# Compile and run the curated suite against the CPU CUDA stub.
+lake build nn_tests_suite
+lake exe nn_tests_suite
+
+# Compile the native CUDA implementation, then execute it on an actual device.
+lake -R -K cuda=true build nn_tests_suite
+CUDA_VISIBLE_DEVICES=0 lake env ./.lake/build/bin/nn_tests_suite
+
+# Replay the default checked-artifact suite.
+lake exe verify -- all
+
+# Check repository conventions and rebuild the complete documentation site.
+lake lint
+scripts/docs/build_site.sh
+```
+
+A CUDA-enabled build proves that the native sources compile and link. It does not prove that a GPU
+kernel ran; that requires the second command and a visible CUDA device. Likewise, a theorem build
+checks Lean declarations, while certificate replay exercises parsers, policy gates, and the stored
+artifacts that instantiate those declarations. Documentation is part of validation
+because examples, import paths, and capability claims can become stale even when source code still
+compiles.
 
 # A Claim, Written Carefully
 
-Suppose a report says:
+Suppose a colleague sends you a result that says:
 
 > The trained model is robust on a box of inputs.
 
-TorchLean encourages us to expand that sentence:
+That sentence is a good beginning. To make it reusable, sit down with the artifact and fill in the
+missing nouns:
 
 1. *Which model?* Identify architecture, parameter artifact, and graph payload.
 2. *Which input box?* Give lower and upper tensors with checked shapes.
@@ -73,42 +105,51 @@ TorchLean encourages us to expand that sentence:
 6. *Which theorem?* Name the proposition obtained when the checker accepts.
 7. *Which boundary remains trusted?* External search, parser, backend kernel, compiler, or hardware.
 
-The longer sentence is not bureaucratic. It is the difference between a result that can be reused
-and one that cannot be audited when the model or backend changes.
+The result might then read: “checker `C` accepted parameter artifact `P`, lowered to graph `G`, and
+established class margin `Q` for the box `[lo, hi]` under the graph's declared scalar semantics;
+artifact generation and the named native providers remain outside the checked implication.” The
+actual names matter more than this template. The point is that a later reader can replace the
+parameters, box, or backend and know exactly which part of the argument must be repeated.
 
-# What TorchLean Owns
+# What Is Checked Or Proved In Lean
 
-TorchLean can own, within Lean:
+Much of the argument can live entirely in Lean. Shapes and layer composition, mathematical operator
+specifications, graph well-formedness, autograd rules, generic rounding, finite FP32 mathematics,
+executable IEEE32 reference algorithms, optimizer laws, and checker soundness are all stated as
+named definitions or theorems with explicit hypotheses.
 
-- tensor shapes and layer composition;
-- mathematical operator specifications;
-- graph well-formedness and supported evaluation;
-- primitive and graph-level autograd theorems;
-- generic rounding and finite FP32 mathematics;
-- executable IEEE32 reference algorithms and proved bridges;
-- optimizer laws under their stated hypotheses;
-- soundness of implemented certificate checkers;
-- policy gates that reject missing or inadmissible evidence.
+The exact scope still comes from each declaration. A theorem for a supported graph fragment does
+not become a theorem about every model because it appears in a broad chapter. In particular, real
+training crosses boundaries that the Lean kernel cannot inspect directly:
 
-The exact scope is determined by each declaration. An import path or chapter heading does not
-upgrade a partial theorem into a universal one.
+:::table +header
+*
+  * Lean-side object
+  * Boundary needed to connect it to a run
+*
+  * typed tensor or model
+  * dataset loader, parameter artifact, and preprocessing
+*
+  * operation graph semantics
+  * model lowering, importer, or compiler
+*
+  * `IEEE32Exec` reference operation
+  * CPU/CUDA kernel, compiler, driver, and hardware conformance
+*
+  * spectral or matrix operation contract
+  * cuFFT, cuBLAS, LibTorch, or another selected provider
+*
+  * checker acceptance theorem
+  * artifact producer and any external search that proposed the evidence
+*
+  * PINN or neural-operator proposition
+  * equation encoding, simulator, sampling, and dataset provenance
+:::
 
-# What Remains A Boundary
-
-Real training also uses:
-
-- native CUDA kernels;
-- cuBLAS, cuFFT, and other accelerator libraries;
-- LibTorch and ATen;
-- C/C++ compilers, drivers, and hardware;
-- Python export and conversion scripts;
-- external verifier search;
-- datasets and scientific simulators.
-
-Wrapping these components in a Lean function does not prove them correct. Kernel capsules record
-provider, device, shape/layout contracts, numerical policy, VJP ownership, and evidence. External
-artifacts cross parsers and checkers. The remaining trust is named rather than disappearing into
-the phrase “verified in Lean.”
+Kernel capsules record provider, device, shape/layout contracts, numerical policy, derivative
+implementation responsibility, and evidence. Artifact parsers and policy gates reject malformed or
+inadmissible input. Those mechanisms make the remaining trust visible; wrapping a native library or
+Python script in a Lean function would not make it proved.
 
 # The Numerical Story
 
@@ -119,7 +160,7 @@ NeuralFloat / NF
   generic radix, format, and rounding mathematics
 
 FP32
-  finite binary32 rounded-real proof semantics
+  binary32-precision, gradual-underflow rounded-real semantics with no upper exponent cutoff
 
 IEEE32Exec
   executable 32-bit IEEE representation and operations
@@ -142,6 +183,13 @@ $$`
 The first term is numerical implementation error. The second is model approximation error. A
 meaningful end-to-end result needs both, with compatible domains and semantics.
 
+# Configuration Fails Closed
+
+Malformed numerical configurations are rejected before they enter a graph or checker. Checked
+format constructors, operation-specific runtime guards, native-buffer validation, and certificate
+parsers all apply this principle at their own boundary. These checks do not prove an external
+implementation; they keep later theorems and tests from silently operating on a different problem.
+
 # The Scaling Story
 
 TorchLean is not meant to replace every tuned numeric kernel with a slow Lean implementation.
@@ -156,7 +204,7 @@ one semantic operation graph
   -> explicit contract and evidence per boundary
 ```
 
-TorchLean can own graph structure, shapes, loss, optimizer meaning, and proof statements while a
+TorchLean records graph structure, shapes, loss, optimizer meaning, and proof statements while a
 provider supplies a fast value or local VJP. The assurance level may range from a proved internal
 implementation to a checked or explicitly trusted external kernel.
 
@@ -186,37 +234,39 @@ enough to audit.
 
 # A Productive Development Loop
 
-When adding an operation or model:
+When adding an operation, begin where its meaning is simplest: write the tensor shape and scalar
+semantics before choosing a fast kernel. Once that object is stable, teach the runtime its forward
+and derivative behavior, and teach the IR how to represent it if export or verification needs the
+operation.
 
-1. define the intended tensor and scalar semantics;
-2. add the shape-checked public operation;
-3. register forward and derivative behavior;
-4. lower it to explicit IR when verification/export needs it;
-5. add provider capsules for implemented runtimes;
-6. state numerical and layout policies;
-7. prove reusable semantic facts;
-8. add executable positive and negative controls;
-9. document unsupported paths and trust boundaries;
-10. run the same small model through every claimed path.
+Only then add providers. Each implemented runtime needs the layout and numerical policy it actually
+uses, together with an honest evidence level. Prove the reusable semantic facts, but also add a
+small executable example with a negative control: a bad shape, nonfinite parameter, unsupported
+policy, or malformed artifact should fail for the reason the documentation promises.
+
+Finally, run the same small model through every path you claim. This last step catches the gaps that
+are easy to miss when a semantic definition, derivative rule, lowering case, and CUDA dispatch are
+reviewed in isolation.
 
 Tests and proofs are complementary. Proofs establish universal propositions about formal objects.
 Tests catch wiring, FFI, build, CLI, documentation, and platform regressions that are outside or not
 yet covered by those propositions.
 
-# What To Build Next
+# The Seams Still Visible
 
-Several directions extend the same architecture:
+The guide also leaves several gaps in plain sight. Local interval transfers are not yet one
+universal graph-wide exact-real enclosure theorem. Reverse lowering and optimizer-error propagation
+cover selected paths rather than every training graph. Native and external kernels usually carry a
+recorded contract and tests, not a machine-checked implementation proof. Quantization theory is
+farther along than packed-kernel conformance.
 
-- prove graph-wide exact-real enclosure from local interval transfers;
-- expand proof-bearing reverse lowering and optimizer-error propagation;
-- add narrower conformance checkers for native and external kernels;
-- support more devices by registering real profiles and capsules, not only enum names;
-- strengthen robustness and scientific certificate formats;
-- connect quantization theory to packed runtime kernels;
-- add model families through general tensor operations rather than private image or sequence types.
+Mixed precision remains the concrete graph-design seam described in *TorchLean And PyTorch*; the
+current runtime follows the homogeneous-scalar contract from *Tensors And Shapes*.
 
-The criterion is not the number of features. A useful addition should reduce the distance between a
-runnable model and a precise claim without hiding a new boundary.
+The same honesty applies to devices. A target name in a parser or registry is not a runtime. A new
+device becomes meaningful when it has real provider profiles, capsules, execution, and validation.
+The useful measure of progress is not the length of the feature list, but whether a runnable path
+and a precise claim are closer without a new boundary being hidden.
 
 # A Final Exercise
 
@@ -230,7 +280,7 @@ data source and preprocessing
 scalar semantics
 execution mode
 device and selected providers
-forward and backward ownership
+forward and backward implementation responsibility
 available theorem or checker
 remaining trusted assumptions
 ```

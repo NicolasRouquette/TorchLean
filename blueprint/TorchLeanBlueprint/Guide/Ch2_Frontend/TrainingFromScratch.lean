@@ -7,9 +7,9 @@ open Verso.Genre Manual
 tag := "training-from-scratch"
 %%%
 
-Training is not a magical property attached to a model. It is a repeated state transition involving
-parameters, optimizer memory, data order, and runtime state. TorchLean's high-level trainer packages
-that transition, while the lower manual API exposes each piece.
+Training repeatedly transforms parameters, optimizer memory, data order, and runtime state.
+TorchLean's high-level trainer packages that transition, while the lower manual API exposes each
+piece.
 
 We will train the running `2 → 8 → 1` MLP and then unpack what happened.
 
@@ -34,7 +34,7 @@ prediction(after)=[0.210239]
 
 The source is
 [`SimpleMlpTrain.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Quickstart/SimpleMlpTrain.lean).
-Its public structure is:
+Its program structure is:
 
 ```
 model builder
@@ -144,9 +144,9 @@ The returned handle retains:
 - final parameters;
 - runtime model state;
 - before/after summary;
-- prediction and public-verification closures.
+- prediction and verification closures.
 
-Prediction accepts public Float tensors and performs the runtime scalar conversion selected by the
+Prediction accepts Float tensors and performs the runtime scalar conversion selected by the
 trainer. It does not rebuild or reinitialize the model.
 
 # What One Update Computes
@@ -161,7 +161,7 @@ g_t=\nabla_\theta L(\theta_t;x_t,y_t),
 
 Every symbol is structured:
 
-- `θ_t` is a heterogeneous pack of tensors whose shapes are fixed by the model;
+- `θ_t` is a shape-indexed pack of differently shaped tensors sharing scalar type `α`;
 - `g_t` has exactly the same pack structure;
 - `L` is a scalar tensor program;
 - the subtraction and scaling occur coordinatewise in the selected scalar semantics.
@@ -203,7 +203,7 @@ it changes the bias correction. Restoring only parameters from a checkpoint but 
 not the same continuation of training.
 
 TorchLean also provides SGD, momentum SGD, AdamW, AdaGrad, RMSProp, Adadelta, and Muon-related
-runtime configuration. Their public constructors share one trainer interface; their state and laws
+runtime configuration. Their constructors share one trainer interface; their state and laws
 remain optimizer-specific.
 
 # What Does `steps` Count?
@@ -224,8 +224,8 @@ For a true vectorized minibatch, define:
 def batchedModel :
     nn.M
       (nn.Sequential
-        (shape![5, 2])
-        (shape![5, 1])) :=
+        (shape![2, 2])
+        (shape![2, 1])) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -233,13 +233,15 @@ def batchedModel :
   ]
 
 def batchedData :
-    Trainer.Dataset (shape![5, 2]) (shape![5, 1]) :=
-  Data.batchDataset 5 data
+    Trainer.Dataset (shape![2, 2]) (shape![2, 1]) :=
+  Data.batchDataset 2 data
     (shuffle := true)
     (seed := 2026)
 ```
 
-Now one forward/backward operation sees five samples in one tensor. This can change reduction order,
+Now one forward/backward operation sees two samples in one tensor. The four-row example produces
+two full batches; using batch size five would produce none because typed batching drops incomplete
+batches. Vectorization can change reduction order,
 optimizer cadence, and performance. It is not an optimization flag applied to the first model.
 
 Run the maintained version:
@@ -273,7 +275,7 @@ lake exe torchlean quickstart_mlp \
 Eager mode records operations and local reverse rules as they execute. Compiled mode builds a typed
 forward/derivative graph and replays it with current parameters and inputs.
 
-The public method remains `train`; compilation is a property of the configured runner, analogous to
+The trainer method remains `train`; compilation is a property of the configured runner, analogous to
 wrapping a PyTorch model with an execution transform rather than renaming the model's `forward`
 method.
 
@@ -282,7 +284,7 @@ than silently falling back to a different semantics.
 
 # Device Selection Is A Profile
 
-Device is not just an enum passed to every tensor. The execution profile includes:
+The execution profile records more than a device enum:
 
 - target device and platform;
 - provider preference;
@@ -331,33 +333,58 @@ The common executable selections are:
 
 Host `Float` is fast and relies on the platform runtime. `IEEE32Exec` is TorchLean's bit-level
 binary32 reference and is much slower, but exposes precise finite and exceptional behavior.
-Proof-level `Real` and finite rounded-real `FP32` are not executable trainer choices.
+Proof-level `Real` and rounded-real `FP32` are not executable trainer choices. `FP32` has binary32
+precision and gradual-underflow parameters, but no upper exponent bound, NaN, infinity, or signed
+zero; bridge theorems therefore require finite/no-overflow hypotheses when relating it to
+`IEEE32Exec`.
 
 A loss curve without its scalar semantics is incomplete. The same architecture and seed may round
 differently in binary32, binary64, a fused CUDA kernel, or an external provider.
 
-# Save Enough State To Resume Honestly
+# A Checkpoint Is A Particular Slice Of State
 
-`Trainer.TrainOptions` can select JSON logging and exact-bit parameter checkpoint paths. Persistent
-configuration includes optimizer and runtime choices; per-call options include:
+TorchLean's JSON parameter checkpoint records each host `Float` with `Float.toBits`, so saving and
+loading does not pass through a decimal approximation. The expected parameter shapes come from the
+model. Each expected tensor must be present with the right shape and scalar count before it becomes
+a parameter pack:
 
-- number of steps;
-- sample grouping and logging cadence;
-- output path and notes;
-- checkpoint load/save;
-- CUDA allocator watch cadence.
+```
+def loadForThisModel (path : System.FilePath) :=
+  Checkpoint.loadModelParamBits (nn.run 2026 model) path
+```
 
-For a faithful resume, preserve:
+The result is an `IO` action returning tensors whose dependent shape list is exactly
+`nn.paramShapes (nn.run 2026 model)`. `Checkpoint.toRuntimeParams` turns such a checked pack into
+runtime parameter handles, while `Checkpoint.loadModuleParamBits` and
+`Checkpoint.saveModuleParamBits` work with an already instantiated host-Float module.
 
-1. parameters;
-2. optimizer state and step number;
-3. data-loader or stream state;
-4. model and preprocessing configuration;
-5. scalar/backend/device profile;
-6. RNG state where stochastic layers or sampling are used.
+One boundary remains worth knowing: after all expected tensors have been decoded, the current
+loader ignores extra trailing tensors in the JSON array. Missing tensors and malformed expected
+tensors are rejected, but the file length alone is not yet a strict architecture identifier. If
+that distinction matters, validate the artifact's tensor manifest before loading it.
 
-A parameter-only checkpoint is still useful for inference. It simply should not be described as an
-exact continuation of Adam training.
+Classification and cross-entropy training also wire the `loadParams?` and `saveParams?` fields of
+`Trainer.TrainOptions` into this exact-bits format. For example, the following options ask that path
+to save parameters after 200 updates:
+
+```
+def saveClassifierParams : Trainer.TrainOptions :=
+  { steps := 200
+    logEvery := 25
+    saveParams? := some "artifacts/classifier.params.json" }
+```
+
+The current high-level regression and custom-loss training paths do not consume those two fields;
+use the direct `Checkpoint`/`NN.API.TorchLean.ParamIO` helpers with a manual module for those tasks.
+This limitation is worth spelling out because accepting a shared options record is not evidence
+that every task dispatch implements every optional field.
+
+Even on the classification path, this is a *parameter* checkpoint, not a complete training
+snapshot. An exact continuation of Adam also needs its moment tensors and step number. Replaying the
+next batch needs loader or stream position; stochastic layers need generator state; and interpreting
+the result needs the model, preprocessing, scalar semantics, backend profile, and device. A
+parameter-only checkpoint is excellent for inference or a fresh optimizer run, but it should not
+be described as resuming the same optimizer trajectory.
 
 # Manual Training
 
@@ -381,6 +408,39 @@ step. PINN collocation points and simulator batches naturally fit this interface
 
 The lower API does not change the model or autograd semantics. It exposes the runner state that the
 high-level trainer normally manages.
+
+## Learning-rate schedules
+
+The manual configuration has constant, step-decay, and exponential schedules. Here a rate of
+`0.1` is halved after every three step indices:
+
+```
+def decay :=
+  NN.API.TorchLean.Schedulers.step 0.1 3 0.5
+
+#eval (List.range 10).map
+  (NN.API.TorchLean.Schedulers.lrAt decay)
+```
+
+Lean prints:
+
+```
+[0.100000, 0.100000, 0.100000, 0.050000, 0.050000, 0.050000, 0.025000, 0.025000, 0.025000, 0.012500]
+```
+
+Attach the same schedule to a manual step configuration with `Trainer.stepLR`:
+
+```
+def scheduledManualRun :=
+  Trainer.stepLR
+    (Trainer.steps 10 (optim.sgd { lr := 0.1 }))
+    0.1 3 0.5
+```
+
+The counter is zero-indexed, which is why the first decay occurs at index three. A step schedule
+with `stepSize := 0` deliberately stays at its base rate instead of dividing by zero. The compact
+high-level `Trainer.TrainOptions` does not currently carry a scheduler; use this manual
+configuration when schedule state must be part of the loop.
 
 # Four Useful Experiments
 
@@ -433,6 +493,6 @@ It does not automatically prove:
 - equality of eager, compiled, CUDA, and LibTorch paths;
 - correctness of every native instruction.
 
-TorchLean's contribution is not to rename those observations as proofs. It gives the run enough
-structure that a theorem, numerical bound, backend contract, or verification certificate can refer
+TorchLean gives the run enough structure for a theorem, numerical bound, backend contract, or
+verification certificate to refer
 to the same model without erasing the boundary between them.

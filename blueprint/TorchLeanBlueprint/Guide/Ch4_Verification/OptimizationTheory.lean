@@ -14,7 +14,7 @@ A TorchLean training run may call SGD or Adam, but a convergence theorem cannot 
 of the optimizer alone. It needs an ideal update map, assumptions on the objective or gradient, and
 a step size condition.
 
-The runtime can execute SGD, Adam style updates, or PPO losses. The optimization theory material
+The runtime can execute SGD and Adam-style updates. The optimization theory material
 names the ideal update and the assumptions under which a theorem is allowed to say "this step moves
 closer." PyTorch faithfully runs an optimizer step; TorchLean can also state the mathematical
 contract that would justify calling the step contractive or convergent.
@@ -24,7 +24,7 @@ contract that would justify calling the step contractive or convergent.
 The optimization contract has three layers:
 
 - *Runtime update*: the concrete operation that writes new values into parameter tensors, such as
-  one SGD, momentum, or Adam style step.
+  one SGD, momentum, or Adam-style step.
 - *Ideal update*: the mathematical map the runtime update is intended to approximate, for example
   `x ↦ x - η g x`.
 - *Convergence theorem*: the conditional theorem saying that iterating the ideal map makes progress
@@ -121,7 +121,7 @@ The current checked baseline says that if the projector is the identity, project
 SGD. A future low-rank projector or refresh policy can optimize memory and matrix structure, but it
 has to state its own projection contract instead of being hidden inside the word "optimizer."
 
-This naming is reflected in the public API. Standard trainer configs use names such as
+This naming is reflected in the trainer API. Standard trainer configs use names such as
 `optim.sgd`, `optim.adamw`, and `optim.adadelta`. Runtime-level extension points use more explicit
 names such as `optim.runtimeMuon` and `optim.galore.projectedSGD`, because those calls need a
 backend or projection story as part of the mathematical object.
@@ -177,7 +177,7 @@ and
 
 $$`\|g(x)-g(y)\|\le L\|x-y\|.`
 
-and proves the one step inequality `step_norm_sq_le`. The
+Under these hypotheses, `step_norm_sq_le` proves the one-step inequality. The
 [strongly convex gradient descent API](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Optimization/StronglyConvexGD.lean) then
 iterates the inequality. Its theorem `dist_sq_iterate_le_of_q_lt_one` is the statement readers
 should remember:
@@ -212,8 +212,8 @@ Concrete theorem names:
 The result is the standard smooth/strongly-monotone contraction argument found in convex
 optimization texts such as Nesterov's
 [*Introductory Lectures on Convex Optimization*](https://link.springer.com/book/10.1007/978-1-4419-8853-9).
-TorchLean's contribution here is not a new convergence rate; it is the ability to attach the rate to
-the exact update map and assumptions used by the rest of the verified training story.
+TorchLean attaches this familiar rate to the exact update map and assumptions used by the rest of
+the verified training story.
 
 # Smoothness, Strong Convexity, And The Bridge
 
@@ -255,6 +255,13 @@ For example, a theorem about a full training run can be read as a composition of
 Those hypotheses matter. The optimization layer avoids turning a loss curve into a convergence
 claim: convexity, smoothness, strong monotonicity, and step size conditions remain visible in the
 theorem statement.
+
+There is also a state boundary between these equations and a native trainer. Runtime Adam-family
+optimizers maintain moment buffers and a step counter for each parameter, while checkpoints must
+restore those states with the same parameter identity and ordering. The pure `TensorOptimizer` and
+`StepSpec` theorems prove the recurrence they state; they do not by themselves prove allocation,
+aliasing, checkpoint restoration, or the mutable runtime state machine. An end-to-end optimizer
+claim needs a bridge showing that the trainer's stored state implements the same recurrence.
 
 # Claim Shape
 

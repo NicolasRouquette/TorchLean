@@ -420,7 +420,7 @@ def logSoftmax {α : Type} [Context α] [DecidableEq Shape]
         let xval := getIdx (α := α) (xs := ctx) ix
         let yval := Activation.logSoftmaxSpec (α := α) (s := s) xval
         let dx := getIdx (α := α) (xs := dctx) ix
-        Activation.logSoftmaxBackwardSpec (α := α) (s := s) yval dx
+        Activation.logSoftmaxJvpSpec (α := α) (s := s) yval dx
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let yval := Activation.logSoftmaxSpec (α := α) (s := s) xval

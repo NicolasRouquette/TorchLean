@@ -2,14 +2,14 @@ import VersoManual
 
 open Verso.Genre Manual
 
-#doc (Manual) "Classical and Structural ML Proofs" =>
+#doc (Manual) "Structural Model Proofs" =>
 %%%
 tag := "classical-ml-proofs"
 %%%
 
 Some neural-network properties are independent of any particular GPU kernel or training loop.
-Hopfield networks have an energy argument. ReLU networks can assemble multiplication from
-piecewise-linear approximants. Recurrent state-space models are causal because their output at time
+Hopfield networks have an energy argument. ReLU networks have exact algebraic identities that make
+larger approximation constructions possible. Recurrent state-space models are causal because their output at time
 `t` is computed before future inputs are seen. These are structural facts about the mathematical
 models.
 
@@ -68,7 +68,7 @@ $$`E(\operatorname{updateAt}(p,s,u))\leq E(s).`
 
 The proof expands the quadratic energy difference. Symmetry makes the changed row and column
 contribute the same net-input term, while the zero diagonal removes the self-interaction. When the
-coordinate actually changes and the net input is not tied with the threshold,
+coordinate changes and the net input is not tied with the threshold,
 `energy_updateAt_lt_of_change_of_ne` strengthens the inequality to a strict decrease.
 
 # Execute A Two-Neuron Update
@@ -150,42 +150,12 @@ apply automatically to synchronous updates, stochastic schedules, modern continu
 Hopfield layers, or a floating-point kernel. Each variation needs its own transition relation and
 energy argument.
 
-# ReLU Networks As An Algebra Of Approximants
+# Exact ReLU Network Algebra
 
-ReLU is piecewise linear, so one hidden layer cannot represent multiplication exactly on all of
-`ℝ²`. It can, however, approximate multiplication uniformly on a bounded box.
-
-The identity
-
-$$`xy=\frac{(x+y)^2-(x-y)^2}{4}`
-
-reduces the problem to approximating the square function on `[-2M,2M]`. The file
-[`ReLUMulApprox`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Proofs/ReLU/Approx/ReLUMulApprox.lean)
-first builds a one-dimensional ReLU approximation to `u²`, lifts copies along the ridge directions
-
-$$`w_+=(1,1),\qquad w_-=(1,-1),`
-
-and combines their outputs with coefficients `1/4` and `-1/4`.
-
-The final theorem is:
-
-```
-theorem relu_mul_universal_approximation_box
-    {M : ℝ} (hM : 0 < M) :
-  ∀ ε > 0,
-    ∃ (hidDim : ℕ)
-      (l1 : LinearSpec ℝ 2 hidDim)
-      (l2 : LinearSpec ℝ hidDim 1),
-    ∀ x ∈ box M,
-      |mulFun x - mlpEvalNd l1 l2 x| < ε
-```
-
-The box hypothesis bounds both coordinates by `M`. Without it, no finite piecewise-linear function
-can uniformly approximate the quadratic growth of multiplication on the whole plane.
-
-The bridge module
+The approximation chapter develops the complete hinge, multiplication, and compact-set
+constructions. Here we need only the small exact bridge they reuse. The module
 [`ReLUMlpBridge`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Proofs/ReLU/Bridge/ReLUMlpBridge.lean)
-supplies network algebra used in these constructions. A particularly useful exact identity is
+proves
 
 $$`\operatorname{ReLU}(u)-\operatorname{ReLU}(-u)=u.`
 
@@ -196,10 +166,11 @@ lemma relu_sub_relu_neg (u : ℝ) :
   relu u - relu (-u) = u
 ```
 
-This identity lets a ReLU network carry affine terms exactly even though individual hidden units
-clip negative values.
+This identity lets a ReLU network carry an affine term exactly even though each hidden unit clips
+negative values. It is the sort of tiny structural lemma from which a larger network construction
+can be assembled.
 
-To explore the proof surface:
+Inspect it alongside the bounded-box multiplication theorem:
 
 ```
 import NN.MLTheory.Proofs.ReLU.Approx.ReLUMulApprox
@@ -212,17 +183,9 @@ open NN.MLTheory.Proofs.ReLUMulApprox
 #check relu_mul_universal_approximation_box
 ```
 
-Try specializing the multiplication theorem with `M = 0`. The proof cannot supply `0 < M`.
-That does not mean multiplication is hard on the singleton zero box; it means this particular
-construction and theorem are stated for a positive-radius box. A separate zero-radius lemma would
-be trivial but would not strengthen the useful approximation result.
-
-On arbitrary compact subsets of finite-dimensional real space, the larger
-[`CompactSet`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Proofs/ReLU/Approximation/CompactSet.lean)
-development combines coordinate polynomials, multiplication approximants, and Stone-Weierstrass.
-`relu_universal_approximation_compact` proves density of one-hidden-layer ReLU MLPs in continuous
-real-valued functions on the compact domain. This is an exact existence theorem over `ℝ`; it is not
-a runtime or training guarantee.
+`relu_mul_universal_approximation_box` uses this algebra inside a genuine approximation argument.
+For its construction, quantitative hypotheses, and the distinction between existence, checkpoint
+verification, and finite-precision execution, return to *Approximation Theory*.
 
 # Causality In State-Space Models
 
@@ -249,7 +212,7 @@ proves this statement for three increasingly rich specifications:
 - `MambaBlockSpec`;
 - `SelectiveMambaBlockSpec`, including its carried convolution history.
 
-The public selective theorem is:
+The selective theorem is:
 
 ```
 theorem selectiveMamba_runList_append_outputs_prefix
@@ -265,6 +228,12 @@ The theorem is polymorphic over any scalar `α` with a TorchLean `Context`. Its 
 induct on `xs`, unfold one recurrent step, and apply the induction hypothesis to the updated state
 and history. It does not require commutative or exact arithmetic because causality depends on
 evaluation order, not algebraic rearrangement.
+
+The reusable list argument is factored through
+[`Scan`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Proofs/StateSpace/Scan.lean),
+which proves append and prefix laws for state-threading scans. `MambaCausality` instantiates that
+structure with the S4/Mamba state and convolution history; it does not assert that an optimized
+selective-scan kernel refines the specification.
 
 Open the declarations:
 

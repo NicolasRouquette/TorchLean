@@ -34,98 +34,26 @@ anything from parsing a JSON file to replaying every bound computation and deriv
 TorchLean’s current α,β-CROWN leaf checker implements the former kind of boundary: it checks a
 small structural leaf format and a local threshold predicate. It does not rerun α,β-CROWN.
 
-# The Checked Artifact
+# Begin With The Producer
 
-The bundled artifact is:
+The previous chapter established exactly what the leaf checker accepts, including the JSON schema,
+the local threshold predicate, and negative controls. Here we begin with the external producer and
+follow its output into the controller workflows.
 
-```
-{
-  "format": "abcrown_leaf_artifact_v0_1",
-  "input_dim": 2,
-  "root": {
-    "lo": [-1.0, -1.0],
-    "hi": [1.0, 1.0]
-  },
-  "leaves": [
-    {
-      "lo": [-1.0, -1.0],
-      "hi": [1.0, 1.0],
-      "lb": [1.0],
-      "threshold": [0.0],
-      "witness_idx": 0,
-      "witness_margin": 1.0
-    }
-  ]
-}
-```
-
-The checker is
-[`checkAbCrownLeafArtifact`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/Cert/AbCrownLeafCert.lean).
-It performs the following operations:
-
-1. require the exact format string `abcrown_leaf_artifact_v0_1`;
-2. parse `input_dim`;
-3. parse finite floating-point root bounds and require matching dimensions;
-4. require `root.lo[i] ≤ root.hi[i]`;
-5. require a nonempty leaf array;
-6. parse each leaf’s finite `lo`, `hi`, `lb`, and `threshold` arrays;
-7. require each leaf box to satisfy
-   `root.lo ≤ leaf.lo ≤ leaf.hi ≤ root.hi`;
-8. require matching `lb` and `threshold` lengths;
-9. check either the supplied witness index or an existential coordinate with
-   `threshold[i] < lb[i]`;
-10. if a witness margin is supplied, compare it with `lb[i] - threshold[i]` at tolerance `1e-6`.
-
-Every parsed numeric claim uses `expectFieldFiniteFloatArray` or
-`optionalFieldFiniteFloat?`. A JSON number that converts to NaN or infinity is rejected before
-ordered comparisons are used.
-
-The local threshold predicate is implemented in
-[`NN.Verification.Util.Array`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/Util/Array.lean):
+After an external verifier has collected terminal domains, the handoff is:
 
 ```
-def refutesThreshold
-    (lowerBound threshold : Array Float) : Bool :=
-  anyPairwise lowerBound threshold
-    (fun lb thr => decide (thr < lb))
+raw terminal-domain dump
+  -> TorchLean conversion helper
+  -> abcrown_leaf_artifact_v0_1.json
+  -> Lean structural checker
 ```
 
-If the vector represents output margins, this is the finite check
+The producer may be large and stateful. The handoff remains small: root and leaf boxes, exported
+lower bounds and thresholds, and an optional witness coordinate. The certificate chapter is the
+reference for the meaning and limitations of those fields.
 
-$$`\exists i,\quad \mathrm{threshold}_i<\mathrm{lb}_i.`
-
-# Run The Bundled Check
-
-From the TorchLean root:
-
-```
-lake exe verify -- abcrown-leaf
-```
-
-The current output is:
-
-```
-[artifact] Checked 1 leaves: ok=1, bad=0
-```
-
-The default path is
-`NN/Examples/Verification/AbCrown/sample_abcrown_leaf_artifact_v0_1.json`. An explicit path can be
-passed after the command name:
-
-```
-lake exe verify -- abcrown-leaf path/to/artifact.json
-```
-
-To see the available verification programs:
-
-```
-lake exe verify -- list
-```
-
-The registration describes this command as an “α,β-CROWN leaf artifact structural check.” That
-wording is deliberate.
-
-# Convert A Producer Dump
+# Convert The Producer Output
 
 Vanilla α,β-CROWN does not emit TorchLean’s JSON schema. The adapter
 [`export_leaf_artifact.py`](https://github.com/lean-dojo/TorchLean/blob/main/scripts/verification/abcrown/export_leaf_artifact.py)
@@ -172,103 +100,42 @@ TorchLean does not vendor α,β-CROWN or the Two-Stage neural-controller reposit
 CUDA, solver, and model dependencies remain in separate environments. The core Lean build needs
 only the exported artifact and checker.
 
-# Make The Check Fail
+# Carry Forward The Exact Claim
 
-Copy the bundled JSON and change
-
-```
-"lb": [1.0]
-```
-
-to
-
-```
-"lb": [-1.0]
-```
-
-while leaving the threshold at zero. Then run the checker on the modified file. The present output
-is:
-
-```
-[artifact] Checked 1 leaves: ok=0, bad=1
-uncaught exception: Artifact failed checks for 1 leaves
-```
-
-Other useful negative controls are:
-
-- put a leaf upper bound above `root.hi`;
-- use a witness index outside the lower-bound vector;
-- make `witness_margin` disagree with `lb[i] - threshold[i]`;
-- use a huge JSON number such as `1e999`, which is rejected as non-finite;
-- make `lo[i] > hi[i]`.
-
-Each variation reaches a different named check. This is often the quickest way to understand an
-artifact schema: perturb one field and observe which invariant rejects it.
-
-# What Acceptance Does Not Prove
-
-The checker treats the numbers in `lb` as claims supplied by the producer. It verifies that one is
-above the threshold; it does not prove that `lb[i]` is genuinely a lower bound for the network on
-that leaf.
-
-It also checks containment of every leaf in the root, not coverage of the root by the leaves.
-Containment is
-
-$$`B_\ell\subseteq B_{\mathrm{root}}.`
-
-Coverage would be
-
-$$`B_{\mathrm{root}}
-\subseteq\bigcup_{\ell=1}^m B_\ell,`
-
-which is a different and stronger condition. The current `abcrown-leaf` checker does not establish
-it.
-
-Finally, it does not parse a neural network, connect leaf bounds to shared IR semantics, or prove a
-theorem of the form
-
-$$`\operatorname{check}(artifact)=\texttt{true}
-\Longrightarrow
-\operatorname{Safe}(network,B_{\mathrm{root}}).`
-
-The current result is an executable IO check over finite Float arrays. Calling it a complete
-α,β-CROWN certificate checker would overstate the implementation.
-
-# The Stronger Certificate We Want
-
-A whole-region branch-and-bound certificate would contain enough information to establish three
-independent facts:
-
-1. *coverage*
-
-   $$`B_{\mathrm{root}}=\bigcup_\ell B_\ell;`
-
-2. *local bound soundness*
-
-   $$`\forall x\in B_\ell,\quad
-   g_i(x)\geq \mathrm{lb}_{\ell,i};`
-
-3. *local safety*
-
-   $$`\exists i,\quad
-   \mathrm{lb}_{\ell,i}>\mathrm{threshold}_i.`
-
-Then elementary set reasoning yields
-
-$$`\left(
-B_{\mathrm{root}}=\bigcup_\ell B_\ell
-\;\land\;
-\forall\ell,\operatorname{Safe}(B_\ell)
-\right)
-\Longrightarrow
-\operatorname{Safe}(B_{\mathrm{root}}).`
-
-The expensive producer may still choose splits and relaxation parameters. The artifact must carry
-enough data for Lean to replay each local bound or check a proof object whose soundness theorem is
-already established. This is the important research step between the present structural fixture
-and a proof-producing verifier boundary.
+The certificate chapter demonstrates the positive check and its negative controls. For the
+workflows below, carry forward its exact conclusion: acceptance establishes structural consistency
+and the exported local threshold predicate, not the provenance of the lower bound or coverage of
+the original root region.
 
 # Neural Controllers
+
+TorchLean also registers three concrete Lyapunov workflow runners. They differ in where candidate
+generation and numerical checking occur:
+
+- [`twostage-pythononly-certgen`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIPythonOnly.lean)
+  invokes the external CROWN producer and writes a Lean module. The generated bounds enter through
+  `CrownOracleWitness`; Lean proves the final real inequalities from that oracle witness and the
+  sign conditions, but does not replay the external verifier.
+- [`twostage-hybrid-van-stage2`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIIHybrid.lean)
+  treats PyTorch's bit-exact float32 parameter export as an untrusted initialization, then performs
+  refinement and the final IBP/CROWN box check in Lean with `IEEE32Exec`.
+- [`twostage-torchlean-cegis-van`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIIIAllInLean.lean)
+  performs initialization, sampled training, PGD-style candidate search, refinement, and the final
+  bound check in Lean with `IEEE32Exec`; it does not require the external stage-one exporter.
+
+Run them by their exact registry names:
+
+```
+lake exe verify -- twostage-pythononly-certgen --model model.pth \
+  --region "[-1,1]x[-1,1]" --dynamics van_der_pol
+lake exe verify -- twostage-hybrid-van-stage2
+lake exe verify -- twostage-torchlean-cegis-van
+```
+
+“Runs in Lean” identifies the execution and checker boundary; it is not by itself a theorem that
+the learned controller satisfies the analytic Lyapunov conditions on an arbitrary region. The
+runtime result must still be connected to the real `LyapunovCert` theorem, and any native or
+`@[implemented_by]` path retains its documented implementation boundary.
 
 In a controller workflow, the producer may search for a policy `u_θ` and a Lyapunov candidate `V`.
 The target inequalities often look like

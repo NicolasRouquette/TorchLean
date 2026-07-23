@@ -12,8 +12,10 @@ import Mathlib.Analysis.Complex.Trigonometric
 /-!
 ## Simple Taylor remainder bounds for `Real.sin` / `Real.cos`
 
-`IEEE32Exec.Trig.sinCosTaylorSmall` uses a reduced-input Taylor kernel (degree 13/12).  For many
-proofs we only need *some* analytic bound saying the Taylor approximation is close on `|x| ≤ 1`.
+`IEEE32Exec.Trig.sinCosTaylorSmall` uses a reduced-input Taylor kernel (degree 13/12). The theorems
+below are coarse analytic facts about separate degree-three/two baselines; they are not an accuracy
+contract for the executable kernel. For many proofs these baseline bounds are still useful on
+`|x| ≤ 1`.
 
 Mathlib provides clean, reusable bounds for the first nontrivial truncations:
 

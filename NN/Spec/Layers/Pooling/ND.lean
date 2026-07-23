@@ -268,25 +268,46 @@ def avgPoolValue
       (padding := padding))
   sum / (kernelProd kernel : α)
 
+/-- Input-space pivot whose scaled value is maximal over a nonempty N-D pooling window. -/
+def smoothMaxPoolPivot
+    {d : Nat} {inSpatial : Vector Nat d}
+    (beta : α)
+    (input : Tensor α (Shape.ofList inSpatial.toList))
+    (outIdxs : List Nat)
+    (kernel stride padding : List Nat) : α :=
+  let firstIdx := List.replicate d 0
+  let first := getPaddedAverageInputVal (d := d) (inSpatial := inSpatial)
+    (input := input) (outIdxs := outIdxs) (winIdxs := firstIdx) (stride := stride)
+    (padding := padding)
+  foldlIndices' kernel first (fun pivot winIdxs =>
+    let x := getPaddedAverageInputVal (d := d) (inSpatial := inSpatial)
+      (input := input) (outIdxs := outIdxs) (winIdxs := winIdxs) (stride := stride)
+      (padding := padding)
+    smoothMaxPivotStep beta pivot x)
+
+/-- Evaluate one N-D smooth-max window with the sign-aware input-space pivot. -/
 def smoothMaxPoolValue
     {d : Nat} {inSpatial : Vector Nat d}
     (beta : α)
     (input : Tensor α (Shape.ofList inSpatial.toList))
     (outIdxs : List Nat)
     (kernel stride padding : List Nat) : α :=
+  let pivot := smoothMaxPoolPivot (d := d) (inSpatial := inSpatial) beta input outIdxs
+    kernel stride padding
   let sumExp := foldlIndices' kernel (0 : α) (fun acc winIdxs =>
     let x := getPaddedAverageInputVal (d := d) (inSpatial := inSpatial)
       (input := input) (outIdxs := outIdxs) (winIdxs := winIdxs) (stride := stride)
       (padding := padding)
-    acc + MathFunctions.exp (beta * x))
+    acc + MathFunctions.exp (beta * (x - pivot)))
   let invTemp : α := 1 / beta
-  MathFunctions.log sumExp * invTemp
+  pivot + MathFunctions.log sumExp * invTemp
 
 /--
 Directional derivative of the smooth log-sum-exp pooling value.
 
 For `y = beta⁻¹ log Σ exp(beta*xᵢ)`, the directional derivative is
-`Σ softmax(beta*xᵢ) * dxᵢ`, using the same zero-padding convention as `smoothMaxPoolValue`.
+`Σ softmax(beta*xᵢ) * dxᵢ`, using the same zero-padding and stable input-pivot convention as
+`smoothMaxPoolValue`.
 -/
 def smoothMaxPoolJvpValue
     {d : Nat} {inSpatial : Vector Nat d}
@@ -294,11 +315,13 @@ def smoothMaxPoolJvpValue
     (input tangent : Tensor α (Shape.ofList inSpatial.toList))
     (outIdxs : List Nat)
     (kernel stride padding : List Nat) : α :=
+  let pivot := smoothMaxPoolPivot (d := d) (inSpatial := inSpatial) beta input outIdxs
+    kernel stride padding
   let sumExp := foldlIndices' kernel (0 : α) (fun acc winIdxs =>
     let x := getPaddedAverageInputVal (d := d) (inSpatial := inSpatial)
       (input := input) (outIdxs := outIdxs) (winIdxs := winIdxs) (stride := stride)
       (padding := padding)
-    acc + MathFunctions.exp (beta * x))
+    acc + MathFunctions.exp (beta * (x - pivot)))
   foldlIndices' kernel (0 : α) (fun acc winIdxs =>
     let x := getPaddedAverageInputVal (d := d) (inSpatial := inSpatial)
       (input := input) (outIdxs := outIdxs) (winIdxs := winIdxs) (stride := stride)
@@ -306,7 +329,7 @@ def smoothMaxPoolJvpValue
     let dx := getPaddedAverageInputVal (d := d) (inSpatial := inSpatial)
       (input := tangent) (outIdxs := outIdxs) (winIdxs := winIdxs) (stride := stride)
       (padding := padding)
-    acc + (MathFunctions.exp (beta * x) / sumExp) * dx)
+    acc + (MathFunctions.exp (beta * (x - pivot)) / sumExp) * dx)
 
 end Private
 
@@ -650,6 +673,8 @@ For a window `x₁,…,xₙ`, the surrogate is:
 `y = (1/beta) * log(∑ exp(beta*xᵢ))`
 
 and the VJP distributes upstream gradient proportionally to `exp(beta*xᵢ)`.
+The implementation evaluates the equivalent max/min-shifted weights so large finite inputs do not
+overflow before normalization.
 -/
 def smoothMaxPoolSpatialBackwardSpec
     {d : Nat} {inSpatial kernel stride padding : Vector Nat d}
@@ -673,13 +698,16 @@ def smoothMaxPoolSpatialBackwardSpec
     Private.tensorOfDims inSpatial.toList (fun _ => 0)
 
   Private.foldlIndices' outDims grad_init (fun acc_grad outIdxs =>
+    let pivot : α :=
+      Private.smoothMaxPoolPivot (d := d) (inSpatial := inSpatial) beta input outIdxs
+        kernelL strideL paddingL
     let sumExp : α :=
       Private.foldlIndices' kernelL (0 : α) (fun acc winIdxs =>
         let x :=
           Private.getPaddedAverageInputVal (d := d) (inSpatial := inSpatial)
             (input := input) (outIdxs := outIdxs) (winIdxs := winIdxs)
             (stride := strideL) (padding := paddingL)
-        acc + MathFunctions.exp (beta * x))
+        acc + MathFunctions.exp (beta * (x - pivot)))
     let gOut : α := getAtOrZero grad_output outIdxs
     Private.foldlIndices' kernelL acc_grad (fun acc winIdxs =>
       match Private.paddedCoords? outIdxs winIdxs strideL with
@@ -692,7 +720,7 @@ def smoothMaxPoolSpatialBackwardSpec
                 Private.getPaddedAverageInputVal (d := d) (inSpatial := inSpatial)
                   (input := input) (outIdxs := outIdxs) (winIdxs := winIdxs)
                   (stride := strideL) (padding := paddingL)
-              let expVal := MathFunctions.exp (beta * x)
+              let expVal := MathFunctions.exp (beta * (x - pivot))
               let w : α := coeff * (expVal / sumExp)
               let current : α := getAtOrZero acc orig
               updateTensorSpec acc orig (current + gOut * w)))

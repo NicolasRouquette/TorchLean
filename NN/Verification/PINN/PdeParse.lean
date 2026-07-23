@@ -16,8 +16,9 @@ A compact hand-rolled parser from strings to PDE AST (`Expr`).
 
 Grammar (informal):
   expr   := term (('+' | '-') term)*
-  term   := factor ('*' factor)*
-  factor := primary ('^' int)?
+  term   := unary ('*' unary)*
+  unary  := '-' unary | factor
+  factor := primary ('^' nat)?
   primary:= derivative | number | ident | '(' expr ')'
 
 Derivative names accept both compact and subscript-style spellings:
@@ -27,6 +28,9 @@ primitive as `u_y`.
 
 Numbers are parsed as Floats. Idents look up a value from `env : String → Option Float`.
 Unsupported tokens produce an error.
+
+Natural powers use the usual identities (`x^0 = 1`), and powers bind more tightly than unary
+minus, so `-u^2` means `-(u^2)`.
 
 Implementation note:
 The parser is total by threading a simple `fuel : Nat` through the recursive descent; `fuel` is
@@ -137,7 +141,7 @@ mutual
     match fuel with
     | 0 => .error "parser: out of fuel"
     | Nat.succ fuel =>
-      let (f, st1) ← parseFactorFuel fuel env st
+      let (f, st1) ← parseUnaryFuel fuel env st
       let rec loop (fuel : Nat) (acc : Expr) (st : State) : Except String (Expr × State) := do
         match fuel with
         | 0 => .ok (acc, st)
@@ -146,12 +150,12 @@ mutual
           match peek st' with
           | some '*' =>
             let st'' := bump st'
-            let (f2, st3) ← parseFactorFuel fuel env st''
+            let (f2, st3) ← parseUnaryFuel fuel env st''
             loop fuel (.mul acc f2) st3
           | _ => .ok (acc, st')
       loop fuel f st1
 
-  /-- Parse a primary expression plus an optional integer power. -/
+  /-- Parse a primary expression plus an optional natural-number power, with `x^0 = 1`. -/
   def parseFactorFuel (fuel : Nat) (env : String → Option Float) (st : State) : Except String (Expr
     × State) := do
     match fuel with
@@ -163,7 +167,9 @@ mutual
       | some '^' =>
         let st2 := bump st1'
         let (n, st3) ← parseNat (skipWs st2)
-        if n ≤ 1 then
+        if n = 0 then
+          .ok (.const 1.0, st3)
+        else if n = 1 then
           .ok (p, st3)
         else
           -- expand p^n as repeated multiplication
@@ -173,6 +179,19 @@ mutual
             | Nat.succ m => powMul base m (.mul acc base)
           .ok (powMul p (n - 1) p, st3)
       | _ => .ok (p, st1')
+
+  /-- Parse leading negations. Exponentiation binds more tightly than unary minus. -/
+  def parseUnaryFuel (fuel : Nat) (env : String → Option Float) (st : State) : Except String (Expr ×
+    State) := do
+    match fuel with
+    | 0 => .error "parser: out of fuel"
+    | Nat.succ fuel =>
+      let st' := skipWs st
+      match peek st' with
+      | some '-' =>
+        let (e, st1) ← parseUnaryFuel fuel env (bump st')
+        .ok (.neg e, st1)
+      | _ => parseFactorFuel fuel env st'
 
   /-- Parse atoms: parenthesized expressions, `u`/derivative names, numerals, or environment identifiers. -/
   def parsePrimaryFuel (fuel : Nat) (env : String → Option Float) (st : State) : Except String (Expr
@@ -190,7 +209,7 @@ mutual
         | some ')' => .ok (e, bump st3)
         | _ => .error "expected ')'"
       | some c =>
-        if c.isDigit || c = '.' || c = '-' then
+        if c.isDigit || c = '.' then
           let (v, st2) ← parseNumber st'
           .ok (.const v, st2)
         else if c.isAlpha then

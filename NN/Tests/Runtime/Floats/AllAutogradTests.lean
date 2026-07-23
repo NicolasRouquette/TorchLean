@@ -6,6 +6,8 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Runtime.Autograd.Compiled.GraphM
+public import NN.Runtime.Autograd.Torch.Core.Compiled
 public import NN.Runtime.Autograd.Utils
 public import NN.Spec.Core.Tensor
 public import NN.Spec.Core.Utils
@@ -588,6 +590,197 @@ end AutogradConv2d
 end Floats
 end Tests
 
+/-! ## Compiled log-softmax JVP -/
+
+namespace Tests
+namespace Floats
+namespace CompiledLogSoftmaxJvp
+
+open _root_.Spec
+open _root_.Spec.Tensor
+
+/-- Check that compiled log-softmax uses its JVP rather than its distinct reverse-mode VJP. -/
+def run : IO Unit := do
+  let vectorShape : Shape := .dim 2 .scalar
+  let build :
+      Runtime.Autograd.Compiled.GraphM.M Float [vectorShape]
+        (Runtime.Autograd.Compiled.GraphM.Var vectorShape) := do
+    let x ← Runtime.Autograd.Compiled.GraphM.arg
+      (α := Float) (Γ := [vectorShape]) 0 vectorShape
+    Runtime.Autograd.Compiled.GraphM.logSoftmax x
+  let compiled ←
+    match Runtime.Autograd.Torch.compileGraph
+        (α := Float) (Γ := [vectorShape]) (τ := vectorShape) build with
+    | .ok c => pure c
+    | .error e => throw <| IO.userError s!"compiled log-softmax JVP: compile failed: {e}"
+  let logits : Tensor Float vectorShape := tensorOfList! [2] [0.0, Float.log 2.0]
+  let tangent : Tensor Float vectorShape := tensorOfList! [2] [1.0, 0.0]
+  let inputs : Proofs.Autograd.Algebra.TList Float [vectorShape] := .cons logits .nil
+  let tangents : Proofs.Autograd.Algebra.TList Float [vectorShape] := .cons tangent .nil
+  let got := Runtime.Autograd.Torch.CompiledGraph.jvp compiled inputs tangents
+  let got0 := Tensor.vecGet got ⟨0, by decide⟩
+  let got1 := Tensor.vecGet got ⟨1, by decide⟩
+  unless Float.abs (got0 - 2.0 / 3.0) ≤ 1e-5 &&
+      Float.abs (got1 - (-1.0 / 3.0)) ≤ 1e-5 do
+    throw <| IO.userError s!"compiled log-softmax JVP: got {pretty got}, expected [2/3, -1/3]"
+  IO.println "compiled_log_softmax_jvp_test (Float): OK"
+
+end CompiledLogSoftmaxJvp
+end Floats
+end Tests
+
+/-! ## Compiled smooth-max parameter checks -/
+
+namespace Tests
+namespace Floats
+namespace CompiledSmoothMaxDomain
+
+open _root_.Spec
+
+/-- Compiled GraphM rejects an undefined zero inverse temperature while building the graph. -/
+def run : IO Unit := do
+  let inputShape : Shape := shape![1, 1, 2]
+  let outputShape : Shape := shape![1, 1, 1]
+  let build :
+      Runtime.Autograd.Compiled.GraphM.M Float [inputShape]
+        (Runtime.Autograd.Compiled.GraphM.Var outputShape) := do
+    let x ← Runtime.Autograd.Compiled.GraphM.arg
+      (α := Float) (Γ := [inputShape]) 0 inputShape
+    Runtime.Autograd.Compiled.GraphM.smoothMaxPool2d
+      (kH := 1) (kW := 2) (inH := 1) (inW := 2) (inC := 1) (stride := 1)
+      (h1 := by decide) (h2 := by decide) x 0.0
+  match Runtime.Autograd.Torch.compileGraph
+      (α := Float) (Γ := [inputShape]) (τ := outputShape) build with
+  | .error _ => IO.println "compiled_smooth_max_domain_test (Float): OK"
+  | .ok _ => throw <| IO.userError "compiled smooth-max accepted zero beta"
+
+end CompiledSmoothMaxDomain
+end Floats
+end Tests
+
+/-! ## Dense gradients for disconnected nodes -/
+
+namespace Tests
+namespace Floats
+namespace DisconnectedDenseGradient
+
+open _root_.Spec
+open _root_.Spec.Tensor
+open Runtime.Autograd
+
+/-- A disconnected reciprocal at zero must not turn an unrelated leaf gradient into `NaN`. -/
+def run : IO Unit := do
+  let t0 : Tape Float := Tape.empty
+  let (t1, xId) := Tape.leaf (t := t0) (Tensor.scalar 0.0) (name := some "x")
+  let (t2, outId) := Tape.leaf (t := t1) (Tensor.scalar 3.0) (name := some "output")
+  let (t3, invId) ← okOrThrow <|
+    Tape.inv (α := Float) (t := t2) (s := Shape.scalar) xId
+  let grads ← okOrThrow <|
+    Tape.backwardDenseAll (t := t3) outId (AnyTensor.mk (Tensor.scalar 1.0))
+  unless grads.size = t3.nodes.size do
+    throw <| IO.userError "disconnected dense gradient: result length mismatch"
+  let checkFiniteZero (label : String) (id : Nat) : IO Unit := do
+    let grad ← match grads[id]? with
+      | some grad => pure grad
+      | none => throw <| IO.userError s!"{label}: gradient id out of bounds"
+    if h : grad.s = Shape.scalar then
+      let value := Tensor.toScalar (Tensor.castShape grad.t h)
+      unless value.isFinite && value == 0.0 do
+        throw <| IO.userError s!"{label}: expected finite zero, got {value}"
+    else
+      throw <| IO.userError s!"{label}: expected a scalar gradient"
+  checkFiniteZero "disconnected reciprocal input gradient" xId
+  checkFiniteZero "disconnected reciprocal output gradient" invId
+  IO.println "disconnected_dense_gradient_test (Float): OK"
+
+end DisconnectedDenseGradient
+end Floats
+end Tests
+
+/-! ## Optimizer and scheduler edge-case regressions -/
+
+namespace Tests
+namespace Floats
+namespace OptimizerNumerics
+
+open Runtime.Autograd
+
+/-- Finite approximate equality used by the optimizer numerical regressions. -/
+def close (x y : Float) (tol : Float := 1e-5) : Bool :=
+  x.isFinite && y.isFinite && (x - y).abs ≤ tol
+
+/-- Construct one scalar parameter entry for a compact optimizer test. -/
+def scalarParam (id : Nat) (x : Float) : Train.ParamEntry Float :=
+  Train.ParamEntry.ofTensor id (Tensor.scalar x)
+
+/-- Construct a one-entry scalar gradient map. -/
+def scalarGrad (id : Nat) (x : Float) : Std.HashMap Nat (Runtime.AnyTensor Float) :=
+  ({} : Std.HashMap Nat (Runtime.AnyTensor Float)).insert id
+    (Runtime.Autograd.AnyTensor.mk (Tensor.scalar x))
+
+/-- Read a scalar parameter while preserving the runtime's error reporting. -/
+def getScalar (tag : String) (params : Train.ParamTable Float) (id : Nat) :
+    Runtime.Autograd.Result Float := do
+  let value ← Train.ParamTable.getTensor (tag := tag) (s := .scalar) params id
+  match value with
+  | .scalar x => pure x
+
+/-- Adam bias correction advances only when that particular parameter receives a gradient. -/
+def checkSparseAdamSteps : Runtime.Autograd.Result Bool := do
+  let opt0 : Train.OptimizerState Float :=
+    { kind := .adam
+      groups := [{ params := [0, 1], lr := 0.1, beta1 := 0.9, beta2 := 0.999,
+                   epsilon := 1e-8 }] }
+  let params0 : Train.ParamTable Float := [scalarParam 0 1.0, scalarParam 1 1.0]
+  let (opt1, params1) ← Train.Optim.step opt0 params0 (scalarGrad 0 1.0)
+  let (opt2, params2) ← Train.Optim.step opt1 params1 (scalarGrad 1 1.0)
+  let p0 ← getScalar "sparse Adam" params2 0
+  let p1 ← getScalar "sparse Adam" params2 1
+  let restored := Train.OptimizerState.ofStateDict opt2.toStateDict
+  pure <|
+    close p0 0.9 && close p1 0.9 && opt2.step == 2 &&
+      opt2.parameterSteps.get? 0 == some 1 && opt2.parameterSteps.get? 1 == some 1 &&
+      restored.parameterSteps.get? 0 == some 1 && restored.parameterSteps.get? 1 == some 1
+
+/-- Momentum dampening does not scale the first buffer, matching the standard SGD convention. -/
+def checkMomentumInitialization : Runtime.Autograd.Result Bool := do
+  let opt0 : Train.OptimizerState Float :=
+    { kind := .momentum
+      groups := [{ params := [0], lr := 0.1, momentum := 0.9, dampening := 0.5 }] }
+  let params0 : Train.ParamTable Float := [scalarParam 0 1.0]
+  let (opt1, params1) ← Train.Optim.step opt0 params0 (scalarGrad 0 2.0)
+  let first ← getScalar "momentum initialization" params1 0
+  let (_, params2) ← Train.Optim.step opt1 params1 (scalarGrad 0 2.0)
+  let second ← getScalar "momentum initialization" params2 0
+  pure (close first 0.8 && close second 0.52)
+
+/-- Warmup-cosine decay remains at zero after its finite schedule has ended. -/
+def checkWarmupCosineStops : Bool :=
+  let base : _root_.Optim.WarmupCosineScheduler Float :=
+    _root_.Optim.warmupCosineScheduler 1.0 2 10
+  let atEnd := { base with currentStep := 10 }
+  let afterEnd := { base with currentStep := 20 }
+  _root_.Optim.WarmupCosineScheduler.getLr atEnd == 0.0 &&
+    _root_.Optim.WarmupCosineScheduler.getLr afterEnd == 0.0
+
+/-- Run the optimizer and scheduler edge-case regressions. -/
+def run : IO Unit := do
+  match checkSparseAdamSteps with
+  | .error msg => throw <| IO.userError s!"optimizer numerics (sparse Adam): {msg}"
+  | .ok false => throw <| IO.userError "optimizer numerics (sparse Adam): FAILED"
+  | .ok true => pure ()
+  match checkMomentumInitialization with
+  | .error msg => throw <| IO.userError s!"optimizer numerics (momentum): {msg}"
+  | .ok false => throw <| IO.userError "optimizer numerics (momentum): FAILED"
+  | .ok true => pure ()
+  unless checkWarmupCosineStops do
+    throw <| IO.userError "optimizer numerics (warmup cosine): FAILED"
+  IO.println "optimizer and scheduler edge cases (Float): OK"
+
+end OptimizerNumerics
+end Floats
+end Tests
+
 namespace Tests
 namespace Floats
 
@@ -598,6 +791,10 @@ def runAllAutogradTests : IO Unit := do
   AutogradTrain.run
   AutogradLayerNorm.run
   AutogradConv2d.run
+  CompiledLogSoftmaxJvp.run
+  CompiledSmoothMaxDomain.run
+  DisconnectedDenseGradient.run
+  OptimizerNumerics.run
   IO.println "=== Autograd test suite completed ==="
 
 end Floats

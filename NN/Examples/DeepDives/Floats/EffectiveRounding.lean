@@ -249,10 +249,10 @@ theorem quarterCodes_roundtrip :
 
 /-- Round-to-odd on a sufficiently fine binary grid prevents double rounding on the quarter grid. -/
 theorem quarterGrid_doubleRounding_safe (extra : ℕ) (x : ℝ) :
-    neuralRoundAtScale neuralNearestEven (1 / 4)
+    neuralRoundAtScale neuralNearestEven (1 / 4) (by norm_num)
         (neuralRoundAtScale neuralOddRound
-          ((1 / 4) / (2 : ℝ) ^ (extra + 2)) x) =
-      neuralRoundAtScale neuralNearestEven (1 / 4) x := by
+          ((1 / 4) / (2 : ℝ) ^ (extra + 2)) (by positivity) x) =
+      neuralRoundAtScale neuralNearestEven (1 / 4) (by norm_num) x := by
   exact neuralRoundAtScale_nearestEven_after_odd_binary_extra extra (1 / 4) x (by norm_num)
 
 /-! ## IEEE exception status -/

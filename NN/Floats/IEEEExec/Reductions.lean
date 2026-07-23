@@ -196,12 +196,15 @@ theorem abs_exactSum_le_sumAbs (leafVal : α → ℝ) (t : SumTree α) :
       simpa [exactSum, sumAbs] using h1.trans h2
 
 /--
-Local rounded-addition assumption for reductions.
+Relative local rounded-addition assumption for reductions.
 
-This matches the usual “unit roundoff” envelope:
-`roundAdd a b = (a+b) + e`, with `|e| ≤ u*(|a|+|b|)`.
+This is the usual normal-range unit-roundoff envelope:
+`roundAdd a b = (a+b) + e`, with `|e| ≤ u*(|a|+|b|)`. Binary32 does **not** satisfy it globally
+with `u = 2⁻²⁴`: subnormal results require an absolute-error term. Consequently the executable
+theorems below take this predicate as an explicit hypothesis; it must be established from
+normal-range intermediate sums or replaced by an absolute/mixed analysis.
 -/
-def LocalAddBound (roundAdd : ℝ → ℝ → ℝ) (u : ℝ) : Prop :=
+def RelativeLocalAddBound (roundAdd : ℝ → ℝ → ℝ) (u : ℝ) : Prop :=
   ∀ a b : ℝ, _root_.abs (roundAdd a b - (a + b)) ≤ u * (_root_.abs a + _root_.abs b)
 
 /--
@@ -210,9 +213,9 @@ Order-independent enclosure for any reduction tree evaluated with `roundAdd`.
 Let `A = Σ |leaf_i|` be the sum of absolute values of leaves.
 For `n` leaves, the rounded evaluation is within `(growth u n - 1) * A` of the exact real sum.
 -/
-theorem evalRound_enclosure_of_LocalAddBound
+theorem evalRound_enclosure_of_relativeLocalAddBound
     (roundAdd : ℝ → ℝ → ℝ) (leafVal : α → ℝ) (u : ℝ)
-    (H : LocalAddBound roundAdd u) (hu : 0 ≤ u) :
+    (H : RelativeLocalAddBound roundAdd u) (hu : 0 ≤ u) :
     ∀ t : SumTree α,
       _root_.abs (evalRound roundAdd leafVal t - exactSum leafVal t) ≤
         (growth u t.leafCount - 1) * sumAbs leafVal t := by
@@ -496,7 +499,7 @@ theorem sumTreeResult_enclosure
     (xs : List IEEE32Exec) (r : IEEE32Exec)
     (hres : sumTreeResult xs r)
     (u : ℝ)
-    (H : LocalAddBound (fun a b => fp32Round (a + b)) u)
+    (H : RelativeLocalAddBound (fun a b => fp32Round (a + b)) u)
     (hu : 0 ≤ u) :
     ∃ t : SumTree IEEE32Exec,
       List.Perm t.leaves xs ∧ evalIEEE t = r ∧
@@ -508,7 +511,7 @@ theorem sumTreeResult_enclosure
   have hE :
       _root_.abs (evalRealIEEE t - exactSumIEEE t) ≤ (growth u t.leafCount - 1) * sumAbsIEEE t := by
     simpa [evalRealIEEE, exactSumIEEE, sumAbsIEEE] using
-      (evalRound_enclosure_of_LocalAddBound (roundAdd := fun a b => fp32Round (a + b))
+      (evalRound_enclosure_of_relativeLocalAddBound (roundAdd := fun a b => fp32Round (a + b))
         (leafVal := toReal) (u := u) H hu t)
   -- rewrite `evalRealIEEE t` as `toReal r` using `r = evalIEEE t`.
   have htr : toReal r = evalRealIEEE t := by simpa [hr] using hto
@@ -687,7 +690,7 @@ theorem dotTreeResult_enclosure
     (xs : List (IEEE32Exec × IEEE32Exec)) (r : IEEE32Exec)
     (hres : dotTreeResult xs r)
     (u : ℝ)
-    (H : LocalAddBound (fun a b => fp32Round (a + b)) u)
+    (H : RelativeLocalAddBound (fun a b => fp32Round (a + b)) u)
     (hu : 0 ≤ u) :
     ∃ t : SumTree (IEEE32Exec × IEEE32Exec),
       List.Perm t.leaves xs ∧ evalDotIEEE t = r ∧
@@ -700,7 +703,7 @@ theorem dotTreeResult_enclosure
       _root_.abs (evalRealDotIEEE t - exactSumDotIEEE t) ≤ (growth u t.leafCount - 1) *
         sumAbsDotIEEE t := by
     simpa [evalRealDotIEEE, exactSumDotIEEE, sumAbsDotIEEE] using
-      (evalRound_enclosure_of_LocalAddBound (roundAdd := fun a b => fp32Round (a + b))
+      (evalRound_enclosure_of_relativeLocalAddBound (roundAdd := fun a b => fp32Round (a + b))
         (leafVal := fun p => toReal (mul p.1 p.2)) (u := u) H hu t)
   have htr : toReal r = evalRealDotIEEE t := by simpa [hr] using hto
   rw [htr]

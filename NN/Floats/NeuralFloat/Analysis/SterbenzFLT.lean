@@ -38,12 +38,12 @@ This is the normal-range converse of `neural_generic_format_FLT_to_FLX`.
 -/
 theorem neural_generic_format_FLX_to_FLT_of_normal (emin prec : ℤ) (hprec : 0 < prec)
     {x : ℝ} (hxFLX : @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) x)
-    (hnorm : neuralBpow β (prec + emin) ≤ abs x) :
+    (hnorm : neuralBpow β (emin + prec - 1) ≤ abs x) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) x := by
   letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
-  obtain ⟨f, hxf, hmant⟩ := (generic_format_FLX_iff (β := β) prec hprec x).mp hxFLX
-  refine (generic_format_FLT_iff (β := β) emin prec hprec x).mpr ⟨f, hxf, hmant, ?_⟩
+  obtain ⟨_, f, hxf, hmant⟩ := (generic_format_FLX_iff (β := β) prec hprec x).mp hxFLX
+  refine (generic_format_FLT_iff (β := β) emin prec hprec x).mpr ⟨hprec, f, hxf, hmant, ?_⟩
   have hmabs : abs (f.mantissa : ℝ) = (f.mantissa.natAbs : ℝ) := by
     cases f.mantissa with
     | ofNat n => simp
@@ -64,9 +64,9 @@ theorem neural_generic_format_FLX_to_FLT_of_normal (emin prec : ℤ) (hprec : 0 
         rw [← neuralBpow.add_exp]
         congr 1
         linarith
-  have hlt : neuralBpow β (prec + emin) < neuralBpow β (f.exponent + prec) :=
+  have hlt : neuralBpow β (emin + prec - 1) < neuralBpow β (f.exponent + prec) :=
     lt_of_le_of_lt hnorm habsx
-  have hexp : prec + emin < f.exponent + prec :=
+  have hexp : emin + prec - 1 < f.exponent + prec :=
     (neuralBpow_lt_neuralBpow_iff β _ _).mp hlt
   linarith
 
@@ -81,11 +81,12 @@ theorem neural_generic_format_FLT_sub_of_le_two_mul (emin prec : ℤ) (hprec : 0
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) (x - y) := by
   letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
   letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
-  by_cases hsmall : abs (x - y) ≤ neuralBpow β (prec + emin)
+  by_cases hsmall : abs (x - y) ≤ neuralBpow β (emin + prec - 1)
   · have hxFix := neural_generic_format_FLT_to_FIX (β := β) emin prec hprec hxFmt
     have hyFix := neural_generic_format_FLT_to_FIX (β := β) emin prec hprec hyFmt
     have hdFix := neural_generic_format_FIX_sub (β := β) emin hxFix hyFix
-    exact neural_generic_format_FIX_to_FLT_of_abs_le (β := β) emin prec hprec hdFix hsmall
+    apply neural_generic_format_FIX_to_FLT_of_abs_le (β := β) emin prec hprec hdFix
+    exact hsmall.trans ((neuralBpow_le_neuralBpow_iff β _ _).2 (by linarith))
   · rw [not_le] at hsmall
     have hxFLX := neural_generic_format_FLT_to_FLX (β := β) emin prec hprec hxFmt
     have hyFLX := neural_generic_format_FLT_to_FLX (β := β) emin prec hprec hyFmt

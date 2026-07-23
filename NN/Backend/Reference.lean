@@ -298,7 +298,7 @@ def smoothMaxPool : KernelCapsule :=
     "reference.smooth_max_pool"
     .smoothMaxPool
     "Spec.smoothMaxPool"
-    "Reference smooth max pooling follows the generic window contract."
+    "Reference smooth max pooling uses stable max/min-shifted window weights."
     "TorchLean tape supplies the VJP."
 
 /-- Reference average pooling. -/

@@ -8,26 +8,26 @@ Inspired by Li, Peng, Severini, and Shafto, "The Network Structure of Mathlib" (
 
 ## Summary
 
-- Modules: `1272`
-- Import edges: `4090`
-- Internal import edges: `3548`
-- Public imports: `3760`
-- Private imports: `330`
+- Modules: `1278`
+- Import edges: `4129`
+- Internal import edges: `3586`
+- Public imports: `3797`
+- Private imports: `332`
 - Critical-path length over internal imports: `133`
 - Findings: `0` (`0` errors, `0` warnings)
-- Lean files: `1272`
-- Lean source lines: `319107`
-- Declaration headers: `13312`
-- Theorem/lemma headers: `2630`
+- Lean files: `1278`
+- Lean source lines: `322540`
+- Declaration headers: `13432`
+- Theorem/lemma headers: `2649`
 
 ## Top Fan-In Modules
 
-- `NN.API`: `73` incoming imports
+- `NN.API`: `76` incoming imports
 - `NN.Spec.Core.TensorOps`: `34` incoming imports
 - `NN.Spec.Core.Tensor`: `33` incoming imports
-- `NN.Spec.Layers.Activation`: `31` incoming imports
+- `NN.Spec.Layers.Activation`: `32` incoming imports
 - `NN.Spec.Core.TensorReductionShape`: `30` incoming imports
-- `NN.MLTheory.CROWN.Graph`: `28` incoming imports
+- `NN.MLTheory.CROWN.Graph`: `29` incoming imports
 - `NN.Floats.IEEEExec.Exec32`: `27` incoming imports
 - `NN.Spec.Core.Context`: `27` incoming imports
 - `NN.Tensor`: `22` incoming imports
@@ -35,7 +35,7 @@ Inspired by Li, Peng, Severini, and Shafto, "The Network Structure of Mathlib" (
 
 ## Top Fan-Out Modules
 
-- `NN.CI.Theory`: `105` imports
+- `NN.CI.Theory`: `106` imports
 - `NN.CI.Foundation`: `98` imports
 - `NN.CI.Floats`: `55` imports
 - `NN.Proofs`: `43` imports
@@ -51,23 +51,23 @@ Inspired by Li, Peng, Severini, and Shafto, "The Network Structure of Mathlib" (
 - `NN.Runtime` -> `NN.Runtime`: `383`
 - `NN.Proofs` -> `NN.Proofs`: `345`
 - `NN.API` -> `NN.API`: `320`
-- `NN.Spec` -> `NN.Spec`: `310`
-- `NN.Floats` -> `NN.Floats`: `279`
-- `NN.MLTheory` -> `NN.MLTheory`: `230`
-- `NN.Verification` -> `NN.Verification`: `176`
+- `NN.Spec` -> `NN.Spec`: `311`
+- `NN.Floats` -> `NN.Floats`: `280`
+- `NN.MLTheory` -> `NN.MLTheory`: `238`
+- `NN.Verification` -> `NN.Verification`: `181`
 - `NN.Examples` -> `NN.Examples`: `159`
 - `NN.CI` -> `NN.Spec`: `84`
-- `NN.MLTheory` -> `NN.Spec`: `74`
+- `NN.MLTheory` -> `NN.Spec`: `78`
+- `NN.CI` -> `NN.MLTheory`: `69`
 - `NN.Proofs` -> `NN.Spec`: `69`
-- `NN.CI` -> `NN.MLTheory`: `68`
 - `NN.Tests` -> `NN.Tests`: `61`
 - `NN.Examples` -> `NN.API`: `56`
 - `NN.CI` -> `NN.Floats`: `54`
-- `NN.Tests` -> `NN.Runtime`: `51`
+- `NN.Tests` -> `NN.Runtime`: `53`
 - `NN.API` -> `NN.Spec`: `43`
 - `Backend` -> `Backend`: `42`
 - `NN.API` -> `NN.Runtime`: `39`
-- `NN.CI` -> `NN.Proofs`: `38`
+- `NN.Runtime` -> `NN.Spec`: `39`
 
 ## Findings
 

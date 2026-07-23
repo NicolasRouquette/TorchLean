@@ -28,8 +28,7 @@ For example, in the one-digit setting `8 + 7 = 15` is represented as the digit s
 `8 7 5 1`.  At inference time the model sees `8 7` and greedily generates the two result digits
 `5 1`, which we reverse back to `15`.
 
-This is not a text chatbot. It is a controlled algorithmic sequence task for the CUDA GPT training
-loop:
+This controlled arithmetic sequence task exercises the CUDA GPT training loop:
 
 * synthetic data is generated in Lean,
 * the model is a GPT-style causal Transformer built from TorchLean layers,

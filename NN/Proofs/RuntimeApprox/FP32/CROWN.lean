@@ -164,6 +164,16 @@ theorem box_contains_inflateUniform_of_approx {s : Shape}
                             Spec.fill,
                             Tensor.subSpec, Tensor.addSpec, Tensor.map2Spec] using hrec
 
+/-- Forward-error budget used to inflate the real IBP box for a two-layer ReLU network. -/
+def ibpReluTwoLayerErrorBudget {inDim hidDim outDim : Nat}
+    (netR : NN.MLTheory.CROWN.TwoLayerMLP R inDim hidDim outDim)
+    (xR : Tensor R (.dim inDim .scalar)) (eW1 eb1 eW2 eb2 ex : ℝ) : ℝ :=
+  let l1R : Spec.LinearSpec R inDim hidDim :=
+    { weights := netR.hiddenWeight, bias := netR.hiddenBias }
+  let l2R : Spec.LinearSpec R hidDim outDim :=
+    { weights := netR.outputWeight, bias := netR.outputBias }
+  reluTwoLayerMlpErrorBudget eW1 eb1 eW2 eb2 ex l1R l2R xR
+
 /--
 Float32-sound IBP for a 2-layer ReLU MLP, via uniform output-box inflation:
 
@@ -186,15 +196,17 @@ theorem ibpBound_contains_reluTwoLayerMlp_float32 {inDim hidDim outDim : Nat}
     (hb2 : approxT (α := R) (toSpec := toSpec) netS.outputBias netR.outputBias eb2)
     (hx : approxT (α := R) (toSpec := toSpec) xS xR ex)
     (hxB : NN.MLTheory.CROWN.Box.contains (α := ℝ) xB xS) :
-    ∃ epsOut : ℝ,
-      NN.MLTheory.CROWN.Box.contains (α := ℝ)
-        (inflateBoxUniform (B := NN.MLTheory.CROWN.boundIbp (α := ℝ) netS xB) epsOut)
-        (tensorToSpec (α := R) (toSpec := toSpec)
-          (let l1R : Spec.LinearSpec R inDim hidDim := { weights := netR.hiddenWeight, bias := netR.hiddenBias }
-           let l2R : Spec.LinearSpec R hidDim outDim := { weights := netR.outputWeight, bias := netR.outputBias }
-           let z1R := Spec.linearSpec (α := R) l1R xR
-           let a1R := mapSpec (reluR (β := β) (fexp := fexp) (rnd := rnd)) z1R
-           Spec.linearSpec (α := R) l2R a1R)) := by
+    NN.MLTheory.CROWN.Box.contains (α := ℝ)
+      (inflateBoxUniform (B := NN.MLTheory.CROWN.boundIbp (α := ℝ) netS xB)
+        (ibpReluTwoLayerErrorBudget netR xR eW1 eb1 eW2 eb2 ex))
+      (tensorToSpec (α := R) (toSpec := toSpec)
+        (let l1R : Spec.LinearSpec R inDim hidDim :=
+            { weights := netR.hiddenWeight, bias := netR.hiddenBias }
+         let l2R : Spec.LinearSpec R hidDim outDim :=
+            { weights := netR.outputWeight, bias := netR.outputBias }
+         let z1R := Spec.linearSpec (α := R) l1R xR
+         let a1R := mapSpec (reluR (β := β) (fexp := fexp) (rnd := rnd)) z1R
+         Spec.linearSpec (α := R) l2R a1R)) := by
   -- Real IBP box contains the real forward output.
   have hyS :
       NN.MLTheory.CROWN.Box.contains (α := ℝ)
@@ -202,18 +214,18 @@ theorem ibpBound_contains_reluTwoLayerMlp_float32 {inDim hidDim outDim : Nat}
         (NN.MLTheory.CROWN.forward (α := ℝ) netS xS) :=
     NN.MLTheory.CROWN.Theorems.bound_ibp_sound (net := netS) (xB := xB) (x := xS) hxB
 
-  -- FP32 forward is close to the real forward, with some propagated `epsOut`.
+  -- FP32 forward is close to the real forward with the named propagated budget.
   let l1S : Spec.LinearSpec ℝ inDim hidDim := { weights := netS.hiddenWeight, bias := netS.hiddenBias }
   let l2S : Spec.LinearSpec ℝ hidDim outDim := { weights := netS.outputWeight, bias := netS.outputBias }
   let l1R : Spec.LinearSpec R inDim hidDim := { weights := netR.hiddenWeight, bias := netR.hiddenBias }
   let l2R : Spec.LinearSpec R hidDim outDim := { weights := netR.outputWeight, bias := netR.outputBias }
 
-  rcases approxT_reluTwoLayerMlp_float32
+  let epsOut := ibpReluTwoLayerErrorBudget netR xR eW1 eb1 eW2 eb2 ex
+  have hOut := approxT_reluTwoLayerMlp_float32
     (L0S := l1S) (L1S := l2S) (L0R := l1R) (L1R := l2R)
     (xS := xS) (xR := xR)
     (e0W := eW1) (e0b := eb1) (e1W := eW2) (e1b := eb2) (ex := ex)
-    hW1 hb1 hW2 hb2 hx with ⟨epsOut, hOut⟩
-  refine ⟨epsOut, ?_⟩
+    hW1 hb1 hW2 hb2 hx
 
   -- Inflate the real box to cover the interpreted FP32 output.
   refine box_contains_inflateUniform_of_approx (B := NN.MLTheory.CROWN.boundIbp (α := ℝ) netS xB)
@@ -231,7 +243,7 @@ theorem ibpBound_contains_reluTwoLayerMlp_float32 {inDim hidDim outDim : Nat}
       (mapSpec (reluR (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.linearSpec (α := R) l1R xR)))
     epsOut
-  simpa [l1S, l2S, l1R, l2R] using hOut
+  simpa [epsOut, ibpReluTwoLayerErrorBudget, l1S, l2S, l1R, l2R] using hOut
 
 end
 

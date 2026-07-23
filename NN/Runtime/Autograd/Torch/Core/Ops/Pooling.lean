@@ -98,7 +98,9 @@ def avgPool {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
 N-D smooth max pooling (log-sum-exp surrogate) for channels-first tensors `(C, spatial...)`.
 
 This is a differentiable approximation to max pooling; PyTorch does not expose it as a single
-primitive, but it can be emulated with `logsumexp` over local windows.
+primitive, but it can be emulated with `logsumexp` over local windows. Executable backends require
+at least one spatial dimension and a finite, nonzero `beta`; evaluation uses an input-space
+max/min shift so the exponential weights remain stable for large finite values.
 -/
 def smoothMaxPool {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Context α]
   [DecidableEq Shape]
@@ -205,8 +207,11 @@ def maxPool2dPad {α : Type} (s : EagerSession α) [Context α] [DecidableEq Sha
     pure (some { id := id })
   dispatchCudaOpt (α := α) s .maxPool cpu cuda
 
-/-- Smooth max-pooling (softmax pooling). Not a standard PyTorch primitive; see
-  `Torch.LinkedSession.smooth_max_pool2d`. -/
+/--
+Smooth max-pooling (softmax pooling). Not a standard PyTorch primitive; see
+`Torch.LinkedSession.smooth_max_pool2d`. Executable backends require finite, nonzero `beta` and
+use max/min-shifted exponential weights.
+-/
 def smoothMaxPool2d {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Context α]
   [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}

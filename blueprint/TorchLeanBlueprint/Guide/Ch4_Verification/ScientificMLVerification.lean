@@ -13,19 +13,17 @@ look smooth while accumulated error takes it outside the claimed corridor. A spl
 excellent at the knots and wrong inside one interval. TorchLean therefore treats the trained model
 or fitted curve as a producer of a mathematical claim, not as the claim itself.
 
-The shared certificate pattern is:
-
-- *ODE enclosure*: an external producer may integrate, search for a tube, or tune step sizes; the
-  Lean checker insists on interval conditions for each segment of the claimed corridor.
-- *PINN certificate*: Python may train a neural PDE surrogate; Lean checks the architecture,
-  parameters, PDE expression, domain boxes, and residual bounds.
-- *Spline or piecewise polynomial*: Julia or another system may fit the certificate; Lean checks
-  explicit rational pieces, interval conditions, and the named serialization format.
+The three maintained paths share a producer-and-checker shape, but they check different things. The
+ODE command tests interval subsolution, supersolution, ordering, and initial-value conditions for
+candidate corridor networks. The bundled PINN command replays residual and derivative bounds for a
+fixed in-source graph and parameter set. The spline command checks that rational polynomial pieces
+interpolate their declared knots exactly; it does not yet bound the polynomial between those knots.
 
 For classifier verification, the artifact is often an input box and logit bounds. For scientific ML,
 the artifact may be a time corridor, a residual bound, a polynomial certificate, or a derivative
-enclosure. TorchLean makes all of these look like the same proof pattern: a producer proposes a
-finite object, Lean checks the object, and a theorem states what follows.
+enclosure. In each case a producer proposes a finite object and Lean checks a smaller predicate.
+Where a mathematical enclosure theorem exists, a separate soundness bridge must still show that
+the executable predicate supplies its hypotheses.
 
 # Three Commands To Try
 
@@ -77,10 +75,22 @@ and prints:
 Piecewise polynomial certificate verified.
 ```
 
-The message refers to the predicates of the piecewise-polynomial certificate format. To understand
-the claim, inspect the intervals, coefficients, and bounds in the sample artifact, then change one
-coefficient and rerun the checker. A certificate interface is doing its job when a small invalid
-change causes a clear rejection.
+Here “verified” means that the knot coordinates are strictly increasing, each piece names the
+matching adjacent knots, every coefficient array has the declared length, and Horner evaluation at
+both endpoints equals the declared knot values over exact rationals. Change one coefficient and
+rerun the checker; an endpoint mismatch should be reported.
+
+Two flags expose useful neighboring checks:
+
+```
+lake exe verify -- spline-cert --ieee32
+lake exe verify -- spline-cert --regen
+```
+
+`--ieee32` additionally requires every rational value to be exactly representable as finite
+binary32 and replays the endpoint equalities with `IEEE32Exec`. `--regen` asks the Julia producer to
+write a fresh JSON document before Lean checks it. Neither flag proves an interior range bound for
+a polynomial piece.
 
 The ODE tool has no meaningful default differential equation, so invoking it without a certificate
 prints the required data:
@@ -90,20 +100,37 @@ lake exe verify -- ode
 ```
 
 ```
-lake exe verify -- ode [--model=direct|torchlean]
+lake exe verify -- ode --model=direct \
   [--scalar=float|ieee32exec] --cert=<ode_enclosure.json>
+lake exe verify -- ode --model=torchlean \
+  --scalar=float --cert=<ode_enclosure.json>
 ```
 
-The explicit `--model` and `--scalar` choices are important. They record whether the expression
-came directly from the ODE certificate or through a TorchLean model, and whether the checker used
-host `Float` arithmetic or the executable IEEE binary32 semantics.
+The ODE expression always comes from the certificate. The `--model` choice controls how the lower
+and upper corridor networks are evaluated: directly from the imported graph, or after compilation
+through TorchLean. The `--scalar` choice controls the arithmetic used by the direct evaluator.
+Today the TorchLean-compiled route supports only `--scalar=float`; pairing it with `ieee32exec` is
+rejected rather than silently changing the requested semantics.
+
+Certificate times and initial endpoints must be finite and correctly ordered; `minWidth` and
+`slack` must be finite and nonnegative. Unknown backend names or wrong JSON field types are rejected
+instead of being replaced by defaults. During checking, a NaN or infinity in any interval
+comparison is a failure, not a successful unordered comparison.
+
+Expression parsing is part of that boundary. In both ODE and PINN expressions, exponentiation
+binds more tightly than unary minus, so `-u^2` means `-(u^2)`; write `(-u)^2` for the other tree.
+Natural powers use the ordinary identities `u^0 = 1` and `u^1 = u`. The parser consumes the whole
+input and rejects unknown identifiers or trailing tokens, preventing a certificate from being
+checked against a silently shortened equation.
 
 # ODE Enclosures
 
 An ODE enclosure certificate is a finite description of a corridor around a trajectory. The checker
 does not depend on an external integrator's explanation of the run. It parses the ODE expression,
-evaluates interval bounds over each segment, and checks that the claimed tube is closed under the
-vector field with the required margins.
+runs its interval-shaped endpoint calculation over each segment, and tests the candidate tube's
+subsolution, supersolution, ordering, and initial-value conditions. That calculation is an
+executable screening condition; a theorem about the true trajectory still needs the outward-bound
+and real-analysis links described below.
 
 The mathematical object is an ODE
 
@@ -121,15 +148,12 @@ The executable side is exposed through the
 [ODE checker API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/ODE/Verify.lean). The core pieces are the expression AST,
 the interval evaluator, the segment certificate, and the final checker result.
 
-The concrete executable declarations are small enough to audit:
+The exported expression language and command entry point are small enough to inspect directly:
 
 ```
 #check NN.Verification.ODE.Expr
 #check NN.Verification.ODE.eval
-#check NN.Verification.ODE.Verify.ODECertificateSegment
-#check NN.Verification.ODE.Verify.ODECertificate
-#check NN.Verification.ODE.Verify.checkSub
-#check NN.Verification.ODE.Verify.checkSuper
+#check NN.Verification.ODE.Verify.main
 ```
 
 The theorem side is the real mathematical statement. In the
@@ -145,9 +169,12 @@ The backend bridge in
 backend valued trajectories, including FP32 and `IEEE32Exec` views, can be related back to the real
 statement through explicit interpretation maps.
 
-Lean has a local enclosure theorem, and the executable checker puts imported ODE or PINN artifacts
-into the shape that theorem expects. Broader neural ODE and integrator claims need their own
-enclosure conditions and agreement evidence.
+Lean has a local real enclosure theorem, and the executable checker computes the kinds of corridor
+inequalities that theorem consumes. There is not currently a theorem saying that a successful
+`runCertificate` call supplies all of the real-analysis hypotheses of that enclosure theorem.
+Continuity, derivative agreement, interval soundness, and any finite-to-real interpretation still
+have to be connected explicitly. Broader neural ODE and integrator claims need their own enclosure
+conditions and agreement evidence as well.
 
 The trusted boundary is therefore:
 
@@ -176,9 +203,12 @@ parameters instead of letting a raw tensor dictionary float around unchecked. Th
 [residual affine API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/PINN/ResidualAffine.lean) contains the bound helpers,
 including McCormick style pieces and branch and bound support.
 
-The certificate level combines the architecture, imported parameters, PDE expression, and domain
-boxes, then checks residual bounds and produces an accepted certificate with a theorem-ready
-residual proposition.
+The bundled `pinn-cert` path is intentionally smaller than that full target. Its graph is the fixed
+`1 -> 16 -> 16 -> 1` tanh network `buildGraph`, and its deterministic parameters are
+`seedParamsFloat`, both defined in Lean. The JSON supplies sample points, box radii, a PDE
+expression, and expected value, derivative, and residual intervals. `verifyCert` recomputes those
+quantities with the Float bound implementation and compares them with the artifact. It returns
+success or an error; it does not construct a proof object for a uniform residual proposition.
 
 For a Burgers-style residual, the mathematical claim has the shape:
 
@@ -213,30 +243,51 @@ Important Lean objects:
 
 PINNs are a good stress test because the model is only part of the claim. The PDE residual, the
 domain, the boundary data, and the imported parameters all matter. TorchLean's design makes those
-pieces explicit in the certificate object.
+pieces explicit across its PINN tools. `pinn-cli` explores one- and two-dimensional residual boxes
+with IBP or CROWN-style methods, while `pinn-dataset-check` performs pointwise interval containment
+checks and can load an optional PyTorch parameter file. The dataset command is report-only by
+default: it prints `ok` and `bad` counts but exits successfully even when misses are present. Use
+
+```
+lake exe verify -- pinn-dataset-check --strict
+```
+
+when a nonzero `bad` count should fail an automated run. Even strict success is still a checker
+result until a soundness theorem connects the selected bound path and imported parameters to a
+quantified PDE statement.
 
 The reference point for the application is Raissi, Perdikaris, and Karniadakis,
 ["Physics-informed neural networks"](https://www.sciencedirect.com/science/article/pii/S0021999118307125)
 (Journal of Computational Physics 2019; arXiv preprint
 [1711.10561](https://arxiv.org/abs/1711.10561)). That paper motivates the residual objective.
-TorchLean's checker makes a narrower claim: for an exported architecture, parameters, PDE
-expression, and domain boxes, the certificate's residual and dataset checks pass the predicates
-implemented in Lean.
+TorchLean's bundled replay makes a narrower claim: for its fixed graph and parameters, the
+artifact's stored value, derivative, and residual intervals match the Float quantities recomputed
+at the declared boxes. The dataset and interactive commands have their own inputs and checks; they
+should not be folded into the meaning of `pinn-cert`.
 
 # Piecewise Polynomial and Spline Certificates
 
 The spline path is concentrated in
 [NN.Verification.Splines.PiecewisePolyCert API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/Splines/PiecewisePolyCert.lean).
-It parses `piecewise_poly_v0` JSON, checks rational polynomial pieces, evaluates polynomials by
-Horner's rule, and also has an `IEEE32Exec` exact conversion path.
+It parses `piecewise_poly_v0` JSON, evaluates polynomial pieces by Horner's rule, checks exact
+rational interpolation at adjacent knots, and also has an `IEEE32Exec` exact conversion path.
 
 A piecewise polynomial certificate names intervals `I_i` and polynomial pieces
 
 $$`p_i(x)=\sum_k a_{ik}x^k,\qquad x\in I_i.`
 
-The checker validates interval claims such as:
+For a piece on `I_i=[x_i,x_{i+1}]`, the checked equations are
 
-$$`\forall x\in I_i,\qquad p_i(x)\in[\ell_i,u_i].`
+$$`p_i(x_i)=y_i,
+\qquad p_i(x_{i+1})=y_{i+1}.`
+
+An interior range theorem would instead need a statement such as
+
+$$`\forall x\in I_i,\qquad p_i(x)\in[\ell_i,u_i],`
+
+together with data or a proof sufficient to check it. That stronger condition is not part of
+`piecewise_poly_v0` today. This is precisely why a curve may interpolate every knot and still
+behave badly between them.
 
 The example follows the external-tool pattern:
 
@@ -256,8 +307,8 @@ The same scientific artifact can support different strengths of claim depending 
   certificate.
 - If an ODE artifact contains a proposed trajectory but no interval enclosure condition, Lean can
   parse the trajectory but does not get an enclosure theorem.
-- If a piecewise polynomial artifact contains rational coefficients and interval bounds for each
-  piece, Lean can check the finite polynomial obligations directly.
+- If a piecewise polynomial artifact contains rational coefficients in the current format, Lean can
+  check exact knot interpolation. An interior range claim needs a richer schema and checker.
 
 This is the same checked/proved/assumed distinction used for robustness certificates. The producer
 may be a numerical solver; the theorem applies only to the artifact fields that Lean checked or to
@@ -267,9 +318,9 @@ producer hypotheses named in the statement.
 
 Scientific ML often lives at the boundary between theorem proving and numerical tooling. The
 working discipline is simple: export a small artifact, recompute as much of it as practical in
-Lean, and attach the accepted artifact to a theorem whose hypotheses name anything still supplied
-by the producer. The plots remain useful evidence, but they no longer have to carry the logical
-meaning of the result by themselves.
+Lean, and attach it to a theorem only after proving that the accepted checks imply the theorem's
+hypotheses. The plots remain useful evidence, but they no longer have to carry the logical meaning
+of the result by themselves.
 
 # References
 

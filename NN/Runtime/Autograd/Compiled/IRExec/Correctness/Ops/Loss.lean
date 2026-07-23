@@ -23,8 +23,8 @@ This file proves the forward-correctness lemma for that compilation step: on suc
 at position `i`, the IR evaluator `NN.IR.Graph.denoteAllFrom` and the compiled evaluator
 `denoteAllState` append the same result.
 
-This is a structural correctness statement: it is not about generalization, training convergence,
-or statistical properties of MSE; it simply connects the IR semantics to the compiled runtime node.
+This structural correctness statement connects the IR semantics to the compiled runtime node. It
+makes no claim about generalization, training convergence, or the statistical properties of MSE.
 
 ## Main definitions
 

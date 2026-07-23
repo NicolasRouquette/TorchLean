@@ -24,7 +24,7 @@ fixed algorithms:
 - `exp`: range reduction + a fixed-point polynomial for `2^(x/ln 2)`,
 - `log`: normalization `x = m * 2^k` + a convergent atanh-series for `log m`,
 - `sinh`, `cosh`: defined via `exp`,
-- `tanh`: a numerically stable expression in terms of `exp`.
+- `tanh`: a small-input odd polynomial plus a bounded expression in terms of `exp`.
 
 Here we prove the **special-value rules** for those definitions: how NaNs, infinities, signed
 zeros (`+0` and `-0`), and sign checks behave. These are the facts we want in proofs without

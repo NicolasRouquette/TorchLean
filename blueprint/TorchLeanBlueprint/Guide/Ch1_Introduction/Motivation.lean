@@ -28,7 +28,11 @@ bound the network everywhere inside it.
 
 # A Mask With The Right Shape And The Wrong Meaning
 
-Some of the most important mistakes are perfectly well typed. Attention masking is a good example.
+Before trying to certify a network, we have to know which function we are certifying. Shape types
+remove many accidental interpretations, but they cannot decide the meaning of every well-shaped
+operation. Attention masking is a useful case because the incorrect version can look convincing in
+ordinary tests.
+
 For query `i`, let `Aᵢ` be the keys that are allowed to receive attention. A hard mask means
 
 $$`
@@ -67,7 +71,7 @@ ones.
 
 # Coordinates Are Part Of The Claim
 
-Now suppose the model consumes normalized vectors:
+The same problem can arise before the first layer. Suppose the model consumes normalized vectors:
 
 $$`N(x)_i=\frac{x_i-\mu_i}{\sigma_i}`.
 
@@ -180,8 +184,9 @@ and overflow introduce further distinctions.
 TorchLean therefore gives several numerical interpretations distinct names:
 
 - exact real-valued specifications;
-- configurable rounded-real arithmetic;
-- a finite binary32-sized model;
+- configurable rounded-real arithmetic with checked positive format precision;
+- `FP32`, a rounded-real model with binary32 precision and gradual-underflow parameters but no
+  upper exponent bound or IEEE special values;
 - executable bit-level IEEE binary32;
 - host `Float`, native CUDA, and external runtime providers.
 
@@ -189,6 +194,25 @@ A real-valued enclosure theorem cannot be silently relabeled as a theorem about 
 A bridge theorem or an explicit backend contract must carry the result across that boundary. Later
 chapters develop these numerical layers in detail; for now, the important habit is to ask which
 arithmetic appears in the statement.
+
+Even an algebraically equivalent formula can make a runtime contract safer. Smooth-max pooling,
+for example, evaluates
+
+$$`
+p+\frac{1}{\beta}
+  \log\!\left(\sum_i e^{\beta(x_i-p)}\right),
+\qquad
+p=
+\begin{cases}
+\max_i x_i,&\beta>0,\\
+\min_i x_i,&\beta<0.
+\end{cases}
+`
+
+The shift keeps every exponential argument nonpositive. TorchLean uses the same shifted weights in
+the forward and derivative paths, and executable entry points reject zero or non-finite `β`. The
+real identity explains the transformation; the validation and backend tests address the executable
+boundary.
 
 # Why Lean Helps
 

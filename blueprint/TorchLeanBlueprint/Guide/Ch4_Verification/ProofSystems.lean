@@ -7,13 +7,15 @@ open Verso.Genre Manual
 tag := "proof-systems-beyond-bounds"
 %%%
 
-Verification in TorchLean means connecting an artifact to the semantics it claims to represent.
+Imagine that a compiler accidentally drops the bias from a linear layer. The compiled graph may
+still be well shaped, execute without an exception, and even receive a convincing interval
+certificate. The certificate would then describe the wrong function. A compiler-correctness
+relation is what prevents that quiet change of subject.
 
-IBP and CROWN enclose outputs. Compiler correctness preserves graph meaning. The autograd theorems
-connect backward rules to derivatives. Runtime approximation accounts for finite precision. BugZoo
-contracts make common ML failure modes precise. These are different proof systems, but they follow
-the same discipline: name the object, state the relation, and prove or check the relation for the
-supported fragment.
+The same pattern reappears elsewhere. IBP and CROWN relate boxes or affine forms to graph values;
+autograd relates a reverse rule to the derivative of the forward map; runtime approximation relates
+rounded execution to ideal arithmetic. These are different proof systems, but each begins by
+naming two objects and the relation that is supposed to connect them.
 
 # Proof Obligations As Relations
 
@@ -56,11 +58,9 @@ In plain English:
 > on any input gives the same value table as the Lean denotational evaluator for the original IR
 > graph.
 
-The theorem connects three objects:
-
-- `NN.IR.Graph.denoteAll`: the reference denotational semantics of the tagged op IR.
-- `execGraphOfIR`: the compiler from IR to executable compiled graph data.
-- `ExecGraphData.denoteAll`: the compiled runtime evaluator.
+The theorem connects three concrete objects: `NN.IR.Graph.denoteAll`, the reference denotation of
+the tagged operation IR; `execGraphOfIR`, the compiler; and `ExecGraphData.denoteAll`, the evaluator
+for the resulting compiled graph.
 
 The theorem shape is: if `execGraphOfIR g payload` returns `ok exec`, and the named fragment
 side conditions hold, then for every input `x`, the value table produced by
@@ -72,11 +72,12 @@ In theorem notation, the supported-fragment statement has the shape:
 $$`\operatorname{execGraphOfIR}(G,P)=\operatorname{ok}(E)
 \;\land\; \operatorname{NoMSELoss}(G)
 \;\land\; \operatorname{NoRawLog}(G)
+\;\land\; \operatorname{NoConcat}(G)
 \quad\Longrightarrow\quad
 \forall x,\;
-\operatorname{ExecGraphData.denoteAll}(E,x)
+\operatorname{Graph.denoteAll}(G,P,x)
 =
-\operatorname{Graph.denoteAll}(G,P,x)`
+\operatorname{ok}\!\left(\operatorname{ExecGraphData.denoteAll}(E,x)\right)`
 
 For the covered IRExec fragment, this theorem prevents "verified the wrong executable graph."
 
@@ -87,17 +88,17 @@ must succeed, and the current theorem has explicit fragment predicates:
 - `NoRawLog g`, because raw real `log` needs a positivity precondition. The local positive-domain
   branch is present, but the whole-graph theorem needs per-node domain facts to use it. Use the
   epsilon-protected safe-log operation when unconditional execution is intended.
+- `NoConcat g`, because concatenation lowering has not yet been connected to this whole-graph
+  preservation theorem, even though selected concat cases execute.
 
 That precision is part of the compiler proof: supported ops get named coverage, and unsupported ops
 or ops needing extra domain facts do not get folded into the theorem by vague prose.
 
-What this theorem rules out:
-
-- In PyTorch or XLA style compilation, we usually rely on the compiler and test for regressions.
-- In TorchLean's supported IRExec fragment, under the named side conditions, the compiler's forward
-  result is tied to the IR denotation by a Lean theorem.
-- This directly targets the classic silent wrong code problem: the optimized/executable graph
-  should not secretly compute a different mathematical program.
+In an ordinary compiler workflow, regression tests supply much of our confidence that a lowering
+did not change the program. Here, for the supported IRExec fragment and named side conditions, a
+Lean theorem ties the compiler's forward result to the IR denotation for every input. Tests remain
+valuable, but this particular silent-wrong-code question no longer rests on the tested examples
+alone.
 
 The proof is large because it recursively mirrors the compiler. The workhorse lemma is
 `buildFrom_preserves_denotation`: as the compiler walks node ids and extends the compiled graph, the
@@ -118,33 +119,35 @@ The current proof is split for auditability:
 - The [semantic equivalence theorem API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean)
   ties the cases together into `execGraphOfIR_semantics_eq`.
 
-Here TorchLean is doing more than a normal ML framework can do with tests. A regression test says
-"we tried these examples." The theorem says "for every input, if the supported compiler accepts this
-graph and the named fragment side conditions hold, the compiled evaluator and IR denotation agree."
+For this supported fragment, the theorem quantifies over every input, while regression tests
+exercise selected examples. If the compiler accepts the graph and the named fragment side
+conditions hold, the compiled evaluator and IR denotation agree.
 
 # A Tiny IRExec Example
 
-Imagine an IR graph for:
+Return to the bias-dropping bug from the opening. For the small graph
 
 $$`y=\operatorname{ReLU}(Wx+b)`
 
-There are two ways to evaluate it:
+there are two ways to evaluate it.
 
-1. Interpret the IR directly:
+First interpret the IR directly:
 
 - input node `0` gives `x`;
 - linear node `1` reads `W` and `b` from the payload and computes `Wx+b`;
 - ReLU node `2` computes `max(0,node1)`.
 
-2. Compile the IR into `ExecGraphData` and run the compiled graph:
+Then compile the IR into `ExecGraphData` and run the compiled graph:
 
 - compiled node `1` has a forward closure for the affine map;
 - compiled node `2` has a forward closure for ReLU;
 - the compiled evaluator visits the same dependency order as the IR denotation.
 
-The theorem says these two paths produce the same result for every `x`, provided the compiler
-accepted the graph and the ops are in the proved fragment. At that boundary, the compiled runtime
-stops being "some other implementation" and becomes a proved refinement of the IR semantics.
+If compilation silently omitted `b`, those paths would disagree as soon as a nonzero bias affected
+the output. The theorem says that cannot happen: they produce the same result for every `x`,
+provided the compiler accepted the graph and the operations are in the proved fragment. At that
+boundary, the compiled evaluator is a proved refinement of the IR semantics rather than merely a
+second implementation with matching tests.
 
 # Run The Graph Through Both Views
 
@@ -198,6 +201,13 @@ That message is a feature, not an inconvenience to hide. The semantic language c
 programs than a particular compiler theorem or runtime backend currently covers. A clean system
 rejects or skips the unsupported lowering; it does not infer correctness from the fact that a
 different implementation happened to return an array of the expected shape.
+
+The executable negative cases in
+[`IR.ShapeContracts`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/IR/ShapeContracts.lean)
+exercise this boundary for malformed axes, incompatible shapes, and unsupported contracts. They
+are useful regression checks that rejection remains fail-closed. They are not a semantic compiler
+theorem: the whole-graph meaning-preservation result is still
+`execGraphOfIR_semantics_eq` with its explicit fragment hypotheses.
 
 # How The Proof Systems Compose
 
@@ -275,13 +285,10 @@ of silent conventions.
 
 # Evidence Is Not Interchangeable
 
-The same result may have several kinds of evidence:
-
-- a runtime example shows that a path executes on one input;
-- a regression test guards behavior on selected inputs;
-- a checker validates a finite artifact;
-- a refinement theorem relates two semantics for every input satisfying its hypotheses;
-- a backend contract records an assumption about code outside Lean.
+The same result may have several kinds of evidence. A runtime example shows that a path executes on
+one input, and a regression test guards selected inputs. A checker can validate every field of one
+finite artifact. A refinement theorem instead quantifies over all inputs satisfying its hypotheses,
+while a backend contract records whatever assumption remains about code outside Lean.
 
 More evidence is welcome, but one kind does not silently become another. A CUDA parity test does
 not prove a vendor kernel. A real-arithmetic CROWN theorem does not by itself prove a binary32

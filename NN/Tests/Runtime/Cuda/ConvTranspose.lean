@@ -265,10 +265,57 @@ def runConvTranspose3 : IO Unit := do
   Utils.assertTensorApprox (s := shape![outC3]) "conv_transpose[d=3] dBias" dBCuda dBCpu (tol := 1e-2)
   Utils.assertTensorApprox (s := inputShape3) "conv_transpose[d=3] dInput" dXCuda dXCpu (tol := 1e-2)
 
+/-- Excessive padding saturates transpose-convolution output size only after adding the kernel. -/
+def runSaturatedOutputGeometry : IO Unit := do
+  IO.println "== conv_transpose saturated output geometry =="
+  let input : Tensor Float (shape![1, 1, 1]) := tensorOfList! [1, 1, 1] [2.0]
+  let kernel : Tensor Float (shape![1, 1, 3, 3]) :=
+    tensorOfList! [1, 1, 3, 3] [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  let bias : Tensor Float (shape![1]) := tensorOfList! [1] [0.0]
+  let (t1, kernelId) := Runtime.Autograd.Cuda.Tape.empty.leaf (Utils.tensorToAnyBuffer kernel)
+  let (t2, biasId) := t1.leaf (Utils.tensorToAnyBuffer bias)
+  let (t3, inputId) := t2.leaf (Utils.tensorToAnyBuffer input)
+  let (t4, outputId) ← Utils.okOrThrow
+    (Runtime.Autograd.Cuda.Tape.convTranspose2d (t := t3)
+      (inC := 1) (outC := 1) (kH := 3) (kW := 3) (stride := 1) (padding := 2)
+      (inH := 1) (inW := 1) (h1 := by decide) (h2 := by decide) (h3 := by decide)
+      kernelId biasId inputId)
+  let empty2dShape : Shape := shape![1, 0, 0]
+  let output ← Utils.okOrThrow <|
+    Runtime.Autograd.Cuda.Tape.requireValue t4 outputId empty2dShape
+  unless Runtime.Autograd.Cuda.Buffer.size output = 0 do
+    throw <| IO.userError "conv_transpose2d excessive padding produced a nonempty buffer"
+
+  let inSpatial : Vector Nat 1 := #v[1]
+  let kernelDims : Vector Nat 1 := #v[3]
+  let strideDims : Vector Nat 1 := #v[1]
+  let paddingDims : Vector Nat 1 := #v[2]
+  let hKernel : ∀ i : Fin 1, kernelDims.get i ≠ 0 := by
+    intro i
+    fin_cases i
+    simp [kernelDims, Vector.get]
+  let inputNd : Tensor Float (Shape.ofList [1, 1]) := tensorOfList! [1, 1] [2.0]
+  let kernelNd : Tensor Float (Shape.ofList [1, 1, 3]) := tensorOfList! [1, 1, 3] [1.0, 1.0, 1.0]
+  let (tn1, kernelNdId) :=
+    Runtime.Autograd.Cuda.Tape.empty.leaf (Utils.tensorToAnyBuffer kernelNd)
+  let (tn2, biasNdId) := tn1.leaf (Utils.tensorToAnyBuffer bias)
+  let (tn3, inputNdId) := tn2.leaf (Utils.tensorToAnyBuffer inputNd)
+  let (tn4, outputNdId) ← Utils.okOrThrow
+    (Runtime.Autograd.Cuda.Tape.convTranspose (t := tn3)
+      (d := 1) (inC := 1) (outC := 1) (inSpatial := inSpatial) (kernel := kernelDims)
+      (stride := strideDims) (padding := paddingDims) kernelNdId biasNdId inputNdId
+      (hInC := by decide) (hKernel := hKernel))
+  let emptyNdShape : Shape := Shape.ofList [1, 0]
+  let outputNd ← Utils.okOrThrow <|
+    Runtime.Autograd.Cuda.Tape.requireValue tn4 outputNdId emptyNdShape
+  unless Runtime.Autograd.Cuda.Buffer.size outputNd = 0 do
+    throw <| IO.userError "N-D conv_transpose excessive padding produced a nonempty buffer"
+
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: conv_transpose ==="
   runConvTranspose2
   runConvTranspose3
+  runSaturatedOutputGeometry
 
 end ConvTranspose
 end Cuda

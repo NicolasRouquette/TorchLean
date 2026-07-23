@@ -659,6 +659,18 @@ inductive ScalarBackend where
 instance : ToString ScalarBackend :=
   ⟨fun b => match b with | .float => "float" | .ieee32exec => "ieee32exec"⟩
 
+/-- Parse a scalar backend name as used in CLI flags and certificate settings. -/
+private def parseScalarName (s : String) : Option ScalarBackend :=
+  if s = "float" then some .float
+  else if s = "ieee32exec" then some .ieee32exec
+  else none
+
+/-- Parse a scalar backend name and report a CLI-friendly error on failure. -/
+private def parseScalarNameE (s : String) : Except String ScalarBackend :=
+  match parseScalarName s with
+  | some sc => pure sc
+  | none => throw s!"--scalar: expected float or ieee32exec; got `{s}`"
+
 /--
 Verification settings controlling domain splitting and slack.
 
@@ -709,6 +721,29 @@ structure ODECertificate where
   settings : ODEVerifierSettings := {}
   deriving Repr
 
+/-- Reject settings that could disable subdivision or make comparisons non-finite. -/
+@[noinline] private def validateSettings (cfg : ODEVerifierSettings) : Except String Unit := do
+  unless cfg.minWidth.isFinite do
+    throw "settings.minWidth must be finite"
+  if cfg.minWidth < 0.0 then
+    throw "settings.minWidth must be nonnegative"
+  unless cfg.slack.isFinite do
+    throw "settings.slack must be finite"
+  if cfg.slack < 0.0 then
+    throw "settings.slack must be nonnegative"
+
+/-- Validate the ordered, finite scalar data carried by one certificate segment. -/
+@[noinline] private def validateSegment (seg : ODECertificateSegment) : Except String Unit := do
+  unless seg.t.lo.isFinite && seg.t.hi.isFinite do
+    throw "segment time interval must have finite endpoints"
+  if seg.t.hi < seg.t.lo then
+    throw "segment: t1 < t0"
+  let (initLo, initHi) := seg.init
+  unless initLo.isFinite && initHi.isFinite do
+    throw "segment initial interval must have finite endpoints"
+  if initHi < initLo then
+    throw "segment.init: hi < lo"
+
 /-- Parse an interval object `{ lo: ..., hi: ... }` from JSON. -/
 private def parseIntervalObj (j : Json) : Except String Interval := do
   let lo ← NN.Verification.Json.expectFieldFiniteFloatE "interval" "lo" j
@@ -737,23 +772,33 @@ private def parseSettings (j : Json) : Except String ODEVerifierSettings := do
       match o.get? "slack" with
       | some value => NN.Verification.Json.expectFiniteFloatE "settings.slack" value
       | none => pure 0.0
-    let verbose :=
+    let verbose ←
       match o.get? "verbose" with
-      | some (.bool b) => b
-      | _ => false
-    let modelBackend :=
+      | some (.bool b) => pure b
+      | some _ => throw "settings.verbose: expected boolean"
+      | none => pure false
+    let modelBackend ←
       match o.get? "modelBackend" with
-      | some (.str "torchlean") => ModelBackend.torchlean
-      | some (.str "direct") => ModelBackend.direct
-      | _ => ModelBackend.direct
-    let scalar :=
+      | some (.str name) =>
+          match parseModelBackendName name with
+          | some backend => pure backend
+          | none => throw s!"settings.modelBackend: expected direct or torchlean; got `{name}`"
+      | some _ => throw "settings.modelBackend: expected string"
+      | none => pure ModelBackend.direct
+    let scalar ←
       match o.get? "scalar" with
-      | some (.str "ieee32exec") => ScalarBackend.ieee32exec
-      | some (.str "float") => ScalarBackend.float
-      | _ => ScalarBackend.float
-    pure { maxDepth := maxDepth, minWidth := minWidth, slack := slack, verbose := verbose
-           , modelBackend := modelBackend, scalar := scalar }
-  | _ => pure {}
+      | some (.str name) =>
+          match parseScalarName name with
+          | some backend => pure backend
+          | none => throw s!"settings.scalar: expected float or ieee32exec; got `{name}`"
+      | some _ => throw "settings.scalar: expected string"
+      | none => pure ScalarBackend.float
+    let cfg := { maxDepth := maxDepth, minWidth := minWidth, slack := slack, verbose := verbose
+                 modelBackend := modelBackend, scalar := scalar }
+    validateSettings cfg
+    pure cfg
+  | .null => pure {}
+  | _ => throw "settings: expected object"
 
 /-- Parse a single segment object from the certificate JSON. -/
 private def parseSegment (j : Json) : Except String ODECertificateSegment := do
@@ -770,10 +815,17 @@ private def parseSegment (j : Json) : Except String ODECertificateSegment := do
     | _ => throw "segment.init must be number or {lo,hi}"
   let lw ← NN.Verification.Json.expectFieldStringE "segment" "lowerWeights" j
   let uw ← NN.Verification.Json.expectFieldStringE "segment" "upperWeights" j
-  if t1 < t0 then throw "segment: t1 < t0" else
-  pure { t := { lo := t0, hi := t1 }, init := init, lowerWeights := lw, upperWeights := uw }
+  let seg := { t := { lo := t0, hi := t1 }, init := init,
+               lowerWeights := lw, upperWeights := uw }
+  validateSegment seg
+  pure seg
 
-/-- Parse the top-level certificate JSON object into an `ODECertificate`. -/
+/--
+Parse the top-level certificate JSON object into an `ODECertificate`.
+
+Parsing fails closed on an empty segment list, non-finite or unordered interval data, negative or
+non-finite numerical settings, and unrecognized model-backend or scalar tags.
+-/
 def parseODECertificate (j : Json) : Except String ODECertificate := do
   let o ← NN.API.Json.expectObjE "ode certificate" j
   let rhs ← NN.Verification.Json.expectFieldStringE "ode certificate" "rhs" j
@@ -788,9 +840,9 @@ def parseODECertificate (j : Json) : Except String ODECertificate := do
     | none => parseSettings Json.null
   pure { rhs := rhs, segments := segs, settings := settings }
 
-/-- Boolean `<=` on scalars, defined in terms of the backend's `gtBool`. -/
+/-- Boolean `<=` on scalars, rejecting unordered values such as NaN. -/
 def leBool {α : Type} [Context α] (x y : α) : Bool :=
-  not (Context.gtBool x y)
+  Ival.leBool x y
 
 /-- Show a closed interval pair as `(lo, hi)`. -/
 private def showPair {α : Type} [ToString α] (p : α × α) : String :=
@@ -911,18 +963,6 @@ This loads both corridor networks (lower/upper) and then runs `verifySegmentAux`
   IO.println s!"[ODE] initial OK at t0={seg.t.lo}"
   verifySegmentAux (α := α) ofFloat rhs mL mU seg.t cfg cfg.maxDepth
 
-/-- Parse a scalar backend name as used in CLI flags and certificate settings. -/
-private def parseScalarName (s : String) : Option ScalarBackend :=
-  if s = "float" then some .float
-  else if s = "ieee32exec" then some .ieee32exec
-  else none
-
-/-- Parse a scalar backend name and report a CLI-friendly error on failure. -/
-private def parseScalarNameE (s : String) : Except String ScalarBackend :=
-  match parseScalarName s with
-  | some sc => pure sc
-  | none => throw s!"--scalar: expected float or ieee32exec; got `{s}`"
-
 /--
 Run verification for a parsed certificate file.
 
@@ -947,6 +987,13 @@ def runCertificate (path : String) (backendOverride : Option ModelBackend) (scal
     match scalarOverride with
     | some sc => { cfg with scalar := sc }
     | none => cfg
+  match validateSettings cfg with
+  | .error msg => throw <| IO.userError s!"Invalid ODE verifier settings: {msg}"
+  | .ok () => pure ()
+  for seg in cert.segments do
+    match validateSegment seg with
+    | .error msg => throw <| IO.userError s!"Invalid ODE certificate segment: {msg}"
+    | .ok () => pure ()
   match cfg.scalar with
   | .float =>
     let mut allOk := true
@@ -1021,6 +1068,12 @@ def runArgs (args : List String) : IO Unit := do
     let cfg := { cfg0 with scalar := scalarBackend }
     let seg : ODECertificateSegment :=
       { t := { lo := t0, hi := t1 }, init := init, lowerWeights := lw, upperWeights := uw }
+    match validateSettings cfg with
+    | .error msg => throw <| IO.userError s!"Invalid ODE verifier settings: {msg}"
+    | .ok () => pure ()
+    match validateSegment seg with
+    | .error msg => throw <| IO.userError s!"Invalid ODE certificate segment: {msg}"
+    | .ok () => pure ()
     match cfg.scalar with
     | .float =>
       let ok ← verifySegmentWith (α := Float) (fun x => x) (fun mb p => loadModelFloat mb p) rhsAst
@@ -1055,8 +1108,8 @@ public def main (args : List String) : IO Unit := do
          "--t1=<float> --init=<float> --lower=<wL.json> --upper=<wU.json>\n") ++
        "Options:\n" ++
        "  --maxDepth=<nat>   (default 18)\n" ++
-       "  --minWidth=<float> (default 1e-3)\n" ++
-       "  --slack=<float>    (default 0)\n" ++
+       "  --minWidth=<nonnegative finite float> (default 1e-3)\n" ++
+       "  --slack=<nonnegative finite float>    (default 0)\n" ++
        "  --scalar=float|ieee32exec\n" ++
        "  --verbose=true|false\n")
   else

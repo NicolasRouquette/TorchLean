@@ -3,7 +3,7 @@
 import math
 from typing import Any
 
-from common import affine_interval, centered_box, write_json
+from common import affine_interval, centered_box, mul_down, mul_up, write_json
 
 # GRU gate graph:
 # input -> gate linear -> sigmoid; input -> candidate linear -> tanh; multiply both branches.
@@ -58,13 +58,30 @@ def ibp_mul_elem(
     y_lo: list[float],
     y_hi: list[float],
 ) -> tuple[list[float], list[float]]:
-    """Propagate interval bounds through elementwise multiplication."""
+    """Propagate multiplication using all four outward-rounded endpoint products.
+
+    This mirrors `box_mul_elem`: lower and upper products must be rounded in their respective
+    directions before selecting the extrema.
+    """
     lo = []
     hi = []
     for lx, ux, ly, uy in zip(x_lo, x_hi, y_lo, y_hi):
-        products = [lx * ly, lx * uy, ux * ly, ux * uy]
-        lo.append(min(products))
-        hi.append(max(products))
+        lo.append(
+            min(
+                mul_down(lx, ly),
+                mul_down(lx, uy),
+                mul_down(ux, ly),
+                mul_down(ux, uy),
+            )
+        )
+        hi.append(
+            max(
+                mul_up(lx, ly),
+                mul_up(lx, uy),
+                mul_up(ux, ly),
+                mul_up(ux, uy),
+            )
+        )
     return lo, hi
 
 

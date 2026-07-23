@@ -13,10 +13,10 @@ billions of them. The useful question is no longer “how large can one rounding
 > If the runtime starts near the ideal inputs, how far can its forward value, gradients, and next
 > parameter state move from the corresponding real-valued computation?
 
-TorchLean answers this compositionally. Each operation contributes a local error rule. A graph
-theorem combines those rules in forward order, a reverse-mode theorem combines the VJP rules in
-backward order, and an optimizer contract carries the resulting gradient error into the next
-training state.
+TorchLean answers this compositionally for its proof-bearing operator fragment. Each covered
+operation contributes a local error rule. A graph theorem combines those rules in forward order,
+a reverse-mode theorem combines the covered VJP rules in backward order, and an optimizer contract
+carries the resulting gradient error into the next training state.
 
 # Two Executions Of The Same MLP
 
@@ -63,7 +63,7 @@ $$`\operatorname{approxT}(x,\widehat x,\varepsilon)
   |\operatorname{toSpec}(\widehat x_i)-x_i|\leq\varepsilon`.
 
 The scalar map `toSpec` decodes the runtime scalar into the real-valued specification. For `NF`, it
-is simply the stored real value. For another runtime type, the map can be different.
+is the stored real value. For another runtime type, the map can be different.
 
 The bound is intentionally separate from the tensor. The same runtime value may be known to
 approximate several ideal values with different errors, and graph propagation should update the
@@ -163,8 +163,8 @@ x
 \frac{x-\mu}{\sqrt{\sigma^2+\epsilon}}.
 `
 
-The positive stabilization constant is not decoration. It gives the square root and division a
-domain margin. TorchLean's local rule records that margin explicitly, then composes the mean,
+The positive stabilization constant gives the square root and division a domain margin. TorchLean's
+local rule records that margin explicitly, then composes the mean,
 subtraction, square, reduction, square root, and division bounds.
 
 # Composition Over A Graph
@@ -188,9 +188,9 @@ The executable graph interpreter uses `GraphData`. The theorem
 Proofs.RuntimeApprox.NFBackend.eval_approx_graphData
 ```
 
-connects that interpreter to the same forward result. The graph may have come from an MLP, CNN,
-transformer, or neural operator; composition depends on its operations and shapes, not its model
-family name.
+connects that interpreter to the same forward result. A supported graph may originate from an MLP,
+CNN, transformer, or neural operator; composition depends on its operations and shapes, not its
+model family name.
 
 # Backward Error Follows The Tape In Reverse
 
@@ -247,6 +247,24 @@ Proofs.RuntimeApprox.NFBackend.backprop_optimizer_update_approx_graphData
 
 takes one parameter gradient from reverse mode and passes it through any optimizer satisfying that
 interface. SGD, momentum SGD, and AdamW reuse the same graph theorem.
+
+# Runtime Optimizers And Proved Optimizer Contracts
+
+The executable training layer is broader than those three numerical contracts.
+`Runtime.Autograd.Train.Optim` implements parameter groups, learning-rate schedulers, shape-checked
+optimizer state, and updates for SGD, momentum/Nesterov, AdaGrad, RMSProp, Adam, AdamW, and
+Adadelta. `OptimStateDict` preserves the global step, per-parameter Adam steps, group configuration,
+and state buffers for save/restore.
+
+This distinction matters for conditional or sparse-gradient models. The global optimizer-call
+counter advances on every step, while an Adam-family parameter advances its bias-correction counter
+only when that parameter receives a gradient. Reloaded state and gradients are checked against the
+current parameter shape before an update.
+
+The proved NF numerical contracts currently cover plain SGD, momentum SGD, and AdamW; AdamW also
+carries the positivity data needed for its square-root denominator. Runtime support for the other
+optimizers is implemented and tested, but it should not be described as inheriting those numerical
+refinement theorems automatically.
 
 # Run A Graph Certificate
 

@@ -18,7 +18,7 @@ GraphSpec, a small typed language in which the architecture itself is data.
 GraphSpec sits between two other layers:
 
 ```
-public model builders
+application model builders
         ↓
 GraphSpec architecture and parameter ABI
         ↓
@@ -27,8 +27,8 @@ pure interpretation / TorchLean program / sequential model / DAG tools
 canonical NN.IR.Graph and runtime-specific lowering
 ```
 
-It is not a second tensor runtime, and it is not the low-level backend IR. Its job is to preserve
-model structure while making every input, output, and parameter shape explicit.
+GraphSpec preserves model structure and makes every input, output, and parameter shape explicit.
+The tensor runtime sits above it, while the low-level backend IR sits below it.
 
 # Write The Running MLP As A Graph
 
@@ -95,7 +95,7 @@ five inputs. Lean reports the mismatch at the architecture definition.
 This is the first hands-on experiment:
 
 1. open
-   [`NN/GraphSpec/Models/Mlp.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/GraphSpec/Models/Mlp.lean);
+   [NN/GraphSpec/Models/Mlp.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/GraphSpec/Models/Mlp.lean);
 2. change the hidden dimension at only one of the two linear nodes;
 3. ask Lean to elaborate the file.
 
@@ -123,6 +123,22 @@ difference is:
 
 TorchLean proves such relationships at the primitive or model level where they are available.
 This avoids a global axiom saying that every future GraphSpec operation is correct by construction.
+
+# Current Primitive Adapters
+
+The minimal sequential vocabulary in `NN.GraphSpec.Core` is `linear`, `relu`, and `softmax`.
+`NN.GraphSpec.Primitives.Vision` adds CHW `conv2d`, `maxPool2d`, `flatten`, and channel-first
+BatchNorm. Each of these adapters supplies the same three pieces of information:
+
+- the exact parameter-shape list;
+- a pure `specFwd` meaning;
+- an executable `torchProgram` meaning.
+
+The MLP and two-convolution CNN compose the sequential adapters. `residualLinear` demonstrates the
+DAG language and an explicit skip connection. These are implemented examples, not a claim that
+every layer under `NN.Spec` already has a GraphSpec adapter. `GraphSpec.ToTorchLean.toSeq` is also
+deliberately partial: it succeeds only when every primitive provides a corresponding layer
+constructor.
 
 # Run The Complete Lowering
 
@@ -166,7 +182,7 @@ Trainer.new
 eager runtime and autograd tape
 ```
 
-`toSeq` is intentionally partial. A sequential linear/ReLU stack has a public layer counterpart, so
+`toSeq` is intentionally partial. A sequential linear/ReLU stack has an `nn` layer counterpart, so
 the conversion succeeds. An arbitrary custom primitive may have a pure and program interpretation
 without having an `nn.LayerDef` constructor; in that case the conversion returns an error rather
 than inventing a layer.

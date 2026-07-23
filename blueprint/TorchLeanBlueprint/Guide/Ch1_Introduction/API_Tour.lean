@@ -15,15 +15,19 @@ import NN.API
 open TorchLean
 ```
 
-It gives application code five main places to begin:
+It gives application code several main places to begin:
 
 - `Tensor` for shape-indexed tensor values and constructors;
 - `nn` for layers, blocks, model families, and seeded initialization;
 - `Data` for in-memory datasets, loaders, checkpoints, and text helpers;
 - `optim` for optimizer configurations;
-- `Trainer` for prediction, training, summaries, and the public verification bridge.
+- `Trainer` for prediction, training, summaries, and the verification bridge;
+- `autograd` for explicit function and model derivatives;
+- `Verification` for lowering a checked model to IBP/CROWN inputs;
+- `classical` for statistical and non-neural model families.
 
-We will take those names in order and use each one once. Every command below runs from the
+This tour starts with tensors, models, data, and training, then briefly points to autograd and
+verification. Later chapters develop the remaining namespaces. Every command below runs from the
 repository root.
 
 # First Contact: Print A Few Tensors
@@ -56,6 +60,10 @@ Open
 [`NN/Examples/Quickstart/TensorBasics.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Quickstart/TensorBasics.lean)
 and find the definitions of `xF`, `xQ`, and `x32`. The values look alike when printed, but their
 types select different arithmetic.
+
+One tensor still has one element type, and one model or IR evaluation chooses one numeric scalar
+`α`. The tensor chapter develops this rule; *TorchLean And PyTorch* explains the present
+mixed-precision difference.
 
 # Build A Small File Of Your Own
 
@@ -205,9 +213,10 @@ def trainer : Trainer (.dim 2 .scalar) (.dim 1 .scalar) :=
 - the initialization seed.
 
 The default execution profile is checked CPU, using the eager runtime and host `Float`. A trainer
-configuration may instead select the compiled runtime, executable IEEE binary32, or another backend
-profile. Device and provider selection are runtime concerns; they do not change the model's input
-and output shapes.
+configuration may instead select the compiled runtime or executable IEEE binary32. The generic
+dtype dispatcher also has an executable complex-binary32 scalar, but the high-level trainer does
+not yet expose complex prediction readback. Device and provider selection are runtime concerns;
+they do not change the model's input and output shapes.
 
 Training options belong to the call:
 
@@ -218,7 +227,7 @@ def options : Trainer.TrainOptions :=
     logEvery := 25 }
 ```
 
-In an `IO` definition, the public lifecycle is:
+In an `IO` definition, the trainer lifecycle is:
 
 ```
 def trainTour : IO Unit := do
@@ -255,9 +264,11 @@ mean_loss(after) = 0.003234
 heldout x=(0.25,-0.75), target=0.2, prediction(after)=[0.210239]
 ```
 
-The next chapter opens this run up and follows one step through the model, loss, tape, optimizer,
-and parameter update. Here the useful API fact is simpler: `Trainer.new` creates the initial handle,
-and `train` returns a new handle containing the trained runtime state.
+Later, the training chapter will open this run up and follow one step through the model, loss,
+tape, optimizer, and parameter update. For now the useful distinction is simpler: `Trainer.new`
+creates the initial handle, and `train` returns a new handle containing the trained runtime state.
+The next two chapters explain why TorchLean keeps those dependencies explicit and teach just enough
+Lean to read their types without guesswork.
 
 Command-specific help shows the available runtime options:
 
@@ -306,6 +317,16 @@ This lowers a model to the graph IR, places an input box at its input node, and 
 to the output. The API has now moved below `Trainer`: the useful objects are `NN.IR.Graph`, the
 parameter payload, the input region, and the IBP state. The graph and verification chapters develop
 those objects carefully.
+
+The shorter application names are also available for a manual run:
+
+```
+def compiled :=
+  Verification.compileForward initialized (nn.initParams initialized)
+```
+
+The result is an `Except`: unsupported operations or malformed lowering stop explicitly before a
+bound pass is run.
 
 Application code that needs these lower layers should use focused imports:
 

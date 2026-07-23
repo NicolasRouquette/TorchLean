@@ -177,7 +177,10 @@ def getParam (ps : Array Param) (i : Nat) : Result Param :=
   | some p => pure p
   | none => throw s!"autograd: fused-fno: parameter index out of bounds: {i}"
 
-/-- Upload parameter `i` as a gradient-requiring CUDA tape leaf and record its node id. -/
+/--
+Validate uploaded parameter buffer `i` against its declared shape, add it as a
+gradient-requiring CUDA tape leaf, and record the new node id.
+-/
 def addParamLeaf (t : Tape) (ps : Array Param) (paramBuffers : Array Buffer)
     (paramIds : Array Nat) (i : Nat) :
     Result (Tape × Array Nat × Nat) := do
@@ -185,23 +188,18 @@ def addParamLeaf (t : Tape) (ps : Array Param) (paramBuffers : Array Buffer)
   let buf ← match paramBuffers[i]? with
     | some buf => pure buf
     | none => throw s!"autograd: fused-fno: missing uploaded parameter buffer: {i}"
-  let expected := UInt32.ofNat (Spec.Shape.size p.shape)
-  if Buffer.size buf != expected then
-    throw s!"autograd: fused-fno: uploaded parameter {i} has size {Buffer.size buf}, expected {expected}"
+  let checked ← match AnyBuffer.validate { s := p.shape, buf := buf } with
+    | .ok checked => pure checked
+    | .error msg => throw s!"autograd: fused-fno: invalid uploaded parameter {i}: {msg}"
   let (t', id) := t.leaf
-    { s := p.shape, buf := buf }
+    checked
     (some s!"param{i}")
   pure (t', paramIds.push id, id)
 
 /-- Broadcast a vector of length `cols` across `grid` rows. -/
 def broadcastVecToMat (t : Tape) (grid cols : Nat) (xId : Nat) : Result (Tape × Nat) :=
   do
-    let x ← t.requireValue xId (vec cols)
-    let actual := Buffer.size x
-    let expected := UInt32.ofNat cols
-    if actual != expected then
-      throw
-        s!"autograd: fused-fno: broadcast source id {xId} has {actual.toNat} elements, expected {cols}"
+    let _ ← t.requireValue xId (vec cols)
     Tape.broadcastTo (t := t) (s₁ := vec cols) (s₂ := mat grid cols) Shape.BroadcastTo.proof xId
 
 /--
@@ -210,6 +208,10 @@ Build a CUDA tape that computes prediction (and optionally MSE loss) for the fus
 Inputs:
 - `x : (grid)` (interpreted as `(grid,1)`),
 - optional `target : (grid)`.
+
+Every external CUDA buffer is checked against the corresponding logical shape and element count
+before an operation can consume it. Input and parameter buffers are checked before their leaf nodes
+are added; the optional target is checked by the MSE operation on the loss path.
 -/
 def forwardWithBuffers (grid width modes blocks : Nat)
     (ps : Array Param)
@@ -220,11 +222,11 @@ def forwardWithBuffers (grid width modes blocks : Nat)
   let yMatShape : Shape := mat grid 1
   let hiddenShape : Shape := mat grid width
   let paramIds0 : Array Nat := #[]
-  let expectedInputSize := UInt32.ofNat grid
-  if Buffer.size xBuffer != expectedInputSize then
-    throw s!"autograd: fused-fno: uploaded input has size {Buffer.size xBuffer}, expected {expectedInputSize}"
+  let checkedInput ← match AnyBuffer.validate { s := xMatShape, buf := xBuffer } with
+    | .ok checked => pure checked
+    | .error msg => throw s!"autograd: fused-fno: invalid uploaded input: {msg}"
   let (t0, xId) := Tape.empty.leaf
-    { s := xMatShape, buf := xBuffer }
+    checkedInput
     (some "x") false
 
   let (t1, paramIds1, wInId) ← addParamLeaf t0 ps paramBuffers paramIds0 0
@@ -262,9 +264,6 @@ def forwardWithBuffers (grid width modes blocks : Nat)
   let (tOutB, idsOutB, bOutId) ← addParamLeaf t ps paramBuffers paramIds (outBase + 1)
   t := tOutB; paramIds := idsOutB
   let (tPred0, pred0Id) ← Tape.matmul (t := t) (m := grid) (n := width) (p := 1) hId wOutId
-  let bOut ← tPred0.requireValue bOutId (vec 1)
-  if Buffer.size bOut != 1 then
-    throw s!"autograd: fused-fno: output bias has {(Buffer.size bOut).toNat} elements, expected 1"
   let (tPredB, bOutBId) ← Tape.broadcastTo (t := tPred0) (s₁ := vec 1) (s₂ := yMatShape)
     Shape.BroadcastTo.proof bOutId
   let (tPred, predId) ← Tape.add (t := tPredB) (s := yMatShape) pred0Id bOutBId

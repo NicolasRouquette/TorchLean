@@ -37,7 +37,7 @@ classifier head shape (the input dimension to the final `Linear`) is computed on
 ## Why not put this under `GraphSpec.DAG`?
 
 You *can* express a chain model as a DAG term, but the sequential DSL is the simpler interface for
-pure pipelines. The DAG language is reserved for models that fundamentally need sharing or
+pure pipelines. The DAG language is reserved for models that need sharing or
 multi-input nodes (e.g. residual adds).
 -/
 

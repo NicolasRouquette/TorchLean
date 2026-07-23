@@ -313,8 +313,8 @@ multiplication. Rank, axes, strides, padding, and index tensors stay in the grap
 shape proofs. A provider therefore registers one capability for a family instead of separate
 capsules for every rank-specific helper name.
 
-The numerical policy is not a proof that the kernel follows those conventions. It is the convention
-claimed by the capsule and retained in the execution audit. A theorem or checker still has to
+The numerical policy records the conventions claimed by the capsule and retained in the execution
+audit. A theorem or checker still has to
 justify any numerical conclusion drawn from it. In particular, the graph interval checker accepts
 its fixed-left reduction transfer only for capsules that advertise `.fixedLeft`; CUDA, cuBLAS,
 cuDNN, and LibTorch reductions need an order-independent or backend-specific bound.
@@ -413,7 +413,7 @@ Metal, ROCm, WebGPU/WASM, TPU/XLA, Trainium/Neuron, custom chips, and caller-sup
 all use the same extension points:
 
 1. add the device and provider vocabulary;
-2. detect build and runtime availability honestly;
+2. report build and runtime availability accurately;
 3. register capsules only for the operations the provider implements;
 4. connect the selected capsules to executable runtime dispatch;
 5. supply shape, layout, value, and VJP evidence at the right trust level;

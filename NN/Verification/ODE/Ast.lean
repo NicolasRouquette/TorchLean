@@ -79,17 +79,37 @@ namespace Ival
 direct, inspectable enclosures over clever rewrites so that each arithmetic case can be reviewed
 against the mathematical interval rule it implements. -/
 
-/-- Boolean `x ≤ y` test, implemented via the primitive `Context.gtBool`. -/
-@[inline] def leBool {α : Type} [Context α] (x y : α) : Bool :=
-  not (Context.gtBool x y)
+/--
+Whether a checker scalar is finite under the supported `Float` and `IEEE32Exec` backends.
 
-/-- Minimum of two scalar endpoints, using the active scalar comparison. -/
+Both backends produce NaN for `∞ - ∞` and for `NaN - NaN`, whereas every finite value subtracts
+from itself to zero. Expressing the guard through `Context` keeps the interval evaluator generic
+without relying on a backend-specific bit decoder.
+-/
+@[noinline] def isFiniteBool {α : Type} [Context α] (x : α) : Bool :=
+  x - x == (0 : α)
+
+/--
+Boolean `x ≤ y` test that rejects NaN and infinite endpoints.
+
+Writing this as `¬ x > y` would treat unordered values as less than or equal to every value. Some
+host `Float` comparisons also use a total implementation order, so the explicit finite guards are
+part of the certificate check rather than an optimization.
+-/
+@[noinline] def leBool {α : Type} [Context α] (x y : α) : Bool :=
+  isFiniteBool x && isFiniteBool y && (Context.gtBool y x || x == y)
+
+/-- Minimum of two scalar endpoints, propagating a non-finite operand so later checks reject it. -/
 @[inline] def min2 {α : Type} [Context α] (a b : α) : α :=
-  if leBool a b then a else b
+  if !isFiniteBool a then a
+  else if !isFiniteBool b then b
+  else if leBool a b then a else b
 
-/-- Maximum of two scalar endpoints, using the active scalar comparison. -/
+/-- Maximum of two scalar endpoints, propagating a non-finite operand so later checks reject it. -/
 @[inline] def max2 {α : Type} [Context α] (a b : α) : α :=
-  if leBool a b then b else a
+  if !isFiniteBool a then a
+  else if !isFiniteBool b then b
+  else if leBool a b then b else a
 
 /-- Add two closed intervals endpointwise. -/
 @[inline] def add {α : Type} [Context α] (x y : α × α) : α × α :=

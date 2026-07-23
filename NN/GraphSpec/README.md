@@ -54,7 +54,7 @@ interpretation.
 | `DAG.lean` | DAG primitive constructors |
 | `Primitives.lean` | common primitive packs |
 | `Primitives/Vision.lean` | convolution, pooling, flattening, and image helpers |
-| `Primitives/Embedding.lean` | embedding primitive and theorem surface |
+| `Primitives/Embedding.lean` | embedding primitive and theorems |
 | `ToTorchLean.lean` | lowering from the supported sequential subset to `TorchLean.NN.Seq` |
 | `Models/*` | GraphSpec-authored examples |
 
@@ -77,7 +77,7 @@ def g (inDim hidDim outDim : Nat) :=
 #check GraphSpec.LowerToDAG.Graph.toDAGModelZeroInit (g 4 8 2)
 ```
 
-Sequential graphs are the right surface for MLPs and simple feed-forward pipelines.
+Sequential graphs are the simplest representation for MLPs and feed-forward pipelines.
 
 ## DAG Models
 

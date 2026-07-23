@@ -27,8 +27,21 @@ namespace NF
 variable {β : NeuralRadix} {fexp : ℤ → ℤ} {rnd : ℝ → ℤ}
 variable [NeuralValidExp fexp] [NeuralValidRnd rnd]
 
-/-- Use rounded-real `NF` arithmetic as a TorchLean specification scalar. -/
+/--
+Use rounded-real `NF` arithmetic as a TorchLean specification scalar.
+
+The general scalar interface requires a total `α ^ α`. Its adapter uses `NF.checkedRealPow`, which
+handles arbitrary exponents on positive bases, integer exponents on negative bases, and positive
+exponents at zero. The adapter selects its rounded-zero fallback only when `checkedRealPow` rejects
+the domain, such as a negative base with a noninteger exponent or zero with a negative exponent;
+an accepted computation can independently round to zero. Direct numerical code should inspect the
+checked result, or use the unambiguous `NF.powNat`, rather than relying on that compatibility
+fallback.
+-/
 noncomputable instance : Context (NF β fexp rnd) where
+  pow a b :=
+    (checkedRealPow (β := β) (fexp := fexp) (rnd := rnd) a b).getD
+      (ofReal (β := β) (fexp := fexp) (rnd := rnd) 0)
   decidable_gt := Classical.decRel _
 
 end NF

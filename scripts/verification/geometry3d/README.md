@@ -37,8 +37,8 @@ _external/geometry3d/overlays/realworld/*.png
 _external/geometry3d/overlays/realworld/geometry3d_contact_sheet.png
 ```
 
-Boundary note: this path is a real model pipeline, but it is not a specialized 3D detector. It uses
-a detector plus monocular depth to produce a conservative 3D camera-box artifact. Lean verifies the
+Boundary note: this path combines a detector with monocular depth to produce a conservative 3D
+camera-box artifact. Lean verifies the
 exported geometry contract, not the semantic truth of the object label or metric depth.
 
 ## Direct 3D Detector Path: WildDet3D

@@ -57,21 +57,33 @@ shortTitle := "TorchLean"
 tag := "torchlean"
 %%%
 
-TorchLean is a Lean 4 library for writing, training, and verifying neural networks. Models use
-shape-typed tensors, run through an executable runtime, and lower to an operation graph with
-explicit parameter payloads. Mathematical operator specifications live beside the code that uses
-them. When execution delegates to CUDA or LibTorch, the selected provider and its trust boundary
-remain visible.
+TorchLean is a Lean 4 library for writing, training, and verifying neural networks. The quickest
+way to understand it is to follow one prediction through the system. A pair of input features enters
+a shape-typed model, concrete parameters turn that model into a program, the runtime records the
+operations needed for differentiation, and a graph records the computation so that preservation and
+verification questions can be stated explicitly.
+The value may travel through several representations, but none of those handoffs is meant to be
+invisible.
 
-The running example is a small nonlinear regression network. It begins as a typed model, acquires
-concrete parameters during initialization and training, records an autograd tape, and lowers to the
-graph read by verification passes. Following those representations in order makes it possible to
-see exactly which object a theorem, certificate, or runtime result describes.
+Our companion for that trip is a small nonlinear regression network. At first it looks pleasantly
+ordinary: two linear layers with a ReLU between them. We will train it, inspect its parameter shapes,
+watch a backward pass accumulate gradients, move selected operations to CUDA, and finally ask what
+can be proved about its outputs. By returning to the same model, the guide can explain why a theorem
+about an exact real-valued specification is relevant to a particular floating-point GPU run without
+automatically proving that run correct.
 
-Later chapters develop the numerical and proof layers in detail: generic floating-point formats,
-executable binary32 arithmetic, runtime-approximation bounds, IBP and CROWN, checked certificates,
-and the interfaces to native kernels. The applications then use these tools with transformers,
-ResNets, Fourier neural operators, generative models, reinforcement learning, and scientific ML.
+Once that path feels familiar, the larger examples are variations on the same theme. Transformers
+add token and attention structure; ResNets add spatial layouts and skip connections; Fourier neural
+operators work with sampled functions; diffusion and reinforcement learning make randomness and
+state explicit. The numerical chapters supply generic formats, executable binary32 arithmetic, and
+error bounds. The verification chapters build interval, affine, compiler, autograd, and certificate
+arguments on top of those definitions.
+
+One reading habit matters throughout: ask what kind of evidence is attached to a claim. An
+*implemented* path can be executed. A *tested* path has a regression or conformance check. A
+*proved* statement has a Lean theorem with the hypotheses visible in its type. A *planned* feature
+is only future work. The guide includes successful runs and deliberately rejected inputs so that
+these differences can be observed rather than guessed from an impressive module name.
 
 The examples are meant to be run from the repository root. No theorem-proving background is needed
 to begin. Readers new to Lean may also use
@@ -81,8 +93,9 @@ to begin. Readers new to Lean may also use
 
 # Introduction
 
-We begin with the problem TorchLean is trying to solve, then write the regression model that will
-stay with us through the rest of the book.
+Before touching an optimizer, we need a reason to put a neural network in a proof assistant at all.
+We begin with a prediction whose surrounding claim is unclear, learn just enough Lean to read the
+code, and then write the regression model that will stay with us through the rest of the book.
 
 {include 2 TorchLeanBlueprint.Guide.Ch1_Introduction.Overview}
 
@@ -101,8 +114,11 @@ stay with us through the rest of the book.
 
 # Building Models
 
-Now we turn the model definition into a training program: tensors, datasets, initialization,
-forward evaluation, loss, backward, and optimizer updates.
+An architecture is still only a recipe. It cannot make a prediction until shapes meet data and a
+seed produces parameters. Here we turn the model into a small training program, one ordinary step
+at a time: load a batch, evaluate the forward map, measure a loss, run backward, and update the
+parameters. Each step leaves an object we can inspect rather than hiding the whole loop behind a
+single call.
 
 {include 2 TorchLeanBlueprint.Guide.Ch2_Frontend.TensorsAndShapes}
 
@@ -140,9 +156,11 @@ CUDA, and LibTorch.
 
 # Semantics and Graphs
 
-Autograd records one execution. Verification needs a meaning that survives after the tape is gone.
-We first write the model as a mathematical function, then preserve its architecture in `GraphSpec`,
-and finally lower it to the ordinary node array used by importers and verification passes.
+Autograd records one execution, and then that tape can be released. A verification claim must
+survive longer. We first recover the model as a mathematical function, then preserve its
+architecture in `GraphSpec`, and finally lower it to the ordinary node array used by importers and
+verification passes. This is where “the same model” stops being a slogan and becomes a sequence of
+explicit correspondence questions.
 
 {include 2 TorchLeanBlueprint.Guide.Ch3_Backend.SpecLayer}
 
@@ -210,10 +228,12 @@ will also feed bad artifacts to the checkers and see exactly where they fail.
 
 # Examples and Applications
 
-Finally we leave the two-layer MLP. ResNets and vision transformers add spatial and attention
-layouts; GPT adds token streams and causal masks; Fourier neural operators connect learned maps to
-PDE data; diffusion and reinforcement learning add stochastic state. Each example includes the
-actual command, the architecture it builds, and the checks currently available for it.
+Finally we ask whether the machinery still feels natural after leaving the two-layer MLP. A ResNet
+introduces spatial layouts and skip connections. GPT turns text into token streams and causal
+masks. A Fourier neural operator connects a learned map to PDE data. Diffusion and reinforcement
+learning force us to keep randomness and state in view. The examples are organized as runs a reader
+can reproduce: what to execute, what artifact appears, what to inspect next, and which claim that
+artifact supports and where that support stops.
 
 {include 2 TorchLeanBlueprint.Guide.Ch5_Applications.ModernModels}
 

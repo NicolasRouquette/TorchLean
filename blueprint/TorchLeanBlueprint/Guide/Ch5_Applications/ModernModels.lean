@@ -12,15 +12,18 @@ not enough to test whether an ML library has found the right abstractions. Moder
 branches, state, masks, patch grids, spectral transforms, latent variables, and interaction with an
 environment. Each addition creates a new place where an informal convention can become a bug.
 
-TorchLean therefore treats the model examples as applications of the same small set of ideas:
+The useful way to read this chapter is not as a menu of architectures. Carry one question from
+section to section: *which convention did this model make explicit?* A residual network must align
+two branches. A vision Transformer must turn a patch grid into a token sequence. A recurrent model
+must expose state, and a causal model must expose its mask. An FNO must say which Fourier modes it
+retains.
 
-1. an architecture has a typed input and output shape;
-2. its parameters have an explicit ordered layout;
-3. its forward program runs through a selected runtime;
-4. mathematical specifications and proofs refer to named objects, not to an opaque training log;
-5. an external kernel, dataset, or environment remains visible at the boundary where it enters.
+Through all of them, the outer discipline stays the same. Inputs, outputs, and parameter layout are
+typed; the forward program names its runtime; specifications and proofs refer to identifiable
+objects rather than to an opaque training log; and a dataset, environment, or external kernel stays
+visible where it enters the run.
 
-The public constructors live under
+The reusable constructors live under
 [`NN/API/Models`](https://github.com/lean-dojo/TorchLean/tree/main/NN/API/Models).
 The runnable applications live under
 [`NN/Examples/Models`](https://github.com/lean-dojo/TorchLean/tree/main/NN/Examples/Models).
@@ -88,26 +91,8 @@ The constructor uses a convolutional stem, two residual blocks, global average p
 vector. The CIFAR example instantiates `d=2`; the model API itself is not tied to images or to two
 dimensions.
 
-Run the compact application after preparing CIFAR:
-
-```
-python3 scripts/datasets/download_example_data.py --cifar10
-lake exe torchlean resnet --device cpu --n-total 1 --steps 1
-```
-
-On the current checkout with seed `0`, the final lines are:
-
-```
-dataset size = 1
-mean_loss(before) = 2.333221
-mean_loss(after) = 2.327496
-steps=1 loss0=2.333221 loss1=2.327496
-torchlean resnet: ok
-```
-
-This is a one-update integration run, not a CIFAR accuracy result. It confirms that the prepared
-array, typed residual model, cross-entropy objective, autograd tape, optimizer, and CPU runtime
-worked together.
+The next chapter runs this compact CIFAR application and inspects the resulting loss log. Here we
+stay with the architectural question: where must the two residual branches agree?
 
 ## Try A Shape Change
 
@@ -151,20 +136,8 @@ $$`\operatorname{Attention}(Q,K,V)
 The current ViT application uses one encoder block and flattens all patch tokens before the final
 classifier. It is a compact architecture check, not an implementation of a particular pretrained
 ViT checkpoint.
-
-```
-lake exe torchlean vit --device cpu --n-total 1 --steps 1
-```
-
-The observed one-example run begins at the uniform ten-class loss:
-
-```
-mean_loss(before) = 2.302585
-mean_loss(after) = 2.300389
-```
-
-The value `2.302585` is `log 10` to the displayed precision. That is a useful sanity check: before
-the first update, the model is effectively assigning equal probability to ten classes.
+The next chapter runs it beside the compact ResNet so their different spatial conventions can be
+compared on the same prepared data.
 
 # Recurrence, Attention, And Causality
 
@@ -256,11 +229,12 @@ dense multidimensional DFT. The CUDA Burgers application selects a fused real-FF
 cuFFT. Both paths implement the same typed field-to-field interface, but their numerical and trust
 boundaries are recorded separately.
 
-# Run Them End To End
+# From Architectures To Runs
 
-We have now seen how the model families are assembled. The next chapter takes three of them off the
-page: a character Transformer, a residual vision model, and a Fourier neural operator. It prepares
-their data, launches training, and inspects the artifacts they leave behind.
+We have now seen how the model families are assembled. The next chapter turns them into three case
+studies spanning four runs: a character Transformer, ResNet and ViT on the same vision data, and a
+Fourier neural operator. It prepares their data, launches training, and inspects the artifacts they
+leave behind.
 
 # References
 

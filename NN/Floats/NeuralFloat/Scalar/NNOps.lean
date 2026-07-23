@@ -77,14 +77,15 @@ noncomputable def neuralLeakyRelu (rnd : ℝ → ℤ) [NeuralValidRnd rnd] (nega
   round2 (β := β) (fexp := fexp) rnd (fun a t => if t > 0 then t else a * t) negative_slope x
 
 /--
-Sigmoid (rounded), with the usual stable piecewise definition.
+Sigmoid (rounded), with the usual piecewise real formula used by finite implementations.
 
 We define the exact real function as:
 
 - if `x ≥ 0`, use `1 / (1 + exp(-x))`
 - else use `exp(x) / (1 + exp(x))`
 
-The two branches are algebraically equal, but the piecewise form avoids overflow in `exp`.
+The two branches are algebraically equal over `ℝ`. The arrangement also avoids a large positive
+exponential when it is transported to a finite implementation.
 -/
 noncomputable def neuralSigmoid (rnd : ℝ → ℤ) [NeuralValidRnd rnd] (x : ℝ) : ℝ :=
   let stable_sigmoid := if x ≥ 0 then
@@ -107,7 +108,7 @@ SiLU / Swish (rounded).
 
 PyTorch analogies: `torch.nn.functional.silu` / `torch.nn.silu`.
 
-Definition: `silu(x) = x * sigmoid(x)`. We use the same stable sigmoid expression as
+Definition: `silu(x) = x * sigmoid(x)`. We use the same piecewise sigmoid expression as
 `neural_sigmoid`, then round the final result.
 -/
 noncomputable def neuralSilu (rnd : ℝ → ℤ) [NeuralValidRnd rnd] (x : ℝ) : ℝ :=
@@ -118,12 +119,13 @@ noncomputable def neuralSilu (rnd : ℝ → ℤ) [NeuralValidRnd rnd] (x : ℝ) 
   neuralRound (β := β) (fexp := fexp) rnd (x * s)
 
 /--
-Softplus (rounded), with a stable piecewise definition.
+Softplus (rounded), with a piecewise real formula suited to finite implementations.
 
 PyTorch analogy: `torch.nn.functional.softplus`.
 
-Naively, `softplus(x) = log(1 + exp(x))`. The piecewise form avoids catastrophic overflow in
-`exp(x)` when `x` is large and positive:
+Naively, `softplus(x) = log(1 + exp(x))`. Over `ℝ` the two arrangements are algebraically
+equivalent; the piecewise form avoids a large positive exponential when implemented in a bounded
+floating-point format:
 
 - if `x > 0`, use `x + log(1 + exp(-x))`
 - else use `log(1 + exp(x))`.

@@ -1020,7 +1020,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool_fwd(
     if (stride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_maxpool_fwd_stub: stride dims must be > 0");
     }
-    outSpatial[ax] = outDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
+    outSpatial[ax] = poolOutDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(inSpatial, rank);
@@ -1103,7 +1103,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool_bwd(
     if (stride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_maxpool_bwd_stub: stride dims must be > 0");
     }
-    outSpatial[ax] = outDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
+    outSpatial[ax] = poolOutDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(inSpatial, rank);
@@ -1329,7 +1329,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_avgpool_fwd(
     if (stride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_avgpool_fwd_stub: stride dims must be > 0");
     }
-    outSpatial[ax] = outDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
+    outSpatial[ax] = poolOutDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(inSpatial, rank);
@@ -1409,7 +1409,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_avgpool_bwd(
     if (stride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_avgpool_bwd_stub: stride dims must be > 0");
     }
-    outSpatial[ax] = outDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
+    outSpatial[ax] = poolOutDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(inSpatial, rank);
@@ -1552,7 +1552,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_fwd(
     if (stride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_smooth_maxpool_fwd_stub: stride dims must be > 0");
     }
-    outSpatial[ax] = outDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
+    outSpatial[ax] = poolOutDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(inSpatial, rank);
@@ -1579,7 +1579,9 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_fwd(
     for (size_t outIdx = 0; outIdx < outSpatialSize; ++outIdx) {
       unflatten_coords(outCoord, outSpatial, rank, outIdx);
 
-      float maxScaled = -INFINITY;
+      // Match the CUDA kernel's input-space shift; multiplying beta only after subtraction avoids
+      // overflow for large finite values.
+      float pivot = (betaF > 0.0f) ? -INFINITY : INFINITY;
       for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
         unflatten_coords(kCoord, kSpatial, rank, kIdx);
 
@@ -1599,7 +1601,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_fwd(
         if (ok) {
           v = input->data[inIdx];
         }
-        maxScaled = fmaxf(maxScaled, betaF * v);
+        pivot = (betaF > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
       }
 
       float sumExp = 0.0f;
@@ -1622,10 +1624,10 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_fwd(
         if (ok) {
           v = input->data[inIdx];
         }
-        sumExp += expf(betaF * v - maxScaled);
+        sumExp += expf(betaF * (v - pivot));
       }
 
-      out->data[(size_t)c * outSpatialSize + outIdx] = (maxScaled + logf(sumExp)) / betaF;
+      out->data[(size_t)c * outSpatialSize + outIdx] = pivot + logf(sumExp) / betaF;
     }
   }
 
@@ -1668,7 +1670,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
     if (stride[ax] == 0) {
       lean_internal_panic("torchlean_cuda_smooth_maxpool_bwd_stub: stride dims must be > 0");
     }
-    outSpatial[ax] = outDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
+    outSpatial[ax] = poolOutDim(inSpatial[ax], kSpatial[ax], stride[ax], padding[ax]);
   }
 
   const size_t inSpatialSize = prod_u32(inSpatial, rank);
@@ -1745,7 +1747,9 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
             const size_t outIdx = flatten_coords(outCoord, outSpatial, rank);
             const float g = gradOutput->data[(size_t)c * outSpatialSize + outIdx];
 
-            float maxScaled = -INFINITY;
+            /* Recompute the sign-aware pivot for this contributing output so the
+               deterministic backward pass uses the same stable softmax weights. */
+            float pivot = (betaF > 0.0f) ? -INFINITY : INFINITY;
             for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
               unflatten_coords(kCoord, kSpatial, rank, kIdx);
 
@@ -1765,7 +1769,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
               if (ok) {
                 v = input->data[inIdx];
               }
-              maxScaled = fmaxf(maxScaled, betaF * v);
+              pivot = (betaF > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
             }
 
             float sumExp = 0.0f;
@@ -1788,10 +1792,10 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
               if (ok) {
                 v = input->data[inIdx];
               }
-              sumExp += expf(betaF * v - maxScaled);
+              sumExp += expf(betaF * (v - pivot));
             }
 
-            const float w = expf(betaF * vSelf - maxScaled) / sumExp;
+            const float w = expf(betaF * (vSelf - pivot)) / sumExp;
             acc += g * w;
           }
         }
@@ -1814,7 +1818,8 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
         const float g = gradOutput->data[(size_t)c * outSpatialSize + outIdx];
         unflatten_coords(outCoord, outSpatial, rank, outIdx);
 
-        float maxScaled = -INFINITY;
+        // Recompute the forward input-space pivot before evaluating the gradient weights.
+        float pivot = (betaF > 0.0f) ? -INFINITY : INFINITY;
         for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
           unflatten_coords(kCoord, kSpatial, rank, kIdx);
 
@@ -1834,7 +1839,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
           if (ok) {
             v = input->data[inIdx];
           }
-          maxScaled = fmaxf(maxScaled, betaF * v);
+          pivot = (betaF > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
         }
 
         float sumExp = 0.0f;
@@ -1857,7 +1862,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
           if (ok) {
             v = input->data[inIdx];
           }
-          sumExp += expf(betaF * v - maxScaled);
+          sumExp += expf(betaF * (v - pivot));
         }
 
         for (size_t kIdx = 0; kIdx < kSpatialSize; ++kIdx) {
@@ -1877,7 +1882,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool_bwd(
           if (!ok) continue;
 
           float v = input->data[inIdx];
-          float e = expf(betaF * v - maxScaled);
+          float e = expf(betaF * (v - pivot));
           float w = e / sumExp;
           dInput->data[inIdx] += g * w;
         }
@@ -1918,7 +1923,8 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_fwd(
   for (uint32_t c = 0; c < inC; ++c) {
     for (uint32_t oh = 0; oh < outH; ++oh) {
       for (uint32_t ow = 0; ow < outW; ++ow) {
-        float maxScaled = -INFINITY;
+        // Two-dimensional forward path uses the same sign-aware, input-space stabilization.
+        float pivot = (betaF > 0.0f) ? -INFINITY : INFINITY;
         for (uint32_t ky = 0; ky < kH; ++ky) {
           int ih = (int)((int64_t)oh * (int64_t)stride + (int64_t)ky - (int64_t)padding);
           for (uint32_t kx = 0; kx < kW; ++kx) {
@@ -1929,7 +1935,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_fwd(
                   ((size_t)c * (size_t)inH + (size_t)ih) * (size_t)inW + (size_t)iw;
               v = input->data[inIdx];
             }
-            maxScaled = fmaxf(maxScaled, betaF * v);
+            pivot = (betaF > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
           }
         }
 
@@ -1944,11 +1950,11 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_fwd(
                   ((size_t)c * (size_t)inH + (size_t)ih) * (size_t)inW + (size_t)iw;
               v = input->data[inIdx];
             }
-            sumExp += expf(betaF * v - maxScaled);
+            sumExp += expf(betaF * (v - pivot));
           }
         }
         size_t outIdx = ((size_t)c * (size_t)outH + (size_t)oh) * (size_t)outW + (size_t)ow;
-        out->data[outIdx] = (maxScaled + logf(sumExp)) / betaF;
+        out->data[outIdx] = pivot + logf(sumExp) / betaF;
       }
     }
   }
@@ -2008,7 +2014,9 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_bwd(
                 const int kxSelf = (int)((int64_t)iw + (int64_t)padding - (int64_t)ow * (int64_t)stride);
                 if (kxSelf < 0 || kxSelf >= (int)kW) continue;
 
-                float maxScaled = -INFINITY;
+                /* Match the forward pass's max/min pivot before forming the
+                   derivative weight for this input/output pair. */
+                float pivot = (betaF > 0.0f) ? -INFINITY : INFINITY;
                 for (uint32_t ky = 0; ky < kH; ++ky) {
                   int candH = (int)((int64_t)oh * (int64_t)stride + (int64_t)ky - (int64_t)padding);
                   for (uint32_t kx = 0; kx < kW; ++kx) {
@@ -2019,7 +2027,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_bwd(
                           ((size_t)c * (size_t)inH + (size_t)candH) * (size_t)inW + (size_t)candW;
                       v = input->data[inIdx];
                     }
-                    maxScaled = fmaxf(maxScaled, betaF * v);
+                    pivot = (betaF > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
                   }
                 }
 
@@ -2034,13 +2042,13 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_bwd(
                           ((size_t)c * (size_t)inH + (size_t)candH) * (size_t)inW + (size_t)candW;
                       v = input->data[inIdx];
                     }
-                    sumExp += expf(betaF * v - maxScaled);
+                    sumExp += expf(betaF * (v - pivot));
                   }
                 }
 
                 const size_t outIdx =
                     ((size_t)c * (size_t)outH + (size_t)oh) * (size_t)outW + (size_t)ow;
-                const float w = expf(betaF * vSelf - maxScaled) / sumExp;
+                const float w = expf(betaF * (vSelf - pivot)) / sumExp;
                 acc += gradOutput->data[outIdx] * w;
               }
             }
@@ -2062,7 +2070,8 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_bwd(
           size_t outIdx = ((size_t)c * (size_t)outH + (size_t)oh) * (size_t)outW + (size_t)ow;
           float g = gradOutput->data[outIdx];
 
-          float maxScaled = -INFINITY;
+          // Reuse the forward input-space shift for the ordinary backward accumulation path.
+          float pivot = (betaF > 0.0f) ? -INFINITY : INFINITY;
           for (uint32_t ky = 0; ky < kH; ++ky) {
             int ih = (int)((int64_t)oh * (int64_t)stride + (int64_t)ky - (int64_t)padding);
             for (uint32_t kx = 0; kx < kW; ++kx) {
@@ -2073,7 +2082,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_bwd(
                     ((size_t)c * (size_t)inH + (size_t)ih) * (size_t)inW + (size_t)iw;
                 v = input->data[inIdx];
               }
-              maxScaled = fmaxf(maxScaled, betaF * v);
+              pivot = (betaF > 0.0f) ? fmaxf(pivot, v) : fminf(pivot, v);
             }
           }
 
@@ -2088,7 +2097,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_bwd(
                     ((size_t)c * (size_t)inH + (size_t)ih) * (size_t)inW + (size_t)iw;
                 v = input->data[inIdx];
               }
-              sumExp += expf(betaF * v - maxScaled);
+              sumExp += expf(betaF * (v - pivot));
             }
           }
 
@@ -2101,7 +2110,7 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_bwd(
               size_t inIdx =
                   ((size_t)c * (size_t)inH + (size_t)ih) * (size_t)inW + (size_t)iw;
               float v = input->data[inIdx];
-              float e = expf(betaF * v - maxScaled);
+              float e = expf(betaF * (v - pivot));
               float w = e / sumExp;
               dInput->data[inIdx] += g * w;
             }

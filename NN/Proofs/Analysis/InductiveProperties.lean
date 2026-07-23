@@ -40,7 +40,7 @@ under `NN/Proofs`.
 
 ## References
 - This is standard structural induction on an inductive family; no external paper is required.
-  The main nontrivial detail is simply that TorchLean encodes tensors as a tree indexed by `Shape`,
+  The main detail is that TorchLean encodes tensors as a tree indexed by `Shape`,
   rather than (say) a flat array with a runtime `shape`.
 -/
 

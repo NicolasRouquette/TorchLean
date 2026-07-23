@@ -263,8 +263,8 @@ def byteAtD (bytes : ByteArray) (i : Nat) (padId : Nat := 0) : Nat :=
 /--
 Extract a fixed-length byte-token window from a raw corpus.
 
-`offset` is measured in bytes, not Unicode characters. That is the right behavior for byte-level
-causal language modeling and avoids hidden UTF-8 slicing assumptions.
+`offset` is measured in bytes, as required for byte-level causal language modeling. This avoids
+hidden UTF-8 slicing assumptions.
 -/
 def byteTokenWindow (bytes : ByteArray) (n : Nat) (offset : Nat := 0)
     (padId : Nat := 0) : List Nat :=

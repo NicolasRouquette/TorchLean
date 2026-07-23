@@ -100,8 +100,8 @@ Generated locally:
 
 - `checks/check.sh`: local verification gate for `lake build`, `lake test`, `lake lint`,
   and optional CUDA / `NN.CI.All` checks.
-- `checks/example_regression.sh`: sequential regression check for the public `lake exe torchlean ...`
-  example surface. It audits every registered subcommand's `--help` path and runs compact
+- `checks/example_regression.sh`: sequential regression check for the `lake exe torchlean ...`
+  examples. It audits every registered subcommand's `--help` path and runs compact
   tutorial/interop examples; pass `--cuda` for a short real-CUDA model regression set, or
   `--extended-cuda` for a broader one-step model-zoo CUDA run. Optional external-environment
   checks, such as ALE/Pong, live behind `--external-rl`.

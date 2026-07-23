@@ -32,7 +32,7 @@ Start here if you want a compact tour from typed tensors to training and verific
 | Effective float32 rounding | `DeepDives/Floats/EffectiveRounding.lean` | `lake build NN.Examples.DeepDives.Floats.EffectiveRounding` | The same shaped tensor addition in the `FP32` proof model and the executable IEEE model, with the resulting mantissa and exponent exposed by theorem. |
 | Autograd API | `Quickstart/AutogradBasics.lean` | `lake exe torchlean quickstart_autograd` | The tape records operations, runs backward, and reports gradients for closed-form checks. |
 | Proof basics | `Quickstart/Proofs.lean` | `lake build NN.Examples.Quickstart.Proofs` | Small theorem statements over tensor expressions and model fragments. |
-| Simple training | `Quickstart/SimpleMlpTrain.lean` | `lake exe torchlean quickstart_mlp --steps 200 --dtype float32 --backend compiled` | A public `Trainer` run with compiled execution, loss reporting, and parameter updates. |
+| Simple training | `Quickstart/SimpleMlpTrain.lean` | `lake exe torchlean quickstart_mlp --steps 200 --dtype float32 --backend compiled` | A `Trainer` run with compiled execution, loss reporting, and parameter updates. |
 | Data loading | `Data/Loaders/Csv.lean` | `lake exe torchlean data_csv --steps 30 --batch 5 --dtype float --backend eager` | A file-backed batch stream crossing into typed TorchLean data. |
 | Verification | `Verification/TorchLean/*` | `lake exe verify -- torchlean-ibp` | A TorchLean model lowered into a verifier graph and checked by a native bound workflow. |
 | PyTorch import/export | `Interop/PyTorch/Roundtrip.lean` | `lake exe torchlean pytorch_roundtrip --model mlp --action import` | Weight and graph exchange at an explicit trust boundary. |
@@ -50,7 +50,7 @@ For the larger or newer workflows:
 | VNN-COMP-style MNIST-FC | `Verification/VNNComp/` | `lake exe verify -- vnncomp-mnistfc` | A VNN-COMP-shaped robustness query using TorchLean's native graph and margin-certificate machinery. |
 | 3D projection certificate | `Verification/Geometry3D` and `BugZoo/Geometry3DProjection.lean` | `lake exe verify -- camera-box3d-cert` | Camera and box tensors are replayed in Lean to check positive depth, projection, and 2D enclosure. |
 | Spline certificate | `Verification/Splines` | `lake exe verify -- spline-cert` | Piecewise-polynomial certificate data is parsed and checked against Lean side interval predicates. |
-| Optimizer certificates | `Optimization/MuonCertificates.lean` | `lake build NN.Examples.Optimization` | Muon update rules, QR/Newton-Schulz orthogonalizer contracts, and public theorem names for downstream optimizer proofs. |
+| Optimizer certificates | `Optimization/MuonCertificates.lean` | `lake build NN.Examples.Optimization` | Muon update rules, QR/Newton-Schulz orthogonalizer contracts, and theorem names for downstream optimizer proofs. |
 
 ## What An Example Should Leave Behind
 
@@ -158,9 +158,9 @@ resulting graph inside Lean. `abcrown-leaf` checks a bundled α,β-CROWN-style l
 box nesting, array sizes, and the represented witness lower-bound comparison are checked in Lean,
 while the external branch-and-bound search remains a named producer boundary.
 
-## Public API Used By Examples
+## API Used By Examples
 
-Runnable application examples use the focused public API:
+Runnable examples use the focused application API:
 
 ```lean
 import NN.API
@@ -171,12 +171,12 @@ Deep dives import a subsystem explicitly when they inspect its internal objects:
 
 | API area | Use |
 | --- | --- |
-| `TorchLean` | Public model, tensor, data, training, runtime, text, and RL names. |
+| `TorchLean` | Model, tensor, data, training, runtime, text, and RL names. |
 | `NN.API.Public` | Application API modules; ordinary examples should not import this directly. |
 | `NN.Tensor` | Typed tensor constructors and semantics below the application API. |
 | `NN.API.Runtime` | Runtime subsystem access for code that is explicitly extending the runtime layer. |
-| `NN.Verification` | Verification APIs and theorem-level surfaces. |
+| `NN.Verification` | Verification APIs and theorems. |
 | `NN.Verification.CLI` | The `lake exe verify` registry. |
 
-New model and training examples should use the public `TorchLean` names. An example that imports an
+New model and training examples should use the `TorchLean` names. An example that imports an
 implementation module should exercise a declaration from that module directly.

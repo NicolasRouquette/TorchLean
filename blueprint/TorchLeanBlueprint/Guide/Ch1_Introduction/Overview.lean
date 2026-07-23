@@ -21,7 +21,7 @@ output stays in a safe range for every input near a test point. During that one 
 Usually these objects agree. When they do not, the resulting bug can be remarkably quiet. A
 checkpoint loader may transpose a weight matrix. A verification script may forget that the model
 expects normalized inputs. A compiler may replace separate multiplication and addition with an FMA.
-The program still runs; it simply computes a different function from the one we had in mind.
+The program still runs, but computes a different function from the one we had in mind.
 
 TorchLean was designed around that problem. It is a neural-network library, but it is also a place
 where the architecture, parameter payload, graph, arithmetic, and property can be named in the same
@@ -81,7 +81,7 @@ The same initialized model can participate in several parts of TorchLean.
 ## The model description
 
 An `nn.Sequential` stores layer definitions, parameter shapes, initialization values, gradient
-flags, and a forward program. This is the object used by the public trainer. Training creates an
+flags, and a forward program. This is the object used by the high-level trainer. Training creates an
 effectful runtime runner whose parameters change over time; it does not rewrite the source
 definition.
 
@@ -105,9 +105,14 @@ declared output shape. Constants, weights, convolution parameters, and similar d
 separate payload store. This separation lets the graph structure be inspected without pretending
 that two different payloads are the same trained model.
 
+The graph structure itself does not choose a scalar type. Evaluation does: `NN.IR.Payload α` and
+the graph denotation use one `α` for the numeric input, parameters, intermediates, and output. The
+tensor chapter explains this homogeneous-scalar boundary; the PyTorch comparison explains what
+would have to change for mixed precision.
+
 ## The object checked by a verifier
 
-The public verification compiler lowers supported forward programs and a concrete parameter payload
+The verification compiler lowers supported forward programs and a concrete parameter payload
 to a `CompiledIR`. IBP and CROWN operate on that graph. Numerical certificates can replay
 bit-level ranges and backend policies over it. Other checkers consume external artifacts such as
 alpha-beta-CROWN leaves or PINN residual certificates.
@@ -140,6 +145,10 @@ or use another loss. That is exactly where the ambiguity belongs.
 Shape typing is deliberately modest. It catches structural mistakes while they are still local.
 Questions about units, label quality, normalization, finiteness, and generalization appear later as
 their own definitions and hypotheses instead of being smuggled into the word "tensor."
+
+The scalar parameter is equally explicit. `Tensor.T α s` is homogeneous: every element of that
+tensor has type `α`. The tensor chapter develops that point once, alongside the distinction between
+scalar polymorphism and mixed precision.
 
 # From One Output To A Statement
 
@@ -201,7 +210,7 @@ and use Lean to make the surrounding mathematical claim precise.
 
 # Imports
 
-Use the focused public API for application code:
+Use the focused TorchLean API for application code:
 
 ```
 import NN.API

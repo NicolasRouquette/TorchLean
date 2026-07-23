@@ -13,7 +13,7 @@ representation.
 - `Round.lean` turns certified brackets into directed or nearest decisions. Its canonical
   truncation theorem preserves the bracket, selects `neuralCexp`, and proves nearest-even agreement
   with `neuralRound` on the positive path.
-- `Plus.lean` packages rounded representation addition. The executable binary32 path remains
+- `Arithmetic.lean` packages rounded representation arithmetic. The executable binary32 path remains
   `IEEE32Exec`; finite bridge theorems identify that result with the `FP32` proof model.
 
 The central proved chain is:

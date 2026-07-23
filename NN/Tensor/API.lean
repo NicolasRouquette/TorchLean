@@ -304,7 +304,8 @@ macro "tensor_len" : tactic =>
 by `tensor_len`.
 
 It expands to `ofListOfLength ... (by tensor_len)`, so you usually don’t have to write the proof.
-If the proof can’t be solved (e.g. truly dynamic `dims`), elaboration fails; use `ofList` in that
+If the proof can’t be solved (for example, when `dims` is computed at runtime), elaboration fails;
+use `ofList` in that
   case.
 -/
 macro "tensorOfList!" dims:term:max xs:term:max : term =>

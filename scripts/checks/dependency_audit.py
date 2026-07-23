@@ -239,7 +239,7 @@ def parse_file(root: pathlib.Path, path: pathlib.Path) -> tuple[list[ImportEdge]
         # `NN.API` or a focused subsystem so their dependencies remain visible to readers.
         rel.startswith("NN/Tests/")
         or rel.startswith("blueprint/")
-        or rel in {"NN.lean", "NN/CI/ComparatorAll.lean"}
+        or rel in {"NN.lean", "NN/Docs.lean", "NN/CI/ComparatorAll.lean"}
     )
 
     visible_text = mask_comments_and_strings(path.read_text(encoding="utf-8"))

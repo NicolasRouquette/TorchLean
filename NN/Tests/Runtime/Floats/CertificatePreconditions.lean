@@ -9,6 +9,8 @@ module
 public import NN.Tests.Runtime.Floats.Utils
 public import NN.Verification.Cert.Common
 public import NN.Verification.Cert.IBPNodeCert
+public import NN.Verification.ODE.Parse
+public import NN.Verification.PINN.PdeParse
 public import Lean.Data.Json
 
 /-!
@@ -17,8 +19,9 @@ public import Lean.Data.Json
 Regression checks for the executable certificate boundary.
 
 These tests cover side conditions that are easy for an external producer to get wrong: α-CROWN
-slopes must be in `[0,1]`, binary elementwise bounds must have matching flattened dimensions, and
-the true `log` relaxation must only be replayed on positive boxes.
+slopes must be in `[0,1]`, binary elementwise bounds must have matching flattened dimensions, the
+true `log` relaxation must only be replayed on positive boxes, verification expressions must follow
+their documented power/negation semantics, and interval comparisons must reject non-finite values.
 -/
 
 @[expose] public section
@@ -34,10 +37,12 @@ namespace Tests
 namespace Floats
 namespace CertificatePreconditions
 
+/-- Fail the test with `msg` unless a Boolean check succeeds. -/
 def expect (msg : String) (b : Bool) : IO Unit := do
   unless b do
     throw <| IO.userError msg
 
+/-- Require an `IO` action to reject malformed certificate input. -/
 def expectRejected {α : Type} (msg : String) (act : IO α) : IO Unit := do
   let mut rejected := false
   try
@@ -47,10 +52,33 @@ def expectRejected {α : Type} (msg : String) (act : IO α) : IO Unit := do
   unless rejected do
     throw <| IO.userError msg
 
+/-- Parse JSON for a test fixture, turning parser errors into test failures. -/
 def parseJson! (s : String) : IO Json := do
   match Json.parse s with
   | .ok j => pure j
   | .error e => throw <| IO.userError s!"bad test JSON: {e}"
+
+/-- Compare a computed scalar interval pair with its exact expected endpoints. -/
+def expectFloatPair (msg : String) (actual : Option (Float × Float))
+    (expected : Float × Float) : IO Unit := do
+  match actual with
+  | some pair =>
+      expect msg (pair.1 == expected.1 && pair.2 == expected.2)
+  | none =>
+      throw <| IO.userError s!"{msg}: expression evaluation failed"
+
+/-- Parse and evaluate an ODE expression on the point interval `u = 2`. -/
+def evalODEAtTwo (source : String) : Option (Float × Float) := do
+  let expr ← NN.Verification.ODE.Parse.parseExpr source |>.toOption
+  NN.Verification.ODE.eval (fun x => x)
+    { t := (0.0, 0.0), u := (2.0, 2.0) } expr
+
+/-- Parse and evaluate a PDE expression on the point interval `u = 2`. -/
+def evalPDEAtTwo (source : String) : Option (Float × Float) := do
+  let expr ← NN.Verification.PINN.PdeParse.parseExpr (fun _ => none) source |>.toOption
+  NN.Verification.PINN.PdeAst.eval
+    { u := some (2.0, 2.0), duX := none, duY := none, d2uX := none, d2uY := none }
+    expr
 
 def flatBox (lo hi : Fin 2 → Float) : FlatBox IEEE32Exec :=
   { dim := 2
@@ -93,6 +121,54 @@ def run : IO Unit := do
 
   let nonfiniteBox ← parseJson! "{\"lo\":[0.0,1e999],\"hi\":[1.0,2.0]}"
   expectRejected "non-finite interval certificate was accepted" (parseFlatBox? 2 nonfiniteBox)
+
+  expectFloatPair "ODE parser interpreted u^0 incorrectly" (evalODEAtTwo "u^0") (1.0, 1.0)
+  expectFloatPair "ODE parser interpreted u^1 incorrectly" (evalODEAtTwo "u^1") (2.0, 2.0)
+  expectFloatPair "ODE parser interpreted u^2 incorrectly" (evalODEAtTwo "u^2") (4.0, 4.0)
+  expectFloatPair "ODE exponentiation did not bind more tightly than unary minus"
+    (evalODEAtTwo "-u^2") (-4.0, -4.0)
+  expectFloatPair "ODE parser interpreted (-u)^2 incorrectly"
+    (evalODEAtTwo "(-u)^2") (4.0, 4.0)
+  expectFloatPair "ODE parser interpreted -(u^2) incorrectly"
+    (evalODEAtTwo "-(u^2)") (-4.0, -4.0)
+  expectFloatPair "ODE parser interpreted double negation incorrectly"
+    (evalODEAtTwo "--u") (2.0, 2.0)
+
+  expectFloatPair "PDE parser interpreted u^0 incorrectly" (evalPDEAtTwo "u^0") (1.0, 1.0)
+  expectFloatPair "PDE parser interpreted u^1 incorrectly" (evalPDEAtTwo "u^1") (2.0, 2.0)
+  expectFloatPair "PDE parser interpreted u^2 incorrectly" (evalPDEAtTwo "u^2") (4.0, 4.0)
+  expectFloatPair "PDE exponentiation did not bind more tightly than unary minus"
+    (evalPDEAtTwo "-u^2") (-4.0, -4.0)
+  expectFloatPair "PDE parser interpreted (-u)^2 incorrectly"
+    (evalPDEAtTwo "(-u)^2") (4.0, 4.0)
+  expectFloatPair "PDE parser interpreted -(u^2) incorrectly"
+    (evalPDEAtTwo "-(u^2)") (-4.0, -4.0)
+  expectFloatPair "PDE parser interpreted double negation incorrectly"
+    (evalPDEAtTwo "--u") (2.0, 2.0)
+
+  let floatNaN := Float.ofBits 0x7ff8000000000000
+  expect "Float NaN was accepted as <= a finite value"
+    (!(NN.Verification.ODE.Ival.leBool floatNaN 0.0))
+  expect "a finite Float was accepted as <= NaN"
+    (!(NN.Verification.ODE.Ival.leBool 0.0 floatNaN))
+  let floatInf := Float.ofBits 0x7ff0000000000000
+  expect "Float infinity was accepted as an ordered finite endpoint"
+    (!(NN.Verification.ODE.Ival.leBool floatInf 0.0))
+  expect "interval minimum hid a non-finite Float endpoint"
+    (!(NN.Verification.ODE.Ival.min2 floatInf 0.0).isFinite)
+  expect "interval maximum hid a non-finite Float endpoint"
+    (!(NN.Verification.ODE.Ival.max2 0.0 floatInf).isFinite)
+
+  expect "IEEE32Exec NaN was accepted as <= a finite value"
+    (!(NN.Verification.ODE.Ival.leBool IEEE32Exec.canonicalNaN IEEE32Exec.posZero))
+  expect "a finite IEEE32Exec value was accepted as <= NaN"
+    (!(NN.Verification.ODE.Ival.leBool IEEE32Exec.posZero IEEE32Exec.canonicalNaN))
+  expect "IEEE32Exec infinity was accepted as an ordered finite endpoint"
+    (!(NN.Verification.ODE.Ival.leBool IEEE32Exec.posInf IEEE32Exec.posZero))
+  expect "interval minimum hid a non-finite IEEE32Exec endpoint"
+    (!(IEEE32Exec.isFinite <| NN.Verification.ODE.Ival.min2 IEEE32Exec.posInf IEEE32Exec.posZero))
+  expect "interval maximum hid a non-finite IEEE32Exec endpoint"
+    (!(IEEE32Exec.isFinite <| NN.Verification.ODE.Ival.max2 IEEE32Exec.posZero IEEE32Exec.posInf))
 
   let b2 := flatBox (fun _ => 0.0) (fun _ => 1.0)
   let mismatchCert : Array (Option (FlatBox IEEE32Exec)) := #[some b2, some flatBox3, some b2]

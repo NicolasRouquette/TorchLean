@@ -3,7 +3,16 @@
 import math
 from typing import Any
 
-from common import affine_interval, centered_box, matmul_interval, relu_interval, softmax_interval, write_json
+from common import (
+    add_down,
+    add_up,
+    affine_interval,
+    centered_box,
+    matmul_interval,
+    relu_interval,
+    softmax_interval,
+    write_json,
+)
 
 # Tiny transformer-encoder-like graph IBP, mirroring
 # `NN.Verification.LiRPA.TransformerEncoder`.
@@ -43,8 +52,10 @@ def seed_input_box(eps: float = 0.5):
 
 
 def ibp_add(lo1: list[float], hi1: list[float], lo2: list[float], hi2: list[float]):
-    """Add two interval vectors elementwise."""
-    return [a + c for a, c in zip(lo1, lo2)], [b + d for b, d in zip(hi1, hi2)]
+    """Add interval vectors with the outward rounding used by Lean's graph rule."""
+    return [add_down(a, c) for a, c in zip(lo1, lo2)], [
+        add_up(b, d) for b, d in zip(hi1, hi2)
+    ]
 
 
 def ibp_layernorm(lo: list[float], hi: list[float], eps: float = 1e-6):

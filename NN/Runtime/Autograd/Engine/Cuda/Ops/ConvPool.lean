@@ -8,9 +8,14 @@ module
 
 public import NN.Runtime.Autograd.Engine.Cuda.Ops.Indexing
 public import NN.Spec.Layers.Conv
+public import NN.Spec.Layers.Pooling.ND
 
 /-!
 # CUDA Tape Operations: Convolution and Pooling
+
+Every entry point rejects zero strides and geometry that cannot cross the `UInt32` ABI, validates
+input lengths through `requireValue`, and checks forward native outputs before recording them on the
+tape. Pointer lifetime and device ownership remain responsibilities of the native buffer layer.
 -/
 
 @[expose] public section
@@ -33,6 +38,8 @@ def conv2d
   {inC outC kH kW stride padding inH inW : Nat}
   {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
   (t : Tape) (kernelId biasId inputId : Nat) : Result (Tape × Nat) := do
+  if stride = 0 then
+    throw "autograd: cuda: conv2d: stride must be > 0"
   have _ := h1
   have _ := h2
   have _ := h3
@@ -49,12 +56,15 @@ def conv2d
   let input ← requireValue (t := t) inputId (.dim inC (.dim inH (.dim inW .scalar)))
   let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride padding
   let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride padding
+  let _ ← numelU32 (Shape.ofList [outH, outW])
+  let outShape : Shape := .dim outC (.dim outH (.dim outW .scalar))
+  let _ ← numelU32 outShape
   let y := torchleanConv2dFwdCuda input kernel bias inC32 inH32 inW32 outC32 kH32 kW32 stride32
     pad32
-  let outShape : Shape := .dim outC (.dim outH (.dim outW .scalar))
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
   let node : Node :=
     { name := some "conv2d"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [kernelId, biasId, inputId]
       backward := fun dLdyAny => do
@@ -78,6 +88,8 @@ def convTranspose2d
   {inC outC kH kW stride padding inH inW : Nat}
   {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
   (t : Tape) (kernelId biasId inputId : Nat) : Result (Tape × Nat) := do
+  if stride = 0 then
+    throw "autograd: cuda: conv_transpose2d: stride must be > 0"
   have _ := h1
   have _ := h2
   have _ := h3
@@ -94,13 +106,16 @@ def convTranspose2d
   let input ← requireValue (t := t) inputId (.dim inC (.dim inH (.dim inW .scalar)))
   let outH : Nat := Spec.convTransposeOutDim inH kH stride padding
   let outW : Nat := Spec.convTransposeOutDim inW kW stride padding
+  let _ ← numelU32 (Shape.ofList [outH, outW])
+  let outShape : Shape := .dim outC (.dim outH (.dim outW .scalar))
+  let _ ← numelU32 outShape
   let y :=
     torchleanConvTranspose2dFwdCuda input kernel bias inC32 inH32 inW32 outC32 kH32 kW32 stride32
       pad32
-  let outShape : Shape := .dim outC (.dim outH (.dim outW .scalar))
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
   let node : Node :=
     { name := some "conv_transpose2d"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [kernelId, biasId, inputId]
       backward := fun dLdyAny => do
@@ -149,16 +164,23 @@ def conv
   let kernelSpatialArr : Array Nat := Array.ofFn (fun i : Fin d => kernel.get i)
   let strideArr : Array Nat := Array.ofFn (fun i : Fin d => stride.get i)
   let paddingArr : Array Nat := Array.ofFn (fun i : Fin d => padding.get i)
+  validateU32Dimensions "conv" inSpatialArr
+  validateU32Dimensions "conv" kernelSpatialArr
+  validateU32Dimensions "conv" strideArr
+  validateU32Dimensions "conv" paddingArr
+  let _ ← numelU32 (Shape.ofList inSpatial.toList)
+  let _ ← numelU32 (Shape.ofList kernel.toList)
 
   let kernelShape : Shape :=
     Shape.ofList (outC :: inC :: kernel.toList)
   let inputShape : Shape :=
     Shape.ofList (inC :: inSpatial.toList)
   let outSpatial : Vector Nat d :=
-    Vector.ofFn (fun a =>
-      Spec.Shape.slidingWindowOutDim (inSpatial.get a) (kernel.get a) (stride.get a) (padding.get a))
+    Spec.convOutSpatial inSpatial kernel stride padding
+  let _ ← numelU32 (Shape.ofList outSpatial.toList)
   let outShape : Shape :=
     Shape.ofList (outC :: outSpatial.toList)
+  let _ ← numelU32 outShape
 
   let kernelBuf ← requireValue (t := t) kernelId kernelShape
   let biasBuf ← requireValue (t := t) biasId (.dim outC .scalar)
@@ -168,10 +190,11 @@ def conv
     torchleanConvFwdCuda inputBuf kernelBuf biasBuf
       inSpatialArr kernelSpatialArr strideArr paddingArr
       inC32 outC32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
 
   let node : Node :=
     { name := some "conv"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [kernelId, biasId, inputId]
       backward := fun dLdyAny => do
@@ -211,6 +234,12 @@ def convTranspose
   let kernelSpatialArr : Array Nat := Array.ofFn (fun i : Fin d => kernel.get i)
   let strideArr : Array Nat := Array.ofFn (fun i : Fin d => stride.get i)
   let paddingArr : Array Nat := Array.ofFn (fun i : Fin d => padding.get i)
+  validateU32Dimensions "conv_transpose" inSpatialArr
+  validateU32Dimensions "conv_transpose" kernelSpatialArr
+  validateU32Dimensions "conv_transpose" strideArr
+  validateU32Dimensions "conv_transpose" paddingArr
+  let _ ← numelU32 (Shape.ofList inSpatial.toList)
+  let _ ← numelU32 (Shape.ofList kernel.toList)
 
   -- NOTE: for transposed conv, kernel layout is `(inC, outC, kernelSpatial...)`.
   let kernelShape : Shape :=
@@ -219,9 +248,12 @@ def convTranspose
     Shape.ofList (inC :: inSpatial.toList)
   let outSpatial : Vector Nat d :=
     Vector.ofFn (fun a =>
-      (inSpatial.get a - 1) * stride.get a - 2 * padding.get a + kernel.get a)
+      Spec.convTransposeOutDim
+        (inSpatial.get a) (kernel.get a) (stride.get a) (padding.get a))
+  let _ ← numelU32 (Shape.ofList outSpatial.toList)
   let outShape : Shape :=
     Shape.ofList (outC :: outSpatial.toList)
+  let _ ← numelU32 outShape
 
   let kernelBuf ← requireValue (t := t) kernelId kernelShape
   let biasBuf ← requireValue (t := t) biasId (.dim outC .scalar)
@@ -231,10 +263,11 @@ def convTranspose
     torchleanConvTransposeFwdCuda inputBuf kernelBuf biasBuf
       inSpatialArr kernelSpatialArr strideArr paddingArr
       inC32 outC32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
 
   let node : Node :=
     { name := some "conv_transpose"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [kernelId, biasId, inputId]
       backward := fun dLdyAny => do
@@ -253,6 +286,8 @@ def convTranspose
 /-- MaxPool2D via ConvPool FFI (no padding). -/
 def maxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
+  if stride = 0 then
+    throw "autograd: cuda: max_pool2d: stride must be > 0"
   have _ := h1
   have _ := h2
   let inC32 ← u32 inC
@@ -265,11 +300,14 @@ def maxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
   let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride 0
   let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride 0
+  let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
+  let _ ← numelU32 outShape
   let y := torchleanMaxPool2dFwdCuda x inC32 inH32 inW32 kH32 kW32 stride32 pad32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
   let node : Node :=
     { name := some "max_pool2d"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [xId]
       backward := fun dLdyAny => do
@@ -281,6 +319,8 @@ def maxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
 /-- MaxPool2D via ConvPool FFI (with symmetric padding). -/
 def maxPool2dPad {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
+  if stride = 0 then
+    throw "autograd: cuda: max_pool2d_pad: stride must be > 0"
   have _ := h1
   have _ := h2
   let inC32 ← u32 inC
@@ -293,11 +333,14 @@ def maxPool2dPad {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} {h2 : 
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
   let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride padding
   let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride padding
+  let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
+  let _ ← numelU32 outShape
   let y := torchleanMaxPool2dFwdCuda x inC32 inH32 inW32 kH32 kW32 stride32 pad32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
   let node : Node :=
     { name := some "max_pool2d_pad"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [xId]
       backward := fun dLdyAny => do
@@ -324,22 +367,30 @@ def maxPool
   let kernelArr : Array Nat := Array.ofFn (fun i : Fin d => kernel.get i)
   let strideArr : Array Nat := Array.ofFn (fun i : Fin d => stride.get i)
   let paddingArr : Array Nat := Array.ofFn (fun i : Fin d => padding.get i)
+  validateU32Dimensions "max_pool" inSpatialArr
+  validateU32Dimensions "max_pool" kernelArr
+  validateU32Dimensions "max_pool" strideArr
+  validateU32Dimensions "max_pool" paddingArr
+  let _ ← numelU32 (Shape.ofList inSpatial.toList)
+  let _ ← numelU32 (Shape.ofList kernel.toList)
 
   let inputShape : Shape :=
     Shape.ofList (C :: inSpatial.toList)
   let outSpatial : Vector Nat d :=
-    Vector.ofFn (fun a =>
-      Spec.Shape.slidingWindowOutDim (inSpatial.get a) (kernel.get a) (stride.get a) (padding.get a))
+    Spec.poolOutSpatialPad inSpatial kernel stride padding
+  let _ ← numelU32 (Shape.ofList outSpatial.toList)
   let outShape : Shape :=
     Shape.ofList (C :: outSpatial.toList)
+  let _ ← numelU32 outShape
 
   let xBuf ← requireValue (t := t) xId inputShape
   let y :=
     torchleanMaxPoolFwdCuda xBuf inSpatialArr kernelArr strideArr paddingArr inC32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
 
   let node : Node :=
     { name := some "max_pool"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [xId]
       backward := fun dLdyAny => do
@@ -350,11 +401,19 @@ def maxPool
         pure [(xId, { s := inputShape, buf := dx })] }
   pure (t.addNode node)
 
-/-- Smooth max-pool2d (log-sum-exp surrogate) via ConvPool FFI (no padding). -/
+/--
+Smooth max-pool2d (log-sum-exp surrogate) via ConvPool FFI, without padding.
+
+`beta` is checked after conversion to `Float32`, because conversion can underflow a nonzero `Float`
+to zero or overflow a finite one to infinity.
+-/
 def smoothMaxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (t : Tape) (xId : Nat) (beta : Float) : Result (Tape × Nat) := do
-  if beta == 0.0 then
-    throw "autograd: cuda: smooth_max_pool2d: beta must be nonzero"
+  let beta32 := Float.toFloat32 beta
+  if !beta32.isFinite || beta32 == (0.0 : Float32) then
+    throw "autograd: cuda: smooth_max_pool2d: beta must be finite and nonzero"
+  if stride = 0 then
+    throw "autograd: cuda: smooth_max_pool2d: stride must be > 0"
   have _ := h1
   have _ := h2
   let inC32 ← u32 inC
@@ -367,11 +426,14 @@ def smoothMaxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW �
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
   let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride 0
   let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride 0
+  let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
+  let _ ← numelU32 outShape
   let y := torchleanSmoothMaxPool2dFwdCuda x beta inC32 inH32 inW32 kH32 kW32 stride32 pad32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
   let node : Node :=
     { name := some "smooth_max_pool2d"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [xId]
       backward := fun dLdyAny => do
@@ -381,11 +443,19 @@ def smoothMaxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW �
         pure [(xId, { s := .dim inC (.dim inH (.dim inW .scalar)), buf := dx })] }
   pure (t.addNode node)
 
-/-- Smooth max-pool2d (log-sum-exp surrogate) via ConvPool FFI (with symmetric padding). -/
+/--
+Smooth max-pool2d (log-sum-exp surrogate) via ConvPool FFI, with symmetric padding.
+
+`beta` is checked after conversion to `Float32`, because conversion can underflow a nonzero `Float`
+to zero or overflow a finite one to infinity.
+-/
 def smoothMaxPool2dPad {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (t : Tape) (xId : Nat) (beta : Float) : Result (Tape × Nat) := do
-  if beta == 0.0 then
-    throw "autograd: cuda: smooth_max_pool2d_pad: beta must be nonzero"
+  let beta32 := Float.toFloat32 beta
+  if !beta32.isFinite || beta32 == (0.0 : Float32) then
+    throw "autograd: cuda: smooth_max_pool2d_pad: beta must be finite and nonzero"
+  if stride = 0 then
+    throw "autograd: cuda: smooth_max_pool2d_pad: stride must be > 0"
   have _ := h1
   have _ := h2
   let inC32 ← u32 inC
@@ -398,11 +468,14 @@ def smoothMaxPool2dPad {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} 
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
   let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride padding
   let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride padding
+  let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
+  let _ ← numelU32 outShape
   let y := torchleanSmoothMaxPool2dFwdCuda x beta inC32 inH32 inW32 kH32 kW32 stride32 pad32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
   let node : Node :=
     { name := some "smooth_max_pool2d_pad"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [xId]
       backward := fun dLdyAny => do
@@ -412,13 +485,19 @@ def smoothMaxPool2dPad {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} 
         pure [(xId, { s := .dim inC (.dim inH (.dim inW .scalar)), buf := dx })] }
   pure (t.addNode node)
 
-/-- N-D smooth max pooling (CUDA) via ConvPool FFI (rank ≤ 8). -/
+/--
+N-D smooth max pooling via the CUDA ConvPool FFI (rank at most eight).
+
+`beta` is checked after conversion to `Float32`, because conversion can underflow a nonzero `Float`
+to zero or overflow a finite one to infinity.
+-/
 def smoothMaxPool
     {d C : Nat} {inSpatial kernel stride padding : Vector Nat d}
     {hKernel : ∀ i : Fin d, kernel.get i ≠ 0}
     (t : Tape) (xId : Nat) (beta : Float) : Result (Tape × Nat) := do
-  if beta == 0.0 then
-    throw "autograd: cuda: smooth_max_pool: beta must be nonzero"
+  let beta32 := Float.toFloat32 beta
+  if !beta32.isFinite || beta32 == (0.0 : Float32) then
+    throw "autograd: cuda: smooth_max_pool: beta must be finite and nonzero"
   have _ := hKernel
   if d = 0 then
     throw "autograd: cuda: smooth_max_pool: d=0 is not supported"
@@ -432,24 +511,32 @@ def smoothMaxPool
   let kernelArr : Array Nat := Array.ofFn (fun i : Fin d => kernel.get i)
   let strideArr : Array Nat := Array.ofFn (fun i : Fin d => stride.get i)
   let paddingArr : Array Nat := Array.ofFn (fun i : Fin d => padding.get i)
+  validateU32Dimensions "smooth_max_pool" inSpatialArr
+  validateU32Dimensions "smooth_max_pool" kernelArr
+  validateU32Dimensions "smooth_max_pool" strideArr
+  validateU32Dimensions "smooth_max_pool" paddingArr
+  let _ ← numelU32 (Shape.ofList inSpatial.toList)
+  let _ ← numelU32 (Shape.ofList kernel.toList)
 
   let inputShape : Shape :=
     Shape.ofList (C :: inSpatial.toList)
   let outSpatial : Vector Nat d :=
-    Vector.ofFn (fun a =>
-      Spec.Shape.slidingWindowOutDim (inSpatial.get a) (kernel.get a) (stride.get a) (padding.get a))
+    Spec.poolOutSpatialPad inSpatial kernel stride padding
+  let _ ← numelU32 (Shape.ofList outSpatial.toList)
   let outShape : Shape :=
     Shape.ofList (C :: outSpatial.toList)
+  let _ ← numelU32 outShape
 
   let xBuf ← requireValue (t := t) xId inputShape
   let y :=
     torchleanSmoothMaxPoolFwdCuda xBuf beta
       inSpatialArr kernelArr strideArr paddingArr
       inC32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
 
   let node : Node :=
     { name := some "smooth_max_pool"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [xId]
       backward := fun dLdyAny => do
@@ -464,6 +551,8 @@ def smoothMaxPool
 /-- AvgPool2D via ConvPool FFI (no padding). -/
 def avgPool2d {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
+  if stride = 0 then
+    throw "autograd: cuda: avg_pool2d: stride must be > 0"
   have _ := h1
   have _ := h2
   let inC32 ← u32 inC
@@ -476,11 +565,14 @@ def avgPool2d {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
   let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride 0
   let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride 0
+  let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
+  let _ ← numelU32 outShape
   let y := torchleanAvgPool2dFwdCuda x inC32 inH32 inW32 kH32 kW32 stride32 pad32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
   let node : Node :=
     { name := some "avg_pool2d"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [xId]
       backward := fun dLdyAny => do
@@ -492,6 +584,8 @@ def avgPool2d {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
 /-- AvgPool2D via ConvPool FFI (with symmetric padding). -/
 def avgPool2dPad {kH kW inH inW inC stride padding : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
+  if stride = 0 then
+    throw "autograd: cuda: avg_pool2d_pad: stride must be > 0"
   have _ := h1
   have _ := h2
   let inC32 ← u32 inC
@@ -504,11 +598,14 @@ def avgPool2dPad {kH kW inH inW inC stride padding : Nat} (h1 : kH ≠ 0) (h2 : 
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
   let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride padding
   let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride padding
+  let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
+  let _ ← numelU32 outShape
   let y := torchleanAvgPool2dFwdCuda x inC32 inH32 inW32 kH32 kW32 stride32 pad32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
   let node : Node :=
     { name := some "avg_pool2d_pad"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [xId]
       backward := fun dLdyAny => do
@@ -535,24 +632,32 @@ def avgPool
   let kernelArr : Array Nat := Array.ofFn (fun i : Fin d => kernel.get i)
   let strideArr : Array Nat := Array.ofFn (fun i : Fin d => stride.get i)
   let paddingArr : Array Nat := Array.ofFn (fun i : Fin d => padding.get i)
+  validateU32Dimensions "avg_pool" inSpatialArr
+  validateU32Dimensions "avg_pool" kernelArr
+  validateU32Dimensions "avg_pool" strideArr
+  validateU32Dimensions "avg_pool" paddingArr
+  let _ ← numelU32 (Shape.ofList inSpatial.toList)
+  let _ ← numelU32 (Shape.ofList kernel.toList)
 
   let inputShape : Shape :=
     Shape.ofList (C :: inSpatial.toList)
   let outSpatial : Vector Nat d :=
-    Vector.ofFn (fun a =>
-      Spec.Shape.slidingWindowOutDim (inSpatial.get a) (kernel.get a) (stride.get a) (padding.get a))
+    Spec.poolOutSpatialPad inSpatial kernel stride padding
+  let _ ← numelU32 (Shape.ofList outSpatial.toList)
   let outShape : Shape :=
     Shape.ofList (C :: outSpatial.toList)
+  let _ ← numelU32 outShape
 
   let xBuf ← requireValue (t := t) xId inputShape
   let y :=
     torchleanAvgPoolFwdCuda xBuf
       inSpatialArr kernelArr strideArr paddingArr
       inC32
+  let output ← AnyBuffer.validate { s := outShape, buf := y }
 
   let node : Node :=
     { name := some "avg_pool"
-      value := { s := outShape, buf := y }
+      value := output
       requires_grad := true
       parents := [xId]
       backward := fun dLdyAny => do

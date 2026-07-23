@@ -104,8 +104,8 @@ theorem futureMask_rejects_past {n : Nat} (i j : Fin n) (hji : j.val ≤ i.val) 
 /-!
 ## Exact hard-mask attention weights
 
-For hard masking, blocked entries are not merely assigned a very small logit. Their softmax
-numerator is definitionally zero. These lemmas are the attention-level facts needed for causal
+For hard masking, a blocked entry has a definitionally zero softmax numerator. These lemmas are the
+attention-level facts needed for causal
 non-interference proofs.
 -/
 

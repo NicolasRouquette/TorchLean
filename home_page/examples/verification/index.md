@@ -61,8 +61,7 @@ let ps : ParamStore α :=
   { compiled.ps with inputBoxes := compiled.ps.inputBoxes.insert compiled.inputId inputBox }
 ```
 
-So the verifier is not checking one input point. It is checking all inputs in the box
-`[inputCenter - eps, inputCenter + eps]`.
+The verifier checks every input in the box `[inputCenter - eps, inputCenter + eps]`.
 
 ```lean
 let ibp := runIBP (α := α) compiled.graph ps

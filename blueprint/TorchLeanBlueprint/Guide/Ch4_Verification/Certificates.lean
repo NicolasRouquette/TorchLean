@@ -122,9 +122,10 @@ For a semantic margin property, the target shape is:
 
 $$`\forall x\in B_\ell,\qquad c^\top f(x)\ge threshold.`
 
-The current checker accepts the artifact when every represented leaf satisfies this predicate and
-the top level metadata is coherent. It does not turn a set of leaves into a root-region proof unless
-coverage of the root by those leaves is separately supplied and checked. In this fragment, the
+The current checker does not establish that quantified statement. It accepts when the exported
+boxes and witness fields are coherent and every represented leaf passes the finite comparison
+`lb[i] > threshold[i]`. Even if the lower-bound provenance were added, turning the leaves into a
+root-region proof would still require separately checked coverage. In this fragment, the
 certificate is structural.
 
 # Three Levels Of Checking
@@ -148,7 +149,7 @@ There are three progressively stronger designs:
   encloses the graph semantics. This requires a proved local transfer for every supported
   operator, plus a compiler correspondence and any required floating-point bridge.
 
-The levels can share one producer workflow, but they support different public claims.
+The levels can share one producer workflow, but they support different claims.
 
 # Lean Entry Points
 
@@ -156,17 +157,26 @@ The leaf checker is intentionally separate from CROWN node checkers:
 
 ```
 #check NN.Verification.Cert.AbCrownLeafCert.checkAbCrownLeafArtifact
+#check NN.Verification.IBPCert.check
+#check NN.Verification.IBPNodeCert.checkIBPNodeCertificate
+#check NN.Verification.CROWNNodeCert.checkCROWNNodeCertificate
 #check NN.Verification.CROWNNodeCertAlphaBeta.AlphaBetaCROWNNodeCertificate
 #check NN.Verification.CROWNNodeCertAlphaBeta.checkAlphaBetaCROWNNodeCertificate
 ```
 
-Use the first when the artifact is a branch-and-bound leaf summary. Use the second family when the
-artifact contains per-node affine bound data that Lean can recompute against a graph and parameter
-store.
+Use the first when the artifact is a branch-and-bound leaf summary. `IBPCert.check` checks a compact
+Float output-bound artifact against a supplied graph and parameter store. `IBPNodeCert` instead
+replays per-node interval data with `IEEE32Exec`. `CROWNNodeCert` adds affine CROWN data, and the
+alpha-beta variant adds the corresponding relaxation parameters. These formats are related, but
+they are not interchangeable transcripts.
 
 This split is important for citations:
 
 - `abcrown-leaf` checks a structural leaf artifact.
+- `checkIBPNodeCertificate` recomputes the authoritative binary32 interval trace and requires the
+  imported node boxes to contain it.
+- `checkCROWNNodeCertificate` checks the additional affine transcript for the supported CROWN
+  fragment.
 - `checkAlphaBetaCROWNNodeCertificate` checks per-node α,β-CROWN transfer data by recomputation and
   exact binary32 transcript comparison; its interval side data may widen the recomputed boxes but
   may never shrink them.
@@ -219,35 +229,12 @@ affine forms. It is therefore a *leaf artifact*, not a full proof certificate.
 The artifact records enough to check the terminal-domain bookkeeping exported by the producer; it
 does not replay the producer's bound propagation.
 
-# How To Generate
+# From Checker To Producer
 
-TorchLean now provides the producer-side conversion helper at
-`scripts/verification/abcrown/export_leaf_artifact.py`. It converts a raw terminal-domain dump into the
-`abcrown_leaf_artifact_v0_1.json` schema and can immediately run the Lean checker:
-
-```
-python3 scripts/verification/abcrown/export_leaf_artifact.py \
-  --input NN/Examples/Verification/AbCrown/example_raw_leaf_dump.json \
-  --out _external/abcrown/leaf_artifact.json \
-  --check
-```
-
-The helper accepts common raw field names such as `x_L`, `x_U`, `lower_bounds`, and `thresholds`.
-For direct instrumentation of an external verifier, import
-`write_abcrown_leaf_artifact` from that script and call it after the verifier has collected terminal
-verified leaves. If no explicit output path is passed, that helper writes to `ABCROWN_ARTIFACT_OUT`.
-That environment variable is a TorchLean helper convention; setting it alone does not modify an
-unpatched α,β-CROWN run.
-
-If you want to use an external α,β-CROWN producer, clone it separately:
-
-```
-git clone https://github.com/Verified-Intelligence/Two-Stage_Neural_Controller_Training.git \
-  Two-Stage_Neural_Controller_Training
-```
-
-Run the external verifier, dump or instrument the terminal verified leaves, convert them with the
-TorchLean helper, then pass the resulting artifact to TorchLean's checker.
+This chapter owns the accepted format and checker claim. The next chapter begins with the external
+producer and shows how `scripts/verification/abcrown/export_leaf_artifact.py` converts terminal
+domains into this schema, both as a command and as a function called inside a producer process.
+Keeping those directions there avoids mixing artifact semantics with external-tool setup.
 
 # How To Check In Lean
 

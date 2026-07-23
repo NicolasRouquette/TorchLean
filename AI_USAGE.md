@@ -13,7 +13,7 @@ oracle and not as a replacement for manual formalization.
   difficult proof and engineering tasks. In particular, it helped with proof
   planning, Lean search, refactoring long proof scripts, debugging stubborn Lean
   goals, and explaining possible ways to organize large correctness arguments.
-- GPT-5.2 Pro was also useful while working around CUDA and native runtime
+- GPT-5.6 Pro was also useful while working around CUDA and native runtime
   boundaries: reading error logs, thinking through FFI and memory ownership
   issues, checking documentation language, and helping us separate what Lean
   proves from what the CUDA/cuBLAS runtime must be trusted to do.

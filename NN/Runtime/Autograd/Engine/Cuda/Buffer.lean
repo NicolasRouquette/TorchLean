@@ -310,8 +310,9 @@ end WithWorkspace
 /--
 Ask the Lean runtime allocator (mimalloc) to collect abandoned/free pages.
 
-This does not change any TorchLean value. It is a pressure valve for long native eager loops where
-many short-lived tape closures and external-buffer wrappers are created every step.
+This allocator-only operation releases abandoned or free pages without changing TorchLean values.
+It is intended for long native eager loops that create many short-lived tape closures and
+external-buffer wrappers at every step.
 
 In the CUDA build, `force = true` also releases cached device blocks held by the native buffer pool.
 That gives training code a way to trade reuse for returning memory to the CUDA driver at clear

@@ -89,8 +89,7 @@ def add [Add α] : {ss : List Shape} → TList α ss → TList α ss → TList �
 Scale every tensor in a context by the same scalar.
 
 This is the context-level analogue of `scaleSpec`. It lives beside `zero` and `add` because several
-proof layers need scalar multiplication on heterogeneous parameter/gradient packs, not just the
-training-step file.
+proof layers need scalar multiplication on heterogeneous parameter/gradient packs.
 -/
 def scale [Mul α] (c : α) : {ss : List Shape} → TList α ss → TList α ss
   | [], nil => nil
