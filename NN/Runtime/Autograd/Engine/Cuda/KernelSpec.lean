@@ -319,6 +319,26 @@ def scatterAddSpec {n k : Nat} (x : FlatBuffer n) (values : FlatBuffer k)
       (fun acc j => if idx j = i then ExecFloat.add acc (values j) else acc)
       (x i)
 
+/-! ## Lookup-table texture lerp -/
+
+/--
+Pure spec for the lookup-table fetch of `NN.Runtime.Autograd.Engine.Cuda.TexTable` in *point*
+mode, after coordinate decomposition: given a layered table, per-element layer selections, the
+two proof-carrying sample indices `j`/`j'` (the clamped `⌊u⌋` and `⌊u⌋+1`), and the float32
+fractional weight `f = u − ⌊u⌋`, each output is the guarded float32 lerp
+`tab[L][j] + f · (tab[L][j'] − tab[L][j])`.
+
+The coordinate decomposition itself (clamping `u` to `[0, width−1]`, `floor`, the exactness of
+`u − ⌊u⌋` in float32) and hardware mode's 9-bit weight quantization live at the native trust
+boundary; both are validated bit-level by the executable `Float32` parity tests in
+`NN.Tests.Runtime.Cuda.TexTable`, per this file's three-layer split.
+-/
+def texLerpSpec {w l k : Nat} (tab : Fin l → Fin w → RefScalar)
+    (layer : Fin k → Fin l) (j j' : Fin k → Fin w) (f : Fin k → RefScalar) : FlatBuffer k :=
+  fun i =>
+    ExecFloat.add (tab (layer i) (j i))
+      (ExecFloat.mul (f i) (ExecFloat.sub (tab (layer i) (j' i)) (tab (layer i) (j i))))
+
 /-! ## Batched row-major matrix multiplication -/
 
 /-- Linear row-major index for `A[b, i, k]` with shape `(batch, m, n)`. -/

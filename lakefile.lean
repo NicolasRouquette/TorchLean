@@ -348,6 +348,11 @@ target torchlean_cuda_conv_pool pkg : FilePath :=
 target torchlean_cuda_tensor pkg : FilePath :=
   buildNativeBackendLib pkg "tensor" "torchlean_cuda_tensor"
 
+/-- CUDA texture-object lookup tables (`NN.Runtime.Autograd.Engine.Cuda.TexTable`), or portable
+stubs. -/
+target torchlean_cuda_textable pkg : FilePath :=
+  buildNativeBackendLib pkg "textures" "torchlean_cuda_textable"
+
 /-- Repair large frees and delayed arena purging in the pinned Linux allocator. -/
 target torchlean_allocator pkg : FilePath := do
   let lean ← getLeanInstall
@@ -376,7 +381,8 @@ lean_lib NN where
       torchlean_dgemm_cuda,
       torchlean_cuda_kernels,
       torchlean_cuda_conv_pool,
-      torchlean_cuda_tensor
+      torchlean_cuda_tensor,
+      torchlean_cuda_textable
     ] : TargetArray FilePath) ++
       if cudaEnabled && libtorchEnabled then
         (#[torchlean_libtorch_sdpa_so] : TargetArray FilePath)
