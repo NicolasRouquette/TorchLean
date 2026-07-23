@@ -371,6 +371,27 @@ target torchlean_allocator pkg : FilePath := do
           "--compiler", compiler.toString, "--output", output.toString]
       }) getLeanTrace
 
+/-- Compile the glibc ≥ 2.38 isoc23 link shim (`csrc/cuda/common/torchlean_isoc23_shim.c`).
+
+nvcc's host pass under `_GNU_SOURCE` references `__isoc23_strto*`, which an older link-time
+glibc (as bundled by the Lean toolchain) does not export, breaking the CUDA link. This tiny
+object *defines* those names as weak wrappers over the plain `strto*`; see the source header. -/
+private def buildIsoc23Shim (pkg : Package) : FetchM (Job FilePath) := do
+  let lean ← getLeanInstall
+  let srcJob ← inputFile (pkg.dir / "csrc/cuda/common/torchlean_isoc23_shim.c") false
+  let oFile := pkg.buildDir / "torchlean_isoc23_shim.o"
+  let compilerJob ← nativeCompilerJob "cc"
+  compilerJob.bindM fun compiler =>
+    buildO oFile srcJob #["-I", lean.includeDir.toString] #["-O2", "-fPIC"] compiler getLeanTrace
+
+/-- The isoc23 link shim as a linkable object; built and linked only for the CUDA build, so
+non-CUDA builds are byte-for-byte unchanged. Weak symbols make it inert where unneeded. -/
+target torchlean_isoc23_shim pkg : FilePath :=
+  if cudaEnabled then
+    buildIsoc23Shim pkg
+  else
+    pure (Job.pure (pkg.buildDir / "torchlean_isoc23_shim_skipped"))
+
 @[default_target]
 lean_lib NN where
   moreLinkObjs :=
@@ -384,10 +405,12 @@ lean_lib NN where
       torchlean_cuda_tensor,
       torchlean_cuda_textable
     ] : TargetArray FilePath) ++
-      if cudaEnabled && libtorchEnabled then
+      (if cudaEnabled && libtorchEnabled then
         (#[torchlean_libtorch_sdpa_so] : TargetArray FilePath)
       else
-        (#[torchlean_libtorch_sdpa_stub] : TargetArray FilePath)
+        (#[torchlean_libtorch_sdpa_stub] : TargetArray FilePath)) ++
+      (if cudaEnabled then (#[torchlean_isoc23_shim] : TargetArray FilePath)
+        else (#[] : TargetArray FilePath))
   -- The reusable library follows its canonical umbrella. Examples, tests, CI-only modules,
   -- documentation, and executable roots have separate targets below.
   roots := #[`NN]
