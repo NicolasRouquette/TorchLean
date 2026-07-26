@@ -18,7 +18,8 @@ Reusable checker for per-example logit-margin certificates (`robust_margin_cert_
 
 The checker reads exported output bounds and recomputes the strict top-label margin:
 
-`logits_hi[j] < logits_lo[label]` for every `j ≠ label`.
+$\mathrm{logits}_{\mathrm{hi}}[j]<\mathrm{logits}_{\mathrm{lo}}[\mathrm{label}]$ for every
+$j\neq\mathrm{label}$.
 -/
 
 @[expose] public section

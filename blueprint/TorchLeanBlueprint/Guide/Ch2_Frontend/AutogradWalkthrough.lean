@@ -72,7 +72,7 @@ $$`
 \nabla f(x_0,x_1)=(x_0,x_1).
 `
 
-At `x=(0.5,-1.2)`:
+At $`x=(0.5,-1.2)`:
 
 $$`
 f(x)=\frac{0.25+1.44}{2}=0.845,
@@ -111,7 +111,7 @@ with Jacobian:
 
 $$`J_f(x)\in\mathbb R^{m\times n}`.
 
-Reverse mode accepts an output cotangent `ȳ ∈ ℝ^m` and returns:
+Reverse mode accepts an output cotangent $`\bar y\in\mathbb R^m` and returns:
 
 $$`\bar x=J_f(x)^\mathsf{T}\bar y`.
 
@@ -175,7 +175,7 @@ $$`
 J_g(x)^\mathsf T(1,1)=(1,-2.4).
 `
 
-Change the seed to `(1,10)`. The expected result becomes `(1,-24)`. This is a clean way to see that
+Change the seed to $`(1,10)`. The expected result becomes $`(1,-24)`. This is a clean way to see that
 a VJP is not “the gradient” of a vector-valued function until an output cotangent is chosen.
 
 # Full Jacobians
@@ -185,7 +185,7 @@ TorchLean provides:
 - `jacfwd`, one output-shaped column per input coordinate;
 - `jacrev`, one input-shaped row per output coordinate.
 
-For `square` at `(0.5,-1.2)`, the quickstart prints:
+For `square` at $`(0.5,-1.2)`, the quickstart prints:
 
 ```
 col[0] = [1.000000, -0.000000]
@@ -213,7 +213,7 @@ where:
 
 $$`W\in\mathbb R^{3\times2},\qquad b\in\mathbb R^3`.
 
-For an output cotangent `ȳ`, the derivatives are:
+For an output cotangent $`\bar y`, the derivatives are:
 
 $$`
 \bar W=\bar y\,x^\mathsf T,
@@ -223,8 +223,8 @@ $$`
 \bar x=W^\mathsf T\bar y.
 `
 
-With `x=(0.5,-1.2)` and `ȳ=(1,1,1)`, each row of `dW` is `x` and each bias derivative is one. The
-quickstart prints:
+With $`x=(0.5,-1.2)` and $`\bar y=(1,1,1)`, each row of `dW` is $`x` and each bias derivative is
+one. The quickstart prints:
 
 ```
 vjpOutParams (seed=ones) dW =
@@ -355,7 +355,7 @@ and adds cotangents when several paths meet. For:
 
 $$`z=x^2+x^2`,
 
-the two paths each contribute `2x`, so accumulation returns `4x`. A tape that overwrote one parent
+the two paths each contribute $`2x`, so accumulation returns $`4x`. A tape that overwrote one parent
 contribution instead of adding would be wrong even if the local square rule were correct.
 
 This local-to-global split also structures the proofs. Primitive derivative theorems establish the

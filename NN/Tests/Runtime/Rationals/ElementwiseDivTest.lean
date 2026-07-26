@@ -15,13 +15,21 @@ public import NN.Tensor
 Regression test for the CPU elementwise division node (`Tape.div` / `TapeM.div`) over `ℚ`.
 
 Exact rational arithmetic (no floating-point roundoff) lets us assert both the forward value
-`a / b` *and* the quotient-rule backward by exact equality:
+$a/b$ *and* the quotient-rule backward by exact equality:
 
-  `∂(a/b)/∂a = 1/b`,  `∂(a/b)/∂b = −a/b²`.
+$$
+\frac{\partial(a/b)}{\partial a}=\frac1b,\qquad
+\frac{\partial(a/b)}{\partial b}=-\frac{a}{b^2}.
+$$
 
-With `a = [6, 8]`, `b = [2, 4]`, and upstream gradient `dLdy = [1, 1]`:
+With $a=[6,8]$, $b=[2,4]$, and upstream gradient
+$\mathrm{dLdy}=[1,1]$:
 
-  `y  = [3, 2]`,  `∂L/∂a = [1/2, 1/4]`,  `∂L/∂b = [−3/2, −1/2]`.
+$$
+y=[3,2],\qquad
+\frac{\partial L}{\partial a}=[1/2,1/4],\qquad
+\frac{\partial L}{\partial b}=[-3/2,-1/2].
+$$
 -/
 
 open scoped NN.Spec.RationalAlgebraic
@@ -47,17 +55,19 @@ abbrev s2 : Shape := .dim 2 .scalar
 def a : Tensor ℚ s2 := tensorOfList! [2] [6.0, 8.0]
 /-- Denominator `b`. -/
 def b : Tensor ℚ s2 := tensorOfList! [2] [2.0, 4.0]
-/-- Upstream gradient `∂L/∂y`. -/
+/-- Upstream gradient $\partial L/\partial y$. -/
 def dLdy : Tensor ℚ s2 := tensorOfList! [2] [1.0, 1.0]
 
-/-- Expected forward `a / b = [3, 2]`. -/
+/-- Expected forward value $a/b=[3,2]$. -/
 def yExp : Tensor ℚ s2 := tensorOfList! [2] [3.0, 2.0]
-/-- Expected `∂L/∂a = dLdy / b = [1/2, 1/4]`. -/
+/-- Expected gradient $\partial L/\partial a=\mathrm{dLdy}/b=[1/2,1/4]$. -/
 def daExp : Tensor ℚ s2 := tensorOfList! [2] [0.5, 0.25]
-/-- Expected `∂L/∂b = −dLdy·a/b² = [−3/2, −1/2]` (built by negating `[3/2, 1/2]`). -/
+/-- Expected gradient
+$\partial L/\partial b=-\mathrm{dLdy}\,a/b^2=[-3/2,-1/2]$
+(built by negating $[3/2,1/2]$). -/
 def dbExp : Tensor ℚ s2 := - tensorOfList! [2] [1.5, 0.5]
 
-/-- Build a tape `y = a / b`, run the backward pass, and check the forward value and both
+/-- Build a tape for $y=a/b$, run the backward pass, and check the forward value and both
 input gradients against the exact rational references. -/
 def checkDiv : Runtime.Autograd.Result Bool := do
   let t0 : Tape ℚ := Tape.empty

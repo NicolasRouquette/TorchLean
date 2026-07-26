@@ -168,7 +168,7 @@ This is the FP32 analogue of the 2-layer ReLU MLP used by CROWN/IBP:
 `Linear → ReLU → Linear`.
 
 Note: the runtime ReLU here is the *rounded* variant `reluR` used by the NFBackend forward
-approximation framework (apply `max · 0` in ℝ, then round once).
+approximation framework (apply `max · 0` in $\mathbb R$, then round once).
 -/
 
 /-- Explicit propagated error budget for `Linear → ReLU → Linear`. -/

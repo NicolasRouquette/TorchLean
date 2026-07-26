@@ -41,7 +41,6 @@ def add {α : Type} (s : EagerSession α) [Add α] [DecidableEq Shape] {sh : Sha
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .add
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.add (t := t0) (s := sh) a.id b.id
@@ -58,7 +57,6 @@ def sub {α : Type} (s : EagerSession α) [Sub α] [Zero α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .sub
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.sub (t := t0) (s := sh) a.id b.id
@@ -75,7 +73,6 @@ def mul {α : Type} (s : EagerSession α) [Mul α] [DecidableEq Shape] {sh : Sha
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .mul
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.mul (t := t0) (s := sh) a.id b.id
@@ -93,7 +90,6 @@ def scale {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Mul α] 
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .scale
     let cF ← CudaBridge.TensorConv.toFloat (α := α) c
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
@@ -112,7 +108,6 @@ def abs {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·) 
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .abs
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.abs (t := t0) (s := sh) x.id
@@ -130,7 +125,6 @@ def sqrt {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·)
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .sqrt
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.sqrt (t := t0) (s := sh) x.id
@@ -148,7 +142,6 @@ def clamp {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Context 
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .clamp
     let lo ← CudaBridge.TensorConv.toFloat (α := α) minVal
     let hi ← CudaBridge.TensorConv.toFloat (α := α) maxVal
     let t0 ← s.cudaTape.get
@@ -168,7 +161,6 @@ def max {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·) 
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .max
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.max (t := t0) (s := sh) a.id b.id
@@ -186,7 +178,6 @@ def min {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·) 
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .min
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.min (t := t0) (s := sh) a.id b.id
@@ -205,7 +196,6 @@ def relu {α : Type} (s : EagerSession α)
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .relu
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.relu (t := t0) (s := sh) x.id
@@ -222,7 +212,6 @@ def sigmoid {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .sigmoid
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.sigmoid (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
@@ -238,7 +227,6 @@ def tanh {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .tanh
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.tanh (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
@@ -259,7 +247,6 @@ def softmax {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .softmax
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.softmax (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
@@ -279,7 +266,6 @@ def logSoftmax {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .logSoftmax
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.logSoftmax (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
@@ -295,7 +281,6 @@ def softplus {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .softplus
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.softplus (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
@@ -311,7 +296,6 @@ def exp {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .exp
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.exp (t := t0) (s := sh) x.id
@@ -328,7 +312,6 @@ def log {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .log
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.log (t := t0) (s := sh) x.id
@@ -345,7 +328,6 @@ def inv {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .inv
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.inv (t := t0) (s := sh) x.id
@@ -366,7 +348,6 @@ def safeLog {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Contex
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .safeLog
     let epsF ← CudaBridge.TensorConv.toFloat (α := α) ε
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|

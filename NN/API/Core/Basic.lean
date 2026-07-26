@@ -34,7 +34,7 @@ This module holds the small foundational surface used by the higher-level API mo
 Most end-user code should not import this file directly; it is re-exported through `NN.API.Public`
 and the top-level `NN` import.
 
-### PyTorch Mapping
+### DType mapping
 
 `DType` here plays a role similar to `torch.dtype` selection in Python, but it also encodes a key
 TorchLean distinction:

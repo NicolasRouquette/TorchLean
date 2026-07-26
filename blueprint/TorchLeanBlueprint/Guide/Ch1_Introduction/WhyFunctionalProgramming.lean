@@ -11,7 +11,8 @@ A neural network is usually introduced as a function
 
 $$`f_\theta : X\to Y`.
 
-The notation tells us something important: the output depends on an input `x` and parameters `θ`.
+The notation tells us something important: the output depends on an input $`x` and parameters
+$`\theta`.
 Real training code has more dependencies. Batch normalization reads and updates running statistics.
 Dropout depends on a mode and a random mask. An optimizer carries momentum or moment estimates. A
 checkpoint loader reads bytes from a file. A GPU execution owns buffers whose lifetime matters.
@@ -289,7 +290,7 @@ The types make the difference visible.
   Functional Programming"](https://arxiv.org/abs/1908.05647), IFL 2019.
 - Lean 4 language reference:
   [Functions](https://lean-lang.org/doc/reference/latest/Terms/Functions/) and
-  [Do notation](https://lean-lang.org/doc/reference/latest/Terms/Do-Notation/).
+  [Do notation](https://lean-lang.org/doc/reference/latest/Terms/do--Notation/).
 - TorchLean's
   [`LayerDef`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/TorchLean/NN/Core.lean)
   and

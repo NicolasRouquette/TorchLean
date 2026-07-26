@@ -88,8 +88,9 @@ def causalLmOneHotSampleRowsFromTokenArray
 /--
 Flatten one `(seqLen + 1)` token window into causal-LM `(x, y)` id lists.
 
-For a window `[t0, t1, ..., t_seqLen]`, the model input is `[t0, ..., t_{seqLen-1}]` and the target
-is `[t1, ..., t_seqLen]`. Short windows are padded rather than rejected so tiny toy corpora can still
+For a window $[t_0,t_1,\ldots,t_{\mathrm{seqLen}}]$, the model input is
+$[t_0,\ldots,t_{\mathrm{seqLen}-1}]$ and the target is
+$[t_1,\ldots,t_{\mathrm{seqLen}}]$. Short windows are padded rather than rejected so tiny toy corpora can still
 exercise the training loop.
 -/
 def causalLmTokenIdRows (seqLen : Nat) (window : List Nat) (padId : Nat := 0) :

@@ -1,6 +1,5 @@
 ---
 title: Numerical Runtime Certificates
-usemathjax: true
 ---
 
 TorchLean can follow a model through two numerical views. The canonical IR records the operations

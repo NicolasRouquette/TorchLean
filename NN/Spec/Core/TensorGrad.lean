@@ -51,8 +51,9 @@ Clip gradients by L2 norm (global norm over all elements).
 
 This implements the common "global norm clipping" used in many optimizers:
 
-1. compute `||g||_2`
-2. if it exceeds `max_norm`, rescale `g` so that `||g||_2 = max_norm`.
+1. compute $\lVert g\rVert_2$
+2. if it exceeds `max_norm`, rescale $g$ so that
+   $\lVert g\rVert_2=\mathtt{max\_norm}$.
 
 Implementation detail:
 - We compare squared norms first so we only compute `sqrt` in the clipping branch.
@@ -90,7 +91,8 @@ Notes:
 - This definition sorts values, so it requires *decidable* comparison (`DecidableLT α`).
 - In practice this is meant for executable scalars like `Float` or `IEEE32Exec`.
 
-PyTorch analogy (conceptual): compute `b = quantile(abs(g), pct/100)` and clamp to `[-b, b]`.
+PyTorch analogy (conceptual): compute
+$b=\operatorname{quantile}(\lvert g\rvert,\mathtt{pct}/100)$ and clamp to $[-b,b]$.
 -/
 def clipByPercentileSpec {s : Shape} (gradients : Tensor α s) (pct : Nat)
     [DecidableLT α] : Tensor α s :=

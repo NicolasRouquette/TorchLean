@@ -17,9 +17,9 @@ the normalized activations are zero.
 
 For affine normalization layers this gives the contract:
 
-```text
-normalize([x, x, ...]) = beta
-```
+$$
+\operatorname{normalize}([x,x,\ldots])=\beta.
+$$
 
 The scale/weight gradient for that slice is also zero, because it is multiplied by the normalized
 activation. This applies to the mathematical core behind LayerNorm, GroupNorm, InstanceNorm, and
@@ -37,8 +37,8 @@ namespace NN.Examples.BugZoo.ConstantNormalizationSlice
 TorchLean's scalar normalization core sends a constant normalized slice to the affine bias.
 
 This is the pointwise representative of the GroupNorm/InstanceNorm/BatchNorm constant-slice
-contract: once the slice statistics are `mean = x` and `variance = 0`, the normalized contribution is
-zero and only `beta` remains.
+contract: once the slice statistics are $\mathrm{mean}=x$ and $\mathrm{variance}=0$, the normalized
+contribution is zero and only `beta` remains.
 -/
 theorem constant_slice_normalizeCore_outputs_bias (x gamma beta epsilon : ℝ) :
     Spec.normalizeCore

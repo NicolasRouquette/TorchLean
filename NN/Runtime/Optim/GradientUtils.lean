@@ -50,31 +50,33 @@ variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)
 
 /-! ## Norms -/
 
-/-- Squared L2 norm: `‖g‖₂² = ∑ᵢ gᵢ²`. -/
+/-- Squared $\ell_2$ norm: $\lVert g\rVert_2^2=\sum_i g_i^2$. -/
 def l2NormSq {s : Shape} (g : Tensor α s) : α :=
   sumSpec (squareSpec g)
 
-/-- L2 norm: `‖g‖₂ = sqrt(∑ᵢ gᵢ²)`. -/
+/-- $\ell_2$ norm: $\lVert g\rVert_2=\sqrt{\sum_i g_i^2}$. -/
 def l2Norm {s : Shape} (g : Tensor α s) : α :=
   MathFunctions.sqrt (l2NormSq (α := α) g)
 
 /-! ## Clipping -/
 
 /--
-Global-norm clipping: if `‖g‖₂ > maxNorm`, rescale `g` so that `‖g‖₂ = maxNorm`.
+Global-norm clipping: if $\lVert g\rVert_2>\mathrm{maxNorm}$, rescale $g$ so that
+$\lVert g\rVert_2=\mathrm{maxNorm}$.
 
 Mathematically:
-`g ← g * (maxNorm / ‖g‖₂)` when `‖g‖₂` exceeds the threshold.
+$g\leftarrow g\,\mathrm{maxNorm}/\lVert g\rVert_2$ when $\lVert g\rVert_2$ exceeds the threshold.
 -/
 def clipByNorm {s : Shape} (g : Tensor α s) (maxNorm : α) : Tensor α s :=
   Spec.clipGradientsSpec g maxNorm
 
-/-- Elementwise value clipping: `gᵢ ← clamp(gᵢ, minVal, maxVal)`. -/
+/-- Elementwise value clipping:
+$g_i\leftarrow\operatorname{clamp}(g_i,\mathrm{minVal},\mathrm{maxVal})$. -/
 def clipByValue {s : Shape} (g : Tensor α s) (minVal maxVal : α) : Tensor α s :=
   Spec.clipByValueSpec g minVal maxVal
 
 /--
-Percentile-driven clipping: compute a bound from `abs(g)` and clamp to `[-b, b]`.
+Percentile-driven clipping: compute a bound from `abs(g)` and clamp to $[-b,b]$.
 
 This is only executable when `<` on `α` is decidable (e.g. `Float`, `IEEE32Exec`).
 -/

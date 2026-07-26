@@ -53,7 +53,7 @@ import NN.Examples.BugZoo.ShapeAndBroadcast
 ```
 
 Open the file in the Lean Infoview. The attention theorem quantifies over every strict-future
-position `j > i`; the shape theorem exposes the singleton batch insertion and the proof-carrying
+position $`j>i`; the shape theorem exposes the singleton batch insertion and the proof-carrying
 broadcast as different operations. These are the contracts. The motivating PyTorch snippets in the
 source comments explain the bug family, but are not imported as trusted evidence.
 
@@ -195,12 +195,13 @@ The all ignored case is then a declared reduction policy, not an accidental divi
 
 [NN.Examples.BugZoo.AutogradDomain source](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/BugZoo/AutogradDomain.lean) follows
 [PyTorch's own autograd note about division by zero](https://docs.pytorch.org/docs/main/notes/autograd.html#division-by-zero-in-autograd).
-If a graph computes `x / 0` and masks the bad value afterward, the forward result may look hidden
+If a graph computes $`x/0` and masks the bad value afterward, the forward result may look hidden
 while the backward graph still contains the undefined operation.
 
 TorchLean's example names the difference between "divide first, mask later" and "safe divide, then
 mask." `maskAfterSafeDiv` records `safedivSpec` before the mask, and
-`maskAfterSafeDiv_uses_epsilon_denominator` unfolds to division by `denominator + epsilon`. The
+`maskAfterSafeDiv_uses_epsilon_denominator` unfolds to division by
+$`\mathrm{denominator}+\varepsilon`. The
 contrast definition, `unsafeDivThenMask`, stays in the file so importers and reviewers can see the
 risky graph shape rather than treating every masked expression as safe.
 
@@ -215,8 +216,8 @@ and [fully masked heads producing NaNs](https://github.com/pytorch/pytorch/issue
 weights are requested.
 
 The example connects the runtime convention to the math. Lean's real numbers do not contain literal
-negative infinity, so the file first uses `EReal` to state the exact fact:
-`exp(-infinity) = 0`. TorchLean's ordinary attention spec then uses the equivalent hard masked
+negative infinity, so the file first uses `EReal` to state the exact fact
+$`\exp(-\infty)=0`. TorchLean's ordinary attention spec then uses the equivalent hard masked
 softmax numerator. The theorem `trueInfinityMask_future_attention_weight_zero` says that strict
 future positions receive exactly zero attention mass under the causal mask. That property is the one
 needed when reasoning about autoregressive output causality.

@@ -134,7 +134,7 @@ there are two ways to evaluate it.
 First interpret the IR directly:
 
 - input node `0` gives `x`;
-- linear node `1` reads `W` and `b` from the payload and computes `Wx+b`;
+- linear node `1` reads `W` and `b` from the payload and computes $`Wx+b`;
 - ReLU node `2` computes `max(0,node1)`.
 
 Then compile the IR into `ExecGraphData` and run the compiled graph:

@@ -119,11 +119,12 @@ arbitrary Lean real remain noncomputable; executable runs use `IEEE32Exec` or a 
 The bridge files then connect the executable bit model to that result:
 
 - `NN/Floats/IEEEExec/Bridge/FP32.lean`: core refinement theorems on the **finite/no-overflow** path:
-  `toReal (op_exec …) = fp32Round (op_real …)`.
+  $\operatorname{toReal}(\operatorname{op}_{\mathrm{exec}}(\ldots))=\operatorname{fp32Round}(\operatorname{op}_{\mathrm{real}}(\ldots))$.
 - `NN/Floats/IEEEExec/Bridge/FP32Total.lean`: total wrappers that combine NaN/Inf propagation rules
   with the finite refinement theorems, phrased using `toReal?`.
 - `NN/Floats/IEEEExec/Bridge/Expressions.lean`: a compact scalar AST + a whole-expression refinement theorem.
-- `NN/Floats/IEEEExec/Bridge/ERealTotal.lean`: an `EReal`-valued semantics that distinguishes `+∞` and `-∞`.
+- `NN/Floats/IEEEExec/Bridge/ERealTotal.lean`: an `EReal`-valued semantics that distinguishes
+  $+\infty$ and $-\infty$.
 - `NN/Floats/IEEEExec/Bridge/RuntimeFloat32.lean`: an assumption-based bridge from Lean's runtime
   `Init.Float32` to `IEEE32Exec`. Exact bit agreement covers finite inputs and finite results;
   classification is stated for all values because runtime NaN payload propagation is opaque.

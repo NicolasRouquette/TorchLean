@@ -147,11 +147,45 @@ def expectGraphRejected (tag : String) (profile : BackendProfile) (g : NN.IR.Gra
   | .error msg =>
       throw <| IO.userError s!"{tag}: graph planning failed before gate: {msg}"
 
-def expectNativeCudaGuardAccepts (_tag : String)
+def expectNativeCudaBindingAccepts (tag : String)
     (opts : Runtime.Autograd.Torch.Options) (op : BackendOp) : IO Unit := do
   let base ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float)
   let s := { base with opts := opts }
-  Runtime.Autograd.Torch.Internal.EagerSession.requireNativeCudaCapsule s op
+  let result ← s.executeSelected op
+    [ ({ name := "profile-test native CUDA handler"
+         op
+         provider := .nativeCuda
+         device := .cuda
+         execute := fun _ => pure true } : KernelHandler Bool) ]
+  expect tag result
+
+/-- A handler mismatch must fail before its implementation can run. -/
+def expectBindingRejected (tag needle : String) (handler : KernelHandler Bool) : IO Unit := do
+  match Reference.relu.bind handler with
+  | .ok _ =>
+      throw <| IO.userError s!"{tag}: mismatched handler unexpectedly bound"
+  | .error message =>
+      expectContains tag needle message
+
+def checkHandlerIdentity : IO Unit := do
+  let referenceHandler : KernelHandler Bool := {
+    name := "reference ReLU test handler"
+    op := .relu
+    provider := .reference
+    device := .cpu
+    execute := fun _ => pure true
+  }
+  match Reference.relu.bind referenceHandler with
+  | .ok executable =>
+      expect "matching handler executes" (← executable.run)
+  | .error message =>
+      throw <| IO.userError s!"matching handler did not bind: {message}"
+  expectBindingRejected "handler operation mismatch" "implements `add`"
+    { referenceHandler with op := .add }
+  expectBindingRejected "handler provider mismatch" "uses provider"
+    { referenceHandler with provider := .torchLean }
+  expectBindingRejected "handler device mismatch" "targets `cuda`"
+    { referenceHandler with device := .cuda }
 
 /-- Eager execution must not run a reference implementation under another provider's capsule. -/
 def expectRandomProviderRejected : IO Unit := do
@@ -166,7 +200,7 @@ def expectRandomProviderRejected : IO Unit := do
     throw <| IO.userError "mismatched random provider unexpectedly executed"
   catch e =>
     expectContains "random provider mismatch is rejected"
-      "wired to TorchLean's reference CPU executor" e.toString
+      "no matching executable handler is linked" e.toString
 
 def expectRuntimeDeviceRejected (tag : String) (device : NN.Backend.Device) :
     IO Unit := do
@@ -204,6 +238,7 @@ def expectCudaSessionMatchesRuntime : IO Unit := do
         expectContains "unavailable native CUDA session rejection" "no usable CUDA device" e.toString
 
 def run : IO Unit := do
+  checkHandlerIdentity
   expect "default registry contract fields are aligned"
     ((Registry.flatten Registry.maintainedModules).all KernelCapsule.contractsAligned)
   expect "LibTorch registry contract fields are aligned"
@@ -472,7 +507,7 @@ def run : IO Unit := do
       , .avgPool
       , .smoothMaxPool
       ] do
-    expectNativeCudaGuardAccepts s!"checked cuda runtime guard accepts `{op.name}`"
+    expectNativeCudaBindingAccepts s!"checked cuda runtime binding accepts `{op.name}`"
       checkedCudaOpts op
 
   IO.println "  backend profiles: ok"

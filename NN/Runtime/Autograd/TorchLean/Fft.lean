@@ -14,12 +14,12 @@ import Mathlib.Algebra.Order.Algebra
 # FFT (1D) building blocks
 
 TorchLean’s layer/model definitions are scalar-polymorphic: a model runs over whatever scalar type
-`α` you instantiate it with (e.g. `Float`, `IEEE32Exec`, `ℝ`, etc.).  A “real FFT” would normally
-*change* the scalar type (real → complex), but TorchLean’s `LayerDef` does not support changing the
+$\alpha$ you instantiate it with (for example `Float`, `IEEE32Exec`, or $\mathbb{R}$). A “real FFT”
+would normally *change* the scalar type (real $\to$ complex), but TorchLean’s `LayerDef` does not support changing the
 scalar type mid-model.
 
 So this module provides **complex-domain** transforms: `fft` and `ifft` as layers that assume the
-chosen scalar type `α` already behaves like a complex field (for example `TorchLean.Complex
+$\alpha$ already behaves like a complex field (for example `TorchLean.Complex
 IEEE32Exec`, selected via `--dtype=complex`).
 
 Implementation note: we define `fft`/`ifft` as multiplication by explicit DFT matrices (so they are
@@ -57,10 +57,10 @@ abbrev mat (m n : Nat) : Shape := .dim m (.dim n .scalar)
 
 /-!
 We build twiddle factors using only the `Context` interface:
-`I := sqrt(-1)` and `e^{-iθ} = cos θ - I * sin θ`.
+$I=\sqrt{-1}$ and $e^{-i\theta}=\cos\theta-I\sin\theta$.
 
 This is intended to be instantiated with TorchLean’s own complex scalar
-`TorchLean.Complex β` (for some base scalar `β`).  For real-only scalar backends, the formulas are
+`TorchLean.Complex β` (for some base scalar $\beta$). For real-only scalar backends, the formulas are
 not meaningful.
 -/
 
@@ -68,25 +68,26 @@ not meaningful.
 def I {α : Type} [Context α] : α :=
   MathFunctions.sqrt Numbers.neg_one
 
-/-- Twiddle factor `exp(-2π i * j*k / n)` written as `cos θ - i sin θ`. -/
+/-- Twiddle factor $e^{-2\pi i jk/n}$ written as $\cos\theta-i\sin\theta$. -/
 def twiddle {α : Type} [Context α] (n : Nat) (j k : Nat) : α :=
   let twoPi : α := Numbers.two * MathFunctions.pi
   let ang : α := twoPi * (j : α) * (k : α) / (n : α)
   MathFunctions.cos ang - I (α := α) * MathFunctions.sin ang
 
-/-- Twiddle factor `exp(+2π i * j*k / n)` written as `cos θ + i sin θ`. -/
+/-- Twiddle factor $e^{2\pi i jk/n}$ written as $\cos\theta+i\sin\theta$. -/
 def twiddleInv {α : Type} [Context α] (n : Nat) (j k : Nat) : α :=
   let twoPi : α := Numbers.two * MathFunctions.pi
   let ang : α := twoPi * (j : α) * (k : α) / (n : α)
   MathFunctions.cos ang + I (α := α) * MathFunctions.sin ang
 
-/-- DFT matrix `F : n×n` with entries `F[k,j] = exp(-2π i j*k / n)`. -/
+/-- DFT matrix $F\in\mathbb{C}^{n\times n}$ with entries $F_{k,j}=e^{-2\pi i jk/n}$. -/
 def dftMatrix {α : Type} [Context α] (n : Nat) : Tensor α (mat n n) :=
   Tensor.dim (fun k =>
     Tensor.dim (fun j =>
       Tensor.scalar (twiddle (α := α) (n := n) (j := j.val) (k := k.val))))
 
-/-- Inverse DFT matrix `F⁻¹ : n×n` with entries `F⁻¹[j,k] = exp(+2π i j*k / n) / n`. -/
+/-- Inverse DFT matrix $F^{-1}\in\mathbb{C}^{n\times n}$ with entries
+$(F^{-1})_{j,k}=e^{2\pi i jk/n}/n$. -/
 def idftMatrix {α : Type} [Context α] (n : Nat) : Tensor α (mat n n) :=
   Tensor.dim (fun j =>
     Tensor.dim (fun k =>
@@ -188,7 +189,7 @@ FFT along an axis at a given depth (0-based from the outermost).
 This is implemented by swapping the target axis outward (one adjacent swap per step) until it
 reaches depth `0`, applying `fftLeadingAxis`, then swapping back.
 
-If `depth ≥ Spec.Shape.rank s`, this layer is the identity.
+If $\mathtt{depth}\ge\operatorname{rank}(s)$, this layer is the identity.
 -/
 def fftAtDepth : {s : Shape} → Nat → LayerDef s s
   | s, depth =>

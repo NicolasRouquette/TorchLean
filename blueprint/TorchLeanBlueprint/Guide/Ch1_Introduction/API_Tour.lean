@@ -227,6 +227,9 @@ def options : Trainer.TrainOptions :=
     logEvery := 25 }
 ```
 
+Here `steps` counts optimizer updates. Each update differentiates four rows at the current
+parameter values, averages their gradients, and applies the optimizer once.
+
 In an `IO` definition, the trainer lifecycle is:
 
 ```

@@ -68,14 +68,14 @@ def InInterval {α : Type} [LE α] (I : ScalarInterval α) (x : α) : Prop :=
 def NonnegativeInterval {α : Type} [OfNat α 0] [LE α] (I : ScalarInterval α) : Prop :=
   0 ≤ I.lo
 
-/-- Interval addition: `[a,b] + [c,d] = [a+c, b+d]`. -/
+/-- Interval addition: $[a,b]+[c,d]=[a+c,b+d]$. -/
 def addInterval {α : Type} [Add α] (I J : ScalarInterval α) : ScalarInterval α where
   lo := I.lo + J.lo
   hi := I.hi + J.hi
 
 /--
 Interval multiplication for nonnegative intervals:
-`[a,b] * [c,d] = [a*c, b*d]` when both intervals are nonnegative.
+$[a,b][c,d]=[ac,bd]$ when both intervals are nonnegative.
 -/
 def mulNonnegInterval {α : Type} [Mul α] (I J : ScalarInterval α) : ScalarInterval α where
   lo := I.lo * J.lo
@@ -85,7 +85,7 @@ def mulNonnegInterval {α : Type} [Mul α] (I J : ScalarInterval α) : ScalarInt
 Interval division for a nonnegative numerator interval and a strictly positive denominator
 interval:
 
-`[a,b] / [c,d] = [a/d, b/c]` when `0 ≤ a` and `0 < c`.
+$[a,b]/[c,d]=[a/d,b/c]$ when $0\le a$ and $0<c$.
 
 This is the perspective-division primitive. A pinhole projection combines affine camera arithmetic
 with division of homogeneous pixel numerators by positive depth. Keeping this operation separate
@@ -100,7 +100,7 @@ def divNonnegByPosInterval {α : Type} [Div α] (num den : ScalarInterval α) :
 /--
 Soundness of interval addition.
 
-If `x ∈ I` and `y ∈ J`, then `x + y ∈ I + J`.
+If $x\in I$ and $y\in J$, then $x+y\in I+J$.
 -/
 theorem addInterval_sound
     {α : Type} [Field α] [LinearOrder α] [IsStrictOrderedRing α]
@@ -116,7 +116,8 @@ theorem addInterval_sound
 Soundness of nonnegative interval multiplication.
 
 If `I` and `J` have nonnegative lower endpoints, then multiplication is monotone over both
-intervals: `x ∈ I`, `y ∈ J` implies `x*y ∈ [I.lo*J.lo, I.hi*J.hi]`.
+intervals: $x\in I$ and $y\in J$ imply
+$xy\in[I_{\mathrm{lo}}J_{\mathrm{lo}},I_{\mathrm{hi}}J_{\mathrm{hi}}]$.
 -/
 theorem mulNonnegInterval_sound
     {α : Type} [Field α] [LinearOrder α] [IsStrictOrderedRing α]
@@ -147,8 +148,10 @@ theorem mulNonnegInterval_sound
 /--
 Soundness of perspective-style interval division.
 
-If `x ∈ num`, `z ∈ den`, `num` is nonnegative, and the denominator interval is bounded away from
-zero, then `x / z` lies in `[num.lo / den.hi, num.hi / den.lo]`.
+If $x\in\mathrm{num}$, $z\in\mathrm{den}$, $\mathrm{num}$ is nonnegative, and the denominator
+interval is bounded away from zero, then
+$x/z\in[\mathrm{num}_{\mathrm{lo}}/\mathrm{den}_{\mathrm{hi}},
+\mathrm{num}_{\mathrm{hi}}/\mathrm{den}_{\mathrm{lo}}]$.
 
 This theorem is the mathematical core behind the "full uncertainty envelope" for 3D boxes: depth
 uncertainty is handled by a certified quotient, not by an informal post-processing check.
@@ -176,8 +179,8 @@ theorem divNonnegByPosInterval_sound
 /--
 Pinhole x-coordinate interval from uncertain intrinsics and normalized coordinate.
 
-For `u = fx * xn + cx`, with `fx ≥ 0` and `xn ≥ 0`, interval arithmetic gives:
-`u ∈ fxI*xnI + cxI`.
+For $u=f_xx_n+c_x$, with $f_x\ge 0$ and $x_n\ge 0$, interval arithmetic gives
+$u\in f_{x,I}x_{n,I}+c_{x,I}$.
 -/
 def pinholePixelInterval {α : Type} [Add α] [Mul α]
     (fI coordI cI : ScalarInterval α) : ScalarInterval α :=
@@ -217,8 +220,9 @@ def PixelInInterval2D {α : Type} [LE α] (pix : PixelInterval2D α) (px py : α
 /--
 Pixel interval obtained from homogeneous camera-coordinate intervals.
 
-Here `uNumI` and `vNumI` enclose the first two rows of `P * [X,Y,Z,1]`, while `zI` encloses the
-positive depth row.  The actual projected pixel is `(u_num / z, v_num / z)`.
+Here `uNumI` and `vNumI` enclose the first two rows of $P[X,Y,Z,1]^\mathsf{T}$, while `zI` encloses
+the positive depth row.  The actual projected pixel is
+$(u_{\mathrm{num}}/z,v_{\mathrm{num}}/z)$.
 
 This formulation matches real exported tensors better than a detached `Vec3` API: camera matrices,
 3D corners, and interval bounds can all be produced by the same tensor pipeline, and Lean proves the
@@ -254,11 +258,15 @@ abbrev BoxCorners (α : Type) := Spec.Tensor α (.dim 8 (.dim 3 .scalar))
 /--
 A 3×4 camera projection matrix.
 
-For a homogeneous point `[X,Y,Z,1]`, the raw camera coordinates are:
+For a homogeneous point $[X,Y,Z,1]$, the raw camera coordinates are:
 
-`u_num = P₀·[X,Y,Z,1]`, `v_num = P₁·[X,Y,Z,1]`, `z = P₂·[X,Y,Z,1]`.
+$$
+u_{\mathrm{num}}=P_0\mathbin{\cdot}[X,Y,Z,1],\qquad
+v_{\mathrm{num}}=P_1\mathbin{\cdot}[X,Y,Z,1],\qquad
+z=P_2\mathbin{\cdot}[X,Y,Z,1].
+$$
 
-The projected pixel is `(u_num / z, v_num / z)`, checked only when `z > 0`.
+The projected pixel is $(u_{\mathrm{num}}/z,v_{\mathrm{num}}/z)$, checked only when $z>0$.
 -/
 abbrev CameraP (α : Type) := Spec.Tensor α (.dim 3 (.dim 4 .scalar))
 
@@ -373,9 +381,9 @@ theorem pixel_inside_bbox_of_interval_inside
 Full pinhole-intrinsics interval-to-bbox theorem.
 
 Assume independent intervals for focal lengths (`fx`, `fy`), normalized coordinates
-(`xn = X/Z`, `yn = Y/Z`), and principal point (`cx`, `cy`).  If the interval arithmetic result
+$x_n=X/Z$ and $y_n=Y/Z$, and principal point (`cx`, `cy`). If the interval arithmetic result
 
-`u ∈ fxI*xnI + cxI`, `v ∈ fyI*ynI + cyI`
+$u\in f_{x,I}x_{n,I}+c_{x,I}$ and $v\in f_{y,I}y_{n,I}+c_{y,I}$
 
 is contained in the claimed bbox, then every concrete camera/pixel choice satisfying those input
 intervals projects inside the bbox.
@@ -427,12 +435,14 @@ Full homogeneous projection interval-to-bbox theorem.
 This is the stronger robustness theorem. Instead of assuming the projected pixel has
 already been bounded, it starts from intervals over the homogeneous camera outputs:
 
-* `uNumI` encloses the x numerator `P₀ · [X,Y,Z,1]`;
-* `vNumI` encloses the y numerator `P₁ · [X,Y,Z,1]`; and
-* `zI` encloses the positive depth denominator `P₂ · [X,Y,Z,1]`.
+* `uNumI` encloses the x numerator $P_0\mathbin{\cdot}[X,Y,Z,1]$;
+* `vNumI` encloses the y numerator $P_1\mathbin{\cdot}[X,Y,Z,1]$; and
+* `zI` encloses the positive depth denominator $P_2\mathbin{\cdot}[X,Y,Z,1]$.
 
-If the quotient intervals `[uNumI.lo / zI.hi, uNumI.hi / zI.lo]` and
-`[vNumI.lo / zI.hi, vNumI.hi / zI.lo]` are inside the claimed 2D box, then every concrete camera
+If the quotient intervals
+$[u_{\mathrm{lo}}/z_{\mathrm{hi}},u_{\mathrm{hi}}/z_{\mathrm{lo}}]$ and
+$[v_{\mathrm{lo}}/z_{\mathrm{hi}},v_{\mathrm{hi}}/z_{\mathrm{lo}}]$
+are inside the claimed 2D box, then every concrete camera
 projection represented by those intervals is inside the box.  This is exactly the guard we want for
 uncertain camera intrinsics/extrinsics, bounded corner perturbations, or mixed numeric backends:
 they may produce ranges for homogeneous coordinates, but Lean checks the perspective divide and
@@ -539,7 +549,8 @@ bounded downstream pixel perturbation.
 The projected corners are inside the claimed 2D box with an explicit positive slack `margin`.
 
 Compared with `BBoxEnclosesProjection`, this predicate is stricter: corners must land inside
-`[xmin + margin, xmax - margin] × [ymin + margin, ymax - margin]`.  The margin is what pays for
+$[x_{\min}+\mathrm{margin},x_{\max}-\mathrm{margin}]
+\times[y_{\min}+\mathrm{margin},y_{\max}-\mathrm{margin}]$.  The margin is what pays for
 future uncertainty.
 -/
 def BBoxEnclosesProjectionWithMargin {α : Type} [OfNat α 1] [Add α] [Sub α] [Mul α] [Div α]
@@ -581,7 +592,8 @@ def BBoxEnclosesPerturbedProjection {α : Type} [LE α]
 Projection-interval robustness theorem.
 
 If every nominal projected corner has at least `margin` pixels of slack inside the box, and every
-perturbed projection is within `eps ≤ margin` pixels of that nominal projection, then all perturbed
+perturbed projection is within $\varepsilon\le\mathrm{margin}$ pixels of that nominal projection,
+then all perturbed
 projections remain inside the original claimed 2D box.
 
 This is deliberately independent of how the perturbation was produced: it can come from Float

@@ -18,8 +18,8 @@ public import NN.Examples.Models.Common
 # KAN Regression
 
 This example trains a small Kolmogorov-Arnold Network on the prepared Auto MPG tabular-regression
-CSV. The downloader normalizes the columns to `[0, 1]`, so the piecewise-linear KAN basis uses
-`inputScale = gridSize - 1` to spread its knots across the data interval.
+CSV. The downloader normalizes the columns to $[0,1]$, so the piecewise-linear KAN basis uses
+$\mathtt{inputScale}=\mathtt{gridSize}-1$ to spread its knots across the data interval.
 
 `KAN` is a model constructor. The task is chosen by the general trainer API:
 

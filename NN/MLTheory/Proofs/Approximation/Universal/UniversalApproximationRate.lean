@@ -14,14 +14,17 @@ import Mathlib.Tactic.Linarith
 # Universal approximation (1D, explicit rate)
 
 This file strengthens `relu_universal_approximation_Icc` by choosing an explicit hidden width in
-terms of the Lipschitz constant `L`, the interval length `(b-a)`, and the target accuracy `ε`.
+terms of the Lipschitz constant $L$, the interval length $b-a$, and the target accuracy
+$\varepsilon$.
 
-The bound is the standard `O(1 / hidDim)` rate coming from piecewise-linear interpolation:
+The bound is the standard $O(1/\mathrm{hidDim})$ rate from piecewise-linear interpolation:
 we pick
 
-`hidDim = ⌈(2 * L * (b - a)) / ε⌉ + 1`,
+$$
+\mathrm{hidDim}=\left\lceil\frac{2L(b-a)}{\varepsilon}\right\rceil+1,
+$$
 
-which guarantees uniform approximation error `< ε` on `Set.Icc a b`.
+which guarantees uniform approximation error below $\varepsilon$ on $[a,b]$.
 
 Mathematically, this is the quantitative sibling of the constructive one-dimensional ReLU
 universal approximation proof in `UniversalApproximation`: sample a Lipschitz function on a
@@ -53,7 +56,7 @@ lemma relu_approximation_width_pos (L a b ε : ℝ) : 0 < reluApproximationWidth
 The chosen width makes the mesh-size error term smaller than the target accuracy.
 
 This is the arithmetic heart of the explicit-rate theorem: the ceiling construction ensures
-`N > 2L(b-a)/ε`, hence `2L(b-a)/N < ε`.
+$N>2L(b-a)/\varepsilon$, hence $2L(b-a)/N<\varepsilon$.
 -/
 lemma two_mul_mul_sub_div_relu_approximation_width_lt {L a b ε : ℝ} (hε : 0 < ε) :
     (2 * L * (b - a)) / (reluApproximationWidth L a b ε : ℝ) < ε := by

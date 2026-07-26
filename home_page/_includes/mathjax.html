@@ -5,16 +5,17 @@
       inlineMath: [['\\(', '\\)'], ['$', '$']],
       displayMath: [['\\[', '\\]'], ['$$', '$$']],
       processEscapes: true,
-      tags: "ams"
+      tags: "ams",
+      packages: {'[-]': ['noundefined']},
+      macros: {
+        llbracket: "{\\lbrack\\!\\lbrack}",
+        rrbracket: "{\\rbrack\\!\\rbrack}"
+      }
     },
-    chtml: { linebreaks: { automatic: true, width: 'container' } },
     options: {
       enableMenu: false,
       renderActions: { addMenu: [] },
       skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
-    },
-    startup: {
-      pageReady: () => MathJax.startup.defaultPageReady().then(() => MathJax.typesetPromise())
     }
   };
 </script>

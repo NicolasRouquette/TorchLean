@@ -17,11 +17,11 @@ import Mathlib.Tactic.Attr.Register
 We collect small, compositional error bounds for TorchLean’s Flocq-style rounding model.
 
 The lowest-level rounding interface lives in `NN/Floats/NeuralFloat/Rounding/Core.lean`: once you have a rounding
-mode `rnd : ℝ → ℤ` that satisfies the usual “round-to-nearest” property, you get the familiar
+mode $r:\mathbb{R}\to\mathbb{Z}$ that satisfies the usual “round-to-nearest” property, you get the familiar
 half-ULP bound for a single rounding step.
 
 Here we package that core lemma into helper theorems that come up frequently in proofs, including
-the `fl(x) = x(1+δ)` factorization.
+the $\operatorname{fl}(x)=x(1+\delta)$ factorization.
 
 Bounds for dot products, matrix operations, and backward stability require a concrete evaluation
 order and format hypotheses. They belong with the corresponding algorithm rather than in this
@@ -134,7 +134,8 @@ theorem round_rsqrt_abs_error (rnd : ℝ → ℤ) [NeuralValidRndToNearest rnd] 
 /--
 Relative error factorisation for rounding, with a ULP-based bound.
 
-This is the standard model `fl(x) = x(1+δ)`, with `|δ|` bounded using the ULP at `x`.
+This is the standard model $\operatorname{fl}(x)=x(1+\delta)$, with $|\delta|$ bounded using the
+ULP at $x$.
 -/
 theorem neural_round_relative_error_ulp (rnd : ℝ → ℤ) [NeuralValidRndToNearest rnd] (x : ℝ) (hx : x
   ≠ 0) :

@@ -1,6 +1,5 @@
 ---
 title: Examples
-usemathjax: true
 ---
 
 TorchLean includes runnable training, autograd, data-loading, export, generation, and verification
@@ -10,7 +9,7 @@ Lean.
 ## Featured Examples
 
 <div class="showcase-grid showcase-grid-featured">
-  <a class="showcase-card showcase-image-card" href="{{ '/blueprint/Semantics-and-Graphs/Graphs-and-IR/' | relative_url }}">
+  <a class="showcase-card showcase-image-card" href="{{ '/blueprint/Semantics-and-Graphs/The-Canonical-Graph-IR/' | relative_url }}">
     <img class="showcase-media" src="{{ '/assets/media/examples/showcase/graph-ir-bounds-new.png' | relative_url }}" alt="TorchLean graph IR to interval bounds example"/>
     <span class="showcase-body">
       <span class="showcase-title">Graph IR and Bounds</span>
@@ -19,7 +18,7 @@ Lean.
     </span>
   </a>
 
-  <a class="showcase-card showcase-image-card" href="{{ '/blueprint/Runtime___-Autograd___-and-Interop/Autograd-Walkthrough/' | relative_url }}">
+  <a class="showcase-card showcase-image-card" href="{{ '/blueprint/Runtime___-Autograd___-and-Interop/Differentiation-By-Example/' | relative_url }}">
     <img class="showcase-media" src="{{ '/assets/media/examples/showcase/autograd-basics-new.png' | relative_url }}" alt="Autograd basics example"/>
     <span class="showcase-body">
       <span class="showcase-title">Autograd Basics</span>
@@ -28,7 +27,7 @@ Lean.
     </span>
   </a>
 
-  <a class="showcase-card showcase-image-card" href="{{ '/blueprint/Building-Models/Training-From-Scratch/' | relative_url }}">
+  <a class="showcase-card showcase-image-card" href="{{ '/blueprint/Building-Models/Training___-One-State-Transition-At-A-Time/' | relative_url }}">
     <img class="showcase-media" src="{{ '/assets/media/examples/showcase/supervised-training-new.png' | relative_url }}" alt="MLP and CNN training example"/>
     <span class="showcase-body">
       <span class="showcase-title">Supervised Training</span>
@@ -129,9 +128,9 @@ Lean.
 </div>
 
 CUDA is opt-in. The build flags, runtime path, and agreement assumptions are explained in
-[GPU and CUDA]({{ '/blueprint/Floating-Point-and-Native-Boundaries/GPU-and-CUDA-Boundaries/' | relative_url }}).
+[GPU and CUDA]({{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }}).
 For the broader backend design, read
-[Backend Selection and Trust]({{ '/blueprint/Runtime___-Autograd___-and-Interop/Backend-Selection-and-Trust/' | relative_url }}).
+[Backend Selection and Trust]({{ '/blueprint/Runtime___-Autograd___-and-Interop/Choosing-How-A-Model-Runs/' | relative_url }}).
 For long CUDA training runs, model commands also expose allocator telemetry through
 `--cuda-mem-watch N`; longer runs choose a small default cadence so device-memory behavior is visible
 while the example is running.

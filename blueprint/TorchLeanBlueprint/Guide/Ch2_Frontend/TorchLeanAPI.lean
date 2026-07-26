@@ -262,8 +262,11 @@ Data.batchDataset
 The model and dataset must agree on `σ` and `τ`. A file loader checks runtime dimensions before
 constructing the typed dataset.
 
-A true tensor minibatch changes shapes to `[batch,...]`. `TrainOptions.batchSize` on an unbatched
-model is a different scheduling choice, as explained in the data chapter.
+A true tensor minibatch changes shapes to `[batch,...]`. `Data.batchDataset` stores each fixed-size
+minibatch as one dataset item, so `TrainOptions.batchSize := 1` executes one vectorized
+forward/backward pass per update. On an unbatched dataset, the same option counts individual
+samples. Values above one always mean gradient accumulation across several dataset items. The data
+chapter develops both forms.
 
 # Explicit Differentiation
 

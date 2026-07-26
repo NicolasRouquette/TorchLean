@@ -101,7 +101,7 @@ ReLU activation in DAG form.
 
 Input: `[x : s]`, output: `s`.
 
-Semantics: elementwise `max(x, 0)`. This is parameter-free and derived from `Primitive.relu`.
+Semantics: elementwise $\max(x,0)$. This is parameter-free and derived from `Primitive.relu`.
 
 Reference: Nair and Hinton (2010), "Rectified Linear Units Improve Restricted Boltzmann Machines".
 -/
@@ -113,7 +113,8 @@ Add two tensors of the same shape.
 
 Input shapes: `[s, s]`, output shape: `s`.
 
-This is the primitive used for residual/skip connections: `out = main(x) + x`. It is defined
+This is the primitive used for residual/skip connections:
+$\mathrm{out}=\operatorname{main}(x)+x$. It is defined
 directly because the sequential surface is unary, while residual addition is genuinely multi-input.
 -/
 def add (s : Shape) : PrimOp [s, s] s :=

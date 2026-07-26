@@ -59,11 +59,11 @@ variable {α : Type}
 
 /-- Small record used by generalized-advantage-estimation helpers. -/
 structure AdvantageStep (α : Type) where
-  /-- Immediate reward `r_t`. -/
+  /-- Immediate reward $r_t$. -/
   reward : α
-  /-- Baseline / critic value estimate `V(s_t)`. -/
+  /-- Baseline / critic value estimate $V(s_t)$. -/
   value : α
-  /-- Bootstrap value `V(s_{t+1})`. -/
+  /-- Bootstrap value $V(s_{t+1})$. -/
   nextValue : α
   /-- Episode termination flag. -/
   done : Bool
@@ -74,7 +74,7 @@ def continueMask [Zero α] [One α] (done : Bool) : α :=
   if done then 0 else 1
 
 /-- Bellman-style one-step backup:
-`r + γ * (1 - done) * bootstrap`. -/
+$r+\gamma(1-\mathtt{done})\mathtt{bootstrap}$. -/
 def discountedBackup [Zero α] [One α] [Add α] [Mul α]
     (reward gamma bootstrap : α) (done : Bool) : α :=
   reward + gamma * continueMask (α := α) done * bootstrap
@@ -85,13 +85,13 @@ def tdTarget [Zero α] [One α] [Add α] [Mul α]
   discountedBackup (α := α) reward gamma nextValue done
 
 /-- TD residual / Bellman error:
-`r + γ * (1-d) * nextValue - value`. -/
+$r+\gamma(1-d)\mathtt{nextValue}-\mathtt{value}$. -/
 def tdResidual [Zero α] [One α] [Add α] [Mul α] [Sub α]
     (value reward gamma nextValue : α) (done : Bool) : α :=
   tdTarget (α := α) reward gamma nextValue done - value
 
 /-- Discounted returns with a bootstrap value on the far right:
-`G_t = r_t + γ G_{t+1}`. -/
+$G_t=r_t+\gamma G_{t+1}$. -/
 def discountedReturnsFrom [Zero α] [Add α] [Mul α]
     (gamma : α) (rewards : List α) (bootstrap : α := 0) : List α :=
   let (_, returns) :=
@@ -123,7 +123,7 @@ def discountedReturnsDone [Zero α] [One α] [Add α] [Mul α]
 
 /-- Generalized Advantage Estimation (GAE).
 
-Each input step provides `r_t`, `V(s_t)`, `V(s_{t+1})`, and `done_t`. The resulting list contains
+Each input step provides $r_t$, $V(s_t)$, $V(s_{t+1})$, and $\mathtt{done}_t$. The resulting list contains
 advantages in forward time order.
 -/
 def generalizedAdvantageEstimation [Zero α] [One α] [Add α] [Mul α] [Sub α]
@@ -138,7 +138,7 @@ def generalizedAdvantageEstimation [Zero α] [One α] [Add α] [Mul α] [Sub α]
       (0, [])
   advantages
 
-/-- Recover lambda-returns from advantages and baseline values via `R_t = A_t + V(s_t)`. -/
+/-- Recover lambda-returns from advantages and baseline values via $R_t=A_t+V(s_t)$. -/
 def returnsFromAdvantages [Add α] : List α → List α → List α
   | [], _ => []
   | _, [] => []

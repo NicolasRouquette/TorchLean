@@ -57,7 +57,10 @@ def model : nn.M (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
 /--
 Small piecewise-linear regression target:
 
-`y = 0.8 * relu(x1 + x2) - 0.4 * relu(x2 - x1) + 0.2`.
+$$
+y=0.8\,\operatorname{ReLU}(x_1+x_2)
+  -0.4\,\operatorname{ReLU}(x_2-x_1)+0.2.
+$$
 
 This is a natural fit for a small ReLU MLP, which keeps the command dependable.
 -/

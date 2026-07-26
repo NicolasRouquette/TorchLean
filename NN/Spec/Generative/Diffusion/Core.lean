@@ -14,7 +14,7 @@ public import NN.Spec.Core.TensorOps
 
 This module defines the common vocabulary used by TorchLean's diffusion / flow specs:
 
-- `EpsModel`: an `ε_θ(x,t)` denoiser interface (noise prediction), and
+- `EpsModel`: an $\varepsilon_\theta(x,t)$ denoiser interface (noise prediction), and
 - a couple of **total** scalar helpers (`sqrtNonneg`, `safeDiv`) that keep specs robust across
   scalar backends.
 
@@ -42,24 +42,26 @@ open Tensor
 
 variable {α : Type} [Context α]
 
-/-- A safe square root used by diffusion schedules and samplers: `sqrt(max x 0)`.
+/-- A safe square root used by diffusion schedules and samplers:
+$\sqrt{\max(x,0)}$.
 
 Why this helper exists:
 - Some backends (intervals, IEEE models, etc.) prefer total semantics.
 - In diffusion schedules, the quantities under a square root are mathematically nonnegative
-  (e.g. `ᾱ(t)` and `1-ᾱ(t)`), but numeric backends can still produce small negative values.
+  (e.g. $\bar\alpha(t)$ and $1-\bar\alpha(t)$), but numeric backends can still produce small
+  negative values.
 -/
 def sqrtNonneg (x : α) : α :=
   MathFunctions.sqrt (Max.max x 0)
 
-/-- Safe scalar division with epsilon protection: `x / (y + ε)`.
+/-- Safe scalar division with epsilon protection: $x/(y+\varepsilon)$.
 
-This is primarily used to avoid `1/0` in edge cases like `t = 0` or degenerate schedules.
+This is primarily used to avoid $1/0$ in edge cases like $t=0$ or degenerate schedules.
 -/
 def safeDiv (x y : α) : α :=
   x / (y + Numbers.epsilon)
 
-/-- Noise-prediction model interface: `ε_θ(x,t)`.
+/-- Noise-prediction model interface: $\varepsilon_\theta(x,t)$.
 
 The intended interpretation is "predict the noise used to construct the noisy sample `x` at time
 `t`".
@@ -72,7 +74,7 @@ Notes:
   code.
 -/
 structure EpsModel (α : Type) (s : Shape) [Context α] where
-  /-- Predict `ε` from a noisy sample `x` at scalar time `t`. -/
+  /-- Predict $\varepsilon$ from a noisy sample $x$ at scalar time $t$. -/
   eps : Tensor α s → α → Tensor α s
 
 end Generative.Diffusion

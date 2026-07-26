@@ -119,7 +119,7 @@ comparison is a failure, not a successful unordered comparison.
 
 Expression parsing is part of that boundary. In both ODE and PINN expressions, exponentiation
 binds more tightly than unary minus, so `-u^2` means `-(u^2)`; write `(-u)^2` for the other tree.
-Natural powers use the ordinary identities `u^0 = 1` and `u^1 = u`. The parser consumes the whole
+Natural powers use the ordinary identities $`u^0=1` and $`u^1=u`. The parser consumes the whole
 input and rejects unknown identifiers or trailing tokens, preventing a certificate from being
 checked against a silently shortened equation.
 
@@ -136,7 +136,7 @@ The mathematical object is an ODE
 
 $$`\dot x(t)=f(t,x(t)).`
 
-A corridor certificate gives boxes `X_i` over time intervals `[t_i,t_{i+1}]`. The theorem shape is:
+A corridor certificate gives boxes $`X_i` over time intervals $`[t_i,t_{i+1}]`. The theorem shape is:
 
 $$`x(t_i)\in X_i
 \quad\text{and}\quad
@@ -272,11 +272,11 @@ The spline path is concentrated in
 It parses `piecewise_poly_v0` JSON, evaluates polynomial pieces by Horner's rule, checks exact
 rational interpolation at adjacent knots, and also has an `IEEE32Exec` exact conversion path.
 
-A piecewise polynomial certificate names intervals `I_i` and polynomial pieces
+A piecewise polynomial certificate names intervals $`I_i` and polynomial pieces
 
 $$`p_i(x)=\sum_k a_{ik}x^k,\qquad x\in I_i.`
 
-For a piece on `I_i=[x_i,x_{i+1}]`, the checked equations are
+For a piece on $`I_i=[x_i,x_{i+1}]`, the checked equations are
 
 $$`p_i(x_i)=y_i,
 \qquad p_i(x_{i+1})=y_{i+1}.`

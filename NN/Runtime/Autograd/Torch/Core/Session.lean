@@ -207,8 +207,8 @@ namespace EagerSession
 Select the accepted capsule for one operation.
 
 The backend profile is fixed for the lifetime of a session, so the first accepted choice is cached
-by operation and reused. Provider-specific operation modules remain responsible for interpreting
-the capsule; this layer checks only the common planner and eager-runtime contract.
+by operation and reused. Execution is a separate step: `executeSelected` binds this contract to a
+typed handler for the same operation, provider, and device.
 -/
 def selectedCapsule {α : Type} (s : EagerSession α) (op : NN.Backend.BackendOp) :
     IO NN.Backend.KernelCapsule := do
@@ -233,20 +233,51 @@ def selectedCapsule {α : Type} (s : EagerSession α) (op : NN.Backend.BackendOp
   pure capsule
 
 /--
-Select a capsule and require the provider wired to the calling eager operation.
+Execute an operation through a handler that matches the selected capsule.
 
-Profiles may contain capsules for providers whose executors are not linked into every eager
-operation. This check prevents a runtime path from recording one provider while silently executing
-another.
+The planner may know about providers that are not linked into a particular runtime build. Such a
+selection fails here instead of recording one provider while silently running another. The
+`ExecutableKernel` equalities certify dispatch identity; the selected capsule still states the
+strength of the numerical evidence.
 -/
-def requireCapsuleProvider {α : Type} (s : EagerSession α) (op : NN.Backend.BackendOp)
-    (expected : NN.Backend.Provider) (executor : String) : IO NN.Backend.KernelCapsule := do
+def executeSelected {α β : Type} (s : EagerSession α) (op : NN.Backend.BackendOp)
+    (handlers : List (NN.Backend.KernelHandler β)) : IO β := do
   let capsule ← s.selectedCapsule op
-  unless capsule.provider == expected do
-    throw <| IO.userError <|
-      s!"torch: `{op.name}` selected provider `{reprStr capsule.provider}`, but this operation " ++
-        s!"is wired to {executor}"
-  pure capsule
+  match handlers.find? (fun handler => handler.matchesCapsule capsule) with
+  | none =>
+      let available := String.intercalate ", " <|
+        handlers.map fun handler =>
+          s!"{handler.name} ({reprStr handler.provider}/{handler.device.cliName})"
+      throw <| IO.userError <|
+        s!"torch: `{op.name}` selected capsule `{capsule.name}` " ++
+          s!"({reprStr capsule.provider}/{capsule.device.cliName}), but no matching executable " ++
+          s!"handler is linked" ++
+          (if available.isEmpty then "" else s!"; available handlers: {available}")
+  | some handler =>
+      match capsule.bind handler with
+      | .ok kernel => kernel.run
+      | .error msg =>
+          throw <| IO.userError s!"torch: invalid executable backend binding: {msg}"
+
+/--
+Execute an operation implemented by the reference CPU and native CUDA runtimes.
+
+This is the common two-provider case. Operations with additional providers, such as LibTorch
+attention, pass their complete handler list directly to `executeSelected`.
+-/
+def executeReferenceOrNativeCuda {α β : Type} (s : EagerSession α)
+    (op : NN.Backend.BackendOp) (cpu cuda : IO β) : IO β :=
+  s.executeSelected op
+    [ ({ name := "TorchLean reference CPU"
+         op
+         provider := .reference
+         device := .cpu
+         execute := fun _ => cpu } : NN.Backend.KernelHandler β),
+      ({ name := "TorchLean native CUDA"
+         op
+         provider := .nativeCuda
+         device := .cuda
+         execute := fun _ => cuda } : NN.Backend.KernelHandler β) ]
 
 /-- Accepted capsules actually selected by this eager session. -/
 def backendSelections {α : Type} (s : EagerSession α) : IO (List NN.Backend.AcceptedKernel) :=
@@ -504,15 +535,12 @@ def detach {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Sh
 def randUniform {α : Type} [Context α] [CudaBridge.TensorConv α]
     (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
     (seed : Nat) (name : Option String := none) : IO (TensorRef α sh) := do
-  let usesCuda := Options.device s.opts == .cuda
-  let expectedProvider :=
-    if usesCuda then NN.Backend.Provider.nativeCuda else NN.Backend.Provider.reference
-  let executor :=
-    if usesCuda then "TorchLean's native CUDA executor" else "TorchLean's reference CPU executor"
-  let _ ← s.requireCapsuleProvider .randUniform expectedProvider executor
-  let invocation ← s.rngCounter.get
-  s.rngCounter.set (invocation + 1)
-  if usesCuda then
+  let nextInvocation := do
+    let invocation ← s.rngCounter.get
+    s.rngCounter.set (invocation + 1)
+    pure invocation
+  let cuda := do
+    let invocation ← nextInvocation
     let t0 ← s.cudaTape.get
     let key := Runtime.Autograd.TorchLean.Random.keyOf seed invocation
     let n32 ← Runtime.Autograd.okOrThrow <|
@@ -523,29 +551,28 @@ def randUniform {α : Type} [Context α] [CudaBridge.TensorConv α]
       Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := any) (name := name) (requires_grad := false)
     s.cudaTape.set t1
     pure { id := id }
-  else
+  let cpu := do
+    let invocation ← nextInvocation
     let key := Runtime.Autograd.TorchLean.Random.keyOf seed invocation
     let v : Tensor α sh := Runtime.Autograd.TorchLean.Random.uniform (α := α) key (s := sh)
     const (α := α) s (sh := sh) v (name := name)
+  s.executeReferenceOrNativeCuda .randUniform cpu cuda
 
 /-- Deterministic `{0,1}` mask generator (seeded) with a scalar keep-probability input. -/
 def bernoulliMask {α : Type} [Context α] [CudaBridge.TensorConv α]
     (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
     (keepProb : TensorRef α Shape.scalar) (seed : Nat) (name : Option String := none) :
     IO (TensorRef α sh) := do
-  let usesCuda := Options.device s.opts == .cuda
-  let expectedProvider :=
-    if usesCuda then NN.Backend.Provider.nativeCuda else NN.Backend.Provider.reference
-  let executor :=
-    if usesCuda then "TorchLean's native CUDA executor" else "TorchLean's reference CPU executor"
-  let _ ← s.requireCapsuleProvider .bernoulliMask expectedProvider executor
   let kpT ← getValue (α := α) s (sh := Shape.scalar) keepProb
   let keepProbVal : α :=
     match kpT with
     | Tensor.scalar v => v
-  let invocation ← s.rngCounter.get
-  s.rngCounter.set (invocation + 1)
-  if usesCuda then
+  let nextInvocation := do
+    let invocation ← s.rngCounter.get
+    s.rngCounter.set (invocation + 1)
+    pure invocation
+  let cuda := do
+    let invocation ← nextInvocation
     let t0 ← s.cudaTape.get
     let key := Runtime.Autograd.TorchLean.Random.keyOf seed invocation
     let n32 ← Runtime.Autograd.okOrThrow <|
@@ -557,10 +584,12 @@ def bernoulliMask {α : Type} [Context α] [CudaBridge.TensorConv α]
       Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := any) (name := name) (requires_grad := false)
     s.cudaTape.set t1
     pure { id := id }
-  else
+  let cpu := do
+    let invocation ← nextInvocation
     let key := Runtime.Autograd.TorchLean.Random.keyOf seed invocation
     let v : Tensor α sh := Runtime.Autograd.TorchLean.Random.mask (α := α) key keepProbVal (s := sh)
     const (α := α) s (sh := sh) v (name := name)
+  s.executeReferenceOrNativeCuda .bernoulliMask cpu cuda
 
 /--
 Use a parameter in the tape by recording its current value as a leaf.

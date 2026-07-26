@@ -124,7 +124,7 @@ def lastAxisMeanDenom (s : Shape) : Nat :=
 def meanOverLastAxisSlices {s : Shape} (x : α) : α :=
   x / (lastAxisMeanDenom s : α)
 
-/-- Mean squared error: average of `(predicted - target)^2`. -/
+/-- Mean squared error: average of $(\mathtt{predicted}-\mathtt{target})^2$. -/
 def mseSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) : α :=
   let diff := subSpec predicted target
   let squared := mulSpec diff diff
@@ -157,10 +157,10 @@ def maeDerivSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) : 
 /--
 Huber loss with transition parameter `delta`.
 
-Elementwise, for residual `d = pred - target`:
+Elementwise, for residual $d=\mathtt{pred}-\mathtt{target}$:
 
-- if `|d| < delta`: `0.5 * d^2`
-- else: `delta * (|d| - 0.5 * delta)`
+- if $\lvert d\rvert<\delta$: $\tfrac12d^2$
+- otherwise: $\delta(\lvert d\rvert-\tfrac12\delta)$
 
 Then we take a mean over all elements.
 
@@ -199,7 +199,10 @@ Cross-entropy between distributions (probabilities).
 This is closest to PyTorch when you already have probabilities `q` (e.g. after a softmax) and a
 probability target `p` (e.g. one-hot or label-smoothed), and you want:
 
-`CE(p, q) = -mean_r sum_c p[r,c] * log(q[r,c])`,
+$$
+\operatorname{CE}(p,q)
+=-\operatorname{mean}_r\sum_c p_{rc}\log q_{rc},
+$$
 
 where `c` is the last (class) axis and `r` ranges over all remaining axes. A lone class vector is
 one distribution and is not divided by its number of classes.
@@ -238,7 +241,11 @@ Cross-entropy on logits (stable log-softmax form).
 
 This matches the common PyTorch decomposition:
 
-`cross_entropy(logits, target) = -mean_r sum_c target[r,c] * log_softmax(logits)[r,c]`,
+$$
+\operatorname{cross\_entropy}(\mathtt{logits},\mathtt{target})
+=-\operatorname{mean}_r\sum_c
+  \mathtt{target}_{rc}\operatorname{logsoftmax}(\mathtt{logits})_{rc},
+$$
 
 where the last axis `c` contains classes and `r` ranges over the remaining axes. This is PyTorch's
 `reduction="mean"` convention for one-hot or soft distribution targets.
@@ -266,7 +273,7 @@ def crossEntropyLogitsDerivSpec {s : Shape} (logits : Tensor α s) (target : Ten
 /--
 Hinge loss (binary margin loss), elementwise then mean-reduced:
 
-`hinge(x, y) = mean_i max(0, 1 - y_i * x_i)`.
+$\operatorname{hinge}(x,y)=\operatorname{mean}_i\max(0,1-y_i x_i)$.
 
 This matches the usual SVM-style hinge loss. (PyTorch exposes similar behavior via margin-style
 losses such as `HingeEmbeddingLoss` / `MultiMarginLoss`, but the exact signature differs.)
@@ -293,7 +300,7 @@ Poisson negative log-likelihood (log-input form), elementwise then mean-reduced:
 If `predicted` represents `log(rate)` and `target` is a nonnegative count,
 then (up to an additive constant that does not affect gradients):
 
-`loss_i = exp(pred_i) - target_i * pred_i`.
+$\operatorname{loss}_i=\exp(\mathtt{pred}_i)-\mathtt{target}_i\mathtt{pred}_i$.
 
 This corresponds to PyTorch's `PoissonNLLLoss(log_input=true, full=false)` at the math level.
 -/
@@ -327,9 +334,14 @@ def cosineSimilaritySpec {s : Shape} (predicted : Tensor α s) (target : Tensor 
 /--
 Derivative of `cosine_similarity_spec` w.r.t. `predicted`.
 
-If `cos = (p·t)/(|p||t|)` and `loss = 1 - cos`, then (for nonzero norms):
+If $\cos=(p\mathbin{\cdot}t)/(\lVert p\rVert\lVert t\rVert)$ and
+$\operatorname{loss}=1-\cos$, then (for nonzero norms):
 
-`∂loss/∂p = (p·t) / (|p|^2 |t|) * p - 1/(|p||t|) * t`.
+$$
+\frac{\partial\operatorname{loss}}{\partial p}
+=\frac{p\mathbin{\cdot}t}{\lVert p\rVert^2\lVert t\rVert}p
+ -\frac{1}{\lVert p\rVert\lVert t\rVert}t.
+$$
 
 We use `epsilon` to avoid division by zero (similar to common "eps" handling in PyTorch code).
 -/
@@ -372,7 +384,10 @@ Binary cross-entropy on scalars (probabilities), with clipping to avoid `log(0)`
 This matches the core formula behind PyTorch's `BCELoss` when `predicted` is already a probability
 (not a logit):
 
-`BCE(p, y) = - ( y*log(p) + (1-y)*log(1-p) )`.
+$$
+\operatorname{BCE}(p,y)
+=-\left(y\log p+(1-y)\log(1-p)\right).
+$$
 
 Assumption: `target` is in `[0, 1]`. We do not clip the target; we only clip `predicted`.
 -/

@@ -24,7 +24,7 @@ $$`\operatorname{IsCholesky}(A,L)
 \bigl(\forall i<j,\;L_{ij}=0\bigr)
 \land A=LL^\top.`
 
-For a rectangular `m × k` matrix, the QR proposition is
+For a rectangular $`m\times k` matrix, the QR proposition is
 
 $$`\operatorname{IsQR}(A,Q,R)
 \;:\!\iff\;
@@ -51,7 +51,7 @@ orthogonal.” These predicates live over `ℝ`, and their equalities are exact.
 
 # Cholesky, One Column At A Time
 
-For a symmetric matrix, Cholesky computes a lower-triangular `L` using
+For a symmetric matrix, Cholesky computes a lower-triangular $`L` using
 
 $$`L_{jj}
 =\sqrt{A_{jj}-\sum_{k<j}L_{jk}^{\,2}},`
@@ -62,7 +62,7 @@ $$`L_{ij}
 =\frac{A_{ij}-\sum_{k<j}L_{ik}L_{jk}}{L_{jj}}
 \qquad(i>j).`
 
-Entries with `i < j` are set to zero. In the executable specification,
+Entries with $`i<j` are set to zero. In the executable specification,
 [`choleskyColsFn`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Spec/Core/Tensor/Factorizations.lean)
 is a left fold that appends one column at a time; `choleskyFn` reads the resulting columns as a
 matrix; and `choleskySpec` wraps that function as a shaped tensor.
@@ -91,7 +91,7 @@ theorem isCholesky_of_pos
 ```
 
 The positive-pivot condition is the algorithm’s success condition. It permits the division by
-`L[j,j]` and identifies the positive square root. A symmetric positive-definite matrix is the
+$`L_{jj}` and identifies the positive square root. A symmetric positive-definite matrix is the
 standard sufficient condition, but the current theorem does not prove
 
 $$`\operatorname{PosDef}(A)
@@ -106,7 +106,7 @@ At tensor level, `choleskySpec_reconstruction` states the entrywise identity
 
 $$`A_{ij}=\sum_k L_{ik}L_{jk}`
 
-for `L = choleskySpec A`, under symmetry and positive tensor pivots.
+for $`L=\operatorname{choleskySpec}(A)`, under symmetry and positive tensor pivots.
 
 # Run The Cholesky Witness
 
@@ -153,7 +153,7 @@ must choose NaN behavior deliberately.
 
 # Classical Gram–Schmidt As QR
 
-For columns `a₀, …, aₖ₋₁`, classical Gram–Schmidt computes
+For columns $`a_0,\ldots,a_{k-1}`, classical Gram–Schmidt computes
 
 $$`\begin{aligned}
 v_j &= a_j-\sum_{i<j}\langle q_i,a_j\rangle q_i,\\
@@ -169,8 +169,8 @@ results.
 Three separate theorems correspond to the three parts of `IsQR`:
 
 - `Rmat_upper_triangular` proves entries below the diagonal vanish;
-- `qr_mul_eq` proves `A = Q * R`;
-- `QT_mul_Q_eq_one` proves `Qᵀ * Q = 1`.
+- `qr_mul_eq` proves $`A=QR`;
+- `QT_mul_Q_eq_one` proves $`Q^\top Q=1`.
 
 The packaged theorem
 [`isQR_of_pos`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Tensor/Basic/FactorizationsOrthonormal.lean)
@@ -243,7 +243,7 @@ The present implementation prints:
 
 The last two lines use a rank-deficient matrix whose second column is twice its first. The
 executable algorithm still reconstructs this particular input, but one `Q` column is zero, so
-`QᵀQ` differs from the identity by one on the diagonal. This is a useful distinction:
+$`Q^\top Q` differs from the identity by one on the diagonal. This is a useful distinction:
 reconstruction observed for one rank-deficient example does not discharge the positive-pivot
 hypothesis of the general theorem.
 
@@ -276,7 +276,7 @@ There are three objects in play:
 :::
 
 The `Float` output is evidence that the executable definitions behave as expected on those inputs.
-It is not the proof of `A = LLᵀ` or `QᵀQ = I`; machine arithmetic cannot generally satisfy those
+It is not the proof of $`A=LL^\top` or $`Q^\top Q=I`; machine arithmetic cannot generally satisfy those
 identities exactly. Conversely, the real theorem does not prove a forward-error or backward-error
 bound for the Float execution.
 

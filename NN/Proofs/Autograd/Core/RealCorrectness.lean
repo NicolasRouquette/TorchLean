@@ -17,9 +17,12 @@ Real-valued autograd correctness layer (proof-only).
 This file does **not** talk about calculus (`HasFDerivAt`) yet. Instead it proves the standard
 reverse-mode / forward-mode *adjointness* law (aka VJP/JVP duality) for a core set of ops:
 
-  ⟪ JVP(x, dx), δ ⟫ = ⟪ dx, VJP(x, δ) ⟫
+$$
+\left\langle \operatorname{JVP}(x,dx),\delta\right\rangle
+=\left\langle dx,\operatorname{VJP}(x,\delta)\right\rangle.
+$$
 
-where `⟪·,·⟫` is the tensor dot-product (sum of elementwise products).
+where $\langle\cdot,\cdot\rangle$ is the tensor dot product (sum of elementwise products).
 
 This is strong enough to justify the reverse-mode chain rule and to build a proved-correct layer
 on top of `Spec.OpSpec.compose`.
@@ -47,8 +50,9 @@ and keeps compilation dependencies smaller.
 
 ## Runtime note
 - The **runtime engine** in `NN.Runtime.Autograd.Engine` remains generic over `α` and works
-  whenever the needed ops exist. Relating a concrete backend to these ℝ-proofs may require a
-  separate semantic model (e.g. mapping to `ℝ` with rounding error bounds for NeuralFloat).
+  whenever the needed ops exist. Relating a concrete backend to these $\mathbb R$-proofs may
+  require a separate semantic model (e.g. mapping to `ℝ` with rounding error bounds for
+  NeuralFloat).
 
 ## PyTorch correspondence / citations
 - PyTorch AD background and conventions (VJP in reverse-mode):
@@ -98,7 +102,7 @@ namespace OpSpecCorrect
 /--
 Composition preserves VJP/JVP correctness (reverse-mode chain rule).
 
-Informally: if `f` and `g` each satisfy the adjointness law, then `g ∘ f` does as well, with the
+Informally: if $f$ and $g$ each satisfy the adjointness law, then $g\circ f$ does as well, with the
 composed JVP and the composed VJP.
 -/
 def compose {σ τ υ : Shape}
@@ -121,7 +125,8 @@ end OpSpecCorrect
 /-!
 ## A reusable adjointness identity
 
-Most elementwise ops have JVP of the form `dx ⊙ f'(x)` and VJP of the form `f'(x) ⊙ δ`.
+Most elementwise ops have JVP of the form $dx\odot f'(x)$ and VJP of the form
+$f'(x)\odot\delta$.
 The following lemma is the “commute elementwise factors under dot” fact that makes those proofs
 one-liners.
 -/
@@ -129,7 +134,8 @@ one-liners.
 /--
 Elementwise multiplication is self-adjoint with respect to the tensor dot-product.
 
-Informally: `⟪dx ⊙ df, δ⟫ = ⟪dx, df ⊙ δ⟫`.
+Informally,
+$\langle dx\odot df,\delta\rangle=\langle dx,df\odot\delta\rangle$.
 -/
 private theorem dot_elemwise_adjoint {s : Shape}
   (dx df δ : Tensor ℝ s) :
@@ -214,7 +220,7 @@ def softplusCorrect {s : Shape} :
 /--
 Correctness of SiLU’s backward rule.
 
-PyTorch analogue: `torch.nn.functional.silu`, equivalently `x * sigmoid(x)`.
+PyTorch analogue: `torch.nn.functional.silu`, equivalently $x\,\operatorname{sigmoid}(x)$.
 -/
 def siluCorrect {s : Shape} :
   OpSpecCorrect s s :=
@@ -250,7 +256,7 @@ def geluCorrect {s : Shape} :
 }
 
 /--
-Correctness of `safe_log`’s backward rule (a log with an `ε` safeguard).
+Correctness of `safe_log`’s backward rule (a log with an $\varepsilon$ safeguard).
 
 PyTorch analogue: typically implemented as `torch.log(torch.clamp(x, min=ε))` (or similar).
 -/
@@ -269,7 +275,7 @@ def safeLogCorrect {s : Shape} (ε : ℝ := Numbers.epsilon) :
 /--
 Correctness of a smooth absolute value’s backward rule (a differentiable approximation to `|x|`).
 
-PyTorch analogue: a custom smooth `abs` implemented via `sqrt(x^2 + ε^2)` or similar.
+PyTorch analogue: a custom smooth `abs` implemented via $\sqrt{x^2+\varepsilon^2}$ or similar.
 -/
 def smoothAbsCorrect {s : Shape} (ε : ℝ := Numbers.epsilon) :
   OpSpecCorrect s s :=
@@ -302,7 +308,7 @@ def expCorrect {s : Shape} :
 /--
 Correctness of `square`'s backward rule.
 
-PyTorch analogue: `torch.square`; the local derivative is `2 * x`.
+PyTorch analogue: `torch.square`; the local derivative is $2x$.
 -/
 def squareCorrect {s : Shape} :
   OpSpecCorrect s s :=
@@ -319,7 +325,8 @@ def squareCorrect {s : Shape} :
 Correctness of ELU's VJP/JVP adjointness rule.
 
 This is the algebraic half of the argument: once a local derivative mask is chosen, the VJP
-`elu'(x) ⊙ δ` is adjoint to the JVP `dx ⊙ elu'(x)`. The analytic differentiability theorem lives in
+$\operatorname{elu}'(x)\odot\delta$ is adjoint to the JVP
+$dx\odot\operatorname{elu}'(x)$. The analytic differentiability theorem lives in
 `Proofs.elu_deriv_correct`, which correctly excludes the kink at `0` for arbitrary `alpha`.
 
 PyTorch analogue: `torch.nn.functional.elu`.
@@ -415,7 +422,8 @@ def linearCorrect {inDim outDim : Nat}
 /--
 Correctness of `sum` (reduce-all) backward rule.
 
-Informally: `d/dx (sum x) = 1`, so the VJP replicates the upstream scalar gradient into every entry.
+Informally, $\frac{d}{dx}\sum x=1$, so the VJP replicates the upstream scalar gradient into every
+entry.
 
 PyTorch analogue: `torch.sum` (over all elements).
 -/

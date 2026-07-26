@@ -1,7 +1,6 @@
 ---
 title: Installation
 layout: default
-usemathjax: true
 redirect_from:
   - /backends/
 ---
@@ -327,6 +326,37 @@ capsule whose device, provider, gradient mode, and trust level satisfy the reque
 Adding a module with an existing name replaces the earlier contribution. Duplicate module names,
 duplicate capsule identities, and missing or inadmissible capsules cause planning to fail.
 
+## From A Capsule To Running Code
+
+The capsule and the implementation are separate objects. Once the planner selects a capsule, the
+eager runtime looks for a typed `KernelHandler` with the same operation, provider, and device. The
+pair becomes executable only after those three identities agree:
+
+```lean
+structure KernelHandler (β : Type) where
+  name : String
+  op : BackendOp
+  provider : Provider
+  device : Device
+  execute : KernelCapsule → IO β
+
+structure ExecutableKernel (β : Type) where
+  capsule : KernelCapsule
+  handler : KernelHandler β
+  operation_matches : handler.op = capsule.op
+  provider_matches : handler.provider = capsule.provider
+  device_matches : handler.device = capsule.device
+```
+
+This prevents a profile from selecting, for example, a native CUDA capsule while the runtime
+quietly executes the reference CPU closure. If a provider is present in the registry but its
+handler is not linked for that operation, execution fails with both the selected capsule and the
+available handlers in the error.
+
+The equalities above concern dispatch identity. They do not prove the body of `execute`. A CUDA or
+LibTorch kernel still has exactly the evidence recorded in its capsule: perhaps a theorem or sound
+checker, perhaps runtime guards and tests, or perhaps an explicit external assumption.
+
 ## Where The Theorems Enter
 
 A capsule does not prove foreign code merely by containing the name of a theorem. The proof itself
@@ -368,7 +398,7 @@ For each backend-visible graph operation, TorchLean follows the same sequence:
   <li><strong>Apply the profile.</strong> Restrict the device, providers, gradient ownership, and accepted trust levels.</li>
   <li><strong>Select a capsule.</strong> Choose a compatible implementation already present in the registry.</li>
   <li><strong>Audit and gate.</strong> Reject missing evidence or forbidden external boundaries.</li>
-  <li><strong>Admit, execute, and report.</strong> The eager runtime rejects non-eager capsules, consumes an accepted executable capsule, and prints it on first use when `--show-backend` is set.</li>
+  <li><strong>Bind, execute, and report.</strong> The eager runtime pairs the selected capsule with a matching typed handler, rejects missing handlers, and prints the capsule on first use when `--show-backend` is set.</li>
 </ol>
 
 An accepted kernel or graph plan carries a Lean proof that its selected policy gate returned

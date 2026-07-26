@@ -21,7 +21,7 @@ interfaces and proves facts about convergence, fallback cases, and optimizer ext
 
 Muon is represented as momentum plus an explicit orthogonalizer backend. The runtime update can use
 an identity orthogonalizer, an exact orthogonalizer, or a future optimized backend. The proof layer
-states what must be true of the backend output, for example exact `Q^T Q = I` or an entrywise bound
+states what must be true of the backend output, for example exact $Q^\mathsf{T}Q=I$ or an entrywise bound
 on the Gram residual.
 
 GaLore-style code is treated as projected-gradient structure. The important theorem-level fallback

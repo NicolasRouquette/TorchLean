@@ -72,7 +72,7 @@ def linearSpec {α : Type} [Add α] [Mul α] [Zero α]
   addSpec (matVecMulSpec layer.weights x) layer.bias
 ```
 
-At coordinate `i`, this means
+At coordinate $`i`, this means
 
 $$`y_i=b_i+\sum_{j=0}^{\mathrm{inDim}-1}W_{ij}x_j.`
 
@@ -185,7 +185,7 @@ point by a set of possible inputs, then bound every intermediate tensor.
 
 # Scalar Polymorphism Is A Real Choice
 
-The type parameter `α` determines what the symbols `+`, `*`, `max`, `exp`, and division mean.
+The type parameter $`\alpha` determines what the symbols `+`, `*`, `max`, `exp`, and division mean.
 TorchLean reuses the tensor structure at several scalar interpretations:
 
 :::table +header
@@ -234,7 +234,7 @@ fragments explicitly.
 
 # Shape Indices And Scalar Types
 
-The shape index `s` and scalar parameter `α` answer different questions. `Tensor α s` fixes both for
+The shape index $`s` and scalar parameter $`\alpha` answer different questions. `Tensor α s` fixes both for
 one value, and `Graph.denote` follows the homogeneous-scalar contract from *Tensors And Shapes*.
 The later IR chapter uses “heterogeneous” only for a table of differently shaped values, not for a
 mixed-dtype graph.
@@ -259,7 +259,7 @@ A boolean attention mask is a hard support constraint:
 - if every key in a row is blocked, the output row is zero.
 
 This is the finite formulation of a negative-infinity mask. It is not an additive score bias of
-`-1000` or any other finite sentinel. For sufficiently large logits a finite sentinel can leak
+$`-1000` or any other finite sentinel. For sufficiently large logits a finite sentinel can leak
 nonzero probability into a blocked position; the hard-mask definition cannot.
 
 ## Dropout

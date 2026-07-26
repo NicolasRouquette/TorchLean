@@ -14,7 +14,7 @@ public import NN.Floats.IEEEExec.Rounding.RatScaling
 Finite-only real semantics for `IEEE32Exec`.
 
 We interpret a float32 bit-pattern as a real number by decoding its exact dyadic payload
-`(-1)^sign * mant * 2^exp` and then mapping to `ℝ`.
+$(-1)^{\mathtt{sign}}\,\mathtt{mant}\,2^{\mathtt{exp}}$ and then mapping to $\mathbb{R}$.
 
 The executable kernel has NaN/Inf payloads; these do not have a real interpretation. We therefore
 provide:
@@ -88,4 +88,3 @@ end -- noncomputable section
 end IEEE32Exec
 
 end TorchLean.Floats.IEEE754
-

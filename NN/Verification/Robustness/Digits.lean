@@ -28,7 +28,8 @@ Workflow:
 - Train a small linear classifier on sklearn's digits (8x8) in Python and export:
   - weights JSON (`digits_linear_weights.json`)
   - test dataset JSON (`digits_test.json`)
-- In Lean, load the weights + dataset and compute certified accuracy under an `ℓ∞` input box using:
+- In Lean, load the weights + dataset and compute certified accuracy under an $\ell^\infty$ input
+  box using:
   - IBP (`runIBP`)
   - a simple CROWN/affine pass (`runAffine` + `AffineVec.eval_on_box`)
 
@@ -63,7 +64,7 @@ def inDim : Nat := 64
 /-- Number of classes (digits 0..9). -/
 def outDim : Nat := 10
 
-/-- Weight shape for a linear classifier `y = Wx + b` (10×64). -/
+/-- Weight shape for a linear classifier $y=Wx+b$ (10×64). -/
 def WShape : Shape := .dim outDim (.dim inDim .scalar)
 /-- Bias shape for a linear classifier (10). -/
 def bShape : Shape := .dim outDim .scalar
@@ -93,7 +94,7 @@ structure DigitsOpts where
   weights : String := defaultWeightsPath
   /-- Dataset JSON path (PyTorch export). -/
   dataset : String := defaultDatasetPath
-  /-- L∞ perturbation radius around each input example. -/
+  /-- $L^\infty$ perturbation radius around each input example. -/
   eps     : Float  := 0.02
   /-- Max number of examples to evaluate (for local checks). -/
   max     : Nat    := 100
@@ -188,7 +189,7 @@ def trainerArgs (opts : TrainCertifyOpts) : Array String :=
     "--out-dataset", opts.certify.dataset
   ]
 
-/-- TorchLean program for the linear classifier `y = Wx + b`. -/
+/-- TorchLean program for the linear classifier $y=Wx+b$. -/
 def classifier {α : Type} [Context α] [DecidableEq Shape] :
     TorchLean.Program α (paramShapes ++ [xShape]) yShape :=
   fun {m} _ _ =>
@@ -252,7 +253,7 @@ structure DigitsReport where
 /--
 Run the certified-accuracy evaluation once, under a chosen scalar backend `α`.
 
-This compiles the linear classifier to the verifier IR, then checks each example's `L∞` box using
+This compiles the linear classifier to the verifier IR, then checks each example's $L^\infty$ box using
 IBP and a simple affine pass.
 -/
 def runOnce {α : Type} [Semantics.Scalar α] [BoundOps α] [DecidableEq Shape] [ToString α]

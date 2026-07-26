@@ -135,7 +135,7 @@ matching PyTorch’s `torch.nn.functional.linear` convention. For one input vect
 
 $$`y_i=\sum_j W_{ij}x_j+b_i.`
 
-If `δᵢ` is the cotangent arriving from the rest of the computation, elementary differentiation
+If $`\delta_i` is the cotangent arriving from the rest of the computation, elementary differentiation
 gives
 
 $$`\frac{\partial L}{\partial x_j}
@@ -187,8 +187,8 @@ $$`\bar x=W^\top\delta
 =\begin{pmatrix}8&10\\-4&-5\end{pmatrix},\qquad
 \bar b=\begin{pmatrix}2\\-1\end{pmatrix}.`
 
-The tensor types prevent transposing the outer product accidentally: `δ ⊗ x` has shape
-`[outDim, inDim]`, while `x ⊗ δ` has shape `[inDim, outDim]`.
+The tensor types prevent transposing the outer product accidentally: $`\delta\otimes x` has shape
+`[outDim, inDim]`, while $`x\otimes\delta` has shape `[inDim, outDim]`.
 
 # What The Linear Theorems Prove
 
@@ -273,7 +273,7 @@ example :
 ```
 
 Both examples compile without goals. Now replace `2` by `0` in the ReLU example. Lean asks for
-`0 ≠ 0`, which cannot be proved. A runtime autograd system may choose a subgradient convention at
+$`0\ne0`, which cannot be proved. A runtime autograd system may choose a subgradient convention at
 the kink, as PyTorch does, but that convention is not an ordinary `HasDerivAt` theorem.
 
 The same audit rule applies to the less visible domains. A theorem for raw `log` needs positivity;
@@ -292,7 +292,7 @@ $$`x\longmapsto W_2\,\sigma(W_1x+b_1)+b_2,`
 a mathematical differentiation proof uses:
 
 1. the affine derivative in each linear layer;
-2. the scalar derivative of `σ`, lifted pointwise;
+2. the scalar derivative of $`\sigma`, lifted pointwise;
 3. the chain rule;
 4. tensor-shape and adjoint bookkeeping.
 

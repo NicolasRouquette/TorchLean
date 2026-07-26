@@ -28,7 +28,7 @@ Important scope note:
 
 - These primitives all fit the *chain* graph language `Graph ps σ τ` because they have one input
   tensor and one output tensor (no merging of paths).
-- Residual networks require skip connections (`y + x`), which are **multi-input** and require
+- Residual networks require skip connections ($y+x$), which are **multi-input** and require
   **sharing**. For that, use `NN.GraphSpec.DAG`, whose DAG primitive constructors reuse these
   sequential adapters when possible.
 

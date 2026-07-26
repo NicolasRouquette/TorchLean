@@ -54,7 +54,7 @@ from the operations in the model.
 
 # The Approximation Relation
 
-Let `x` be an ideal real tensor and `x̂` its rounded counterpart. TorchLean writes the basic
+Let $`x` be an ideal real tensor and $`\widehat{x}` its rounded counterpart. TorchLean writes the basic
 coordinatewise relation as
 
 $$`\operatorname{approxT}(x,\widehat x,\varepsilon)
@@ -75,8 +75,9 @@ For one output coordinate, an exact affine layer computes
 
 $$`y_j=\sum_{k=0}^{n-1}W_{jk}x_k+b_j`.
 
-Suppose the runtime has approximations `Ŵ`, `x̂`, and `b̂` with coordinatewise errors
-`ε_W`, `ε_x`, and `ε_b`. Before accounting for arithmetic rounding, one product satisfies
+Suppose the runtime has approximations $`\widehat W`, $`\widehat x`, and $`\widehat b` with
+coordinatewise errors $`\varepsilon_W`, $`\varepsilon_x`, and $`\varepsilon_b`. Before accounting
+for arithmetic rounding, one product satisfies
 
 $$`
 |\widehat W_{jk}\widehat x_k-W_{jk}x_k|
@@ -86,7 +87,7 @@ $$`
 +\varepsilon_W\varepsilon_x.
 `
 
-This identity comes from adding and subtracting `W_{jk}x̂_k`:
+This identity comes from adding and subtracting $`W_{jk}\widehat x_k`:
 
 $$`
 \widehat W\widehat x-Wx
@@ -94,7 +95,8 @@ $$`
   +(\widehat W-W)(\widehat x-x).
 `
 
-Now add the local multiplication error `ρ_mul` and the rounding introduced by each accumulation.
+Now add the local multiplication error $`\rho_{\rm mul}` and the rounding introduced by each
+accumulation.
 For a fixed-left dot product, a conservative recurrence is
 
 $$`
@@ -109,7 +111,7 @@ E_{k+1} &= E_k+P_k+\rho_{\rm add}(s_k,p_k).
 \end{aligned}
 `
 
-Finally add `ε_b` and the rounding of the bias addition. This explains why a linear-layer theorem
+Finally add $`\varepsilon_b` and the rounding of the bias addition. This explains why a linear-layer theorem
 needs more than the half-ULP bound from the previous chapter. It also needs the chosen reduction
 order and magnitude information for the operands.
 
@@ -126,9 +128,10 @@ $$`
 \leq |u-v|.
 `
 
-If the runtime ReLU itself is exact for the declared scalar semantics, an incoming bound `ε`
-remains `ε`. The interesting case is when `u` and `v` lie on opposite sides of zero. The derivative
-changes discontinuously there, but the forward Lipschitz bound still holds.
+If the runtime ReLU itself is exact for the declared scalar semantics, an incoming bound
+$`\varepsilon` remains $`\varepsilon`. The interesting case is when $`u` and $`v` lie on opposite
+sides of zero. The derivative changes discontinuously there, but the forward Lipschitz bound still
+holds.
 
 This difference between forward and backward sensitivity matters. A small perturbation can leave
 the ReLU output close while changing which VJP branch is selected. Backward approximation
@@ -148,7 +151,7 @@ $$`
 `
 
 Now every exponent input is nonpositive, the denominator is at least one, and the output lies in
-`[0,1]`. Those range facts control the local Lipschitz and rounding terms.
+$`[0,1]`. Those range facts control the local Lipschitz and rounding terms.
 
 Layer normalization has a similar chain:
 
@@ -195,7 +198,7 @@ model family name.
 # Backward Error Follows The Tape In Reverse
 
 Reverse mode starts from a seed cotangent and applies local VJPs from outputs back to inputs and
-parameters. For a composition `h(x)=g(f(x))`,
+parameters. For a composition $`h(x)=g(f(x))`,
 
 $$`
 \bar x
@@ -225,9 +228,9 @@ Training does not stop at a gradient. SGD computes
 
 $$`\theta^+=\theta-\eta g`.
 
-If `θ̂`, `η̂`, and `ĝ` approximate their ideal values, the next parameter bound combines the old
-parameter error, learning-rate error, gradient error, and local multiplication/subtraction
-rounding.
+If $`\widehat\theta`, $`\widehat\eta`, and $`\widehat g` approximate their ideal values, the next
+parameter bound combines the old parameter error, learning-rate error, gradient error, and local
+multiplication/subtraction rounding.
 
 Momentum adds a state recurrence. AdamW adds first and second moments, bias correction, square root,
 division, and weight decay. Rather than hard-code each optimizer into the graph theorem, TorchLean
@@ -339,7 +342,7 @@ theorems; graph theorems feed a training-step bound.
 
 - Nicholas J. Higham,
   [*Accuracy and Stability of Numerical Algorithms*](https://doi.org/10.1137/1.9780898718027),
-  second edition, for forward error, backward error, and the standard `γ_n` style of accumulated
+  second edition, for forward error, backward error, and the standard $`\gamma_n` style of accumulated
   rounding analysis.
 - Jean-Michel Muller et al.,
   [*Handbook of Floating-Point Arithmetic*](https://doi.org/10.1007/978-3-319-76526-6),

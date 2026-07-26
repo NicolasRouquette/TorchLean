@@ -12,7 +12,8 @@ public import NN.Floats.IEEEExec.Bridge.ERealTotal
 /-!
 # Total `EReal` semantics helpers for `IEEE32Exec`
 
-`Bridge/ERealTotal.lean` defines `toEReal? : IEEE32Exec → Option EReal`, which is the canonical
+`NN/Floats/IEEEExec/Bridge/ERealTotal.lean` defines
+`toEReal? : IEEE32Exec → Option EReal`, which is the canonical
 extended-real interpretation we use when we want to distinguish `+∞` from `-∞` and treat NaN as
 "unordered" (`none`).
 

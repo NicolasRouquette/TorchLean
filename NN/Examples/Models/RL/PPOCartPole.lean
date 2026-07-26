@@ -25,8 +25,8 @@ This example is small but complete:
 
 More concretely:
 
-- The policy is a categorical distribution over discrete actions parameterized by logits
-  `π_θ(a | s) = softmax(logits_θ(s))`.
+- The policy is a categorical distribution over discrete actions parameterized by logits:
+  $\pi_\theta(a\mid s)=\operatorname{softmax}(\mathrm{logits}_\theta(s))$.
 - Advantages are computed using Generalized Advantage Estimation (GAE(λ)).
 - PPO uses the clipped surrogate objective (plus a value-loss and optional entropy bonus, depending
   on the runtime configuration).

@@ -67,17 +67,30 @@ def paramShapes (width : Nat) : List Shape :=
 /-!
 Loss program:
 
-  penalty_pos = relu(cV*||x||^2 - V(x))
-  penalty_dec = relu(Vdot(x) + cD*V(x))
-  loss = penalty_pos + penalty_dec
+$$
+\begin{aligned}
+\operatorname{penalty}_{\mathrm{pos}}
+  &= \operatorname{ReLU}\!\left(c_V\lVert x\rVert^2-V(x)\right),\\
+\operatorname{penalty}_{\mathrm{dec}}
+  &= \operatorname{ReLU}\!\left(\dot V(x)+c_DV(x)\right),\\
+\operatorname{loss}
+  &= \operatorname{penalty}_{\mathrm{pos}}+\operatorname{penalty}_{\mathrm{dec}}.
+\end{aligned}
+$$
 
 Where:
-  u(x) = scaleU * tanh(Wc x + bc)
-  s(x) = w2 · tanh(W1 x + b1) + b2
-  V(x) = s(x)^2
-  Vdot(x) = ∇V(x) · f(x, u(x))  (van-der-Pol-like)
 
-We compute ∇V analytically (1-hidden-layer tanh + square), so training uses only first-order AD.
+$$
+\begin{aligned}
+u(x) &= \mathrm{scale}_U\tanh(W_cx+b_c),\\
+s(x) &= w_2\mathbin{\cdot}\tanh(W_1x+b_1)+b_2,\\
+V(x) &= s(x)^2,\\
+\dot V(x) &= \nabla V(x)\mathbin{\cdot}f(x,u(x)).
+\end{aligned}
+$$
+
+The last line uses the van der Pol-like dynamics. We compute $\nabla V$ analytically for the
+one-hidden-layer tanh network followed by a square, so training needs only first-order AD.
 -/
 def lossProgram (width : Nat) :
     ∀ {β : Type}, [Context β] → [DecidableEq Shape] →

@@ -33,9 +33,12 @@ is covered by the global theorem `Graph.backpropVec_eq_adjoint_fderiv`.
 
 What remains here is the dot/adjointness bridge:
 
-  dot (JVP_conv2d …) δ = dot dKernel gK + dot dBias gB + dot dInput gX
+$$
+\operatorname{dot}(\operatorname{JVP}_{\mathrm{conv2d}}(\ldots),\delta)
+=\operatorname{dot}(dK,g_K)+\operatorname{dot}(dB,g_B)+\operatorname{dot}(dX,g_X).
+$$
 
-where `(gK, gB, gX) = Spec.conv2d_backward_spec … δ`.
+Here `(gK, gB, gX)` is the tuple returned by `Spec.conv2d_backward_spec` for $\delta$.
 
 The padding-related rewrites needed for the input-gradient proof are factored into:
 

@@ -36,10 +36,15 @@ inductive LoweringMode where
 
 /-- One named backend execution profile. -/
 structure BackendProfile where
+  /-- Human-readable profile name used in diagnostics and reports. -/
   name : String
+  /-- Device, provider preference, assurance policy, and VJP execution mode. -/
   config : ExecutionConfig
+  /-- Operating-system, architecture, and accelerator capabilities available to planning. -/
   target : Target
+  /-- Capsule modules used to construct and validate the profile's planning registry. -/
   capsuleModules : List Registry.CapsuleModule := Registry.maintainedModules
+  /-- Whether accepted nodes remain separate or are combined into compatible execution groups. -/
   loweringMode : LoweringMode := .coalesced
   deriving Repr
 

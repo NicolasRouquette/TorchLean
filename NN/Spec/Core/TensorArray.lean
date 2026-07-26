@@ -89,7 +89,8 @@ theorem foldl_mul_factor (n : Nat) (ns : List Nat) :
     rw [ih]
     grind
 
-/-- Step case for `shapeProd`: product of `(n :: ns)` is `n * shapeProd ns`. -/
+/-- Step case for `shapeProd`: the product satisfies
+$\operatorname{shapeProd}(n::ns)=n\operatorname{shapeProd}(ns)$. -/
 @[simp]
 theorem shapeProd_cons (n : Nat) (ns : List Nat) :
   shapeProd (n :: ns) = n * shapeProd ns := by
@@ -156,7 +157,8 @@ def flatIndex (shape : List Nat) (indices : List Nat) : Option Nat :=
 remaining `shape`.
 
 Intuition: starting with accumulator `acc`, the recursion computes something of the form
-`acc * shapeProd shape + tail`, where `tail < shapeProd shape`.
+$\mathtt{acc}\,\operatorname{shapeProd}(\mathtt{shape})+\mathtt{tail}$, where
+$\mathtt{tail}<\operatorname{shapeProd}(\mathtt{shape})$.
 -/
 theorem flatIndexAux_lt (shape indices : List Nat) (acc idx : Nat) :
   flatIndexAux shape indices acc = some idx → idx < (acc + 1) * shapeProd shape := by
@@ -338,7 +340,7 @@ def matvec {α : Type} [Add α] [Mul α] [Zero α] [Inhabited α]
       simp [rows, result] }
 
 /--
-Linear layer: `y = W x + b`.
+Linear layer: $y=Wx+b$.
 
 PyTorch analogy: `torch.nn.Linear(n, m)` forward pass with weight `W` and bias `b`.
 -/

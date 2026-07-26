@@ -58,7 +58,6 @@ def conv {α : Type} (s : EagerSession α) [Context α]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .conv
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.conv (t := t0)
       (d := d) (inC := inC) (outC := outC)
@@ -89,7 +88,6 @@ def conv2d {α : Type} (s : EagerSession α) [Context α]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .conv
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.conv2d (t := t0)
@@ -128,7 +126,6 @@ def convTranspose {α : Type} (s : EagerSession α) [Context α]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .convTranspose
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.convTranspose (t := t0)
       (d := d) (inC := inC) (outC := outC)
@@ -159,7 +156,6 @@ def convTranspose2d {α : Type} (s : EagerSession α) [Context α]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .convTranspose
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.convTranspose2d (t := t0)

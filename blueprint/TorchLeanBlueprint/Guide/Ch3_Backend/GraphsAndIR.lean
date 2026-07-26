@@ -291,8 +291,10 @@ It then chooses an admissible kernel capsule for each runtime-relevant node. A p
 IDs and records capsule names in graph order.
 
 This is useful audit data, but a `KernelCapsule` is a contract descriptor, not a closure containing
-machine code. Planning node 1 for `nativeCuda` does not call a CUDA kernel. Provider-specific eager
-or compiled runtime code must interpret that choice.
+machine code. Planning node 1 for `nativeCuda` does not call a CUDA kernel. Eager execution must
+bind the selected capsule to a typed handler with the same operation, provider, and device before
+that handler can run. An `AcceptedGraphPlan` remains data; the current compiled trainer does not
+consume it.
 
 The distinction prevents a common architecture mistake:
 

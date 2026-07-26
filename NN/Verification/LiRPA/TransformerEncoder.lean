@@ -127,7 +127,7 @@ def seedParamsFloat : ParamStore Float :=
           ({ m := nModel, n := nHidden, w := feedForwardOutputWeight, b := feedForwardOutputBias }) }
   withFeedForwardOutput
 
-/-- Insert an `L∞` input box of radius `eps` around a fixed center point. -/
+/-- Insert an $L^\infty$ input box of radius `eps` around a fixed center point. -/
 def seedInputFloat (ps : ParamStore Float) (eps : Float) : ParamStore Float :=
   NN.Verification.LiRPA.seedNaturalInputBox 0 4 eps ps
 

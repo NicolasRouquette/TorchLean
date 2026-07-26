@@ -37,7 +37,7 @@ Consider an ordinary one-hidden-layer network
 
 $$`f_\theta(x)=W_2\,\rho(W_1x+b_1)+b_2.`
 
-For a batch of `B` vectors, the shapes are
+For a batch of $`B` vectors, the shapes are
 
 $$`X\in\mathbb{R}^{B\times d_{\mathrm{in}}},\qquad
 W_1\in\mathbb{R}^{d_{\mathrm{in}}\times d_h},\qquad
@@ -64,10 +64,10 @@ A residual block computes
 
 $$`y=F_\theta(x)+S_\theta(x),`
 
-where `S` is either the identity or a projection. The addition is defined only if the two branches
+where $`S` is either the identity or a projection. The addition is defined only if the two branches
 have the same output shape. In
 [`NN.API.Models.ResNet`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/ResNet.lean),
-the reusable configuration is indexed by the number `d` of spatial axes:
+the reusable configuration is indexed by the number $`d` of spatial axes:
 
 ```
 structure ResNetConfig (d : Nat) where
@@ -87,8 +87,8 @@ $$`\operatorname{input}
 $$`\operatorname{output}=B\times C_{\mathrm{class}}.`
 
 The constructor uses a convolutional stem, two residual blocks, global average pooling over all
-`d` spatial axes, and a linear classifier. The pooling operation is parameterized by the spatial
-vector. The CIFAR example instantiates `d=2`; the model API itself is not tied to images or to two
+$`d` spatial axes, and a linear classifier. The pooling operation is parameterized by the spatial
+vector. The CIFAR example instantiates $`d=2`; the model API itself is not tied to images or to two
 dimensions.
 
 The next chapter runs this compact CIFAR application and inspects the resulting loss log. Here we
@@ -98,7 +98,7 @@ stay with the architectural question: where must the two residual branches agree
 
 Open
 [`NN/Examples/Models/Vision/ResNet.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Vision/ResNet.lean)
-and inspect `cfg`. The command uses an `8 × 8` crop and four hidden channels. Changing the hidden
+and inspect `cfg`. The command uses an $`8\times8` crop and four hidden channels. Changing the hidden
 width changes both residual branches and the classifier input. Removing the projection that keeps
 the branch shapes aligned is not a late runtime error: the residual composition no longer
 elaborates.
@@ -106,13 +106,13 @@ elaborates.
 # Vision Transformers
 
 A vision Transformer first turns a spatial field into a token sequence. For an input with spatial
-extent `n₁ × ... × n_d`, patch kernel `k`, stride `s`, and padding `p`, each output extent is the
-usual convolution expression
+extent $`n_1\times\cdots\times n_d`, patch kernel $`k`, stride $`s`, and padding $`p`, each output
+extent is the usual convolution expression
 
 $$`n'_i
 =\left\lfloor\frac{n_i+2p_i-k_i}{s_i}\right\rfloor+1.`
 
-If the patch convolution emits `D` channels, then the patch grid becomes
+If the patch convolution emits $`D` channels, then the patch grid becomes
 
 $$`B\times D\times n'_1\times\cdots\times n'_d
 \;\longrightarrow\;
@@ -124,7 +124,7 @@ defines this conversion as `spatialToTokens`. The implementation reshapes the pa
 the channel axis to the end. The following Transformer block therefore receives the conventional
 `batch × sequence × embedding` layout.
 
-For `H` attention heads of width `D_h`, the model width is
+For $`H` attention heads of width $`D_h`, the model width is
 
 $$`D=H D_h,`
 
@@ -169,9 +169,9 @@ Transformers remove recurrent state but introduce a mask. A causal language mode
 $$`p_\theta(x_0,\ldots,x_T)
 =\prod_{t=0}^{T}p_\theta(x_t\mid x_0,\ldots,x_{t-1}).`
 
-Consequently, attention row `i` must assign exactly zero probability to every key `j>i`. TorchLean
+Consequently, attention row $`i` must assign exactly zero probability to every key $`j>i`. TorchLean
 models this as a hard mask in the semantic layer. It does not use a finite additive constant such
-as `-1000` as a mathematical substitute for negative infinity.
+as $`-1000` as a mathematical substitute for negative infinity.
 
 The shared GPT-family constructor in
 [`NN.API.Models.Gpt2`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Gpt2.lean)

@@ -37,7 +37,7 @@ under `NN/Examples/Verification`; reusable checkers live under `NN/Verification`
    This is the API shape we want people to copy first: `import NN.API`, `nn.Sequential![...]`,
    `Data.tensorDataset xs ys`, `Trainer.new model { task := .regression, optimizer := ... }`,
    `trainer.predict x`, `trainer.train data { steps := ..., batchSize := ..., logEvery := ... }`,
-   and then one trained-handle prediction plus one `ℓ∞` IBP verification call. The task field chooses
+   and then one trained-handle prediction plus one $\ell_\infty$ IBP verification call. The task field chooses
    the loss kind: regression means MSE, classification means one-hot cross entropy.
    The example is small enough to read in one sitting and already has the ownership pattern used by
    the larger examples: the trainer owns parameters, optimizer state, backend selection, and

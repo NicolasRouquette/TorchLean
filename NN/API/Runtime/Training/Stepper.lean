@@ -63,12 +63,11 @@ def stepper {σ τ : Spec.Shape} {task : SeqTask σ τ}
         let runStep := fun (sample : API.TorchLean.TensorPack α [σ, τ]) => do
           trainMode runner
           let stepIdx ← stepRef.get
-          let loss ← moduleLoss runner sample
           updateRunnerBuffers runner sample
           let lrα := API.Runtime.ofFloat (stepLR scheduler optimizer stepIdx)
-          API.TorchLean.Module.step runner.module lrα sample
+          let loss ← API.TorchLean.Module.stepWithLoss runner.module lrα sample
           stepRef.set (stepIdx + 1)
-          pure loss
+          pure (Spec.Tensor.toScalar loss)
         pure {
           runner := runner
           stepSample := runStep
@@ -86,15 +85,15 @@ def stepper {σ τ : Spec.Shape} {task : SeqTask σ τ}
         let runStep := fun (sample : API.TorchLean.TensorPack α [σ, τ]) => do
           trainMode runner
           let stepIdx ← stepRef.get
-          let loss ← moduleLoss runner sample
           updateRunnerBuffers runner sample
           let lrα := API.Runtime.ofFloat (stepLR scheduler optimizer stepIdx)
           let st0 ← stRef.get
           let st := momentumSGDStateWithLR (paramShapes := paramShapes task) lrα st0
-          let st' ← API.TorchLean.Module.stepWith runner.module opt st sample
+          let (st', loss) ←
+            API.TorchLean.Module.stepWithOptimizerAndLoss runner.module opt st sample
           stRef.set st'
           stepRef.set (stepIdx + 1)
-          pure loss
+          pure (Spec.Tensor.toScalar loss)
         pure {
           runner := runner
           stepSample := runStep
@@ -112,15 +111,14 @@ def stepper {σ τ : Spec.Shape} {task : SeqTask σ τ}
       let runStep := fun (sample : API.TorchLean.TensorPack α [σ, τ]) => do
         trainMode runner
         let stepIdx ← stepRef.get
-        let loss ← moduleLoss runner sample
         updateRunnerBuffers runner sample
         let lrα := API.Runtime.ofFloat (stepLR scheduler optimizer stepIdx)
         let st0 ← stRef.get
         let st := adagradStateWithLR (paramShapes := paramShapes task) lrα st0
-        let st' ← API.TorchLean.Module.stepWith runner.module opt st sample
+        let (st', loss) ← API.TorchLean.Module.stepWithOptimizerAndLoss runner.module opt st sample
         stRef.set st'
         stepRef.set (stepIdx + 1)
-        pure loss
+        pure (Spec.Tensor.toScalar loss)
       pure {
         runner := runner
         stepSample := runStep
@@ -139,15 +137,14 @@ def stepper {σ τ : Spec.Shape} {task : SeqTask σ τ}
       let runStep := fun (sample : API.TorchLean.TensorPack α [σ, τ]) => do
         trainMode runner
         let stepIdx ← stepRef.get
-        let loss ← moduleLoss runner sample
         updateRunnerBuffers runner sample
         let lrα := API.Runtime.ofFloat (stepLR scheduler optimizer stepIdx)
         let st0 ← stRef.get
         let st := rmspropStateWithLR (paramShapes := paramShapes task) lrα st0
-        let st' ← API.TorchLean.Module.stepWith runner.module opt st sample
+        let (st', loss) ← API.TorchLean.Module.stepWithOptimizerAndLoss runner.module opt st sample
         stRef.set st'
         stepRef.set (stepIdx + 1)
-        pure loss
+        pure (Spec.Tensor.toScalar loss)
       pure {
         runner := runner
         stepSample := runStep
@@ -167,15 +164,14 @@ def stepper {σ τ : Spec.Shape} {task : SeqTask σ τ}
       let runStep := fun (sample : API.TorchLean.TensorPack α [σ, τ]) => do
         trainMode runner
         let stepIdx ← stepRef.get
-        let loss ← moduleLoss runner sample
         updateRunnerBuffers runner sample
         let lrα := API.Runtime.ofFloat (stepLR scheduler optimizer stepIdx)
         let st0 ← stRef.get
         let st := adamStateWithLR (paramShapes := paramShapes task) lrα st0
-        let st' ← API.TorchLean.Module.stepWith runner.module opt st sample
+        let (st', loss) ← API.TorchLean.Module.stepWithOptimizerAndLoss runner.module opt st sample
         stRef.set st'
         stepRef.set (stepIdx + 1)
-        pure loss
+        pure (Spec.Tensor.toScalar loss)
       pure {
         runner := runner
         stepSample := runStep
@@ -195,15 +191,14 @@ def stepper {σ τ : Spec.Shape} {task : SeqTask σ τ}
       let runStep := fun (sample : API.TorchLean.TensorPack α [σ, τ]) => do
         trainMode runner
         let stepIdx ← stepRef.get
-        let loss ← moduleLoss runner sample
         updateRunnerBuffers runner sample
         let lrα := API.Runtime.ofFloat (stepLR scheduler optimizer stepIdx)
         let st0 ← stRef.get
         let st := adamwStateWithLR (paramShapes := paramShapes task) lrα st0
-        let st' ← API.TorchLean.Module.stepWith runner.module opt st sample
+        let (st', loss) ← API.TorchLean.Module.stepWithOptimizerAndLoss runner.module opt st sample
         stRef.set st'
         stepRef.set (stepIdx + 1)
-        pure loss
+        pure (Spec.Tensor.toScalar loss)
       pure {
         runner := runner
         stepSample := runStep
@@ -222,15 +217,14 @@ def stepper {σ τ : Spec.Shape} {task : SeqTask σ τ}
       let runStep := fun (sample : API.TorchLean.TensorPack α [σ, τ]) => do
         trainMode runner
         let stepIdx ← stepRef.get
-        let loss ← moduleLoss runner sample
         updateRunnerBuffers runner sample
         let lrα := API.Runtime.ofFloat (stepLR scheduler optimizer stepIdx)
         let st0 ← stRef.get
         let st := adadeltaStateWithLR (paramShapes := paramShapes task) lrα st0
-        let st' ← API.TorchLean.Module.stepWith runner.module opt st sample
+        let (st', loss) ← API.TorchLean.Module.stepWithOptimizerAndLoss runner.module opt st sample
         stRef.set st'
         stepRef.set (stepIdx + 1)
-        pure loss
+        pure (Spec.Tensor.toScalar loss)
       pure {
         runner := runner
         stepSample := runStep

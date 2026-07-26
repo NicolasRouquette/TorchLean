@@ -135,12 +135,12 @@ def convTranspose2d
 
 The CUDA tape exposes `conv`/`max_pool`/`avg_pool`/`smooth_max_pool` using the same names as the
 CPU tape. These dispatch to the ConvPool CUDA FFI entrypoints that take per-axis parameters as
-`Array Nat` (rank ≤ 8).
+`Array Nat` (rank $\le 8$).
 
 The `*2d*` wrappers remain as concise convenience names for the common rank-2 case.
 -/
 
-/-- N-D convolution (CUDA) via ConvPool FFI (rank ≤ 8). -/
+/-- N-D convolution (CUDA) via ConvPool FFI (rank $\le 8$). -/
 def conv
   {d inC outC : Nat}
   {kernel stride padding : Vector Nat d}
@@ -210,7 +210,7 @@ def conv
         ] }
   pure (t.addNode node)
 
-/-- N-D transposed convolution (CUDA) via ConvPool FFI (rank ≤ 8). -/
+/-- N-D transposed convolution (CUDA) via ConvPool FFI (rank $\le 8$). -/
 def convTranspose
   {d inC outC : Nat}
   {kernel stride padding : Vector Nat d}
@@ -349,7 +349,7 @@ def maxPool2dPad {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} {h2 : 
         pure [(xId, { s := .dim inC (.dim inH (.dim inW .scalar)), buf := dx })] }
   pure (t.addNode node)
 
-/-- N-D max pooling (CUDA) via ConvPool FFI (rank ≤ 8). -/
+/-- N-D max pooling (CUDA) via ConvPool FFI (rank $\le 8$). -/
 def maxPool
     {d C : Nat} {inSpatial kernel stride padding : Vector Nat d}
     {hKernel : ∀ i : Fin d, kernel.get i ≠ 0}
@@ -614,7 +614,7 @@ def avgPool2dPad {kH kW inH inW inC stride padding : Nat} (h1 : kH ≠ 0) (h2 : 
         pure [(xId, { s := .dim inC (.dim inH (.dim inW .scalar)), buf := dx })] }
   pure (t.addNode node)
 
-/-- N-D average pooling (CUDA) via ConvPool FFI (rank ≤ 8). -/
+/-- N-D average pooling (CUDA) via ConvPool FFI (rank $\le 8$). -/
 def avgPool
     {d C : Nat} {inSpatial kernel stride padding : Vector Nat d}
     (hKernel : ∀ i : Fin d, kernel.get i ≠ 0)

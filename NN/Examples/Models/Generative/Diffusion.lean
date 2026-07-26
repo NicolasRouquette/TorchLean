@@ -88,7 +88,7 @@ def cifarTinyW : Nat := 2
 local instance : NeZero cifarTinyH := ⟨by decide⟩
 local instance : NeZero cifarTinyW := ⟨by decide⟩
 
-/-- Clean image batch shape `x₀`: NCHW with the fixed command batch size. -/
+/-- Clean image batch shape $x_0$: NCHW with the fixed command batch size. -/
 abbrev cleanImageShape (c h w : Nat) : Shape :=
   .dim batch (.dim c (.dim h (.dim w .scalar)))
 
@@ -129,7 +129,7 @@ def mkModel (c h w hiddenC : Nat)
 /--
 Convert one typed CIFAR minibatch into diffusion-space clean images.
 
-The loader returns images in `[0,1]`; diffusion training uses `[-1,1]`, so this function performs the
+The loader returns images in $[0,1]$; diffusion training uses $[-1,1]$, so this function performs the
 range conversion after Lean has established the CIFAR NCHW shape.
 -/
 def cifarCleanImageBatch
@@ -160,7 +160,7 @@ def imageNet64CleanImageBatch
 Load CIFAR-10 batches as a finite list of clean diffusion images.
 
 The function validates the `.npy` paths, builds a typed `Data.batchLoader`, drops incomplete final
-batches, and returns NCHW tensors already mapped into `[-1,1]`.
+batches, and returns NCHW tensors already mapped into $[-1,1]$.
 -/
 def loadCifarCleanImageBatches (xPath yPath : System.FilePath) (nRows seed : Nat) :
     IO (List (Tensor.T Float (cleanImageShape RealData.cifarChannels cifarTinyH cifarTinyW))) := do
@@ -183,7 +183,7 @@ def loadImageNet64CleanImageBatches (xPath yPath : System.FilePath) (nRows seed 
 Run deterministic DDIM reverse steps from a starting noisy image.
 
 This is used for unconditional sample artifacts: start from Gaussian noise, repeatedly ask the model
-for `ε̂`, and apply the DDIM previous-step formula.
+for $\hat{\varepsilon}$, and apply the DDIM previous-step formula.
 -/
 def reverseDdim {c h w : Nat}
     (predict : Tensor.T Float (noisyInputShape c h w) → IO (Tensor.T Float (cleanImageShape c h w)))
@@ -370,7 +370,8 @@ Run one typed diffusion dataset branch.
 
 The CIFAR-10 and ImageNet64 commands differ in their shape-level loader and default `.npy` paths,
 but after parsing those inputs they follow the same command flow: parse training flags, reject
-unused args, require `hiddenC > 0`, train the epsilon predictor, then write the same curve log.
+unused args, require $\mathtt{hiddenC}>0$, train the epsilon predictor, then write the same curve
+log.
 -/
 def runTypedDataset {c h w : Nat} [NeZero c] [NeZero h] [NeZero w]
     (opts : Options) (args : List String)

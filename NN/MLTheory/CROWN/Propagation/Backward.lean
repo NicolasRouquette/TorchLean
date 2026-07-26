@@ -296,8 +296,9 @@ def runBackward (net : BackwardNetwork α) : Option (BackwardState α) := do
 
   return state
 
-/-- Evaluate backward bounds on input box to get output bounds.
-    Given A·x + b with x ∈ [lo, hi], compute output interval.
+/-- Evaluate backward bounds on an input box.
+
+Given $Ax+b$ with $x\in[\mathrm{lo},\mathrm{hi}]$, compute the corresponding output interval.
 -/
 def evalBackwardBounds (outDim inDim : Nat) (state : BackwardState α)
     [BoundOps α] (xB : Box α (.dim inDim .scalar)) :

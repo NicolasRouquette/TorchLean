@@ -38,7 +38,7 @@ open scoped BigOperators
 
 noncomputable section
 
-/-- Weight matrices as a real Hilbert space (Frobenius / L2 inner product). -/
+/-- Weight matrices as a real Hilbert space (Frobenius/$\ell_2$ inner product). -/
 abbrev Mat (m n : Nat) := PiLp 2 (fun _ : Fin m => PiLp 2 (fun _ : Fin n => ℝ))
 
 /-- Convert a coordinate function `Fin n → ℝ` into the bundled vector type `Vec n`. -/
@@ -85,7 +85,7 @@ def matApplyLin {m n : Nat} (x : Vec n) : Mat m n →L[ℝ] Vec m := by
 /--
 Outer product `δ ⊗ x` (as a matrix in `Mat`).
 
-This is the standard formula for the adjoint of `W ↦ W x` under Frobenius/L2 inner products.
+This is the standard formula for the adjoint of `W ↦ W x` under Frobenius/$\ell_2$ inner products.
 -/
 def outer {m n : Nat} (δ : Vec m) (x : Vec n) : Mat m n :=
   WithLp.toLp 2 fun i : Fin m =>
@@ -96,7 +96,7 @@ def outer {m n : Nat} (δ : Vec m) (x : Vec n) : Mat m n :=
     outer (m := m) (n := n) δ x i j = δ.ofLp i * x.ofLp j := by
   simp [outer]
 
-/-- Coordinate formula for the Frobenius/L2 inner product on `Mat m n`. -/
+/-- Coordinate formula for the Frobenius/$\ell_2$ inner product on `Mat m n`. -/
 lemma inner_mat_eq_sum {m n : Nat} (A B : Mat m n) :
     inner ℝ A B = ∑ i : Fin m, ∑ j : Fin n, A i j * B i j := by
   classical
@@ -157,7 +157,7 @@ Main adjoint lemma:
 `(W ↦ W x)† δ = δ ⊗ x`.
 -/
 /--
-Adjoint of `W ↦ W x` under Frobenius/L2 inner products.
+Adjoint of `W ↦ W x` under Frobenius/$\ell_2$ inner products.
 
 This is the mathematical core of the “weight gradient is outer product” rule:
 `(matApplyLin x)† δ = δ ⊗ x`.

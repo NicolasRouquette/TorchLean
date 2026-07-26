@@ -4,14 +4,20 @@ This folder contains the TorchLean landing page and the small amount of glue tha
 public site:
 
 - API reference under `/docs/` (built by DocGen4)
-- Verso guide (built from the `blueprint/` Lake package) under `/blueprint/`
+- Verso Blueprint guide under `/blueprint/`, including the curated declaration and proof map
 - Curated runnable examples under `/examples/` (a maintained Jekyll page)
 - Dependency and import graph pages under `/graphs/` and `/importgraph/`
+- Companion projects and their documentation under `/tools/`
 - CI timing history under `/performance/`
 - Status/update notes under `/updates/`
 
 The source of truth is split deliberately. Edit the source that owns the idea, then rebuild the
-generated output:
+generated output.
+
+The Tools directory is maintained in `home_page/tools/index.md`. Its links should point to the
+documentation owned by each companion repository rather than copying those manuals into this site.
+
+The rest of the source map is:
 
 | Public page | Source to edit |
 | --- | --- |
@@ -19,6 +25,7 @@ generated output:
 | Getting started | `home_page/start/index.md` |
 | Examples pages | `home_page/examples/**/index.md` plus matching `NN/Examples/**` README/source |
 | Guide | `blueprint/TorchLeanBlueprint/Guide/**/*.lean` |
+| Formalization map | `blueprint/TorchLeanBlueprint/FormalizationMap/*.lean` |
 | API reference | `NN/**/*.lean` module docstrings and declaration docstrings |
 | Graph pages | `home_page/graphs/index.md`, `scripts/checks/dependency_audit.py`, generated graph JSON |
 | Performance page | `home_page/performance/index.md`, site CSS |
@@ -82,28 +89,41 @@ equation lemmas for every imported Lean and Mathlib definition, which otherwise 
 non-fatal timeout warnings. Clear `.lake/build/doc-data` first when switching to this mode because
 Lake can otherwise replay old DocGen artifacts.
 
+Lean documentation comments use `$...$` for inline math and `$$...$$` for display math; DocGen
+loads MathJax on every declaration page. Jekyll pages load MathJax from the shared layout. Verso
+pages use their bundled KaTeX runtime: prefix a Verso code literal with `$` for inline math or `$$`
+for display math. Ordinary backticks are for code and stay monospace.
+
 ### Verso Guide (Blueprint Package)
 
 ```bash
 cd ../blueprint
-lake exe blueprint-gen --output ../_out/blueprint
+lake exe vbp build --output ../_out/blueprint
+lake exe vbp check --site ../_out/blueprint
 cd ..
+if [ -d blueprint/TorchLeanBlueprint/Guide/Assets ]; then
+  mkdir -p _out/blueprint/html-multi/Guide/Assets
+  cp -r blueprint/TorchLeanBlueprint/Guide/Assets/* _out/blueprint/html-multi/Guide/Assets/
+fi
+python3 scripts/docs/polish_verso_guide.py --guide _out/blueprint/html-multi
 rm -rf home_page/blueprint
 mkdir -p home_page/blueprint
 cp -r _out/blueprint/html-multi/* home_page/blueprint/
 ```
 
+The guide’s Formalization Map follows selected definitions and theorems across subsystems. The
+`/graphs/` page answers a different question: it audits source-module imports. The runtime graph IR
+is the third graph in the repository, representing a neural-network computation rather than Lean
+source or proof dependencies.
+
 ### Dependency graph explorer
 
-The `/graphs/` page uses a compact JSON audit generated from Lean imports. It is inspired by
-Li, Peng, Severini, and Shafto, "The Network Structure of Mathlib" (arXiv:2604.24797), but keeps
-TorchLean's public site manageable by starting at module/import granularity.
+The `/graphs/` page reads a JSON snapshot generated from the current Lean imports.
 
 ```bash
 cd ..
 python3 scripts/checks/dependency_audit.py \
   --json home_page/graphs/dependency-audit.json \
-  --markdown _out/torchlean_dependency_audit.md \
   --fail-on-error
 ```
 
@@ -129,7 +149,8 @@ For a lighter pass after editing only the Verso guide:
 
 ```bash
 cd blueprint
-lake exe blueprint-gen --output ../_out/blueprint
+lake exe vbp build --output ../_out/blueprint
+lake exe vbp check --site ../_out/blueprint
 cd ..
 python3 scripts/docs/polish_verso_guide.py --guide _out/blueprint/html-multi
 rm -rf home_page/blueprint

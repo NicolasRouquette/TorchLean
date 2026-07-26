@@ -22,8 +22,6 @@ variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)
 Spec-level broadcasting and broadcasted binary maps.
 -/
 
-/-! ## Broadcasting -/
-
 /-
 Broadcasting in the spec layer is defined in terms of `Shape.CanBroadcastTo`:
 

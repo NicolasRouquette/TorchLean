@@ -98,7 +98,8 @@ Architecture:
 `stem conv -> relu -> residual block -> relu -> residual block -> relu -> output conv`
 
 Each residual block has shape `hiddenC×H×W -> hiddenC×H×W` and computes
-`x + conv(relu(conv(x)))`.  This compact residual denoiser omits U-Net downsampling, upsampling,
+$x+\operatorname{conv}(\operatorname{relu}(\operatorname{conv}(x)))$.  This compact residual
+denoiser omits U-Net downsampling, upsampling,
 and multi-scale skip concatenation. It is still a useful compact architecture because
 residual paths make the denoising problem much easier than a plain conv chain while staying within
 the eager CUDA memory envelope used by examples.
@@ -142,7 +143,7 @@ end nn
 
 namespace diffusion
 
-/-- Map a tensor from `[0,1]` into the standard diffusion training range `[-1,1]`. -/
+/-- Map a tensor from $[0,1]$ into the standard diffusion training range $[-1,1]$. -/
 def toMinusOneOne {s : Spec.Shape} (x01 : Spec.Tensor Float s) : Spec.Tensor Float s :=
   Spec.Tensor.mapSpec (fun x => 2.0 * x - 1.0) x01
 
@@ -165,9 +166,10 @@ def linearBeta (T : Nat) (betaStart betaEnd : Float) (t : Nat) : Float :=
     betaStart + u * (betaEnd - betaStart)
 
 /--
-Compute cumulative products `ᾱ_t = ∏_{s≤t} (1 - β_s)` for a linear beta schedule.
+Compute the cumulative products
+$\bar\alpha_t=\prod_{s\le t}(1-\beta_s)$ for a linear beta schedule.
 
-These values connect clean data `x₀`, noised data `x_t`, and the epsilon target used by DDPM-style
+These values connect clean data $x_0$, noised data $x_t$, and the epsilon target used by DDPM-style
 training.
 -/
 def alphaBarsLinear (T : Nat) (betaStart betaEnd : Float) : Array Float :=
@@ -207,7 +209,8 @@ Build an epsilon-prediction training sample from explicit noise.
 The caller supplies `eps`, usually from the runtime RNG.  Keeping randomness outside this helper
 makes the transformation reusable:
 
-`x_t = sqrt(ᾱ_t) * x₀ + sqrt(1 - ᾱ_t) * eps`, target `eps`.
+$x_t=\sqrt{\bar{\alpha}_t}\,x_0+\sqrt{1-\bar{\alpha}_t}\,\varepsilon$, with target
+$\varepsilon$.
 -/
 def noisedSampleFromEps (leading : Spec.Shape) {d c : Nat} (spatial : Vector Nat d)
     (alphaBars : Array Float) (T : Nat)
@@ -232,7 +235,7 @@ def noisedSampleFromEps (leading : Spec.Shape) {d c : Nat} (spatial : Vector Nat
 Build a deterministic epsilon-prediction training sample.
 
 This is the common DDPM training step used by examples: draw reproducible Gaussian noise from
-`(seed, step)`, corrupt `x₀`, and use that same noise as the target.
+`(seed, step)`, corrupt $x_0$, and use that same noise as the target.
 -/
 def noisedSample (leading : Spec.Shape) {d c : Nat} (spatial : Vector Nat d)
     (alphaBars : Array Float) (T : Nat)
@@ -246,12 +249,12 @@ def noisedSample (leading : Spec.Shape) {d c : Nat} (spatial : Vector Nat d)
     (seed + step)
 
 /--
-One deterministic DDIM reverse update (`η = 0`).
+One deterministic DDIM reverse update ($\eta=0$).
 
-Given `x_t`, predicted epsilon, and adjacent schedule values, this estimates `x₀` and remixes it to
+Given $x_t$, predicted epsilon, and adjacent schedule values, this estimates $x_0$ and remixes it to
 the previous timestep.
 
-We clamp the intermediate `x₀` estimate to the training image range `[-1,1]`.  This is the standard
+We clamp the intermediate $x_0$ estimate to the training image range $[-1,1]$.  This is the standard
 "clipped denoised" stabilizer used by many DDPM/DDIM samplers: without it, a compact model can
 drive one color channel far outside the data range and the final PPM exporter merely clips the
 damage into saturated color blobs.

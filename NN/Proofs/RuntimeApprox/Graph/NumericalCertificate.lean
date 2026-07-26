@@ -1351,11 +1351,17 @@ trace reconstructed from the graph, and `backendPlan` contains the acceptance-ga
 structure CheckedCertificate where
   /-- The exact graph whose ranges and backend plan were reconstructed by the checker. -/
   graph : Graph
+  /-- The untrusted artifact supplied to the checker, retained for inspection and serialization. -/
   raw : GraphNumericalCertificate
+  /-- Source assumptions whose interval endpoints have been proved finite and ordered. -/
   sources : Array CheckedSourceRange
+  /-- The canonical node-by-node range trace reconstructed from the graph. -/
   ranges : Array CheckedNodeRange
+  /-- The backend plan accepted when the checker replanned `graph`. -/
   backendPlan : AcceptedGraphPlan
+  /-- Proof that the reconstructed trace matches every range row claimed by `raw`. -/
   rangesMatch : sameRangeTrace ranges raw.ranges = true
+  /-- Proof that the accepted plan's audit snapshot is the one stored in `raw`. -/
   auditMatch : backendPlan.audit.snapshot = raw.audit
 
 instance : Repr CheckedCertificate where
@@ -1467,10 +1473,15 @@ The numerical checker reconstructs interval transfers, while a semantic proof es
 real graph trace lies in those intervals. Keeping this proof separate prevents successful endpoint
 replay from being mistaken for a theorem about an unsupported real operation. -/
 structure CheckedRealExecution (certificate : CheckedCertificate) where
+  /-- Real-valued constants and external tensors used by the graph execution. -/
   payload : NN.IR.Payload Real
+  /-- Real-valued graph input. -/
   input : NN.IR.DVal Real
+  /-- Complete real-valued node trace, in graph order. -/
   values : Array (NN.IR.DVal Real)
+  /-- Evidence that `values` is exactly the graph's denotational execution trace. -/
   denotation : certificate.graph.denoteAll payload input = .ok values
+  /-- Pointwise evidence that every real node value lies in its checked interval. -/
   enclosed : List.Forall₂ RealDValEnclosed certificate.ranges.toList values.toList
 
 namespace CheckedExecution

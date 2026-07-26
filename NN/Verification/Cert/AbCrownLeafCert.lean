@@ -24,8 +24,8 @@ external verifier into the checked schema.
 The checker does **not** run bound propagation itself. It validates only the finite claims present
 in the artifact:
 - each leaf input box is nested inside the declared root input box, and
-- each leaf contains a witness that refutes the unsafe threshold (`lb[i] > threshold[i]` for some
-  `i`).
+- each leaf contains a witness that refutes the unsafe threshold
+  ($\mathrm{lb}[i]>\mathrm{threshold}[i]$ for some $i$).
 
 This is useful for:
 - regression testing JSON export/import paths, and

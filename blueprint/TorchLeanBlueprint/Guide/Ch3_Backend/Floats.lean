@@ -43,9 +43,9 @@ Over the reals, both parenthesizations are equal:
 
 $$`(a+b)+c=a+(b+c)=1`.
 
-Binary32 has 24 bits of significand precision. Around `2²⁴`, adjacent representable numbers are two
-units apart. The exact value `2²⁴+1` sits halfway between them, and ties-to-even rounds it back to
-`2²⁴`. Therefore
+Binary32 has 24 bits of significand precision. Around $`2^{24}`, adjacent representable numbers are
+two units apart. The exact value $`2^{24}+1` sits halfway between them, and ties-to-even rounds it
+back to $`2^{24}`. Therefore
 
 $$`
 \operatorname{fl}(\operatorname{fl}(a+b)+c)=0,
@@ -77,9 +77,10 @@ Save the snippet as `FloatPlayground.lean` in the repository root and run:
 lake env lean FloatPlayground.lean
 ```
 
-There are two quick variations worth trying. Replace `b` by `2`; both parenthesizations now return
-`2`, because `2²⁴+2` is representable. Replace it by the binary32 value `0.5`; both paths lose the
-small addend. The interesting case `b=1` sits exactly at the tie between neighboring values.
+There are two quick variations worth trying. Replace $`b` by $`2`; both parenthesizations now
+return $`2`, because $`2^{24}+2` is representable. Replace it by the binary32 value $`0.5`; both
+paths lose the small addend. The interesting case $`b=1` sits exactly at the tie between
+neighboring values.
 
 This small calculation already raises three different questions.
 
@@ -135,7 +136,7 @@ The correspondence is useful when reading either library:
   * Flocq vocabulary
   * TorchLean vocabulary
 *
-  * radix power `βᵉ`
+  * radix power $`\beta^e`
   * `bpow`
   * `neuralBpow`
 *
@@ -166,7 +167,8 @@ theorems themselves are ordinary numerical analysis and can be used independentl
 
 # The Exact Carrier Comes First
 
-Before imposing a precision, define a radix-`β` value by an integer mantissa and an integer exponent:
+Before imposing a precision, define a radix-$`\beta` value by an integer mantissa and an integer
+exponent:
 
 $$`\operatorname{value}_{\beta}(m,e)=m\beta^e`.
 
@@ -192,8 +194,8 @@ denotes
 $$`\operatorname{neuralToReal}(\texttt{threeQuarters})
   =3\cdot2^{-2}=\frac34`.
 
-There is intentionally no field saying “24 bits of precision.” The pair `(3,-2)` and the pair
-`(6,-3)` denote the same real number. A raw mantissa/exponent pair is a representation, not yet a
+There is intentionally no field saying “24 bits of precision.” The pair $`(3,-2)` and the pair
+$`(6,-3)` denote the same real number. A raw mantissa/exponent pair is a representation, not yet a
 machine format. Keeping it general lets later proofs normalize representations and reuse the same
 carrier at different precisions.
 
@@ -201,7 +203,7 @@ A format is added as a predicate on the real value. Informally,
 
 $$`\operatorname{neuralGenericFormat}(\beta,f_{\rm exp},x)`
 
-means that after scaling `x` by the exponent selected by `fexp`, the resulting mantissa is an
+means that after scaling $`x` by the exponent selected by `fexp`, the resulting mantissa is an
 integer. The exponent policy is where precision and underflow enter.
 
 # Formats As Exponent Policies
@@ -210,19 +212,19 @@ The central format parameter is an exponent function
 
 $$`f_{\mathrm{exp}}:\mathbb Z\to\mathbb Z`.
 
-For a nonzero real `x`, its magnitude identifies the power of `β` immediately above `|x|`. Applying
-`fexp` to that magnitude gives the canonical exponent at which the mantissa must be integral.
-TorchLean's `neuralGenericFormat β fexp x` says precisely that `x` lies on this grid.
+For a nonzero real $`x`, its magnitude identifies the power of $`\beta` immediately above
+$`|x|`. Applying `fexp` to that magnitude gives the canonical exponent at which the mantissa must
+be integral. TorchLean's `neuralGenericFormat β fexp x` says precisely that $`x` lies on this grid.
 
 Three standard policies explain most uses:
 
 - `FIXExp emin` always returns `emin`. This is a fixed-point grid with constant spacing
-  `β^emin`.
+  $`\beta^{e_{\min}}`.
 - `FLXExp prec` returns `e - prec`. This models a precision of `prec` radix digits with no lower
   exponent bound.
 - `FLTExp emin prec` returns `max (e - prec) emin`. This is the gradual-underflow format: normal
   values receive `prec` digits, while values near zero stay on the fixed subnormal grid
-  `β^emin`.
+  $`\beta^{e_{\min}}`.
 
 Precision must be positive. The raw integer formulas remain useful inside symbolic theorem
 statements, where positivity is carried as a hypothesis. Code reading a format configuration uses
@@ -230,25 +232,26 @@ statements, where positivity is carried as a hypothesis. Code reading a format c
 FLX, FLT, and FTZ exponent selectors. Thus zero and negative inputs are rejected instead of being
 silently reinterpreted through an absolute value.
 
-It helps to see this on a toy system. Take radix two, precision three, and minimum exponent `-4`.
-Between `1` and `2`, three-bit numbers are spaced by `1/4`:
+It helps to see this on a toy system. Take radix two, precision three, and minimum exponent $`-4`.
+Between $`1` and $`2`, three-bit numbers are spaced by $`1/4`:
 
 $$`1,\quad 1.25,\quad 1.5,\quad 1.75,\quad 2`.
 
 Near zero, `FLTExp (-4) 3` stops decreasing the exponent, so the spacing becomes the constant
-subnormal step `2^-4=1/16`. `FLXExp 3` would continue creating smaller normal scales forever;
-`FIXExp (-4)` would use the `1/16` grid everywhere. These three policies are not unrelated format
+subnormal step $`2^{-4}=1/16`. `FLXExp 3` would continue creating smaller normal scales forever;
+`FIXExp (-4)` would use the $`1/16` grid everywhere. These three policies are not unrelated format
 implementations. They are three choices for the same exponent function interface.
 
-Binary32 uses radix two, precision 24, and the least subnormal exponent `-149`, so TorchLean defines
+Binary32 uses radix two, precision 24, and the least subnormal exponent $`-149`, so TorchLean defines
 
 ```
 def fexp32 : ℤ → ℤ :=
   FLTExp (-149) 24
 ```
 
-The choice `-149` is not the minimum *normal* exponent. Binary32 normal numbers begin at `2^-126`,
-but the 23 fraction bits extend the gradual-underflow grid down to `2^-149`. Encoding that fact in
+The choice $`-149` is not the minimum *normal* exponent. Binary32 normal numbers begin at
+$`2^{-126}`, but the 23 fraction bits extend the gradual-underflow grid down to $`2^{-149}`.
+Encoding that fact in
 `FLTExp` is what allows the same representability predicate to cover normal and subnormal finite
 values.
 
@@ -269,18 +272,18 @@ $$`\operatorname{round}_{\beta,f,r}(x)
    = \beta^{e}\,r(x\beta^{-e}),
    \qquad e=f(\operatorname{mag}_{\beta}(x))`,
 
-where `r : ℝ → ℤ` rounds the scaled mantissa to an integer. The type class `NeuralValidRnd r`
+where $`r:\mathbb R\to\mathbb Z` rounds the scaled mantissa to an integer. The type class `NeuralValidRnd r`
 records the order properties required of that integer rounder. `NeuralRoundingMode` packages the
 standard choices used by APIs.
 
-Return to the toy three-bit format and round `1.375`. Its canonical exponent in this binade is
-`-2`, so the scaled mantissa is
+Return to the toy three-bit format and round $`1.375`. Its canonical exponent in this binade is
+$`-2`, so the scaled mantissa is
 
 $$`1.375\cdot2^2=5.5`.
 
-Rounding downward chooses mantissa `5`, giving `1.25`. Rounding upward chooses `6`, giving `1.5`.
-Nearest-even also chooses `6`, because the two candidates are equally distant and `6` is even. The
-format selected the scale `2^-2`; the rounding mode selected the integer mantissa.
+Rounding downward chooses mantissa $`5`, giving $`1.25`. Rounding upward chooses $`6`, giving
+$`1.5`. Nearest-even also chooses $`6`, because the two candidates are equally distant and $`6` is
+even. The format selected the scale $`2^{-2}`; the rounding mode selected the integer mantissa.
 
 The separation gives us reusable theorems:
 
@@ -371,7 +374,7 @@ infinite, and NaN encodings. Core arithmetic is implemented in Lean using intege
 calculations, so it can be evaluated without delegating the operation to the host's floating-point
 instruction.
 
-For example, these are the binary32 encodings of `1`, `2^-25`, and their nearest-even sum:
+For example, these are the binary32 encodings of $`1`, $`2^{-25}`, and their nearest-even sum:
 
 ```
 open TorchLean.Floats.IEEE754
@@ -386,12 +389,13 @@ def tinyBits : IEEE32Exec :=
 -- 1065353216, hexadecimal 0x3f800000
 ```
 
-At `1`, one ULP is `2^-23`; half an ULP is `2^-24`. The exact addend `2^-25` is smaller than half an
-ULP, so nearest-even returns `1`. The executable `absorbs` predicate records precisely this event:
+At $`1`, one ULP is $`2^{-23}`; half an ULP is $`2^{-24}`. The exact addend $`2^{-25}` is smaller
+than half an ULP, so nearest-even returns $`1`. The executable `absorbs` predicate records precisely
+this event:
 the accumulator is unchanged even though the exact real increment is positive.
 
-Change `tinyBits` to `0x33800000`, the encoding of exactly half an ULP at `1`. The sum still rounds
-to `1` because its significand is even. Change it once more to `0x34000000`, one full ULP, and the
+Change `tinyBits` to `0x33800000`, the encoding of exactly half an ULP at $`1`. The sum still rounds
+to $`1` because its significand is even. Change it once more to `0x34000000`, one full ULP, and the
 result advances to `0x3f800001`. These three evaluations are the bit-level version of the spacing
 picture developed above.
 
@@ -406,7 +410,7 @@ For example:
 #eval IEEE32Exec.divWithStatus IEEE32Exec.posOne IEEE32Exec.posZero
 ```
 
-returns positive infinity together with `divideByZero := true`. In contrast, `0/0` returns the
+returns positive infinity together with `divideByZero := true`. In contrast, $`0/0` returns the
 canonical NaN and sets `invalid := true`. The status is derived from the same exact dyadic or
 rational intermediate used by the arithmetic operation; no host floating-point instruction is
 called to guess the flag.
@@ -429,10 +433,10 @@ First, the ideal real expression is
 
 $$`z = 1 + 2^{-25}`.
 
-Nothing is lost in `ℝ`. Second, `round32 z = 1`, justified by the binary32 format and nearest-even
-rounding theory. Third, constructing `FP32` operands and adding them applies that same `round32`
-policy to the exact sum. Fourth, `IEEE32Exec.add` runs the bit-level algorithm and returns
-`0x3f800000`.
+Nothing is lost in $`\mathbb R`. Second, $`\operatorname{round}_{32}(z)=1`, justified by the binary32
+format and nearest-even rounding theory. Third, constructing `FP32` operands and adding them applies
+that same `round32` policy to the exact sum. Fourth, `IEEE32Exec.add` runs the bit-level algorithm
+and returns `0x3f800000`.
 
 The bridge theorem supplies the nontrivial connection:
 
@@ -462,11 +466,11 @@ bridge or a backend contract.
 # Exact Subtraction: A More Interesting Example
 
 Sterbenz's lemma says that subtraction can be exact even in floating-point arithmetic. If positive,
-representable `x` and `y` are within a factor of two,
+representable $`x` and $`y` are within a factor of two,
 
 $$`\frac{y}{2}\leq x\leq 2y`,
 
-then `x-y` is representable in the same format. TorchLean first proves the fixed-grid and
+then $`x-y` is representable in the same format. TorchLean first proves the fixed-grid and
 unbounded-exponent results, then extends the argument to the gradual-underflow `FLT` format. The
 extension matters near zero: a proof only about normal values would miss subtraction across the
 normal/subnormal boundary.
@@ -488,12 +492,12 @@ over `NF` therefore inherits the declared rounding at each scalar operation.
 
 Reductions add another choice: order. A left fold, balanced tree, warp reduction, atomic
 accumulation, and library matrix multiplication may all use binary32 addition and still disagree.
-Contraction adds the same issue for `a*b+c`: FMA rounds once, while separate multiplication and
+Contraction adds the same issue for $`ab+c`: FMA rounds once, while separate multiplication and
 addition round twice. Backend capsules record these policies so the numerical analysis can select
 the matching expression.
 
 Affine quantization reuses the generic rounding layer rather than inventing another scalar
-semantics. An `AffineQuantizer` has a positive scale `s`, zero point `z`, and integer code bounds:
+semantics. An `AffineQuantizer` has a positive scale $`s`, zero point $`z`, and integer code bounds:
 
 $$`q(x)=\operatorname{clamp}
   \left(\operatorname{round}\left(\frac{x}{s}\right)+z\right)`,

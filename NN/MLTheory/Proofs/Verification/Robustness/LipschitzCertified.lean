@@ -20,12 +20,14 @@ import Mathlib.Tactic.Linarith
 This file connects Lipschitz continuity assumptions to the robustness specifications from
 `NN.MLTheory.Robustness.Spec`.
 
-Main results (over `ℝ`):
+Main results (over $\mathbb{R}$):
 
-* An `L`-Lipschitz map is adversarially robust: `ε` input perturbations imply `L*ε` output
+* An $L$-Lipschitz map is adversarially robust: $\varepsilon$ input perturbations imply
+  $L\varepsilon$ output
   perturbations.
 * If a logits vector has a positive logit margin, then its `argmax` classifier is stable under
-  sufficiently small `L∞` perturbations; combined with an output-`L∞` Lipschitz bound, this yields
+  sufficiently small $\ell_\infty$ perturbations; combined with an output-$\ell_\infty$ Lipschitz
+  bound, this yields
   certified robustness radii.
 -/
 
@@ -40,8 +42,8 @@ open NN.MLTheory.Robustness.Spec
 /-! ## Lipschitz continuity implies adversarial robustness -/
 
 /--
-If `f` is `L`-Lipschitz and `L ≥ 0`, then `f` is adversarially robust at `x₀`:
-every input within distance `ε` of `x₀` maps within distance `L*ε` of `f x₀`.
+If $f$ is $L$-Lipschitz and $L\geq 0$, then $f$ is adversarially robust at $x_0$:
+every input within distance $\varepsilon$ of $x_0$ maps within distance $L\varepsilon$ of $f(x_0)$.
 -/
 theorem is_adversarially_robust_of_lipschitz
     {s₁ s₂ : Shape}
@@ -58,12 +60,12 @@ theorem is_adversarially_robust_of_lipschitz
     mul_le_mul_of_nonneg_left hx hL
   exact le_trans h1 h2
 
-/-! ## Bridging `L2` and `L∞` Lipschitz predicates -/
+/-! ## Bridging $\ell_2$ and $\ell_\infty$ Lipschitz predicates -/
 
 /--
-`L2`-Lipschitz implies `L∞`-Lipschitz into logits, with the same constant.
+$\ell_2$-Lipschitz implies $\ell_\infty$-Lipschitz into logits, with the same constant.
 
-This is the standard norm comparison `‖v‖∞ ≤ ‖v‖₂` (proved as
+This is the standard norm comparison $\lVert v\rVert_\infty\leq\lVert v\rVert_2$ (proved as
 `Proofs.tensor_linf_norm_le_tensor_l2_norm`).
 -/
 theorem is_lipschitz_continuous_linf_of_l2
@@ -87,7 +89,7 @@ theorem is_lipschitz_continuous_linf_of_l2
 /--
 The `argmax` classifier on logits vectors, breaking ties by the earliest index.
 
-When `n = 0`, this returns `0` by convention.
+When $n=0$, this returns $0$ by convention.
 -/
 noncomputable def argmaxClassifier {n : Nat} (y : Tensor ℝ (.dim n .scalar)) : Nat :=
   match List.argmax (fun i : Fin n => Tensor.vecGet y i) (List.finRange n) with
@@ -95,7 +97,7 @@ noncomputable def argmaxClassifier {n : Nat} (y : Tensor ℝ (.dim n .scalar)) :
   | none => 0
 
 /--
-`HasLogitMargin y c m` means class `c` beats every competitor by at least `m` in logit value.
+`HasLogitMargin y c m` means class $c$ beats every competitor by at least $m$ in logit value.
 -/
 def HasLogitMargin {n : Nat} (y : Tensor ℝ (.dim n .scalar)) (c : Fin n) (m : ℝ) : Prop :=
   ∀ k : Fin n, k ≠ c → Tensor.vecGet y k ≤ Tensor.vecGet y c - m
@@ -177,8 +179,8 @@ private lemma argmax_eq_some_of_strictMax
     · exact False.elim (not_le_of_gt (hstrict a hEq) hca)
 
 /--
-If `y₀` has a positive logit margin `m` for class `c`, then any `y` within `L∞` distance `δ`
-with `2*δ < m` has the same `argmax` class.
+If $y_0$ has a positive logit margin $m$ for class $c$, then any $y$ within $\ell_\infty$
+distance $\delta$ with $2\delta<m$ has the same `argmax` class.
 -/
 theorem argmaxClassifier_eq_of_linf_distance_lt_half_margin
     {n : Nat} {y₀ y : Tensor ℝ (.dim n .scalar)} {c : Fin n} {m δ : ℝ}
@@ -206,7 +208,7 @@ theorem argmaxClassifier_eq_of_linf_distance_lt_half_margin
   simp [argmaxClassifier, harg]
 
 /--
-If `y₀` has margin `m > 0` for class `c`, then `c` is the `argmaxClassifier` of `y₀`.
+If $y_0$ has margin $m>0$ for class $c$, then $c$ is the `argmaxClassifier` of $y_0$.
 -/
 theorem argmaxClassifier_eq_of_hasLogitMargin
     {n : Nat} {y₀ : Tensor ℝ (.dim n .scalar)} {c : Fin n} {m : ℝ}
@@ -223,8 +225,9 @@ theorem argmaxClassifier_eq_of_hasLogitMargin
 /-! ## Certified robustness from a Lipschitz bound and a logit margin -/
 
 /--
-If `f` is `L`-Lipschitz into `L∞` logits and the reference logits `f x₀` have margin `m` for class
-`c`, then any input perturbation of radius `ε` with `2*(L*ε) < m` preserves the predicted class.
+If $f$ is $L$-Lipschitz into $\ell_\infty$ logits and the reference logits $f(x_0)$ have margin
+$m$ for class $c$, then any input perturbation of radius $\varepsilon$ with
+$2L\varepsilon<m$ preserves the predicted class.
 
 This is a standard “margin over Lipschitz constant” certified robustness lemma.
 -/
@@ -260,10 +263,10 @@ theorem is_certified_robust_of_lipschitz_of_logitMargin
     _ = argmaxClassifier (n := n) (f x₀) := by simp [hx0_class]
 
 /--
-Certified robustness, but starting from an output-`L2` Lipschitz assumption.
+Certified robustness, but starting from an output-$\ell_2$ Lipschitz assumption.
 
 This avoids requiring the user to manually insert the norm-equivalence step
-`‖·‖∞ ≤ ‖·‖₂`.
+$\lVert\cdot\rVert_\infty\leq\lVert\cdot\rVert_2$.
 -/
   theorem is_certified_robust_of_l2_lipschitz_of_logitMargin
     {s₁ : Shape} {n : Nat}

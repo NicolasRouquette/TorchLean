@@ -72,9 +72,9 @@ max_abs_diff(Float vs IEEE32Exec) =
 ```
 
 This number is an observation about one input and one network. It is not a uniform error theorem.
-The proof task is to derive a bound `ε` from input ranges, parameter ranges, and the sequence of
+The proof task is to derive a bound $`\varepsilon` from input ranges, parameter ranges, and the sequence of
 rounded operations, then prove that every execution covered by those hypotheses differs from the
-real specification by at most `ε`.
+real specification by at most $`\varepsilon`.
 
 Try changing the example's weights by a power of two and by a nearby non-power-of-two decimal. The
 former often passes through binary arithmetic exactly; the latter exposes rounding earlier. The
@@ -136,10 +136,10 @@ already has an FP32 theorem.
 
 # Spend The Budget In A Verification Result
 
-Suppose real IBP proves that an output lies in a box `[lo,hi]`, while the rounded network theorem
+Suppose real IBP proves that an output lies in a box $`[\mathrm{lo},\mathrm{hi}]`, while the rounded network theorem
 gives an error `epsOut` at a fixed input. Inflating every output coordinate by that amount gives
 
-$$`[lo-\varepsilon_{out},\;hi+\varepsilon_{out}].`
+$$`[\mathrm{lo}-\varepsilon_{\mathrm{out}},\;\mathrm{hi}+\varepsilon_{\mathrm{out}}].`
 
 `ibpBound_contains_reluTwoLayerMlp_float32` proves this construction pointwise for the two-layer
 ReLU MLP. It combines the real IBP theorem with `approxT_reluTwoLayerMlp_float32`; its named budget

@@ -42,7 +42,7 @@ def assertFinite (msg : String) (x : Float) : IO Unit := do
   if x.isNaN || x.isInf then
     throw <| IO.userError s!"{msg}: expected finite, got {x}"
 
-/-- Check that a value lies in `[0, 1]` up to a small tolerance. -/
+/-- Check that a value lies in $[0,1]$ up to a small tolerance. -/
 def assertIn01 (msg : String) (x : Float) : IO Unit := do
   if x < -1e-6 || x > 1.0 + 1e-6 then
     throw <| IO.userError s!"{msg}: expected in [0,1], got {x}"

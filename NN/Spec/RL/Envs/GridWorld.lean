@@ -91,7 +91,7 @@ structure GridWorld (width height : Nat) where
   start : GridPos width height
   /-- Terminal goal cell. -/
   goal : GridPos width height
-  /-- Discount factor `γ` used by induced MDP views. -/
+  /-- Discount factor $\gamma$ used by induced MDP views. -/
   discount : ℝ
 
 namespace GridWorld
@@ -198,7 +198,7 @@ def toFiniteMDP (gw : GridWorld width height) : FiniteMDP ℝ (height * width) 4
 def oneHot (next : Fin (height * width)) : Tensor ℝ (.dim (height * width) .scalar) :=
   Tensor.dim (fun i => Tensor.scalar (if i = next then (1 : ℝ) else 0))
 
-/-- Finite-stochastic MDP view of GridWorld where `P(. | s,a)` is a one-hot row. -/
+/-- Finite-stochastic MDP view of GridWorld where $P(\mathord{\cdot}\mid s,a)$ is a one-hot row. -/
 def toFiniteStochasticMDP (gw : GridWorld width height) : FiniteStochastic.MDP (height * width) 4 :=
   { initialState := (toFiniteMDP (width := width) (height := height) gw).initialState
     transitionProb := fun state action =>

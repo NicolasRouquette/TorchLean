@@ -1,6 +1,5 @@
 ---
 title: Diffusion Walkthrough
-usemathjax: true
 ---
 
 The diffusion example in `NN.Examples.Models.Generative.Diffusion` keeps the model definition,
@@ -46,8 +45,8 @@ batches them.
 
 The two dataset modes in `NN.Examples.Models.Generative.Diffusion` are:
 
-- CIFAR-10 as `(N, 3, 32, 32)` arrays.
-- ImageNet-style folders converted to `(N, 3, 64, 64)` arrays (Imagenette, Tiny-ImageNet, or any
+- CIFAR-10 as $(N,3,32,32)$ arrays.
+- ImageNet-style folders converted to $(N,3,64,64)$ arrays (Imagenette, Tiny-ImageNet, or any
   folder with class subdirectories).
 
 Inside the example, the loader path is straightforward:
@@ -55,7 +54,7 @@ Inside the example, the loader path is straightforward:
 1. Build a labeled source over `.npy` files.
 2. Load it into a dataset.
 3. Create a shuffled batch loader.
-4. Map pixel values from `[0, 1]` into the diffusion range `[-1, 1]`.
+4. Map pixel values from $[0,1]$ into the diffusion range $[-1,1]$.
 
 That last step is a single line in the example code:
 
@@ -71,7 +70,7 @@ TorchLean keeps diffusion vocabulary in `NN.Spec.Generative.Diffusion.*`, so tra
 code, and proof modules talk about the same objects.
 
 The DDPM picture is simple enough to state before the formulas: add noise to an image at timestep
-`t`, train a model to predict the noise that was added, then run reverse steps that use the model’s
+$t$, train a model to predict the noise that was added, then run reverse steps that use the model’s
 noise prediction to move back toward a clean image. TorchLean gives each component a named
 definition so the runtime command and proof modules use the same vocabulary.
 
@@ -107,11 +106,12 @@ def epsPredLoss (sched : VPSchedule α T) (model : EpsModel α s)
 
 Then the surrounding spec modules define:
 
-- a discrete VP schedule `VPSchedule` with `β_t`, `α_t = 1-β_t`, and cumulative products `ᾱ_t`;
+- a discrete VP schedule `VPSchedule` with $\beta_t$, $\alpha_t=1-\beta_t$, and cumulative products
+  $\bar{\alpha}_t$;
 - two reverse samplers:
 
   - DDPM: a stochastic reverse step with explicit per-step noise inputs,
-  - DDIM (η = 0): a deterministic reverse step that reuses the same denoiser but drops the noise.
+  - DDIM ($\eta=0$): a deterministic reverse step that reuses the same denoiser but drops the noise.
 
 There are also “hooks” that let diffusion samplers plug into the generic dynamical-system API. For
 example, the DDIM spec exposes `ddimStepSystem` and proves the step definition by `rfl` so other
@@ -127,8 +127,8 @@ Two choices matter in the example:
 1. The epsilon predictor is a residual CNN that preserves resolution
    (`epsResidualConvNet`). The training, sampling, and visualization path stays easy to run
    on a local checkout.
-2. Time is fed to the model as an extra channel: the input has `(data channels + 1)` channels,
-   where the last channel is the normalized timestep broadcast across spatial positions.
+2. Time is fed to the model as an extra channel: when the data has $c$ channels, the input has
+   $c+1$ channels. The last channel is the normalized timestep broadcast across spatial positions.
 
 That “append time as a channel” trick is defined once in the API:
 
@@ -164,16 +164,16 @@ height, and width axes. Its output predicts noise with the original data shape.
 
 ## Training: What Gets Optimized
 
-Training is classic DDPM-style ε-prediction. Each step:
+Training is classic DDPM-style $\varepsilon$-prediction. Each step:
 
-1. pick a real image batch `x0`,
-2. pick a timestep `t`,
-3. sample noise `ε`,
-4. build a supervised pair `(appendTimeChannel x_t tNorm, ε)`,
+1. pick a real image batch $x_0$,
+2. pick a timestep $t$,
+3. sample noise $\varepsilon$,
+4. pair `appendTimeChannel x_t tNorm` with the target noise $\varepsilon$,
 5. take an optimizer step on MSE.
 
 TorchLean makes the supervised pair explicit as a `SupervisedSample` value. The operation that
-constructs `x_t` from `x0` and `ε` is `NN.API.diffusion.noisedSampleFromEps`; it is the runtime
+constructs $x_t$ from $x_0$ and $\varepsilon$ is `NN.API.diffusion.noisedSampleFromEps`; it is the runtime
 version of the same formula used by `qSample` in the spec layer.
 
 The excerpt below leaves out the local definitions of `sqrtAb`, `sqrtOneMinusAb`, and `tNorm`, but
@@ -200,8 +200,8 @@ The example uses deterministic DDIM because it is easy to audit and stable at sm
 The reverse update used by the runnable example is `NN.API.diffusion.ddimPrev`. It does the usual
 “predict x0, clip, remix” step:
 
-- estimate `x0_hat` from `x_t` and `ε̂`,
-- clamp it to `[-1, 1]`,
+- estimate $\hat{x}_0$ from $x_t$ and $\hat{\varepsilon}$,
+- clamp it to $[-1,1]$,
 - recombine it using the previous schedule coefficients.
 
 The implementation follows that recipe. Here is the compact form, with the schedule coefficients
@@ -222,7 +222,7 @@ def ddimPrev {s : Spec.Shape}
 
 The sampler also produces the “three pictures” view:
 
-- a reference image (real `x0`),
+- a reference image (the real $x_0$),
 - a noisy image at a chosen timestep,
 - a reconstruction from DDIM reverse steps starting at that timestep.
 
@@ -240,4 +240,4 @@ Source entry points:
 
 - [`NN.Examples.Models.Generative.Diffusion`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Generative/Diffusion.lean)
 - [`NN.Examples.Models.Generative`](https://github.com/lean-dojo/TorchLean/tree/main/NN/Examples/Models/Generative)
-- [Generative Models and ML Theory]({{ '/blueprint/Examples-and-Applications/Generative-Models-and-ML-Theory/' | relative_url }})
+- [Generative Models]({{ '/blueprint/Examples-and-Applications/Generative-Models/' | relative_url }})

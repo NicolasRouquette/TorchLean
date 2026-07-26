@@ -28,13 +28,13 @@ open _root_.Spec.Tensor
 def naturalCenter (dim : Nat) : Tensor Float (.dim dim .scalar) :=
   Tensor.dim (fun i => Tensor.scalar (Float.ofNat (i.val + 1)))
 
-/-- Insert an `L∞` input box around `center` into a graph parameter store. -/
+/-- Insert an $L^\infty$ input box around `center` into a graph parameter store. -/
 def seedVectorInputBox (inputId dim : Nat)
     (center : Tensor Float (.dim dim .scalar)) (eps : Float)
     (ps : ParamStore Float) : ParamStore Float :=
   ps.seedLInfBall inputId center eps
 
-/-- Insert an `L∞` input box around `[1, 2, ..., dim]`. -/
+/-- Insert an $L^\infty$ input box around the center vector $[1,2,\ldots,\mathrm{dim}]$. -/
 def seedNaturalInputBox (inputId dim : Nat) (eps : Float)
     (ps : ParamStore Float) : ParamStore Float :=
   seedVectorInputBox inputId dim (naturalCenter dim) eps ps

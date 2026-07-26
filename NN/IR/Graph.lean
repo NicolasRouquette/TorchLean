@@ -368,7 +368,8 @@ def getNode? (g : Graph) (id : Nat) : Option Node :=
   g.nodes[id]?
 
 /--
-Total node lookup that enforces the common "id discipline" invariant (`nodes[id].id = id`).
+Total node lookup that enforces the common "id discipline" invariant
+$\mathrm{nodes}[i].\mathrm{id}=i$.
 
 This is convenient for backends that treat node ids as array indices (verifiers, exporters, pretty
 printers). The error message is meant to point to a builder bug rather than a user error.

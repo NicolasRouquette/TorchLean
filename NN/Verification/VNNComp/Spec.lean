@@ -31,7 +31,7 @@ open Json
 open NN.Verification.Json
 open NN.MLTheory.CROWN
 
-/-- One conjunction term `mat * y <= rhs` in a VNNLIB disjunction. -/
+/-- One conjunction term $\mathrm{mat}\,y\leq\mathrm{rhs}$ in a VNNLIB disjunction. -/
 abbrev Term := Array (Array Float) × Array Float
 
 /-- A VNNLIB-style unsafe-region spec: a disjunction of conjunction terms. -/
@@ -40,7 +40,8 @@ abbrev Spec := Array Term
 /--
 One exported VNN-COMP instance.
 
-`spec` is a disjunction-of-conjunctions: each term is a conjunction `mat * y <= rhs` over the
+`spec` is a disjunction-of-conjunctions: each term is a conjunction
+$\mathrm{mat}\,y\leq\mathrm{rhs}$ over the
 network output vector `y`.
 -/
 structure Instance where
@@ -82,8 +83,8 @@ def loadSuite (path : String) : IO (Array Instance) := do
 /--
 Lower-bound one linear row over an output interval box.
 
-For each coefficient `a_j`, the minimum of `a_j * y_j` over `y_j ∈ [lo_j, hi_j]` is the smaller of
-the endpoint products.
+For each coefficient $a_j$, the minimum of $a_jy_j$ over
+$y_j\in[\mathrm{lo}_j,\mathrm{hi}_j]$ is the smaller of the endpoint products.
 -/
 def rowLowerBoundOnBox? (row yLo yHi : Array Float) : Option Float :=
   if hLo : yLo.size = row.size then

@@ -1,6 +1,5 @@
 ---
 title: Bug Zoo Walkthrough
-usemathjax: true
 ---
 
 Bug Zoo is TorchLean’s collection of small case studies for semantic bugs that can pass ordinary
@@ -90,7 +89,7 @@ The Lean files are the primary artifacts:
 
 | Source file | Bug family | Contract exposed |
 | --- | --- | --- |
-| `AttentionMask.lean` | Causal masks, mask polarity, finite sentinels standing in for `-∞` | Future positions receive exactly zero attention weight under hard-mask semantics. |
+| `AttentionMask.lean` | Causal masks, mask polarity, finite sentinels standing in for $-\infty$ | Future positions receive exactly zero attention weight under hard-mask semantics. |
 | `KVCache.lean` | Shifted or malformed key/value caches in autoregressive decoding | The appended key/value vector is exactly the final cache entry. |
 | `RoPEPosition.lean` | Off-by-one or mismatched rotary/absolute positions | Appending a token assigns the next sequence position. |
 | `TokenizerBoundary.lean` | Vocabulary-size and special-token mismatches | Imported token ids inhabit `Fin vocabSize`. |

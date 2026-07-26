@@ -15,7 +15,9 @@ import Mathlib.Algebra.Ring.Basic
 The Mamba/S4 scan theorem is an algebra theorem about affine maps.  A sequential recurrent update
 and a parallel prefix scan are equivalent because affine transition composition is associative:
 
-`(a₂,b₂) ∘ (a₁,b₁) = (a₂*a₁, a₂*b₁ + b₂)`.
+$$
+(a_2,b_2)\circ(a_1,b_1)=(a_2a_1,a_2b_1+b_2).
+$$
 
 The tensor/CUDA implementation is allowed to choose an efficient scan schedule, but the mathematical
 contract is this file: prefix summaries denote the same state as the left-to-right recurrence.
@@ -215,7 +217,7 @@ theorem summarizeScalarAffine_apply_eq_run {α : Type} [Semiring α] (h0 : α)
 Prefix summaries compose across list append in the expected order, at the level of denotation.
 
 The order matters: `xs ++ ys` means "run `xs`, then run `ys`", so the summary is
-`summary(ys) ∘ summary(xs)`.
+$\operatorname{summary}(ys)\circ\operatorname{summary}(xs)$.
 -/
 theorem summarizeScalarAffine_append_apply {α : Type} [Semiring α] (h0 : α)
     (xs ys : List (_root_.Spec.ScalarAffineTransition α)) :
@@ -229,7 +231,8 @@ theorem summarizeScalarAffine_append_apply {α : Type} [Semiring α] (h0 : α)
   exact runScalarAffine_append h0 xs ys
 
 /--
-The affine summary of an appended list factors as `summary(ys) ∘ summary(xs)`.
+The affine summary of an appended list factors as
+$\operatorname{summary}(ys)\circ\operatorname{summary}(xs)$.
 
 Unlike `summarizeScalarAffine_append_apply`, this is equality of the summary transitions
 themselves.  It is the algebraic contract needed by parallel prefix-scan implementations.
@@ -317,7 +320,8 @@ theorem diagonalSelectiveScan_append {α : Type} [Add α] [Mul α] {stateDim : N
       simp [_root_.Spec.diagonalSelectiveScan, _root_.Spec.runDiagonalTransitions, ih]
 
 /--
-A homogeneous affine transition over `ℝ` is Lipschitz with factor `ρ` whenever `|a| ≤ ρ`.
+A homogeneous affine transition over $\mathbb{R}$ is Lipschitz with factor $\rho$ whenever
+$|a|\leq\rho$.
 
 This is the one-channel stability lemma used to lift diagonal SSMs into contraction proofs.
 -/
@@ -329,7 +333,7 @@ theorem abs_homogeneous_apply_le (a ρ h : ℝ) (ha : |a| ≤ ρ) :
     _ = |a| * |h| := by rw [abs_mul]
     _ ≤ ρ * |h| := mul_le_mul_of_nonneg_right ha (abs_nonneg h)
 
-/-- A homogeneous scalar transition with `|a| ≤ 1` is non-expansive. -/
+/-- A homogeneous scalar transition with $|a|\leq 1$ is non-expansive. -/
 theorem abs_homogeneous_apply_le_self (a h : ℝ) (ha : |a| ≤ 1) :
     |(_root_.Spec.ScalarAffineTransition.apply { a := a, b := 0 } h)| ≤ |h| := by
   calc

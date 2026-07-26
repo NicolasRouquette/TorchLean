@@ -374,11 +374,11 @@ Executable node payload (no correctness proof).
 auxiliary data). The VJP returns gradients only for the differentiable context `Γ`.
 -/
 structure NodeData (α : Type) (Δ : Type) (Γ : List Shape) (τ : Shape) where
-  /-- forward. -/
+  /-- Evaluate the node from the current differentiable context and auxiliary data. -/
   forward : TList α Γ → Δ → Tensor α τ
-  /-- jvp. -/
+  /-- Propagate one tangent context through the node. -/
   jvp : TList α Γ → TList α Γ → Δ → Tensor α τ
-  /-- vjp. -/
+  /-- Pull an output cotangent back to the node's differentiable input context. -/
   vjp : TList α Γ → Δ → Tensor α τ → TList α Γ
 
 -- A node with a VJP/JVP adjointness law (proof-carrying).
@@ -389,12 +389,15 @@ The field `correct` is the algebraic version of the standard JVP/VJP inner-produ
 -/
 structure Node {α : Type} [CommSemiring α] (Δ : Type) (Γ : List Shape) (τ : Shape)
     extends NodeData α Δ Γ τ where
+  /-- The node's JVP and VJP satisfy the local dot-product adjoint identity. -/
   correct : ∀ x dx d δ, dot (α := α) (jvp x dx d) δ = TList.dotList (α := α) dx (vjp x d δ)
 
 -- A tape/SSA graph without local correctness proofs (executable form).
 /-- Executable-only graph: a snoc-list of `NodeData`. -/
 inductive GraphData (α : Type) (Δ : Type) (Γ : List Shape) : List Shape → Type where
+  /-- A graph with no computed nodes; its context consists only of the inputs `Γ`. -/
   | nil : GraphData α Δ Γ []
+  /-- Append one node whose inputs may use the original and previously computed values. -/
   | snoc {ss : List Shape} {τ : Shape} :
       GraphData α Δ Γ ss → NodeData α Δ (Γ ++ ss) τ → GraphData α Δ Γ (ss ++ [τ])
 
@@ -457,7 +460,9 @@ A proof-carrying tape/SSA graph.
 Nodes are appended in topological order and may reference any previously computed value.
 -/
 inductive Graph {α : Type} [CommSemiring α] (Δ : Type) (Γ : List Shape) : List Shape → Type where
+  /-- A graph with no computed nodes; its context consists only of the inputs `Γ`. -/
   | nil : Graph Δ Γ []
+  /-- Append one locally correct node that may use the inputs and all preceding results. -/
   | snoc {ss : List Shape} {τ : Shape} :
       Graph Δ Γ ss → Node (α := α) (Δ := Δ) (Γ := Γ ++ ss) τ → Graph Δ Γ (ss ++ [τ])
 

@@ -87,8 +87,9 @@ namespace Shape
 /--
 Output length of a floor-mode sliding window with symmetric padding.
 
-For positive `kernel` and `stride` with `kernel ≤ input + 2 * padding`, this is
-`(input + 2 * padding - kernel) / stride + 1`. Invalid geometry has length zero, so saturated
+For positive `kernel` and `stride` with
+$\mathtt{kernel}\le\mathtt{input}+2\mathtt{padding}$, this is
+$(\mathtt{input}+2\mathtt{padding}-\mathtt{kernel})/\mathtt{stride}+1$. Invalid geometry has length zero, so saturated
 natural-number subtraction and division by zero cannot create a phantom output element.
 -/
 def slidingWindowOutDim (input kernel stride padding : Nat) : Nat :=
@@ -166,7 +167,7 @@ def size : Shape → Nat
       rw [List.replicate_succ]
       simp [ofList, size, ih]
 
-/-- `size` for a 2D shape factors as `a * b * size s`. -/
+/-- `size` for a 2D shape factors as $ab\,\operatorname{size}(s)$. -/
 theorem size_dim_mul (a b : Nat) (s : Shape) :
     size (dim a (dim b s)) = a * b * size s := by
   simp [size, Nat.mul_assoc]
@@ -196,8 +197,9 @@ theorem size_concat (leading suffix : Shape) :
 /--
 Shape-size identity used in Transformer attention reshapes.
 
-If `dModel = numHeads * headDim`, then:
-`(seqLen × dModel)` has the same `size` as `(numHeads × seqLen × headDim)`.
+If $\mathtt{dModel}=\mathtt{numHeads}\cdot\mathtt{headDim}$, then
+$(\mathtt{seqLen}\times\mathtt{dModel})$ has the same `size` as
+$(\mathtt{numHeads}\times\mathtt{seqLen}\times\mathtt{headDim})$.
 -/
 theorem size_eq_of_dModel_eq_numHeads_mul_headDim
   (seqLen numHeads dModel headDim : Nat)
@@ -303,11 +305,15 @@ PyTorch analogy:
 
 /-- Evidence that shape `s₁` can be broadcast to shape `s₂` (PyTorch-style broadcasting). -/
 inductive CanBroadcastTo : Shape → Shape → Type where
+  /-- A scalar can be broadcast to any target shape. -/
   | scalar_to_any  (s : Shape) : CanBroadcastTo .scalar s
+  /-- Matching outer dimensions preserve broadcasting of their tails. -/
   | dim_eq {n : Nat} {s₁ s₂ : Shape} (tail : CanBroadcastTo s₁ s₂) :
       CanBroadcastTo (.dim n s₁) (.dim n s₂)
+  /-- An outer dimension of length one can expand to any target length. -/
   | dim_1_to_n {n : Nat} {s₁ s₂ : Shape} (tail : CanBroadcastTo s₁ s₂) :
       CanBroadcastTo (.dim 1 s₁) (.dim n s₂)
+  /-- A new outer target dimension aligns a source of lower rank. -/
   | expand_dims {n : Nat} {s₁ s₂ : Shape} (tail : CanBroadcastTo s₁ s₂) :
       CanBroadcastTo s₁ (Shape.dim n s₂)
 deriving Repr

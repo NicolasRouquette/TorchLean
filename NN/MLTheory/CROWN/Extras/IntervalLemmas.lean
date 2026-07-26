@@ -36,7 +36,7 @@ theorem inInterval_of_bounds {x lo hi : ℝ}
 
 /-! ### Addition Interval Soundness -/
 
-/-- If x ∈ [a,b] and y ∈ [c,d], then x + y ∈ [a+c, b+d] -/
+/-- If $x\in[a,b]$ and $y\in[c,d]$, then $x+y\in[a+c,b+d]$. -/
 theorem interval_add_sound {x y a b c d : ℝ}
     (hx : inInterval x a b) (hy : inInterval y c d) :
     inInterval (x + y) (a + c) (b + d) := by
@@ -46,7 +46,7 @@ theorem interval_add_sound {x y a b c d : ℝ}
 
 /-! ### Subtraction Interval Soundness -/
 
-/-- If x ∈ [a,b] and y ∈ [c,d], then x - y ∈ [a-d, b-c] -/
+/-- If $x\in[a,b]$ and $y\in[c,d]$, then $x-y\in[a-d,b-c]$. -/
 theorem interval_sub_sound {x y a b c d : ℝ}
     (hx : inInterval x a b) (hy : inInterval y c d) :
     inInterval (x - y) (a - d) (b - c) := by
@@ -62,21 +62,25 @@ def minOfFour (p q r s : ℝ) : ℝ := min (min p q) (min r s)
 /-- Helper: maximum of four values -/
 def maxOfFour (p q r s : ℝ) : ℝ := max (max p q) (max r s)
 
-/-- For multiplication, the interval is [min(ac,ad,bc,bd), max(ac,ad,bc,bd)].
+/-- For multiplication, the enclosing interval is
 
-    The proof requires 9-case analysis based on signs of interval endpoints:
-    1. a >= 0, c >= 0: min=ac, max=bd
-    2. a >= 0, c < 0 <= d: min=bc, max=bd
-    3. a >= 0, d < 0: min=bc, max=ad
-    4. a < 0 <= b, c >= 0: min=ad, max=bd
-    5. a < 0 <= b, c < 0 <= d: min=min(ad,bc), max=max(ac,bd)
-    6. a < 0 <= b, d < 0: min=bc, max=ac
-    7. b < 0, c >= 0: min=ad, max=bc
-    8. b < 0, c < 0 <= d: min=ad, max=ac
-    9. b < 0, d < 0: min=bd, max=ac
+$$
+[\min(ac,ad,bc,bd),\max(ac,ad,bc,bd)].
+$$
 
-    The key insight is that extrema of the bilinear function x*y over a rectangle
-    [a,b] x [c,d] occur at the corners.
+The proof splits into nine cases according to the signs of the interval endpoints:
+
+1. $a\ge 0,\ c\ge 0$: $\min=ac,\ \max=bd$.
+2. $a\ge 0,\ c<0\le d$: $\min=bc,\ \max=bd$.
+3. $a\ge 0,\ d<0$: $\min=bc,\ \max=ad$.
+4. $a<0\le b,\ c\ge 0$: $\min=ad,\ \max=bd$.
+5. $a<0\le b,\ c<0\le d$: $\min=\min(ad,bc),\ \max=\max(ac,bd)$.
+6. $a<0\le b,\ d<0$: $\min=bc,\ \max=ac$.
+7. $b<0,\ c\ge 0$: $\min=ad,\ \max=bc$.
+8. $b<0,\ c<0\le d$: $\min=ad,\ \max=ac$.
+9. $b<0,\ d<0$: $\min=bd,\ \max=ac$.
+
+The extrema of the bilinear function $xy$ over $[a,b]\times[c,d]$ occur at the corners.
 -/
 theorem interval_mul_sound {x y a b c d : ℝ}
     (hx : inInterval x a b) (hy : inInterval y c d) :
@@ -218,7 +222,7 @@ def square (x : ℝ) : ℝ := x * x
 /-- Squares over the reals are nonnegative. -/
 theorem square_nonneg (x : ℝ) : 0 ≤ square x := mul_self_nonneg x
 
-/-- If 0 ≤ a ≤ b, then a² ≤ b² -/
+/-- If $0\le a\le b$, then $a^2\le b^2$. -/
 theorem square_le_square_of_nonneg {a b : ℝ} (ha : 0 ≤ a) (hab : a ≤ b) :
     square a ≤ square b := mul_self_le_mul_self ha hab
 
@@ -233,7 +237,8 @@ noncomputable def intervalSquareMin (l u : ℝ) : ℝ :=
 /-- Maximum square in an interval -/
 noncomputable def intervalSquareMax (l u : ℝ) : ℝ := max (l * l) (u * u)
 
-/-- Square interval soundness: if x ∈ [l, u], then x² ∈ [minSq, maxSq] -/
+/-- Square interval soundness: if $x\in[l,u]$, then
+$x^2\in[\mathrm{minSq},\mathrm{maxSq}]$. -/
 theorem interval_square_sound {x l u : ℝ} (h : inInterval x l u) :
     inInterval (square x) (intervalSquareMin l u) (intervalSquareMax l u) := by
   unfold square intervalSquareMin intervalSquareMax inInterval
@@ -266,7 +271,7 @@ theorem interval_square_sound {x l u : ℝ} (h : inInterval x l u) :
 
 /-! ### Negation Interval -/
 
-/-- Negation flips and swaps the interval: -[a,b] = [-b, -a] -/
+/-- Negation flips and swaps the interval: $-[a,b]=[-b,-a]$. -/
 theorem interval_neg_sound {x a b : ℝ} (h : inInterval x a b) :
     inInterval (-x) (-b) (-a) := by
   constructor
@@ -275,7 +280,7 @@ theorem interval_neg_sound {x a b : ℝ} (h : inInterval x a b) :
 
 /-! ### Absolute Value Interval -/
 
-/-- If x ∈ [l, u], then |x| is bounded -/
+/-- If $x\in[l,u]$, then $|x|$ is bounded. -/
 theorem interval_abs_sound {x l u : ℝ} (h : inInterval x l u) :
     0 ≤ |x| ∧ |x| ≤ max |l| |u| := by
   constructor

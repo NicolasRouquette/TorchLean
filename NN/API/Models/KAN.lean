@@ -63,14 +63,15 @@ end KANEdgeFamily
 /--
 Configuration for triangular piecewise-linear KAN edge bases.
 
-The basis functions are hats centered at the integer knots `0, ..., gridSize - 1`. The input is
-multiplied by `inputScale` before the hats are evaluated. For normalized data in `[0, 1]`, setting
-`inputScale = gridSize - 1` spreads the grid across the full interval.
+The basis functions are hats centered at the integer knots $0,\ldots,\mathrm{gridSize}-1$. The input is
+multiplied by `inputScale` before the hats are evaluated. For normalized data in $[0,1]$, setting
+$\mathrm{inputScale}=\mathrm{gridSize}-1$ spreads the grid across the full interval.
 -/
 structure KANPiecewiseLinear where
   /-- Number of knots, hence the number of basis functions per scalar coordinate. -/
   gridSize : Nat
-  /-- Scale applied before basis evaluation; use `gridSize - 1` for normalized `[0, 1]` inputs. -/
+  /-- Scale applied before basis evaluation; use $\mathrm{gridSize}-1$ for normalized $[0,1]$
+  inputs. -/
   inputScale : Nat := 1
 deriving Repr
 
@@ -80,9 +81,11 @@ namespace KANPiecewiseLinear
 Expand `x : Vec inDim` to all triangular basis features.
 
 The output is flattened row-major from a `(gridSize × inDim)` table:
-`[basis_0(x_0), ..., basis_0(x_n), basis_1(x_0), ...]`.
+$[\operatorname{basis}_0(x_0),\ldots,\operatorname{basis}_0(x_n),
+\operatorname{basis}_1(x_0),\ldots]$.
 
-Each basis value is `relu(1 - |inputScale * x_i - k|)`, expressed directly in the ordinary
+Each basis value is
+$\operatorname{ReLU}(1-|\mathrm{inputScale}\,x_i-k|)$, expressed directly in the ordinary
 TorchLean op language rather than through an opaque spline evaluator.
 -/
 def basisLayer (cfg : KANPiecewiseLinear) (inDim : Nat) :

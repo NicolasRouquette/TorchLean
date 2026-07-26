@@ -13,7 +13,7 @@ public import NN.Floats.IEEEExec.Bridge.FP32
 
 Compositional refinement lemmas on top of `NN/Floats/IEEEExec/Bridge/FP32.lean`.
 
-In `Bridge/FP32.lean` we prove refinement theorems one operation at a time. In
+In `NN/Floats/IEEEExec/Bridge/FP32.lean` we prove refinement theorems one operation at a time. In
 practice, though, we often want to talk about a whole scalar expression and not re-run the same
 “op-level” proof script at every node.
 
@@ -24,9 +24,10 @@ This file provides:
 
 so we can state and prove a single theorem that looks like:
 
-```
-toReal (evalRuntime env e) = evalSpec (toReal ∘ env) e
-```
+$$
+\operatorname{toReal}(\operatorname{evalRuntime}(\mathrm{env},e))
+=\operatorname{evalSpec}(\operatorname{toReal}\circ\mathrm{env},e).
+$$
 
 where:
 - `evalRuntime` evaluates the AST using the executable IEEE-754 kernel `IEEE32Exec`, and
@@ -97,7 +98,7 @@ def evalSpec (env : Nat → ℝ) : Expr → ℝ
 /-!
 ## "Finite evaluation" witnesses (finite at every intermediate node)
 
-`Bridge/FP32.lean` is explicit about the trust boundary: it bridges only the finite behavior of
+`NN/Floats/IEEEExec/Bridge/FP32.lean` is explicit about the trust boundary: it bridges only the finite behavior of
 `IEEE32Exec` to `FP32`. For expression-level statements, we therefore need an assumption that every
 intermediate evaluation remains finite.
 

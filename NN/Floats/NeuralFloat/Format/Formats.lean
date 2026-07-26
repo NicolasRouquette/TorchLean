@@ -16,7 +16,7 @@ We are **not** defining the executable IEEE-754 layer here.
 
 What we do here is the same separation used by Flocq:
 
-- `Core.lean` gives us mantissa/exponent arithmetic on `ℝ` plus `bpow`, `mag`, and `cexp`;
+- `Core.lean` gives us mantissa/exponent arithmetic on $\mathbb{R}$ plus `bpow`, `mag`, and `cexp`;
 - this file defines *format families* via exponent-selection functions `fexp : ℤ → ℤ`.
 
 Those `fexp`s let us talk about “a fixed-point grid”, “an unbounded float grid”, or “a float grid
@@ -101,7 +101,8 @@ end NeuralFormatPrecision
 `FIX_exp emin` is the simplest exponent-selection function: it always returns the same exponent.
 
 This is the Flocq “FIX” family. It is useful when you want to reason about values living on a
-single, fixed grid `β^emin * ℤ` (think: fixed-point arithmetic / quantization).
+single, fixed grid $\beta^{\mathtt{emin}}\mathbb{Z}$ (think: fixed-point arithmetic or
+quantization).
 -/
 def FIXExp (emin : ℤ) : ℤ → ℤ := fun _ => emin
 
@@ -205,8 +206,8 @@ abbrev flxBoundedExpGrowth (prec : ℤ) : NeuralBoundedExpGrowth (FLXExp prec) w
 /--
 Exact representability predicate for `FLX`.
 
-Heuristically: there exists a mantissa/exponent pair with mantissa bounded by the precision, and
-`x = m * β^e`.
+Heuristically, there exists a mantissa/exponent pair with mantissa bounded by the precision, and
+$x=m\beta^e$.
 -/
 def FLXFormat (prec : ℤ) (x : ℝ) : Prop :=
   0 < prec ∧
@@ -361,7 +362,8 @@ Exact representability predicate for `FLT`.
 This version includes:
 
 - a mantissa size bound (precision),
-- and the lower exponent bound `emin ≤ exponent` (no values smaller than the min normal/subnormal
+- and the lower exponent bound $\mathtt{emin}\le\mathtt{exponent}$ (no values smaller than the
+  minimum normal/subnormal
   scale, depending on the choice of `emin` and rounding).
 -/
 def FLTFormat (emin prec : ℤ) (x : ℝ) : Prop :=
@@ -380,7 +382,7 @@ theorem exists_neuralNegligibleExp_FLT (emin prec : ℤ) :
   refine ⟨emin, ?_⟩
   exact le_max_right _ _
 
-/-- The ULP at zero for FLT is the smallest grid step `β^emin`. -/
+/-- The ULP at zero for FLT is the smallest grid step $\beta^{\mathtt{emin}}$. -/
 theorem neuralUlp_zero_FLT (emin prec : ℤ) (hprec : 0 < prec) :
     @neuralUlp β (FLTExp emin prec) (fltValidExp emin prec hprec) 0 = neuralBpow β emin := by
   rw [neuralUlp.zero]

@@ -28,16 +28,16 @@ def fixedScale : Nat := 48
 /-- `fixedScale` as an `Int`. -/
 def fixedScaleInt : Int := Int.ofNat fixedScale
 
-/-- Fixed-point encoding of `1` at scale `fixedScale` (i.e. `2^fixedScale`). -/
+/-- Fixed-point encoding of $1$ at scale `fixedScale` (that is, $2^{\mathtt{fixedScale}}$). -/
 def fixedOne : Int := Int.ofNat (pow2 fixedScale)
 
-/-- Integer power of two: `pow2Int k = 2^k` as an `Int`. -/
+/-- Integer power of two: $\mathtt{pow2Int}(k)=2^k$, represented as an `Int`. -/
 def pow2Int (k : Nat) : Int := Int.ofNat (pow2 k)
 
 /--
-Round an integer quotient `num/den` to the nearest integer, ties-to-even.
+Round an integer quotient $\mathtt{num}/\mathtt{den}$ to the nearest integer, ties-to-even.
 
-Assumes `den > 0`.
+Assumes $\mathtt{den}>0$.
 -/
 def roundQuotEvenInt (num den : Int) : Int :=
   -- Round `num/den` to nearest, ties-to-even (assumes `den > 0`).
@@ -49,12 +49,12 @@ def roundQuotEvenInt (num den : Int) : Int :=
   else
     if q % 2 == 0 then q else q + 1
 
-/-- Divide by `2^shift`, rounding to nearest with ties-to-even. -/
+/-- Divide by $2^{\mathtt{shift}}$, rounding to nearest with ties-to-even. -/
 def roundDivPow2EvenInt (n : Int) (shift : Nat) : Int :=
   if shift == 0 then n else roundQuotEvenInt n (pow2Int shift)
 
 /--
-Shift by a power of two: multiply when `k ≥ 0`, divide when `k < 0`.
+Shift by a power of two: multiply when $k\ge 0$, divide when $k<0$.
 
 Division uses ties-to-even rounding.
 -/
@@ -89,15 +89,16 @@ def fixedOfDyadic (d : Dyadic) : Int :=
 def fixedToDyadic (x : Int) : Dyadic :=
   { sign := x < 0, mant := Int.natAbs x, exp := -fixedScaleInt }
 
-/-- Fixed-point approximation to `ln 2` at scale `fixedScale`. -/
+/-- Fixed-point approximation to $\log 2$ at scale `fixedScale`. -/
 def fixedLn2 : Int := 195103586505167     -- round(ln2 * 2^48)
-/-- Fixed-point approximation to `1/ln 2` at scale `fixedScale`. -/
+/-- Fixed-point approximation to $1/\log 2$ at scale `fixedScale`. -/
 def fixedInvLn2 : Int := 406082553034800  -- round((1/ln2) * 2^48)
 
 -- Coefficients for `2^x` on `[-1/2, 1/2]` using the Taylor series:
 --   2^x = Σ (ln 2)^n / n! * x^n
 -- Each coefficient is rounded to scale `2^48`.
-/-- Fixed-point Taylor coefficients (highest degree first) for `2^x` on `[-1/2, 1/2]`. -/
+/-- Fixed-point Taylor coefficients (highest degree first) for $2^x$ on
+$[-\tfrac12,\tfrac12]$. -/
 def exp2PolyCoeffsDesc : List Int :=
   [ 1985781
   , 28648765
@@ -112,7 +113,7 @@ def exp2PolyCoeffsDesc : List Int :=
   , 281474976710656
   ]
 
-/-- Evaluate the fixed-point `2^x` polynomial approximation using Horner’s method. -/
+/-- Evaluate the fixed-point $2^x$ polynomial approximation using Horner’s method. -/
 def evalExp2Poly (xFixed : Int) : Int :=
   match exp2PolyCoeffsDesc with
   | [] => fixedOne
@@ -122,8 +123,8 @@ def evalExp2Poly (xFixed : Int) : Int :=
 
 end Transcendentals
 
-/-- Deterministic `exp` (no delegation to `Float`): range-reduced `2^(x/ln2)` with a fixedpoint
-  polynomial. -/
+/-- Deterministic `exp` (no delegation to `Float`): range-reduced $2^{x/\log 2}$ with a
+fixed-point polynomial. -/
 def exp (x : IEEE32Exec) : IEEE32Exec :=
   if isNaN x then quietNaN x
   else if isInf x then
@@ -146,8 +147,8 @@ def exp (x : IEEE32Exec) : IEEE32Exec :=
               , mant := Int.natAbs pFixed
               , exp := k - Transcendentals.fixedScaleInt }
 
-/-- Deterministic `log` (no delegation to `Float`): normalize `x = m*2^k` and use an atanh-series
-  for `log m`. -/
+/-- Deterministic `log` (no delegation to `Float`): normalize $x=m2^k$ and use an
+atanh-series for $\log m$. -/
 def log (x : IEEE32Exec) : IEEE32Exec :=
   if isNaN x then quietNaN x
   else if isInf x then
@@ -233,9 +234,11 @@ def cosh (x : IEEE32Exec) : IEEE32Exec :=
 /--
 Deterministic `tanh` without host `Float` delegation.
 
-For `|x| ≤ 1/4`, the degree-nine Taylor polynomial
+For $|x|\le\tfrac14$, the degree-nine Taylor polynomial
 
-`x * (2835 - 945*x² + 378*x⁴ - 153*x⁶ + 62*x⁸) / 2835`
+$$
+\frac{x\left(2835-945x^2+378x^4-153x^6+62x^8\right)}{2835}
+$$
 
 is evaluated as one exact dyadic rational and rounded only at the end. This avoids cancellation and
 preserves every tiny binary32 input, including the minimum subnormal. Larger finite inputs use the
@@ -326,7 +329,8 @@ etc.). We do not claim correctly-rounded libm behavior; reproducible execution i
   { sign := false, mant := 1, exp := 0 }
 
 /--
-Round the exact rational `d / den` to binary32, where `d` is an exact dyadic `mant * 2^exp`.
+Round the exact rational $d/\mathtt{den}$ to binary32, where $d$ is the exact dyadic
+$\mathtt{mant}\,2^{\mathtt{exp}}$.
 
 We package the dyadic exponent into a rational numerator/denominator and call `roundRatToIEEE32`.
 -/
@@ -346,15 +350,19 @@ def roundDyadicDivNat (d : Dyadic) (den : Nat) : IEEE32Exec :=
 We encode the partial sums using a common factorial denominator so the coefficients are *exact*
 integers, not approximations.
 
-For `z = y^2`:
+For $z=y^2$:
 
-* `sin y = ∑_{i=0}^6 (-1)^i y^(2i+1)/(2i+1)! + R₇(y)`
+* $\displaystyle
+  \sin y=\sum_{i=0}^{6}\frac{(-1)^i y^{2i+1}}{(2i+1)!}+R_7(y)$,
   where the polynomial part can be written as
-  `y * (∑_{i=0}^6 (-1)^i (13!/(2i+1)!) z^i) / 13!`.
+  $\displaystyle
+  \frac{y}{13!}\sum_{i=0}^{6}(-1)^i\frac{13!}{(2i+1)!}z^i$.
 
-* `cos y = ∑_{i=0}^6 (-1)^i y^(2i)/(2i)! + R₇'(y)`
-  i.e.
-  `(∑_{i=0}^6 (-1)^i (12!/(2i)!) z^i) / 12!`.
+* $\displaystyle
+  \cos y=\sum_{i=0}^{6}\frac{(-1)^i y^{2i}}{(2i)!}+R'_7(y)$,
+  whose polynomial part is
+  $\displaystyle
+  \frac1{12!}\sum_{i=0}^{6}(-1)^i\frac{12!}{(2i)!}z^i$.
 -/
 
 def sinDen : Nat := 6227020800   -- 13!
@@ -416,7 +424,8 @@ def reductionScale : Nat := 256
 /-- `reductionScale` as an integer. -/
 def reductionScaleInt : Int := Int.ofNat reductionScale
 
-/-- `round((pi / 2) * 2^256)`, used for deterministic Payne–Hanek-style quadrant reduction. -/
+/-- $\operatorname{round}((\pi/2)2^{256})$, used for deterministic Payne–Hanek-style quadrant
+reduction. -/
 def halfPiFixed : Int :=
   181885788445883162140117471388864931326696688664196214979386075558969447233093
 

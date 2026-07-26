@@ -18,13 +18,15 @@ import Mathlib.Tactic.Linarith
 /-!
 # Universal approximation (1D, constructive)
 
-On a compact interval `I = [a,b]`, any Lipschitz function `f : ℝ → ℝ` can be uniformly approximated
+On a compact interval $I=[a,b]$, any Lipschitz function $f:\mathbb{R}\to\mathbb{R}$ can be
+uniformly approximated
 by a single-hidden-layer ReLU network (a 2-layer MLP).
 
 This file formalizes the classic constructive proof strategy:
 
-- approximate `f` by a polygonal function on a uniform grid,
-- express that polygonal function as an affine term plus a finite sum of hinges `relu(x - tᵢ)`,
+- approximate $f$ by a polygonal function on a uniform grid,
+- express that polygonal function as an affine term plus a finite sum of hinges
+  $\operatorname{ReLU}(x-t_i)$,
 - package the hinge representation as TorchLean's spec-level 2-layer MLP (`NN.Spec.Models.Mlp`).
 
 ## Main result
@@ -50,12 +52,12 @@ namespace NN.MLTheory.Proofs.UniversalApproximation
   /-- Shorthand for `relu` in this development, using TorchLean’s spec semantics. -/
   abbrev relu (x : ℝ) : ℝ := Activation.Math.reluSpec x
 
-  /-- If the knot `t` is to the left of `x`, the hinge `relu (x - t)` equals `x - t`. -/
+  /-- If the knot $t$ is to the left of $x$, then $\operatorname{ReLU}(x-t)=x-t$. -/
   lemma relu_sub_eq_of_le {x t : ℝ} (h : t ≤ x) : relu (x - t) = x - t := by
     have : 0 ≤ x - t := sub_nonneg.mpr h
     simp [relu, Activation.Math.reluSpec, max_eq_left this]
 
-  /-- If `x` is to the left of the knot `t`, the hinge `relu (x - t)` is zero. -/
+  /-- If $x$ is to the left of the knot $t$, then $\operatorname{ReLU}(x-t)=0$. -/
   lemma relu_sub_eq_zero_of_le {x t : ℝ} (h : x ≤ t) : relu (x - t) = 0 := by
     have : x - t ≤ 0 := sub_nonpos.mpr h
     simp [relu, Activation.Math.reluSpec, max_eq_right this]
@@ -70,7 +72,10 @@ noncomputable def mlpEval1d (hidDim : ℕ)
     (l1 : LinearSpec ℝ 1 hidDim) (l2 : LinearSpec ℝ hidDim 1) (x : ℝ) : ℝ :=
   extractScalarOutput (Examples.mlpForward l1 l2 (Tensor.singleton x))
 
-/-- TorchLean's MLP forward pass is exactly `linear ∘ relu ∘ linear`. -/
+/--
+TorchLean's MLP forward pass is exactly
+$\operatorname{linear}\circ\operatorname{ReLU}\circ\operatorname{linear}$.
+-/
 lemma mlp_forward_eq_linear_relu_linear {hidDim : ℕ}
     (l1 : LinearSpec ℝ 1 hidDim) (l2 : LinearSpec ℝ hidDim 1) (x : Tensor ℝ (.dim 1 .scalar)) :
     Examples.mlpForward l1 l2 x =
@@ -140,17 +145,17 @@ lemma vectorN_eq_dim {α : Type} [Zero α] (n : ℕ) (f : Fin n → α) :
   | succ n =>
     simp [vectorN]
 
-/-- First real hinge layer: hidden unit `i` computes `x - tᵢ` before ReLU. -/
+/-- First real hinge layer: hidden unit $i$ computes $x-t_i$ before ReLU. -/
 noncomputable def hingeLayer1 (n : ℕ) (t : Fin n → ℝ) : LinearSpec ℝ 1 n :=
   { weights := matrixMN n 1 (fun _ _ => (1 : ℝ))
     bias := vectorN n (fun i => -t i) }
 
-/-- Second real hinge layer: sum hidden activations with coefficients `cᵢ` and bias `b`. -/
+/-- Second real hinge layer: sum hidden activations with coefficients $c_i$ and bias $b$. -/
 noncomputable def hingeLayer2 (n : ℕ) (c : Fin n → ℝ) (b : ℝ) : LinearSpec ℝ n 1 :=
   { weights := matrixMN 1 n (fun _ j => c j)
     bias := vectorN 1 (fun _ => b) }
 
-/-- Real hinge network `b + Σᵢ cᵢ ReLU(x - tᵢ)`. -/
+/-- Real hinge network $b+\sum_i c_i\operatorname{ReLU}(x-t_i)$. -/
 noncomputable def hingeFun (n : ℕ) (t : Fin n → ℝ) (c : Fin n → ℝ) (b x : ℝ) : ℝ :=
   b + ∑ i : Fin n, c i * relu (x - t i)
 
@@ -292,8 +297,9 @@ lemma mlp_eval_1d_hinge (n : ℕ) (t : Fin n → ℝ) (c : Fin n → ℝ) (b x :
 1D Universal Approximation (ReLU, one hidden layer).
 
 This is the classic constructive proof:
-Lipschitz continuity on `[a,b]` + uniform partition + piecewise-linear interpolation,
-then represent the interpolant as a finite linear combination of hinges `relu(x - t_i)`.
+Lipschitz continuity on $[a,b]$, a uniform partition, and piecewise-linear interpolation,
+then represent the interpolant as a finite linear combination of hinges
+$\operatorname{ReLU}(x-t_i)$.
 -/
   theorem relu_universal_approximation_Icc_hinge {f : ℝ → ℝ} {a b L : ℝ}
       (h_ab : a < b) (hL : 0 < L)

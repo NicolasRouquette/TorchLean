@@ -19,14 +19,17 @@ public import NN.Floats.IEEEExec.Rounding.NatLemmas
 `NN/Floats/IEEEExec/Exec32.lean` defines executable outward-rounded division endpoints:
 
 - `roundRatDown` / `roundRatUp`: enclose an exact rational `±(num/den)` by a dyadic at scale
-  `2^ratApproxShift` and then apply `roundDyadicDown` / `roundDyadicUp`.
+  $2^{\mathtt{ratApproxShift}}$ and then apply `roundDyadicDown` / `roundDyadicUp`.
 - `divDown` / `divUp`: lift this to IEEE32 floats (handling NaN/Inf/±0 cases explicitly).
 
 This file proves the enclosure direction that is needed for interval arithmetic soundness:
 
-- `toEReal (roundRatDown …) ≤ exact`,
-- `exact ≤ toEReal (roundRatUp …)`,
-- `toEReal (divDown x y) ≤ toReal x / toReal y` and `toReal x / toReal y ≤ toEReal (divUp x y)`
+- $\operatorname{toEReal}(\operatorname{roundRatDown}(\ldots))\le\text{exact}$,
+- $\text{exact}\le\operatorname{toEReal}(\operatorname{roundRatUp}(\ldots))$,
+- $\operatorname{toEReal}(\operatorname{divDown}(x,y))\le
+  \operatorname{toReal}(x)/\operatorname{toReal}(y)$ and
+  $\operatorname{toReal}(x)/\operatorname{toReal}(y)\le
+  \operatorname{toEReal}(\operatorname{divUp}(x,y))$
   in the finite, nonzero-divisor regime.
 
 We work in `EReal` so that overflow of the *computed endpoints* to `±∞` remains a sound enclosure.

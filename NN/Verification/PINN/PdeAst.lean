@@ -140,14 +140,15 @@ def eval (p : Prims) (e : Expr) : Option (Float × Float) :=
   evalWithFuel 256 p e
 
 
-/-- 2D Allen–Cahn residual: R = ε (u_xx + u_yy) - (u^3 - u). -/
+/-- Two-dimensional Allen–Cahn residual:
+$R=\varepsilon(u_{xx}+u_{yy})-(u^3-u)$. -/
 def allenCahn2D (ε : Float) : Expr :=
   let lap := Expr.add (.d2u .X) (.d2u .Y)
   let uu := Expr.u
   let u3 := Expr.mul uu (Expr.mul uu uu)
   Expr.add (Expr.scale ε lap) (Expr.neg (Expr.sub u3 uu))
 
-/-- 2D Poisson-like residual: R = u_xx + u_yy + u. -/
+/-- Two-dimensional Poisson-like residual: $R=u_{xx}+u_{yy}+u$. -/
 def poissonPlusU : Expr :=
   Expr.add (Expr.add (.d2u .X) (.d2u .Y)) Expr.u
 

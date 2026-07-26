@@ -282,7 +282,12 @@ def jacrevParams {σ τ : Spec.Shape} (model : TorchLean.LayerCore.Seq σ τ)
 Jacobian-vector product (JVP) of a scalar loss w.r.t. parameters.
 
 Directional derivative in the direction `vparams`. Conceptually:
-`d/dt loss(params + t*vparams, x, target) | t = 0`.
+
+$$
+\left.\frac{d}{dt}
+\operatorname{loss}(\mathrm{params}+t\,\mathrm{vparams},x,\mathrm{target})
+\right|_{t=0}.
+$$
 -/
 def jvpParams {σ τ υ : Spec.Shape} (model : TorchLean.LayerCore.Seq σ τ) (loss :
   TorchLean.Autodiff.Model.OutputLoss τ υ)

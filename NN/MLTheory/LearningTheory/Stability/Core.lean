@@ -204,7 +204,7 @@ abbrev Loss (H Z : Type) : Type :=
 /--
 Empirical error (average loss on a dataset).
 
-We write this with an explicit `(1 / n)` normalization so downstream lemmas can control constants.
+We write this with an explicit $1/n$ normalization so downstream lemmas can control constants.
 -/
 def empiricalError {n : Nat} [Fintype (Fin n)] (ℓ : Loss H Z) (h : H) (S : Dataset n Z) : ℝ :=
   (1 / (n : ℝ)) * ∑ i : Fin n, ℓ h (Dataset.get (n := n) (Z := Z) S i)
@@ -216,7 +216,7 @@ variable [MeasurableSpace Z]
 /--
 True (population) error under a data distribution `μ`.
 
-This is the expected loss `𝔼_{z∼μ}[ℓ(h,z)]`.
+This is the expected loss $\mathbb{E}_{z\sim\mu}[\ell(h,z)]$.
 -/
 def trueError (μ : MeasureTheory.ProbabilityMeasure Z) (ℓ : Loss H Z) (h : H) : ℝ :=
   ∫ z, ℓ h z ∂μ
@@ -227,7 +227,7 @@ def trueError (μ : MeasureTheory.ProbabilityMeasure Z) (ℓ : Loss H Z) (h : H)
 Deterministic **replace-one uniform stability** (a common core notion).
 
 `UniformStableReplace A ℓ β` means that if you replace one example in the training set, then the
-loss on *any* test point changes by at most `β`.
+loss on *any* test point changes by at most $\beta$.
 
 This is the most “pointwise” notion in this file; the probabilistic notions below integrate or
 take suprema in various ways.
@@ -263,9 +263,9 @@ Expected (integrated) hypothesis stability.
 
 This integrates the pointwise loss change over:
 
-1. a random dataset `S ∼ iid μ n`,
-2. a fresh replacement example `z' ∼ μ`, and
-3. an independent test point `z ∼ μ`.
+1. a random dataset $S\sim\operatorname{iid}(\mu,n)$,
+2. a fresh replacement example $z'\sim\mu$, and
+3. an independent test point $z\sim\mu$.
 
 This corresponds to one of the standard “expected” stability notions in the literature.
 -/
@@ -350,8 +350,9 @@ def UniformStability {n : Nat} [DecidableEq (Fin n)]
 /--
 Probabilistic uniform stability.
 
-This is a “high probability” analogue of `UniformStability`: with probability at least `1-δ` over
-datasets `S`, the (integrated) uniform stability quantity is at most `β`. As above, boundedness of
+This is a “high probability” analogue of `UniformStability`: with probability at least $1-\delta$
+over datasets $S$, the integrated uniform-stability quantity is at most $\beta$. As above,
+boundedness of
 the pointwise ranges is part of the definition rather than an implicit side condition.
 -/
 def ProbUniformStability {n : Nat} [DecidableEq (Fin n)]

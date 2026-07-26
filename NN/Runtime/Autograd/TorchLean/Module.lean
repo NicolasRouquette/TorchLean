@@ -177,10 +177,14 @@ Infer `(fanIn, fanOut)` from a parameter shape using the common linear/conv conv
 For a matrix shaped `[out, in]`, this returns `(in, out)`. For convolution-like weights shaped
 `[outChannels, inChannels, k1, ..., kd]`, it returns:
 
-```text
-fanIn  = inChannels  * k1 * ... * kd
-fanOut = outChannels * k1 * ... * kd
-```
+$$
+\begin{aligned}
+\operatorname{fanIn}
+  &=\operatorname{inChannels}\,k_1\cdots k_d,\\
+\operatorname{fanOut}
+  &=\operatorname{outChannels}\,k_1\cdots k_d.
+\end{aligned}
+$$
 
 This is the same fan convention documented by PyTorch's Xavier/Kaiming initialization utilities.
 -/
@@ -404,6 +408,7 @@ This wraps `Torch.ScalarTrainer`, but exposes a more `Module`-like set of method
 -/
 structure ScalarModule (α : Type) [Context α] [DecidableEq Shape]
     (paramShapes inputShapes : List Shape) where
+  /-- Trainer that owns the parameters and runs the scalar-loss program. -/
   trainer : Torch.ScalarTrainer α paramShapes inputShapes
   /-- Runtime options used to instantiate the module. -/
   opts : Torch.Options
@@ -452,6 +457,14 @@ def backward {α : Type} [Context α] [DecidableEq Shape]
   Torch.ScalarTrainer.backwardT (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
     m.trainer xs
 
+/-- Return a scalar loss and its parameter gradients from one forward tape. -/
+def lossAndBackward {α : Type} [Context α] [DecidableEq Shape]
+    {paramShapes inputShapes : List Shape}
+    (m : ScalarModule α paramShapes inputShapes) (xs : Torch.TList α inputShapes) :
+    IO (Tensor α Shape.scalar × Torch.TList α paramShapes) :=
+  Torch.ScalarTrainer.lossAndBackwardT
+    (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) m.trainer xs
+
 /-- Convenience "one-step SGD": compute gradients and apply an SGD update with learning rate `lr`.
   -/
 def step {α : Type} [Context α] [DecidableEq Shape]
@@ -461,12 +474,23 @@ def step {α : Type} [Context α] [DecidableEq Shape]
   Torch.ScalarTrainer.stepT (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
     m.trainer lr xs
 
+/-- Apply one SGD update and return the loss from the tape that produced its gradients. -/
+def stepWithLoss {α : Type} [Context α] [DecidableEq Shape]
+    {paramShapes inputShapes : List Shape}
+    (m : ScalarModule α paramShapes inputShapes) (lr : α) (xs : Torch.TList α inputShapes) :
+    IO (Tensor α Shape.scalar) :=
+  Torch.ScalarTrainer.stepWithLossT
+    (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) m.trainer lr xs
+
 /-- Initialize an optimizer state for this module's parameters. -/
 def initOptim {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes inputShapes : List Shape}
     (m : ScalarModule α paramShapes inputShapes)
     (opt : TorchLean.Optim.Optimizer α paramShapes) :
-    IO opt.State :=
+    IO opt.State := do
+  -- Generic optimizer states are initialized from host tensors. Synchronize device-backed
+  -- parameters first so a CUDA module cannot seed those states from stale host mirrors.
+  let _ ← m.trainer.getParams
   opt.init m.trainer.params
 
 /--
@@ -488,7 +512,31 @@ def stepWith {α : Type} [Context α] [DecidableEq Shape]
   | none =>
       let grads ← Torch.ScalarTrainer.backwardT (α := α)
         (paramShapes := paramShapes) (inputShapes := inputShapes) m.trainer xs
+      let _ ← m.trainer.getParams
       opt.step st m.trainer.params grads
+
+/--
+Run an explicit optimizer step and return both the next optimizer state and the loss used for it.
+
+Native trainer hooks may keep gradients and optimizer state on the selected device. The fallback
+path computes the loss and gradients once, synchronizes parameter mirrors when needed, and applies
+the optimizer to those gradients.
+-/
+def stepWithOptimizerAndLoss {α : Type} [Context α] [DecidableEq Shape]
+    {paramShapes inputShapes : List Shape}
+    (m : ScalarModule α paramShapes inputShapes)
+    (opt : TorchLean.Optim.Optimizer α paramShapes) (st : opt.State)
+    (xs : Torch.TList α inputShapes) :
+    IO (opt.State × Tensor α Shape.scalar) := do
+  match ← opt.trainerStepWithLoss? m.trainer st xs with
+  | some result =>
+      pure result
+  | none =>
+      let (loss, grads) ← Torch.ScalarTrainer.lossAndBackwardT (α := α)
+        (paramShapes := paramShapes) (inputShapes := inputShapes) m.trainer xs
+      let _ ← m.trainer.getParams
+      let st' ← opt.step st m.trainer.params grads
+      pure (st', loss)
 
 /-- Fetch the current parameter values as a shape-indexed list. -/
 def params {α : Type} [Context α] [DecidableEq Shape]

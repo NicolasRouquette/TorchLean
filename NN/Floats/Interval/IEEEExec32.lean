@@ -45,22 +45,23 @@ structure Interval32 where
 
 namespace Interval32
 
-/-- Membership predicate: `x` lies between `lo` and `hi` using the `IEEE32Exec` order. -/
+/-- Membership predicate: $x$ lies between `lo` and `hi` using the `IEEE32Exec` order. -/
 def mem (I : Interval32) (x : IEEE32Exec) : Prop :=
   le I.lo x ∧ le x I.hi
 
-/-- Enable `x ∈ I` notation for executable `Interval32` intervals. -/
+/-- Enable $x\in I$ notation for executable `Interval32` intervals. -/
 instance : Membership IEEE32Exec Interval32 where
   mem I x := Interval32.mem I x
 
-/-- Unfold membership: `x ∈ I ↔ I.lo ≤ x ∧ x ≤ I.hi`. -/
+/-- Unfold membership: $x\in I\iff I.\mathtt{lo}\le x\land x\le I.\mathtt{hi}$. -/
 @[simp] theorem mem_iff (I : Interval32) (x : IEEE32Exec) : x ∈ I ↔ le I.lo x ∧ le x I.hi :=
   Iff.rfl
 
 /--
 Validity predicate for executable intervals.
 
-We require both endpoints to be finite (not NaN/Inf) and ordered (`lo ≤ hi`).
+We require both endpoints to be finite (not NaN/Inf) and ordered
+($\mathtt{lo}\le\mathtt{hi}$).
 -/
 def Valid (I : Interval32) : Prop :=
   isFinite I.lo = true ∧ isFinite I.hi = true ∧ le I.lo I.hi
@@ -89,7 +90,7 @@ Implementation note: we use IEEE-754 `minimum`/`maximum` so NaNs propagate.
 @[inline] def add (A B : Interval32) : Interval32 :=
   ⟨addDown A.lo B.lo, addUp A.hi B.hi⟩
 
-/-- Interval negation: `-[lo, hi] = [-hi, -lo]`. -/
+/-- Interval negation: $-[\mathtt{lo},\mathtt{hi}]=[-\mathtt{hi},-\mathtt{lo}]$. -/
 @[inline] def neg (A : Interval32) : Interval32 :=
   ⟨IEEE32Exec.neg A.hi, IEEE32Exec.neg A.lo⟩
 
@@ -129,11 +130,11 @@ def mul (A B : Interval32) : Interval32 :=
   let q11 := mulUp A.hi B.hi
   ⟨minOfFour p00 p01 p10 p11, maxOfFour q00 q01 q10 q11⟩
 
-/-- The "whole" interval `[-∞, +∞]` (useful as a conservative fallback). -/
+/-- The "whole" interval $[-\infty,+\infty]$ (useful as a conservative fallback). -/
 @[inline] def whole : Interval32 := ⟨negInf, posInf⟩
 
 /--
-Executable Boolean `x ≤ y` using IEEE `compare`.
+Executable Boolean $x\le y$ using IEEE `compare`.
 
 If `compare` is unordered (`none`, i.e. NaN involved), we return `false`.
 -/
@@ -154,10 +155,10 @@ def containsZero (I : Interval32) : Bool :=
   leB I.lo posZero && leB negZero I.hi
 
 /--
-Interval division via the classical 4-corner rule when the denominator interval does not contain
-  `0`.
+Interval division via the classical four-corner rule when the denominator interval does not
+contain $0$.
 
-If `0 ∈ B`, we conservatively return `whole = [-∞,+∞]`.
+If $0\in B$, we conservatively return $\mathtt{whole}=[-\infty,+\infty]$.
 -/
 def div (A B : Interval32) : Interval32 :=
   if containsZero B then
@@ -174,9 +175,9 @@ def div (A B : Interval32) : Interval32 :=
     ⟨minOfFour p00 p01 p10 p11, maxOfFour q00 q01 q10 q11⟩
 
 /--
-Interval reciprocal `1/B`, implemented as a special case of interval division.
+Interval reciprocal $1/B$, implemented as a special case of interval division.
 
-If `0 ∈ B`, we return `whole`.
+If $0\in B$, we return `whole`.
 -/
 @[inline] def inv (B : Interval32) : Interval32 :=
   div (point posOne) B

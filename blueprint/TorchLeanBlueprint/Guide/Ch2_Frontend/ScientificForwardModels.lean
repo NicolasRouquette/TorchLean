@@ -52,13 +52,13 @@ f'(x)
 =-1.6e^{-2x}.
 `
 
-At `x=0.5`:
+At $`x=0.5`:
 
 $$`
 f'(0.5)=-1.6e^{-1}.
 `
 
-The derivative is negative. Dropping the `-2` factor or flipping its sign is an easy implementation
+The derivative is negative. Dropping the $`-2` factor or flipping its sign is an easy implementation
 mistake if forward and backward formulas are maintained separately.
 
 # Functional Tensor Primitives
@@ -79,7 +79,7 @@ detach x
 along with broadcasting and other tensor operations. Each builds the same checked tensor program
 used by autograd. There is no special “scientific mode.”
 
-`scale x c` computes `c*x`; `shift x k` computes `x+k`; and `affine x c k` computes `c*x+k`.
+`scale x c` computes $`c\,x`; `shift x k` computes $`x+k`; and `affine x c k` computes $`c\,x+k`.
 Keeping these as named primitives gives graph lowering and derivative proofs an explicit operation
 to recognize.
 
@@ -110,13 +110,14 @@ The first case evaluates:
 
 $$`\frac{d}{dx}e^x=e^x`
 
-at `x=0.5`, giving `e^0.5 ≈ 1.648721`. The affine case checks a slope of three. The third case checks:
+at $`x=0.5`, giving $`e^{0.5}\approx1.648721`. The affine case checks a slope of three. The third
+case checks:
 
 $$`
 \frac{d}{dx}e^{-2x}=-2e^{-2x}
 `
 
-at `x=0.5`, giving approximately `-0.735759`.
+at $`x=0.5`, giving approximately $`-0.735759`.
 
 Each positive control is paired with a wrong answer that must *not* match. This matters because a
 test that always returns gradient one would pass a poorly chosen identity example. The negative
@@ -189,7 +190,7 @@ Its derivative:
 
 $$`\frac{d}{dx}\log x=\frac1x`
 
-also assumes `x>0`.
+also assumes $`x>0`.
 
 The eager CPU tape, explicit IR evaluator, and proved forward fragment reject nonpositive raw-log
 inputs. A compiled pure closure fails on an invalid domain rather than inventing a real logarithm of
@@ -200,11 +201,12 @@ A common attempted fix is:
 
 $$`\log(x+\epsilon)`.
 
-For arbitrary negative `x`, adding a small positive epsilon does not guarantee positivity. The
+For arbitrary negative $`x`, adding a small positive $`\varepsilon` does not guarantee positivity. The
 actual alternatives are:
 
-- prove a precondition `x > 0`;
-- construct a positive quantity, such as `softplus(x)+ε`, with a supported operation;
+- prove a precondition $`x>0`;
+- construct a positive quantity, such as $`\operatorname{softplus}(x)+\varepsilon`, with a supported
+  operation;
 - use a deliberately total guarded operation such as the lower `safeLog` primitive and state its
   semantics.
 
@@ -227,7 +229,7 @@ g(a,b,x)=a e^{-bx}+c.
 
 One clean representation is a typed input pack or a tensor whose final axis has a declared feature
 order. The choice must be explicit because the shape `[3]` alone does not tell us whether coordinate
-zero means `a`, `b`, or `x`.
+zero means $`a`, $`b`, or $`x`.
 
 The functional tensor namespace does not export every indexing operation. For a
 multi-feature program, use the implemented gather/projection operation at the appropriate layer or
@@ -250,7 +252,7 @@ L(\theta)=
 
 TorchLean can:
 
-1. express `fθ` as a checked tensor program;
+1. express $`f_\theta` as a checked tensor program;
 2. build the MSE objective;
 3. differentiate with respect to the parameter pack;
 4. train through a selected runtime;
@@ -267,7 +269,7 @@ For a PDE:
 
 $$`\mathcal N[u]=0`,
 
-a PINN uses a neural field `uθ(x,t)` and a residual loss:
+a PINN uses a neural field $`u_\theta(x,t)` and a residual loss:
 
 $$`
 L_{\mathrm{PDE}}(\theta)
@@ -279,7 +281,7 @@ L_{\mathrm{PDE}}(\theta)
 The derivative with respect to input coordinates is not the same derivative as the gradient with
 respect to model parameters:
 
-- input derivatives form `u_t`, `u_x`, `u_{xx}`, and similar PDE terms;
+- input derivatives form $`u_t`, $`u_x`, $`u_{xx}`, and similar PDE terms;
 - parameter derivatives optimize the residual loss.
 
 TorchLean's function JVP/Jacobian/Hessian APIs can express input derivatives for supported programs,
@@ -300,14 +302,14 @@ TorchLean reference code; agreement needs a stated approximation or refinement c
 
 TorchLean's executable `IEEE32Exec` transcendental functions are deterministic definitions, but
 they do not currently carry a universal correctly-rounded contract. In particular, a small
-derivative regression such as `exp(-2x)` supports that tested point and code path; it does not
+derivative regression such as $`\exp(-2x)` supports that tested point and code path; it does not
 establish global accuracy for `exp`, `log`, `sin`, or `cos` over all finite bit patterns.
 
 # Continue The Experiment
 
 Three useful modifications are:
 
-1. replace `-2` by a parameter and inspect its gradient sign;
+1. replace $`-2` by a parameter and inspect its gradient sign;
 2. add a sum or mean over a vector of observation locations and compare the scale of the gradient;
 3. run the same finite example with `IEEE32Exec` and compare against host Float.
 

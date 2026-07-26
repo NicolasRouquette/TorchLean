@@ -79,10 +79,14 @@ def computeOffset (params : BatchNormParams α) : Tensor α (.dim params.dim .sc
         let denom := MathFunctions.sqrt (max v Numbers.zero + params.eps)
         Tensor.scalar (b - g * m / denom))
 
-/-- IBP for BatchNorm: since BN is affine, we can compute exact bounds.
-    y = scale * x + offset, so:
-    - If scale > 0: y_lo = scale * x_lo + offset, y_hi = scale * x_hi + offset
-    - If scale < 0: y_lo = scale * x_hi + offset, y_hi = scale * x_lo + offset
+/-- IBP for BatchNorm. Since BatchNorm is affine, its bounds are exact.
+
+For $y=sx+o$:
+
+- if $s>0$, then $y_{\mathrm{lo}}=s x_{\mathrm{lo}}+o$ and
+  $y_{\mathrm{hi}}=s x_{\mathrm{hi}}+o$;
+- if $s<0$, then $y_{\mathrm{lo}}=s x_{\mathrm{hi}}+o$ and
+  $y_{\mathrm{hi}}=s x_{\mathrm{lo}}+o$.
 -/
 def ibpBatchnorm (params : BatchNormParams α)
     (xB : Box α (.dim params.dim .scalar)) : Box α (.dim params.dim .scalar) :=
@@ -105,10 +109,18 @@ def ibpBatchnorm (params : BatchNormParams α)
     { lo := outLo, hi := outHi }
 
 /-- Affine bounds for BatchNorm propagation.
-    Since BN is affine, compose the affine forms:
-    If prev = A_prev * x_in + c_prev and BN = scale * · + offset
-    Then composed = scale * (A_prev * x_in + c_prev) + offset
-                  = diag(scale) * A_prev * x_in + (scale * c_prev + offset)
+
+Since BatchNorm is affine, compose the two affine forms:
+
+$$
+\begin{aligned}
+y_{\mathrm{prev}} &= A_{\mathrm{prev}}x_{\mathrm{in}}+c_{\mathrm{prev}},\\
+\operatorname{BN}(y) &= sy+o,\\
+\operatorname{BN}(y_{\mathrm{prev}})
+  &= \operatorname{diag}(s)A_{\mathrm{prev}}x_{\mathrm{in}}
+     +(s c_{\mathrm{prev}}+o).
+\end{aligned}
+$$
 -/
 def affBatchnorm {inDim : Nat} (params : BatchNormParams α)
     (aff : AffineVec α inDim params.dim) : AffineVec α inDim params.dim :=
@@ -130,8 +142,10 @@ def affBatchnorm {inDim : Nat} (params : BatchNormParams α)
         Tensor.scalar (si * ci + oi))
     { A := A', c := c' }
 
-/-- Derivative bounds for BatchNorm: since BN is affine, d(BN)/dx = scale (constant).
-    Given input derivative bounds [dlo, dhi], output = scale * [dlo, dhi]. -/
+/-- Derivative bounds for BatchNorm. Since BatchNorm is affine,
+$\frac{d}{dx}\operatorname{BN}(x)=s$ is constant. Input bounds
+$[d_{\mathrm{lo}},d_{\mathrm{hi}}]$ therefore become
+$s[d_{\mathrm{lo}},d_{\mathrm{hi}}]$. -/
 def derivBatchnorm (params : BatchNormParams α)
     (dB : Box α (.dim params.dim .scalar)) : Box α (.dim params.dim .scalar) :=
   let scale := computeScale params

@@ -14,14 +14,28 @@ public import NN.Floats.FP32.Error
 
 `NN.Floats.IEEEExec.Bridge.FP32Total` provides refinement theorems of the form
 
-`toReal (op_exec x y) = fp32Round (op_real (toReal x) (toReal y))`,
+$$
+\operatorname{toReal}(\operatorname{op}_{\mathrm{exec}}(x,y))
+=\operatorname{fp32Round}\!\left(
+  \operatorname{op}_{\mathrm{real}}(\operatorname{toReal}(x),\operatorname{toReal}(y))
+\right),
+$$
 
 valid when the executable result stays finite (no NaN/Inf).
 
 This file turns those equalities into the standard **half-ULP absolute error bounds** you want in
 numerical proofs:
 
-`|toReal (op_exec x y) - op_real (toReal x) (toReal y)| ≤ eps₃₂ (op_real (toReal x) (toReal y))`.
+$$
+\left|
+\operatorname{toReal}(\operatorname{op}_{\mathrm{exec}}(x,y))
+-\operatorname{op}_{\mathrm{real}}(\operatorname{toReal}(x),\operatorname{toReal}(y))
+\right|
+\le
+\varepsilon_{32}\!\left(
+  \operatorname{op}_{\mathrm{real}}(\operatorname{toReal}(x),\operatorname{toReal}(y))
+\right).
+$$
 
 We intentionally do *not* provide bounds for `sin`/`cos` here: the current executable
 implementation is deterministic (see `NN.Floats.IEEEExec.Exec32`), but it is an algorithmic
@@ -44,7 +58,7 @@ theorem fp32Round_abs_error (x : ℝ) :
   -- `fp32Round` is definitionally the `FP32` rounding operator.
   simpa [fp32Round] using (TorchLean.Floats.FP32.round_abs_error (x := x))
 
-/-- In the normal range, executable binary32 rounding has relative error at most `2^-24`. -/
+/-- In the normal range, executable binary32 rounding has relative error at most $2^{-24}$. -/
 theorem fp32Round_relative_error_of_normal (x : ℝ) (hx : x ≠ 0)
     (hnormal : TorchLean.Floats.FP32.minNormal ≤ _root_.abs x) :
     ErrorBounds.relativeError x (fp32Round x) hx ≤ neuralBpow binaryRadix (-24) := by
@@ -55,7 +69,9 @@ theorem fp32Round_relative_error_of_normal (x : ℝ) (hx : x ≠ 0)
 Addition absolute error bound for `IEEE32Exec` on the finite branch.
 
 Informal: if `add x y` stays finite then
-`|toReal(add x y) - (toReal x + toReal y)| ≤ eps₃₂(toReal x + toReal y)`.
+$|\operatorname{toReal}(\operatorname{add}(x,y))
+-(\operatorname{toReal}(x)+\operatorname{toReal}(y))|
+\le\varepsilon_{32}(\operatorname{toReal}(x)+\operatorname{toReal}(y))$.
 -/
 theorem toReal_add_abs_error_of_isFinite (x y : IEEE32Exec)
     (hfin : isFinite (add x y) = true) :
@@ -75,7 +91,9 @@ theorem toReal_sub_abs_error_of_isFinite (x y : IEEE32Exec)
 Multiplication absolute error bound for `IEEE32Exec` on the finite branch.
 
 Informal: if `mul x y` stays finite then
-`|toReal(mul x y) - (toReal x * toReal y)| ≤ eps₃₂(toReal x * toReal y)`.
+$|\operatorname{toReal}(\operatorname{mul}(x,y))
+-\operatorname{toReal}(x)\operatorname{toReal}(y)|
+\le\varepsilon_{32}(\operatorname{toReal}(x)\operatorname{toReal}(y))$.
 -/
 theorem toReal_mul_abs_error_of_isFinite (x y : IEEE32Exec)
     (hfin : isFinite (mul x y) = true) :
@@ -87,7 +105,11 @@ theorem toReal_mul_abs_error_of_isFinite (x y : IEEE32Exec)
 Division absolute error bound for `IEEE32Exec` on the finite branch.
 
 Informal: if `div x y` stays finite then
-`|toReal(div x y) - (toReal x / toReal y)| ≤ eps₃₂(toReal x / toReal y)`.
+$\left|\operatorname{toReal}(\operatorname{div}(x,y))
+-\frac{\operatorname{toReal}(x)}{\operatorname{toReal}(y)}\right|
+\le\varepsilon_{32}\!\left(
+  \frac{\operatorname{toReal}(x)}{\operatorname{toReal}(y)}
+\right)$.
 -/
 theorem toReal_div_abs_error_of_isFinite (x y : IEEE32Exec)
     (hfin : isFinite (div x y) = true) :
@@ -99,7 +121,11 @@ theorem toReal_div_abs_error_of_isFinite (x y : IEEE32Exec)
 FMA absolute error bound for `IEEE32Exec` on the finite branch.
 
 Informal: if `fma x y z` stays finite then
-`|toReal(fma x y z) - (toReal x * toReal y + toReal z)| ≤ eps₃₂(toReal x * toReal y + toReal z)`.
+$|\operatorname{toReal}(\operatorname{fma}(x,y,z))
+-(\operatorname{toReal}(x)\operatorname{toReal}(y)+\operatorname{toReal}(z))|
+\le\varepsilon_{32}(
+  \operatorname{toReal}(x)\operatorname{toReal}(y)+\operatorname{toReal}(z)
+)$.
 -/
 theorem toReal_fma_abs_error_of_isFinite (x y z : IEEE32Exec)
     (hfin : isFinite (fma x y z) = true) :
@@ -112,7 +138,8 @@ theorem toReal_fma_abs_error_of_isFinite (x y z : IEEE32Exec)
 Square-root absolute error bound for `IEEE32Exec` on the finite branch.
 
 Informal: if `sqrt x` stays finite then
-`|toReal(sqrt x) - Real.sqrt(toReal x)| ≤ eps₃₂(Real.sqrt(toReal x))`.
+$|\operatorname{toReal}(\operatorname{sqrt}(x))-\sqrt{\operatorname{toReal}(x)}|
+\le\varepsilon_{32}(\sqrt{\operatorname{toReal}(x)})$.
 -/
 theorem toReal_sqrt_abs_error_of_isFinite (x : IEEE32Exec)
     (hfin : isFinite (sqrt x) = true) :

@@ -110,11 +110,13 @@ Generated locally:
   performance reports.
 - `checks/repo_lint.py`: repository lint used by `lake lint`. It checks source hygiene, public API
   boundaries, import-only aggregators, fixed-rank names in public tensor/model APIs,
-  trusted-axiom quarantine, public-example spellings, and module docstrings for `NN/` Lean files.
+  trusted-axiom quarantine, public-example spellings, DocGen/Verso math markup, and module
+  docstrings for `NN/` Lean files.
 - `checks/dependency_audit.py`: repository-level module/import graph audit inspired by
   Li et al., "The Network Structure of Mathlib" (arXiv:2604.24797). It reports
   broad imports, layer-boundary smells, fan-in/fan-out hubs, and Markdown/JSON
-  summaries for repository hygiene.
+  summaries for repository hygiene. Lean comments, strings, and fenced guide examples are ignored
+  so imports shown in documentation do not become graph edges.
 - `checks/TorchLeanLint.lean`: Lean-side lint entry point used by Lake.
 
 Useful commands:
@@ -152,20 +154,22 @@ python3 scripts/checks/dependency_audit.py --markdown /tmp/torchlean_dependency_
 
 ## Documentation
 
-- `docs/build_site.sh`: rebuilds the DocGen declaration pages, the Verso guide (from the
-  `blueprint/` package), dependency graph JSON, and homepage bundle.
+- `docs/build_site.sh`: rebuilds the DocGen declaration pages, the Verso Blueprint guide and
+  formalization map, dependency graph JSON, and homepage bundle.
 - `docs/polish_docgen.py`: post-processes DocGen HTML with the TorchLean landing page,
   navigation links, declaration legends, dependency-link rewrites, and site styling.
 - `docs/polish_verso_guide.py`: post-processes the Verso guide with responsive figures and tables,
-  stable KaTeX display layout, copy buttons, theorem cards, and asset wiring.
+  stable KaTeX display layout, copy buttons, theorem cards, and a check that every guide page loads
+  the local math runtime.
 
 `docs/build_site.sh` is the full site build: it rebuilds Lean modules, DocGen, the Verso guide,
 the dependency graph JSON, and the Jekyll site. To refresh only the graph artifact, run
 `checks/dependency_audit.py` directly.
 
 The dependency audit is a source-architecture check. Its graph is made from Lean imports, so it is
-the right tool for questions about layer boundaries and module ownership. It is not the graph IR
-used by TorchLean runtimes, and it is not a declaration-level proof-dependency extractor.
+the right tool for questions about layer boundaries and module dependencies. The Blueprint
+formalization map covers selected declarations and proof dependencies. The runtime graph IR
+represents neural-network computations.
 
 ## Setup
 

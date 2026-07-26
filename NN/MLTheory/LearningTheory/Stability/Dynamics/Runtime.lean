@@ -30,7 +30,7 @@ namespace NN.MLTheory.Stability.Runtime
 # Stability runtime utilities (Float)
 
 This module provides executable, Float-specialized helpers for exploring stability properties of
-discrete-time systems (`x_{t+1} = f x_t`).
+discrete-time systems ($x_{t+1}=f(x_t)$).
 
 All routines in this file are **runtime diagnostics**:
 
@@ -72,9 +72,9 @@ where
     trajectory.all (fun x => tensorL2DistanceFloat eq x ≤ tol)
 
 /--
-Generate the first `steps` iterates of a discrete-time system `x_{t+1} = f x_t`, starting at `x₀`.
+Generate the first `steps` iterates of a discrete-time system $x_{t+1}=f(x_t)$, starting at $x_0$.
 
-The returned list includes the initial state `x₀` as the first element (because we use `scanl`).
+The returned list includes the initial state $x_0$ as the first element (because we use `scanl`).
 -/
 def generateTrajectory {s : Shape}
     (f : Tensor Float s → Tensor Float s)
@@ -104,10 +104,13 @@ def testAsymptoticStability {s : Shape}
 /--
 Empirical exponential decay test:
 
-We simulate a trajectory, compute distances `d_t = ‖x_t - equilibrium‖₂`, and check a simple
+We simulate a trajectory, compute distances
+$d_t=\lVert x_t-\mathrm{equilibrium}\rVert_2$, and check a simple
 inequality of the form
 
-`d_t ≤ d_0 * exp(-rate * t)`
+$$
+d_t\leq d_0 e^{-\mathrm{rate}\,t}
+$$
 
 for the given `expected_decay_rate`.
 
@@ -136,7 +139,10 @@ Empirical contractivity test on a finite list of input pairs.
 
 Checks the inequality
 
-`‖f x - f y‖₂ / ‖x - y‖₂ ≤ expected_contraction_factor`
+$$
+\frac{\lVert f(x)-f(y)\rVert_2}{\lVert x-y\rVert_2}
+\leq \mathrm{expected\_contraction\_factor}
+$$
 
 for each pair `(x,y)` in `test_pairs`, ignoring pairs with zero input distance.
 -/
@@ -154,7 +160,8 @@ def testContractivity {s : Shape}
 /--
 Empirical BIBO stability test on a finite list of inputs.
 
-For each test input `x`, if `‖x‖₂ ≤ input_bound` then we check `‖f x‖₂ ≤ output_bound`.
+For each test input $x$, if $\lVert x\rVert_2\leq\mathrm{input\_bound}$ then we check
+$\lVert f(x)\rVert_2\leq\mathrm{output\_bound}$.
 -/
 def testBiboStability {s₁ s₂ : Shape}
     (f : Tensor Float s₁ → Tensor Float s₂)
@@ -169,7 +176,8 @@ def testBiboStability {s₁ s₂ : Shape}
 /--
 Empirical monotonic-loss check for a training log.
 
-Returns `true` if each consecutive loss satisfies `l_{t+1} ≤ l_t + tolerance`.
+Returns `true` if each consecutive loss satisfies
+$\ell_{t+1}\leq\ell_t+\mathrm{tolerance}$.
 -/
 def testTrainingStability
     (loss_sequence : List Float)

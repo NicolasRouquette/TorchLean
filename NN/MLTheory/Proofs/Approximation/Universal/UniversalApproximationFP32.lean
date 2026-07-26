@@ -18,7 +18,7 @@ This file has two jobs.
 
 First, it proves an exact interpolation lemma on a uniform grid: given arbitrary target values at
 the grid points, we construct a two-layer ReLU MLP that matches those values exactly under the
-ideal `ℝ` semantics.  This is the familiar hinge-basis construction behind one-dimensional
+ideal $\mathbb{R}$ semantics. This is the familiar hinge-basis construction behind one-dimensional
 piecewise-linear approximation; see Pinkus for the approximation-theory background and Yarotsky
 for quantitative ReLU-network rates.
 
@@ -41,10 +41,10 @@ open Examples
 noncomputable section
 
 /--
-Exact interpolation on a uniform grid by a 2-layer ReLU MLP (over `ℝ` semantics).
+Exact interpolation on a uniform grid by a two-layer ReLU MLP over $\mathbb{R}$ semantics.
 
-Given arbitrary target values `y₀,…,y_N` at the uniform grid points
-`grid k = a + k * ((b-a)/N)`, this constructs a width-`N` hinge network that matches them at the
+Given arbitrary target values $y_0,\ldots,y_N$ at the uniform grid points
+$\operatorname{grid}(k)=a+k(b-a)/N$, this constructs a width-$N$ hinge network that matches them at the
 grid points.
 -/
 theorem relu_mlp_exact_on_uniform_grid {a b : ℝ} (h_ab : a < b) :
@@ -275,7 +275,7 @@ noncomputable def mlpEval1dFp32 (hidDim : ℕ)
     (l1 : LinearSpec FP32 1 hidDim) (l2 : LinearSpec FP32 hidDim 1) (x : FP32) : FP32 :=
   extractScalarOutputFp32 (Examples.mlpForward l1 l2 (Tensor.singleton x))
 
-/-- Scalar ReLU on `FP32`. (No rounding: it is `max x 0` at the `FP32` level.) -/
+/-- Scalar ReLU on `FP32`. No rounding occurs: it is $\max(x,0)$ at the `FP32` level. -/
 @[inline] def reluFp32 (x : FP32) : FP32 := Activation.Math.reluSpec x
 
 @[simp] lemma fp32_zero_val : (0 : FP32).val = 0 := by
@@ -342,17 +342,17 @@ lemma relu_lipschitz (u v : ℝ) : |relu u - relu v| ≤ |u - v| := by
 
 /-! ### FP32 hinge layers and a pointwise error bound -/
 
-/-- First FP32 hinge layer: hidden unit `i` computes `x - tᵢ` before ReLU. -/
+/-- First FP32 hinge layer: hidden unit $i$ computes $x-t_i$ before ReLU. -/
   noncomputable def hingeLayer1Fp32 (n : ℕ) (t : Fin n → FP32) : LinearSpec FP32 1 n :=
   { weights := matrixMN n 1 (fun _ _ => (1 : FP32))
     bias := vectorN n (fun i => -t i) }
 
-/-- Second FP32 hinge layer: sum hidden activations with coefficients `cᵢ` and bias `b`. -/
+/-- Second FP32 hinge layer: sum hidden activations with coefficients $c_i$ and bias $b$. -/
   noncomputable def hingeLayer2Fp32 (n : ℕ) (c : Fin n → FP32) (b : FP32) : LinearSpec FP32 n 1 :=
   { weights := matrixMN 1 n (fun _ j => c j)
     bias := vectorN 1 (fun _ => b) }
 
-/-- One rounded hinge term `cᵢ * reluFp32 (x - tᵢ)` in the FP32 model. -/
+/-- One rounded hinge term $c_i\operatorname{ReLU}_{32}(x-t_i)$ in the FP32 model. -/
   noncomputable def hingeTermFp32 {n : ℕ} (c t : Fin n → FP32) (x : FP32) (i : Fin n) : FP32 :=
   c i * reluFp32 (x - t i)
 
@@ -364,7 +364,7 @@ lemma relu_lipschitz (u v : ℝ) : |relu u - relu v| ≤ |u - v| := by
 Per-neuron FP32 hinge-term error bound.
 
 The bound has two pieces: one half-ulp term for the final multiplication and one subtraction
-rounding term propagated through the 1-Lipschitz ReLU and scaled by `|cᵢ|`.
+rounding term propagated through the $1$-Lipschitz ReLU and scaled by $|c_i|$.
 -/
   lemma hinge_term_abs_error {n : ℕ} (c t : Fin n → FP32) (x : FP32) (i : Fin n) :
     let term32 := hingeTermFp32 c t x i
@@ -552,7 +552,7 @@ not associative.
 noncomputable def hingeFunFp32 {n : ℕ} (t c : Fin n → FP32) (b x : FP32) : FP32 :=
   hingeSumFp32 c t x + b
 
-/-- Real reference for `hinge_fun_fp32`: evaluate over `ℝ` on the `.val` parameters/inputs. -/
+/-- Real reference for `hinge_fun_fp32`: evaluate over $\mathbb{R}$ on the `.val` parameters and inputs. -/
 noncomputable def hingeFunReal {n : ℕ} (t c : Fin n → FP32) (b : FP32) (x : FP32) : ℝ :=
   hingeSumReal c t x + b.val
 

@@ -33,7 +33,7 @@ remove many accidental interpretations, but they cannot decide the meaning of ev
 operation. Attention masking is a useful case because the incorrect version can look convincing in
 ordinary tests.
 
-For query `i`, let `Aᵢ` be the keys that are allowed to receive attention. A hard mask means
+For query $`i`, let $`A_i` be the keys that are allowed to receive attention. A hard mask means
 
 $$`
 \operatorname{attention}_{ij}
@@ -46,7 +46,7 @@ $$`
 `
 
 Blocked entries never enter the denominator and receive exactly zero weight. A common numerical
-shortcut instead adds a large negative constant `-C` to a blocked logit before softmax:
+shortcut instead adds a large negative constant $`-C` to a blocked logit before softmax:
 
 $$`
 \widetilde{\operatorname{attention}}_{ij}
@@ -56,10 +56,10 @@ $$`
        +\sum_{k\notin A_i}\exp(s_{ik}-C)}.
 `
 
-For ordinary logits and a large `C`, this value may underflow to zero in a particular floating-point
-run. Mathematically, however, it is positive for every finite `C`. Worse, the shortcut is not safe
-for arbitrary logits. If a blocked score is `C+100`, then subtracting `C` leaves the very large score
-`100`; the supposedly blocked key can dominate the softmax.
+For ordinary logits and a large $`C`, this value may underflow to zero in a particular floating-point
+run. Mathematically, however, it is positive for every finite $`C`. Worse, the shortcut is not safe
+for arbitrary logits. If a blocked score is $`C+100`, then subtracting $`C` leaves the very large
+score $`100`; the supposedly blocked key can dominate the softmax.
 
 Both implementations have the same tensor shapes. Both run. Tests with moderate random logits may
 make them look identical. The bug is in the definition of masking.
@@ -79,7 +79,7 @@ If the raw input lies in a box
 
 $$`x_i\in[\ell_i,u_i]`,
 
-then, when `σᵢ > 0`, the normalized box is
+then, when $`\sigma_i>0`, the normalized box is
 
 $$`N(x)_i\in
   \left[
@@ -112,8 +112,8 @@ output box hi: [2.256000]
 The source is
 [`NN/Verification/TorchLean/IBPWorkflow.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/TorchLean/IBPWorkflow.lean).
 It constructs a two-input, three-hidden-unit ReLU MLP with an explicit parameter payload. It lowers
-that forward program to `NN.IR.Graph`, places an `L∞` box of radius `0.1` around
-`(0.5, 0.8)`, and runs interval bound propagation.
+that forward program to `NN.IR.Graph`, places an $`\ell_\infty` box of radius $`0.1` around
+$`(0.5,0.8)`, and runs interval bound propagation.
 
 The two vectors are not samples. They are the lower and upper endpoints computed for the output
 box. Its midpoint is
@@ -156,7 +156,7 @@ $$`\operatorname{check}(g,\theta,B,c)=\mathrm{true}
   \Longrightarrow
   \operatorname{Property}(\operatorname{denote}(g,\theta),B)`.
 
-The certificate `c` may come from a large external search. That is often the best arrangement:
+The certificate $`c` may come from a large external search. That is often the best arrangement:
 search can be clever and expensive, while checking stays small and deterministic.
 
 # See The Available Workflows
@@ -210,9 +210,9 @@ p=
 `
 
 The shift keeps every exponential argument nonpositive. TorchLean uses the same shifted weights in
-the forward and derivative paths, and executable entry points reject zero or non-finite `β`. The
-real identity explains the transformation; the validation and backend tests address the executable
-boundary.
+the forward and derivative paths, and executable entry points reject zero or non-finite $`\beta`.
+The real identity explains the transformation; the validation and backend tests address the
+executable boundary.
 
 # Why Lean Helps
 

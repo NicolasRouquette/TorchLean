@@ -109,7 +109,9 @@ def tutorialCnn :=
 /--
 The minimal DAG-native skip-connection example:
 
-`x ↦ relu((W x + b) + x)`.
+$$
+x\mapsto\operatorname{ReLU}(Wx+b+x).
+$$
 
 This is not a plain chain: representing it that way would either duplicate the input path or hide
 sharing in a special layer. That is the pedagogical reason `GraphSpec.DAG` exists.

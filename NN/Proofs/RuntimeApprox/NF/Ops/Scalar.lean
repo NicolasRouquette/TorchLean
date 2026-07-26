@@ -57,7 +57,7 @@ lemma approx_ofReal_nf (x : ℝ) :
         (β := β) (fexp := fexp) (rnd := rnd) x)
 
 /-!
-## NF → ℝ bridge lemmas
+## Bridge lemmas from `NF` to $\mathbb R$
 
 Most approximation statements in this file are phrased over the spec scalar `ℝ`, but the runtime
 backend is `NF β fexp rnd`. The following lemmas are small bridge facts that let us rewrite

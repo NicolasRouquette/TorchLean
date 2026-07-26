@@ -206,7 +206,9 @@ theorem toEReal_neg_of_isNaN_eq_false (x : IEEE32Exec) (hnan : isNaN x = false) 
       cases hsb : signBit x <;> simp [toEReal, hxE, hxNegE, hs, hsb]
 
 /--
-Soundness of `roundDyadicDown`: the result is ≤ the exact dyadic real value (in `EReal`).
+Soundness of `roundDyadicDown`:
+$\operatorname{toEReal}(\operatorname{roundDyadicDown}(d))
+\leq\operatorname{dyadicToReal}(d)$.
 
 This is the key lemma needed to justify `addDown/mulDown` as interval *lower endpoints*.
 -/
@@ -608,7 +610,9 @@ theorem toEReal_roundDyadicDown_le (d : Dyadic) :
       simpa [hOut, hE, hd] using hleE
 
 /--
-Soundness of `roundDyadicUp`: the result is ≥ the exact dyadic real value (in `EReal`).
+Soundness of `roundDyadicUp`:
+$\operatorname{dyadicToReal}(d)
+\leq\operatorname{toEReal}(\operatorname{roundDyadicUp}(d))$.
 
 This is the key lemma needed to justify `addUp/mulUp` as interval *upper endpoints*.
 -/
@@ -682,7 +686,9 @@ theorem toEReal_roundDyadicUp_ge (d : Dyadic) :
 
 /--
 Lower-endpoint soundness for `addDown` on finite inputs:
-the result is ≤ the exact real sum (in `EReal`), even in overflow-to-`-∞` scenarios.
+$\operatorname{toEReal}(\operatorname{addDown}(x,y))
+\leq\operatorname{toReal}(x)+\operatorname{toReal}(y)$, even when the result overflows to
+$-\infty$.
 -/
 theorem toEReal_addDown_le (x y : IEEE32Exec) (hx : isFinite x = true) (hy : isFinite y = true) :
     toEReal (addDown x y) ≤ ((toReal x + toReal y : ℝ) : EReal) := by
@@ -730,7 +736,8 @@ theorem toEReal_addDown_le (x y : IEEE32Exec) (hx : isFinite x = true) (hy : isF
 
 /--
 Upper-endpoint soundness for `addUp` on finite inputs:
-the exact real sum is ≤ the result (in `EReal`), with overflow rounding to `+∞`.
+$\operatorname{toReal}(x)+\operatorname{toReal}(y)
+\leq\operatorname{toEReal}(\operatorname{addUp}(x,y))$, with overflow rounding to $+\infty$.
 -/
 theorem toEReal_addUp_ge (x y : IEEE32Exec) (hx : isFinite x = true) (hy : isFinite y = true) :
     ((toReal x + toReal y : ℝ) : EReal) ≤ toEReal (addUp x y) := by

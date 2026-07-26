@@ -58,10 +58,12 @@ tensors `TList α Γ`. Then:
 
 The residual pattern “main path + skip path” is the canonical example that needs DAG syntax:
 
-```
-y   = linear(W,b,x)
-out = relu(y + x)
-```
+$$
+\begin{aligned}
+y &= \operatorname{linear}(W,b,x),\\
+\mathrm{out} &= \operatorname{ReLU}(y+x).
+\end{aligned}
+$$
 
 Here `x` is used twice, so a pure chain representation would need duplication. With `let1`,
 sharing is explicit: compute `y` once, then reuse it.

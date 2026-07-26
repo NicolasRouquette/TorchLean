@@ -10,10 +10,10 @@ public import NN.Floats.NeuralFloat.Core
 public import NN.Floats.NeuralFloat.Rounding.Core
 
 /-!
-# Rounded scalar NN ops (`ℝ` + `neural_round`)
+# Rounded scalar NN ops ($\mathbb{R}$ + `neuralRound`)
 
 We collect *small* building blocks: common scalar functions used in neural networks,
-defined in the “rounding-on-`ℝ`” style.
+defined in the “rounding on $\mathbb{R}$” style.
 
 The pattern is always:
 
@@ -56,7 +56,8 @@ This is handy for “activation-like” helpers that take a parameter (e.g. leak
 /--
 ReLU (rounded).
 
-Mathematically, ReLU is `relu(x) = max(x, 0)`. Here we evaluate that in `ℝ` and then round.
+Mathematically,
+$\operatorname{ReLU}(x)=\max(x,0)$. Here we evaluate that in $\mathbb{R}$ and then round.
 
 This is close in spirit to what happens in practice: even if a framework fuses ops, the overall
 effect is still “some real expression, then it gets rounded to the destination format”.
@@ -69,8 +70,8 @@ Leaky ReLU (rounded).
 
 Definition (PyTorch `torch.nn.functional.leaky_relu`):
 
-- if `x > 0` then `x`
-- else `negative_slope * x`.
+- if $x>0$, return $x$;
+- otherwise, return $\mathtt{negative\_slope}\,x$.
 -/
 noncomputable def neuralLeakyRelu (rnd : ℝ → ℤ) [NeuralValidRnd rnd] (negative_slope : ℝ) (x : ℝ)
   : ℝ :=
@@ -81,10 +82,10 @@ Sigmoid (rounded), with the usual piecewise real formula used by finite implemen
 
 We define the exact real function as:
 
-- if `x ≥ 0`, use `1 / (1 + exp(-x))`
-- else use `exp(x) / (1 + exp(x))`
+- if $x\ge0$, use $\displaystyle\frac1{1+\exp(-x)}$;
+- otherwise, use $\displaystyle\frac{\exp(x)}{1+\exp(x)}$.
 
-The two branches are algebraically equal over `ℝ`. The arrangement also avoids a large positive
+The two branches are algebraically equal over $\mathbb{R}$. The arrangement also avoids a large positive
 exponential when it is transported to a finite implementation.
 -/
 noncomputable def neuralSigmoid (rnd : ℝ → ℤ) [NeuralValidRnd rnd] (x : ℝ) : ℝ :=
@@ -108,8 +109,9 @@ SiLU / Swish (rounded).
 
 PyTorch analogies: `torch.nn.functional.silu` / `torch.nn.silu`.
 
-Definition: `silu(x) = x * sigmoid(x)`. We use the same piecewise sigmoid expression as
-`neural_sigmoid`, then round the final result.
+Definition:
+$\operatorname{SiLU}(x)=x\,\operatorname{sigmoid}(x)$. We use the same piecewise sigmoid expression
+as `neuralSigmoid`, then round the final result.
 -/
 noncomputable def neuralSilu (rnd : ℝ → ℤ) [NeuralValidRnd rnd] (x : ℝ) : ℝ :=
   let s := if x ≥ 0 then
@@ -123,7 +125,7 @@ Softplus (rounded), with a piecewise real formula suited to finite implementatio
 
 PyTorch analogy: `torch.nn.functional.softplus`.
 
-Naively, `softplus(x) = log(1 + exp(x))`. Over `ℝ` the two arrangements are algebraically
+Naively, $\operatorname{softplus}(x)=\log(1+\exp x)$. Over $\mathbb{R}$ the two arrangements are algebraically
 equivalent; the piecewise form avoids a large positive exponential when implemented in a bounded
 floating-point format:
 

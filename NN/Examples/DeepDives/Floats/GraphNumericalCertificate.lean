@@ -71,7 +71,7 @@ def checked : Except String CheckedCertificate :=
   generateChecked NN.Backend.BackendProfile.checkedCpu graph sources
 
 /-- Concrete payload used for bit-level replay. The constant is `0.75`, which lies in the declared
-constant range `[0.5, 1]`. -/
+constant range $[0.5,1]$. -/
 def payload : NN.IR.Payload IEEE32Exec where
   const? := fun nodeId =>
     if nodeId = 1 then
@@ -90,8 +90,8 @@ def replay : Except String CheckedExecution := do
   let certificate <- checked
   executeIEEE32 payload input certificate
 
-/-- Deliberately replace the addition range with `[0,0]`. This models a corrupted or optimistic
-external artifact; replay must not accept it merely because `[0,0]` is itself a valid interval. -/
+/-- Deliberately replace the addition range with $[0,0]$. This models a corrupted or optimistic
+external artifact; replay must not accept it merely because $[0,0]$ is itself a valid interval. -/
 def tampered : Except String GraphNumericalCertificate := do
   let raw <- generate NN.Backend.BackendProfile.checkedCpu graph sources
   let addition <- match raw.ranges[2]? with
@@ -331,7 +331,7 @@ def activationReplay : Except String CheckedExecution := do
 /-!
 ## Stable axis softmax
 
-The real softmax theorem proves that a nonempty row lies in `[0,1]`; the bit-level replay then checks
+The real softmax theorem proves that a nonempty row lies in $[0,1]$; the bit-level replay then checks
 that the executable implementation stayed finite and respected that range for the concrete input.
 -/
 

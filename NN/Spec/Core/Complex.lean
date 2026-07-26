@@ -36,7 +36,7 @@ mathlib’s `ℂ` directly.
 
 namespace TorchLean
 
-/-- Parametric complex numbers `a + i·b` over a scalar type `α`. -/
+/-- Parametric complex numbers $a+ib$ over a scalar type `α`. -/
 structure Complex (α : Type) where
   /-- Real part. -/
   re : α
@@ -76,7 +76,9 @@ instance [Mul α] [Add α] [Sub α] : Mul (Complex α) :=
 
 /-!
 Division uses the standard formula
-`(a+bi)/(c+di) = ((ac+bd) + i(bc-ad)) / (c^2 + d^2)`.
+$$
+\frac{a+bi}{c+di}=\frac{(ac+bd)+i(bc-ad)}{c^2+d^2}.
+$$
 -/
 instance [Mul α] [Add α] [Sub α] [Div α] : Div (Complex α) :=
   ⟨fun x y =>
@@ -125,7 +127,7 @@ instance [Numbers α] [Zero α] : Numbers (Complex α) where
 
 namespace Internal
 
-/-- Squared magnitude `re^2 + im^2` (helper for `abs/log`). -/
+/-- Squared magnitude $\operatorname{re}^2+\operatorname{im}^2$ (helper for `abs`/`log`). -/
 def normSq [Mul α] [Add α] (z : Complex α) : α := z.re * z.re + z.im * z.im
 
 /-- Real magnitude `sqrt(normSq z)`. -/

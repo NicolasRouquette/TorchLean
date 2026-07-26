@@ -25,7 +25,8 @@ can discharge the assumptions that finite runtime `Float32` primitives match the
 
 1) execute with `Float32` (runtime),
 2) rewrite the result to `IEEE32Exec`,
-3) reuse `Bridge/FP32.lean` and `Bridge/Expressions.lean` to connect
+3) reuse `NN/Floats/IEEEExec/Bridge/FP32.lean` and
+   `NN/Floats/IEEEExec/Bridge/Expressions.lean` to connect
    execution to the `FP32` rounding-on-`ℝ` model on finite/no-overflow inputs.
 
 The trust boundary is explicit: the only unproved part is the external/runtime correctness
@@ -62,8 +63,10 @@ clean *interface* that you can assume/provide:
 - If the runtime `Float32` primitives produce the same result bits as `IEEE32Exec`,
   then runtime evaluation can be rewritten into `IEEE32Exec` evaluation.
 - Once we are in `IEEE32Exec`, we can use the internal bridge theorems to connect execution to the
-  `FP32` rounding-on-`ℝ` model on the finite/no-overflow path (`Bridge/FP32.lean`,
-  `Bridge/FP32Total.lean`, and `Bridge/Expressions.lean`).
+  `FP32` rounding-on-`ℝ` model on the finite/no-overflow path
+  (`NN/Floats/IEEEExec/Bridge/FP32.lean`,
+  `NN/Floats/IEEEExec/Bridge/FP32Total.lean`, and
+  `NN/Floats/IEEEExec/Bridge/Expressions.lean`).
 
 NaN payloads are deliberately outside the exact-bit contract: Lean runtimes may canonicalize them,
 whereas `IEEE32Exec` preserves a deterministic payload. Classification fields below still relate

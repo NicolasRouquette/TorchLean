@@ -99,13 +99,14 @@ def scalarPowNat {α : Type} [One α] [Mul α] (x : α) : Nat → α
 /-! ## Shared utilities -/
 namespace OptimizerUtils
 
-/-- Momentum-style buffer update `μ * buf + g`. -/
+/-- Momentum-style buffer update $\mu\,\mathtt{buf}+g$. -/
 def updateMomentumBuf {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] {s : Shape}
     (buf : Tensor α s) (momentum : α) (grads : Tensor α s) : Tensor α s :=
   addSpec (scaleSpec buf momentum) grads
 
 /--
-Elementwise “adaptive learning rate” tensor `lr / (sqrt(denom) + ε)`.
+Elementwise adaptive learning-rate tensor
+$\mathtt{lr}/(\sqrt{\mathtt{denom}}+\varepsilon)$.
 
 This is shared by AdaGrad/RMSProp/Adam-style optimizers.
 -/
@@ -150,17 +151,18 @@ def SGD.update {α : Type} [Context α] [DecidableRel ((· > ·) : α → α →
 /--
 Momentum SGD state (per parameter tensor).
 
-We store a momentum buffer `buf` and a momentum coefficient `μ`.
+We store a momentum buffer `buf` and a momentum coefficient $\mu$.
 Update rule:
-- `buf ← μ buf + g`
-- `p ← p - lr * buf`
+
+- $\mathtt{buf}\gets\mu\,\mathtt{buf}+g$,
+- $p\gets p-\mathtt{lr}\,\mathtt{buf}$.
 
 This matches PyTorch's SGD momentum behavior when `dampening = 0` and `nesterov = false`.
 -/
 structure MomentumSGD.State (α : Type) (s : Shape) where
   /-- Learning rate. -/
   lr : α
-  /-- Momentum coefficient `μ`. -/
+  /-- Momentum coefficient $\mu$. -/
   momentum : α
   /-- Momentum buffer `buf`. -/
   buf : Tensor α s
@@ -183,13 +185,13 @@ def MomentumSGD.update {α : Type} [Context α] [DecidableRel ((· > ·) : α �
 /--
 AdaGrad state (per parameter tensor).
 
-We store an accumulator `G` of squared gradients (same shape as the parameters). The effective
-step size is scaled by `1 / (sqrt(G) + ε)`.
+We store an accumulator $G$ of squared gradients (same shape as the parameters). The effective
+step size is scaled by $1/(\sqrt G+\varepsilon)$.
 -/
 structure AdaGrad.State (α : Type) (s : Shape) where
   /-- Base learning rate. -/
   lr : α
-  /-- Numerical stability constant `ε`. -/
+  /-- Numerical stability constant $\varepsilon$. -/
   epsilon : α
   /-- Accumulated squared gradients. -/
   accumulator : Tensor α s
@@ -219,9 +221,9 @@ We store an EMA of squared gradients (`accumulator`), often called `square_avg` 
 structure RMSProp.State (α : Type) (s : Shape) where
   /-- Learning rate. -/
   lr : α
-  /-- Decay coefficient for the EMA of `g²` (often called `alpha`). -/
+  /-- Decay coefficient for the EMA of $g^2$ (often called `alpha`). -/
   decay : α
-  /-- Numerical stability constant `ε`. -/
+  /-- Numerical stability constant $\varepsilon$. -/
   epsilon : α
   /-- EMA of squared gradients. -/
   accumulator : Tensor α s
@@ -253,11 +255,11 @@ We store first/second moment EMAs (`m`, `v`) and a step counter `t` used for bia
 structure Adam.State (α : Type) (s : Shape) where
   /-- Learning rate. -/
   lr : α
-  /-- First moment decay `β₁`. -/
+  /-- First moment decay $\beta_1$. -/
   beta1 : α
-  /-- Second moment decay `β₂`. -/
+  /-- Second moment decay $\beta_2$. -/
   beta2 : α
-  /-- Numerical stability constant `ε`. -/
+  /-- Numerical stability constant $\varepsilon$. -/
   epsilon : α
   /-- First moment EMA. -/
   m : Tensor α s
@@ -266,7 +268,7 @@ structure Adam.State (α : Type) (s : Shape) where
   /-- Step counter (used for bias correction). -/
   t : Nat
 
-/-- Initialize Adam with `m = 0`, `v = 0`, and `t = 0`. -/
+/-- Initialize Adam with $m=0$, $v=0$, and $t=0$. -/
 def Adam.init {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] {s : Shape}
   (lr : α) (beta1 : α) (beta2 : α) (epsilon : α) (_ : Tensor α s) : Adam.State α s :=
   {
@@ -283,13 +285,14 @@ def Adam.init {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → 
 One Adam step (returns updated state and parameters).
 
 Equations (elementwise):
-- `m ← β₁ m + (1-β₁) g`
-- `v ← β₂ v + (1-β₂) g²`
-- `m̂ ← m / (1-β₁ᵗ)`
-- `v̂ ← v / (1-β₂ᵗ)`
-- `p ← p - lr * m̂ / (sqrt(v̂) + ε)`
 
-The `ε` placement matches Kingma and Ba: it is added after `sqrt(v̂)`.
+- $m\gets\beta_1m+(1-\beta_1)g$,
+- $v\gets\beta_2v+(1-\beta_2)g^2$,
+- $\widehat m\gets m/(1-\beta_1^t)$,
+- $\widehat v\gets v/(1-\beta_2^t)$,
+- $p\gets p-\mathtt{lr}\,\widehat m/(\sqrt{\widehat v}+\varepsilon)$.
+
+The $\varepsilon$ placement matches Kingma and Ba: it is added after $\sqrt{\widehat v}$.
 -/
 def Adam.update {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] {s : Shape}
   (state : Adam.State α s) (params : Tensor α s) (grads : Tensor α s) : (Adam.State α s × Tensor α
@@ -336,11 +339,11 @@ separate parameter decay term rather than being folded into the gradient that fe
 structure AdamW.State (α : Type) (s : Shape) where
   /-- Learning rate. -/
   lr : α
-  /-- First moment decay `β₁`. -/
+  /-- First moment decay $\beta_1$. -/
   beta1 : α
-  /-- Second moment decay `β₂`. -/
+  /-- Second moment decay $\beta_2$. -/
   beta2 : α
-  /-- Numerical stability constant `ε`. -/
+  /-- Numerical stability constant $\varepsilon$. -/
   epsilon : α
   /-- Weight decay coefficient `wd`. -/
   weight_decay : α
@@ -418,9 +421,9 @@ We store two EMAs:
 structure Adadelta.State (α : Type) (s : Shape) where
   /-- Learning rate (often set to `1` in some presentations; we keep it explicit). -/
   lr : α
-  /-- Decay coefficient `ρ`. -/
+  /-- Decay coefficient $\rho$. -/
   rho : α
-  /-- Numerical stability constant `ε`. -/
+  /-- Numerical stability constant $\varepsilon$. -/
   epsilon : α
   /-- EMA of squared gradients. -/
   v : Tensor α s
@@ -436,12 +439,14 @@ def Adadelta.init {α : Type} [Context α] [DecidableRel ((· > ·) : α → α 
 One Adadelta step (returns updated state and parameters).
 
 Elementwise equations:
-- `v ← ρ v + (1-ρ) g²`
-- `Δp ← - lr * (sqrt(u + ε) / sqrt(v + ε)) ⊙ g`
-- `p ← p + Δp`
-- `u ← ρ u + (1-ρ) (Δp)²`
 
-The `ε` placement is inside the RMS terms, matching Zeiler's Adadelta update.
+- $v\gets\rho v+(1-\rho)g^2$,
+- $\Delta p\gets-\mathtt{lr}\,
+  \dfrac{\sqrt{u+\varepsilon}}{\sqrt{v+\varepsilon}}\odot g$,
+- $p\gets p+\Delta p$,
+- $u\gets\rho u+(1-\rho)(\Delta p)^2$.
+
+The $\varepsilon$ placement is inside the RMS terms, matching Zeiler's Adadelta update.
 -/
 def Adadelta.update {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] {s : Shape}
   (state : Adadelta.State α s) (params : Tensor α s) (grads : Tensor α s) : (Adadelta.State α s ×

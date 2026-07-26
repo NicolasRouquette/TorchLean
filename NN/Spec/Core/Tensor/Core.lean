@@ -52,7 +52,9 @@ This is a *functional* representation:
 The spec layer does not commit to a concrete memory layout.
 -/
 inductive Tensor (α : Type) : Shape → Type where
+  /-- Construct a rank-zero tensor from one scalar value. -/
   | scalar : α → Tensor α .scalar
+  /-- Construct an outer dimension from its shape-indexed entries. -/
   | dim : ∀ {n s}, (Fin n → Tensor α s) → Tensor α (.dim n s)
 
 /-!

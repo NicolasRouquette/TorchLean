@@ -102,7 +102,7 @@ Lean then reconstructs the family-specific typed record used by this example's s
 forward pass. Converting that record into another model API is a separate, explicit adapter. The
 JSON file is transport, not semantics.
 
-For the checked-in `2 → 3 → 1` MLP, the payload has the following shape:
+For the checked-in $`2\to3\to1` MLP, the payload has the following shape:
 
 ```
 {

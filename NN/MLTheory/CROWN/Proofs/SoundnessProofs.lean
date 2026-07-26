@@ -55,8 +55,11 @@ open NN.MLTheory.CROWN
 variable {α : Type} [Context α]
 
 /--
-Lemma: If x ∈ [lo, hi], then for any affine function f(x) = ax + b,
-f(x) ∈ [min(a*lo + b, a*hi + b), max(a*lo + b, a*hi + b)]
+If $x\in[\ell,h]$, then the affine function $f(x)=ax+b$ satisfies
+
+$$
+f(x)\in[\min(a\ell+b,ah+b),\max(a\ell+b,ah+b)].
+$$
 -/
 theorem affine_scalar_interval_sound (a b x lo hi : ℝ)
     (hx : lo ≤ x ∧ x ≤ hi) :
@@ -96,13 +99,14 @@ theorem affine_scalar_interval_sound (a b x lo hi : ℝ)
       rw [max_eq]; linarith
 
 /--
-Theorem: ReLU upper affine bound is sound.
-For ReLU(z) where z ∈ [l, u], the triangular relaxation provides an upper bound.
+The ReLU upper affine bound is sound. For $\operatorname{ReLU}(z)$ with $z\in[l,u]$,
+the triangular relaxation provides an upper bound.
 
 The CROWN relaxation uses:
-- If l ≥ 0: slope = 1, bias = 0 (ReLU is identity)
-- If u ≤ 0: slope = 0, bias = 0 (ReLU is zero)
-- If l < 0 < u: slope = u/(u-l), bias = -l*u/(u-l) (linear upper envelope)
+
+- If $l\ge 0$: slope $=1$, bias $=0$; ReLU is the identity.
+- If $u\le 0$: slope $=0$, bias $=0$; ReLU is zero.
+- If $l<0<u$: slope $=\frac{u}{u-l}$ and bias $=-\frac{lu}{u-l}$, the linear upper envelope.
 -/
 theorem relu_affine_upper_bound_sound (z l u : ℝ) (hz : l ≤ z ∧ z ≤ u) :
     let relu_z := max 0 z
@@ -168,8 +172,9 @@ theorem relu_affine_upper_bound_sound (z l u : ℝ) (hz : l ≤ z ∧ z ≤ u) :
              _ ≤ (u * z - l * u) / (u - l) := by apply div_le_div_of_nonneg_right key; linarith
 
 /--
-Main Theorem: CROWN affine bounds are sound for 2-layer MLPs.
-If x ∈ xB, then forward(net, x) ∈ bound_affine(net, xB).
+Main theorem: CROWN affine bounds are sound for two-layer MLPs.
+If $x\in x_B$, then
+$\operatorname{forward}(\mathrm{net},x)\in\operatorname{boundAffine}(\mathrm{net},x_B)$.
 
 This is the key soundness theorem for CROWN: it shows that the affine relaxation
 computed by `bound_affine` is indeed an overapproximation of the true network output.

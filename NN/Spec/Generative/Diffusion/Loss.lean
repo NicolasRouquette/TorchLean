@@ -32,7 +32,8 @@ variable {α : Type} [Context α]
 variable {T : Nat} {s : Shape}
 
 /--
-ε-prediction (DDPM-style) loss: `MSE( ε̂_θ(x_t, t), ε )`.
+$\varepsilon$-prediction (DDPM-style) loss:
+$\operatorname{MSE}(\hat\varepsilon_\theta(x_t,t),\varepsilon)$.
 
 Inputs:
 - `x0`: clean sample,

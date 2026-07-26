@@ -38,7 +38,7 @@ def takeDataDir (args : List String) (default : System.FilePath := defaultDataDi
 def cifar10Dir (dataDir : System.FilePath := defaultDataDir) : System.FilePath :=
   dataDir / "cifar10"
 
-/-- Prepared CIFAR-10 training images, shape `(N, 3, 32, 32)`, float32 in `[0, 1]`. -/
+/-- Prepared CIFAR-10 training images, shape `(N, 3, 32, 32)`, float32 in $[0,1]$. -/
 def cifar10TrainX (dataDir : System.FilePath := defaultDataDir) : System.FilePath :=
   cifar10Dir dataDir / "cifar10_train_X.npy"
 
@@ -46,7 +46,7 @@ def cifar10TrainX (dataDir : System.FilePath := defaultDataDir) : System.FilePat
 def cifar10TrainY (dataDir : System.FilePath := defaultDataDir) : System.FilePath :=
   cifar10Dir dataDir / "cifar10_train_y.npy"
 
-/-- Prepared CIFAR-10 test images, shape `(N, 3, 32, 32)`, float32 in `[0, 1]`. -/
+/-- Prepared CIFAR-10 test images, shape `(N, 3, 32, 32)`, float32 in $[0,1]$. -/
 def cifar10TestX (dataDir : System.FilePath := defaultDataDir) : System.FilePath :=
   cifar10Dir dataDir / "cifar10_test_X.npy"
 
@@ -64,7 +64,7 @@ ImageNet-compatible, or Tiny-ImageNet-style directory tree and write the convert
 def imagenet64Dir (dataDir : System.FilePath := defaultDataDir) : System.FilePath :=
   dataDir / "imagenet64"
 
-/-- Prepared ImageNet-style training images, shape `(N, 3, 64, 64)`, float32 in `[0, 1]`. -/
+/-- Prepared ImageNet-style training images, shape `(N, 3, 64, 64)`, float32 in $[0,1]$. -/
 def imagenet64TrainX (dataDir : System.FilePath := defaultDataDir) : System.FilePath :=
   imagenet64Dir dataDir / "imagenet64_train_X.npy"
 
@@ -81,7 +81,7 @@ def householdPowerDir (dataDir : System.FilePath := defaultDataDir) : System.Fil
   dataDir / "household_power"
 
 /--
-Prepared UCI household-power inputs, shape `(N, 24, 1)`, float32 normalized to `[0, 1]`.
+Prepared UCI household-power inputs, shape `(N, 24, 1)`, float32 normalized to $[0,1]$.
 
 Each row is a 24-hour window of hourly mean `Global_active_power`.
 -/
@@ -89,7 +89,7 @@ def householdPowerX (dataDir : System.FilePath := defaultDataDir) : System.FileP
   householdPowerDir dataDir / "household_power_X.npy"
 
 /--
-Prepared UCI household-power targets, shape `(N, 24, 1)`, float32 normalized to `[0, 1]`.
+Prepared UCI household-power targets, shape `(N, 24, 1)`, float32 normalized to $[0,1]$.
 
 Each target row is the corresponding input window shifted by one hour.
 -/

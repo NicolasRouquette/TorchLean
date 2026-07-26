@@ -224,7 +224,8 @@ theorem box_sub_sound (n : Nat)
                           simpa [Tensor.map2Spec, hL1, hU1, hX, hL2, hU2, hY] using And.intro hlo hhi
 
 omit [BoundOps α] in
-/-- Enclosure for `box_relu`: if x ∈ B then ReLU(x) ∈ box_relu B. -/
+/-- Enclosure for `box_relu`: if $x\in B$, then $\operatorname{ReLU}(x)$ belongs to the resulting
+box. -/
 theorem box_relu_sound (n : Nat)
   (lo hi : Tensor α (.dim n .scalar))
   (relu_mono : ∀ {a b : α}, a ≤ b →

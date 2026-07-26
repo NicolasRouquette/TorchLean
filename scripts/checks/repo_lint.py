@@ -189,6 +189,22 @@ LOCAL_SOURCE_REF_RE = re.compile(
     r"\.(?:lean|md|py|json|sh|cu|c|h|yml|yaml))`"
 )
 
+LEAN_DOC_COMMENT_RE = re.compile(r"/-(?:!|-).*?-/", flags=re.DOTALL)
+# A single backslash starts the delimiters that MD4Lean does not recognize.
+# The negative lookbehind leaves TeX line breaks such as `\\[1ex]` alone.
+DOCGEN_UNSUPPORTED_MATH_DELIMITER_RE = re.compile(r"(?<!\\)\\[\(\[]")
+DOCGEN_DISPLAY_MATH_RE = re.compile(r"\$\$(.*?)\$\$", flags=re.DOTALL)
+DOCGEN_MARKDOWN_LIST_IN_DISPLAY_MATH_RE = re.compile(
+    r"^[ \t]*(?:[-+*]|\d+[.)])[ \t]+",
+    flags=re.MULTILINE,
+)
+VERSO_TEX_IN_ORDINARY_CODE_RE = re.compile(
+    r"(?<!\$)`[^`\n]*(?:\\[A-Za-z]+|_\{[^}`]+\})[^`\n]*`"
+)
+FORMALIZATION_MATH_IN_ORDINARY_CODE_RE = re.compile(
+    r"(?<!\$)`[^`\n]*(?:\s[\^+*/<>]=?\s|≤|≥|±)[^`\n]*`"
+)
+
 PUBLIC_EXAMPLE_PREFIXES = (
     "NN/Examples/Quickstart/",
     "NN/Examples/Models/",
@@ -791,6 +807,58 @@ def _check_docgen_api_links(path: pathlib.Path, text: str, findings: list[Findin
             )
 
 
+def _check_lean_doc_math(path: pathlib.Path, text: str, findings: list[Finding]) -> None:
+    """Reject documentation math that DocGen cannot pass intact to MathJax."""
+
+    for comment in LEAN_DOC_COMMENT_RE.finditer(text):
+        for match in DOCGEN_UNSUPPORTED_MATH_DELIMITER_RE.finditer(comment.group()):
+            offset = comment.start() + match.start()
+            line, col = _line_col(text, offset)
+            findings.append(
+                Finding(
+                    "ERROR",
+                    path,
+                    line,
+                    col,
+                    "DocGen does not preserve this math delimiter; use `$...$` or `$$...$$`.",
+                )
+            )
+        for display in DOCGEN_DISPLAY_MATH_RE.finditer(comment.group()):
+            for match in DOCGEN_MARKDOWN_LIST_IN_DISPLAY_MATH_RE.finditer(display.group(1)):
+                offset = comment.start() + display.start(1) + match.start()
+                line, col = _line_col(text, offset)
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        path,
+                        line,
+                        col,
+                        "a display-math line starts like a Markdown list item; move the operator "
+                        "to the preceding TeX line so DocGen keeps the equation together.",
+                    )
+                )
+
+
+def _check_verso_math_roles(path: pathlib.Path, text: str, findings: list[Finding]) -> None:
+    """Catch mathematical TeX that would remain an ordinary monospace code span."""
+
+    patterns = [VERSO_TEX_IN_ORDINARY_CODE_RE]
+    if path.is_relative_to(REPO_ROOT / "blueprint/TorchLeanBlueprint/FormalizationMap"):
+        patterns.append(FORMALIZATION_MATH_IN_ORDINARY_CODE_RE)
+    for pattern in patterns:
+        for match in pattern.finditer(text):
+            line, col = _line_col(text, match.start())
+            findings.append(
+                Finding(
+                    "ERROR",
+                    path,
+                    line,
+                    col,
+                    "mathematical prose is in an ordinary code span; use a Verso `$` math role.",
+                )
+            )
+
+
 def _lean_string_field(body: str, field: str) -> str | None:
     m = re.search(rf"\b{re.escape(field)}\s*:=\s*\"([^\"]+)\"", body)
     return m.group(1) if m else None
@@ -1021,6 +1089,8 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         if path.suffix != ".lean":
             _check_local_source_refs(path, text, findings)
             _check_docgen_api_links(path, text, findings)
+        elif path.is_relative_to(REPO_ROOT / "blueprint/TorchLeanBlueprint"):
+            _check_verso_math_roles(path, text, findings)
         for rx, msg in DOC_FACT_BANNED_PATTERNS:
             for m in rx.finditer(text):
                 line, col = _line_col(text, m.start())
@@ -1172,6 +1242,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         text = raw.decode("utf-8", errors="replace")
         masked = _mask_lean_comments_and_strings(text)
         _check_local_source_refs(path, text, findings)
+        _check_lean_doc_math(path, text, findings)
         _check_backend_contract_refs(path, text, lake_text, findings)
 
         if not _has_nn_header(path, text):

@@ -47,8 +47,8 @@ open NN.MLTheory.CROWN
 
 /-! ## Interval arithmetic on output boxes -/
 
-/-- Interval subtraction: `boxSub T S` encloses all pointwise differences `x - y` with `x ∈ T`, `y ∈
-  S`. -/
+/-- Interval subtraction: `boxSub T S` encloses every pointwise difference $x-y$ with $x\in T$ and
+$y\in S$. -/
 def boxSub {n : Nat}
     (T S : Box ℝ (.dim n .scalar)) : Box ℝ (.dim n .scalar) :=
   { lo := Tensor.subSpec T.lo S.hi

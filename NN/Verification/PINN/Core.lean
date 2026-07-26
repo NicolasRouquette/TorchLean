@@ -200,12 +200,13 @@ def seedParamsFloat2D : ParamStore Float :=
         withMiddleLayer.linearWB.insert 5 ({ m := 1, n := 16, w := outputWeight, b := outputBias }) }
   withOutputLayer
 
-/-- Seed a 1D input box `[x - eps, x + eps]` at node id 0. -/
+/-- Seed a 1D input box $[x-\varepsilon,x+\varepsilon]$ at node id 0. -/
 def seedInputFloat (ps : ParamStore Float) (x : Float) (eps : Float) : ParamStore Float :=
   let inputCenter : Tensor Float (.dim 1 .scalar) := Tensor.dim (fun _ => Tensor.scalar x)
   ps.seedLInfBall 0 inputCenter eps
 
-/-- Seed a 2D input box `[(x,y) - eps, (x,y) + eps]` at node id 0. -/
+/-- Seed a 2D input box
+$[(x,y)-(\varepsilon,\varepsilon),(x,y)+(\varepsilon,\varepsilon)]$ at node id 0. -/
 def seedInputFloat2D (ps : ParamStore Float) (x y : Float) (eps : Float) : ParamStore Float :=
   let inputCenter : Tensor Float (.dim 2 .scalar) :=
     Tensor.dim (fun i => Tensor.scalar (if decide (i.val = 0) then x else y))
@@ -248,7 +249,8 @@ def hessian2D (g : Graph) (ps : ParamStore Float)
     else none
   (d2x, d2y)
 
-/-- Laplacian upper/lower interval: Δu = u_xx + u_yy. For 1D inputs, returns u_xx. -/
+/-- Laplacian enclosure: $\Delta u=u_{xx}+u_{yy}$. For one-dimensional inputs, this returns
+$u_{xx}$. -/
 def laplacianBounds2D (g : Graph) (ps : ParamStore Float) : Option (Float × Float) :=
   let (d2x, d2y) := hessian2D g ps
   match d2x, d2y with

@@ -104,8 +104,8 @@ For `g : Graph ps σ τ`, think of `g` as denoting a function
 
 In this file, that semantics is implemented by `Interp.spec`, and it is defined structurally:
 
-- `⟦id⟧ params x = x`
-- `⟦prim p⟧ params x = p.specFwd params x`
+- $\llbracket\mathrm{id}\rrbracket(\mathrm{params},x)=x$
+- $\llbracket\operatorname{prim}(p)\rrbracket(\mathrm{params},x)=p.\operatorname{specFwd}(\mathrm{params},x)$
 - `⟦g₁ >>> g₂⟧ params x`:
   split `params : Params(ps₁ ++ ps₂)` into `(params₁ : Params ps₁, params₂ : Params ps₂)`, then
   compute `⟦g₂⟧ params₂ (⟦g₁⟧ params₁ x)`.
@@ -210,7 +210,7 @@ structure Primitive (ps : List Shape) (σ τ : Shape) where
   Optional lowering to a TorchLean `LayerDef`.
 
   We thread an occurrence index (`Nat`) so primitives can implement deterministic “per-layer”
-  initialization (e.g. seed = f(index)).
+  initialization (for example, $\mathrm{seed}=f(\mathrm{index})$).
   -/
   toLayerDefM? :
     Option (Nat → { l : Runtime.Autograd.TorchLean.NN.LayerDef σ τ // l.paramShapes = ps }) := none
@@ -257,7 +257,7 @@ Mathematical semantics (vector case):
 
 Let `x : Vec inDim`, `W : Mat outDim inDim`, and `b : Vec outDim`. Then:
 
-`linear(W,b,x) = W * x + b`.
+$\operatorname{linear}(W,b,x)=Wx+b$.
 
 This matches the standard dense layer as in PyTorch `torch.nn.linear` / `torch.nn.functional.linear`
 (up to the usual row/column convention; here the shape indices make the intended dimensions
@@ -309,7 +309,7 @@ def linear (inDim outDim : Nat) :
 /--
 ReLU activation (parameter-free).
 
-Mathematical semantics: elementwise `relu(x) = max(x, 0)`.
+Mathematical semantics: elementwise $\operatorname{ReLU}(x)=\max(x,0)$.
 
 This is *shape-preserving* and *parameter-free*, so its parameter list is `[]` and its input/output
 shape indices are both `s`.
@@ -333,7 +333,10 @@ Last-axis softmax (parameter-free).
 
 Softmax turns “logits” into a probability distribution along the *last* axis:
 
-`softmax(x)_i = exp(x_i) / (∑_j exp(x_j))`.
+$$
+\operatorname{softmax}(x)_i
+=\frac{\exp(x_i)}{\sum_j\exp(x_j)}.
+$$
 
 In TorchLean’s spec layer, this is implemented as a genuine last-axis tensor softmax (recursing
 over outer dimensions), analogous to `torch.softmax(x, dim=-1)` in PyTorch.

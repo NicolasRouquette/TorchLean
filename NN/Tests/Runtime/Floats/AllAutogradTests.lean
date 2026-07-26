@@ -155,7 +155,9 @@ This file is a small, end-to-end training regression test for the *dynamic autog
 
 We fit a 1D linear model to a small dataset:
 
-  `y = 2x + 1`
+$$
+y=2x+1
+$$
 
 using SGD on the mean-squared-error (MSE) loss.
 

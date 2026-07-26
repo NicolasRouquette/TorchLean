@@ -43,36 +43,41 @@ PyTorch comparison: this is the standard eager autograd mechanism (a dynamic tap
 -/
 
 /--
-Dispatch an eager op with optional CUDA support.
+Dispatch an eager operation through its selected CPU or CUDA capsule.
 
-When `Options.device = .cuda`, any op whose CUDA implementation returns `none` will throw.
-
-TorchLean's CUDA eager mode has no per-op CPU fallback: either the op is supported by CUDA, or it
-errors immediately.
+`cudaProviders` names the providers implemented by the supplied CUDA handler. The selected capsule
+is bound to the matching handler before any implementation runs. Returning `none` still means that
+the operation has no implementation in this CUDA runtime; there is no per-operation CPU fallback.
 -/
-def dispatchCudaOpt {α β : Type} (s : EagerSession α) (op : NN.Backend.BackendOp)
-    (cpu : IO β) (cuda : IO (Option β)) : IO β := do
-  if Options.device s.opts == .cuda then
-    let r? ← cuda
-    match r? with
-    | some r => pure r
-    | none =>
-        throw <| IO.userError s!"torch: cuda: `{op.name}` is unsupported by the eager CUDA backend"
-  else
-    let _ ← s.requireCapsuleProvider op .reference "TorchLean's reference CPU executor"
-    cpu
+def dispatchCudaCapsuleOpt {α β : Type} (s : EagerSession α) (op : NN.Backend.BackendOp)
+    (cudaProviders : List NN.Backend.Provider) (cpu : IO β)
+    (cuda : NN.Backend.KernelCapsule → IO (Option β)) : IO β := do
+  let cpuHandler : NN.Backend.KernelHandler β :=
+    { name := "TorchLean reference CPU"
+      op
+      provider := .reference
+      device := .cpu
+      execute := fun _ => cpu }
+  let cudaHandlers : List (NN.Backend.KernelHandler β) :=
+    cudaProviders.map fun provider =>
+      { name := s!"CUDA executor for {reprStr provider}"
+        op
+        provider
+        device := .cuda
+        execute := fun capsule => do
+          match ← cuda capsule with
+          | some result => pure result
+          | none =>
+              throw <| IO.userError <|
+                s!"torch: cuda: `{op.name}` is unsupported by `{reprStr provider}`" }
+  s.executeSelected op (cpuHandler :: cudaHandlers)
 
 /--
-Require that the selected backend contract is the native CUDA capsule used by this eager op.
-
-This guard is intentionally runtime-side. The planner may know about LibTorch, Metal, ROCm, or
-reference capsules, but these eager branches below call TorchLean's native CUDA tape directly. If a
-profile selects another provider, failing here is better than silently running a different backend.
+Dispatch an eager operation implemented by the reference CPU and TorchLean native CUDA runtimes.
 -/
-def requireNativeCudaCapsule {α : Type} (s : EagerSession α) (op : NN.Backend.BackendOp) : IO Unit := do
-  unless s.opts.usesCuda do
-    throw <| IO.userError s!"torch: native CUDA capsule requested for CPU op `{op.name}`"
-  let _ ← s.requireCapsuleProvider op .nativeCuda "TorchLean's native CUDA executor"
+def dispatchCudaOpt {α β : Type} (s : EagerSession α) (op : NN.Backend.BackendOp)
+    (cpu : IO β) (cuda : IO (Option β)) : IO β :=
+  dispatchCudaCapsuleOpt s op [.nativeCuda] cpu (fun _ => cuda)
 
 /--
 Validate one float-encoded token id and return the corresponding `Nat`.

@@ -70,14 +70,15 @@ noncomputable def vqvaeObjectiveTerms
     middle := codebookLoss model x idx
     regularizer := commitmentLoss model x idx }
 
-/-- VQ-VAE loss is exactly the shared `base + middle + β * regularizer` objective. -/
+/-- VQ-VAE loss is exactly the shared
+$\mathrm{base}+\mathrm{middle}+\beta\,\mathrm{regularizer}$ objective. -/
 theorem vqvae_loss_eq_weightedThreeTerm
     [DecidableRel ((· > ·) : ℝ → ℝ → Prop)]
     (model : Model ℝ obs latent numCodes) (beta : ℝ) (x : Tensor ℝ obs) (idx : Fin numCodes) :
     loss model beta x idx = weightedThreeTerm beta (vqvaeObjectiveTerms model x idx) := by
   rfl
 
-/-- At commitment weight `β = 0`, VQ-VAE keeps reconstruction plus codebook loss. -/
+/-- At commitment weight $\beta=0$, VQ-VAE keeps reconstruction plus codebook loss. -/
 @[simp] theorem vqvae_loss_zero_beta
     [DecidableRel ((· > ·) : ℝ → ℝ → Prop)]
     (model : Model ℝ obs latent numCodes) (x : Tensor ℝ obs) (idx : Fin numCodes) :

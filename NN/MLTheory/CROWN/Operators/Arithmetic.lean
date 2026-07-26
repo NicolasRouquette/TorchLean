@@ -39,7 +39,7 @@ variable {α : Type} [Context α]
 
 /-! ### Negation -/
 
-/-- Negation: f(x) = -x. Simplest linear operation. -/
+/-- Negation, $f(x)=-x$, is the simplest linear operation. -/
 def neg (x : α) : α := -x
 
 /-- IBP for negation. Just swaps and negates bounds. -/
@@ -67,7 +67,7 @@ def derivNeg : α × α := (-Numbers.one, -Numbers.one)
 
 /-! ### Absolute Value -/
 
-/-- Absolute value: f(x) = |x|. -/
+/-- Absolute value: $f(x)=|x|$. -/
 def abs (x : α) : α :=
   if x > Numbers.zero then x else -x
 
@@ -119,7 +119,7 @@ def affAbs (l u : α) : α × α × α × α :=
 
 /-! ### Reciprocal -/
 
-/-- Reciprocal: f(x) = 1/x. -/
+/-- Reciprocal: $f(x)=1/x$. -/
 def reciprocal (x : α) : α := Numbers.one / x
 
 /-- IBP for reciprocal on boxes, defined only when every coordinate interval excludes zero. -/
@@ -148,7 +148,7 @@ def posPow (base : α) (exp : Nat) : α :=
   | 0 => Numbers.one
   | k + 1 => base * posPow base k
 
-/-- Power: f(x) = x^n (integer power). -/
+/-- Integer power: $f(x)=x^n$. -/
 def powerInt (x : α) (n : Int) : α :=
   if n == 0 then Numbers.one
   else if n > 0 then

@@ -1,10 +1,9 @@
 ---
 title: Updates
-usemathjax: true
 ---
 
 <nav class="timeline-nav" aria-label="TorchLean update timeline">
-  <a href="#july-2026-refactor">July 2026 refactor</a>
+  <a href="#july-2026-refactor">July 2026</a>
   <a href="#june-2026-reliability">June 2026 reliability</a>
   <a href="#june-2026-lean-431">Lean 4.31</a>
   <a href="#may-2026-cleanup">Comment cleanup</a>
@@ -20,39 +19,36 @@ usemathjax: true
   <div class="update-date">July 2026</div>
   <div class="update-body" markdown="1">
 
-## Lean 4.32 and a Leaner TorchLean
+## Lean 4.32, Numerical Proofs, and Runtime Tests
 
-<p class="update-kicker">A smaller API, stronger numerical foundations, and harder runtime tests</p>
+<p class="update-kicker">Imports, floating point, training, CUDA, and documentation</p>
 <p class="update-summary">
-This release began as a cleanup and grew into a fairly thorough pass over the library. We removed
-duplicate entry points, made tensor operations less image-specific, brought the floating-point
-work into one coherent hierarchy, and tested the training runtime on models large enough to expose
-bugs that the small examples never reached.
+The July work touched most of TorchLean. We removed duplicate entry points, generalized tensor
+operations, reorganized the floating-point files, and tested the training runtime on models large
+enough to expose bugs that the small examples never reached.
 </p>
 
-### One Public Library
+### Imports and File Layout
 
-Model code now starts with `import NN`. There is no second convenience namespace sitting in front
-of the real library: the old `NN.Library` and `NN.Entrypoint.*` shells are gone, and focused imports
-such as `NN.Spec`, `NN.Runtime`, `NN.Floats`, and `NN.Verification` lead directly to the modules that
-own those declarations. The model zoo is still part of TorchLean; only its forwarding import modules were
-removed.
+Most model code now starts with `import NN`. The old `NN.Library` and `NN.Entrypoint.*` forwarding
+modules are gone. Focused imports such as `NN.Spec`, `NN.Runtime`, `NN.Floats`, and
+`NN.Verification` still lead directly to their declarations. The model zoo remains part of
+TorchLean.
 
 We also broke up several files that had become difficult to navigate. Training, data handling,
 schedulers, CROWN propagation, graph compilation, runtime operations, normalization, Muon, and
-floating-point semantics now live in smaller modules with narrower imports. The public API tree is
+floating-point semantics now live in smaller modules with narrower imports. The API tree is
 about 300 lines smaller and the guide is more than 5,000 lines shorter. The proof tree is larger
-because the numerical certificates, rounded backpropagation, optimizer contracts, and floating-point
-results below are new formal developments rather than forwarding wrappers.
+because it now includes numerical certificates, rounded backpropagation, optimizer contracts, and
+new floating-point results.
 
 <div class="update-grid">
   <section>
     <h3>General tensors</h3>
     <p>
-      A batch is now an axis of a tensor, not a separate kind of object. Generic permutation,
-      reduction, reshape, and global-average-pooling operations replace the old public CHW/NCHW
-      helpers. We keep layout names only where the operation itself depends on a layout, as
-      channel-first batch normalization does.
+      A batch is an axis of a tensor. Generic permutation, reduction, reshape, and
+      global-average-pooling operations replace the old CHW/NCHW helpers. We keep layout names
+      where the operation depends on a layout, as channel-first batch normalization does.
     </p>
   </section>
   <section>
@@ -73,19 +69,24 @@ results below are new formal developments rather than forwarding wrappers.
   </section>
 </div>
 
+The trainer now treats `batchSize` as the number of dataset items per optimizer update. For
+an ordinary dataset those items are samples. For `Data.batchDataset`, each item is already a typed
+tensor minibatch, so `batchSize := 1` keeps one vectorized pass per update. Larger values accumulate
+gradients across several items. Logged pre-update loss comes from the same forward tapes as the
+gradients; training no longer runs a second forward pass just for logging.
+
 ### Floating-Point Semantics
 
-The floating-point library now has a strict numerical boundary. `import NN.Floats` provides formats,
-rounding, finite binary32 semantics, executable IEEE binary32 operations, interval rounders, and
-scalar quantization without importing tensors, models, autograd, CUDA, certificate checkers, or
-external tools. Tensor and proof integrations live above that boundary, while optional Arb checks
-require an explicit import.
+`import NN.Floats` provides formats, rounding, finite binary32 semantics, executable IEEE binary32
+operations, interval rounders, and scalar quantization. It does not pull in tensors, models,
+autograd, CUDA, certificate checkers, or external tools. Tensor and proof integrations sit above
+that import, while optional Arb checks require an explicit import.
 
 The generic development under `NN.Floats.NeuralFloat` is organized by format, rounding, scalar
 operations, analysis, error bounds, and execution policy. It covers radix and exponent formats,
 directed and nearest rounding, round-to-odd, ULPs and neighboring values, double rounding, Sterbenz
-subtraction, and absolute and relative error bounds. Flocq influenced this organization, but this
-is a native Lean development rather than a port of the whole Coq library.
+subtraction, and absolute and relative error bounds. Flocq influenced the layout. TorchLean's
+definitions and proofs are written in Lean.
 
 Sterbenz subtraction now covers gradual underflow and has a binary32 specialization. Every finite
 `IEEE32Exec` bit pattern is proved representable in that specification, so the executable Sterbenz
@@ -107,14 +108,14 @@ explicit.
 
 ### Whole-Graph Numerical Certificates
 
-TorchLean can now build a numerical trace over the canonical `NN.IR.Graph` rather than stopping at
-isolated scalar lemmas. Source intervals use exact binary32 endpoints. The checker reconstructs
+TorchLean can now build a numerical trace over the canonical `NN.IR.Graph`. Source intervals use
+exact binary32 endpoints. The checker reconstructs
 outward-rounded ranges for supported arithmetic, activations, directed square root, reductions,
 matrix multiplication, pooling, MSE, and stable softmax; malformed domains and non-finite ranges
 fail at the node that produced them.
 
-Range propagation is now an operation registry rather than one large match over model cases. The
-same traversal handles any architecture after lowering. Before propagation, a coverage pass lists
+Range rules now live in an operation registry. The same traversal handles any architecture after
+lowering. Before propagation, a coverage pass lists
 the exact nodes whose primitives lack a range contract. Custom registries are named and the name is
 stored in the certificate, so an artifact cannot be replayed under a different set of rules.
 
@@ -164,16 +165,20 @@ rather than separate image-specific APIs.
 
 ### Backend Contracts
 
-A user should be able to choose where a model runs without learning a pile of unrelated switches.
-The backend API therefore separates three questions. `Device` says where the work runs, `Provider`
-says whose implementation performs it, and `BackendOp` names the operation being requested. For
-each available implementation, a kernel capsule records its shape and layout requirements, whether
-it supplies forward and backward computation, and what evidence supports its numerical contract.
+Backend selection has three parts. `Device` says where the work runs, `Provider` identifies the
+implementation, and `BackendOp` names the requested operation. For each available implementation,
+a kernel capsule records its shape and layout requirements, whether it supplies forward and
+backward computation, and what evidence supports its numerical contract.
 
-The backend catalog is modular as well. Attention, native CUDA, portable reference code, and
-optional LibTorch providers contribute named capsule modules. A downstream provider can extend a
-profile with another module; model definitions do not change, because they request operations rather
-than provider-specific kernels.
+Attention, native CUDA, portable reference code, and optional LibTorch providers contribute named
+capsule modules. Another provider can extend a profile with its own module. Model definitions
+continue to request operations instead of provider-specific kernels.
+
+Capsules are now connected to runtime code through typed handlers. Before an operation runs, the
+session checks that the selected capsule and handler agree on operation, provider, and device. A
+missing binding fails explicitly instead of allowing the backend report and executed closure to
+disagree. This guarantees dispatch identity. Kernel correctness still has the evidence and trust
+level shown in the capsule.
 
 Capability names are now rank-polymorphic operation families. Convolution, pooling, reduction,
 permutation, slicing, gathering, and matrix multiplication each have one backend capability; rank,
@@ -217,7 +222,7 @@ requested provider is unavailable, TorchLean reports that fact instead of silent
       JSON certificate readers reject non-finite claims before array comparisons. IBP certificates
       are checked by recomputing the complete <code>IEEE32Exec</code> trace from the trusted graph,
       parameters, and input box; an artifact may widen that trace but may not shrink it. CROWN and
-      α,β-CROWN affine entries are compared exactly with a sequential replay instead of being
+      $\alpha,\beta$-CROWN affine entries are compared exactly with a sequential replay instead of being
       propagated from certificate-supplied parents.
     </p>
   </section>
@@ -247,6 +252,16 @@ requested provider is unavailable, TorchLean reports that fact instead of silent
       unbiased covariance and exports the centering term as a linear bias. Linear SVM fitting calls
       its regularization coefficient <code>lambda</code>, leaving <code>C</code> for the standard
       inverse-strength convention.
+    </p>
+  </section>
+  <section>
+    <h3>Formats and smooth pooling</h3>
+    <p>
+      A radix now carries a proof that its base is at least two, and a format precision carries a
+      proof that it is positive. Checked constructors reject bad integers at configuration
+      boundaries. Smooth max pooling uses a sign-aware pivot for both positive and negative
+      inverse temperatures on CPU and CUDA. Zero, non-finite, or unrepresentable inverse
+      temperatures are rejected before a native kernel runs.
     </p>
   </section>
 </div>
@@ -285,6 +300,10 @@ released the wrapper reference. The declarations now mark those inputs as borrow
 payload and wrapper counters make the distinction visible, and the stress suite checks thousands
 of allocations for matching finalization counts.
 
+Shape-erased CUDA values now compare the native buffer length with the recorded tensor shape before
+an operation runs. Dense and sparse backward also reject output seeds or initial gradients with the
+wrong length. The stress suite covers each rejected case.
+
 We exercised 21 CPU workflows and 24 CUDA workflows, including dense, convolutional, attention,
 recurrent, operator-learning, generative, and reinforcement-learning models. On the machine used
 for this release, a roughly 100-million-parameter MLP completed ten CUDA optimizer steps in about
@@ -297,7 +316,23 @@ machine. They are not a general performance promise.
 The Guide and API reference now follow the new module layout. Installation has separate notes for
 Linux, macOS, WSL2, native Windows, CUDA, and optional LibTorch support, and the floating-point and
 backend chapters explain where a theorem ends and a runtime assumption begins. Repository checks
-now build `NN` directly rather than passing through the deleted `NN.Library` shell.
+build `NN` directly; `NN.Library` no longer exists.
+
+The Guide ends with a map of 61 definitions and 48 theorems. Its 110 dependency edges distinguish
+statement dependencies from proof dependencies, and every node links back to its Lean declaration.
+The first view groups the map into 17 parts; the full view shows all 109 entries. The CROWN
+Lyapunov oracle is the only incomplete node, and the page labels it as an assumption.
+
+The Graphs page contains the module-import explorer and build-performance link. The Tools page links
+LeanProfiler and TorchLean Verified Examples. LeanProfiler includes a TorchLean model run, Perfetto
+trace output, and JSON comparisons. The verified examples cover batch-invariant inference and a
+verifiable transformer checkpoint.
+
+The import explorer now ignores fenced guide examples, so an `import` shown in a tutorial is not
+mistaken for a source-module dependency.
+
+Wide tables are wrapped during the documentation build, and the Guide's equations render with
+KaTeX.
 
 <div class="validation-list" markdown="1">
   <h3>Validation</h3>

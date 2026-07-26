@@ -14,7 +14,7 @@ import Mathlib.Tactic.Ring
 # Approximating multiplication with a 2-layer ReLU MLP (2D box)
 
 This file gives a constructive, fully proved approximation result:
-on `[-M,M]²`, the function `(x₀,x₁) ↦ x₀ * x₁` can be uniformly approximated by a
+on $[-M,M]^2$, the function $(x_0,x_1)\mapsto x_0x_1$ can be uniformly approximated by a
   single-hidden-layer
 ReLU MLP on `Tensor ℝ (.dim 2 .scalar)`.
 -/
@@ -39,7 +39,7 @@ noncomputable def firstCoordinate (x : PlaneTensorVec) : ℝ := toVec x ⟨0, by
 /-- Second coordinate projection for `PlaneTensorVec`. -/
 noncomputable def secondCoordinate (x : PlaneTensorVec) : ℝ := toVec x ⟨1, by decide⟩
 
-/-- The closed box domain `[-M,M] × [-M,M]` inside `PlaneTensorVec`. -/
+/-- The closed box domain $[-M,M]\times[-M,M]$ inside `PlaneTensorVec`. -/
 noncomputable def box (M : ℝ) : Set PlaneTensorVec :=
   fun x => firstCoordinate x ∈ Set.Icc (-M) M ∧ secondCoordinate x ∈ Set.Icc (-M) M
 
@@ -58,7 +58,7 @@ lemma dot_wPlus (x : PlaneTensorVec) : dot wPlus x = firstCoordinate x + secondC
   -- Expand the `Fin 2` sum explicitly.
   simp [dot, wPlus, firstCoordinate, secondCoordinate, Fin.sum_univ_two]
 
-/-- Evaluate the ridge `wMinus`: `dot wMinus x = the first coordinate minus secondCoordinate`. -/
+/-- Evaluate the ridge `wMinus`: $\operatorname{dot}(w_-,x)=x_0-x_1$. -/
 lemma dot_wMinus (x : PlaneTensorVec) : dot wMinus x = firstCoordinate x - secondCoordinate x := by
   classical
   simp [dot, wMinus, firstCoordinate, secondCoordinate, Fin.sum_univ_two, sub_eq_add_neg]
@@ -71,7 +71,7 @@ lemma mul_identity (x y : ℝ) : x * y = ((x + y) * (x + y) - (x - y) * (x - y))
 lemma box_bounds {M : ℝ} (_hM : 0 ≤ M) {x : PlaneTensorVec} (hx : x ∈ box M) :
     firstCoordinate x ∈ Set.Icc (-M) M ∧ secondCoordinate x ∈ Set.Icc (-M) M := hx
 
-/-- If `x ∈ box M`, then the ridge input `the first coordinate plus secondCoordinate` lies in `[-2M, 2M]`. -/
+/-- If $x\in\operatorname{box}(M)$, then $x_0+x_1\in[-2M,2M]$. -/
 lemma sum_mem_Icc {M : ℝ} (_hM : 0 ≤ M) {x : PlaneTensorVec} (hx : x ∈ box M) :
     dot wPlus x ∈ Set.Icc (-2*M) (2*M) := by
   have hx0 := hx.1
@@ -85,7 +85,7 @@ lemma sum_mem_Icc {M : ℝ} (_hM : 0 ≤ M) {x : PlaneTensorVec} (hx : x ∈ box
   have hu : firstCoordinate x + secondCoordinate x ≤ 2*M := by linarith
   simpa [dot_wPlus] using And.intro hl hu
 
-/-- If `x ∈ box M`, then the ridge input `the first coordinate minus secondCoordinate` lies in `[-2M, 2M]`. -/
+/-- If $x\in\operatorname{box}(M)$, then $x_0-x_1\in[-2M,2M]$. -/
 lemma diff_mem_Icc {M : ℝ} (_hM : 0 ≤ M) {x : PlaneTensorVec} (hx : x ∈ box M) :
     dot wMinus x ∈ Set.Icc (-2*M) (2*M) := by
   have hx0 := hx.1
@@ -98,7 +98,7 @@ lemma diff_mem_Icc {M : ℝ} (_hM : 0 ≤ M) {x : PlaneTensorVec} (hx : x ∈ bo
   have hu : firstCoordinate x - secondCoordinate x ≤ 2*M := by linarith
   simpa [dot_wMinus] using And.intro hl hu
 
-/-- Lipschitz bound for `square` on `[-R,R]`: `|x^2 - y^2| ≤ (2R) * |x - y|`. -/
+/-- Lipschitz bound for `square` on $[-R,R]$: $|x^2-y^2|\leq 2R|x-y|$. -/
 lemma square_lipschitz_Icc {R : ℝ} (_hR : 0 ≤ R) :
     ∀ x ∈ Set.Icc (-R) R, ∀ y ∈ Set.Icc (-R) R, |(x*x) - (y*y)| ≤ (2*R) * |x - y| := by
   intro x hx y hy
@@ -157,8 +157,8 @@ lemma singleRowMatrix_get_matrixMN {n : Nat} (f : Fin 1 → Fin n → ℝ) (j : 
 /--
 Combine two scalar-output linear specs into one scalar-output spec on an appended hidden layer.
 
-If the appended hidden vector is `[z_a; z_b]`, the resulting output layer computes
-`γ + α*out_a(z_a) + β*out_b(z_b)`.
+If the appended hidden vector is $[z_a;z_b]$, the resulting output layer computes
+$\gamma+\alpha\,\mathrm{out}_a(z_a)+\beta\,\mathrm{out}_b(z_b)$.
 -/
 noncomputable def combineOutput
     {m n : Nat} (α β γ : ℝ) (a : LinearSpec ℝ m 1) (b : LinearSpec ℝ n 1) :
@@ -355,7 +355,7 @@ lemma vec_get_linear_spec_append_right
 Appending hidden units and wiring the output with `combineOutput` yields an affine combination.
 
 Concretely, the combined network computes:
-`γ + α * net_a(x) + β * net_b(x)`.
+$\gamma+\alpha\,\mathrm{net}_a(x)+\beta\,\mathrm{net}_b(x)$.
 -/
 theorem mlp_eval_append_linear
     {inDim m n : Nat} (l1a : LinearSpec ℝ inDim m) (l1b : LinearSpec ℝ inDim n)
@@ -445,10 +445,11 @@ theorem mlp_eval_append_linear
 -- ---------------------------------------------------------------------------
 
 /--
-Uniform approximation of multiplication on `[-M,M]^2` by a single-hidden-layer ReLU MLP.
+Uniform approximation of multiplication on $[-M,M]^2$ by a single-hidden-layer ReLU MLP.
 
 The construction follows the classical reduction
-`x*y = ((x+y)^2 - (x-y)^2) / 4`, combined with a 1D ReLU approximator for `square` on `[-2M,2M]`
+$xy=((x+y)^2-(x-y)^2)/4$, combined with a one-dimensional ReLU approximator for `square` on
+$[-2M,2M]$
 that is lifted along the ridge directions `wPlus` and `wMinus`.
 -/
 theorem relu_mul_universal_approximation_box

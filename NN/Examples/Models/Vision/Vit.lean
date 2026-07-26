@@ -99,7 +99,7 @@ def outDim : Nat := RealData.cifarClasses
 /-- Number of attention heads in the single encoder block. -/
 def numHeads : Nat := 1
 
-/-- Per-head feature width; `numHeads * headDim = dModel`. -/
+/-- Per-head feature width; $\mathtt{numHeads}\cdot\mathtt{headDim}=\mathtt{dModel}$. -/
 def headDim : Nat := 1
 
 /-- Feed-forward hidden width inside the encoder block. -/

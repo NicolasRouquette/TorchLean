@@ -53,7 +53,6 @@ def maxPool {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .maxPool
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.maxPool (t := t0)
       (d := d) (C := C)
@@ -84,7 +83,6 @@ def avgPool {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .avgPool
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.avgPool (t := t0)
       (d := d) (C := C)
@@ -118,7 +116,6 @@ def smoothMaxPool {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .smoothMaxPool
     let betaF ← CudaBridge.TensorConv.toFloat (α := α) beta
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.smoothMaxPool (t := t0)
@@ -145,7 +142,6 @@ def maxPool2d {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .maxPool
     let inCU32 ← okOrThrow <| Runtime.Autograd.Cuda.AnyBuffer.natToU32Checked inC
     let inHU32 ← okOrThrow <| Runtime.Autograd.Cuda.AnyBuffer.natToU32Checked inH
     let inWU32 ← okOrThrow <| Runtime.Autograd.Cuda.AnyBuffer.natToU32Checked inW
@@ -184,7 +180,6 @@ def maxPool2dPad {α : Type} (s : EagerSession α) [Context α] [DecidableEq Sha
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .maxPool
     let inCU32 ← okOrThrow <| Runtime.Autograd.Cuda.AnyBuffer.natToU32Checked inC
     let inHU32 ← okOrThrow <| Runtime.Autograd.Cuda.AnyBuffer.natToU32Checked inH
     let inWU32 ← okOrThrow <| Runtime.Autograd.Cuda.AnyBuffer.natToU32Checked inW
@@ -226,7 +221,6 @@ def smoothMaxPool2d {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α)
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .smoothMaxPool
     let betaF ← CudaBridge.TensorConv.toFloat (α := α) beta
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
@@ -251,7 +245,6 @@ def avgPool2d {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .avgPool
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.avgPool2d (t := t0)
       (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
@@ -275,7 +268,6 @@ def avgPool2dPad {α : Type} (s : EagerSession α) [Context α] [DecidableEq Sha
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .avgPool
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.avgPool2dPad (t := t0)
       (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=

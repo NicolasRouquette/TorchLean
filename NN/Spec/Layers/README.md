@@ -15,7 +15,7 @@ Files:
 
 - `Activation.lean`: scalar activation formulas under `Activation.Math`, tensor activation wrappers,
   real last-axis softmax/log-softmax, and VJP specs.
-- `Linear.lean`: fully connected layer spec (`y = W x + b`) and gradients.
+- `Linear.lean`: fully connected layer spec ($y=Wx+b$) and gradients.
 - `Attention.lean`: scaled dot product attention and multihead attention with hard-mask semantics;
   blocked weights are exactly zero, and a fully blocked row evaluates to the zero vector
   semantics and VJPs.

@@ -79,10 +79,15 @@ def crownUBoundsBackward (g : Graph) (ps : ParamStore Float)
     | .error _ => none
 
 /-- Scalar product upper envelope over rectangles using McCormick.
-    Given u∈[lx,ux], v∈[ly,uy], returns an affine upper bound of the form
-      uv ≤ ax*u + ay*v + c,
-    as coefficients (ax, ay, c).
-    We pick the tighter of the two classical McCormick upper planes.
+
+Given $u\in[l_x,u_x]$ and $v\in[l_y,u_y]$, this returns coefficients
+$(a_x,a_y,c)$ for the affine upper bound
+
+$$
+uv\le a_xu+a_yv+c.
+$$
+
+It chooses the tighter of the two classical McCormick upper planes.
 -/
 def mccormickUpper (lx ux ly uy : Float) : (Float × Float × Float) :=
   let cx := (lx + ux) * 0.5
@@ -97,8 +102,9 @@ def mccormickUpper (lx ux ly uy : Float) : (Float × Float × Float) :=
     (uy, lx, -(lx * uy))
 
 /-- Scalar product lower envelope over rectangles using McCormick.
-    Given u∈[lx,ux], v∈[ly,uy], returns an affine lower bound of the form
-      uv ≥ ax*u + ay*v + c.
+
+Given $u\in[l_x,u_x]$ and $v\in[l_y,u_y]$, this returns an affine lower bound
+$uv\ge a_xu+a_yv+c$.
 -/
 def mccormickLower (lx ux ly uy : Float) : (Float × Float × Float) :=
   -- Lower planes: uv ≥ uy*u + ux*v - ux*uy and uv ≥ ly*u + lx*v - lx*ly
@@ -109,8 +115,9 @@ def mccormickLower (lx ux ly uy : Float) : (Float × Float × Float) :=
   else
     (ly, lx, -(lx * ly))
 
-/-- Evaluate an affine ax*u + ay*v + c on intervals u∈[ul,uh], v∈[vl,vh]
-    to produce a numeric interval bound. -/
+/-- Evaluate $a_xu+a_yv+c$ on the box
+$u\in[u_{\mathrm{lo}},u_{\mathrm{hi}}]$,
+$v\in[v_{\mathrm{lo}},v_{\mathrm{hi}}]$ to produce a numeric interval bound. -/
 def evalAffine2DOnBox (ax ay c ul uh vl vh : Float) : (Float × Float) :=
   let p1 := ax * ul + ay * vl + c
   let p2 := ax * ul + ay * vh + c
@@ -122,10 +129,12 @@ def evalAffine2DOnBox (ax ay c ul uh vl vh : Float) : (Float × Float) :=
   let hi2 := if p3 > p4 then p3 else p4
   ((if lo1 < lo2 then lo1 else lo2), (if hi1 > hi2 then hi1 else hi2))
 
-/-- Basic 1D branch-and-bound over the input box [x-ε,x+ε]. Recursively splits the
-    box up to `maxDepth` or until width ≤ `minWidth`. On each sub-box it calls
-    the provided bounding function `boundOn` which must return (lo, hi).
-    Returns the tightest global (min lo, max hi) across sub-boxes. -/
+/-- Basic one-dimensional branch-and-bound over $[x-\varepsilon,x+\varepsilon]$.
+
+It recursively splits the box up to `maxDepth` or until its width is at most `minWidth`.
+On each sub-box it calls `boundOn`, which returns `(lo, hi)`. The result is the tightest
+global pair `(min lo, max hi)` across the sub-boxes.
+-/
 def branchAndBound1D (x eps : Float) (maxDepth : Nat) (minWidth : Float)
    (boundOn : Float → Float → IO (Float × Float)) : IO (Float × Float) := do
   let rec go (a b : Float) (d : Nat) : IO (Float × Float) := do

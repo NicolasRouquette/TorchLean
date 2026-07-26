@@ -277,11 +277,12 @@ structure TrainOptions where
   /-- Number of optimizer updates. -/
   steps : Nat := 1
   /--
-  Requested minibatch size for public training calls.
+  Number of dataset items included in one optimizer update.
 
-  Fixed-shape model-zoo trainers may already carry their batch axis in the model type. This field is
-  still part of the public API so ordinary scripts can write the same record shape across simple
-  tensor datasets, loader-backed examples, and future batched trainer paths.
+  For an ordinary sample dataset, each item is one example. A dataset made by `Data.batchDataset`
+  already stores fixed-size tensor minibatches as its items; the usual vectorized path therefore
+  keeps this option at `1`. Values above one accumulate gradients from several such items before
+  updating.
   -/
   batchSize : Nat := 1
   /-- Print step losses every `logEvery` updates; `0` disables stdout step logging. -/

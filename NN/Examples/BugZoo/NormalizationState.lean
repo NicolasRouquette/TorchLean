@@ -39,11 +39,15 @@ noncomputable section
 The buggy BatchNorm pattern reported by cross-backend testing is easy to state:
 putting epsilon outside the square root changes the formula from
 
-`(x - μ) / sqrt(σ² + ε)`
+$$
+\frac{x-\mu}{\sqrt{\sigma^2+\varepsilon}}
+$$
 
 to
 
-`(x - μ) / (sqrt(σ²) + ε)`.
+$$
+\frac{x-\mu}{\sqrt{\sigma^2}+\varepsilon}.
+$$
 
 We keep this definition as the "bad PyTorch-like code" analogue for documentation and regression
 tests. TorchLean's actual `normalizeCore` does not use this expression.
@@ -62,8 +66,9 @@ def correctEpsilonInsideSqrt (x mean variance gamma beta epsilon : ℝ) : ℝ :=
 Spec-level BatchNorm uses epsilon inside the variance term.
 
 There is one extra implementation detail worth making explicit: `sqrtSpec` is total, so it computes
-`sqrt (max (variance + epsilon) 0)`. On the usual BatchNorm path, variance is nonnegative and
-epsilon is positive, so this is the same mathematical formula as `sqrt (variance + epsilon)`.
+$\sqrt{\max(\mathrm{variance}+\varepsilon,0)}$. On the usual BatchNorm path, variance is nonnegative
+and epsilon is positive, so this is the same mathematical formula as
+$\sqrt{\mathrm{variance}+\varepsilon}$.
 -/
 theorem normalizeCore_scalar_uses_variance_plus_epsilon
     (x mean variance gamma beta epsilon : ℝ) :

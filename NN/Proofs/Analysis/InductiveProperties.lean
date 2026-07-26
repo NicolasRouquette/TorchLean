@@ -109,10 +109,12 @@ theorem binary_tensor_induction
 -- ====================================================================
 
 /--
-Squared L2 norm of a concatenation is the sum of squared L2 norms.
+The squared $\ell_2$ norm of a concatenation is the sum of the squared $\ell_2$ norms.
 
 Informally: `Tensor.dim f` is a “stack/concat along the outer dimension”. The Euclidean norm
-satisfies `‖concat_i f i‖₂² = ∑ i, ‖f i‖₂²`.
+satisfies
+$\left\lVert\operatorname{concat}_i f_i\right\rVert_2^2
+=\sum_i\lVert f_i\rVert_2^2$.
 -/
 theorem l2_norm_concatenation {n : Nat} {s : Shape}
   (f : Fin n → Tensor ℝ s) :
@@ -281,7 +283,8 @@ theorem componentwise_bound_extension {n : Nat} {s : Shape}
 /--
 ReLU preserves non-negativity inductively over all dimensions.
 
-PyTorch analogue: `relu` is defined pointwise as `max(x, 0)`, so its outputs are always ≥ 0.
+PyTorch analogue: `relu` is defined pointwise as $\max(x,0)$, so its outputs are always
+$\ge 0$.
 https://pytorch.org/docs/stable/generated/torch.nn.functional.relu.html
 -/
 theorem relu_nonneg_inductive {s : Shape} (t : Tensor ℝ s) :
@@ -317,7 +320,7 @@ theorem relu_nonneg_inductive {s : Shape} (t : Tensor ℝ s) :
 
 /--
 Sigmoid output bounds extend inductively.
-Shows 0 < σ(x) < 1 for all tensor components.
+Shows $0<\sigma(x)<1$ for all tensor components.
 
 PyTorch analogue: `torch.sigmoid` maps reals to the open interval (0, 1) pointwise.
 https://pytorch.org/docs/stable/generated/torch.sigmoid.html

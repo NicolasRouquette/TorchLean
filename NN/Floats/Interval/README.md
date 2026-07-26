@@ -15,7 +15,7 @@ endpoint checks reusable across the codebase, while keeping the trust boundary e
   using floor/ceil rounding on `ℝ` (directed rounding on a discrete grid).
 - `Quantized.lean`: a proof oriented quantized interval arithmetic layer over `ℝ` and `EReal`,
   with outward rounding at endpoints and overflow awareness for division by zero (returns
-  `[-∞,+∞]`).
+  $[-\infty,+\infty]$).
 - `FP32.lean`: interval-style enclosure corollaries for the `FP32` model.
 - `IEEEExec32.lean`: executable endpoint intervals for `IEEE32Exec`.
 - `RealBounds.lean`: a shared real analysis lemma (`mul_bounds_Icc`) giving the classical
@@ -29,7 +29,7 @@ endpoint checks reusable across the codebase, while keeping the trust boundary e
 - `IEEEExec32MulSoundness.lean`: enclosure theorem for executable interval multiplication
   (`Interval32.mul`) via the 4-corner rule.
 - `IEEEExec32DivSoundness.lean`: enclosure theorem for executable interval division / reciprocal
-  (`Interval32.div`/`inv`), with a `whole = [-∞,+∞]` fallback when the denominator interval contains
+  (`Interval32.div`/`inv`), with a $whole=[-\infty,+\infty]$ fallback when the denominator interval contains
   `0`.
 - `IEEEExec32Soundness.lean`: umbrella import re-exporting the main `IEEEExec32` interval enclosure
   theorems (and small helper lemmas) in one place.

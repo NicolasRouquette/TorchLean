@@ -23,12 +23,18 @@ public import NN.Floats.Interval.RealBounds
 `NN/Floats/Interval/IEEEExec32.lean` defines executable endpoint intervals with IEEE32Exec
 endpoints and outward-rounded arithmetic. Interval division is implemented as:
 
-* if the denominator interval contains `0`, return the conservative `whole = [-∞,+∞]`,
+* if the denominator interval contains $0$, return the conservative
+  $\mathtt{whole}=[-\infty,+\infty]$,
 * otherwise use the classical “4-corner” rule:
 
-```
-[a,b] / [c,d] ⊆ [ min(a/c, a/d, b/c, b/d),  max(a/c, a/d, b/c, b/d) ]
-```
+$$
+\frac{[a,b]}{[c,d]}
+\subseteq
+\left[
+  \min\left\{\frac ac,\frac ad,\frac bc,\frac bd\right\},
+  \max\left\{\frac ac,\frac ad,\frac bc,\frac bd\right\}
+\right].
+$$
 
 where each corner is computed using directed rounding (`divDown` / `divUp`) and we take the IEEE
 `minimum` / `maximum` of the 4 rounded corners.
@@ -63,7 +69,7 @@ open TorchLean.Floats.Interval
 /--
 Reciprocal bounds for positive intervals.
 
-If `0 < c` and `y ∈ [c,d]`, then `1/y ∈ [1/d, 1/c]`.
+If $0<c$ and $y\in[c,d]$, then $1/y\in[1/d,1/c]$.
 -/
 private lemma inv_mem_Icc_of_mem_Icc_of_pos (c d y : ℝ)
     (hc : 0 < c) (hy : y ∈ Set.Icc c d) :
@@ -80,7 +86,7 @@ private lemma inv_mem_Icc_of_mem_Icc_of_pos (c d y : ℝ)
 /--
 Reciprocal bounds for negative intervals.
 
-If `d < 0` and `y ∈ [c,d]`, then `1/y ∈ [1/d, 1/c]`.
+If $d<0$ and $y\in[c,d]$, then $1/y\in[1/d,1/c]$.
 -/
 private lemma inv_mem_Icc_of_mem_Icc_of_neg (c d y : ℝ)
     (hd : d < 0) (hy : y ∈ Set.Icc c d) :
@@ -239,7 +245,8 @@ private lemma isNaN_divUp_eq_false_of_isFinite (x y : IEEE32Exec)
 /-! ## Interval division soundness -/
 
 /--
-Decoding of IEEE signed zeros: if `x` is one of `±0`, then `toReal x = 0`.
+Decoding of IEEE signed zeros: if $x$ is one of $\pm0$, then
+$\operatorname{toReal}(x)=0$.
 
 This is used to rule out the case where an endpoint is IEEE-zero when we have already proved the
 real endpoint is strictly positive/negative.
@@ -277,8 +284,9 @@ private lemma toReal_eq_zero_of_isZero (x : IEEE32Exec) (hz : isZero x = true) :
   simp [toReal_eq, hdy, dyadicToReal]
 
 /--
-If the executable check says `0 ∉ B` (`containsZero B = false`), then the real interval
-`[toReal B.lo, toReal B.hi]` is sign-stable: either entirely negative or entirely positive.
+If the executable check says $0\notin B$ (`containsZero B = false`), then the real interval
+$[\operatorname{toReal}(B.\mathtt{lo}),\operatorname{toReal}(B.\mathtt{hi})]$ is sign-stable:
+either entirely negative or entirely positive.
 -/
 private lemma denom_sign_case (B : Interval32)
     (hBlo : isFinite B.lo = true) (hBhi : isFinite B.hi = true) (hcz : containsZero B = false) :
@@ -351,7 +359,7 @@ Soundness of `Interval32.div` w.r.t. real division.
 
 This theorem is phrased over real concretizations `Set.Icc (toReal lo) (toReal hi)`.
 
-If the executable implementation detects `0 ∈ B` (via `containsZero`), it returns `whole`, and
+If the executable implementation detects $0\in B$ (via `containsZero`), it returns `whole`, and
 the enclosure is trivial. Otherwise we use the 4-corner rule and the directed-rounding soundness
 lemmas for `divDown`/`divUp`.
 -/

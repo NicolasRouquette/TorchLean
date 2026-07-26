@@ -63,7 +63,7 @@ variable {α : Type} [Context α]
 
 /-! ## Scalar activations -/
 
-/-- ReLU: `relu(x) = max(x, 0)`.
+/-- ReLU: $\operatorname{ReLU}(x)=\max(x,0)$.
 
 PyTorch analogy: `torch.nn.functional.relu`.
 
@@ -75,12 +75,12 @@ def reluSpec {α : Type} [Zero α] [Max α] (x : α) : α :=
 
 /-- A standard subgradient choice for ReLU:
 
-`d/dx relu(x) = 1` if `x > 0`, and `0` otherwise.
+$\frac{d}{dx}\operatorname{ReLU}(x)=1$ if $x>0$, and $0$ otherwise.
 
-PyTorch analogy: autograd picks a subgradient at `x = 0`; our spec commits to a concrete one to
+PyTorch analogy: autograd picks a subgradient at $x=0$; our spec commits to a concrete one to
 make "the derivative" a pure function.
 
-The `DecidableRel (· > ·)` constraint reflects that this definition branches on `x > 0`.
+The `DecidableRel (· > ·)` constraint reflects that this definition branches on $x>0$.
 -/
 def reluDerivSpec {α : Type} [Zero α] [One α] [LT α] [DecidableRel ((· > ·) : α → α → Prop)] (x :
   α) : α :=
@@ -88,7 +88,7 @@ def reluDerivSpec {α : Type} [Zero α] [One α] [LT α] [DecidableRel ((· > ·
 
 /-- Logistic sigmoid:
 
-`sigmoid(x) = 1 / (1 + exp(-x))`.
+$\operatorname{sigmoid}(x)=1/(1+\exp(-x))$.
 
 PyTorch analogy: `torch.nn.functional.sigmoid` (or `torch.sigmoid`).
 -/
@@ -97,9 +97,9 @@ def sigmoidSpec (x : α) : α :=
 
 /-- Derivative of sigmoid:
 
-`sigmoid'(x) = σ(x) * (1 - σ(x))`.
+$\operatorname{sigmoid}'(x)=\sigma(x)(1-\sigma(x))$.
 
-We write it this way (in terms of `σ(x)`) because that is the form used in most AD systems and it
+We write it this way (in terms of $\sigma(x)$) because that is the form used in most AD systems and it
 avoids re-expanding the exponential expression.
 -/
 def sigmoidDerivSpec (x : α) : α :=
@@ -112,14 +112,14 @@ def tanhSpec (x : α) : α :=
 
 /-- Derivative of tanh:
 
-`tanh'(x) = 1 - tanh(x)^2`.
+$\tanh'(x)=1-\tanh^2(x)$.
 -/
 def tanhDerivSpec (x : α) : α :=
   1 - ((MathFunctions.tanh x) * (MathFunctions.tanh x))
 
 /-- Leaky ReLU:
 
-`leaky_relu(x; α) = x` if `x > 0`, else `α * x`.
+$\operatorname{leaky\_relu}(x;\alpha)=x$ if $x>0$, else $\alpha x$.
 
 PyTorch analogy: `torch.nn.functional.leaky_relu` with `negative_slope = α`.
 -/
@@ -129,7 +129,7 @@ def leakyReluSpec {α : Type} [Zero α] [Mul α] [LT α] [DecidableRel ((· > ·
 
 /-- Derivative of leaky ReLU:
 
-`d/dx leaky_relu(x; α) = 1` if `x > 0`, else `α`.
+$\frac{d}{dx}\operatorname{leaky\_relu}(x;\alpha)=1$ if $x>0$, else $\alpha$.
 -/
 def leakyReluDerivSpec {α : Type} [Zero α] [One α] [LT α] [DecidableRel ((· > ·) : α → α → Prop)]
   (x : α) (αₗ : α) : α :=
@@ -151,7 +151,7 @@ def coshSpec (x : α) : α :=
 def coshDerivSpec (x : α) : α :=
   MathFunctions.sinh x
 
-/-- Logistic form written as `exp(x)/(exp(x)+1)`.
+/-- Logistic form written as $\exp(x)/(\exp(x)+1)$.
 
 This is mathematically the same sigmoid function as `sigmoidSpec`; we keep it as `logisticSpec`
 because several scalar approximation proofs reason about this `exp(x)` numerator form directly.
@@ -168,7 +168,7 @@ def logisticDerivSpec (x : α) : α :=
 
 /-- ELU (Exponential Linear Unit):
 
-`elu(x; α) = x` if `x > 0`, else `α * (exp(x) - 1)`.
+$\operatorname{ELU}(x;\alpha)=x$ if $x>0$, else $\alpha(\exp(x)-1)$.
 
 PyTorch analogy: `torch.nn.functional.elu` with `alpha = α`.
 -/
@@ -178,7 +178,7 @@ def eluSpec {α : Type} [Zero α] [One α] [LT α] [DecidableRel ((· > ·) : α
 
 /-- Derivative of ELU:
 
-`elu'(x; α) = 1` if `x > 0`, else `α * exp(x)`.
+$\operatorname{ELU}'(x;\alpha)=1$ if $x>0$, else $\alpha\exp(x)$.
 -/
 def eluDerivSpec {α : Type} [Zero α] [One α] [LT α] [DecidableRel ((· > ·) : α → α → Prop)]
   [MathFunctions α] [Mul α] (x : α) (alpha : α) : α :=
@@ -211,7 +211,7 @@ def geluDerivSpec {α : Type} [MathFunctions α] [OfScientific α] [Add α] [Mul
 
 /-- Swish / SiLU:
 
-`swish(x) = x * sigmoid(x)`.
+$\operatorname{swish}(x)=x\operatorname{sigmoid}(x)$.
 
 PyTorch analogy: `torch.nn.functional.silu`.
 -/
@@ -229,9 +229,9 @@ def swishDerivSpec (x : α) : α :=
 
 /-- Softplus, evaluated without a large positive exponential:
 
-`softplus(x) = log(1 + exp(x))`.
+$\operatorname{softplus}(x)=\log(1+\exp(x))$.
 
-The positive branch uses the equivalent expression `x + log(1 + exp(-x))`; this keeps finite
+The positive branch uses the equivalent expression $x+\log(1+\exp(-x))$; this keeps finite
 floating-point inputs finite when `exp(x)` itself would overflow. The operation remains the
 one-argument, unit-scale softplus used throughout TorchLean.
 
@@ -245,14 +245,15 @@ def softplusSpec (x : α) : α :=
 
 /-- Derivative of softplus:
 
-`softplus'(x) = sigmoid(x)`.
+$\operatorname{softplus}'(x)=\operatorname{sigmoid}(x)$.
 -/
 def softplusDerivSpec (x : α) : α :=
   sigmoidSpec x
 
 /-- A smooth log surrogate:
 
-`safe_log(x; ε) = log(softplus(x) + ε)`.
+$\operatorname{safe\_log}(x;\varepsilon)
+=\log(\operatorname{softplus}(x)+\varepsilon)$.
 
 We use this when we want something "log-like" without having to carry side conditions about the
 input being strictly positive.
@@ -266,7 +267,7 @@ def safeLogDerivSpec (x : α) (ε : α := Numbers.epsilon) : α :=
 
 /-- A smooth absolute value surrogate:
 
-`smooth_abs(x; ε) = sqrt(x^2 + ε)`.
+$\operatorname{smooth\_abs}(x;\varepsilon)=\sqrt{x^2+\varepsilon}$.
 
 Useful when you want an `abs`-like shape but keep differentiability at `0`.
 -/
@@ -353,8 +354,9 @@ This is the "real" softmax, not the scalar logistic helper in `Activation.Math.l
 
 Numerical stability:
 
-We implement the standard stabilized form `softmax(x) = exp(x - m) / Σ exp(x - m)` where
-`m = max_i x_i`. Subtracting the max avoids overflow in typical floating-point backends, and it is
+We implement the standard stabilized form
+$\operatorname{softmax}(x)_i=\exp(x_i-m)/\sum_j\exp(x_j-m)$, where
+$m=\max_i x_i$. Subtracting the max avoids overflow in typical floating-point backends, and it is
 also a nice canonical form to reference in proofs.
 -/
 def softmaxVecSpec {n : Nat} (t : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
@@ -380,9 +382,16 @@ def softmaxSpec : {s : Shape} → Tensor α s → Tensor α s
 
 /-- Backward/VJP for last-axis softmax.
 
-If `y = softmax(x)` and we are given an upstream gradient `dL/dy`, then for each last-axis slice:
+If $y=\operatorname{softmax}(x)$ and we are given an upstream gradient $\partial L/\partial y$,
+then for each last-axis slice:
 
-`dL/dx = y ⊙ (dL/dy - ⟨dL/dy, y⟩)`
+$$
+\frac{\partial L}{\partial x}
+=y\odot\left(
+  \frac{\partial L}{\partial y}
+  -\left\langle\frac{\partial L}{\partial y},y\right\rangle
+\right).
+$$
 
 This is the standard Jacobian-vector product for softmax, written in a way that avoids materializing
 the full `n×n` Jacobian.
@@ -428,9 +437,9 @@ def logSoftmaxSpec : {s : Shape} → Tensor α s → Tensor α s
 
 /-- Forward-mode JVP for last-axis log-softmax.
 
-If `y = log_softmax(x)`, then each last-axis slice has directional derivative
+If $y=\operatorname{logsoftmax}(x)$, then each last-axis slice has directional derivative
 
-`dy = dx - replicate(⟨exp(y), dx⟩)`.
+$dy=dx-\operatorname{replicate}(\langle\exp(y),dx\rangle)$.
 
 Unlike the VJP below, the subtracted scalar is replicated uniformly across the slice; the
 softmax probabilities occur only inside the dot product. Taking the already-computed output `y`
@@ -447,9 +456,14 @@ def logSoftmaxJvpSpec : {s : Shape} → Tensor α s → Tensor α s → Tensor �
 
 /-- Backward/VJP for last-axis log-softmax.
 
-If `y = log_softmax(x)`, then `softmax(x) = exp(y)` and the vector-Jacobian product is
+If $y=\operatorname{logsoftmax}(x)$, then $\operatorname{softmax}(x)=\exp(y)$ and the
+vector-Jacobian product is
 
-`dL/dx = dL/dy - softmax(x) * sum(dL/dy)`.
+$$
+\frac{\partial L}{\partial x}
+=\frac{\partial L}{\partial y}
+ -\operatorname{softmax}(x)\sum_i\frac{\partial L}{\partial y_i}.
+$$
 
 This is the same formula used by PyTorch's stable `log_softmax` backward path.  We take the
 already-computed output `y` rather than the logits `x`, so runtime backends can avoid recomputing
@@ -535,11 +549,12 @@ Given:
 
 - `f'` (as a tensor-level derivative function),
 - the forward input `x`,
-- and an upstream gradient `dL/df(x)`,
+- and an upstream gradient $\partial L/\partial f(x)$,
 
-this returns `dL/dx` by the chain rule:
+this returns $\partial L/\partial x$ by the chain rule:
 
-`dL/dx = dL/df(x) ⊙ f'(x)`.
+$\frac{\partial L}{\partial x}
+=\frac{\partial L}{\partial f(x)}\odot f'(x)$.
 
 This matches how most PyTorch elementwise ops behave in backward: multiply upstream gradients by
 the pointwise derivative mask/value.

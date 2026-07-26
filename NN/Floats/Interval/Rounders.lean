@@ -14,14 +14,17 @@ public import NN.Floats.NeuralFloat.Rounding.Core
 For interval propagation under a *discrete* numeric grid (float, fixed-point, quantization), one
 typically wants **directed rounding** at interval endpoints:
 
-- `down x` is a representable value with `down x ≤ x`,
-- `up x` is a representable value with `x ≤ up x`.
+- `down x` is a representable value with
+  $\operatorname{down}(x)\le x$,
+- `up x` is a representable value with
+  $x\le\operatorname{up}(x)$.
 
-In IEEE-754 hardware this corresponds to rounding modes “toward -∞” and “toward +∞”. In TorchLean’s
-proof-oriented model we represent this with Flocq-style rounding on `ℝ` via `neural_round` together with
+In IEEE-754 hardware this corresponds to rounding modes “toward $-\infty$” and
+“toward $+\infty$”. In TorchLean’s proof-oriented model we represent this with Flocq-style
+rounding on $\mathbb{R}$ via `neuralRound` together with
 the floor/ceil rounding functions from `NN/Floats/NeuralFloat/Rounding/Core.lean`.
 
-This file is *format-generic*: it works for any radix `β` and exponent selection
+This file is *format-generic*: it works for any radix $\beta$ and exponent selection
 function `fexp` satisfying `NeuralValidExp`.
 
 References:
@@ -39,12 +42,12 @@ open TorchLean.Floats
 
 variable {β : NeuralRadix} {fexp : ℤ → ℤ} [NeuralValidExp fexp]
 
-/-- Format-directed rounding down to the `(β,fexp)` grid (via floor rounding of the scaled
+/-- Format-directed rounding down to the $(\beta,\mathtt{fexp})$ grid (via floor rounding of the scaled
   mantissa). -/
 noncomputable def roundDown (x : ℝ) : ℝ :=
   neuralRound (β := β) (fexp := fexp) neuralFloorRound x
 
-/-- Format-directed rounding up to the `(β,fexp)` grid (via ceil rounding of the scaled mantissa).
+/-- Format-directed rounding up to the $(\beta,\mathtt{fexp})$ grid (via ceil rounding of the scaled mantissa).
   -/
 noncomputable def roundUp (x : ℝ) : ℝ :=
   neuralRound (β := β) (fexp := fexp) neuralCeilRound x
@@ -52,7 +55,7 @@ noncomputable def roundUp (x : ℝ) : ℝ :=
 /--
 Correctness of directed rounding down: `roundDown x` is an enclosure **lower bound**.
 
-This is the format-generic analogue of the IEEE-754 fact that rounding “toward -∞” never exceeds
+This is the format-generic analogue of the IEEE-754 fact that rounding toward $-\infty$ never exceeds
 the exact real value.
 -/
 theorem roundDown_le (x : ℝ) : roundDown (β := β) (fexp := fexp) x ≤ x := by
@@ -73,7 +76,7 @@ theorem roundDown_le (x : ℝ) : roundDown (β := β) (fexp := fexp) x ≤ x := 
 /--
 Correctness of directed rounding up: `roundUp x` is an enclosure **upper bound**.
 
-This is the format-generic analogue of the IEEE-754 fact that rounding “toward +∞” is never below
+This is the format-generic analogue of the IEEE-754 fact that rounding toward $+\infty$ is never below
 the exact real value.
 -/
 theorem le_roundUp (x : ℝ) : x ≤ roundUp (β := β) (fexp := fexp) x := by
@@ -92,7 +95,7 @@ theorem le_roundUp (x : ℝ) : x ≤ roundUp (β := β) (fexp := fexp) x := by
 A focused “rounder” interface for enclosure-style interval arithmetic.
 
 Monotonicity of `down`/`up` is not required: enclosure proofs use only
-`down x ≤ x ≤ up x`.
+$\operatorname{down}(x)\le x\le\operatorname{up}(x)$.
 -/
 structure Rounder where
   /-- down. -/
@@ -104,7 +107,7 @@ structure Rounder where
   /-- le up. -/
   le_up : ∀ x, x ≤ up x
 
-/-- Canonical rounder for the `(β,fexp)` format via `roundDown`/`roundUp`. -/
+/-- Canonical rounder for the $(\beta,\mathtt{fexp})$ format via `roundDown`/`roundUp`. -/
 noncomputable def formatRounder (β : NeuralRadix) (fexp : ℤ → ℤ) [NeuralValidExp fexp] : Rounder :=
   { down := fun x => roundDown (β := β) (fexp := fexp) x
     up := fun x => roundUp (β := β) (fexp := fexp) x

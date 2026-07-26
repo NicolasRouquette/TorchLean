@@ -129,7 +129,7 @@ def oneHot {α : Type} [Zero α] [One α] (n : Nat) (k : Fin n) :
 
 /-- One-hot vector using a raw `Nat` index.
 
-If `k ≥ n`, we return the all-zeros vector instead of failing.
+If $k\ge n$, we return the all-zeros vector instead of failing.
 This is convenient in data-conversion code where carrying a `Fin n` would obscure the caller.
 -/
 def oneHotNat {α : Type} [Zero α] [One α] (n k : Nat) : Spec.Tensor α (.dim n .scalar) :=

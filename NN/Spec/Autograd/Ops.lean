@@ -62,7 +62,8 @@ def liftElementwise {s : Shape}
   (f : α → α) : Tensor α s → Tensor α s :=
   mapSpec f
 
-/-- Lift an elementwise backward using the chain rule: `dL/dx = df(x) * dL/dy` pointwise.
+/-- Lift an elementwise backward using the chain rule:
+$\frac{\partial L}{\partial x}=f'(x)\frac{\partial L}{\partial y}$ pointwise.
 
 This is the standard VJP pattern for elementwise ops.
 
@@ -156,9 +157,10 @@ def logSoftmaxOp {s : Shape} : OpSpec α s s :=
 
 /-! ## Linear layers -/
 
-/-- Linear layer as an OpSpec: `y = W x + b`.
+/-- Linear layer as an OpSpec: $y=Wx+b$.
 
-This `OpSpec` only returns the input gradient `dL/dx`. Parameter gradients for `W` and `b`
+This `OpSpec` only returns the input gradient $\partial L/\partial x$. Parameter gradients for
+$W$ and $b$
 are not part of `OpSpec` (those live at the graph/runtime level).
 
 PyTorch analogy: `torch.nn.linear` forward, with autograd producing grads for `x/W/b`. -/
@@ -209,7 +211,7 @@ def negOp   {s : Shape} : OpSpec α s s :=
 
 /-- Absolute value (uses `signSpec` for the subgradient).
 
-PyTorch analogy: `torch.abs(x)`. At `x = 0` we pick the subgradient `0`. -/
+PyTorch analogy: `torch.abs(x)`. At $x=0$ we pick the subgradient $0$. -/
 def absOp   {s : Shape} : OpSpec α s s :=
 { forward := fun x => absSpec x
 , backward := fun x dLdy =>
@@ -221,7 +223,7 @@ def absOp   {s : Shape} : OpSpec α s s :=
 
 This is useful when you want to avoid a kink at 0 in optimization.
 PyTorch analogy: there is no single canonical `smooth_abs`, but it is similar in spirit to
-`sqrt(x^2 + eps)`-style smoothings. -/
+$\sqrt{x^2+\varepsilon}$-style smoothings. -/
 def smoothAbsOp {s : Shape} (ε : α := Numbers.epsilon) : OpSpec α s s :=
 { forward      := liftElementwise (α:=α) (s:=s) (fun x => Activation.Math.smoothAbsSpec (α := α)
   x ε)
@@ -241,7 +243,7 @@ Elementwise natural logarithm.
 Domain discipline: this is the raw mathematical/PyTorch-style rule. The VJP multiplies by `1/x`,
 so callers should use it only when the input is strictly positive. Runtime backends are allowed to
 reject nonpositive inputs rather than silently manufacture a gradient. Use `safeLogOp` when the
-intended model is `log(x + ε)`.
+intended model is $\log(x+\varepsilon)$.
 
 PyTorch analogy: `torch.log(x)`. -/
 def logOp   {s : Shape} : OpSpec α s s :=
@@ -249,10 +251,10 @@ def logOp   {s : Shape} : OpSpec α s s :=
 , backward := fun x dLdy => mulSpec (invSpec x) dLdy }
 
 /--
-Elementwise log with epsilon shift, `log(x + ε)`.
+Elementwise log with epsilon shift, $\log(x+\varepsilon)$.
 
 This is the default API-safe logarithm: it is total as a spec expression and its VJP uses
-`1/(x+ε)` pointwise.
+$1/(x+\varepsilon)$ pointwise.
 
 PyTorch analogy: often written manually as `torch.log(x + eps)`. -/
 def safeLogOp {s : Shape} (ε : α := Numbers.epsilon) : OpSpec α s s :=
@@ -265,8 +267,8 @@ def safeLogOp {s : Shape} (ε : α := Numbers.epsilon) : OpSpec α s s :=
 Elementwise square root.
 
 Domain discipline: TorchLean's spec-level `sqrtSpec` is total by clamping the forward value on
-nonpositive inputs. The VJP follows that convention and returns zero where `x <= 0`, rather than
-introducing an artificial `1/ε` spike.
+nonpositive inputs. The VJP follows that convention and returns zero where $x\le0$, rather than
+introducing an artificial $1/\varepsilon$ spike.
 
 PyTorch analogy: `torch.sqrt(x)` on the positive region, with an explicit TorchLean subgradient
 choice outside the classical domain.
@@ -288,14 +290,14 @@ def sqrtOp  {s : Shape} : OpSpec α s s :=
     mulSpec dsqrt dLdy
 }
 
-/-- Elementwise square (`x^2`). -/
+/-- Elementwise square, $x^2$. -/
 def squareOp {s : Shape} : OpSpec α s s :=
 { forward := fun x => squareSpec x
 , backward := fun x dLdy => mulSpec (mulSpec (fill (Numbers.two) _) x) dLdy }
 
 /-- Elementwise power with a captured RHS exponent tensor.
 
-This is the VJP with respect to the base `x` for `x ^ rhs`. Domain restrictions are the usual
+This is the VJP with respect to the base $x$ for $x^{\mathtt{rhs}}$. Domain restrictions are the usual
 ones for the scalar backend's power operation. -/
 def powOp {s : Shape} (rhs : Tensor α s) : OpSpec α s s :=
 { forward := fun x => powSpec x rhs
@@ -305,11 +307,11 @@ def powOp {s : Shape} (rhs : Tensor α s) : OpSpec α s s :=
     mulSpec localGrad dLdy }
 
 /--
-Elementwise reciprocal, `1/x`.
+Elementwise reciprocal, $1/x$.
 
-Domain discipline: this is the raw reciprocal. Its VJP is `-1/x^2`, so callers should use it only
+Domain discipline: this is the raw reciprocal. Its VJP is $-1/x^2$, so callers should use it only
 when zero is excluded by the surrounding invariant. Use `safeInvOp` when the intended model is
-`1/(x+ε)`.
+$1/(x+\varepsilon)$.
 
 PyTorch analogy: `torch.reciprocal(x)` or `1 / x`. -/
 def invOp   {s : Shape} : OpSpec α s s :=
@@ -322,7 +324,7 @@ def invOp   {s : Shape} : OpSpec α s s :=
 }
 
 /--
-Elementwise epsilon-shifted reciprocal, `1/(x+ε)`.
+Elementwise epsilon-shifted reciprocal, $1/(x+\varepsilon)$.
 
 This is the safe API counterpart to `invOp`: the forward pass delegates to `safedivSpec` with
 unit numerator, and the VJP is the derivative of the same shifted expression.
@@ -339,11 +341,11 @@ def safeInvOp {s : Shape} : OpSpec α s s :=
 
 /-! ## Binary ops capturing a right-hand tensor -/
 
-/-- Add a captured RHS tensor (`x + rhs`). -/
+/-- Add a captured RHS tensor, $x+\mathtt{rhs}$. -/
 def addOp  {s : Shape} (rhs : Tensor α s) : OpSpec α s s :=
   binaryElemOp (α:=α) rhs (· + ·) (fun _ _ => (1 : α))
 
-/-- Subtract a captured RHS tensor (`x - rhs`). -/
+/-- Subtract a captured RHS tensor, $x-\mathtt{rhs}$. -/
 def subOp  {s : Shape} (rhs : Tensor α s) : OpSpec α s s :=
   binaryElemOp (α:=α) rhs (· - ·) (fun _ _ => (1 : α))
 
@@ -362,7 +364,7 @@ def divOp  {s : Shape} (rhs : Tensor α s) : OpSpec α s s :=
   binaryElemOp (α:=α) rhs (· / ·) (fun _ y => (1 : α) / y)
 
 /--
-Elementwise safe division by a captured RHS tensor, `x/(rhs+ε)`.
+Elementwise safe division by a captured RHS tensor, $x/(\mathtt{rhs}+\varepsilon)$.
 
 PyTorch analogy: usually written manually as `x / (rhs + eps)`.
 -/
@@ -375,7 +377,7 @@ def safeDivOp {s : Shape} (rhs : Tensor α s) : OpSpec α s s :=
 
 /-- Elementwise min with captured RHS.
 
-We pick a subgradient via a `<=` mask (ties go to the left input).
+We pick a subgradient via a $\le$ mask (ties go to the left input).
 
 PyTorch analogy: `torch.minimum(x, rhs)` (subgradient convention is an implementation detail). -/
 def minOp {s : Shape} (rhs : Tensor α s) : OpSpec α s s :=
@@ -387,7 +389,7 @@ def minOp {s : Shape} (rhs : Tensor α s) : OpSpec α s s :=
 
 /-- Elementwise max with captured RHS.
 
-We pick a subgradient via a `>=` mask (ties go to the left input).
+We pick a subgradient via a $\ge$ mask (ties go to the left input).
 
 PyTorch analogy: `torch.maximum(x, rhs)` (subgradient convention is an implementation detail). -/
 def maxOp {s : Shape} (rhs : Tensor α s) : OpSpec α s s :=
@@ -455,7 +457,7 @@ def huberLossOp {s : Shape} (target : Tensor α s) (delta : α := (1 : α)) : Op
 
 /-- Cross-entropy loss (returns a scalar), capturing the target distribution.
 
-This is "cross-entropy between distributions": `target` is `p`, `yhat` is `q`.
+This is "cross-entropy between distributions": `target` is $p$, `yhat` is $q$.
 PyTorch analogy: closer to `-(p * log(q)).mean()` than to the logits-based
 `torch.nn.functional.cross_entropy` default. -/
 def crossEntropyLossOp {s : Shape} (target : Tensor α s) (epsilon : α := Numbers.epsilon) :
@@ -517,7 +519,7 @@ def logCoshLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar 
 /-! ## Normalization -/
 
 /-- LayerNorm OpSpec over (seqLen × embedDim). Parameters gamma/beta are captured.
-Backward returns only ∂L/∂x (parameter grads are not returned at this level). -/
+Backward returns only $\partial L/\partial x$ (parameter grads are not returned at this level). -/
 def layerNormOp (seqLen embedDim : Nat)
   (gamma : Tensor α (.dim embedDim .scalar))
   (beta  : Tensor α (.dim embedDim .scalar))
@@ -588,28 +590,30 @@ def dropoutMaskedOp {s : Shape} (p : α) (mask : Tensor Bool s) : OpSpec α s s 
 { forward      := fun x => dropoutMaskedSpec (α:=α) p mask x
 , backward     := fun _x dLdy => dropoutMaskedBackwardSpec (α:=α) p mask dLdy }
 
-/-- Right-multiply by fixed matrix: X (m×n) ↦ X·B (m×p). -/
+/-- Right-multiply by a fixed matrix:
+$X\in\mathbb{R}^{m\times n}\mapsto XB\in\mathbb{R}^{m\times p}$. -/
 def matmulRightOp {m n p : Nat}
   (B : Tensor α (.dim n (.dim p .scalar))) :
   OpSpec α (.dim m (.dim n .scalar)) (.dim m (.dim p .scalar)) :=
 { forward      := fun X => matMulSpec (α:=α) X B
 , backward     := fun _X dLdz => matMulSpec (α:=α) dLdz (matrixTransposeSpec B) }
 
-/-- Left-multiply by fixed matrix: X (n×p) ↦ A·X (m×p). -/
+/-- Left-multiply by a fixed matrix:
+$X\in\mathbb{R}^{n\times p}\mapsto AX\in\mathbb{R}^{m\times p}$. -/
 def matmulLeftOp {m n p : Nat}
   (A : Tensor α (.dim m (.dim n .scalar))) :
   OpSpec α (.dim n (.dim p .scalar)) (.dim m (.dim p .scalar)) :=
 { forward      := fun X => matMulSpec (α:=α) A X
 , backward     := fun _X dLdz => matMulSpec (α:=α) (matrixTransposeSpec A) dLdz }
 
-/-- Batched matrix multiply with captured RHS: `A ↦ A @ B`. -/
+/-- Batched matrix multiply with captured RHS: $A\mapsto AB$. -/
 def bmmRightOp {batch m n p : Nat}
   (B : Tensor α (.dim batch (.dim n (.dim p .scalar)))) :
   OpSpec α (.dim batch (.dim m (.dim n .scalar))) (.dim batch (.dim m (.dim p .scalar))) :=
 { forward      := fun A => bmmSpec (α:=α) A B
 , backward     := fun A dLdz => (bmmBackwardSpec (α:=α) A B dLdz).1 }
 
-/-- Batched matrix multiply with captured LHS: `B ↦ A @ B`. -/
+/-- Batched matrix multiply with captured LHS: $B\mapsto AB$. -/
 def bmmLeftOp {batch m n p : Nat}
   (A : Tensor α (.dim batch (.dim m (.dim n .scalar)))) :
   OpSpec α (.dim batch (.dim n (.dim p .scalar))) (.dim batch (.dim m (.dim p .scalar))) :=

@@ -75,7 +75,8 @@ class Context (α : Type) extends
   BEq α, LT α, LE α, -- For ordering
   MathFunctions α, Numbers α,
   Coe Nat α where -- For converting natural numbers to the type
-  decidable_gt : DecidableRel (· > · : α → α → Prop) -- For ordering
+  /-- Decision procedure for the scalar type's strict order. -/
+  decidable_gt : DecidableRel (· > · : α → α → Prop)
 
 namespace Context
 

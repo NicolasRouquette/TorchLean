@@ -41,8 +41,10 @@ The transfer rules in this file are **optional** and have different proof status
 - PINNs: Raissi, Perdikaris, Karniadakis, "Physics-informed neural networks", JCP 2019:
   https://arxiv.org/abs/1711.10561
 - CROWN/DeepPoly context: Zhang et al., 2018 (CROWN) https://arxiv.org/abs/1811.00866
-- Lipschitz enclosure idea for `sin`/`cos`: |d/dx sin(x)| <= 1 and |d/dx cos(x)| <= 1, so a
-  ball/interval can be mapped using a Lipschitz radius (as implemented in `Runtime/Ops`).
+- Lipschitz enclosure idea for `sin`/`cos`:
+  $\left|\frac{d}{dx}\sin x\right|\le 1$ and
+  $\left|\frac{d}{dx}\cos x\right|\le 1$, so a ball or interval can be mapped using a
+  Lipschitz radius (as implemented in `Runtime/Ops`).
 -/
 
 @[expose] public section

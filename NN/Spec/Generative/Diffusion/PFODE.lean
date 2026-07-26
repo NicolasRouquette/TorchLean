@@ -12,8 +12,8 @@ public import NN.Spec.Generative.Diffusion.Core
 /-!
 # Probability-flow ODE (spec layer)
 
-This file defines a small continuous-time VP schedule (linear `β(t)`) and the corresponding
-probability-flow ODE drift field, using an `ε_θ(x,t)` model.
+This file defines a small continuous-time VP schedule (linear $\beta(t)$) and the corresponding
+probability-flow ODE drift field, using an $\varepsilon_\theta(x,t)$ model.
 
 Why include this in the spec layer:
 - the ODE is a deterministic dynamical system derived from the same diffusion model, and
@@ -38,23 +38,28 @@ open Tensor
 
 variable {α : Type} [Context α]
 
-/-- Continuous-time linear VP schedule on `t ∈ [0,1]`: `β(t) = β0 + t(β1-β0)`. -/
+/-- Continuous-time linear VP schedule on $t\in[0,1]$:
+$\beta(t)=\beta_0+t(\beta_1-\beta_0)$. -/
 structure VPLinearSchedule (α : Type) [Context α] where
-  /-- `β(0)`. -/
+  /-- $\beta(0)$. -/
   beta0 : α
-  /-- `β(1)`. -/
+  /-- $\beta(1)$. -/
   beta1 : α
 
 namespace VPLinearSchedule
 
-/-- Linear interpolation `β(t)` on `t ∈ [0,1]`. -/
+/-- Linear interpolation $\beta(t)$ on $t\in[0,1]$. -/
 def beta (sch : VPLinearSchedule α) (t : α) : α :=
   sch.beta0 + t * (sch.beta1 - sch.beta0)
 
 /--
-Closed-form `ᾱ(t)` for the VP SDE with linear `β(t)`:
+Closed-form $\bar\alpha(t)$ for the VP SDE with linear $\beta(t)$:
 
-`ᾱ(t) = exp(-∫₀ᵗ β(s) ds) = exp(-(β0 t + 0.5 (β1-β0) t^2))`.
+$$
+\bar\alpha(t)
+=\exp\!\left(-\int_0^t\beta(s)\,ds\right)
+=\exp\!\left[-\left(\beta_0t+\tfrac12(\beta_1-\beta_0)t^2\right)\right].
+$$
 -/
 def alphaBar (sch : VPLinearSchedule α) (t : α) : α :=
   let half : α := Numbers.pointfive
@@ -62,7 +67,7 @@ def alphaBar (sch : VPLinearSchedule α) (t : α) : α :=
   let intBeta : α := sch.beta0 * t + half * (sch.beta1 - sch.beta0) * (t * t)
   MathFunctions.exp (-intBeta)
 
-/-- `σ(t) = sqrt(1-ᾱ(t))` (clamped to stay total). -/
+/-- $\sigma(t)=\sqrt{1-\bar\alpha(t)}$ (clamped to stay total). -/
 def sigma (sch : VPLinearSchedule α) (t : α) : α :=
   sqrtNonneg (1 - sch.alphaBar t)
 
@@ -71,19 +76,29 @@ end VPLinearSchedule
 variable {s : Shape}
 
 /--
-Probability-flow ODE drift for a VP schedule, expressed via an `ε_θ(x,t)` model.
+Probability-flow ODE drift for a VP schedule, expressed via an $\varepsilon_\theta(x,t)$ model.
 
 For VP SDE:
 
-`dx = -0.5 β(t) x dt + sqrt(β(t)) dW`
+$$
+dx=-\tfrac12\beta(t)x\,dt+\sqrt{\beta(t)}\,dW.
+$$
 
 The probability-flow ODE is:
 
-`dx = (-0.5 β(t) x - 0.5 β(t) score(x,t)) dt`.
+$$
+dx=\left[-\tfrac12\beta(t)x-\tfrac12\beta(t)\operatorname{score}(x,t)\right]dt.
+$$
 
-Using the ε-parameterization, an approximate score is `score ≈ -(1/σ(t)) ε̂`, so:
+Using the $\varepsilon$-parameterization, an approximate score is
+$\operatorname{score}\approx-\hat\varepsilon/\sigma(t)$, so:
 
-`dx = (-0.5 β(t) x + 0.5 (β(t)/σ(t)) ε̂(x,t)) dt`.
+$$
+dx=\left[
+  -\tfrac12\beta(t)x
+  +\tfrac12\frac{\beta(t)}{\sigma(t)}\hat\varepsilon(x,t)
+\right]dt.
+$$
 -/
 def pfOdeRhs (sch : VPLinearSchedule α) (model : EpsModel α s) (x : Tensor α s) (t : α) :
     Tensor α s :=
@@ -96,11 +111,11 @@ def pfOdeRhs (sch : VPLinearSchedule α) (model : EpsModel α s) (x : Tensor α 
   drift_x + drift_eps
 
 /--
-One explicit Euler step for an ODE `x' = f(x,t)`:
+One explicit Euler step for an ODE $x'=f(x,t)$:
 
-`xNext = x + dt * f(x,t)`.
+$x_{\mathrm{next}}=x+dt\,f(x,t)$.
 
-To integrate the probability-flow ODE *backwards* from `t=1` to `t=0`, use a negative `dt`.
+To integrate the probability-flow ODE *backwards* from $t=1$ to $t=0$, use a negative $dt$.
 -/
 def eulerStep (f : Tensor α s → α → Tensor α s) (x : Tensor α s) (t dt : α) : Tensor α s :=
   x + Tensor.scaleSpec (f x t) dt
@@ -110,10 +125,10 @@ Deterministic probability-flow sampler using Euler integration on a uniform grid
 
 Inputs:
 - `steps`: number of Euler steps (typically large, e.g. 1000),
-- `x1`: initial state at `t = 1` (typically standard normal noise).
+- `x1`: initial state at $t=1$ (typically standard normal noise).
 
 We integrate backwards in time on the grid:
-`t_i = 1 - i/steps`, with `dt = -1/steps`.
+$t_i=1-i/\mathtt{steps}$, with $dt=-1/\mathtt{steps}$.
 -/
 def pfOdeSampleEuler (sch : VPLinearSchedule α) (model : EpsModel α s)
     (steps : Nat) (x1 : Tensor α s) : Tensor α s :=

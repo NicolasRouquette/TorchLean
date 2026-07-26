@@ -326,7 +326,7 @@ main details.bp_code_block > code.hl.lean.block {
   background: #eef8fb;
 }
 
-main :not(pre) > code:not(.math) {
+main :not(pre) > code:not(.math):not(.bp_math) {
   border: 1px solid rgba(32, 52, 71, 0.12);
   border-radius: 0.32em;
   background: rgba(15, 95, 143, 0.07);
@@ -335,7 +335,8 @@ main :not(pre) > code:not(.math) {
   word-break: break-word;
 }
 
-main code.math {
+main code.math,
+main code.bp_math {
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -430,12 +431,12 @@ main .content-wrapper {
   overflow-x: hidden;
 }
 
-main p:has(> code.math.display) {
+main p:has(> code:is(.math, .bp_math).display) {
   margin: 0.8rem 0 1rem;
   text-align: center;
 }
 
-main code.math.display {
+main code:is(.math, .bp_math).display {
   box-sizing: border-box;
   display: block;
   width: 100%;
@@ -445,7 +446,7 @@ main code.math.display {
   padding: 0.3rem 0;
 }
 
-main code.math.display > .katex-display {
+main code:is(.math, .bp_math).display > .katex-display {
   box-sizing: border-box;
   display: block;
   width: max-content;
@@ -475,6 +476,16 @@ mjx-container {
 .katex .katex-mathml semantics {
   max-width: 1px !important;
   overflow: hidden !important;
+}
+
+.katex .katex-mathml {
+  /*
+   * KaTeX centers this absolutely positioned accessibility layer at its static
+   * inline position. For a long display formula that point can lie beyond the
+   * viewport even though the visible formula has its own horizontal scroller.
+   * Pinning the clipped layer to the start keeps it in the same scroll box.
+   */
+  left: 0;
 }
 
 main img {
@@ -604,6 +615,21 @@ main p > img:only-child {
     max-width: 7rem;
   }
 
+  header #search-wrapper .combobox,
+  header #search-wrapper .combobox .group,
+  header #search-wrapper .combobox .cb_edit {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  header #search-wrapper ul[role="listbox"] {
+    right: 0;
+    width: min(12rem, calc(100vw - 1rem));
+    max-width: calc(100vw - 1rem);
+  }
+
   .tl-guide-nav {
     flex: 0 0 auto;
     margin-left: 0;
@@ -731,6 +757,7 @@ TORCHLEAN_JS_BODY = r"""
       ["Examples", "examples/"],
       ["API Reference", "docs/"],
       ["Graphs", "graphs/"],
+      ["Tools", "tools/"],
     ];
 
     document.querySelectorAll(".header-title").forEach((a) => {
@@ -1039,7 +1066,7 @@ TORCHLEAN_JS_BODY = r"""
 
 
   function moveDisplayMathPunctuation() {
-    document.querySelectorAll("main code.math.display").forEach((math) => {
+    document.querySelectorAll("main code.math.display, main code.bp_math.display").forEach((math) => {
       const tail = math.nextSibling;
       if (!tail || tail.nodeType !== Node.TEXT_NODE) return;
       const match = tail.nodeValue.match(/^([.,;:])(?=\s|$)/);
@@ -1116,7 +1143,7 @@ def inject_script(root: Path) -> None:
     script_re = re.compile(r'\s*<script defer src="[^"]*torchlean-guide-polish\.js(?:\?v=[^"]*)?"></script>\n?')
     # Verso emits a <base> tag on every generated page. A bare script URL is
     # therefore resolved relative to the guide root, even from nested pages.
-    tag = '    <script defer src="torchlean-guide-polish.js?v=20260721-rendering"></script>\n'
+    tag = '    <script defer src="torchlean-guide-polish.js?v=20260725-graph"></script>\n'
     for path in root.rglob("*.html"):
         html = path.read_text()
         if marker in html:
@@ -1149,6 +1176,29 @@ def repair_generated_table_css(root: Path) -> None:
             repaired = repaired.replace(old, new)
         if repaired != original:
             path.write_text(repaired)
+
+
+def select_formalization_group_view(root: Path) -> None:
+    """Render the curated group overview first while keeping every graph view available."""
+    path = root / "Dependency-Graph" / "index.html"
+    if not path.exists():
+        return
+
+    html_text = path.read_text()
+    group_option = '<option value="group">Group View</option>'
+    selected_group_option = '<option value="group" selected="">Group View</option>'
+    if selected_group_option in html_text:
+        return
+    if group_option not in html_text:
+        raise SystemExit(f"missing Group View selector in {path}")
+
+    html_text = re.sub(
+        r'(<option value="full")\s+selected(?:="")?(>)',
+        r"\1\2",
+        html_text,
+        count=1,
+    )
+    path.write_text(html_text.replace(group_option, selected_group_option, 1))
 
 
 def rewrite_repository_links(root: Path) -> None:
@@ -1404,6 +1454,39 @@ def remove_stale_search_shards(root: Path) -> None:
         path.unlink()
 
 
+def validate_math_runtime(root: Path) -> None:
+    """Require the local KaTeX runtime on every generated guide page."""
+    runtime = root / "-verso-data" / "katex"
+    assets = ("katex.js", "math.js", "katex.css")
+    missing_assets = [
+        runtime / name
+        for name in assets
+        if not (runtime / name).is_file() or (runtime / name).stat().st_size == 0
+    ]
+    if missing_assets:
+        missing = ", ".join(str(path) for path in missing_assets)
+        raise SystemExit(f"missing generated KaTeX assets: {missing}")
+
+    references = tuple(f"-verso-data/katex/{name}" for name in assets)
+    generated_pages = 0
+    missing_pages: list[Path] = []
+    for path in root.rglob("*.html"):
+        page = path.read_text()
+        # Asset directories may contain standalone HTML demos. They are not
+        # Verso pages and do not inherit the guide's runtime.
+        if 'href="book.css"' not in page:
+            continue
+        generated_pages += 1
+        if any(reference not in page for reference in references):
+            missing_pages.append(path)
+    if generated_pages == 0:
+        raise SystemExit(f"no generated Verso pages found under {root}")
+    if missing_pages:
+        sample = ", ".join(str(path) for path in missing_pages[:5])
+        suffix = "" if len(missing_pages) <= 5 else f" (and {len(missing_pages) - 5} more)"
+        raise SystemExit(f"KaTeX is not loaded by every guide page: {sample}{suffix}")
+
+
 def main() -> int:
     """CLI entry point for the post-Verso guide polish pass."""
     parser = argparse.ArgumentParser()
@@ -1427,10 +1510,12 @@ def main() -> int:
     css_path.write_text(css.rstrip() + TORCHLEAN_CSS)
     write_js(args.guide)
     repair_generated_table_css(args.guide)
+    select_formalization_group_view(args.guide)
     rewrite_repository_links(args.guide)
     add_fragment_aliases(args.guide)
     remove_stale_search_shards(args.guide)
     inject_script(args.guide)
+    validate_math_runtime(args.guide)
     return 0
 
 

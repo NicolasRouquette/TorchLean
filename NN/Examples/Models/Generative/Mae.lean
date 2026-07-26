@@ -74,7 +74,7 @@ def dModel : Nat := 1
 /-- Number of self-attention heads in the compact ViT encoder. -/
 def numHeads : Nat := 1
 
-/-- Per-head attention width; `numHeads * headDim = dModel`. -/
+/-- Per-head attention width; $\mathtt{numHeads}\cdot\mathtt{headDim}=\mathtt{dModel}$. -/
 def headDim : Nat := 1
 
 /-- Hidden width of the feed-forward block inside the encoder. -/

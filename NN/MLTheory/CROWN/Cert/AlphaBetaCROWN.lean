@@ -42,7 +42,7 @@ provably active/inactive ones.
 
 We do **not** attempt to formalize the full β-CROWN search/optimization loop here; the checker only
 verifies that the provided β phases are consistent with IBP and then uses the corresponding exact
-ReLU transfer rule (slope \(0\) or \(1\)).
+ReLU transfer rule (slope $0$ or $1$).
 -/
 
 @[expose] public section
@@ -61,11 +61,11 @@ variable {α : Type} [Context α]
 ## ReLU phase encoding
 
 We represent β information using a three-valued phase:
-- `inactive`: pre-activation \(z \le 0\), so ReLU is exactly \(0\);
-- `active`:   pre-activation \(0 \le z\), so ReLU is exactly \(z\);
+- `inactive`: pre-activation $z \le 0$, so ReLU is exactly $0$;
+- `active`:   pre-activation $0 \le z$, so ReLU is exactly $z$;
 - `unstable`: no phase constraint, so we fall back to linear relaxations.
 
-At runtime, a certificate provides an `Array Int` with entries in \(\{-1,0,1\}\), which we decode
+At runtime, a certificate provides an `Array Int` with entries in $\{-1,0,1\}$, which we decode
 using `ReLUPhase.ofInt?`.
 -/
 
@@ -94,7 +94,7 @@ def getBeta? (beta : Array (Option (Array Int))) (id : Nat) : Option (Array Int)
   if _h : id < beta.size then beta[id]! else none
 
 /--
-Executable phase-consistency check for a scalar pre-activation interval \([l,u]\).
+Executable phase-consistency check for a scalar pre-activation interval $[l,u]$.
 
 This is written for a generic `Context α` (so it can run over floats or other semirings).
 For proof-level soundness over `ℝ`, see theorems in

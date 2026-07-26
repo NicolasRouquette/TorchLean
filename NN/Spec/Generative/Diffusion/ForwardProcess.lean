@@ -13,9 +13,11 @@ public import NN.Spec.Generative.Diffusion.Schedule
 
 This module defines the standard VP/DDPM forward noising transformation:
 
-`x_t = sqrt(ᾱ_t) x_0 + sqrt(1-ᾱ_t) ε`
+$$
+x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\varepsilon
+$$
 
-where `ε` is intended to be standard normal noise (in runtime usage), but at the spec level is
+where $\varepsilon$ is intended to be standard normal noise (in runtime usage), but at the spec level is
 treated as an explicit input tensor.
 -/
 
@@ -30,7 +32,7 @@ variable {α : Type} [Context α]
 variable {T : Nat} {s : Shape}
 
 /--
-Forward-process sampling `q(x_t | x_0)` for a discrete VP schedule.
+Forward-process sampling $q(x_t\mid x_0)$ for a discrete VP schedule.
 
 Inputs:
 - `x0`: clean data sample,
@@ -38,7 +40,7 @@ Inputs:
 - `eps`: explicit noise tensor (intended as `N(0,I)`).
 
 Output:
-- the noisy sample `x_t`.
+- the noisy sample $x_t$.
 
 This function is **pure** and total; any probabilistic interpretation is handled in the
 `MLTheory` layer (mathlib) or at runtime by sampling `eps`.

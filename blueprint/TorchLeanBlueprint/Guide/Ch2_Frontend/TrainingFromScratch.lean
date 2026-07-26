@@ -11,7 +11,7 @@ Training repeatedly transforms parameters, optimizer memory, data order, and run
 TorchLean's high-level trainer packages that transition, while the lower manual API exposes each
 piece.
 
-We will train the running `2 → 8 → 1` MLP and then unpack what happened.
+We will train the running $`2\to8\to1` MLP and then unpack what happened.
 
 # The Smallest Complete Run
 
@@ -87,7 +87,7 @@ def trainer (seed : Nat) :=
 or update a parameter.
 
 For regression, the default objective is mean-squared error. If a prediction and target each have
-`n` entries:
+$`n` entries:
 
 $$`
 L(\theta;x,y)
@@ -151,7 +151,7 @@ trainer. It does not rebuild or reinitialize the model.
 
 # What One Update Computes
 
-Let `θ_t` be the parameter pack at update `t`. A plain SGD update is:
+Let $`\theta_t` be the parameter pack at update $`t`. A plain SGD update is:
 
 $$`
 g_t=\nabla_\theta L(\theta_t;x_t,y_t),
@@ -161,9 +161,9 @@ g_t=\nabla_\theta L(\theta_t;x_t,y_t),
 
 Every symbol is structured:
 
-- `θ_t` is a shape-indexed pack of differently shaped tensors sharing scalar type `α`;
-- `g_t` has exactly the same pack structure;
-- `L` is a scalar tensor program;
+- $`\theta_t` is a shape-indexed pack of differently shaped tensors sharing scalar type `α`;
+- $`g_t` has exactly the same pack structure;
+- $`L` is a scalar tensor program;
 - the subtraction and scaling occur coordinatewise in the selected scalar semantics.
 
 An optimizer is therefore not merely a function from a flat vector to a flat vector. It owns
@@ -198,9 +198,9 @@ $$`
 \frac{\widehat m_t}{\sqrt{\widehat v_t}+\epsilon}.
 `
 
-The two moment packs have the same dependent tensor shapes as `θ`. The step counter matters because
-it changes the bias correction. Restoring only parameters from a checkpoint but not Adam state is
-not the same continuation of training.
+The two moment packs have the same dependent tensor shapes as $`\theta`. The step counter matters
+because it changes the bias correction. Restoring only parameters from a checkpoint but not Adam
+state is not the same continuation of training.
 
 TorchLean also provides SGD, momentum SGD, AdamW, AdaGrad, RMSProp, Adadelta, and Muon-related
 runtime configuration. Their constructors share one trainer interface; their state and laws
@@ -208,15 +208,20 @@ remain optimizer-specific.
 
 # What Does `steps` Count?
 
-For the unbatched model `[2] → [1]`, the current in-memory loop interprets:
+For the unbatched model `[2] → [1]`, this configuration:
 
 ```
 steps := 200
 batchSize := 4
 ```
 
-as 200 outer loop steps, each consuming a group of four samples. An optimizer update is currently
-applied per sample in that group. Logging follows the outer step cadence.
+means 200 optimizer updates. Each update consumes four samples, differentiates them at the same
+parameter point, and averages their gradient packs. Logging reports the mean pre-update loss from
+those same forward tapes.
+The trainer does not run an extra forward pass merely to print that loss. Before building those
+tapes, it advances mutable model buffers once per item; trainable parameters stay fixed until the
+mean gradient is ready. This matters for dropout, BatchNorm, and any operation whose tape retains
+data needed by backward: the displayed scalar, saved state, and gradient come from the same step.
 
 For a true vectorized minibatch, define:
 
@@ -239,10 +244,13 @@ def batchedData :
     (seed := 2026)
 ```
 
-Now one forward/backward operation sees two samples in one tensor. The four-row example produces
-two full batches; using batch size five would produce none because typed batching drops incomplete
-batches. Vectorization can change reduction order,
-optimizer cadence, and performance. It is not an optimization flag applied to the first model.
+Each item in `batchedData` now holds two samples in one tensor. With the default
+`TrainOptions.batchSize := 1`, an update consumes one item and therefore runs one vectorized
+forward/backward operation over two samples. The four-row example produces two full items; asking
+`Data.batchDataset` for groups of five would produce none because typed batching drops incomplete
+groups. Setting `TrainOptions.batchSize` above one would accumulate gradients across several of
+these tensor minibatches. Vectorization can change reduction order and performance; it is not an
+optimization flag applied to the first model.
 
 Run the maintained version:
 
@@ -400,8 +408,8 @@ loader loops
 prediction
 ```
 
-Use it when the program needs gradient accumulation, custom scheduling, multiple losses, generated
-batches, reinforcement-learning interaction, or detailed instrumentation.
+Use it when the program needs a custom accumulation policy, custom scheduling, multiple losses,
+generated batches, reinforcement-learning interaction, or detailed instrumentation.
 
 `Trainer.Manual.StepBatchStream α shapes` supplies already collated tensors as a function of the
 step. PINN collocation points and simulator batches naturally fit this interface.

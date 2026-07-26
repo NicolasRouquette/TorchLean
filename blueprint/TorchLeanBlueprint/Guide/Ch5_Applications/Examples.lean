@@ -46,9 +46,9 @@ scalar meanings differ:
 - `IEEE32Exec` is TorchLean's explicit executable IEEE-754 binary32 model;
 - `ℝ` is suitable for proofs but is not an object the runtime should pretend to print.
 
-The shape of the final tensor is `2 × 2 × 2`. It is represented by nested, length-indexed
-dimensions, so the eight entries cannot accidentally be interpreted as a `4 × 2` matrix without an
-explicit reshape proof.
+The shape of the final tensor is $`2\times2\times2`. It is represented by nested, length-indexed
+dimensions, so the eight entries cannot accidentally be interpreted as a $`4\times2` matrix
+without an explicit reshape proof.
 
 Read
 [`TensorBasics.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Quickstart/TensorBasics.lean)
@@ -67,7 +67,7 @@ For input
 
 $$`x=(0.5,-1.2),`
 
-the Jacobian of `y=Wx+b` with respect to `W` has three block rows. The command prints those rows:
+the Jacobian of $`y=Wx+b` with respect to $`W` has three block rows. The command prints those rows:
 
 ```
 jacrevOutParams rows = 3 (should be size(out)=3)
@@ -179,7 +179,7 @@ Source:
 # Lab Four: Learn From Data You Can See
 
 Before introducing files, downloads, or preprocessing scripts, it helps to train once on a dataset
-small enough to draw on paper. TorchLean's band samples are single-channel `4 × 4` images. Class
+small enough to draw on paper. TorchLean's band samples are single-channel $`4\times4` images. Class
 zero contains a vertical band; class one contains a horizontal band. Three offsets per class make
 the six training examples.
 
@@ -256,7 +256,7 @@ TorchLean model
   -> output box
 ```
 
-For an affine layer `y=Wx+b`, IBP separates positive and negative weights:
+For an affine layer $`y=Wx+b`, IBP separates positive and negative weights:
 
 $$`\begin{aligned}
 \ell'_i

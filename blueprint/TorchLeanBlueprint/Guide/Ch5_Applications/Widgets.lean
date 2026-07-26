@@ -319,10 +319,10 @@ def samplePropState :
 #bounds_tightness_view sampleGraphCROWN, samplePropState
 ```
 
-For this graph, adding the exact constant `0.25` shifts `[-1,1]` to `[-0.75,1.25]` without changing
-the interval width. The tightness view should therefore report width two at both the input and
-output. In a larger network, the first unexpected jump in width is usually more informative than
-the final loose bound.
+For this graph, adding the exact constant $`0.25` shifts $`[-1,1]` to $`[-0.75,1.25]` without
+changing the interval width. The tightness view should therefore report width two at both the input
+and output. In a larger network, the first unexpected jump in width is usually more informative
+than the final loose bound.
 
 # Autograd (Tape + Gradients)
 
@@ -361,7 +361,7 @@ def sampleTape : Tape Float :=
 #tape_trace_view sampleTape, 3
 ```
 
-The recorded scalar is `a*b+b` at `a=2` and `b=3`, so the value is nine and both derivatives are
+The recorded scalar is $`ab+b` at $`a=2` and $`b=3`, so the value is nine and both derivatives are
 three. That closed form gives the trace a human-sized oracle: if a gradient is absent or differs,
 inspect the first reverse step where the contribution from multiplication or addition failed to
 arrive.

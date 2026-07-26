@@ -65,7 +65,8 @@ def byteArrayOfIds (ids : List Nat) : ByteArray :=
 
 /--
 Decode byte tokens as UTF-8 when possible, falling back to a byte-wise display mode for generated
-byte streams that are not valid UTF-8. For valid UTF-8 strings, `decode (encode s) = s`; model
+byte streams that are not valid UTF-8. For valid UTF-8 strings,
+$\operatorname{decode}(\operatorname{encode}(s))=s$; model
 output remains printable even when the byte stream is invalid UTF-8.
 -/
 def decodeByteIds (ids : List Nat) : String :=
@@ -74,7 +75,7 @@ def decodeByteIds (ids : List Nat) : String :=
   | some s => s
   | none => String.ofList (ids.map (fun n => Char.ofNat (n % 256)))
 
-/-- Byte-level UTF-8 tokenizer: each byte is one token in `[0,256)`. -/
+/-- Byte-level UTF-8 tokenizer: each byte is one token in $[0,256)$. -/
 def byte : Tokenizer where
   vocabSize := 256
   encode := fun s => (s.toByteArray.toList.map (fun b => b.toNat))
@@ -141,8 +142,11 @@ def tokensToOneHotBatchFloat {batch seqLen vocab : Nat} (tokens : Vector (Vector
 /--
 Build a `(x, y)` pair for next-token prediction from a token stream.
 
-`x[t] = oneHot(tokens[t])`
-`y[t] = oneHot(tokens[t+1])`
+$$
+x[t] = \operatorname{oneHot}(\mathrm{tokens}[t]),
+\qquad
+y[t] = \operatorname{oneHot}(\mathrm{tokens}[t+1]).
+$$
 
 If the stream is too short, we pad with `padId`.
 -/
@@ -159,9 +163,9 @@ Build a batched causal-LM `(x, y)` pair from one token window per batch row.
 
 This is the text analogue of image/tabular minibatching:
 
-- row `i` receives its own token window `tokensAt i`;
-- `x[i,t]` is `tokensAt i[t]`;
-- `y[i,t]` is `tokensAt i[t+1]`;
+- row $i$ receives its own token window `tokensAt i`;
+- $x[i,t]$ is $\mathrm{tokensAt}(i)[t]$;
+- $y[i,t]$ is $\mathrm{tokensAt}(i)[t+1]$;
 - short rows are padded with `padId`.
 
 GPT-style examples share this batching logic. The contract is explicit: a text batch is a typed
@@ -211,7 +215,8 @@ def causalLmXOneHotBatchRows {α : Type} [Semantics.Scalar α] [Runtime.Scalar �
 /--
 Build a batched supervised next-token sample from a token stream.
 
-The target is shifted by one position: `x[t] = tokens[t]`, `y[t] = tokens[t+1]`. Every batch row
+The target is shifted by one position:
+$x[t]=\mathrm{tokens}[t]$ and $y[t]=\mathrm{tokens}[t+1]$. Every batch row
 receives the same window, which is useful for prompt evaluation, deterministic checks, and synthetic
 sequence tasks.
 -/

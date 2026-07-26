@@ -64,8 +64,9 @@ def ibpSlice? (xB : FlatBox α) (start stop : Nat) : Option (FlatBox α) :=
     none
 
 /-- IBP for Gather: index into a vector using integer indices.
-    Given input x and indices i, output[j] = x[indices[j]].
-    Since indices are concrete, this is a permutation/selection.
+
+For input $x$ and a concrete index vector, the output satisfies
+$y_j=x_{\mathrm{indices}[j]}$. This is a permutation or selection.
 -/
 def ibpGather? (xB : FlatBox α) (indices : List Nat) : Option (FlatBox α) :=
   let outDim := indices.length
@@ -114,8 +115,9 @@ def ibpSplit? (xB : FlatBox α) (splitSizes : List Nat) : Option (List (FlatBox 
       box :: buildSplits rest (offset + size)
   if splitSizes.sum = xB.dim then some (buildSplits splitSizes 0) else none
 
-/-- Affine bounds for Slice: extract subvector of affine form.
-    If aff represents y = A·x + c, then slice just selects rows of A and c.
+/-- Affine bounds for Slice: extract a subvector of an affine form.
+
+If the input represents $y=Ax+c$, slicing selects the corresponding rows of $A$ and entries of $c$.
 -/
 def affSlice? {inDim outDim : Nat} (start sliceSize : Nat)
     (aff : AffineVec α inDim outDim) : Option (AffineVec α inDim sliceSize) :=

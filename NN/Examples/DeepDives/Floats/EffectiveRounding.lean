@@ -77,7 +77,7 @@ theorem specSum_entry_computed (i : Fin width) :
 
 /--
 Every executable tensor entry reaches the same effective representation once finiteness is checked.
-The finiteness premise is discharged by computation for the concrete `1 + 2` example.
+The finiteness premise is discharged by computation for the concrete $1+2$ example.
 -/
 theorem runtimeSum_entry_computed (i : Fin width) :
     toReal (Spec.Tensor.vecGet runtimeSum i) =
@@ -92,7 +92,7 @@ theorem runtimeSum_entry_computed (i : Fin width) :
 
 /-! ## Exact subtraction, local spacing, and absorption -/
 
-/-- Sterbenz's lemma certifies the concrete binary32 subtraction `2 - 1` as exact. -/
+/-- Sterbenz's lemma certifies the concrete binary32 subtraction $2-1$ as exact. -/
 theorem two_sub_one_exact :
     round₃₂ ((2 : ℝ) - 1) = (2 : ℝ) - 1 := by
   have hOne : neuralGenericFormat binaryRadix fexp32 (1 : ℝ) := by

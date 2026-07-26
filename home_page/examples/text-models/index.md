@@ -1,6 +1,5 @@
 ---
 title: Text Models Walkthrough
-usemathjax: true
 ---
 
 The text-model examples run from corpus to continuation. The models are small, but the path is
@@ -72,7 +71,8 @@ abbrev σ : Shape := shape![batch, seqLen, vocab]
 abbrev τ : Shape := σ
 ```
 
-The function `Data.causalLmOneHotSample` converts a `(seqLen + 1)` token window into `(x, y)`:
+The function `Data.causalLmOneHotSample` converts a token window of length
+$\mathtt{seqLen}+1$ into $(x,y)$:
 input tokens and the same window shifted by one position as the target. The trainer consumes those
 typed tensors directly.
 
@@ -207,4 +207,4 @@ Source entry points:
 - [`NN.Examples.Models.Sequence.Gpt2`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Sequence/Gpt2.lean)
 - [`NN.Examples.Models.Sequence.Gpt2Saved`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Sequence/Gpt2Saved.lean)
 - [`NN.Examples.Models.Sequence.Mamba`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Sequence/Mamba.lean)
-- [Model Examples Deep Dive]({{ '/blueprint/Examples-and-Applications/Model-Examples-Deep-Dive/' | relative_url }})
+- [Three End-to-End Case Studies]({{ '/blueprint/Examples-and-Applications/Three-End-to-End-Case-Studies/' | relative_url }})

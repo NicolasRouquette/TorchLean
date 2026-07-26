@@ -29,7 +29,7 @@ primitive as `u_y`.
 Numbers are parsed as Floats. Idents look up a value from `env : String → Option Float`.
 Unsupported tokens produce an error.
 
-Natural powers use the usual identities (`x^0 = 1`), and powers bind more tightly than unary
+Natural powers use the usual identities ($x^0=1$), and powers bind more tightly than unary
 minus, so `-u^2` means `-(u^2)`.
 
 Implementation note:
@@ -155,7 +155,7 @@ mutual
           | _ => .ok (acc, st')
       loop fuel f st1
 
-  /-- Parse a primary expression plus an optional natural-number power, with `x^0 = 1`. -/
+  /-- Parse a primary expression plus an optional natural-number power, with $x^0=1$. -/
   def parseFactorFuel (fuel : Nat) (env : String → Option Float) (st : State) : Except String (Expr
     × State) := do
     match fuel with

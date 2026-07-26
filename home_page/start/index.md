@@ -1,7 +1,6 @@
 ---
 title: Getting Started
 layout: default
-usemathjax: true
 ---
 
 # Getting Started
@@ -18,7 +17,7 @@ lake exe verify -- torchlean-ibp
 ```
 
 The first command checks the Lean project. The second command runs a compact supervised model through
-the public trainer: it initializes parameters, executes a Float32 forward pass, computes a loss, runs
+the trainer: it initializes parameters, executes a Float32 forward pass, computes a loss, runs
 reverse mode, and applies optimizer updates. The third command lowers a small TorchLean model into
 the graph used by the verifier and runs interval bound propagation over an input box.
 
@@ -40,7 +39,7 @@ certificates, and two-stage Lyapunov experiments.
 1. [Installation]({{ '/installation/' | relative_url }}) covers Linux, macOS, Windows/WSL, CUDA,
    optional LibTorch integration, and backend capsules.
 2. [Building Models]({{ '/blueprint/Building-Models/' | relative_url }}) introduces typed tensors,
-   layers, parameter packs, datasets, losses, optimizers, and the public trainer.
+   layers, parameter packs, datasets, losses, optimizers, and the trainer.
 3. [Runtime and Interop]({{ '/blueprint/Runtime___-Autograd___-and-Interop/' | relative_url }})
    explains eager and compiled execution, autograd, runtime artifacts, PyTorch interop boundaries,
    data streams, and backend selection.
@@ -61,9 +60,10 @@ certificates, and two-stage Lyapunov experiments.
 - Train a model: `lake exe torchlean mlp --device cpu --steps 100 --dtype float32`.
 - Inspect a scientific ML run: [Scientific ML]({{ '/examples/scientific-ml/' | relative_url }}).
 - Check a certificate or bound pass: [Verification Bounds]({{ '/examples/verification/' | relative_url }}).
-- Read the public import path: `import NN; open TorchLean`.
-- Explore module ownership: [Graphs]({{ '/graphs/' | relative_url }}).
-- Understand CUDA assumptions: [GPU and CUDA Boundaries]({{ '/blueprint/Floating-Point-and-Native-Boundaries/GPU-and-CUDA-Boundaries/' | relative_url }}).
+- Start from the main import: `import NN; open TorchLean`.
+- Follow declaration and proof dependencies: [Formalization graph]({{ '/blueprint/Dependency-Graph/' | relative_url }}).
+- Explore module dependencies: [Import graphs]({{ '/graphs/' | relative_url }}).
+- Understand CUDA assumptions: [GPU and CUDA Boundaries]({{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }}).
 
 When changing code, keep the edit loop small at first: run one example, inspect the file it writes,
 then run the matching checker when the example has one.

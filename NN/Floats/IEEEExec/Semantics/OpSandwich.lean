@@ -18,12 +18,24 @@ public import NN.Floats.IEEEExec.Rules.SpecialRules
 
 `NN.Floats.IEEEExec.Rounding.RoundDyadicToIEEE32Bounds` proves the core theorem:
 
-`roundDyadicDown d ≤ roundDyadicToIEEE32 d ≤ roundDyadicUp d` (in `EReal`).
+$$
+\operatorname{roundDyadicDown}(d)
+\le \operatorname{roundDyadicToIEEE32}(d)
+\le \operatorname{roundDyadicUp}(d)
+$$
+
+in `EReal`.
 
 This file packages small **op-level** corollaries for `IEEE32Exec.add` / `mul` / `sub` on the
 finite path:
 
-`addDown x y ≤ add x y ≤ addUp x y`, and similarly for multiplication and subtraction.
+$$
+\operatorname{addDown}(x,y)
+\le \operatorname{add}(x,y)
+\le \operatorname{addUp}(x,y),
+$$
+
+and similarly for multiplication and subtraction.
 
 These are useful for “checked boundary => enclosure” statements in downstream code (e.g. RL shadow
 interval diagnostics).
@@ -176,7 +188,8 @@ theorem toEReal_mulDown_le_mul_le_mulUp_of_isFinite (x y : IEEE32Exec)
 
 This is a direct corollary of the addition sandwich, since:
 
-`sub x y = add x (neg y)` and similarly for directed endpoints.
+$\operatorname{sub}(x,y)=\operatorname{add}(x,\operatorname{neg}(y))$, and similarly for directed
+endpoints.
 -/
 
 theorem toEReal_subDown_le_sub_le_subUp_of_isFinite (x y : IEEE32Exec)

@@ -78,14 +78,14 @@ noncomputable def vaeObjectiveTerms
   { base := reconstructionLoss model x eps
     regularizer := klLoss model x }
 
-/-- β-VAE loss is exactly the shared `base + β * regularizer` objective. -/
+/-- β-VAE loss is exactly the shared $\mathrm{base}+\beta\,\mathrm{regularizer}$ objective. -/
 theorem betaVae_loss_eq_weightedTwoTerm
     [DecidableRel ((· > ·) : ℝ → ℝ → Prop)]
     (model : Model ℝ obs latent) (beta : ℝ) (x : Tensor ℝ obs) (eps : Tensor ℝ latent) :
     loss model beta x eps = weightedTwoTerm beta (vaeObjectiveTerms model x eps) := by
   rfl
 
-/-- At `β = 0`, the VAE objective reduces to reconstruction loss. -/
+/-- At $\beta=0$, the VAE objective reduces to reconstruction loss. -/
 @[simp] theorem betaVae_loss_zero_beta
     [DecidableRel ((· > ·) : ℝ → ℝ → Prop)]
     (model : Model ℝ obs latent) (x : Tensor ℝ obs) (eps : Tensor ℝ latent) :
@@ -117,10 +117,11 @@ theorem betaVae_loss_mono_beta_of_kl_nonneg
 /-! ## Real-valued KL facts for diagonal Gaussian posteriors -/
 
 /--
-One-coordinate KL contribution for `N(μ, exp(logvar)) || N(0, 1)`.
+One-coordinate KL contribution for
+$\mathcal{N}(\mu,\exp(\mathrm{logvar}))\mathbin{\|}\mathcal{N}(0,1)$.
 
 This is the usual VAE closed form
-`0.5 * (exp(logσ²) + μ² - 1 - logσ²)`, stated over `ℝ` so the proof can use
+$\tfrac12(\exp(\log\sigma^2)+\mu^2-1-\log\sigma^2)$, stated over $\mathbb{R}$ so the proof can use
 mathlib's real exponential inequalities directly.
 -/
 noncomputable def coordinateKlToStandard (mu logvar : ℝ) : ℝ :=
@@ -137,12 +138,12 @@ noncomputable def diagonalGaussianKlToStandardReal
     {n : Nat} (mu logvar : Fin n → ℝ) : ℝ :=
   ∑ i, coordinateKlToStandard (mu i) (logvar i)
 
-/-- The elementary inequality behind VAE KL nonnegativity: `exp x ≥ 1 + x`. -/
+/-- The elementary inequality behind VAE KL nonnegativity: $\exp x\geq 1+x$. -/
 theorem exp_minus_one_minus_nonneg (x : ℝ) : 0 ≤ Real.exp x - 1 - x := by
   have h := Real.add_one_le_exp x
   linarith
 
-/-- Strict form of `exp x ≥ 1 + x`; equality occurs only at `x = 0`. -/
+/-- Strict form of $\exp x\geq 1+x$; equality occurs only at $x=0$. -/
 theorem exp_minus_one_minus_pos {x : ℝ} (hx : x ≠ 0) :
     0 < Real.exp x - 1 - x := by
   have h := Real.add_one_lt_exp hx
@@ -234,7 +235,8 @@ noncomputable def varianceOfScale (sigma : ℝ) : ℝ≥0 :=
 /--
 Scalar VAE reparameterization law.
 
-If `ε ~ N(0, 1)`, then `μ + σ ε ~ N(μ, σ²)`.  The diagonal multivariate statement is
+If $\varepsilon\sim\mathcal{N}(0,1)$, then
+$\mu+\sigma\varepsilon\sim\mathcal{N}(\mu,\sigma^2)$.  The diagonal multivariate statement is
 obtained by applying this coordinatewise together with the usual independence/product-measure
 assumptions; TorchLean keeps this scalar theorem as the reusable primitive because it already
 matches each coordinate in the diagonal-Gaussian reparameterization trick.
@@ -253,8 +255,9 @@ theorem scalar_reparameterization_law
 /--
 Coordinatewise diagonal VAE reparameterization law.
 
-If every coordinate `εᵢ` has standard-normal law, then every coordinate of
-`μ + σ ⊙ ε` has Gaussian law `N(μᵢ, σᵢ²)`.  A joint diagonal-Gaussian law additionally requires
+If every coordinate $\varepsilon_i$ has standard-normal law, then every coordinate of
+$\mu+\sigma\odot\varepsilon$ has Gaussian law $\mathcal{N}(\mu_i,\sigma_i^2)$.  A joint
+diagonal-Gaussian law additionally requires
 the usual independence/product-measure hypothesis; this theorem packages the part that follows
 directly from mathlib's one-dimensional Gaussian pushforward lemmas.
 -/

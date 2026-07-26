@@ -12,7 +12,7 @@ public import NN.MLTheory.LearningTheory.Robustness.Spec
 # `NN.MLTheory.Stability.Spec`
 
 Scalar-polymorphic stability definitions for discrete-time dynamical systems
-`x_{t+1} = f x_t` over shape-indexed tensors.
+$x_{t+1}=f(x_t)$ over shape-indexed tensors.
 -/
 
 @[expose] public section
@@ -46,14 +46,15 @@ These are standard definitions in control theory / dynamical systems. Useful ent
 
 open NN.MLTheory.Robustness.Spec
 
-/-- Iterate `f` for `n` steps: `iterate f n x = f^[n] x`. -/
+/-- Iterate `f` for $n$ steps: $\operatorname{iterate}(f,n,x)=f^{[n]}(x)$. -/
 abbrev iterate {α : Type} {s : Shape} (f : Tensor α s → Tensor α s) (n : Nat) (x : Tensor α s) :
   Tensor α s :=
   Nat.iterate f n x
 
 /--
 A computable notion of stability margin, matching the "largest invariant ball" intuition:
-the largest `r ≥ 0` such that the closed ball `{x | dist(eq, x) ≤ r}` is forward-invariant.
+the largest $r\geq 0$ such that the closed ball
+$\{x\mid \operatorname{dist}(\mathrm{eq},x)\leq r\}$ is forward-invariant.
 
 TorchLean only installs a real supremum-based instance globally for `ℝ`. Other scalar backends can
 opt into the conservative lower-bound instance below explicitly; this avoids silently reporting `0` as a
@@ -93,9 +94,9 @@ noncomputable instance : StabilityMarginComputable ℝ where
 variable {α : Type} [Context α]
 
 /--
-Lyapunov stability of `equilibrium` for the discrete-time system `x_{t+1} = f x_t`.
+Lyapunov stability of `equilibrium` for the discrete-time system $x_{t+1}=f(x_t)$.
 
-This is the usual `ε`/`δ` definition using the distance induced by `norm`.
+This is the usual $\varepsilon$/$\delta$ definition using the distance induced by `norm`.
 -/
 def isLyapunovStable {s : Shape}
     (f : Tensor α s → Tensor α s)
@@ -148,9 +149,17 @@ def isGloballyStable {s : Shape}
     tensorDistance norm equilibrium (iterate f n x₀) < ε
 
 /--
-Input-to-state stability (ISS) for an input-driven system `x_{t+1} = f x_t u_t`.
+Input-to-state stability (ISS) for an input-driven system $x_{t+1}=f(x_t,u_t)$.
 
-This is the standard bound `‖x_t‖ ≤ β(‖x_0‖, t) + γ( sup_{k ≤ t} ‖u_k‖ )` packaged as a `Prop`.
+This is the standard bound
+
+$$
+\lVert x_t\rVert
+\leq \beta(\lVert x_0\rVert,t)
+  +\gamma\!\left(\sup_{k\leq t}\lVert u_k\rVert\right)
+$$
+
+packaged as a `Prop`.
 -/
 def isInputToStateStable {s₁ s₂ : Shape}
     (f : Tensor α s₁ → Tensor α s₂ → Tensor α s₁)

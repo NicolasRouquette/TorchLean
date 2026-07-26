@@ -121,8 +121,8 @@ theorem newtonSchulz_fixed_update_step_direction_has_exact_gram
     hstep.params_eq⟩
 
 /--
-At an exact-column-orthogonal matrix, one real Newton-Schulz step acts by the scalar
-`a + b + c`. This is the algebra behind the fixed-point shortcut below.
+At an exact-column-orthogonal matrix, one real Newton-Schulz step acts by the scalar $a+b+c$.
+This is the algebra behind the fixed-point shortcut below.
 -/
 theorem newtonSchulz_step_scales_exact_gram_matrix {m n : Nat}
     (coeffs : Optim.Muon.NewtonSchulzCoeffs ℝ)
@@ -163,7 +163,7 @@ theorem newtonSchulz_step_has_approx_gram_from_coeff_square_error {m n : Nat}
     coeffs Q eps hgram herr heps
 
 /--
-Over `ℝ`, the common coefficient condition `a + b + c = 1` means an already exact-column-orthogonal
+Over `ℝ`, the common coefficient condition $a+b+c=1$ means an already exact-column-orthogonal
 fresh buffer is automatically a fixed point, so the Newton-Schulz Muon update is exactly certified.
 -/
 theorem newtonSchulz_coeff_sum_update_step_direction_has_exact_gram {m n : Nat}

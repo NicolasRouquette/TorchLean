@@ -11,7 +11,7 @@ public import NN.Spec.Autograd.Ops
 /-!
 # BugZoo: autograd domains before masks
 
-PyTorch's own autograd notes document a sharp footgun: if a program computes `x / 0` and only
+PyTorch's own autograd notes document a sharp footgun: if a program computes $x/0$ and only
 masks the bad value afterward, the forward loss can look masked while the backward graph still
 contains the undefined division. The documented example gives a `nan` gradient for the masked-out
 entry:
@@ -55,7 +55,8 @@ def unsafeDivThenMask {s : Spec.Shape}
   Spec.Tensor.mulSpec mask (Spec.Tensor.divSpec numerator denominator)
 
 /--
-The safe-domain contract expands to division by `denominator + epsilon`, followed by the mask.
+The safe-domain contract expands to division by $\mathrm{denominator}+\varepsilon$, followed by
+the mask.
 
 This is the checked TorchLean hook: downstream proofs and importers can distinguish the protected
 graph from the "divide first, mask later" graph.

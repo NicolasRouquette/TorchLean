@@ -33,8 +33,8 @@ weights = torch.softmax(scores.masked_fill(future, -torch.inf), dim=-1)
 assert weights[i, j] == 0.0 for all j > i
 ```
 
-Lean's ordinary `ℝ` does not contain a literal `-∞`, but mathlib does provide extended reals
-`EReal`, where `⊥` is negative infinity and `EReal.exp ⊥ = 0`. We record that exact `-∞` fact
+Lean's ordinary `ℝ` does not contain a literal $-\infty$, but mathlib does provide extended reals
+`EReal`, where `⊥` is negative infinity and `EReal.exp ⊥ = 0`. We record that exact $-\infty$ fact
 first. TorchLean's ordinary tensor softmax then uses the computationally convenient equivalent:
 blocked logits get zero numerator before normalization. Both views lead to the exact theorem below.
 
@@ -59,16 +59,16 @@ open Spec
 open Spec.Tensor
 
 /-- Exact extended-real masked logit: allowed entries keep their real score, blocked entries are
-literal `-∞` (`⊥ : EReal`). -/
+literal $-\infty$ (`⊥ : EReal`). -/
 noncomputable def exactMaskedLogit (score : ℝ) (allowed : Bool) : EReal :=
   if allowed then (score : EReal) else ⊥
 
-/-- Blocking a logit really means assigning `-∞` in the extended-real presentation. -/
+/-- Blocking a logit really means assigning $-\infty$ in the extended-real presentation. -/
 @[simp] theorem exactMaskedLogit_blocked (score : ℝ) :
     exactMaskedLogit score false = (⊥ : EReal) := by
   rfl
 
-/-- The key `-∞` softmax fact: `exp(-∞) = 0`. -/
+/-- The key negative-infinity softmax fact: $\exp(-\infty)=0$. -/
 @[simp] theorem exactMaskedLogit_blocked_exp_zero (score : ℝ) :
     EReal.exp (exactMaskedLogit score false) = 0 := by
   simp [exactMaskedLogit]
@@ -79,7 +79,7 @@ noncomputable def exactCausalMaskedScore {n : Nat}
   exactMaskedLogit (Spec.get2 scores i j) (Spec.get2 (Spec.causalMask n) i j)
 
 /--
-For a strict-future position, exact causal masking assigns literal `-∞`.
+For a strict-future position, exact causal masking assigns literal $-\infty$.
 
 This is the formal version of the PyTorch operation
 `scores.masked_fill(future, -torch.inf)` at one matrix coordinate.
@@ -105,11 +105,11 @@ theorem exactCausalMaskedScore_future_exp_zero
   simp [exactCausalMaskedScore_future_eq_bot scores i j hij]
 
 /--
-True-`-∞` causal attention gets the exact zero-weight theorem.
+Causal attention with true $-\infty$ masking gets the exact zero-weight theorem.
 
 This is the statement we want for formal output-causality arguments: every strict-future key has
 zero attention mass for the current query row. In TorchLean this is represented by
-`hardMaskedSoftmaxSpec`, not by a finite real sentinel treated as `-∞`.
+`hardMaskedSoftmaxSpec`, not by a finite real sentinel treated as $-\infty$.
 -/
 theorem trueInfinityMask_future_attention_weight_zero
     {n : Nat}

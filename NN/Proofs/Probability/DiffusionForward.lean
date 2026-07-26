@@ -17,7 +17,8 @@ public import Mathlib.Probability.Kernel.Composition.Prod
 This file gives a small, Mathlib-backed formalization of the *forward* (noising) step used in
 diffusion models, expressed as an affine pushforward of the standard Gaussian measure.
 
-We work in a finite-dimensional real inner product space `E` equipped with its Borel σ-algebra.
+We work in a finite-dimensional real inner product space `E` equipped with its Borel
+$\sigma$-algebra.
 
 Main definitions:
 * `forwardNoising a b x` : the measure of `x' = a • x + b • z` with `z ∼ stdGaussian E`.

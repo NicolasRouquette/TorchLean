@@ -18,7 +18,7 @@ public import Mathlib.Analysis.InnerProductSpace.Calculus
 
 Fréchet-derivative facts for **log-softmax** on Euclidean vectors.
 
-This is the analytic (ℝ) ingredient used to justify `log_softmax` nodes
+This is the analytic ($\mathbb R$) ingredient used to justify `log_softmax` nodes
 (`Vec n → Vec n`) in the tape/DAG autograd proofs.
 
 ## References

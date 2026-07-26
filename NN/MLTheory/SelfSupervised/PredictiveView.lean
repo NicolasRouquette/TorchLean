@@ -406,7 +406,7 @@ theorem coordinateSpread_eq_zero_of_collapsed {n d : Nat}
   rcases hcollapsed with ⟨z, hz⟩
   simp [coordinateSpread, hz]
 
-/-- Real-valued variance-floor penalty: `max(0, gamma - spread)`. -/
+/-- Real-valued variance-floor penalty: $\max(0,\gamma-\mathrm{spread})$. -/
 noncomputable def realVarianceFloorPenalty (gamma spread : ℝ) : ℝ :=
   max 0 (gamma - spread)
 
@@ -415,7 +415,7 @@ noncomputable def realVarianceFloorGuard {d : Nat}
     (gamma : ℝ) (spread : Fin d → ℝ) : ℝ :=
   ∑ j : Fin d, realVarianceFloorPenalty gamma (spread j)
 
-/-- Zero spread in every coordinate pays exactly `d * gamma` when `gamma` is nonnegative. -/
+/-- Zero spread in every coordinate pays exactly $d\gamma$ when $\gamma$ is nonnegative. -/
 theorem realVarianceFloorGuard_zero_spread {d : Nat} {gamma : ℝ}
     (hgamma : 0 ≤ gamma) :
     realVarianceFloorGuard (d := d) gamma (fun _ => 0) = d * gamma := by

@@ -34,7 +34,7 @@ References:
 
 namespace NN.MLTheory.Generative.Latent.Objective
 
-/-- A two-term latent objective: `base + weight * regularizer`. -/
+/-- A two-term latent objective: $\mathrm{base}+\mathrm{weight}\,\mathrm{regularizer}$. -/
 structure WeightedTwoTerm where
   /-- Main data-fitting term, typically reconstruction or score regression. -/
   base : ℝ
@@ -45,7 +45,8 @@ structure WeightedTwoTerm where
 def weightedTwoTerm (weight : ℝ) (terms : WeightedTwoTerm) : ℝ :=
   terms.base + weight * terms.regularizer
 
-/-- A three-term latent objective: `base + middle + weight * regularizer`. -/
+/-- A three-term latent objective:
+$\mathrm{base}+\mathrm{middle}+\mathrm{weight}\,\mathrm{regularizer}$. -/
 structure WeightedThreeTerm where
   /-- Main data-fitting term. -/
   base : ℝ
@@ -81,7 +82,8 @@ theorem weightedTwoTerm_mono_weight
   simp
   exact mul_le_mul_of_nonneg_right hw hreg
 
-/-- A weighted three-term objective collapses to `base + middle` when the regularizer is zero. -/
+/-- A weighted three-term objective collapses to $\mathrm{base}+\mathrm{middle}$ when the
+regularizer is zero. -/
 @[simp] theorem weightedThreeTerm_zero_regularizer (weight base middle : ℝ) :
     weightedThreeTerm weight { base := base, middle := middle, regularizer := 0 } =
       base + middle := by

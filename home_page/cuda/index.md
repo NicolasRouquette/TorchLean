@@ -1,7 +1,6 @@
 ---
 title: CUDA
 layout: default
-usemathjax: true
 ---
 
 # CUDA
@@ -59,6 +58,10 @@ separate "CUDA forward" function in ordinary code. The backend changes where sup
 it should not silently change tensor shapes, graph identities, mask semantics, parameter layout, or
 the theorem statement attached to a checker.
 
+Before a supported operation runs, the eager session binds its selected capsule to a handler with
+the same operation, provider, and device. A missing handler is an execution error; TorchLean does
+not print one provider in the audit report and quietly call another.
+
 ## Training Boundary
 
 For training, TorchLean keeps the derivative boundary visible. A backend capsule states both the
@@ -99,6 +102,6 @@ Evidence levels should be stated carefully:
 | Native kernel verified | A theorem about the native CUDA implementation itself, rather than only the Lean side spec or boundary contract. |
 
 For the full explanation, read
-[GPU and CUDA Boundaries]({{ '/blueprint/Floating-Point-and-Native-Boundaries/GPU-and-CUDA-Boundaries/' | relative_url }}).
+[GPU and CUDA Boundaries]({{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }}).
 For the public runtime choice, read
-[Backend Selection and Trust]({{ '/blueprint/Runtime___-Autograd___-and-Interop/Backend-Selection-and-Trust/' | relative_url }}).
+[Backend Selection and Trust]({{ '/blueprint/Runtime___-Autograd___-and-Interop/Choosing-How-A-Model-Runs/' | relative_url }}).

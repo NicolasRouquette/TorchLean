@@ -156,7 +156,11 @@ def tanh {n : Nat} (xB : Box α (.dim n .scalar)) : Box α (.dim n .scalar) :=
 
 /--
 Conservative IBP for `sin` using a 1-Lipschitz enclosure:
-  sin([l,u]) ⊆ [sin(m)-r, sin(m)+r] ∩ [-1,1],  m=(l+u)/2, r=(u-l)/2.
+
+$$
+\sin([l,u])\subseteq[\sin(m)-r,\sin(m)+r]\cap[-1,1],
+\qquad m=\frac{l+u}{2},\quad r=\frac{u-l}{2}.
+$$
 
 This avoids periodic case splits (no `floor/ceil` in `Context α`) while remaining sound.
 -/

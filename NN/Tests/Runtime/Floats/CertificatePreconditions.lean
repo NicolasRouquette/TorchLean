@@ -19,7 +19,7 @@ public import Lean.Data.Json
 Regression checks for the executable certificate boundary.
 
 These tests cover side conditions that are easy for an external producer to get wrong: α-CROWN
-slopes must be in `[0,1]`, binary elementwise bounds must have matching flattened dimensions, the
+slopes must be in $[0,1]$, binary elementwise bounds must have matching flattened dimensions, the
 true `log` relaxation must only be replayed on positive boxes, verification expressions must follow
 their documented power/negation semantics, and interval comparisons must reject non-finite values.
 -/
@@ -67,13 +67,13 @@ def expectFloatPair (msg : String) (actual : Option (Float × Float))
   | none =>
       throw <| IO.userError s!"{msg}: expression evaluation failed"
 
-/-- Parse and evaluate an ODE expression on the point interval `u = 2`. -/
+/-- Parse and evaluate an ODE expression on the point interval $u=2$. -/
 def evalODEAtTwo (source : String) : Option (Float × Float) := do
   let expr ← NN.Verification.ODE.Parse.parseExpr source |>.toOption
   NN.Verification.ODE.eval (fun x => x)
     { t := (0.0, 0.0), u := (2.0, 2.0) } expr
 
-/-- Parse and evaluate a PDE expression on the point interval `u = 2`. -/
+/-- Parse and evaluate a PDE expression on the point interval $u=2$. -/
 def evalPDEAtTwo (source : String) : Option (Float × Float) := do
   let expr ← NN.Verification.PINN.PdeParse.parseExpr (fun _ => none) source |>.toOption
   NN.Verification.PINN.PdeAst.eval

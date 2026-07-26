@@ -51,8 +51,8 @@ Current fully smooth elementwise coverage includes:
 * `softplus`
 * tanh-approximate `gelu`
 * `silu`
-* `safeLog`, assuming `ε > 0`
-* `smoothAbs`, assuming `ε > 0`
+* `safeLog`, assuming $\varepsilon>0$
+* `smoothAbs`, assuming $\varepsilon>0$
 
 Pointwise / condition-carrying coverage includes:
 
@@ -82,18 +82,19 @@ The larger block proofs are built by composing the tape-node theorems:
 * last-axis softmax/log-softmax;
 * dense/matmul/reduction/broadcast/shape nodes;
 * scaled dot-product attention;
-* fixed additive-bias scaled dot-product attention `softmax(c · QKᵀ + bias) V`;
+* fixed additive-bias scaled dot-product attention
+  $\operatorname{softmax}(cQK^{\mathsf T}+\operatorname{bias})V$;
 * fixed additive-bias multi-head attention core over split heads;
 * unmasked multi-head self-attention;
-* residual multi-head self-attention sublayer `x + MHA(x)`;
-* residual Transformer feed-forward sublayers, both one-token/vector-shaped and sequence-shaped
-  `X + A₂(GELU(A₁X+b₁))+b₂`;
+* residual multi-head self-attention sublayer $x+\operatorname{MHA}(x)$;
+* residual Transformer feed-forward sublayers, both one-token/vector-shaped and sequence-shaped,
+  $X+A_2(\operatorname{GELU}(A_1X+b_1))+b_2$;
 * arbitrary-context LayerNorm as a whole tape node, so a graph can consume an earlier SSA value plus
   carried `gamma`/`beta` without rebuilding the LayerNorm proof each time;
 * a single SSA graph and VJP theorem for the first post-norm Transformer sublayer
-  `LayerNorm(x + MHA(x), gamma, beta)`;
+  $\operatorname{LayerNorm}(x+\operatorname{MHA}(x),\gamma,\beta)$;
 * a single SSA graph and VJP theorem for the second post-norm Transformer sublayer
-  `LayerNorm(X + FFN(X), gamma, beta)`;
+  $\operatorname{LayerNorm}(X+\operatorname{FFN}(X),\gamma,\beta)$;
 * a concrete full post-norm Transformer encoder-block SSA graph and VJP theorem, composing MHA,
   the first LayerNorm, sequence FFN, and the second LayerNorm with both LayerNorm domain hypotheses
   stated explicitly;
@@ -105,12 +106,14 @@ The larger block proofs are built by composing the tape-node theorems:
   attention proof;
 * a more abstract GPT-style post-norm decoder-block differentiability theorem for outer model
   packers that assemble token projections or other front-end context before the decoder core;
-* post-norm Transformer boundary `residual_stream ↦ LayerNorm(residual_stream, gamma, beta)`;
+* post-norm Transformer boundary
+  $r\mapsto\operatorname{LayerNorm}(r,\gamma,\beta)$;
 * a chain-rule bridge `residualThenPostNorm_hasFDerivAt` showing that any differentiable
   residual-producing map composes correctly with the post-norm LayerNorm graph;
 * conv2d FDeriv/backward-dot infrastructure;
 * LayerNorm and channel-first BatchNorm-like graphs;
-* one-step tanh/Elman RNN cell `h' = tanh(W [x; h] + b)`, a two-step composition bridge, and an
+* one-step tanh/Elman RNN cell
+  $h'=\tanh\!\left(W[x;h]+b\right)$, a two-step composition bridge, and an
   arbitrary-length BPTT chain-rule induction over differentiable recurrent transition builders;
 * finite-index gather-row / embedding lookup adjointness (`gather` VJP is scatter-add).
 

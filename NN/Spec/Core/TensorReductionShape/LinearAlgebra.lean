@@ -123,9 +123,10 @@ def swapAtDepthSpec {α : Type} {n : Nat} {s : Shape}
 -- Backward pass for matrix multiplication
 /-- Backward pass for matrix multiplication: returns `(dA, dB)` given `dC`.
 
-PyTorch analogy: if `C = A @ B`, then:
-- `dA = dC @ Bᵀ`
-- `dB = Aᵀ @ dC` -/
+PyTorch analogy: if $C=AB$, then:
+
+- $dA=dC\,B^\mathsf{T}$
+- $dB=A^\mathsf{T}dC$ -/
 def matMulBackwardSpec
   {m n p : Nat}
   (A : Tensor α (.dim m (.dim n .scalar)))

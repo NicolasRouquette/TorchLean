@@ -14,8 +14,10 @@ public import NN.Spec.Layers.SelectiveScan
 
 State-space sequence models are recurrent dynamical systems:
 
-`h_{t+1} = A_t h_t + B_t x_t`,
-`y_t     = C_t h_t + D_t x_t`.
+$$
+h_{t+1}=A_t h_t+B_t x_t,\qquad
+y_t=C_t h_t+D_t x_t.
+$$
 
 The full S4/Mamba family uses structured matrices and input-dependent ("selective") parameters.
 This file starts with the diagonal/channelwise version because it is:
@@ -44,7 +46,7 @@ This is the smallest useful SSM shape: it captures the recurrent memory path use
 remaining easy to verify.  Richer models can wrap this core with linear projections and gates.
 -/
 structure DiagonalSSM (α : Type) (dim : Nat) where
-  /-- Elementwise recurrent multiplier. Stability usually requires `|Aᵢ| < 1`. -/
+  /-- Elementwise recurrent multiplier. Stability usually requires $\lvert A_i\rvert<1$. -/
   A : Tensor α (.dim dim .scalar)
   /-- Elementwise input-to-state gain. -/
   B : Tensor α (.dim dim .scalar)
@@ -57,12 +59,12 @@ namespace DiagonalSSM
 
 variable {α : Type} [Add α] [Mul α] {dim : Nat}
 
-/-- One recurrent state update `h' = A ⊙ h + B ⊙ x`. -/
+/-- One recurrent state update $h'=A\odot h+B\odot x$. -/
 def step (m : DiagonalSSM α dim)
     (h x : Tensor α (.dim dim .scalar)) : Tensor α (.dim dim .scalar) :=
   m.A * h + m.B * x
 
-/-- Readout `y = C ⊙ h + D ⊙ x`. -/
+/-- Readout $y=C\odot h+D\odot x$. -/
 def readout (m : DiagonalSSM α dim)
     (h x : Tensor α (.dim dim .scalar)) : Tensor α (.dim dim .scalar) :=
   m.C * h + m.D * x

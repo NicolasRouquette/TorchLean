@@ -31,10 +31,11 @@ TorchLean provides a small GRU specification that is:
 
 ## Notes on parameterization
 
-The GRU equations are often written with separate matrices `W_*` for the input and `U_*` for the
-hidden state. In this spec we use a single matrix per gate applied to a concatenated vector
-`[x_t; h_{t-1}]` (or `[x_t; r_t ⊙ h_{t-1}]` for the candidate). This is the same idea, just packaged
-in a way that reuses the tensor building blocks already present in the spec layer.
+The GRU equations are often written with separate matrices $W_\bullet$ for the input and
+$U_\bullet$ for the hidden state. In this spec we use a single matrix per gate applied to a
+concatenated vector $[x_t;h_{t-1}]$ (or $[x_t;r_t\odot h_{t-1}]$ for the candidate). This is the
+same idea, just packaged in a way that reuses the tensor building blocks already present in the
+spec layer.
 
 One small place where libraries differ is the candidate equation: some implementations apply the
 reset gate before the hidden-state linear map (as in Cho et al.), while others apply it after a
@@ -59,23 +60,27 @@ variable {α : Type} [Context α]
 Parameters for a single GRU cell.
 
 This is the spec-level analogue of PyTorch `torch.nn.GRUCell` parameters, using a concatenated
-input `[x_t; h_{t-1}]` (shape `inputSize + hiddenSize`) for the reset/update gates and
-`[x_t; r_t ⊙ h_{t-1}]` for the candidate gate.
+input $[x_t;h_{t-1}]$ (shape `inputSize + hiddenSize`) for the reset/update gates and
+$[x_t;r_t\odot h_{t-1}]$ for the candidate gate.
 
 Shapes:
+
 - each `*_weights` is `[hiddenSize, inputSize + hiddenSize]`,
 - each `*_bias` is `[hiddenSize]`.
 -/
 structure GRUSpec (α : Type) (inputSize hiddenSize : Nat) where
-  /-- Reset-gate weights for `r_t = sigmoid(W_r [x_t; h_{t-1}] + b_r)`. -/
+  /-- Reset-gate weights for
+  $r_t=\operatorname{sigmoid}(W_r[x_t;h_{t-1}]+b_r)$. -/
   reset_weights : Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))
   /-- Reset-gate bias. -/
   reset_bias    : Tensor α (.dim hiddenSize .scalar)
-  /-- Update-gate weights for `z_t = sigmoid(W_z [x_t; h_{t-1}] + b_z)`. -/
+  /-- Update-gate weights for
+  $z_t=\operatorname{sigmoid}(W_z[x_t;h_{t-1}]+b_z)$. -/
   update_weights : Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))
   /-- Update-gate bias. -/
   update_bias    : Tensor α (.dim hiddenSize .scalar)
-  /-- Candidate-state weights for `n_t = tanh(W_n [x_t; r_t ⊙ h_{t-1}] + b_n)`. -/
+  /-- Candidate-state weights for
+  $n_t=\tanh(W_n[x_t;r_t\odot h_{t-1}]+b_n)$. -/
   new_weights   : Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))
   /-- Candidate-state bias. -/
   new_bias      : Tensor α (.dim hiddenSize .scalar)
@@ -83,7 +88,7 @@ structure GRUSpec (α : Type) (inputSize hiddenSize : Nat) where
 /--
 Forward pass for a single GRU cell.
 
-Given input `x_t` and previous hidden state `h_{t-1}`, compute the next hidden state `h_t` using
+Given input $x_t$ and previous hidden state $h_{t-1}$, compute the next hidden state $h_t$ using
 the standard GRU equations.
 
 PyTorch analogue: `torch.nn.GRUCell` forward (see module header links).
@@ -132,7 +137,8 @@ def gruCellSpec {inputSize hiddenSize : Nat}
 /--
 Unroll a GRU over `seqLen` timesteps (time-major).
 
-This returns the sequence of hidden states `[h_0, ..., h_{seqLen-1}]`. It is a pure spec-level
+This returns the sequence of hidden states $[h_0,\ldots,h_{\mathtt{seqLen}-1}]$. It is a pure
+spec-level
 definition of semantics; an efficient runtime is free to implement the same behavior with loops and
 caching.
 
@@ -167,11 +173,12 @@ def gruSequenceSpec {seqLen inputSize hiddenSize : Nat}
 /--
 GRU cell forward pass that also returns cached intermediates for BPTT.
 
-This computes the same next hidden state as `gru_cell_spec`, but additionally returns:
-- `reset_gate` (`r_t`),
-- `update_gate` (`z_t`),
-- `new_candidate` (`n_t`), and
-- `reset_hidden` (`r_t ⊙ h_{t-1}`).
+This computes the same next hidden state as `gruCellSpec`, but additionally returns:
+
+- `reset_gate` ($r_t$),
+- `update_gate` ($z_t$),
+- `new_candidate` ($n_t$), and
+- `reset_hidden` ($r_t\odot h_{t-1}$).
 
 These are exactly the quantities commonly saved by a reverse-mode implementation (PyTorch-style
 autograd) to compute gradients efficiently in the backward pass.
@@ -220,8 +227,8 @@ Run a GRU forward pass while collecting the per-timestep intermediates needed fo
 
 This is the "spec-level" analogue of what frameworks do internally:
 
-- the forward pass produces `h_t`,
-- and it also saves gate activations (`r_t`, `z_t`) and the candidate (`n_t`) for the backward pass.
+- the forward pass produces $h_t$,
+- and it also saves gate activations $r_t$, $z_t$, and candidate $n_t$ for the backward pass.
 
 The returned tensors are all time-major (`seqLen` first) to match the rest of the spec layer.
 -/
@@ -315,8 +322,8 @@ def gruBatchedSpec {batchSize seqLen inputSize hiddenSize : Nat}
 /--
 Reference gradient for reset-gate weights via the generic RNN weight-gradient helper.
 
-This uses `rnn_weights_deriv_spec` on the concatenated inputs/hidden states. It is a convenient
-building block, but the more explicit `*_bptt_spec` helpers below show the time-unrolled
+This uses `rnnWeightsDerivSpec` on the concatenated inputs/hidden states. It is a convenient
+building block, but the more explicit BPTT helpers below show the time-unrolled
 accumulation form.
 -/
 def gruResetWeightsDerivSpec {seqLen inputSize hiddenSize : Nat}
@@ -327,7 +334,7 @@ def gruResetWeightsDerivSpec {seqLen inputSize hiddenSize : Nat}
   rnnWeightsDerivSpec inputs hiddens grad_reset
 
 -- Gradient w.r.t. update gate weights
-/-- Reference gradient for update-gate weights (via `rnn_weights_deriv_spec`). -/
+/-- Reference gradient for update-gate weights (via `rnnWeightsDerivSpec`). -/
 def gruUpdateWeightsDerivSpec {seqLen inputSize hiddenSize : Nat}
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
   (hiddens : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
@@ -337,9 +344,10 @@ def gruUpdateWeightsDerivSpec {seqLen inputSize hiddenSize : Nat}
 
 -- Gradient w.r.t. new gate weights
 /--
-Reference gradient for candidate ("new") gate weights (via `rnn_weights_deriv_spec`).
+Reference gradient for candidate ("new") gate weights (via `rnnWeightsDerivSpec`).
 
-Note the second sequence argument is `reset_hiddens = r_t ⊙ h_{t-1}`.
+The second sequence argument satisfies
+$\mathtt{reset\_hiddens}_t=r_t\odot h_{t-1}$.
 -/
 def gruNewWeightsDerivSpec {seqLen inputSize hiddenSize : Nat}
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
@@ -354,7 +362,7 @@ Bias gradient by summing per-timestep gradients over the time axis.
 
 This is the spec-level analogue of the common "sum across batch/time" reduction used for bias
 gradients. The `seqLen ≠ 0` hypothesis is exactly what makes axis `0` a valid reduction axis for
-`reduce_sum_auto` in the shape-indexed tensor API.
+`reduceSumAuto` in the shape-indexed tensor API.
 -/
 def gruBiasDerivSpec {seqLen hiddenSize : Nat}
   (grad_outputs : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
@@ -370,7 +378,11 @@ def gruBiasDerivSpec {seqLen hiddenSize : Nat}
 /--
 Reset-gate weight gradient by explicit time-unrolled accumulation (BPTT-style).
 
-This computes `Σ_t (dL/dr_t) ⊗ [x_t; h_{t-1}]`, where `⊗` is an outer product.
+This computes
+$$
+\sum_t \frac{\partial L}{\partial r_t}\otimes[x_t;h_{t-1}],
+$$
+where $\otimes$ is an outer product.
 -/
 def gruResetWeightsDerivBpttSpec {seqLen inputSize hiddenSize : Nat}
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
@@ -404,7 +416,10 @@ def gruResetWeightsDerivBpttSpec {seqLen inputSize hiddenSize : Nat}
 /--
 Update-gate weight gradient by explicit time-unrolled accumulation (BPTT-style).
 
-This computes `Σ_t (dL/dz_t) ⊗ [x_t; h_{t-1}]`.
+This computes
+$$
+\sum_t \frac{\partial L}{\partial z_t}\otimes[x_t;h_{t-1}].
+$$
 -/
 def gruUpdateWeightsDerivBpttSpec {seqLen inputSize hiddenSize : Nat}
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
@@ -437,7 +452,10 @@ def gruUpdateWeightsDerivBpttSpec {seqLen inputSize hiddenSize : Nat}
 /--
 Candidate-gate weight gradient by explicit time-unrolled accumulation (BPTT-style).
 
-This computes `Σ_t (dL/dn_t) ⊗ [x_t; r_t ⊙ h_{t-1}]`.
+This computes
+$$
+\sum_t \frac{\partial L}{\partial n_t}\otimes[x_t;r_t\odot h_{t-1}].
+$$
 -/
 def gruNewWeightsDerivBpttSpec {seqLen inputSize hiddenSize : Nat}
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
@@ -462,18 +480,20 @@ def gruNewWeightsDerivBpttSpec {seqLen inputSize hiddenSize : Nat}
 Backward (VJP) for a single GRU cell.
 
 Inputs:
+
 - the cell parameters `gru`,
-- the current input `x_t`,
-- the previous hidden state `h_{t-1}`,
-- an upstream gradient `dL/dh_t`,
-- and the forward intermediates (`r_t`, `z_t`, `n_t`) that a typical BPTT implementation would
+- the current input $x_t$,
+- the previous hidden state $h_{t-1}$,
+- an upstream gradient $\partial L/\partial h_t$,
+- and the forward intermediates $r_t$, $z_t$, and $n_t$ that a typical BPTT implementation would
   cache.
 
 Outputs:
+
 - gradients w.r.t. the input and previous hidden state,
 - plus gradients for each parameter tensor (weights and biases).
 
-This is written to match the forward equations in `gru_cell_spec`. It is not an optimized kernel;
+This is written to match the forward equations in `gruCellSpec`. It is not an optimized kernel;
 it is a precise spec for what gradients *should* be.
 -/
 def gruCellBackwardFullSpec {inputSize hiddenSize : Nat}
@@ -557,7 +577,7 @@ def gruCellBackwardFullSpec {inputSize hiddenSize : Nat}
 /--
 Reverse-mode backprop through an unrolled GRU over `seqLen` steps (BPTT).
 
-This function consumes the same intermediates produced by `gru_extract_intermediate_values`:
+This function consumes the same intermediates produced by `gruExtractIntermediateValues`:
 per-timestep gate activations and candidates. This mirrors the PyTorch mental model: the forward
 pass produces a sequence of hidden states and saves what it needs; the backward pass walks time
 in reverse and accumulates gradients.

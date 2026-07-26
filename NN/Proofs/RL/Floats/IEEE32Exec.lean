@@ -16,7 +16,7 @@ public import NN.Proofs.RL.Tactics
 TorchLean provides multiple “views” of float32:
 
 - `IEEE32Exec`: executable, bit-level IEEE-754 binary32 (can run inside Lean),
-- `FP32`: proof-oriented “round-on-ℝ” float32 model (finite-only).
+- `FP32`: proof-oriented “round-on-$\mathbb R$” float32 model (finite-only).
 
 The IEEE32Exec bridge files prove that, on the **finite path**, executable float32 arithmetic
 refines the standard mathematical model: compute the real operation and round to float32 at each

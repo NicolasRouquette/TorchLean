@@ -228,7 +228,7 @@ structure ParamGroup (α : Type) [Context α] where
   params : List Nat
   /-- Base learning rate (possibly overridden by `scheduler` on each step). -/
   lr : α
-  /-- L2 regularization coefficient (behavior depends on the optimizer kind; see AdamW). -/
+  /-- $\ell_2$ regularization coefficient (behavior depends on the optimizer kind; see AdamW). -/
   weight_decay : α := 0
   /-- Momentum factor (SGD with momentum). -/
   momentum : α := 0
@@ -383,7 +383,8 @@ def castState
     throw (tagError tag s!"state shape mismatch for id {id}")
 
 /--
-Add an L2 regularization term to the gradient: `g + weight_decay * param`.
+Add an $\ell_2$ regularization term to the gradient:
+$g+\operatorname{weightDecay}\,\operatorname{param}$.
 
 Note: this is the *coupled* weight decay used by classic SGD-style updates.
 For AdamW the integration step delegates to the canonical optimizer's decoupled update.

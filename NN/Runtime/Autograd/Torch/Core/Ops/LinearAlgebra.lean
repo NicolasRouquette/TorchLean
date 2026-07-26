@@ -46,7 +46,6 @@ def matmul {α : Type} (s : EagerSession α) [Context α]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .matmul
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.matmul (t := t0) (m := m) (n := n) (p := p) a.id b.id
@@ -67,7 +66,6 @@ def bmm {α : Type} (s : EagerSession α) [Add α] [Mul α] [Zero α] [Decidable
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .matmul
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.bmm (t := t0) (batch := batch) (m := m) (n := n) (p := p) a.id b.id
@@ -89,7 +87,6 @@ def concatVectors {α : Type} (s : EagerSession α) [Context α]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .concat
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.concatVectors (t := t0) (n := n) (m := m) a.id b.id
@@ -110,7 +107,6 @@ def concatLeadingAxis {α : Type} (s : EagerSession α) [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .concat
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.concatLeadingAxis (t := t0) (n := n) (m := m) (s := sh) a.id b.id
@@ -130,7 +126,6 @@ def sliceLeadingAxisRange {α : Type} (s : EagerSession α) [Zero α] [Decidable
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .slice
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.sliceLeadingAxisRange (t := t0) (n := n) (s := sh) x.id start len h

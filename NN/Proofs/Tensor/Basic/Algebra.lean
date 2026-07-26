@@ -86,7 +86,7 @@ theorem tensor_ext {α : Type} {s : Shape} {x y : Tensor α s} :
 
           -- rewrite and finish
           rw [eq_funcs]
-/-- Elementwise addition is associative (over ℝ tensors). -/
+/-- Elementwise addition is associative (over $\mathbb R$ tensors). -/
 theorem add_spec_assoc {s : Shape}
   (a b c : Tensor ℝ s) :
   addSpec (addSpec a b) c = addSpec a (addSpec b c) := by

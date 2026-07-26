@@ -38,7 +38,7 @@ Torchvision-style transform composition.
 
 Applies transforms left-to-right:
 
-`Compose [f, g, h] x = h (g (f x))`.
+$\operatorname{Compose}[f,g,h](x)=h(g(f(x)))$.
 -/
 def Compose {a : Type} (ts : List (a → a)) : a → a :=
   fun x => ts.foldl (fun acc f => f acc) x
@@ -59,7 +59,7 @@ def onDataset {a b : Type} (f : a → b) (ds : API.Data.Dataset a) : API.Data.Da
 def mapTensor {α : Type} {s : Spec.Shape} (f : α → α) (x : Spec.Tensor α s) : Spec.Tensor α s :=
   Spec.mapTensor f x
 
-/-- Normalize any tensor elementwise: `(x - mean) / std`. -/
+/-- Normalize any tensor elementwise: $(x-\mu)/\sigma$. -/
 def normalizeTensor {α : Type} [Sub α] [Div α] {s : Spec.Shape} (mean std : α)
     (x : Spec.Tensor α s) : Spec.Tensor α s :=
   mapTensor (fun v => (v - mean) / std) x

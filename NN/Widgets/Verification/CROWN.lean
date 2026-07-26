@@ -32,7 +32,7 @@ The panel makes it easy to inspect:
 ## Main definitions
 
 - `crownPropHtml`: interactive per-node state viewer for CROWN/IBP propagation.
-- `boundsTightnessHtml`: interval-width diagnostic panel (`hi - lo`) per node.
+- `boundsTightnessHtml`: interval-width diagnostic panel ($\mathrm{hi}-\mathrm{lo}$) per node.
 - `#crown_view g, st`: command form for `crownPropHtml`.
 - `#bounds_tightness_view g, st`: command form for `boundsTightnessHtml`.
 
@@ -354,7 +354,7 @@ def crownPropHtml {α : Type} [Context α] [ToString α] (g : Graph) (ps : PropS
 ## Bounds Tightness
 
 When IBP boxes exist, a very fast diagnostic for "where are my bounds blowing up?" is to look at
-interval widths `hi - lo` node-by-node.
+interval widths $\mathrm{hi}-\mathrm{lo}$ node-by-node.
 
 This viewer computes width summaries per node and highlights missing IBP coverage.
 -/
@@ -375,7 +375,8 @@ private def flatBoxWidthTensor {α : Type} [Context α] (b : FlatBox α) : Tenso
   -- Width per flattened component.
   Tensor.subSpec (α := α) b.hi b.lo
 
-/-- Render a per-node diagnostic panel summarizing IBP interval widths (`hi - lo`). -/
+/-- Render a per-node diagnostic panel summarizing IBP interval widths
+$\mathrm{hi}-\mathrm{lo}$. -/
 def boundsTightnessHtml {α : Type} [Context α] [ToString α]
     (g : Graph) (ps : PropState α) (maxNodes : Nat := 200) : ProofWidgets.Html :=
   let nG := g.size

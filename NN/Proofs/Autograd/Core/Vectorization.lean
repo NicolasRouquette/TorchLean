@@ -20,7 +20,7 @@ This module centralizes the `Vec` alias (`EuclideanSpace ℝ (Fin n)`) and the b
 `Tensor ℝ (.dim n .scalar)` ↔ `Vec n` conversions used across multiple proof files.
 
 ## PyTorch correspondence / citations
-This plays the same role as treating a length-`n` tensor as an element of `ℝ^n` when using
+This plays the same role as treating a length-`n` tensor as an element of $\mathbb R^n$ when using
 standard analysis results (mean value theorem, operator norms, etc.).
 https://pytorch.org/docs/stable/linalg.html
 -/
@@ -44,7 +44,7 @@ abbrev Vec (n : Nat) := EuclideanSpace ℝ (Fin n)
 /--
 Convert a 1D scalar tensor (`Tensor ℝ (.dim n .scalar)`) into a Euclidean vector `Vec n`.
 
-This is the “analysis-friendly” view of a length-`n` tensor as an element of `ℝ^n`.
+This is the “analysis-friendly” view of a length-`n` tensor as an element of $\mathbb R^n$.
 -/
 def toVecE {n : Nat} (t : Tensor ℝ (.dim n .scalar)) : Vec n :=
   (EuclideanSpace.equiv (𝕜 := ℝ) (ι := Fin n)).symm (Spec.toVec t)
@@ -78,7 +78,8 @@ def ofVecE {n : Nat} (v : Vec n) : Tensor ℝ (.dim n .scalar) :=
 /--
 Coordinate formula for the Euclidean inner product on `Vec n`.
 
-This is the statement “`⟪x,y⟫ = ∑ᵢ xᵢ*yᵢ`” specialized to `EuclideanSpace ℝ (Fin n)`.
+This is the statement $\langle x,y\rangle=\sum_i x_i y_i$ specialized to
+`EuclideanSpace ℝ (Fin n)`.
 -/
 lemma inner_eq_sum_mul {n : Nat} (x y : Vec n) :
     inner ℝ x y = ∑ i : Fin n, x i * y i := by

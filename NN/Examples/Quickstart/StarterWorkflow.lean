@@ -92,7 +92,7 @@ The shape below is the user-facing training path:
 - call `trainer.predict` for initial prediction,
 - call `trainer.train`,
 - use the returned trained handle for prediction.
-- call `trained.verifyRobustLInf` on a small `ℓ∞` box.
+- call `trained.verifyRobustLInf` on a small $\ell_\infty$ box.
 
 The quickstart build only checks that these declarations typecheck; it does not train during
 ordinary `lake build`, which keeps CI fast.

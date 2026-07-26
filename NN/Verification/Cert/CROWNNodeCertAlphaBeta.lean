@@ -37,9 +37,9 @@ Certificate JSON format:
 ```
 
 β encoding (per neuron):
-- `-1` = forced inactive (`z ≤ 0`)
+- `-1` = forced inactive ($z\leq0$)
 - `0`  = unconstrained / unstable
-- `1`  = forced active (`0 ≤ z`)
+- `1`  = forced active ($0\leq z$)
 
 As with the α-CROWN checker, the certificate is accepted only if the provided binary32 affine
 bounds exactly match Lean recomputation.

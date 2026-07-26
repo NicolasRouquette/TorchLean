@@ -137,7 +137,8 @@ the learned controller satisfies the analytic Lyapunov conditions on an arbitrar
 runtime result must still be connected to the real `LyapunovCert` theorem, and any native or
 `@[implemented_by]` path retains its documented implementation boundary.
 
-In a controller workflow, the producer may search for a policy `u_θ` and a Lyapunov candidate `V`.
+In a controller workflow, the producer may search for a policy $`u_\theta` and a Lyapunov candidate
+$`V`.
 The target inequalities often look like
 
 $$`V(x)\geq 0,\qquad

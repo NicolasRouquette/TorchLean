@@ -22,7 +22,10 @@ Reference:
 This file proves the cache append boundary. A stronger future theorem should connect cached decode
 to full-sequence attention:
 
-`decodeWithCache prefix newToken = fullAttention (prefix ++ [newToken])`
+$$
+\operatorname{decodeWithCache}(\mathit{prefix},\mathit{newToken})
+=\operatorname{fullAttention}(\mathit{prefix}\mathbin{+\!\!+}[\mathit{newToken}]).
+$$
 
 under the same mask, RoPE/position encoding, and numeric semantics.
 -/

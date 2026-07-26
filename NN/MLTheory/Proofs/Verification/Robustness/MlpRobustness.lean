@@ -29,7 +29,7 @@ import Mathlib.Tactic.Linarith
 This file collects small real-analysis facts used by robustness statements for spec-level MLPs.
 
 Contents:
-- ReLU (written as `max 0 x`) is 1-Lipschitz on `ℝ`.
+- ReLU (written as $\max(0,x)$) is $1$-Lipschitz on $\mathbb{R}$.
 - Lipschitz bounds compose under function composition.
 - A few tensor-norm helper lemmas that connect to the more general library in
   `NN.Proofs.Analysis.Lipschitz`.
@@ -50,7 +50,8 @@ open scoped BigOperators
 /-! ## Basic Lipschitz lemmas -/
 
 /--
-Fundamental property: ReLU satisfies |ReLU(x) - ReLU(y)| ≤ |x - y|
+Fundamental property: ReLU satisfies
+$|\operatorname{ReLU}(x)-\operatorname{ReLU}(y)|\le|x-y|$.
 -/
 theorem relu_lipschitz_bound : ∀ x y : ℝ, |max 0 x - max 0 y| ≤ |x - y| := by
   intro x y

@@ -55,12 +55,12 @@ def lInfBox {α : Type} [Context α] {s : Shape}
     (center radius : Tensor α s) : NN.MLTheory.CROWN.FlatBox α :=
   NN.MLTheory.CROWN.FlatBox.lInfBox (α := α) center radius
 
-/-- Uniform `ℓ∞` box around a shaped TorchLean input tensor. -/
+/-- Uniform $\ell^\infty$ box around a shaped TorchLean input tensor. -/
 def lInfBall {α : Type} [Context α] {s : Shape}
     (center : Tensor α s) (eps : α) : NN.MLTheory.CROWN.FlatBox α :=
   NN.MLTheory.CROWN.FlatBox.lInfBall (α := α) center eps
 
-/-- Seed the distinguished verifier input with a uniform `ℓ∞` ball. -/
+/-- Seed the distinguished verifier input with a uniform $\ell^\infty$ ball. -/
 def CompiledIR.seedLInfBall {α : Type} [Context α] {s : Shape}
     (compiled : CompiledIR α) (center : Tensor α s) (eps : α) :
     NN.MLTheory.CROWN.Graph.ParamStore α :=

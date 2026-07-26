@@ -120,7 +120,7 @@ def writeCsv (path : System.FilePath) (header : List String) (rows : List (List 
 /--
 Write a one-dimensional prediction probe CSV.
 
-Rows are `i,x,input,target,prediction`, where `x = i/(n-1)` for `n > 1`.
+Rows are `i,x,input,target,prediction`, where $x=i/(n-1)$ for $n>1$.
 This writes the compact prediction table used by plotting examples such as 1D operator learning.
 -/
 def writeVectorPredictionCsv {n : Nat}

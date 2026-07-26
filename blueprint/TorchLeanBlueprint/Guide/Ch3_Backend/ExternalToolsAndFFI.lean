@@ -51,7 +51,7 @@ Successful parsing establishes only that this text is valid JSON. A useful check
 
 1. require the exact `format` string;
 2. require finite numeric fields;
-3. establish `lower ≤ upper`;
+3. establish $`\mathrm{lower}\leq\mathrm{upper}`;
 4. connect the interval to a particular graph, payload, input set, and output;
 5. invoke a sound acceptance theorem.
 
@@ -297,6 +297,29 @@ For long training runs this prevents two forms of growth:
 
 Allocator counters report live and peak bytes, allocation/free counts, wrapper counts, and device
 free memory. They are observability tools, not a proof that no native leak exists.
+
+# Profile The Host Path
+
+[LeanProfiler](https://github.com/lean-dojo/LeanProfiler) records named `IO` spans and writes both a
+Perfetto-compatible trace and a JSON timing summary. It can sit around an existing TorchLean
+runner:
+
+```
+open LeanProfiler
+
+def main : IO Unit :=
+  profileFromEnvironment "training" do
+    span "model.run" runModel
+```
+
+With `LEAN_PROFILE=1`, the trace shows nesting and order while the summary groups repeated spans and
+records process counters. The comparison command checks a new summary against a baseline with
+explicit absolute and relative tolerances.
+
+A host timer does not automatically measure asynchronous device work. The TorchLean integration
+can wait for device completion before closing a span; that number is completion latency, not
+per-kernel CUDA or CUPTI time. The distinction matters when a short host call merely queues a long
+GPU operation.
 
 # External Oracles And Certificates
 

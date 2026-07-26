@@ -88,7 +88,8 @@ def stateActionValue [Zero α] [One α] [Add α] [Mul α]
   let out := mdp.step state action
   discountedBackup (α := α) out.reward mdp.discount (valueAt values out.state) out.terminated
 
-/-- All state-action values `Q_v(s, ·)` for a fixed state and candidate value function. -/
+/-- All state-action values $Q_v(s,\mathord{\cdot})$ for a fixed state and candidate value
+function. -/
 def actionValues [Zero α] [One α] [Add α] [Mul α]
     (mdp : FiniteMDP α nStates nActions)
     (values : ValueFunction α nStates)

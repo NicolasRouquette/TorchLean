@@ -18,8 +18,8 @@ schedules.
 
 We expose:
 
-- `ddpmStep`: one reverse step `x_t -> x_{t-1}` with explicit noise input `z`,
-- `ddpmSample`: run all `T` reverse steps, given a noise stream `z₀..z_{T-1}`.
+- `ddpmStep`: one reverse step $x_t\to x_{t-1}$ with explicit noise input $z$,
+- `ddpmSample`: run all $T$ reverse steps, given a noise stream $z_0,\ldots,z_{T-1}$.
 
 We keep everything scalar-polymorphic (`Context α`). The intended use is:
 
@@ -42,11 +42,14 @@ variable {α : Type} [Context α]
 variable {T : Nat} {s : Shape}
 
 /--
-Predict `x₀` from `x_t` and an `ε`-prediction model.
+Predict $x_0$ from $x_t$ and an $\varepsilon$-prediction model.
 
 Formula (ε-pred parameterization):
 
-`x0 = (x_t - sqrt(1-ᾱ_t) * ε̂) / sqrt(ᾱ_t)`
+$$
+x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\,\hat\varepsilon}
+          {\sqrt{\bar\alpha_t}}.
+$$
 -/
 def x0Pred (sched : VPSchedule α T) (model : EpsModel α s) (x_t : Tensor α s) (t : Fin (T + 1)) :
     Tensor α s :=
@@ -59,12 +62,13 @@ def x0Pred (sched : VPSchedule α T) (model : EpsModel α s) (x_t : Tensor α s)
   Tensor.scaleSpec num (safeDiv 1 c0)
 
 /--
-One reverse DDPM step `x_t -> x_{t-1}` with explicit noise `z` (intended as `N(0,I)`).
+One reverse DDPM step $x_t\to x_{t-1}$ with explicit noise $z$ (intended as
+$\mathcal{N}(0,I)$).
 
-We index reverse steps by `k : Fin T` corresponding to the transition `t = k+1 -> k`.
+We index reverse steps by `k : Fin T` corresponding to the transition $t=k+1\to k$.
 
 Implementation details:
-- time embedding passed to the model is `tScalar := (t/T)` (see `VPSchedule.timeOfIndex`).
+- time embedding passed to the model is $t/T$ (see `VPSchedule.timeOfIndex`).
 - we use epsilon-protected scalar division in the coefficient formulas to stay total.
 -/
 def ddpmStep (sched : VPSchedule α T) (model : EpsModel α s)
@@ -94,15 +98,15 @@ def ddpmStep (sched : VPSchedule α T) (model : EpsModel α s)
 Run the full reverse DDPM sampler for `T` steps.
 
 Inputs:
-- `x_T`: starting state (typically standard normal noise),
+- $x_T$: starting state (typically standard normal noise),
 - `noise`: per-step noise stream `z_k` for `k = 0..T-1`.
 
 Output:
-- the terminal sample `x_0`.
+- the terminal sample $x_0$.
 
 Order note:
-- `noise (T-1)` is used first (for the step `T -> T-1`),
-- `noise 0` is used last (for the step `1 -> 0`).
+- `noise (T-1)` is used first (for the step $T\to T-1$),
+- `noise 0` is used last (for the step $1\to0$).
 -/
 def ddpmSample (sched : VPSchedule α T) (model : EpsModel α s)
     (x_T : Tensor α s) (noise : Fin T → Tensor α s) : Tensor α s :=

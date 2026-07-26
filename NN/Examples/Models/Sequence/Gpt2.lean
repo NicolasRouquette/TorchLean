@@ -84,7 +84,8 @@ def vocab : Nat := 8
 /-- Number of attention heads in the miniature Transformer block. -/
 def numHeads : Nat := 1
 
-/-- Per-head embedding width. The model dimension is `numHeads * headDim`. -/
+/-- Per-head embedding width. The model dimension is
+$\mathtt{numHeads}\cdot\mathtt{headDim}$. -/
 def headDim : Nat := 1
 
 /-- Transformer embedding width. -/

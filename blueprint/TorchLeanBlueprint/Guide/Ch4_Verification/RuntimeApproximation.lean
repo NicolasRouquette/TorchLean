@@ -132,12 +132,13 @@ global induction over the graph.
 A tiny example is multiplication. The spec value is the real product, while the runtime value is the
 rounded product computed by the chosen scalar model.
 
-If `x_run` is within `eps_x` of `x_real`, and `y_run` is within `eps_y` of `y_real`, the local
-multiplication lemma supplies a bound for `z_run` versus `z_real`. The graph theorem then lets that
+If $`x_{\mathrm{run}}` is within $`\varepsilon_x` of $`x_{\mathrm{real}}`, and $`y_{\mathrm{run}}` is
+within $`\varepsilon_y` of $`y_{\mathrm{real}}`, the local multiplication lemma supplies a bound for
+$`z_{\mathrm{run}}` versus $`z_{\mathrm{real}}`. The graph theorem then lets that
 new bound feed the next node.
 
 It is worth doing that local estimate once by hand. Writing the interpreted runtime inputs as
-`x + dx` and `y + dy`,
+$`x+dx` and $`y+dy`,
 
 $$`
 (x+dx)(y+dy)-xy=x\,dy+y\,dx+dx\,dy.
@@ -148,7 +149,8 @@ Hence input uncertainty alone contributes at most
 $$`|x|\,\varepsilon_y+|y|\,\varepsilon_x
   +\varepsilon_x\varepsilon_y.`
 
-If `x = 2`, `y = 3`, `eps_x = 0.01`, and `eps_y = 0.02`, this part of the budget is `0.0702`.
+If $`x=2`, $`y=3`, $`\varepsilon_x=0.01`, and $`\varepsilon_y=0.02`, this part of the budget is
+$`0.0702`.
 The local rule then adds the rounding error of the multiplication itself. The number is not meant
 as a universal tolerance; it shows why the graph carries operand scale and incoming error rather
 than attaching one unexplained epsilon to every multiplication.
@@ -341,7 +343,7 @@ A safe division example has three pieces: the mathematical value is a guarded di
 value is computed by `safeDivR eps xR yR`, and the theorem states that the runtime value
 approximates the guarded spec value under the declared tolerance.
 
-The theorem covers guarded division, including the declared behavior at `y = 0`, so the proof
+The theorem covers guarded division, including the declared behavior at $`y=0`, so the proof
 matches the stable programming pattern users ought to deploy.
 
 ## Reductions And Softmax: Where Error Budgets Grow
@@ -374,11 +376,12 @@ real denominator lower bounds, and rounded denominator margins required by
 `approxT_hardMaskedSoftmaxRowsSpec_of_max`. Backward bounds are provided by
 `approxT_softmaxBackwardFromWeightsVecSpec` and `approxT_softmaxBackwardVecSpec`. The analytic facts
 `sum_softmaxVec`, `sum_softmaxJvp`, and `abs_softmaxJvp_le_two_mul` establish normalization,
-zero-sum JVP coordinates, and the dimension-independent bound `|vjp_i| <= 2G`.
+zero-sum JVP coordinates, and the dimension-independent bound
+$`\lvert\operatorname{vjp}_i\rvert\le 2G`.
 
 These are NF rounded-real theorems, not automatic claims about `IEEE32Exec`, a fused attention
 kernel, or native binary32. The numerical-certificate registry's softmax rule only derives the
-coarse range `[0,1]`; that range is not a forward-error theorem.
+coarse range $`[0,1]`; that range is not a forward-error theorem.
 
 ## Normalization And Attention
 
@@ -510,14 +513,14 @@ theorem covers the path being used.
 
 # A Worked Mental Example
 
-Suppose we have a two layer classifier whose hidden layer is `ReLU (W1 x + b1)` and whose output is
-`W2 h + b2`.
+Suppose we have a two layer classifier whose hidden layer is $`\operatorname{ReLU}(W_1x+b_1)` and
+whose output is $`W_2h+b_2`.
 
-The ideal proof might establish that, for all inputs in a box, the margin over the reals for class `0`
-over class `1` is at least `0.05`.
+The ideal proof might establish that, for all inputs in a box, the margin over the reals for class
+$`0` over class $`1` is at least $`0.05`.
 
 A float deployment theorem adds the runtime approximation statement: for every input in the same
-box, `runtime_y` approximates `real_y` within `0.01` per relevant logit.
+box, $`y_{\mathrm{run}}` approximates $`y_{\mathrm{real}}` within $`0.01` per relevant logit.
 
 Then the margin proof must be adjusted:
 
@@ -567,24 +570,25 @@ with any scalar/backend assumptions.
 
 ## Reading One Bounded Training Step
 
-Take a parameter tensor at index `i`. The real reverse pass produces `g_spec`; executable rounded
-reverse mode produces `g_run`; and `backprop_gradient_approx_graphData` proves
+Take a parameter tensor at index $`i`. The real reverse pass produces $`g_{\mathrm{spec}}`; executable
+rounded reverse mode produces $`g_{\mathrm{run}}`; and `backprop_gradient_approx_graphData` proves
 
 $$`\|\operatorname{toSpec}(g_{\mathrm{run}})-g_{\mathrm{spec}}\|_\infty
 \le \varepsilon_g.`
 
-Suppose the current parameters and learning rate have errors `epsilon_p` and `epsilon_lr`. For SGD,
+Suppose the current parameters and learning rate have errors $`\varepsilon_p` and
+$`\varepsilon_{\mathrm{lr}}`. For SGD,
 the two executions perform the same equation in their respective scalar systems,
 
 $$`p' = p-\eta g.`
 
-`sgdStepBound` first bounds the rounded product `eta * g`, including both input errors and the new
+`sgdStepBound` first bounds the rounded product $`\eta g`, including both input errors and the new
 multiplication rounding, then bounds the final subtraction. The graph-level theorem returns
 
 $$`\|\operatorname{toSpec}(p'_{\mathrm{run}})-p'_{\mathrm{spec}}\|_\infty
 \le \varepsilon_{p'}`
 
-with `epsilon_p'` equal to that computed bound, not a user-chosen test tolerance. Momentum SGD uses
+with $`\varepsilon_{p'}` equal to that computed bound, not a user-chosen test tolerance. Momentum SGD uses
 the same theorem and additionally returns a bound for the updated momentum buffer.
 
 For AdamW, the route is longer: update both moments, apply bias correction, take the second-moment

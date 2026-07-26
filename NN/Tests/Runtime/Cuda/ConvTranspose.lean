@@ -37,7 +37,7 @@ open Runtime.Autograd
 example : Spec.convTransposeOutDim 1 3 1 1 = 1 := by decide
 
 /-!
-## 2D case (d = 2)
+## 2D case ($d=2$)
 -/
 
 /-- Spatial rank for the 2D transposed-convolution coverage case. -/
@@ -149,7 +149,7 @@ def runConvTranspose2 : IO Unit := do
   Utils.assertTensorApprox (s := inputShape2) "conv_transpose[d=2] dInput" dXCuda dXCpu (tol := 5e-3)
 
 /-!
-## 3D case (d = 3)
+## 3D case ($d=3$)
 -/
 
 abbrev d3 : Nat := 3

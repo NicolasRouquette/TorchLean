@@ -58,9 +58,9 @@ Read the type from right to left:
 - the graph consumes one tensor of shape `[input]`;
 - it produces one tensor of shape `[output]`;
 - its parameter environment contains exactly four tensors;
-- the order is `W₁`, `b₁`, `W₂`, `b₂`.
+- the order is $`W_1`, $`b_1`, $`W_2`, $`b_2`.
 
-For the `2 → 3 → 1` model used by the GraphSpec tutorial, the parameter shapes are
+For the $`2\to3\to1` model used by the GraphSpec tutorial, the parameter shapes are
 
 ```
 W₁ : [3, 2]   six values
@@ -87,7 +87,7 @@ then
 g₁ >>> g₂ : Graph (ps₁ ++ ps₂) σ υ.
 ```
 
-The intermediate shape must be the same `τ`, and the parameter lists are concatenated in
+The intermediate shape must be the same $`\tau`, and the parameter lists are concatenated in
 construction order. Replacing the first linear layer by `Graph.linear input 5` changes its output
 shape to `[5]`; the existing ReLU can still consume it, but the second linear layer must now accept
 five inputs. Lean reports the mismatch at the architecture definition.
@@ -210,8 +210,8 @@ Here `params` is a heterogeneous tensor list whose shape index is exactly
 [[hidden, input], [hidden], [output, hidden], [output]].
 ```
 
-Pattern matching on that list reveals `W₁`, `b₁`, `W₂`, and `b₂` in ABI order. The interpreter then
-computes
+Pattern matching on that list reveals $`W_1`, $`b_1`, $`W_2`, and $`b_2` in ABI order. The
+interpreter then computes
 
 $$`\operatorname{linearSpec}
   (W_2,b_2)
@@ -220,7 +220,7 @@ $$`\operatorname{linearSpec}
 
 The theorem
 `NN.GraphSpec.Models.mlp_interp_eq_spec_mlp_forward` proves that this interpretation equals
-TorchLean's hand-written MLP specification for every scalar `α` satisfying the required `Context`,
+TorchLean's hand-written MLP specification for every scalar $`\alpha` satisfying the required `Context`,
 every well-shaped parameter list, and every input.
 
 That is stronger than checking a few Float examples: it is a universally quantified equality of
@@ -233,7 +233,7 @@ A chain can be written with `>>>`. A residual block cannot:
 
 $$`r(x)=\operatorname{ReLU}(Wx+b+x).`
 
-The input `x` is used twice. Hiding this in a special `ResidualLinear` primitive would make one
+The input $`x` is used twice. Hiding this in a special `ResidualLinear` primitive would make one
 example work, but every new sharing pattern would demand another special primitive. GraphSpec's DAG
 language instead represents sharing directly.
 
@@ -243,7 +243,7 @@ A term has type
 DAG.Term Γ τ
 ```
 
-meaning that, given a typed environment `Γ`, it computes a tensor of shape `τ`. Its essential
+meaning that, given a typed environment $`\Gamma`, it computes a tensor of shape $`\tau`. Its essential
 constructors are:
 
 - `var`, which reads an existing value;
@@ -258,7 +258,7 @@ let z = add(y, x)
 relu(z)
 ```
 
-The same `x` variable appears in the linear and add arguments, while `y` is bound once. Because the
+The same $`x` variable appears in the linear and add arguments, while $`y` is bound once. Because the
 language has no recursion and only extends the environment with prior values, its terms denote
 acyclic graphs by construction.
 

@@ -71,11 +71,13 @@ list as two `LinearSpec`s.
 
 Informally, both sides compute the same explicit formula:
 
-```
-z₁ = W₁ · x + b₁
-a₁ = relu(z₁)
-out = W₂ · a₁ + b₂
-```
+$$
+\begin{aligned}
+z_1 &= W_1x+b_1,\\
+a_1 &= \operatorname{ReLU}(z_1),\\
+\mathrm{out} &= W_2a_1+b_2.
+\end{aligned}
+$$
 
 where the dot/plus are the `Spec.linear_spec` and `Activation.relu_spec` operations already used by
 the Spec model.

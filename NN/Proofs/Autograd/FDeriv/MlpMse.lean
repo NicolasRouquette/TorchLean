@@ -61,7 +61,7 @@ noncomputable section
 Convert a matrix-shaped tensor `W : Tensor ℝ (m×n)` into the Hilbert-space matrix type `Mat m n`.
 
 This is used for parameter-gradient proofs, where the parameter space is a Hilbert space with the
-Frobenius/L2 inner product.
+Frobenius/$\ell_2$ inner product.
 -/
 def toMatE {m n : Nat} (W : Tensor ℝ (.dim m (.dim n .scalar))) : Mat m n :=
   WithLp.toLp 2 fun i : Fin m =>

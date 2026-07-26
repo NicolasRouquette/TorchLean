@@ -33,7 +33,7 @@ On CUDA, the fused `spectralConv1dRfft` autograd primitive uses the same represe
 weights and executes the transforms through cuFFT.
 
 The training task follows the standard FNO Burgers setup: learn the operator
-`u₀(x) ↦ u(x,T)` on a fixed periodic grid. The default grid and row counts are modest enough for a
+$u_0(x)\mapsto u(x,T)$ on a fixed periodic grid. The default grid and row counts are modest enough for a
 local run while still exercising the real operator-learning path. Larger runs can raise `--steps`,
 export more rows, and bump the constants below.
 

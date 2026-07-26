@@ -51,7 +51,8 @@ but does not promise a decidable `<` for every backend. To stay portable, the tr
 
 `goRight := (x_feature > threshold)`
 
-and goes left otherwise (which matches “≤ threshold” for the usual numeric orders).
+and goes left otherwise (equivalently, $x_{\mathrm{feature}}\leq\mathrm{threshold}$ for the usual
+numeric orders).
 -/
 
 /--
@@ -408,8 +409,10 @@ Branching convention:
 - go right iff `(x[feature] > threshold)`,
 - otherwise go left.
 
-This mirrors a common "≤ goes left / > goes right" convention, but avoids needing a decidable `<`
-for every `Context α` backend.
+This mirrors the common convention
+$x_{\mathrm{feature}}\leq\mathrm{threshold}$ goes left and
+$x_{\mathrm{feature}}>\mathrm{threshold}$ goes right, but avoids needing a decidable `<` for every
+`Context α` backend.
 -/
 def decisionTreeClassifyForwardSpecN {β : Type} {maxDepth nFeatures : Nat}
   (tree : DecisionTreeClassifierSpec α β maxDepth)

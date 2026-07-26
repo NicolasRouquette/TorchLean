@@ -1,6 +1,5 @@
 ---
 title: 3D Vision Projection Certificates
-usemathjax: true
 ---
 
 A 3D detector can act as an artifact producer. The detector/exporter emits a camera matrix, eight
@@ -19,16 +18,15 @@ the producer; TorchLean checks the geometric claim it exported.
 
 The checked claim is geometric:
 
-```text
-camera_P : 3 x 4 projection matrix
-corners3d : 8 x 3 cuboid corners
-bbox2d : [xmin, ymin, xmax, ymax]
-```
+- `camera_P` is a $3 \times 4$ projection matrix;
+- `corners3d` is an $8 \times 3$ matrix of cuboid corners;
+- `bbox2d` stores $[x_{\min}, y_{\min}, x_{\max}, y_{\max}]$.
 
-For each corner `(x, y, z)`, the checker forms the homogeneous point `[x, y, z, 1]`, multiplies by
-the `3 x 4` camera matrix, divides image coordinates by projected depth, and compares the resulting
-pixel `(u, v)` with both the image bounds and the claimed 2D box. The depth check matters: a point
-behind the camera is rejected before its divided coordinates can be treated as an image point.
+For each corner $(x,y,z)$, the checker forms the homogeneous point $[x,y,z,1]$, multiplies by
+the $3 \times 4$ camera matrix, divides image coordinates by projected depth, and compares the
+resulting pixel $(u,v)$ with both the image bounds and the claimed 2D box. The depth check matters:
+a point behind the camera is rejected before its divided coordinates can be treated as an image
+point.
 
 Lean checks that image dimensions are positive, the box is ordered and inside the image, all eight
 corners have positive projected depth, every projected corner is inside the image, and every
@@ -121,7 +119,7 @@ or another detector/exporter that emits the camera and box fields.
 }
 ```
 
-For Cube R-CNN, Omni3D, or another detector, the export path is the same: export `K` or `P`, image
+For Cube R-CNN, Omni3D, or another detector, the export path is the same: export $K$ or $P$, image
 size, corners, and a claimed box, then run the Lean checker.
 
 ```bash

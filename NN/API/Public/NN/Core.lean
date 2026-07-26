@@ -150,7 +150,10 @@ def linear (inDim outDim : Nat) (seedW seedB : Nat := 0)
 Vanilla RNN layer (time-major sequence, no batch axis).
 
 Semantics:
-`h_t = tanh(W [x_t; h_{t-1}] + b)`, with `h_{-1} = 0`.
+
+$$
+h_t=\tanh\!\left(W[x_t;h_{t-1}]+b\right),\qquad h_{-1}=0.
+$$
 
 This is implemented by unrolling `seqLen` steps using existing TorchLean ops, so it runs on both
 CPU and CUDA backends.
@@ -364,7 +367,10 @@ Apply RoPE to a batched multi-head tensor `(batch × numHeads × seqLen × headD
 
 This matches the standard identity:
 
-`rope(x) = x * cos + rotatePairs(x) * sin`
+$$
+\operatorname{rope}(x)
+  = x \odot \cos + \operatorname{rotatePairs}(x) \odot \sin
+$$
 
 where `cos`/`sin` depend only on `(pos, dim)` and broadcast across `(batch, numHeads)`.
 

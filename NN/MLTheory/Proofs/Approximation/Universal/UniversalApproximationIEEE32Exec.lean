@@ -621,10 +621,13 @@ theorem reluApproximationIccIEEE32Exec_fromHinge
 /--
 1D IEEE32Exec ReLU approximation with an explicit 3-term error decomposition:
 
-1. **Real approximation error**: `|f(r) - hinge_fun … r| < εApprox`
-2. **Quantization/reference error**: `|hinge_fun … r - hinge_fun_real (embed IEEE-params) (embed r)|
-  ≤ εQ`
-3. **IEEE rounding error** (proved): `hinge_fun_error_bound …`
+1. **Real approximation error**:
+   $|f(r)-\operatorname{hinge\_fun}(\ldots,r)|<\varepsilon_{\mathrm{approx}}$.
+2. **Quantization/reference error**:
+   $|\operatorname{hinge\_fun}(\ldots,r)
+   -\operatorname{hinge\_fun}_{\mathbb R}(\operatorname{embed}(\text{IEEE parameters}),
+     \operatorname{embed}(r))|\leq\varepsilon_Q$.
+3. **IEEE rounding error** (proved): `hinge_fun_error_bound`.
 
 To obtain a fully synthesized IEEE32Exec approximation theorem, callers must additionally:
 - construct IEEE32Exec parameters `(t,c,b0)` from the real hinge parameters, and

@@ -34,7 +34,8 @@ Forward:
 `-(1/m) * ⟪target, log_softmax_last(logits)⟫`
 
 This matches the common PyTorch `cross_entropy` convention with one-hot targets,
-using `log_softmax` on logits (numerically stable vs `log(softmax)` for floats; here ℝ).
+using `log_softmax` on logits (numerically stable versus `log(softmax)` for floats; here
+$\mathbb R$).
 -/
 def crossEntropyOneHotLast {Γ : List Shape} {m n : Nat}
     (logits target : Idx Γ (.dim m (.dim n .scalar))) : Node Γ Shape.scalar :=

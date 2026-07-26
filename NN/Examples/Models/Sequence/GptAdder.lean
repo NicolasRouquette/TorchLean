@@ -24,7 +24,7 @@ experiment. The original minGPT adder trains a compact GPT to complete digit str
 
 `digits(a) ++ digits(b) ++ reverseDigits(a+b)`.
 
-For example, in the one-digit setting `8 + 7 = 15` is represented as the digit sequence
+For example, in the one-digit setting $8+7=15$ is represented as the digit sequence
 `8 7 5 1`.  At inference time the model sees `8 7` and greedily generates the two result digits
 `5 1`, which we reverse back to `15`.
 
@@ -64,7 +64,7 @@ def defaultLogJson : System.FilePath := ModelZoo.trainLogPath "gpt_adder"
 Number of input digits per operand.
 
 The one-digit curriculum trains directly in the eager CUDA runtime while still including carry
-examples such as `8 + 7 = 15`.
+examples such as $8+7=15$.
 -/
 def ndigit : Nat := 1
 
@@ -89,7 +89,7 @@ def testCount : Nat := 20
 /--
 GPT block size: `a`, `b`, and all but the final reversed result digit.
 
-For `ndigit = 1`, full rendered examples have length `1 + 1 + 2 = 4`; model inputs have length
+For `ndigit = 1`, full rendered examples have length $1+1+2=4$; model inputs have length
 `3`, exactly as in minGPT's `get_block_size = 3 * ndigit + 1 - 1`.
 -/
 def seqLen : Nat := 3 * ndigit
@@ -109,7 +109,7 @@ def headDim : Nat := 16
 /-- Transformer embedding width. -/
 def dModel : Nat := numHeads * headDim
 
-/-- Feed-forward hidden width (`4 * dModel`, matching the common GPT MLP ratio). -/
+/-- Feed-forward hidden width ($4\,\mathtt{dModel}$, matching the common GPT MLP ratio). -/
 def ffnHidden : Nat := 128
 
 /-- Number of Transformer blocks. -/
@@ -205,7 +205,8 @@ Karpathy/minGPT masks the loss on the operand-prefix positions.
 In `projects/adder/adder.py`, the target vector `y` is shifted by one token and then
 `y[:ndigit*2-1] = -1`, where `-1` is PyTorch's "ignore index" for cross entropy. TorchLean's
 current one-hot cross entropy does not have an ignore-index target, so we represent the same idea by
-using an all-zero one-hot vector on ignored positions. Because the loss is `-sum(y * log p)`, these
+using an all-zero one-hot vector on ignored positions. Because the loss is
+$-\sum y\log p$, these
 positions contribute exactly zero gradient.
 -/
 def keepTargetPosition (t : Nat) : Bool :=
@@ -308,10 +309,10 @@ abbrev Predictor :=
   Tensor.T Float σ → IO (Tensor.T Float τ)
 
 /--
-Greedily complete `ndigit + 1` result digits from the operand digits.
+Greedily complete $\mathtt{ndigit}+1$ result digits from the operand digits.
 
 The key detail is that when the current prefix has length `k`, the next-token prediction lives at
-position `k - 1`, not always at the final padded position.
+position $k-1$, not always at the final padded position.
 -/
 def generateResultDigits
     (predict : Predictor)
@@ -326,7 +327,7 @@ def generateResultDigits
     out := out ++ [next]
   pure out
 
-/-- Predict `a + b` by greedy decoding and reversing the minGPT result digits. -/
+/-- Predict $a+b$ by greedy decoding and reversing the minGPT result digits. -/
 def predictSum (predict : Predictor) (a b : Nat) : IO Nat := do
   let revDigits ← generateResultDigits predict a b
   pure (decodeResult revDigits)

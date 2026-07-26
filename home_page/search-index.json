@@ -22,25 +22,25 @@ layout: null
   },
   {
     "title": "Graphs and IR",
-    "url": "{{ '/blueprint/Semantics-and-Graphs/Graphs-and-IR/' | relative_url }}",
+    "url": "{{ '/blueprint/Semantics-and-Graphs/The-Canonical-Graph-IR/' | relative_url }}",
     "section": "Guide",
     "text": "graph IR lowering shapes payloads semantics execution traces bounds"
   },
   {
     "title": "Autograd Walkthrough",
-    "url": "{{ '/blueprint/Runtime___-Autograd___-and-Interop/Autograd-Walkthrough/' | relative_url }}",
+    "url": "{{ '/blueprint/Runtime___-Autograd___-and-Interop/Differentiation-By-Example/' | relative_url }}",
     "section": "Guide",
     "text": "autograd reverse mode tape gradients VJP training runtime"
   },
   {
     "title": "GPU and CUDA Boundaries",
-    "url": "{{ '/blueprint/Floating-Point-and-Native-Boundaries/GPU-and-CUDA-Boundaries/' | relative_url }}",
+    "url": "{{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }}",
     "section": "Guide",
     "text": "CUDA GPU kernels native runtime trust boundary fast kernels memcheck device buffers"
   },
   {
     "title": "Backend Selection and Trust",
-    "url": "{{ '/blueprint/Runtime___-Autograd___-and-Interop/Backend-Selection-and-Trust/' | relative_url }}",
+    "url": "{{ '/blueprint/Runtime___-Autograd___-and-Interop/Choosing-How-A-Model-Runs/' | relative_url }}",
     "section": "Guide",
     "text": "backend eager compiled CUDA ATen PyTorch runtime provider graph tape backward trust boundary"
   },
@@ -108,7 +108,19 @@ layout: null
     "title": "Dependency Graphs",
     "url": "{{ '/graphs/' | relative_url }}",
     "section": "Reference",
-    "text": "dependency graph import graph audit modules architecture"
+    "text": "Lean import graph modules imports importers source tree build performance"
+  },
+  {
+    "title": "Formalization Graph",
+    "url": "{{ '/blueprint/Dependency-Graph/' | relative_url }}",
+    "section": "Reference",
+    "text": "theorem proof statement dependency graph declarations verification numerics autograd backend models Blueprint"
+  },
+  {
+    "title": "Tools",
+    "url": "{{ '/tools/' | relative_url }}",
+    "section": "Tools",
+    "text": "LeanProfiler profiling performance trace Perfetto benchmark regression verified TorchLean examples batch invariance transformer checkpoint certificates"
   },
   {
     "title": "Updates",

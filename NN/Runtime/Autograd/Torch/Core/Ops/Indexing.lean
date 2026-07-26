@@ -41,7 +41,6 @@ def gatherScalar {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .gather
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.gatherScalar (t := t0) (n := n) x.id i
@@ -60,7 +59,6 @@ def gatherRow {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .gather
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.gatherRow (t := t0) (rows := rows) (cols := cols) x.id i
@@ -77,7 +75,6 @@ def gatherScalarNat {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Sha
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .gather
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.gatherScalarNat (t := t0) (n := n) x.id i
@@ -114,7 +111,6 @@ def gatherVecNat {α : Type} (s : EagerSession α) [Add α] [Zero α] [Decidable
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .gather
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.gatherVecNat (t := t0) (n := n) (k := k) x.id idx
@@ -134,7 +130,6 @@ def gatherRowsNat {α : Type} (s : EagerSession α) [Add α] [Zero α] [Decidabl
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .gather
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.gatherRowsNat (t := t0) (rows := rows) (cols := cols) (k := k) x.id idx
@@ -186,7 +181,6 @@ def scatterAddVec {α : Type} (s : EagerSession α) [Add α] [Zero α] [Decidabl
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .scatterAdd
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.scatterAddVec (t := t0) (n := n) x.id v.id i
@@ -207,7 +201,6 @@ def scatterAddRow {α : Type} (s : EagerSession α) [Add α] [Zero α] [Decidabl
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .scatterAdd
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.scatterAddRow (t := t0) (rows := rows) (cols := cols) x.id v.id i

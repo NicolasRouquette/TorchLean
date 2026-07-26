@@ -3,47 +3,33 @@ title: Graphs
 ---
 
 <div class="graph-actions">
-  <a class="primary-link" href="{{ '/importgraph/' | relative_url }}">Open interactive graph</a>
-  <a class="secondary-link" href="{{ '/graphs/dependency-audit.html' | relative_url }}">Read audit summary</a>
-  <a class="secondary-link" href="{{ '/graphs/dependency-audit.json' | relative_url }}">Download JSON</a>
+  <a class="primary-link" href="{{ '/importgraph/' | relative_url }}">Open import graph</a>
   <a class="secondary-link" href="{{ '/performance/' | relative_url }}">View build performance</a>
 </div>
 
-TorchLean uses the word graph in three different places, and the distinction matters.
-
-The page below is about the Lean import graph: which source modules import which other modules.
-It shows whether the codebase has the shape we intend. The runtime graph IR is a different object:
-it represents a neural-network computation and has a denotation. Proof dependencies are different
-again: they live at the declaration level after Lean elaborates a file.
-
-The import graph answers architecture questions: whether `NN.Spec` stays independent of runtime
-code, which modules have become central hubs, and where a new example or verifier enters the module
-tree. Runtime semantics belong to the graph-IR chapters of the guide; theorem dependencies belong to
-the proof modules themselves.
+This page shows the Lean import graph. Search for a module to see what it imports, what imports it,
+and how far a change can travel through the source tree.
 
 <div class="dep-dashboard" id="dep-dashboard">
   <section class="dep-panel dep-summary graph-overview">
     <div>
       <h2>Import Graph</h2>
       <p class="dep-panel-intro">
-        Each edge means one Lean module directly imports another. This map is about source ownership
-        and layer boundaries; runtime dataflow lives in the TorchLean IR.
+        Each edge means that one Lean module directly imports another.
       </p>
     </div>
     <div class="dep-stat-grid" id="dep-summary-cards">
-      <div class="dep-loading">Loading dependency audit…</div>
+      <div class="dep-loading">Loading import graph…</div>
     </div>
   </section>
 
   <section class="dep-panel">
     <h2>Source Snapshot</h2>
     <p class="dep-panel-intro">
-      These counts are generated from the Lean source tree during the site build. They give a quick
-      sense of repository scale while keeping proof coverage and semantic dependency questions at
-      the declaration level, where Lean records them.
+      The site build reads these counts from the current Lean source tree.
     </p>
     <div class="dep-stat-grid" id="dep-code-cards">
-      <div class="dep-loading">Loading codebase statistics…</div>
+      <div class="dep-loading">Loading source statistics…</div>
     </div>
   </section>
 
@@ -55,11 +41,11 @@ the proof modules themselves.
         <input id="dep-search" type="search" placeholder="GraphSpec, Runtime, Fno1d…" />
       </label>
       <label>
-        Source layer
+        Importing area
         <select id="dep-src-layer"></select>
       </label>
       <label>
-        Destination layer
+        Imported area
         <select id="dep-dst-layer"></select>
       </label>
     </div>
@@ -111,7 +97,7 @@ the proof modules themselves.
     $("dep-summary-cards").innerHTML = [
       ["Modules", fmt(s.modules)],
       ["Import edges", fmt(s.import_edges)],
-      ["Public imports", fmt(s.public_import_edges)],
+      ["Re-export edges", fmt(s.public_import_edges)],
       ["Longest chain", fmt(s.critical_path_import_edges)],
     ].map(([k, v]) => `
       <div class="dep-stat-card">
@@ -124,7 +110,7 @@ the proof modules themselves.
   function renderCodeStats(report) {
     const stats = report.code_stats;
     if (!stats) {
-      $("dep-code-cards").innerHTML = `<div class="dep-error">No code statistics found in audit JSON.</div>`;
+      $("dep-code-cards").innerHTML = `<div class="dep-error">No source statistics found.</div>`;
       return;
     }
     $("dep-code-cards").innerHTML = [
@@ -210,7 +196,7 @@ the proof modules themselves.
         ${edges.slice(0, 80).map(e => {
           const mod = side === "dst" ? e.dst : e.src;
           return `<li><button type="button" data-module="${esc(mod)}">${esc(mod)}</button>
-            <small>${e.public ? "public" : "private"} · ${esc(e.path)}:${e.line}</small></li>`;
+            <small>${e.public ? "re-exported" : "local"} · ${esc(e.path)}:${e.line}</small></li>`;
         }).join("")}
       </ul>
     `;
@@ -257,8 +243,8 @@ the proof modules themselves.
       state.report = report;
       report._index = buildIndex(report);
       const layers = [...new Set(report._index.modules.map(layerOf))].sort();
-      setOptions($("dep-src-layer"), layers, "All source layers");
-      setOptions($("dep-dst-layer"), layers, "Any imported layer");
+      setOptions($("dep-src-layer"), layers, "All importing areas");
+      setOptions($("dep-dst-layer"), layers, "Any imported area");
       renderSummary(report);
       renderCodeStats(report);
       $("dep-search").addEventListener("input", renderModuleList);
@@ -268,7 +254,7 @@ the proof modules themselves.
     })
     .catch(err => {
       $("dep-summary-cards").innerHTML =
-        `<div class="dep-error">Could not load ${esc(dataUrl)}: ${esc(err.message)}</div>`;
+        `<div class="dep-error">Could not load the import graph: ${esc(err.message)}</div>`;
       $("dep-code-cards").innerHTML =
         `<div class="dep-error">Could not load codebase statistics.</div>`;
     });

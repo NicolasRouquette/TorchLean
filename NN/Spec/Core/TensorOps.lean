@@ -132,7 +132,7 @@ def divSpec {s : Shape} : Tensor α s → Tensor α s → Tensor α s :=
 instance {s : Shape} : Div (Tensor α s) :=
   ⟨divSpec⟩
 
-/-- Safe division with epsilon protection (`x / (y + ε)`). -/
+/-- Safe division with epsilon protection, $x/(y+\varepsilon)$. -/
 def safedivSpec {s : Shape} (t1 t2 : Tensor α s) : Tensor α s :=
   map2Spec (fun x y => x / (y + Numbers.epsilon)) t1 t2
 
@@ -195,7 +195,8 @@ def powSpec {s : Shape} (t1 t2 : Tensor α s) : Tensor α s :=
 def greaterThanSpec {s : Shape} (x y : Tensor α s) : Tensor Bool s :=
   map2Spec (fun a b => decide (a > b)) x y
 
-/-- Element‑wise `≤` test, implemented via `¬(>)` so we only depend on `DecidableRel (·>·)`. -/
+/-- Element-wise $\le$ test, implemented via $\neg(>)$ so we only depend on
+`DecidableRel (· > ·)`. -/
 def lessEqualSpec {s : Shape} (x y : Tensor α s) : Tensor Bool s :=
   map2Spec (fun a b => decide (¬(a > b))) x y
 
@@ -203,7 +204,7 @@ def lessEqualSpec {s : Shape} (x y : Tensor α s) : Tensor Bool s :=
 def lessThanSpec {s : Shape} (x y : Tensor α s) : Tensor Bool s :=
   map2Spec (fun a b => decide (b > a)) x y
 
-/-- Element‑wise `≥` test (defined as `¬(y > x)`). -/
+/-- Element-wise $\ge$ test (defined as $\neg(y>x)$). -/
 def greaterEqualSpec {s : Shape} (x y : Tensor α s) : Tensor Bool s :=
   map2Spec (fun a b => decide (¬(b > a))) x y
 

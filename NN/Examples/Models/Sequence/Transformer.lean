@@ -51,7 +51,7 @@ def seqLen : Nat := 1
 def dModel : Nat := 2
 /-- Number of attention heads. -/
 def numHeads : Nat := 1
-/-- Per-head width; `numHeads * headDim` matches `dModel`. -/
+/-- Per-head width; $\mathtt{numHeads}\cdot\mathtt{headDim}$ matches `dModel`. -/
 def headDim : Nat := 2
 /-- Feed-forward hidden width inside the encoder block. -/
 def ffnHidden : Nat := 4

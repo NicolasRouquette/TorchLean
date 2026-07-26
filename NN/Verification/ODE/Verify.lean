@@ -20,11 +20,21 @@ ODE enclosure verification via NN sub- and super-solutions.
 This module implements the core executable checking loop inspired by arXiv:2601.19818:
 
 Given candidate functions `u₋, u₊` with
-  `u₋(t₀) ≤ u₀ ≤ u₊(t₀)`,
-  `u₋(t) ≤ u₊(t)` for all `t`,
-  `u₋'(t) ≤ f(t, u₋(t))` and `u₊'(t) ≥ f(t, u₊(t))` for all `t`,
+
+$$
+u_-(t_0)\leq u_0\leq u_+(t_0),\qquad
+u_-(t)\leq u_+(t),
+$$
+
+and
+
+$$
+u_-'(t)\leq f(t,u_-(t)),\qquad
+u_+'(t)\geq f(t,u_+(t)),
+$$
+
 these are the corridor inequalities used by the classical comparison theorem for enclosing a
-solution of `u' = f(t,u)` inside `[u₋, u₊]`. The executable checker validates these sufficient
+solution of $u'=f(t,u)$ inside $[u_-,u_+]$. The executable checker validates these sufficient
 inequalities on the chosen time boxes; the mathematical existence/comparison theorem is the
 external classical assumption behind the workflow.
 
@@ -75,11 +85,11 @@ instance : ToString Interval :=
 
 namespace Interval
 
-/-- Interval width `hi - lo`. -/
+/-- Interval width $\mathrm{hi}-\mathrm{lo}$. -/
 @[inline] def width (I : Interval) : Float := I.hi - I.lo
-/-- Interval center `(lo + hi)/2`. -/
+/-- Interval center $(\mathrm{lo}+\mathrm{hi})/2$. -/
 @[inline] def center (I : Interval) : Float := (I.lo + I.hi) * 0.5
-/-- Interval radius `(hi - lo)/2`. -/
+/-- Interval radius $(\mathrm{hi}-\mathrm{lo})/2$. -/
 @[inline] def radius (I : Interval) : Float := (I.hi - I.lo) * 0.5
 
 /-- Split an interval into two halves at its center. -/
@@ -413,7 +423,8 @@ private def buildDerivativeGraph1D {α : Type} [Context α]
 /--
 Seed the 1D input box (time) into a `ParamStore`.
 
-The verifier represents a time interval `I = [lo, hi]` using its center `tCenter` and radius `tRad`,
+The verifier represents a time interval $I=[\mathrm{lo},\mathrm{hi}]$ using its center `tCenter`
+and radius `tRad`,
 and inserts the resulting box at input node id `0`.
 -/
 private def seedInput1D {α : Type} [Context α]

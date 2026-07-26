@@ -33,7 +33,7 @@ environment or an external sampler.
 ## Formal hooks
 
 1. The environment has an induced finite stochastic MDP (`Spec.RL.FiniteStochastic.MDP`) and we import a
-   proof that it is well-formed (row-stochastic transition rows, `0 ≤ γ < 1`).
+   proof that it is well-formed (row-stochastic transition rows, $0\le\gamma<1$).
 2. The boundary checker can be turned into a Prop-level hypothesis via
    `Proofs.RL.Boundary.contractHolds_of_checkTransitionFin_eq_ok` (see `NN/Proofs/RL/Boundary.lean`), or you can
    use the proof-layer Gymnasium checked step `Runtime.RL.Gymnasium.Session.stepCheckedWithProof`
@@ -181,7 +181,8 @@ def gwR : Spec.RL.Envs.GridWorld width height :=
     goal := goalPos
     discount := discountR }
 
-/-- The induced finite stochastic MDP for `gwR` is well-formed (`0 ≤ γ < 1`, row-stochastic transitions). -/
+/-- The induced finite stochastic MDP for `gwR` is well-formed
+($0\le\gamma<1$, with row-stochastic transitions). -/
 theorem gwR_valid :
     Spec.RL.FiniteStochastic.Valid (Spec.RL.Envs.GridWorld.toFiniteStochasticMDP (width := width) (height := height) gwR) := by
   -- `discountR = 99/100` is in `[0,1)`.

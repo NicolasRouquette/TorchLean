@@ -20,8 +20,9 @@ such a backend should satisfy.
 
 There are two useful levels:
 
-* `ExactMatrixOrthogonalizer` says the backend returns a matrix `Q` with `QᵀQ = I`.
-* `ApproxMatrixOrthogonalizer eps` says the Gram residual `QᵀQ - I` is entrywise bounded by `eps`.
+* `ExactMatrixOrthogonalizer` says the backend returns a matrix $Q$ with $Q^\mathsf{T}Q=I$.
+* `ApproxMatrixOrthogonalizer eps` says the Gram residual $Q^\mathsf{T}Q-I$ is entrywise bounded
+  by $\varepsilon$.
 
 The theorems below connect those contracts to the executable Muon step: if the backend satisfies one
 of these contracts, the direction used in the parameter update is certified at the same level.
@@ -42,7 +43,7 @@ variable {α : Type} [Context α]
 abbrev MatrixTensor (α : Type) (m n : Nat) :=
   Tensor α (.dim m (.dim n .scalar))
 
-/-- The column Gram matrix `QᵀQ`. -/
+/-- The column Gram matrix $Q^\mathsf{T}Q$. -/
 def columnGram {m n : Nat} (Q : MatrixTensor α m n) :
     MatrixTensor α n n :=
   matMulSpec (Spec.Tensor.matrixTransposeSpec Q) Q
@@ -57,7 +58,7 @@ def ExactOrthogonalizesBuffer {m n : Nat}
     (buffer : MatrixTensor α m n) : Prop :=
   HasExactColumnGram (orthogonalizer.apply buffer)
 
-/-- Residual matrix `QᵀQ - I`, used for approximate orthogonalization certificates. -/
+/-- Residual matrix $Q^\mathsf{T}Q-I$, used for approximate orthogonalization certificates. -/
 def columnGramResidual {m n : Nat} (Q : MatrixTensor α m n) :
     MatrixTensor α n n :=
   subSpec (columnGram Q) (identityTensorSpec n)
@@ -66,8 +67,8 @@ def columnGramResidual {m n : Nat} (Q : MatrixTensor α m n) :
 Entrywise approximate column orthogonality.
 
 For an exact backend use `HasExactColumnGram`. For Newton-Schulz or CUDA implementations, this is
-the certificate shape we want the backend to establish or export: every entry of `QᵀQ - I` is
-bounded by `eps`.
+the certificate shape we want the backend to establish or export: every entry of
+$Q^\mathsf{T}Q-I$ is bounded by $\varepsilon$.
 -/
 def HasApproxColumnGram {m n : Nat} (eps : α) (Q : MatrixTensor α m n) : Prop :=
   ∀ i : Fin n, ∀ j : Fin n,
@@ -81,7 +82,7 @@ def ApproxOrthogonalizesBuffer {m n : Nat} (eps : α)
 
 /--
 An exact matrix Muon orthogonalizer maps every momentum buffer to a direction whose columns have
-Gram matrix `I`.
+Gram matrix $I$.
 -/
 def ExactMatrixOrthogonalizer {m n : Nat}
     (orthogonalizer : Orthogonalizer α (.dim m (.dim n .scalar))) : Prop :=
@@ -89,7 +90,7 @@ def ExactMatrixOrthogonalizer {m n : Nat}
 
 /--
 An approximate matrix Muon orthogonalizer maps every momentum buffer to a direction whose Gram
-residual is entrywise bounded by `eps`.
+residual is entrywise bounded by $\varepsilon$.
 -/
 def ApproxMatrixOrthogonalizer {m n : Nat} (eps : α)
     (orthogonalizer : Orthogonalizer α (.dim m (.dim n .scalar))) : Prop :=
@@ -100,7 +101,7 @@ def ApproxMatrixOrthogonalizer {m n : Nat} (eps : α)
 /--
 Unconditionally certified exact Muon backend.
 
-Use this when the orthogonalizer is known to return an exact `QᵀQ = I` direction for every buffer
+Use this when the orthogonalizer is known to return an exact $Q^\mathsf{T}Q=I$ direction for every buffer
 of a fixed matrix shape.
 -/
 structure ExactCertifiedOrthogonalizer (α : Type) [Context α] (m n : Nat) where
@@ -113,7 +114,7 @@ structure ExactCertifiedOrthogonalizer (α : Type) [Context α] (m n : Nat) wher
 Unconditionally certified approximate Muon backend.
 
 Use this when the orthogonalizer is known to return a direction whose Gram residual is bounded by
-`eps` for every buffer of a fixed matrix shape.
+$\varepsilon$ for every buffer of a fixed matrix shape.
 -/
 structure ApproxCertifiedOrthogonalizer (α : Type) [Context α] (m n : Nat) (eps : α) where
   /-- Executable orthogonalizer used by Muon. -/
@@ -142,7 +143,7 @@ Checked approximate Muon backend with a per-buffer success predicate.
 
 This is the intended proof shape for Newton-Schulz/CUDA-style backends: the kernel may be fast and
 approximate, but the exported proof or checker must establish `Success buffer`, which then gives the
-entrywise `QᵀQ - I` bound.
+entrywise $Q^\mathsf{T}Q-I$ bound.
 -/
 structure CheckedApproxOrthogonalizer (α : Type) [Context α] (m n : Nat) (eps : α) where
   /-- Executable orthogonalizer used by Muon. -/

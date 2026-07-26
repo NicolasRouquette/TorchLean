@@ -44,19 +44,31 @@ class MathFunctions (α : Type) where
 
 /-- Common scalar constants used by scalar-polymorphic model definitions. -/
 class Numbers (α : Type) where
+  /-- Backend representation of `-0.5`. -/
   neg_point_five : α
+  /-- Backend representation of `-1`. -/
   neg_one : α
+  /-- Backend representation of `0.1`. -/
   pointone : α
+  /-- Backend representation of `0.5`. -/
   pointfive : α
   one : α
   zero : α
+  /-- Backend representation of `2`. -/
   two : α
+  /-- Backend representation of `3`. -/
   three : α
+  /-- Backend representation of `4`. -/
   four : α
+  /-- Backend representation of `5`. -/
   five : α
+  /-- Backend representation of `10`. -/
   ten : α
+  /-- Backend representation of the natural logarithm of `10`. -/
   log10 : α
+  /-- Backend representation of the natural logarithm of `10000`. -/
   log10000 : α
+  /-- Backend-supplied tolerance for numerically guarded formulas. -/
   epsilon : α
 
 /-- Host implementations of the scalar transcendental interface. -/

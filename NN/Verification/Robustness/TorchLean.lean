@@ -17,13 +17,17 @@ public import NN.Verification.TorchLean.Compile
 End-to-end robustness certification for a TorchLean model.
 
 We build a compact 2-class classifier in TorchLean, compile it to the verifier IR, and certify a
-margin condition on an `ℓ∞` input box using:
+margin condition on an $\ell^\infty$ input box using:
 
 - IBP (`runIBP`)
 - a simple CROWN/affine pass (`runAffine` + `AffineVec.eval_on_box`)
 
 Spec we certify (binary logits):
-  `∀ x ∈ [x0-ε, x0+ε], logit0(x) > logit1(x)`
+
+$$
+\forall x\in[x_0-\varepsilon,x_0+\varepsilon],\quad
+\operatorname{logit}_0(x)>\operatorname{logit}_1(x).
+$$
 
 Run:
   `lake exe verify -- torchlean-robustness`
@@ -65,14 +69,16 @@ def yShape : Spec.Shape := .dim outDim .scalar
 /-- Parameter shapes list used by the compiled TorchLean program (`[hiddenWeight,hiddenBias,outputWeight,outputBias]`). -/
 def paramShapes : List Spec.Shape := [hiddenWeightShape, hiddenBiasShape, outputWeightShape, outputBiasShape]
 
-/-- Compute a (conservative) margin lower bound `lo0 - hi1` from logit bounds. -/
+/-- Compute a conservative margin lower bound
+$\mathrm{lo}_0-\mathrm{hi}_1$ from logit bounds. -/
 def margin {α : Type} [Context α]
     (lo hi : Tensor α yShape) : α :=
   let lo0 := _root_.Spec.Tensor.vecGet lo fin0!
   let hi1 := _root_.Spec.Tensor.vecGet hi fin1!
   lo0 - hi1
 
-/-- Decide if the output bounds certify `logit0 > logit1`. -/
+/-- Decide if the output bounds certify
+$\operatorname{logit}_0>\operatorname{logit}_1$. -/
 def certifiedMargin {α : Type} [Context α]
     (lo hi : Tensor α yShape) : Bool :=
   let lo0 := _root_.Spec.Tensor.vecGet lo fin0!

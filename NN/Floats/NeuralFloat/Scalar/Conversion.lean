@@ -20,7 +20,8 @@ This module contains small utilities for *moving values between*:
 
 Important scope note:
 
-- The canonical rounding semantics is `neuralRound` (see `Rounding/Core.lean`), which
+- The canonical rounding semantics is `neuralRound`
+  (see `NN/Floats/NeuralFloat/Rounding/Core.lean`), which
   models **one** “compute in `ℝ`, then round” step and comes with the key half-ULP theorem
   `neural_error_bound_ulp` (under round-to-nearest assumptions).
 - The helpers in this file are conversion utilities and examples: packaging the rounded result into a

@@ -1317,7 +1317,8 @@ by
         δR)) hout
   simpa using hctx'
 
-/-- Reverse node for the scalar `softmax` node, using the analytic ℝ derivative plus NF error bounds. -/
+/-- Reverse node for the scalar `softmax` node, using the analytic $\mathbb R$ derivative plus NF
+error bounds. -/
 def softmaxRevNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) :
     RevNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by

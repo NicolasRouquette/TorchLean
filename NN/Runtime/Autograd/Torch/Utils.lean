@@ -251,6 +251,18 @@ def forwardT {α : Type} {paramShapes inputShapes : List Shape}
   Curried.uncurry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar)) tr.forward xs
 
 /--
+Uncurried loss-and-gradient pass for `ScalarTrainer`.
+
+The loss and gradients come from the same tape. Use this instead of calling `forwardT` followed by
+`backwardT` when both results are needed.
+-/
+def lossAndBackwardT {α : Type} {paramShapes inputShapes : List Shape}
+    (tr : ScalarTrainer α paramShapes inputShapes) (xs : TList α inputShapes) :
+    IO (Tensor α Shape.scalar × TList α paramShapes) :=
+  Curried.uncurry (α := α) (ss := inputShapes)
+    (β := IO (Tensor α Shape.scalar × TList α paramShapes)) tr.lossAndBackward xs
+
+/--
 Uncurried backward pass for `ScalarTrainer`.
 
 Returns per-parameter gradients (aligned with `paramShapes`).
@@ -269,6 +281,13 @@ except here the trainer bundles the update rule.
 def stepT {α : Type} {paramShapes inputShapes : List Shape}
     (tr : ScalarTrainer α paramShapes inputShapes) (lr : α) (xs : TList α inputShapes) : IO Unit :=
   Curried.uncurry (α := α) (ss := inputShapes) (β := IO Unit) (tr.step lr) xs
+
+/-- Uncurried SGD step that returns the loss used to compute the update. -/
+def stepWithLossT {α : Type} {paramShapes inputShapes : List Shape}
+    (tr : ScalarTrainer α paramShapes inputShapes) (lr : α) (xs : TList α inputShapes) :
+    IO (Tensor α Shape.scalar) :=
+  Curried.uncurry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar))
+    (tr.stepWithLoss lr) xs
 
 end ScalarTrainer
 

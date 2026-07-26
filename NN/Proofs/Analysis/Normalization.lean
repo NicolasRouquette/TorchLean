@@ -41,18 +41,19 @@ namespace Normalization
 
 At inference time, BatchNorm uses fixed running mean/variance. The resulting function is affine:
 
-`y = x ⊙ scale + bias`.
+$y=x\odot\operatorname{scale}+\operatorname{bias}$.
 -/
 
 /--
 Scalar algebra behind inference-time BatchNorm folding.
 
-For fixed mean `μ`, scale `γ`, shift `β`, and standard deviation `std`, the expression
+For fixed mean $\mu$, scale $\gamma$, shift $\beta$, and standard deviation
+$\operatorname{std}$, the expression
 
-`((x - μ) / std) * γ + β`
+$\frac{x-\mu}{\operatorname{std}}\gamma+\beta$
 
-is affine in `x`, with multiplicative coefficient `γ / std` and bias
-`β - μ * (γ / std)`.
+is affine in $x$, with multiplicative coefficient $\gamma/\operatorname{std}$ and bias
+$\beta-\mu\gamma/\operatorname{std}$.
 -/
 private lemma batchNorm_inference_affine_scalar (x μ γ β std : ℝ) :
     ((x - μ) / std) * γ + β = x * (γ / std) + (β - μ * (γ / std)) := by
@@ -115,7 +116,8 @@ This is the public theorem users want for verification and graph simplification:
 
 is definitionally equal to a pointwise affine map
 
-`x * (gamma / std) + (beta - mean * (gamma / std))`
+$x\,\frac{\gamma}{\operatorname{std}}
++\left(\beta-\mu\frac{\gamma}{\operatorname{std}}\right)$
 
 after broadcasting channel parameters to the input shape and clamping the running variance exactly
 as the spec does.

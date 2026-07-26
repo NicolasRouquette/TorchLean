@@ -40,7 +40,7 @@ def listGet? {β : Type} (xs : List β) (i : Nat) : Option β :=
   | x :: _ => some x
 
 /--
-Elementwise square: `x ↦ x * x`.
+Elementwise square: $x\mapsto x^2$.
 
 PyTorch analogue: `torch.square`.
 -/
@@ -60,16 +60,16 @@ rule, so reverse-mode `jacrev` and `grad` work through the expression.
 PyTorch analogues: `torch.exp`, `torch.log`, and `c·x` / `c·x + k` via
 `torch.mul`/`torch.add` against scalars. -/
 
-/-- Elementwise exponential `x ↦ eˣ`.  PyTorch: `torch.exp`. -/
+/-- Elementwise exponential $x\mapsto e^x$. PyTorch: `torch.exp`. -/
 def exp {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {s : Shape} (x : RefTy (m := m) (α := α) s) : m (RefTy (m := m) (α := α) s) :=
   _root_.Runtime.Autograd.Torch.exp (m := m) (α := α) (s := s) x
 
-/-- Elementwise natural log `x ↦ ln x`. PyTorch: `torch.log`.
+/-- Elementwise natural log $x\mapsto\log x$. PyTorch: `torch.log`.
 
 Domain: for real-valued reasoning, assume positive inputs. This is the real
-natural log only on `x > 0`. TorchLean's eager CPU tape, IR evaluator, and proved
+natural log only on $x>0$. TorchLean's eager CPU tape, IR evaluator, and proved
 forward-fragment evaluator reject nonpositive inputs explicitly; compiled pure
 closures hit a runtime panic on a bad raw-log domain, and CUDA follows the native
 buffer operation. Use `safeLog` when the model needs a total epsilon-protected
@@ -79,7 +79,7 @@ def log {α : Type} [Context α] [DecidableEq Shape]
     {s : Shape} (x : RefTy (m := m) (α := α) s) : m (RefTy (m := m) (α := α) s) :=
   _root_.Runtime.Autograd.Torch.log (m := m) (α := α) (s := s) x
 
-/-- Multiply by a scalar `c`: `x ↦ c · x`.
+/-- Multiply by a scalar $c$: $x\mapsto cx$.
 A re-export of the primitive `Ops.scale` through the functional API. `Ops.scale`
 already powers `mean`; this definition gives users the direct
 `nn.functional.*` name too. -/
@@ -88,7 +88,7 @@ def scale {α : Type} [Context α] [DecidableEq Shape]
     {s : Shape} (x : RefTy (m := m) (α := α) s) (c : α) : m (RefTy (m := m) (α := α) s) :=
   _root_.Runtime.Autograd.Torch.scale (m := m) (α := α) (s := s) x c
 
-/-- Add a constant scalar `c` to every element: `x ↦ x + c`.  Builds the
+/-- Add a constant scalar $c$ to every element: $x\mapsto x+c$. Builds the
 constant via `Ops.const` at scalar shape and broadcasts it to `s` (same pattern
 as the dropout keep-probability broadcast). -/
 def shift {α : Type} [Context α] [DecidableEq Shape]
@@ -100,7 +100,7 @@ def shift {α : Type} [Context α] [DecidableEq Shape]
     (s₁ := Shape.scalar) (s₂ := s) (Shape.CanBroadcastTo.scalar_to_any s) cs
   _root_.Runtime.Autograd.Torch.add (m := m) (α := α) (s := s) x cb
 
-/-- Scalar affine map `x ↦ c · x + k`.
+/-- Scalar affine map $x\mapsto cx+k$.
 
 This is a common building block in physical forward models, including the
 SMAP-NISAR AVS surface and vegetation terms. It composes `scale` and `shift`. -/
@@ -115,7 +115,8 @@ def affine {α : Type} [Context α] [DecidableEq Shape]
 /--
 Checkpoint wrapper matching PyTorch's memory saving pattern.
 
-In this codebase, checkpointing is a semantic identity wrapper (`checkpoint f x = f x`). Backends
+In this codebase, checkpointing is a semantic identity wrapper
+($\operatorname{checkpoint}(f,x)=f(x)$). Backends
 that implement recomputation can refine this hook without changing the mathematical meaning.
 -/
 def checkpoint {α : Type} [Context α] [DecidableEq Shape]
@@ -231,7 +232,8 @@ def tokenIdsFromFloatVec {α : Type} [Context α] [DecidableEq Shape]
 /-! ## Reductions -/
 
 /--
-Mean reduction: `mean(x) = sum(x) / numel(x)`.
+Mean reduction:
+$\operatorname{mean}(x)=\operatorname{sum}(x)/\operatorname{numel}(x)$.
 
 PyTorch analogue: `torch.mean`.
 -/
@@ -259,7 +261,8 @@ def bernoulliMask {α : Type} [Context α] [DecidableEq Shape]
   _root_.Runtime.Autograd.Torch.bernoulliMask (m := m) (α := α) (s := s) keepProb seed
 
 /--
-Seeded dropout implemented as `x * mask / keepProb` where `mask ∈ {0,1}` is sampled from a
+Seeded dropout implemented as $x\odot\mathtt{mask}/\mathtt{keepProb}$, where
+$\mathtt{mask}\in\{0,1\}$ is sampled from a
 deterministic PRNG keyed by `seed`.
 -/
 def dropoutSeeded {α : Type} [Context α] [DecidableEq Shape]

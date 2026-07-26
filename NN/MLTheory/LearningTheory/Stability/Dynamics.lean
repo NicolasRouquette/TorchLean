@@ -13,7 +13,7 @@ public import NN.MLTheory.LearningTheory.Stability.Dynamics.Runtime
 # Stability of dynamical systems
 
 This entrypoint collects the discrete-time stability layer for maps of the form
-`x_{t+1} = f x_t` and input-driven systems `x_{t+1} = f x_t u_t`.
+$x_{t+1}=f(x_t)$ and input-driven systems $x_{t+1}=f(x_t,u_t)$.
 
 The spec file states the mathematical predicates: Lyapunov stability, asymptotic stability,
 exponential stability, input-to-state stability, BIBO stability, incremental stability, practical

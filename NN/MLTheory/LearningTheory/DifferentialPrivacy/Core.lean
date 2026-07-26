@@ -23,9 +23,13 @@ We keep the definition general by parameterizing over:
 - an *adjacency relation* `Adj : α → α → Prop` (e.g. “datasets differ in one example”), and
 - a *randomized mechanism* `M : α → ProbabilityMeasure β`.
 
-Then `(ε, δ)`-DP is the standard **event-wise** bound:
+Then $(\varepsilon,\delta)$-DP is the standard **event-wise** bound:
 
-`P[M a ∈ S] ≤ exp(ε) * P[M a' ∈ S] + δ` for all adjacent `a ~ a'` and measurable events `S`.
+$$
+\Pr[M(a)\in S]\leq e^\varepsilon\Pr[M(a')\in S]+\delta
+$$
+
+for all adjacent $a\sim a'$ and measurable events $S$.
 
 We phrase this in mathlib using `ProbabilityMeasure` and `Measure`:
 
@@ -77,7 +81,7 @@ variable {α β γ : Type}
 /--
 A randomized mechanism from inputs `α` to outputs `β`.
 
-We use `ProbabilityMeasure β` so probability mass is total (`μ univ = 1`) and so that
+We use `ProbabilityMeasure β` so probability mass is total ($\mu(\mathrm{univ})=1$) and so that
 post-processing can be phrased using `ProbabilityMeasure.map` (pushforward along a measurable
 function).
 -/
@@ -87,13 +91,15 @@ abbrev Mechanism (α β : Type) [MeasurableSpace β] : Type :=
 /-! ## Differential privacy -/
 
 /--
-`(ε, δ)`-differential privacy with respect to an adjacency relation `Adj`.
+$(\varepsilon,\delta)$-differential privacy with respect to an adjacency relation `Adj`.
 
 This is the standard “event-wise” definition:
 
-for all adjacent inputs `a ~ a'` and all measurable events `S`,
+for all adjacent inputs $a\sim a'$ and all measurable events $S$,
 
-`P[M a ∈ S] ≤ exp(ε) * P[M a' ∈ S] + δ`.
+$$
+\Pr[M(a)\in S]\leq e^\varepsilon\Pr[M(a')\in S]+\delta.
+$$
 
 We write probabilities as measures `(M a : Measure β) S` so the inequality lives in `ENNReal`.
 -/
@@ -103,18 +109,19 @@ def DifferentialPrivacy (Adj : α → α → Prop) [MeasurableSpace β]
     ∀ S : Set β, MeasurableSet S →
       (M a : Measure β) S ≤ (ENNReal.ofReal (Real.exp ε)) * (M a' : Measure β) S + δ
 
-/-! A common special case: `δ = 0` (“pure DP”). -/
+/-! A common special case: $\delta=0$ (“pure DP”). -/
 abbrev PureDP (Adj : α → α → Prop) [MeasurableSpace β]
     (M : Mechanism α β) (ε : ℝ) : Prop :=
   DifferentialPrivacy (α := α) (β := β) Adj M ε 0
 
 /--
-`δ`-monotonicity: if a mechanism is `(ε, δ₁)`-DP and `δ₁ ≤ δ₂`, then it is also `(ε, δ₂)`-DP.
+$\delta$-monotonicity: if a mechanism is $(\varepsilon,\delta_1)$-DP and
+$\delta_1\leq\delta_2$, then it is also $(\varepsilon,\delta_2)$-DP.
 
 This small lemma is useful when you:
 
 - prove DP with a “clean” bound, then
-- want to reuse it under a slightly looser `δ` (e.g. after taking a `sup`, or adding a slack term).
+- want to reuse it under a slightly looser $\delta$ (e.g. after taking a `sup`, or adding a slack term).
 -/
 theorem differentialPrivacy_mono_delta {Adj : α → α → Prop} [MeasurableSpace β]
     {M : Mechanism α β} {ε : ℝ} {δ₁ δ₂ : ENNReal} (hδ : δ₁ ≤ δ₂) :

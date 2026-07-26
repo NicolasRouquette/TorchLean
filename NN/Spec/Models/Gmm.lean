@@ -14,17 +14,19 @@ public import NN.Spec.Models.CommonHelpers
 
 This file defines a basic GMM with `nComponents` multivariate Gaussians over `nFeatures`:
 
-- mixing weights `π : nComponents`
-- means `μ : nComponents × nFeatures`
-- covariances `Σ : nComponents × nFeatures × nFeatures`
+- mixing weights $\pi$,
+- means $\mu$, and
+- covariances $\Sigma$.
 
 `gmmForwardSpec` computes **per-component** log-probabilities for a single input:
 
-`log π_k + log N(x | μ_k, Σ_k)`
+$$
+\log \pi_k + \log \mathcal{N}(x \mid \mu_k, \Sigma_k).
+$$
 
 PyTorch analogies:
 
-- `torch.distributions.MultivariateNormal` for `N(x | μ, Σ)`,
+- `torch.distributions.MultivariateNormal` for $\mathcal{N}(x \mid \mu, \Sigma)$,
 - `torch.distributions.MixtureSameFamily` for mixture distributions,
 - `torch.softmax` for turning per-component log-probabilities into responsibilities.
 
@@ -54,11 +56,11 @@ variable {α : Type} [Context α]
 
 /-- Parameters of a Gaussian mixture model (GMM). -/
 structure GMMSpec (α : Type) (nComponents nFeatures : Nat) where
-  /-- Mixing weights `π_k` (typically nonnegative and summing to `1`). -/
+  /-- Mixing weights $\pi_k$ (typically nonnegative and summing to $1$). -/
   weights : Tensor α (.dim nComponents .scalar)
-  /-- Component means `μ_k`. -/
+  /-- Component means $\mu_k$. -/
   means : Tensor α (.dim nComponents (.dim nFeatures .scalar))
-  /-- Component covariance matrices `Σ_k` (typically symmetric positive definite). -/
+  /-- Component covariance matrices $\Sigma_k$ (typically symmetric positive definite). -/
   covariances : Tensor α (.dim nComponents (.dim nFeatures (.dim nFeatures .scalar)))
 
 /-- The leading `k × k` principal submatrix of a square matrix. -/
@@ -113,12 +115,17 @@ def gmmParametersValidSpec {nComponents nFeatures : Nat}
 
 /-- Per-component log-probabilities for a single input.
 
-Given `x : ℝ^d`, each component contributes:
+Given $x \in \mathbb{R}^d$, each component contributes
 
-`log π_k - 1/2 * ( (x-μ_k)^T Σ_k^{-1} (x-μ_k) + log det Σ_k + d * log(2π) )`
+$$
+\log \pi_k-\frac12\left(
+  (x-\mu_k)^\mathsf{T}\Sigma_k^{-1}(x-\mu_k)
+  +\log\det\Sigma_k+d\log(2\pi)
+\right).
+$$
 
 This is the natural "logit vector" for responsibilities.  If you want posterior probabilities
-`P(z=k | x)`, apply `gmm_expectation_spec` (a last-axis softmax).
+$P(z=k\mid x)$, apply `gmmExpectationSpec` (a last-axis softmax).
 
 PyTorch analogy: the returned vector is like per-component `log_prob` values before the final
 mixture `logsumexp`.
@@ -152,7 +159,13 @@ def gmmForwardSpec {nComponents nFeatures : Nat}
 
 Mathematically:
 
-`γ_k = P(z=k | x) = softmax_k ( log π_k + log N(x | μ_k, Σ_k) )`
+$$
+\gamma_k
+  = P(z=k\mid x)
+  = \operatorname{softmax}_k\!\left(
+      \log \pi_k+\log\mathcal{N}(x\mid\mu_k,\Sigma_k)
+    \right).
+$$
 
 PyTorch analogy: `torch.softmax(component_log_probs, dim=-1)` where the logits are the
 per-component log-probabilities.
@@ -180,17 +193,19 @@ def gmmBatchedForwardSpec {batch nComponents nFeatures : Nat}
 `gmmForwardSpec` is **vector-valued**: it returns one log-probability per component.
 
 The gradients below are the VJP for that vector function. In particular, responsibilities
-`γ = softmax(component_log_probs)` do *not* appear in these formulas by themselves.
+$\gamma=\operatorname{softmax}(\text{component log-probabilities})$ do *not* appear in these
+formulas by themselves.
 
 Responsibilities show up when you differentiate a **scalar** objective that aggregates components,
-like the mixture log-likelihood `logsumexp(component_log_probs)`. In that case, you compute
-`dL/d(component_log_probs)` first (which will involve `γ`), then feed that vector into
+like the mixture log-likelihood $\operatorname{logsumexp}(\text{component log-probabilities})$.
+In that case, you compute the derivative with respect to the component log-probabilities first
+(which will involve $\gamma$), then feed that vector into
 `gmmBackwardSpec`.
 -/
 
-/-- Gradient/VJP w.r.t. weights `π` for the output of `gmmForwardSpec`.
+/-- Gradient/VJP with respect to weights $\pi$ for the output of `gmmForwardSpec`.
 
-For `y_k = log π_k + ...`, we have `∂y_k/∂π_k = 1/π_k`.
+For $y_k=\log\pi_k+\cdots$, we have $\partial y_k/\partial\pi_k=1/\pi_k$.
 -/
 def gmmWeightsDerivSpec {nComponents nFeatures : Nat}
   (m : GMMSpec α nComponents nFeatures)
@@ -205,13 +220,16 @@ def gmmWeightsDerivSpec {nComponents nFeatures : Nat}
   else
     none
 
-/-- Gradient/VJP w.r.t. means `μ` for the output of `gmmForwardSpec`.
+/-- Gradient/VJP with respect to means $\mu$ for the output of `gmmForwardSpec`.
 
 For a single component:
 
-`∂/∂μ log N(x|μ,Σ) = 1/2 (Σ^{-1} + Σ^{-T}) (x - μ)`.
+$$
+\frac{\partial}{\partial\mu}\log\mathcal{N}(x\mid\mu,\Sigma)
+=\frac12\left(\Sigma^{-1}+\Sigma^{-\mathsf{T}}\right)(x-\mu).
+$$
 
-For a valid symmetric covariance this reduces to the familiar `Σ^{-1}(x-μ)`.
+For a valid symmetric covariance this reduces to the familiar $\Sigma^{-1}(x-\mu)$.
 -/
 def gmmMeansDerivSpec {nComponents nFeatures : Nat}
   (m : GMMSpec α nComponents nFeatures)
@@ -236,13 +254,16 @@ def gmmMeansDerivSpec {nComponents nFeatures : Nat}
   else
     none
 
-/-- Gradient/VJP w.r.t. the input `x` for the output of `gmmForwardSpec`.
+/-- Gradient/VJP with respect to the input $x$ for the output of `gmmForwardSpec`.
 
 For one component:
 
-`∂/∂x log N(x|μ,Σ) = -1/2 (Σ^{-1} + Σ^{-T}) (x - μ)`.
+$$
+\frac{\partial}{\partial x}\log\mathcal{N}(x\mid\mu,\Sigma)
+=-\frac12\left(\Sigma^{-1}+\Sigma^{-\mathsf{T}}\right)(x-\mu).
+$$
 
-We sum the contributions from all components, weighted by the upstream gradient `g_k`.
+We sum the contributions from all components, weighted by the upstream gradient $g_k$.
 -/
 def gmmInputDerivSpec {nComponents nFeatures : Nat}
   (m : GMMSpec α nComponents nFeatures)
@@ -270,12 +291,17 @@ def gmmInputDerivSpec {nComponents nFeatures : Nat}
   else
     none
 
-/-- Gradient/VJP w.r.t. covariances `Σ` for the output of `gmmForwardSpec`.
+/-- Gradient/VJP with respect to covariances $\Sigma$ for the output of `gmmForwardSpec`.
 
 For one component:
 
-`∂/∂Σ log N(x|μ,Σ) =
-1/2 * ( Σ^{-T} (x-μ)(x-μ)^T Σ^{-T} - Σ^{-T} )`.
+$$
+\frac{\partial}{\partial\Sigma}\log\mathcal{N}(x\mid\mu,\Sigma)
+=\frac12\left(
+  \Sigma^{-\mathsf{T}}(x-\mu)(x-\mu)^\mathsf{T}\Sigma^{-\mathsf{T}}
+  -\Sigma^{-\mathsf{T}}
+\right).
+$$
 -/
 def gmmCovariancesDerivSpec {nComponents nFeatures : Nat}
   (m : GMMSpec α nComponents nFeatures)
@@ -320,7 +346,7 @@ def gmmBackwardSpec {nComponents nFeatures : Nat}
   let dInput ← gmmInputDerivSpec m input grad_output h
   pure (dWeights, dMeans, dCovariances, dInput)
 
-/-- Uniform mixture weights (all components have probability `1/nComponents`). -/
+/-- Uniform mixture weights (all components have probability $1/\mathtt{nComponents}$). -/
 private def uniformWeights {nComponents : Nat} : Tensor α (.dim nComponents .scalar) :=
   match nComponents with
   | 0 => Tensor.dim (fun k => nomatch k)
@@ -349,9 +375,11 @@ def gmmInitSpec {nComponents nFeatures : Nat} :
   }
 
 /--
-Numerically stable log-sum-exp reduction: `log (Σ_i exp(log_probs[i]))`.
+Numerically stable log-sum-exp reduction:
+$\log\!\left(\sum_i \exp(\mathtt{log\_probs}[i])\right)$.
 
-This is the standard `max + log(sum(exp(x - max)))` trick.
+This is the standard
+$m+\log\!\left(\sum_i\exp(x_i-m)\right)$ trick, where $m=\max_i x_i$.
 -/
 def logSumExpReduce {n : Nat} (log_probs : Tensor α (.dim n .scalar)) (h : n ≠ 0) : α :=
   -- Step 1: Find maximum for numerical stability
@@ -377,9 +405,14 @@ def logSumExpReduce {n : Nat} (log_probs : Tensor α (.dim n .scalar)) (h : n �
     max_log_prob'  -- Fallback if sum is zero
 
 /--
-Mixture log-likelihood `log p(x)` computed via log-sum-exp over components.
+Mixture log-likelihood $\log p(x)$ computed via log-sum-exp over components.
 
-Mathematically: `log p(x) = log (Σ_k exp(log p(x | z_k) + log π_k))`.
+Mathematically,
+$$
+\log p(x)=\log\!\left(
+  \sum_k \exp\!\left(\log p(x\mid z_k)+\log\pi_k\right)
+\right).
+$$
 -/
 def gmmLogLikelihoodSpec {nComponents nFeatures : Nat}
   (m : GMMSpec α nComponents nFeatures)
@@ -394,19 +427,20 @@ def gmmLogLikelihoodSpec {nComponents nFeatures : Nat}
 
 For a GMM, “training” is typically done with the Expectation–Maximization (EM) algorithm:
 
-- **E-step**: compute responsibilities `r_{ik} = P(z=k | x_i)` for each sample/component.
-- **M-step**: update `π, μ, Σ` from the weighted sufficient statistics.
+- **E-step**: compute responsibilities $r_{ik}=P(z=k\mid x_i)$ for each sample/component.
+- **M-step**: update $\pi$, $\mu$, and $\Sigma$ from the weighted sufficient statistics.
 
-This file already provides `gmm_expectation_spec` (responsibilities for one sample). The helpers
+This file already provides `gmmExpectationSpec` (responsibilities for one sample). The helpers
 below lift that to a batched dataset and implement a deterministic EM update step.
 
 Numerical notes:
-- If a component gets (near) zero total responsibility (`N_k ≈ 0`), we keep that component’s
+- If a component gets (near) zero total responsibility ($N_k\approx 0$), we keep that component’s
   parameters unchanged (otherwise we’d divide by zero).
-- We add a small diagonal “jitter” (`Numbers.epsilon · I`) to covariances to keep them well-behaved.
+- We add a small diagonal “jitter,” $\mathtt{Numbers.epsilon}\,I$, to covariances to keep them
+  well-behaved.
 -/
 
-/-- Batched responsibilities: apply `gmm_expectation_spec` to each sample. -/
+/-- Batched responsibilities: apply `gmmExpectationSpec` to each sample. -/
 def gmmResponsibilitiesBatchedSpec {nSamples nComponents nFeatures : Nat}
   (m : GMMSpec α nComponents nFeatures)
   (data : Tensor α (.dim nSamples (.dim nFeatures .scalar)))

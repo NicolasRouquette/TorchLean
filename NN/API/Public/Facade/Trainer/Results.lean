@@ -63,7 +63,7 @@ structure TrainResult (σ τ : Shape) where
   predict : Tensor.T Float σ → IO (Tensor.T Float τ)
   /-- Run several `Float` inputs through the trained model. -/
   predictBatch : List (Tensor.T Float σ) → IO (List (Tensor.T Float τ))
-  /-- Optional verifier for a uniform `ℓ∞` input ball. -/
+  /-- Optional verifier for a uniform $\ell_\infty$ input ball. -/
   verifyRobustLInf? :
     Option (Tensor.T Float σ → Float → IO VerificationReport) := none
 
@@ -84,7 +84,7 @@ def printPrediction {σ τ : Shape}
   IO.println s!"{label} = {Tensor.pretty yhat}"
 
 /--
-Verify a uniform `ℓ∞` ball around `center`.
+Verify a uniform $\ell_\infty$ ball around `center`.
 
 The method fails explicitly when the training path did not attach the checked IBP capability.
 -/
@@ -97,7 +97,7 @@ def verifyRobustLInf {σ τ : Shape}
       throw <| IO.userError
         "Trainer.TrainResult.verifyRobustLInf: this trained result has no IBP verifier"
 
-/-- Verify a uniform `ℓ∞` ball and print the resulting output interval. -/
+/-- Verify a uniform $\ell_\infty$ ball and print the resulting output interval. -/
 def printRobustLInf {σ τ : Shape}
     (result : TrainResult σ τ) (center : Tensor.T Float σ) (eps : Float) : IO Unit := do
   let report ← result.verifyRobustLInf center eps

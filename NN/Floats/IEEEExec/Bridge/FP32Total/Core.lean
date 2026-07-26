@@ -15,7 +15,8 @@ public import NN.Floats.IEEEExec.Rules.SpecialRules
 “Total” bridge theorems combining:
 
 - `IEEE32Exec`'s proved NaN/Inf propagation rules, and
-- the `FP32`-on-`ℝ` refinement theorems for the finite/no-overflow branch (`Bridge/FP32.lean`).
+- the `FP32`-on-`ℝ` refinement theorems for the finite/no-overflow branch
+  (`NN/Floats/IEEEExec/Bridge/FP32.lean`).
 
 The key end-user view is `toReal?`:
 - `toReal? x = none` for NaN/Inf,

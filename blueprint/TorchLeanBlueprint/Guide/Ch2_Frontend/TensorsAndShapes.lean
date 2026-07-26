@@ -9,7 +9,7 @@ tag := "tensors-shapes"
 
 Most tensor libraries carry a shape beside a buffer and check compatibility when an operation
 runs. TorchLean also carries the shape in the Lean type. A function that accepts a length-four
-vector cannot accidentally receive a `2 × 2` matrix, even though both contain four scalar values.
+vector cannot accidentally receive a $`2\times 2` matrix, even though both contain four scalar values.
 
 That choice is the foundation for the rest of the library. Layers become checked maps between
 shapes, parameter packs remember the layout expected by a model, and theorem statements do not
@@ -159,7 +159,7 @@ def firstRow : Tensor.T Float (shape![2]) :=
 The output shape is visible in the function type. Indexing once removed the outer dimension; it did
 not flatten or reinterpret the remaining data.
 
-This representation is particularly pleasant in proofs. A theorem about a rank-`n+1` tensor can
+This representation is particularly pleasant in proofs. A theorem about a rank-$`n+1` tensor can
 introduce an arbitrary `i : Fin size` and apply the induction hypothesis to the smaller tensor at
 that index.
 
@@ -291,7 +291,7 @@ The layout convention matters at the representation boundary. In row-major order
 
 $$`\operatorname{flatIndex}(i,j)=3i+j`
 
-for a `2 × 3` matrix. A column-major native library would use a different equation. Shape equality
+for a $`2\times 3` matrix. A column-major native library would use a different equation. Shape equality
 does not prove layout agreement, so backend capsules record layout requirements separately.
 
 # Specification Tensors And Runtime Buffers

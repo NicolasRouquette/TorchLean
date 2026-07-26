@@ -34,6 +34,12 @@ It describes how TorchLean names native CUDA, LibTorch, and future platform prov
 a runtime path uses them. Capsule modules may extend a backend profile, but the ordinary alignment,
 availability, trust-policy, and VJP gates apply to every contributed capsule.
 
+The eager runtime binds a selected capsule to a typed handler only when operation, provider, and
+device agree. This prevents a backend report from naming one provider while its dispatch branch
+runs another. The binding proves only that identity agreement; it does not prove the handler's
+arithmetic, FFI code, compiler output, driver, or hardware. Those obligations retain the evidence
+and trust level stated by the capsule.
+
 ## Lean Axioms
 
 - `NN/MLTheory/CROWN/Lyapunov/Oracle.lean`: `crown_oracle` assumes an external CROWN

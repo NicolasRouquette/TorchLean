@@ -304,12 +304,17 @@ keeps the example executable.
 
 ## Groups of unbatched samples
 
-`Trainer.TrainOptions.batchSize` on a model `[2] → [1]` controls how many samples are consumed in an
-outer step. In the current in-memory loop, an optimizer update is still applied for each sample in
-that group. The option affects scheduling and logging; it does not insert a leading tensor axis.
+`Trainer.TrainOptions.batchSize` counts dataset items per optimizer update. On a model `[2] → [1]`,
+ordinary dataset items are individual samples. Every selected item is differentiated at the same
+parameter point, the resulting gradient packs are averaged, and the optimizer is applied once. The
+reported loss is the corresponding mean of the item losses. This path does not insert a leading
+tensor axis.
 
-The two paths can have different optimization behavior. Calling both of them “batch size” without
-examining the model shape would hide that difference.
+For a `Data.batchDataset`, each item already contains a fixed-size tensor minibatch. Keep
+`TrainOptions.batchSize := 1` to perform one vectorized device pass per update. A larger value
+accumulates gradients across several tensor minibatches. On CUDA, generic accumulation currently
+synchronizes the parameter pack for the host optimizer update, so one typed batch item per update
+is the fast path for large batches.
 
 # Why The Final Partial Batch Is Dropped
 

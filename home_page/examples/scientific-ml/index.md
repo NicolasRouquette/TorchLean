@@ -1,6 +1,5 @@
 ---
 title: Scientific ML
-usemathjax: true
 ---
 
 Scientific ML examples are where TorchLean has to behave like both an ML library and a mathematics
@@ -102,17 +101,17 @@ downloading a public `.mat` file, preparing external datasets, or plotting a pre
 TorchLean owns the pieces that should be typed, inspectable, or connected to verification:
 
 <div class="workflow-list">
-  <a href="{{ '/blueprint/Building-Models/Datasets___-Loaders___-and-Minibatches/' | relative_url }}">
+  <a href="{{ '/blueprint/Building-Models/From-Files-To-Typed-Minibatches/' | relative_url }}">
     <span>01</span>
     <strong>Typed data loading</strong>
     <em>The <code>.npy</code> arrays become fixed-shape supervised samples: one grid input, one grid target.</em>
   </a>
-  <a href="{{ '/docs/NN/Examples/Models/Operators/Fno1dBurgers.html' | relative_url }}">
+  <a href="{{ '/docs/NN/API/Models/FNO.html' | relative_url }}">
     <span>02</span>
     <strong>Model shape contract</strong>
     <em>The FNO config fixes the grid, channel width, Fourier modes, block count, and parameter shapes.</em>
   </a>
-  <a href="{{ '/blueprint/Floating-Point-and-Native-Boundaries/GPU-and-CUDA-Boundaries/' | relative_url }}">
+  <a href="{{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }}">
     <span>03</span>
     <strong>Runtime boundary</strong>
     <em>The CUDA path is fast, but its role is named: a fused real-FFT kernel implements the TorchLean FNO step.</em>

@@ -35,7 +35,7 @@ The easiest way to see the pieces together is a small GridWorld run.
 
 # A Complete PPO GridWorld Run
 
-The environment is a `4 × 4` GridWorld defined in Lean. The actor and critic use a fixed rollout
+The environment is a $`4\times4` GridWorld defined in Lean. The actor and critic use a fixed rollout
 horizon of 64. Run one update on CPU and send the artifacts to temporary files:
 
 ```
@@ -101,12 +101,12 @@ description has two useful views:
   * Critic shape
 *
   * one observation
-  * `16 -> 4`
-  * `16 -> 1`
+  * $`16\to4`
+  * $`16\to1`
 *
   * rollout of 64 observations
-  * `64 × 16 -> 64 × 4`
-  * `64 × 16 -> 64 × 1`
+  * $`64\times16\to64\times4`
+  * $`64\times16\to64\times1`
 :::
 
 The prefix belongs to the sequential model's input and output shapes rather than an implicit
@@ -117,7 +117,7 @@ and a full horizon during optimization without introducing a second, loosely rel
 
 # What Enters A Rollout
 
-For a discrete action space of size `A`, one PPO step stores:
+For a discrete action space of size $`A`, one PPO step stores:
 
 $$`(s_t,\;a_t,\;\log\pi_{\mathrm{old}}(a_t\mid s_t),\;
 r_t,\;d_t,\;V(s_t),\;V(s_{t+1})).`
@@ -149,7 +149,7 @@ The conversion is total because the horizon invariant is already present.
 
 # Returns And Generalized Advantage Estimation
 
-Let `d_t` be one when timestep `t` ends an episode and zero otherwise. The one-step temporal
+Let $`d_t` be one when timestep $`t` ends an episode and zero otherwise. The one-step temporal
 difference residual is
 
 $$`\delta_t
@@ -177,7 +177,7 @@ changed value targets, and which direction the recurrence traversed the rollout.
 
 # The PPO Objective
 
-For the sampled action at timestep `t`, define
+For the sampled action at timestep $`t`, define
 
 $$`r_t(\theta)
 =\exp\!\left(
@@ -216,7 +216,7 @@ recurrences, not a numerical error theorem for the whole PPO loop.
 
 # Bellman Operators And Fixed Points
 
-The same vocabulary supports classical MDP theorems. For a fixed policy `π`,
+The same vocabulary supports classical MDP theorems. For a fixed policy $`\pi`,
 
 $$`(T^\pi V)(s)
 =r(s,\pi(s))
@@ -229,7 +229,7 @@ $$`(T^\star V)(s)
 r(s,a)+\gamma\mathbb E_{s'\sim P(\cdot\mid s,a)}[V(s')]
 \right).`
 
-For `0 ≤ γ < 1`, both are contractions in the sup norm:
+For $`0\leq\gamma<1`, both are contractions in the sup norm:
 
 $$`\|TV-TW\|_\infty
 \le\gamma\|V-W\|_\infty.`
@@ -294,8 +294,8 @@ lake exe torchlean ppo_cartpole --device cpu \
 ```
 
 The command expects a four-entry observation and two actions. Its actor and critic are MLPs with
-hidden width 32, rollout horizon 64, discount `0.99`, GAE parameter `0.95`, and Adam learning rate
-`3 × 10⁻⁴`. Those values are defined in
+hidden width 32, rollout horizon 64, discount $`0.99`, GAE parameter $`0.95`, and Adam learning rate
+$`3\times10^{-4}`. Those values are defined in
 [`PPOCartPole.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/RL/PPOCartPole.lean),
 not inferred from a generic PPO label.
 

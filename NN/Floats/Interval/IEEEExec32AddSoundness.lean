@@ -18,16 +18,17 @@ public import NN.Floats.Interval.IEEEExec32
 This file proves the “golden theorem”-style enclosure results for the *monotone* interval
 operations:
 
-- addition: `[a,b] + [c,d] ⊆ [a+c, b+d]`,
-- negation: `-[a,b] = [-b, -a]`,
-- subtraction: `[a,b] - [c,d] ⊆ [a-d, b-c]` (a derived combination of addition + negation).
+- addition: $[a,b]+[c,d]\subseteq[a+c,b+d]$,
+- negation: $-[a,b]=[-b,-a]$,
+- subtraction: $[a,b]-[c,d]\subseteq[a-d,b-c]$ (a derived combination of addition and negation).
 
 In `NN/Floats/Interval/IEEEExec32.lean`, these are implemented with IEEE32 executable
   outward-rounded
 endpoints:
 
 - `add` uses `addDown` / `addUp`,
-- `sub` uses `subDown` / `subUp`, where `subDown x y = addDown x (neg y)` and similarly for `subUp`.
+- `sub` uses `subDown` / `subUp`, where
+  $\operatorname{subDown}(x,y)=\operatorname{addDown}(x,-y)$, and similarly for `subUp`.
 
 We work in `EReal` because finite binary32 inputs can still overflow under addition or subtraction.
 The extended-real endpoints record those infinite results directly and let these lemmas compose
@@ -62,8 +63,9 @@ noncomputable section
 /--
 Negation preserves finiteness.
 
-We use this to justify that `subDown a b = addDown a (neg b)` is still in the finite regime when
-`b` is finite, so we can reuse directed-rounding soundness lemmas that assume finiteness.
+We use this to justify that
+$\operatorname{subDown}(a,b)=\operatorname{addDown}(a,-b)$ is still in the finite regime when
+$b$ is finite, so we can reuse directed-rounding soundness lemmas that assume finiteness.
 -/
 private lemma isFinite_neg_of_isFinite (x : IEEE32Exec) (hx : isFinite x = true) :
     isFinite (IEEE32Exec.neg x) = true := by
@@ -110,7 +112,8 @@ private lemma toReal_neg_eq_neg_of_isFinite (x : IEEE32Exec) (hx : isFinite x = 
 /--
 Soundness of `Interval32.add` w.r.t. real addition, in the finite-endpoint regime.
 
-If `x ∈ [A.lo,A.hi]` and `y ∈ [B.lo,B.hi]` in real semantics, then `x+y` lies between the `EReal`
+If $x\in[A.\mathtt{lo},A.\mathtt{hi}]$ and
+$y\in[B.\mathtt{lo},B.\mathtt{hi}]$ in real semantics, then $x+y$ lies between the `EReal`
 interpretation of the executable endpoints of `Interval32.add A B`.
 -/
 theorem add_sound (A B : Interval32) (hA : Valid A) (hB : Valid B) :
@@ -146,7 +149,8 @@ theorem add_sound (A B : Interval32) (hA : Valid A) (hB : Valid B) :
 /--
 Soundness of `Interval32.neg` w.r.t. real negation, in the finite-endpoint regime.
 
-If `x ∈ [A.lo,A.hi]` in real semantics, then `-x` lies between the `EReal` interpretation of the
+If $x\in[A.\mathtt{lo},A.\mathtt{hi}]$ in real semantics, then $-x$ lies between the `EReal`
+interpretation of the
 executable endpoints of `Interval32.neg A`.
 -/
 theorem neg_sound (A : Interval32) (hA : Valid A) :

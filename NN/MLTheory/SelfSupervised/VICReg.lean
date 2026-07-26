@@ -37,7 +37,7 @@ theory captures the algebraic shape of the collapse guard without importing nume
 namespace NN.MLTheory.SelfSupervised
 
 /--
-Hinge penalty for a variance floor: `max(0, gamma - v)`, written over `Nat`.
+Hinge penalty for a variance floor: $\max(0,\gamma-v)$, written over `Nat`.
 
 This is the discrete analogue of the VICReg variance hinge.  In the floating-point objective, `v`
 would be a per-coordinate standard deviation; in this finite formalization it is an already-computed
@@ -78,7 +78,7 @@ theorem varianceTerm_append (gamma : Nat) (xs ys : List Nat) :
   simp [varianceTerm, List.map_append, List.sum_append]
 
 /--
-Collapsed coordinates (`variance = 0`) pay exactly `d * gamma`.
+Collapsed coordinates ($\mathrm{variance}=0$) pay exactly $d\gamma$.
 
 This is the direct anti-collapse fact: if every coordinate has zero variance, the variance floor
 does not silently accept it.
@@ -91,7 +91,7 @@ theorem varianceTerm_replicate_zero (gamma d : Nat) :
       rw [List.replicate_succ, varianceTerm_cons, varianceFloorPenalty_zero, ih, Nat.succ_mul]
       exact Nat.add_comm gamma (d * gamma)
 
-/-- If `gamma > 0` and there is at least one collapsed coordinate, the variance term is positive. -/
+/-- If $\gamma>0$ and there is at least one collapsed coordinate, the variance term is positive. -/
 theorem varianceTerm_collapsed_positive {gamma d : Nat} (hγ : 0 < gamma) :
     0 < varianceTerm gamma (List.replicate (d + 1) 0) := by
   rw [varianceTerm_replicate_zero]
@@ -112,9 +112,9 @@ theorem vicregObjective_variance_positive {μ variance : Nat}
 /--
 Penalty for a diagonal cross-correlation entry that should be one.
 
-The `Nat` version is an absolute-deviation hinge around `1`.  The Barlow Twins paper uses squared
+The `Nat` version is an absolute-deviation hinge around $1$. The Barlow Twins paper uses squared
 floating-point deviations, but both objectives share the key finite property proved below: diagonal
-value `1` is free, while collapsed diagonal value `0` is not.
+value $1$ is free, while collapsed diagonal value $0$ is not.
 -/
 def diagonalRedundancyPenalty (c : Nat) : Nat :=
   (c - 1) + (1 - c)
@@ -127,7 +127,7 @@ def offDiagonalRedundancyPenalty (c : Nat) : Nat :=
 Barlow-style redundancy-reduction objective over already-computed diagonal and off-diagonal
 correlation summaries.
 
-Over `Nat`, the diagonal penalty is zero at `1`; the off-diagonal penalty is zero at `0`. Runtime
+Over `Nat`, the diagonal penalty is zero at $1$; the off-diagonal penalty is zero at $0$. Runtime
 versions can use squared floating-point deviations.
 -/
 def redundancyReductionObjective (lambda : Nat) (diag offDiag : List Nat) : Nat :=
@@ -143,8 +143,8 @@ def redundancyReductionObjective (lambda : Nat) (diag offDiag : List Nat) : Nat 
   simp [offDiagonalRedundancyPenalty]
 
 /--
-The ideal Barlow-style correlation summary has zero redundancy loss: all diagonal entries are `1`
-and all off-diagonal entries are `0`.
+The ideal Barlow-style correlation summary has zero redundancy loss: all diagonal entries are $1$
+and all off-diagonal entries are $0$.
 -/
 @[simp] theorem redundancyReductionObjective_identity (lambda d k : Nat) :
     redundancyReductionObjective lambda (List.replicate d 1) (List.replicate k 0) = 0 := by
@@ -155,7 +155,7 @@ theorem diagonalRedundancyPenalty_zero_positive :
   simp [diagonalRedundancyPenalty]
 
 /--
-If even one diagonal entry is collapsed to `0` while all other entries are ideal, the redundancy
+If even one diagonal entry is collapsed to $0$ while all other entries are ideal, the redundancy
 objective is positive.
 -/
 theorem redundancyReductionObjective_collapsed_diag_positive

@@ -19,7 +19,7 @@ The theorem separates the three mathematically different sources of error:
 - **real approximation**: the ideal real-valued ReLU MLP approximates the target,
 - **parameter quantization**: the real MLP is close to the real interpretation of the IEEE
   parameters, and
-- **IEEE execution**: the executable graph, interpreted back into `ℝ`, is close to the real graph
+- **IEEE execution**: the executable graph, interpreted back into $\mathbb{R}$, is close to the real graph
   with those interpreted parameters.
 
 This is the finite-dimensional analogue of the hinge-network executable bound in
@@ -49,15 +49,18 @@ noncomputable section
 
 Read this as:
 
-Given an IEEE32Exec input `xI`, let `xR` be its real interpretation (`toReal` elementwise).
+Given an IEEE32Exec input `xI`, let $x_R$ be its real interpretation (`toReal` elementwise).
 If:
 
-1) the target `f` is approximated by a real 2-layer ReLU MLP (error ≤ εApprox),
-2) the real MLP is close to the real interpretation of the IEEE parameters (error ≤ εQ),
-3) executing the IEEE MLP and then mapping to reals is close to the real interpretation
-   of those IEEE parameters (error ≤ εR),
+1. the target $f$ is approximated by a real two-layer ReLU MLP with error
+   at most $\varepsilon_{\mathrm{approx}}$,
+2. the real MLP is close to the real interpretation of the IEEE parameters, with error at most
+   $\varepsilon_Q$,
+3. executing the IEEE MLP and then mapping to reals is close to the real interpretation
+   of those IEEE parameters, with error at most $\varepsilon_R$,
 
-then the IEEE32Exec execution approximates `f` within εApprox + εQ + εR.
+then the IEEE32Exec execution approximates $f$ within
+$\varepsilon_{\mathrm{approx}}+\varepsilon_Q+\varepsilon_R$.
 -/
 
 theorem relu_twoLayerMlp_ieee32exec_threeTerm

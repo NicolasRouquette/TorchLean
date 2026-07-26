@@ -23,7 +23,8 @@ This runtime-oriented `Dual α` scalar can be used to compute:
 Notes:
 - This is an *execution* facility. It is not connected to the `fderiv` proof layer.
 - Non-smooth primitives (`abs`, `max`, `min`) use a subgradient-like choice based on the primal.
-- `Pow` uses the standard `x^y` rule (`d (x^y) = x^y * (y' * log x + y * x'/x)`), which is
+- `Pow` uses the standard $x^y$ rule,
+  $d(x^y)=x^y(y'\log x+yx'/x)$, which is
   only mathematically justified on domains where that expression is defined.
 -/
 
@@ -38,7 +39,7 @@ open Spec
 open Tensor
 
 /--
-A dual number `x + ε·dx` used for forward-mode automatic differentiation.
+A dual number $x+\varepsilon\,dx$ used for forward-mode automatic differentiation.
 
 `re` is the primal value and `du` is the tangent (directional derivative). When you run a
 computation once on dual inputs, the resulting `du` component computes a Jacobian-vector product.
@@ -72,13 +73,14 @@ namespace Dual
 instance {α : Type} [Inhabited α] [Zero α] : Inhabited (Dual α) :=
   ⟨⟨default, 0⟩⟩
 
-/-- Zero dual number: `0 + ε·0`. -/
+/-- Zero dual number: $0+\varepsilon\cdot0$. -/
 instance {α : Type} [Zero α] : Zero (Dual α) where
   zero := ⟨0, 0⟩
-/-- One dual number: `1 + ε·0`. -/
+/-- One dual number: $1+\varepsilon\cdot0$. -/
 instance {α : Type} [One α] [Zero α] : One (Dual α) where
   one := ⟨1, 0⟩
-/-- Negation is componentwise (`-(x + ε·dx) = (-x) + ε·(-dx)`). -/
+/-- Negation is componentwise:
+$-(x+\varepsilon\,dx)=-x+\varepsilon(-dx)$. -/
 instance {α : Type} [Neg α] : Neg (Dual α) where
   neg x := ⟨-x.re, -x.du⟩
 
@@ -89,11 +91,12 @@ instance {α : Type} [Add α] : Add (Dual α) where
 instance {α : Type} [Sub α] : Sub (Dual α) where
   sub x y := ⟨x.re - y.re, x.du - y.du⟩
 
-/-- Multiplication uses the product rule: `(x·y)' = x'·y + x·y'`. -/
+/-- Multiplication uses the product rule: $(xy)'=x'y+xy'$. -/
 instance {α : Type} [Mul α] [Add α] : Mul (Dual α) :=
   ⟨fun x y => ⟨x.re * y.re, x.du * y.re + x.re * y.du⟩⟩
 
-/-- Division uses the quotient rule: `(x / y)' = (x'·y - x·y') / y^2`. -/
+/-- Division uses the quotient rule:
+$(x/y)'=(x'y-xy')/y^2$. -/
 instance {α : Type} [Div α] [Mul α] [Sub α] [Add α] : Div (Dual α) :=
   ⟨fun x y =>
     -- (x / y)' = (x' y - x y') / y^2
@@ -170,7 +173,7 @@ instance {α : Type} [Context α] : MathFunctions (Dual α) where
 /--
 Power rule for `x^y` over dual numbers.
 
-We use the standard identity `d(x^y) = x^y * (y' * log x + y * x'/x)`, which is mathematically
+We use the standard identity $d(x^y)=x^y(y'\log x+yx'/x)$, which is mathematically
 justified only on domains where the right-hand side is defined.
 -/
 instance {α : Type} [Context α] : Pow (Dual α) (Dual α) where

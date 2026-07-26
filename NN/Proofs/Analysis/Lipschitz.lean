@@ -35,7 +35,8 @@ derive Lipschitz-style bounds for common neural-network building blocks.
   theorems and includes bridge lemmas where those polymorphic specs need theorem-level support.
 
 ## PyTorch correspondence / citations
-- L2/L1/L∞ norms correspond to PyTorch’s `torch.linalg.*_norm` / `torch.linalg.norm` APIs.
+- $\ell_2$/$\ell_1$/$\ell_\infty$ norms correspond to PyTorch’s `torch.linalg.*_norm` /
+  `torch.linalg.norm` APIs.
   https://pytorch.org/docs/stable/generated/torch.linalg.vector_norm.html
   https://pytorch.org/docs/stable/generated/torch.linalg.norm.html
 - ReLU corresponds to `torch.nn.functional.relu` (and `torch.nn.relu`).
@@ -77,35 +78,33 @@ open Spec (dot tensorNormSquared tensor_norm_squared_nonneg tensor_norm_squared_
 -- ====================================================================
 
 /--
-L2 norm (Euclidean norm) for tensors.
+$\ell_2$ norm (Euclidean norm) for tensors.
 Fundamental for measuring tensor magnitudes and distances.
 -/
 noncomputable def tensorL2Norm {s : Shape} (t : Tensor ℝ s) : ℝ :=
   Real.sqrt (tensorNormSquared t)
 
 /--
-L∞ norm (maximum norm) for tensors.
+$\ell_\infty$ norm (maximum norm) for tensors.
 Important for uniform convergence and pointwise bounds.
 -/
 noncomputable def tensorLInftyNorm {s : Shape} (t : Tensor ℝ s) : ℝ :=
   tensorFoldlSpec (fun acc x => max acc (|x|)) (0 : ℝ) t
 
 /--
-L1 norm (Manhattan norm) for tensors.
+$\ell_1$ norm (Manhattan norm) for tensors.
 Useful for sparsity-inducing regularization.
 -/
 noncomputable def tensorL1Norm {s : Shape} (t : Tensor ℝ s) : ℝ :=
   sumSpec (absSpec t)
 
 /--
-Distance function based on L2 norm.
+Distance function based on the $\ell_2$ norm.
 -/
 noncomputable def tensorL2Dist {s : Shape} (x y : Tensor ℝ s) : ℝ :=
   tensorL2Norm (subSpec x y)
 
-/--
-Distance function based on L∞ norm.
--/
+/-- Distance function based on the $\ell_\infty$ norm. -/
 noncomputable def tensorLInftyDist {s : Shape} (x y : Tensor ℝ s) : ℝ :=
   tensorLInftyNorm (subSpec x y)
 
@@ -113,15 +112,16 @@ noncomputable def tensorLInftyDist {s : Shape} (x y : Tensor ℝ s) : ℝ :=
 ## Cross-library norm facts
 
 `NN.MLTheory.Robustness.Spec` defines a scalar-polymorphic `tensor_linf_norm`. In this file we work
-over `ℝ` and often use `tensor_l2_norm`. The key inequality `‖v‖∞ ≤ ‖v‖₂` is what lets L2-based
-Lipschitz proofs feed directly into the `L∞`-robustness lemmas.
+over $\mathbb R$ and often use `tensor_l2_norm`. The key inequality
+$\lVert v\rVert_\infty\le\lVert v\rVert_2$ is what lets $\ell_2$-based
+Lipschitz proofs feed directly into the $\ell_\infty$-robustness lemmas.
 -/
 
 /--
-For a real vector-valued tensor, the `L∞` norm from `NN.MLTheory.Robustness.Spec` is bounded by the
-`L2` norm from this file:
+For a real vector-valued tensor, the $\ell_\infty$ norm from
+`NN.MLTheory.Robustness.Spec` is bounded by the $\ell_2$ norm from this file:
 
-`‖v‖∞ ≤ ‖v‖₂`.
+$\lVert v\rVert_\infty\le\lVert v\rVert_2$.
 -/
 theorem tensor_linf_norm_le_tensor_l2_norm {n : Nat} (y : Tensor ℝ (.dim n .scalar)) :
     NN.MLTheory.Robustness.Spec.tensorLinfNorm (α := ℝ) y ≤ tensorL2Norm y := by
@@ -201,14 +201,14 @@ theorem tensor_linf_norm_le_tensor_l2_norm {n : Nat} (y : Tensor ℝ (.dim n .sc
 -- Basic norm properties used throughout the Lipschitz development.
 
 /--
-L2 norm is non-negative.
+The $\ell_2$ norm is nonnegative.
 -/
 theorem tensor_l2_norm_nonneg {s : Shape} (t : Tensor ℝ s) :
   tensorL2Norm t ≥ (0 : ℝ) := by
   simp [tensorL2Norm]
 
 /--
-L2 norm is zero iff tensor is zero.
+The $\ell_2$ norm is zero if and only if the tensor is zero.
 -/
 theorem tensor_l2_norm_zero_iff {s : Shape} (t : Tensor ℝ s) :
   tensorL2Norm t = (0 : ℝ) ↔ t = fill (0 : ℝ) s := by
@@ -333,9 +333,8 @@ theorem dot_add_add {s : Shape} (x y : Tensor ℝ s) :
   -- This follows from the fact that a + a = 2 * a
   ring
 
-/--
-Bilinearity of dot product: dot (x + ty) (x + ty) = ||x||² + 2t⟨x,y⟩ + t²||y||²
--/
+/-- Bilinearity of the dot product:
+$\operatorname{dot}(x+ty,x+ty)=\lVert x\rVert^2+2t\langle x,y\rangle+t^2\lVert y\rVert^2$. -/
 theorem dot_quadratic_expand {s : Shape} (x y : Tensor ℝ s) (t : ℝ) :
   dot (addSpec x (scaleSpec y t)) (addSpec x (scaleSpec y t)) =
   dot x x + 2 * t * dot x y + t^2 * dot y y := by
@@ -363,7 +362,8 @@ theorem dot_quadratic_expand {s : Shape} (x y : Tensor ℝ s) (t : ℝ) :
 
 /--
 Cauchy-Schwarz inequality for tensors.
-For any tensors x, y: |⟨x,y⟩| ≤ ||x|| * ||y||
+For any tensors $x$ and $y$,
+$|\langle x,y\rangle|\le\lVert x\rVert\,\lVert y\rVert$.
 This is a fundamental inequality in inner product spaces.
 -/
 theorem tensor_cauchy_schwarz {s : Shape} (x y : Tensor ℝ s) :
@@ -539,7 +539,7 @@ theorem tensor_cauchy_schwarz {s : Shape} (x y : Tensor ℝ s) :
     exact sqrt_ineq
 
 /--
-Triangle inequality for L2 norm.
+Triangle inequality for the $\ell_2$ norm.
 -/
 theorem tensor_l2_norm_triangle {s : Shape} (x y : Tensor ℝ s) :
   tensorL2Norm (addSpec x y) ≤ tensorL2Norm x + tensorL2Norm y := by
@@ -596,7 +596,7 @@ theorem tensor_l2_norm_triangle {s : Shape} (x y : Tensor ℝ s) :
     _ = Real.sqrt (tensorNormSquared x) + Real.sqrt (tensorNormSquared y) := by
       unfold tensorL2Norm; rfl
 /--
-Homogeneity of L2 norm.
+Homogeneity of the $\ell_2$ norm.
 -/
 theorem tensor_l2_norm_scale {s : Shape} (t : Tensor ℝ s) (c : ℝ) :
   tensorL2Norm (scaleSpec t c) = |c| * tensorL2Norm t := by
@@ -722,7 +722,7 @@ theorem relu_scalar_tensor_lipschitz (x y : Tensor ℝ .scalar) :
 
 /--
 General ReLU Lipschitz theorem for arbitrary tensor shapes.
-Main result: ReLU is 1-Lipschitz in L2 norm for any tensor shape.
+Main result: ReLU is 1-Lipschitz in the $\ell_2$ norm for any tensor shape.
 -/
 theorem relu_lipschitz_general {s : Shape} (x y : Tensor ℝ s) :
   tensorL2Dist (reluSpec x) (reluSpec y) ≤ tensorL2Dist x y := by
@@ -928,7 +928,7 @@ theorem relu_lipschitz_general {s : Shape} (x y : Tensor ℝ s) :
       exact ih_fold (k + 1) _ _ k_plus_one_le new_acc_ineq' h_next
 
 /--
-Vector-shaped ReLU is 1-Lipschitz in L2.
+Vector-shaped ReLU is 1-Lipschitz in $\ell_2$.
 
 This theorem is just the vector specialization of `relu_lipschitz_general`, but it is convenient
 for callers working with ordinary `.dim n .scalar` activations.
@@ -1056,8 +1056,14 @@ theorem mat_vec_mul_spec_zero {m n : Nat} (W : Tensor ℝ (.dim m (.dim n .scala
 Upper bound on a matrix operator norm.
 
 We use the Frobenius-norm-style bound:
-`matrix_op_norm W = √(∑ i, ‖row_i‖₂²)`,
-which satisfies `‖W x‖₂ ≤ matrix_op_norm W * ‖x‖₂`.
+
+$$
+\operatorname{matrixOpNorm}(W)
+=\sqrt{\sum_i\lVert\operatorname{row}_i(W)\rVert_2^2},
+$$
+
+which satisfies
+$\lVert Wx\rVert_2\le\operatorname{matrixOpNorm}(W)\lVert x\rVert_2$.
 -/
 noncomputable def matrixOpNorm {m n : Nat} (W : Tensor ℝ (.dim m (.dim n .scalar))) : ℝ :=
   Real.sqrt (∑ i : Fin m, tensorNormSquared (get W i))
@@ -1097,9 +1103,8 @@ private lemma mat_vec_coord_eq_dot_row {m n : Nat}
   intro j _
   simp [toVec_get_eq_get2 (W := W) (i := i) (j := j)]
 
-/--
-Frobenius-based operator norm bound: `‖W x‖₂ ≤ matrix_op_norm W * ‖x‖₂`.
--/
+/-- Frobenius-based operator norm bound:
+$\lVert Wx\rVert_2\le\operatorname{matrixOpNorm}(W)\lVert x\rVert_2$. -/
 theorem matrix_spectral_norm_bound {m n : Nat}
   (W : Tensor ℝ (.dim m (.dim n .scalar)))
   (x : Tensor ℝ (.dim n .scalar)) :
@@ -1208,7 +1213,7 @@ theorem matrix_spectral_norm_bound {m n : Nat}
   simpa using hsqrt
 
 /--
-Linear transformation preserves L2 norm bounds.
+Linear transformations preserve $\ell_2$-norm bounds.
 Fundamental theorem for neural network stability analysis.
 -/
 theorem linear_op_norm_bound {m n : Nat}

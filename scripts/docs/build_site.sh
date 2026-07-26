@@ -23,7 +23,7 @@ if [ "${SKIP_DOCGEN:-0}" = "1" ]; then
   echo "    Reusing .lake/build/doc"
 else
   rm -rf .lake/build/doc .lake/build/doc-data .lake/build/api-docs.db
-  DISABLE_EQUATIONS=1 lake build NN:docs
+  DISABLE_EQUATIONS=1 lake build TorchLeanDocs:docs
 fi
 
 echo "==> Copying DocGen output"
@@ -39,7 +39,10 @@ rm -rf home_page/manual
 
 echo "==> Building Verso Guide (Blueprint Package)"
 rm -rf _out/blueprint
-(cd blueprint && lake exe blueprint-gen --output ../_out/blueprint)
+(cd blueprint && lake exe vbp build --output ../_out/blueprint)
+(cd blueprint && lake exe vbp check --site ../_out/blueprint)
+test -s _out/blueprint/html-multi/-verso-data/blueprint-manifest.json
+test -s _out/blueprint/html-multi/-verso-data/blueprint-html-cache.json
 # Verso does not automatically copy arbitrary guide assets in every local build
 # mode, so mirror the guide asset directory before polishing the generated HTML.
 if [ -d blueprint/TorchLeanBlueprint/Guide/Assets ]; then
@@ -52,12 +55,10 @@ mkdir -p home_page/blueprint
 cp -r _out/blueprint/html-multi/* home_page/blueprint/
 
 echo "==> Building dependency graph audit"
-# The homepage graph page consumes this JSON directly; the Markdown file is a
-# readable companion artifact for debugging site builds.
+# The Graphs page reads this JSON to populate the import explorer.
 python3 scripts/checks/dependency_audit.py \
   --root "$ROOT" \
   --json home_page/graphs/dependency-audit.json \
-  --markdown home_page/graphs/dependency-audit.md \
   --fail-on-error
 
 echo "==> Building interactive import graph HTML"
@@ -100,6 +101,54 @@ fi
 
 echo "==> Building Jekyll site"
 (cd home_page && rm -rf _site && "${BUNDLE_CMD[@]}" exec jekyll build --config _config.yml,_config_dev.yml)
+jekyll_content_pages=0
+while IFS= read -r -d '' page; do
+  if grep -Fq "<main" "$page"; then
+    jekyll_content_pages=$((jekyll_content_pages + 1))
+    grep -Fq "mathjax@3/es5/tex-chtml.js" "$page" || {
+      echo "error: MathJax is not loaded by $page" >&2
+      exit 1
+    }
+    grep -Fq "packages: {'[-]': ['noundefined']}" "$page" || {
+      echo "error: MathJax does not report unsupported TeX commands in $page" >&2
+      exit 1
+    }
+  fi
+done < <(
+  find home_page/_site -type f -name "*.html" \
+    ! -path "home_page/_site/blueprint/*" \
+    ! -path "home_page/_site/docs/*" \
+    ! -path "home_page/_site/importgraph/*" \
+    -print0
+)
+if [ "$jekyll_content_pages" -eq 0 ]; then
+  echo "error: no Jekyll content pages were generated" >&2
+  exit 1
+fi
+python3 - <<'PY'
+import re
+from pathlib import Path
+
+site = Path("home_page/_site")
+excluded = ("blueprint/", "docs/", "importgraph/")
+ignored_html = re.compile(
+    r"<(script|style|pre|code)\b[^>]*>.*?</\1>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+inline_math = re.compile(r"(?<!\$)\$(?!\$)(.*?)(?<!\$)\$(?!\$)", flags=re.DOTALL)
+
+for page in site.rglob("*.html"):
+    relative = page.relative_to(site).as_posix()
+    if relative.startswith(excluded):
+        continue
+    html = ignored_html.sub("", page.read_text(encoding="utf-8"))
+    for formula in inline_math.finditer(html):
+        if "<" in formula.group(1):
+            raise SystemExit(
+                f"error: Jekyll inserted HTML inside inline math in {page}; "
+                "escape Markdown-sensitive characters in the source formula"
+            )
+PY
 
 cat <<'EOF'
 

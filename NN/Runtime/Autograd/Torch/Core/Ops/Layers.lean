@@ -46,7 +46,6 @@ def linear {α : Type} (s : EagerSession α) [Inhabited α] [Add α] [Mul α] [Z
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .linear
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.linear (t := t0) (outDim := outDim) (inDim := inDim) w.id b.id x.id
@@ -64,7 +63,6 @@ def mseLoss {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α)
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .mseLoss
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.mseLoss (t := t0) (s := sh) yhat.id target.id
@@ -89,7 +87,6 @@ def layerNorm {α : Type} (s : EagerSession α) [Context α]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .layerNorm
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.layerNorm (t := t0)
       (seqLen := seqLen) (embedDim := embedDim) (h_seq_pos := h_seq_pos) (h_embed_pos := h_embed_pos)
@@ -116,7 +113,6 @@ def batchnormChannelFirst {α : Type} (s : EagerSession α) [Context α]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .batchNorm
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.batchnormChannelFirst (t := t0)
       (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h)
@@ -145,16 +141,16 @@ def multiHeadAttention {α : Type} (s : EagerSession α) [Context α]
       wq.id wk.id wv.id wo.id x.id mask)
     s.tape.set t1
     pure { id := id }
-  let cuda := do
+  let cuda := fun attentionCapsule => do
     let t0 ← s.cudaTape.get
-    let attentionCapsule ← s.selectedCapsule NN.Backend.Attention.scaledDotProductOp
     let result ← Runtime.Autograd.Cuda.Tape.multiHeadAttention (t := t0)
       (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim) (h1 := h1)
       wq.id wk.id wv.id wo.id x.id (mask := mask) (attentionCapsule := attentionCapsule)
     let (t1, id) ← okOrThrow result
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .scaledDotProductAttention cpu cuda
+  dispatchCudaCapsuleOpt (α := α) s .scaledDotProductAttention
+    [.nativeCuda, .torchLean, .libTorch] cpu cuda
 
 end EagerSession
 

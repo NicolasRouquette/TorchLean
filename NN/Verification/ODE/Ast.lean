@@ -14,14 +14,17 @@ public import NN.Spec.Core.Tensor
 ODE RHS expression language + interval evaluator.
 
 This is a small companion to the existing PINN PDE DSL, specialized for ODE IVPs:
-  u'(t) = f(t, u(t)).
+
+$$
+u'(t)=f(t,u(t)).
+$$
 
 We use conservative interval arithmetic over `α × α` intervals (for any scalar `α` with a
 `Context` instance), with a few common transcendentals (`sin`, `cos`, `exp`, `log`) needed by the
 benchmarks in arXiv:2601.19818.
 
 For the trigonometric cases we use a 1-Lipschitz enclosure around the midpoint and then clamp to
-`[-1,1]`. Over real-valued semantics this is the intended enclosure argument; executable scalar
+$[-1,1]$. Over real-valued semantics this is the intended enclosure argument; executable scalar
 backends rely on their `Context` operations matching the assumed real behavior closely enough for
 the checker mode being used.
 -/
@@ -34,7 +37,7 @@ namespace NN.Verification.ODE
 open Spec
 
 /--
-`Expr` is an AST for ODE right-hand sides `f(t,u)`.
+`Expr` is an AST for ODE right-hand sides $f(t,u)$.
 
 We cover the arithmetic and elementary functions needed by the ODE certificate format used in
 TorchLean: constants, the independent variable `t`, the state variable `u`, field arithmetic, and
@@ -82,7 +85,8 @@ against the mathematical interval rule it implements. -/
 /--
 Whether a checker scalar is finite under the supported `Float` and `IEEE32Exec` backends.
 
-Both backends produce NaN for `∞ - ∞` and for `NaN - NaN`, whereas every finite value subtracts
+Both backends produce NaN for $\infty-\infty$ and for $\mathrm{NaN}-\mathrm{NaN}$, whereas every
+finite value subtracts
 from itself to zero. Expressing the guard through `Context` keeps the interval evaluator generic
 without relying on a backend-specific bit decoder.
 -/
@@ -90,9 +94,9 @@ without relying on a backend-specific bit decoder.
   x - x == (0 : α)
 
 /--
-Boolean `x ≤ y` test that rejects NaN and infinite endpoints.
+Boolean $x\leq y$ test that rejects NaN and infinite endpoints.
 
-Writing this as `¬ x > y` would treat unordered values as less than or equal to every value. Some
+Writing this as $\neg(x>y)$ would treat unordered values as less than or equal to every value. Some
 host `Float` comparisons also use a total implementation order, so the explicit finite guards are
 part of the certificate check rather than an optimization.
 -/

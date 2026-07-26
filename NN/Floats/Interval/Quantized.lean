@@ -11,24 +11,25 @@ public import Mathlib.Data.EReal.Basic
 public import NN.Floats.Interval.Rounders
 
 /-!
-# Quantized interval arithmetic (rounding-on-`ℝ`, overflow-aware)
+# Quantized interval arithmetic (rounding on $\mathbb{R}$, overflow-aware)
 
 This file provides a **sound enclosure** layer for real computations where interval endpoints are
-snapped outward to a chosen representable grid (a Flocq-style `(β,fexp)` format).
+snapped outward to a chosen representable grid (a Flocq-style $(\beta,\mathtt{fexp})$ format).
 
 The main intended use is verification/bounding:
 
-- You start from a real interval `x ∈ [lo,hi]`.
+- You start from a real interval $x\in[\mathtt{lo},\mathtt{hi}]$.
 - You propagate it through primitive operations and monotone nonlinearities.
 - After each primitive, you quantize the endpoint outward via a `Rounder` (down/up).
 
 Compared to an executable IEEE kernel:
-- This is proof-friendly (everything lives in `ℝ`/`EReal` and uses Flocq-style rounding).
+- This is proof-friendly (everything lives in $\mathbb{R}$ or `EReal` and uses Flocq-style
+  rounding).
 - It is *not* a bit-level IEEE-754 model (no NaN payloads, signed zero rules, etc.).
 
 Overflow-awareness:
 - We use `EReal` (extended reals) to represent unbounded intervals arising from division by an
-  interval that contains `0`.
+  interval that contains $0$.
 
 References:
 - IEEE 1788-2015 (interval arithmetic).
@@ -43,7 +44,7 @@ namespace TorchLean.Floats.Interval
 
 open scoped BigOperators
 
-/-- A closed real interval `[lo,hi]`. -/
+/-- A closed real interval $[\mathtt{lo},\mathtt{hi}]$. -/
 structure RInterval where
   /-- lo. -/
   lo : ℝ
@@ -52,23 +53,25 @@ structure RInterval where
 
 namespace RInterval
 
-/-- Membership predicate: `x ∈ I` means `I.lo ≤ x ≤ I.hi`. -/
+/-- Membership predicate: $x\in I$ means
+$I.\mathtt{lo}\le x\le I.\mathtt{hi}$. -/
 def mem (I : RInterval) (x : ℝ) : Prop :=
   I.lo ≤ x ∧ x ≤ I.hi
 
-/-- Enable `x ∈ I` notation for real intervals. -/
+/-- Enable $x\in I$ notation for real intervals. -/
 instance : Membership ℝ RInterval where
   mem I x := I.mem x
 
-/-- Unfold membership: `x ∈ I ↔ I.lo ≤ x ∧ x ≤ I.hi`. -/
+/-- Unfold membership:
+$x\in I\iff I.\mathtt{lo}\le x\land x\le I.\mathtt{hi}$. -/
 @[simp] theorem mem_iff (I : RInterval) (x : ℝ) : x ∈ I ↔ I.lo ≤ x ∧ x ≤ I.hi :=
   Iff.rfl
 
-/-- Validity predicate: endpoints are ordered (`lo ≤ hi`). -/
+/-- Validity predicate: endpoints are ordered ($\mathtt{lo}\le\mathtt{hi}$). -/
 def Valid (I : RInterval) : Prop :=
   I.lo ≤ I.hi
 
-/-- Degenerate interval `[x,x]`. -/
+/-- Degenerate interval $[x,x]$. -/
 @[inline] def point (x : ℝ) : RInterval := ⟨x, x⟩
 
 /-- Membership in a point interval is equality. -/
@@ -80,26 +83,28 @@ def Valid (I : RInterval) : Prop :=
     subst h
     constructor <;> rfl
 
-/-- Interval negation: `-[lo,hi] = [-hi,-lo]`. -/
+/-- Interval negation:
+$-[\mathtt{lo},\mathtt{hi}]=[-\mathtt{hi},-\mathtt{lo}]$. -/
 @[inline] def neg (I : RInterval) : RInterval := ⟨-I.hi, -I.lo⟩
 
 /-- Outward-rounded interval addition, using the provided endpoint `Rounder`. -/
 @[inline] def add (R : Rounder) (A B : RInterval) : RInterval :=
   ⟨R.down (A.lo + B.lo), R.up (A.hi + B.hi)⟩
 
-/-- Interval subtraction, implemented as `A + (-B)` so soundness reuses `mem_add` and `mem_neg`. -/
+/-- Interval subtraction, implemented as $A+(-B)$ so soundness reuses `mem_add` and `mem_neg`. -/
 @[inline] def sub (R : Rounder) (A B : RInterval) : RInterval :=
   add R A (neg B)
 
 /--
-Maximum absolute endpoint magnitude: `max |lo| |hi|`.
+Maximum absolute endpoint magnitude:
+$\max(|\mathtt{lo}|,|\mathtt{hi}|)$.
 
 This is a convenient (and very proof-stable) way to get a coarse enclosure for products.
 -/
 noncomputable def absMax (I : RInterval) : ℝ :=
   max |I.lo| |I.hi|
 
-/-- If `x ∈ I`, then `|x| ≤ absMax I`. -/
+/-- If $x\in I$, then $|x|\le\operatorname{absMax}(I)$. -/
 theorem abs_le_absMax {I : RInterval} {x : ℝ} (hx : x ∈ I) :
     |x| ≤ absMax I := by
   -- `abs` is convex on ℝ; max on an interval occurs at endpoints.
@@ -108,8 +113,9 @@ theorem abs_le_absMax {I : RInterval} {x : ℝ} (hx : x ∈ I) :
 /--
 Loose-but-sound multiplication enclosure.
 
-For `x ∈ A`, `y ∈ B` we have `|x*y| ≤ absMax A * absMax B`, hence
-`x*y ∈ [-M, M]`. We then outward-round the endpoints via `R`.
+For $x\in A$ and $y\in B$, we have
+$|xy|\le\operatorname{absMax}(A)\operatorname{absMax}(B)$, hence $xy\in[-M,M]$.
+We then outward-round the endpoints via `R`.
 
 This bound is conservative and serves as a generally applicable, proof-stable fallback. The
 executable IEEE interval layer provides the tighter four-corner multiplication theorem when that
@@ -176,7 +182,7 @@ theorem mem_exp {R : Rounder} {A : RInterval} {x : ℝ} (hx : x ∈ A) :
     exact le_trans this (R.le_up _)
 
 /--
-Coarse `tanh` enclosure `[-1, 1]` with outward-rounded endpoints.
+Coarse `tanh` enclosure $[-1,1]$ with outward-rounded endpoints.
 
 We use this instead of a tighter monotone bound because `tanh` is bounded everywhere and the
 uniform bound is often enough for verification pipelines.
@@ -184,7 +190,7 @@ uniform bound is often enough for verification pipelines.
 noncomputable def tanhBounds (R : Rounder) : RInterval :=
   ⟨R.down (-1), R.up 1⟩
 
-/-- Soundness of `tanhBounds`: `Real.tanh x ∈ [-1,1]`. -/
+/-- Soundness of `tanhBounds`: $\tanh x\in[-1,1]$. -/
 theorem mem_tanhBounds {R : Rounder} (x : ℝ) :
     Real.tanh x ∈ tanhBounds R := by
   -- `tanh x = sinh x / cosh x`, `cosh x > 0`, and `sinh x < cosh x`.
@@ -227,7 +233,8 @@ theorem mem_tanh {R : Rounder} {A : RInterval} {x : ℝ} (_hx : x ∈ A) :
     Real.tanh x ∈ tanh R A := by
   simpa [tanh] using (mem_tanhBounds (R := R) x)
 
-/-- Outward-rounded interval enclosure for `Real.sqrt` (requires `0 ≤ lo`). -/
+/-- Outward-rounded interval enclosure for `Real.sqrt` (requires
+$0\le\mathtt{lo}$). -/
 noncomputable def sqrt (R : Rounder) (A : RInterval) : RInterval :=
   ⟨R.down (Real.sqrt A.lo), R.up (Real.sqrt A.hi)⟩
 
@@ -241,7 +248,8 @@ theorem mem_sqrt {R : Rounder} {A : RInterval} {x : ℝ} (hA : 0 ≤ A.lo) (hx :
   · have : Real.sqrt x ≤ Real.sqrt A.hi := by exact Real.sqrt_le_sqrt hx.2
     exact le_trans this (R.le_up _)
 
-/-- Outward-rounded interval enclosure for `Real.log` (requires `0 < lo`). -/
+/-- Outward-rounded interval enclosure for `Real.log` (requires
+$0<\mathtt{lo}$). -/
 noncomputable def log (R : Rounder) (A : RInterval) : RInterval :=
   ⟨R.down (Real.log A.lo), R.up (Real.log A.hi)⟩
 

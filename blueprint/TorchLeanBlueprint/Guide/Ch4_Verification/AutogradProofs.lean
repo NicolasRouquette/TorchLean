@@ -268,7 +268,7 @@ $$`\operatorname{backpropGradient}
 =
 \left(D\,\operatorname{loss}\right)^{\!*}(1)`
 
-Equivalently, for parameters `θ` and a scalar loss `L(θ)=\ell(f_\theta(x),t)`, the gradient
+Equivalently, for parameters $`\theta` and a scalar loss $`L(\theta)=\ell(f_\theta(x),t)`, the gradient
 statement has the shape
 
 $$`\nabla_\theta L(\theta)
@@ -361,7 +361,7 @@ extensions can refine.
 The optimizer theory page extends this idea for larger update records. The autograd page should not
 be read as proving optimizer convergence. It proves the gradient side of the handoff:
 
-$$`\text{reverse pass returns }(D_\theta L(\theta))^\* 1.`
+$$`\text{reverse pass returns }(D_\theta L(\theta))^{\ast} 1.`
 
 Optimization theory then decides what an update using that gradient means under step-size,
 smoothness, convexity, or backend-certification hypotheses.

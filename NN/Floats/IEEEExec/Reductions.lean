@@ -31,9 +31,10 @@ Assuming a local rounded-addition model with parameter `u`, we derive a global e
 parameters depend only on:
 
 - `n` (the number of leaves), and
-- `A = Σ |leaf_i|` (a scale factor).
+- $A=\sum_i|\mathtt{leaf}_i|$ (a scale factor).
 
-This matches the standard "γ_k-style" summation bounds where order-dependence is absorbed by `A`
+This matches the standard $\gamma_k$-style summation bounds where order-dependence is absorbed by
+$A$
 (sum of absolute values) and a growth factor in `n`.
 
 For `IEEE32Exec`, we connect the executable `add` to the real model `fp32Round (a + b)`, but only on
@@ -47,7 +48,7 @@ This is a direct formalization of standard numerical-analysis results for parall
 - David Goldberg, “What Every Computer Scientist Should Know About Floating-Point Arithmetic”
   (1991). DOI: 10.1145/103162.103163
 - Nicholas J. Higham, *Accuracy and Stability of Numerical Algorithms*, 2nd ed., SIAM (2002),
-  especially the summation chapter and the `γ_k`-style bounds.
+  especially the summation chapter and the $\gamma_k$-style bounds.
 - Sylvie Boldo and Guillaume Melquiond, “Flocq: A Unified Library for Proving Floating-Point
   Algorithms in Coq” (ARITH 2011). DOI: 10.1109/ARITH.2011.40
 
@@ -69,7 +70,7 @@ namespace TorchLean.Floats.IEEE754
 
 open TorchLean.Floats
 
-/-! ## Generic reduction trees over `ℝ` -/
+/-! ## Generic reduction trees over $\mathbb{R}$ -/
 
 universe u
 
@@ -111,7 +112,7 @@ theorem leafCount_pos (t : SumTree α) : 0 < t.leafCount := by
       -- `0 < a + b` since `0 < a`.
       simpa [leafCount] using Nat.add_pos_left ihA (leafCount b)
 
-/-- A reduction tree has `leafCount ≥ 1` (as a `Nat` inequality). -/
+/-- A reduction tree has $\mathtt{leafCount}\ge 1$ (as a `Nat` inequality). -/
 theorem leafCount_ge_one (t : SumTree α) : 1 ≤ t.leafCount :=
   Nat.succ_le_iff.mp (leafCount_pos t)
 
@@ -129,7 +130,7 @@ theorem growth_one (u : ℝ) : growth u 1 = 1 := by simp [growth]
 /--
 Monotonicity of the growth factor in the number of leaves.
 
-When `u ≥ 0` (which is the only meaningful regime for an error parameter), longer reductions have
+When $u\ge 0$ (which is the only meaningful regime for an error parameter), longer reductions have
 larger or equal worst-case amplification.
 -/
 theorem growth_mono (u : ℝ) (hu : 0 ≤ u) : Monotone (fun n => growth u n) := by
@@ -178,7 +179,8 @@ theorem sumAbs_nonneg (leafVal : α → ℝ) (t : SumTree α) : 0 ≤ sumAbs lea
 Triangle-inequality bound: the absolute value of the exact sum is at most the sum of absolute
 values.
 
-This is the standard inequality `|Σ a_i| ≤ Σ |a_i|` proved by induction on the tree shape.
+This is the standard inequality
+$\left|\sum_i a_i\right|\le\sum_i|a_i|$, proved by induction on the tree shape.
 -/
 theorem abs_exactSum_le_sumAbs (leafVal : α → ℝ) (t : SumTree α) :
     _root_.abs (exactSum leafVal t) ≤ sumAbs leafVal t := by
@@ -199,8 +201,13 @@ theorem abs_exactSum_le_sumAbs (leafVal : α → ℝ) (t : SumTree α) :
 Relative local rounded-addition assumption for reductions.
 
 This is the usual normal-range unit-roundoff envelope:
-`roundAdd a b = (a+b) + e`, with `|e| ≤ u*(|a|+|b|)`. Binary32 does **not** satisfy it globally
-with `u = 2⁻²⁴`: subnormal results require an absolute-error term. Consequently the executable
+$$
+\operatorname{roundAdd}(a,b)=(a+b)+e,
+\qquad
+|e|\le u(|a|+|b|).
+$$
+Binary32 does **not** satisfy it globally with $u=2^{-24}$: subnormal results require an
+absolute-error term. Consequently the executable
 theorems below take this predicate as an explicit hypothesis; it must be established from
 normal-range intermediate sums or replaced by an absolute/mixed analysis.
 -/
@@ -210,8 +217,9 @@ def RelativeLocalAddBound (roundAdd : ℝ → ℝ → ℝ) (u : ℝ) : Prop :=
 /--
 Order-independent enclosure for any reduction tree evaluated with `roundAdd`.
 
-Let `A = Σ |leaf_i|` be the sum of absolute values of leaves.
-For `n` leaves, the rounded evaluation is within `(growth u n - 1) * A` of the exact real sum.
+Let $A=\sum_i|\mathtt{leaf}_i|$ be the sum of absolute values of leaves.
+For $n$ leaves, the rounded evaluation is within
+$(\operatorname{growth}(u,n)-1)A$ of the exact real sum.
 -/
 theorem evalRound_enclosure_of_relativeLocalAddBound
     (roundAdd : ℝ → ℝ → ℝ) (leafVal : α → ℝ) (u : ℝ)
@@ -683,7 +691,7 @@ each pair, and then summing the products using *some* reduction tree whose leave
 of `xs`.
 
 The conclusion gives a witness tree `t` for that schedule and an order-independent enclosure:
-the accumulation result is close (in `ℝ`) to the exact sum of leaf products, with the same growth
+the accumulation result is close (in $\mathbb{R}$) to the exact sum of leaf products, with the same growth
 factor bound as in the plain-sum case.
 -/
 theorem dotTreeResult_enclosure

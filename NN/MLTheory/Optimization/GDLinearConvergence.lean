@@ -20,20 +20,23 @@ This file is a small, “real” optimization-theory module:
 
 It proves a linear convergence bound for the iteration
 
-`x_{k+1} = x_k - η g(x_k)`
+$$
+x_{k+1}=x_k-\eta g(x_k)
+$$
 
 under two assumptions on `g` over a real inner product space:
 
-1. `g` is **μ-strongly monotone**:
-   `μ‖x-y‖^2 ≤ ⟪x-y, g x - g y⟫`.
-2. `g` is **L-Lipschitz**:
-   `‖g x - g y‖ ≤ L‖x-y‖`.
+1. $g$ is **$\mu$-strongly monotone**:
+   $\mu\lVert x-y\rVert^2 \leq \langle x-y, g(x)-g(y)\rangle$.
+2. $g$ is **$L$-Lipschitz**:
+   $\lVert g(x)-g(y)\rVert \leq L\lVert x-y\rVert$.
 
-For gradients of `μ`-strongly convex and `L`-smooth functions, these are the standard operator-level
+For gradients of $\mu$-strongly convex and $L$-smooth functions, these are the standard
+operator-level
 properties that imply linear convergence of gradient descent with a suitable step size.
 
 This module avoids any heavy Fréchet-derivative setup: it is stated directly in terms
-of `g` so it can later be instantiated either by “`g = ∇f`” theorems or by verified gradients of
+of $g$ so it can later be instantiated either by $g=\nabla f$ theorems or by verified gradients of
 concrete TorchLean models.
 -/
 
@@ -66,8 +69,13 @@ theorem step_sub_step (η : ℝ) (g : E → E) (x y : E) :
 /--
 Key contraction-in-squared-norm inequality.
 
-If `g` is μ-strongly monotone and L-Lipschitz, then
-`‖step η g x - step η g y‖² ≤ q * ‖x - y‖²` with `q = 1 - 2ημ + η² L²`.
+If $g$ is $\mu$-strongly monotone and $L$-Lipschitz, then
+$$
+\lVert \operatorname{step}_\eta(g,x)-\operatorname{step}_\eta(g,y)\rVert^2
+  \leq q\lVert x-y\rVert^2,
+\qquad
+q=1-2\eta\mu+\eta^2L^2.
+$$
 -/
 theorem step_norm_sq_le (η μ : ℝ) (hη : 0 ≤ η) {L : NNReal} (g : E → E)
     (hmono : StrongMonotone μ g) (hlip : LipschitzWith L g)

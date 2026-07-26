@@ -33,38 +33,37 @@ theorem cos_eq_quietNaN_of_isNaN (x : IEEE32Exec) (hx : isNaN x = true) :
     cos x = quietNaN x := by
   simp [IEEE32Exec.cos, Trig.cos, Trig.sinCos, hx]
 
-/-- `sin(±Inf) = NaN`. -/
+/-- $\sin(+\infty)=\mathrm{NaN}$. -/
 theorem sin_posInf : sin posInf = canonicalNaN := by
   decide
 
-/-- `sin(±Inf) = NaN`. -/
+/-- $\sin(-\infty)=\mathrm{NaN}$. -/
 theorem sin_negInf : sin negInf = canonicalNaN := by
   decide
 
-/-- `cos(±Inf) = NaN`. -/
+/-- $\cos(+\infty)=\mathrm{NaN}$. -/
 theorem cos_posInf : cos posInf = canonicalNaN := by
   decide
 
-/-- `cos(±Inf) = NaN`. -/
+/-- $\cos(-\infty)=\mathrm{NaN}$. -/
 theorem cos_negInf : cos negInf = canonicalNaN := by
   decide
 
-/-- `sin(+0) = +0`. -/
+/-- $\sin(+0)=+0$. -/
 theorem sin_posZero : sin posZero = posZero := by
   decide
 
-/-- `sin(-0) = -0`. -/
+/-- $\sin(-0)=-0$. -/
 theorem sin_negZero : sin negZero = negZero := by
   decide
 
-/-- `cos(±0) = 1`. -/
+/-- $\cos(+0)=1$. -/
 theorem cos_posZero : cos posZero = ofBits 0x3F800000 := by
   decide
 
-/-- `cos(±0) = 1`. -/
+/-- $\cos(-0)=1$. -/
 theorem cos_negZero : cos negZero = ofBits 0x3F800000 := by
   decide
 
 end IEEE32Exec
 end TorchLean.Floats.IEEE754
-

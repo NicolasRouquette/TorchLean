@@ -19,7 +19,7 @@ explicit DFT matrices. This file proves the corresponding *exact* math facts ove
 numbers `ℂ`:
 
 - the inverse DFT matrix is a left inverse of the DFT matrix, and therefore
-- `ifft (fft x) = x` for vectors.
+- $\operatorname{ifft}(\operatorname{fft}(x))=x$ for vectors.
 
 We prove these statements in the mathlib `Matrix` world first. That choice is deliberate:
 primitive roots of unity, conjugate transposes, geometric sums, and matrix inverse facts already
@@ -49,20 +49,23 @@ namespace Fft
 
 /-! ## DFT / IDFT matrices -/
 
-/-- Primitive `n`-th root of unity: `ζₙ = exp(2π i / n)`. -/
+/-- Primitive `n`-th root of unity:
+$\zeta_n=\exp(2\pi i/n)$. -/
 def ζ (n : Nat) : ℂ :=
   Complex.exp (2 * Real.pi * Complex.I / n)
 
-/-- The “negative-frequency” root used by the DFT: `ωₙ = ζₙ⁻¹ = exp(-2π i / n)`. -/
+/-- The negative-frequency root used by the DFT:
+$\omega_n=\zeta_n^{-1}=\exp(-2\pi i/n)$. -/
 def ω (n : Nat) : ℂ :=
   (ζ n)⁻¹
 
 /--
 DFT matrix `F : n×n` (frequency × spatial), with entries:
 
-`F[k,j] = ωₙ^(j*k)`.
+$F_{k,j}=\omega_n^{jk}$.
 
-This matches the usual `exp(-2π i j*k/n)` convention (since `ωₙ = exp(-2π i / n)`).
+This matches the usual $\exp(-2\pi ijk/n)$ convention (since
+$\omega_n=\exp(-2\pi i/n)$).
 -/
 def dftMatrix (n : Nat) : Matrix (Fin n) (Fin n) ℂ :=
   fun k j => ω n ^ (j.val * k.val)
@@ -70,21 +73,24 @@ def dftMatrix (n : Nat) : Matrix (Fin n) (Fin n) ℂ :=
 /--
 Inverse DFT matrix `F⁻¹ : n×n` (spatial × frequency), with entries:
 
-`F⁻¹[j,k] = ζₙ^(j*k) / n`.
+$F^{-1}_{j,k}=\zeta_n^{jk}/n$.
 
-This matches the classical inverse scaling `1/n`.
+This matches the classical inverse scaling $1/n$.
 -/
 def idftMatrix (n : Nat) : Matrix (Fin n) (Fin n) ℂ :=
   fun j k => ζ n ^ (j.val * k.val) / n
 
 /-! ## Inversion theorem
 
-The proof follows the textbook orthogonality argument. The `(i,k)` entry of `IDFT * DFT` is
+The proof follows the textbook orthogonality argument. The $(i,k)$ entry of
+$\operatorname{IDFT}\operatorname{DFT}$ is
 
-`(1/n) * ∑ j, (ζ^i * (ζ^k)⁻¹)^j`.
+$$
+\frac1n\sum_j\left(\zeta^i(\zeta^k)^{-1}\right)^j.
+$$
 
-If `i = k`, the ratio is `1` and the sum is `n`. If `i ≠ k`, the ratio is a nontrivial `n`-th root
-of unity, so the geometric sum is `0`.
+If $i=k$, the ratio is $1$ and the sum is $n$. If $i\ne k$, the ratio is a nontrivial
+$n$-th root of unity, so the geometric sum is $0$.
 -/
 
 private lemma zeta_ne_zero (n : Nat) : ζ n ≠ 0 := by
@@ -92,7 +98,8 @@ private lemma zeta_ne_zero (n : Nat) : ζ n ≠ 0 := by
   simp [ζ]
 
 /--
-Geometric-sum lemma (specialized): if `r^n = 1` and `r ≠ 1`, then `∑_{j=0}^{n-1} r^j = 0`.
+Geometric-sum lemma (specialized): if $r^n=1$ and $r\ne1$, then
+$\sum_{j=0}^{n-1}r^j=0$.
 -/
 private lemma geom_sum_eq_zero_of_pow_eq_one {r : ℂ} {n : Nat} (hr : r ≠ 1) (hrn : r ^ n = 1) :
     (∑ j ∈ Finset.range n, r ^ j) = 0 := by
@@ -109,7 +116,7 @@ private lemma geom_sum_eq_zero_of_pow_eq_one {r : ℂ} {n : Nat} (hr : r ≠ 1) 
       hmul
 
 /--
-Main algebraic identity: `IDFT * DFT = 1` (over `ℂ`), for `n ≠ 0`.
+Main algebraic identity: $\operatorname{IDFT}\operatorname{DFT}=I$ (over `ℂ`), for $n\ne0$.
 
 This is the standard DFT inversion theorem.
 -/
@@ -251,7 +258,8 @@ private lemma star_zeta (n : Nat) : star (ζ n) = ω n := by
     _ = (ζ n)⁻¹ := by simp [ζ, x]
     _ = ω n := rfl
 
-/-- Conjugation sends the negative-frequency DFT root `ωₙ` back to the positive root `ζₙ`. -/
+/-- Conjugation sends the negative-frequency DFT root $\omega_n$ back to the positive root
+$\zeta_n$. -/
 private lemma star_omega (n : Nat) : star (ω n) = ζ n := by
   -- `ω = ζ⁻¹` and `star` preserves inverses.
   simp [ω, star_zeta (n := n)]
@@ -259,7 +267,7 @@ private lemma star_omega (n : Nat) : star (ω n) = ζ n := by
 /--
 On `ℂ`, the inverse DFT matrix is a scaled conjugate transpose of the DFT matrix:
 
-`F⁻¹ = (1/n) • Fᴴ`.
+$F^{-1}=n^{-1}F^{\mathrm H}$.
 -/
 theorem idftMatrix_eq_invNat_smul_conjTranspose_dftMatrix (n : Nat) :
     idftMatrix n = (1 / (n : ℂ)) • (dftMatrix n)ᴴ := by
@@ -270,9 +278,9 @@ theorem idftMatrix_eq_invNat_smul_conjTranspose_dftMatrix (n : Nat) :
     div_eq_mul_inv, mul_left_comm, mul_comm]
 
 /--
-Orthogonality identity (unitary form): `Fᴴ * F = n • 1`.
+Orthogonality identity (unitary form): $F^{\mathrm H}F=nI$.
 
-Equivalently, the DFT columns form an orthogonal basis with squared norm `n`.
+Equivalently, the DFT columns form an orthogonal basis with squared norm $n$.
 -/
 theorem conjTranspose_dft_mul_dft (n : Nat) (hn : n ≠ 0) :
     (dftMatrix n)ᴴ * dftMatrix n = (n : ℂ) • 1 := by
@@ -288,7 +296,7 @@ theorem conjTranspose_dft_mul_dft (n : Nat) (hn : n ≠ 0) :
   -- Cancel the scalar `n` against `1/n`.
   simpa [smul_smul, div_eq_mul_inv, hn0] using this
 
-/-- Right-inverse form: `DFT * IDFT = 1` (for `n ≠ 0`). -/
+/-- Right-inverse form: $\operatorname{DFT}\operatorname{IDFT}=I$ (for $n\ne0$). -/
 theorem dft_mul_idft (n : Nat) (hn : n ≠ 0) :
     dftMatrix n * idftMatrix n = 1 := by
   -- Square matrices over a commutative semiring are Dedekind-finite, so a right-inverse is also a
@@ -306,7 +314,7 @@ def idft (n : Nat) (x : Fin n → ℂ) : Fin n → ℂ :=
   Matrix.mulVec (idftMatrix n) x
 
 /--
-Vector inversion theorem: `idft (dft x) = x`, for `n ≠ 0`.
+Vector inversion theorem: $\operatorname{idft}(\operatorname{dft}(x))=x$, for $n\ne0$.
 -/
 theorem idft_dft (n : Nat) (hn : n ≠ 0) (x : Fin n → ℂ) :
     idft n (dft n x) = x := by
@@ -323,7 +331,8 @@ theorem idft_dft (n : Nat) (hn : n ≠ 0) (x : Fin n → ℂ) :
     _ = x := by simp [Matrix.one_mulVec]
 
 /--
-Vector inversion theorem (other direction): `dft (idft x) = x`, for `n ≠ 0`.
+Vector inversion theorem (other direction): $\operatorname{dft}(\operatorname{idft}(x))=x$, for
+$n\ne0$.
 -/
 theorem dft_idft (n : Nat) (hn : n ≠ 0) (x : Fin n → ℂ) :
     dft n (idft n x) = x := by

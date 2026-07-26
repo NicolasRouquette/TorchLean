@@ -33,7 +33,9 @@ This is the builder-layer analogue of `torch.nn.Sequential`: a `Seq σ τ` repre
 takes an input of shape `σ` and produces an output of shape `τ` by running layers left-to-right.
 -/
 inductive Seq : Shape → Shape → Type 2 where
+  /-- The empty sequence, which leaves a tensor unchanged. -/
   | id (s : Shape) : Seq s s
+  /-- Run one layer, then the remaining sequence. -/
   | cons {σ τ υ : Shape} : LayerDef σ τ → Seq τ υ → Seq σ υ
 
 namespace Seq

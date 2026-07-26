@@ -65,7 +65,7 @@ def input : Tensor Float (shape![inC, inH, inW]) :=
   ]
 
 /-!
-## N-D runtime cases (d = 3)
+## N-D runtime cases ($d=3$)
 
 These exercise the new "ND" ConvPool CUDA entrypoints (`conv`/`max_pool`/`avg_pool`/`smooth_max_pool`)
 which accept per-axis parameters.
@@ -521,7 +521,7 @@ def expectCudaResultError {α : Type} (label : String) : Except String α → IO
   | .error _ => pure ()
   | .ok _ => throw <| IO.userError s!"{label}: expected rejection"
 
-/-- Check the stable two-dimensional smooth-max formula at scales where `beta*x` overflows FP32. -/
+/-- Check the stable two-dimensional smooth-max formula at scales where $\beta x$ overflows FP32. -/
 def runSmoothMaxPool2dStabilityCase (beta expectedSign : Float)
     (expectedDx : Tensor Float (shape![1, 1, 2])) : IO Unit := do
   let x : Tensor Float (shape![1, 1, 2]) :=

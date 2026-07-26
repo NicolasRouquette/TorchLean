@@ -20,13 +20,16 @@ and checker soundness in one graph.
 
 We build one medium IR graph:
 
-`x ↦ tanh(sum(Linear2(ReLU(Linear1(x)))))`
+$$
+x\mapsto\tanh\!\left(\operatorname{sum}
+  \left(\operatorname{Linear}_2(\operatorname{ReLU}(\operatorname{Linear}_1(x)))\right)\right)
+$$
 
 and then:
 1) evaluate it under multiple scalar semantics (`ℝ`, `FP32`, `IEEE32Exec`);
 2) run IBP under multiple interval semantics (endpoints in `ℝ`, `FP32`, `IEEE32Exec` with directed
   rounding);
-3) empirically check that `evalIEEE(G,x)` lies in the IBP output box for random `x ∈ B`;
+3) empirically check that `evalIEEE(G,x)` lies in the IBP output box for random $x\in B$;
 4) point to the Lean theorem that the Boolean checker is sound (`Box.containsDecBool_sound`).
 
 Notes:

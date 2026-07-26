@@ -34,10 +34,11 @@ equalities hold under the same semantics.
 What is checked in `format = "piecewise_poly_v0"`:
 - `xs` is strictly increasing,
 - `ys` has the same length as `xs`,
-- there is one `piece` per interval `[xs[i], xs[i+1]]`,
+- there is one `piece` per interval $[\mathrm{xs}[i],\mathrm{xs}[i+1]]$,
 - each piece’s `(lo, hi)` matches the corresponding interval endpoints,
 - the local-coordinate polynomial interpolates the endpoints exactly:
-  `p_i(xs[i]) = ys[i]` and `p_i(xs[i+1]) = ys[i+1]`.
+  $p_i(\mathrm{xs}[i])=\mathrm{ys}[i]$ and
+  $p_i(\mathrm{xs}[i+1])=\mathrm{ys}[i+1]$.
 
 This certificate format focuses on endpoint and piece consistency.  It does **not** claim global
 range bounds for higher-degree polynomials; those require additional machinery such as Bernstein
@@ -116,7 +117,8 @@ def parseRat (ctx : String) (j : Json) : IO Rat := do
 ## Certificate schema
 -/
 
-/-- One polynomial segment on an interval `[lo, hi]`, using local coordinate `t = x - lo`. -/
+/-- One polynomial segment on an interval $[\mathrm{lo},\mathrm{hi}]$, using local coordinate
+$t=x-\mathrm{lo}$. -/
 structure PolynomialPiece where
   lo : Rat
   hi : Rat
@@ -137,7 +139,7 @@ structure PiecewisePolyCertificate where
   xs : Tensor Rat [n]
   /-- Knot y-values as a length-`n` vector. -/
   ys : Tensor Rat [n]
-  /-- One piece per interval `[xs[i], xs[i+1]]`. -/
+  /-- One piece per interval $[\mathrm{xs}[i],\mathrm{xs}[i+1]]$. -/
   pieces : Array PolynomialPiece
 
 /-!
@@ -145,11 +147,13 @@ structure PiecewisePolyCertificate where
 -/
 
 /--
-Evaluate a polynomial in local coordinate `t` using Horner’s rule.
+Evaluate a polynomial in local coordinate $t$ using Horner’s rule.
 
-Given coefficients `[a₀, a₁, …, a_d]` representing:
+Given coefficients $[a_0,a_1,\ldots,a_d]$ representing:
 
-`a₀ + a₁ t + a₂ t^2 + … + a_d t^d`.
+$$
+a_0+a_1t+a_2t^2+\cdots+a_dt^d.
+$$
 
 This helper is generic so we can reuse it for `Rat` (exact checking) and for `IEEE32Exec`
 (executable float32 semantics).

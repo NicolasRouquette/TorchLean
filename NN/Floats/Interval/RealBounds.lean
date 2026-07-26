@@ -13,8 +13,8 @@ public import Mathlib.Data.Real.Basic
 
 Several IEEEExec32 interval-soundness modules need the same basic real-analysis fact:
 
-If `x ∈ [a,b]` and `y ∈ [c,d]`, then `x*y` is enclosed by the minimum/maximum of the four corner
-products `{a*c, a*d, b*c, b*d}`.
+If $x\in[a,b]$ and $y\in[c,d]$, then $xy$ is enclosed by the minimum and maximum of the four
+corner products $\{ac,ad,bc,bd\}$.
 
 This module keeps the interval arithmetic fact separate from the IEEEExec32 soundness proofs.
 -/
@@ -34,9 +34,10 @@ def maxOfFourReal (a b c d : ℝ) : ℝ :=
 /--
 Corner enclosure for real multiplication on intervals.
 
-If `x ∈ [a,b]` and `y ∈ [c,d]`, then:
-
-`min(ac, ad, bc, bd) ≤ x*y ≤ max(ac, ad, bc, bd)`,
+If $x\in[a,b]$ and $y\in[c,d]$, then
+$$
+\min(ac,ad,bc,bd)\le xy\le\max(ac,ad,bc,bd),
+$$
 
 where the min/max are represented by `minOfFourReal`/`maxOfFourReal` with the same grouping used by the IEEE32Exec
 4-corner rule implementations.

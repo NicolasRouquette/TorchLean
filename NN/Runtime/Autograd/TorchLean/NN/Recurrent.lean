@@ -27,7 +27,7 @@ namespace NN
 /-! ## Convenience constructors (layers) -/
 
 /--
-Fully-connected affine layer on vectors: `y = W x + b`.
+Fully-connected affine layer on vectors: $y=Wx+b$.
 
 Parameters:
 - `W : (outDim × inDim)` initialized with Xavier initialization,
@@ -54,7 +54,7 @@ def linear (inDim outDim : Nat) (seedW seedB : Nat := 0) :
   }
 
 /--
-Batched / matrix-valued affine layer: `y = x @ Wᵀ + b`.
+Batched / matrix-valued affine layer: $y=xW^\mathsf{T}+b$.
 
 Input shape: `(batch × inDim)`. Output shape: `(batch × outDim)`.
 
@@ -84,7 +84,10 @@ def linear2d (batch inDim outDim : Nat) (seedW seedB : Nat := 0) :
 Vanilla RNN layer (time-major sequence, no batch axis).
 
 Semantics:
-`h_t = tanh(W [x_t; h_{t-1}] + b)`, with `h_{-1} = 0`.
+$$
+h_t=\tanh\!\left(W[x_t;h_{t-1}]+b\right),
+\qquad h_{-1}=0.
+$$
 
 This is implemented by unrolling a fixed number of steps (`seqLen`) using existing TorchLean ops,
 so it works on both CPU and CUDA backends.
@@ -135,7 +138,7 @@ def rnn (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
 GRU layer (time-major sequence, no batch axis).
 
 This is an unrolled GRU using the standard gate equations (reset/update/candidate), with
-`h_{-1} = 0`.
+$h_{-1}=0$.
 
 PyTorch analogy: `torch.nn.GRU(inputSize, hiddenSize)` with `batch_first=false`, specialized to a
 single batch element.
@@ -215,13 +218,14 @@ Mamba-style gated diagonal state-space layer (time-major sequence, no batch axis
 This is the trainable recurrent core used by the runnable Mamba text example.  At each time step it
 learns an input candidate, a token/state-dependent retention gate, and an output gate:
 
-`u_t = silu(Wᵤ x_t + bᵤ)`
-
-`δ_t = sigmoid(Wδ [x_t; h_{t-1}] + bδ)`
-
-`h_t = δ_t * h_{t-1} + (1 - δ_t) * u_t`
-
-`y_t = h_t * silu(Wz x_t + bz)`
+$$
+\begin{aligned}
+u_t &= \operatorname{SiLU}(W_u x_t+b_u),\\
+\delta_t &= \operatorname{sigmoid}\!\left(W_\delta[x_t;h_{t-1}]+b_\delta\right),\\
+h_t &= \delta_t\odot h_{t-1}+(1-\delta_t)\odot u_t,\\
+y_t &= h_t\odot\operatorname{SiLU}(W_zx_t+b_z).
+\end{aligned}
+$$
 
 The recurrence is unrolled with ordinary TorchLean differentiable ops, so the same definition trains
 on the CPU backend and on the CUDA backend.  The lower-level selective-scan CUDA kernels are still
@@ -304,7 +308,8 @@ def mamba (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
 /--
 LSTM layer (time-major sequence, no batch axis).
 
-This is an unrolled LSTM using the standard four gates, with `(h_{-1}, c_{-1}) = (0, 0)`.
+This is an unrolled LSTM using the standard four gates, with
+$(h_{-1},c_{-1})=(0,0)$.
 
 PyTorch analogy: `torch.nn.LSTM(inputSize, hiddenSize)` with `batch_first=false`, specialized to a
 single batch element.

@@ -43,7 +43,7 @@ def flattenOutShape (s : Shape) : Shape :=
   .dim (Spec.Shape.size s) .scalar
 
 /--
-If `s` has rank ≥ 2, return the shape obtained by swapping its first two axes.
+If `s` has rank at least two, return the shape obtained by swapping its first two axes.
 
 Example: `(a, b, rest)` becomes `(b, a, rest)`.
 -/
@@ -52,7 +52,7 @@ def swapFirstTwoShape? : Shape → Option Shape
   | _ => none
 
 /--
-If `s` has shape `(a, b, c)` (rank=3 with scalar base), return `(a, c, b)`.
+If `s` has shape `(a, b, c)` (rank three with scalar base), return `(a, c, b)`.
 
 This is the common “transpose the last two axes” pattern for batched matrices.
 -/
@@ -148,7 +148,7 @@ def checkLastAxis (tag : String) (axis : Nat) (s : Shape) : Except String Unit :
 Compute the inverse of a permutation list.
 
 If `perm` is a permutation of `[0,1,...,r-1]` (where `r = perm.length`), then the inverse `inv`
-satisfies `inv[perm[i]] = i`.
+satisfies $\mathrm{inv}[\mathrm{perm}[i]]=i$.
 -/
 def inversePerm (perm : List Nat) : Except String (List Nat) := do
   let r := perm.length
@@ -191,7 +191,7 @@ def inversePerm (perm : List Nat) : Except String (List Nat) := do
 Permutation (0-based axes) that moves `axis` to the **last** position, preserving the relative
 order of the other axes.
 
-Example: rank=4 and `axis=1` yields `[0,2,3,1]`.
+Example: rank four with `axis` set to `1` yields `[0,2,3,1]`.
 -/
 def permMoveAxisToLast (axis : Nat) (s : Shape) : Except String (List Nat) := do
   checkAxisValid axis s
@@ -202,7 +202,7 @@ def permMoveAxisToLast (axis : Nat) (s : Shape) : Except String (List Nat) := do
 Permutation (0-based axes) that moves `axis` to the **first** position, preserving the relative
 order of the other axes.
 
-Example: rank=4 and `axis=2` yields `[2,0,1,3]`.
+Example: rank four with `axis` set to `2` yields `[2,0,1,3]`.
 -/
 def permMoveAxisToFront (axis : Nat) (s : Shape) : Except String (List Nat) := do
   checkAxisValid axis s
@@ -325,7 +325,8 @@ Centralizing them gives inference, evaluation, verification, and export code a s
 for convolution and pooling shapes.
 -/
 
-/-- Output length for a 1D sliding-window op without padding: `⌊(in - k)/stride⌋ + 1`. -/
+/-- Output length for a 1D sliding-window op without padding:
+$\left\lfloor(\mathrm{in}-k)/\mathrm{stride}\right\rfloor+1$. -/
 def slideOut (inLen k stride : Nat) : Nat :=
   Shape.slidingWindowOutDim inLen k stride 0
 
@@ -337,7 +338,7 @@ def slideOutPad (inLen k stride padding : Nat) : Nat :=
 /--
 Reject sliding-window shapes where the kernel has no valid placement.
 
-Lean `Nat` subtraction saturates at zero, so `(in + 2*pad - k)` would otherwise turn an invalid
+Lean `Nat` subtraction saturates at zero, so $\mathrm{in}+2\,\mathrm{pad}-k$ would otherwise turn an invalid
 window into a plausible one-element output.
 -/
 def checkWindowFits (tag axis : String) (inLen k padding : Nat) : Except String Unit := do

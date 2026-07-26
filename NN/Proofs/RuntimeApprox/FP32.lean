@@ -22,19 +22,21 @@ Here we connect that generic notion of tolerance to our `FP32` rounding model.
 
 In `NN.Floats.FP32.Error` we prove *per‑operation* absolute error bounds like
 
-```
-abs (approx - exact) ≤ eps₃₂ exact
-```
+$$
+|\mathrm{approx}-\mathrm{exact}|
+\le \varepsilon_{32}(\mathrm{exact}).
+$$
 
 We repackage those bounds so downstream proofs can use the uniform `≈[t]` vocabulary.
 
 Two small conventions show up everywhere below:
 
 * We use an **absolute-only tolerance** `ApproxTol.absOnly eps`.
-  That means `x ≈[absOnly eps] y` is exactly the usual bound `|y - x| ≤ eps`
+  That means `x ≈[absOnly eps] y` is exactly the usual bound $|y-x|\le\varepsilon$
   (see `approxR_absOnly_iff`). This matches the shape of our `FP32` theorems.
 
-* The `FP32` “epsilon” is **value-dependent**: `eps = ulp(exact) / 2 = eps₃₂(exact)`.
+* The `FP32` “epsilon” is **value-dependent**:
+  $\varepsilon=\operatorname{ulp}(\mathrm{exact})/2=\varepsilon_{32}(\mathrm{exact})$.
   This is the standard round-to-nearest error model: the ulp is smaller near 0 and grows as the
   magnitude grows. Writing it as an `≈[t]` fact makes it easy to mix with other tolerances without
   inventing yet another approximation relation.
@@ -60,7 +62,8 @@ They are private because they are only used by this file's approximation bridge.
 /--
 Helper: turn a plain absolute-error inequality into an `approxR` with an absolute-only tolerance.
 
-Informal: if `|y - x| ≤ eps` and `eps ≥ 0`, then `x ≈[absOnly eps] y`.
+Informally, if $|y-x|\le\varepsilon$ and $\varepsilon\ge 0$, then
+`x ≈[absOnly eps] y`.
 -/
 private lemma approxR_absOnly_of_abs_sub_le {x y eps : ℝ} (heps : 0 ≤ eps) (h : abs (y - x) ≤ eps) :
     approxR x y (ApproxTol.absOnly eps) :=
@@ -69,7 +72,7 @@ private lemma approxR_absOnly_of_abs_sub_le {x y eps : ℝ} (heps : 0 ≤ eps) (
 /--
 Nonnegativity of the FP32 half-ULP scale `eps₃₂`.
 
-This is needed to use `approxR_absOnly_iff` (which requires `0 ≤ eps`).
+This is needed to use `approxR_absOnly_iff`, which requires $\varepsilon\ge 0$.
 -/
 private lemma eps32_nonneg (x : ℝ) : 0 ≤ eps₃₂ x := by
   -- Unfold to the underlying `neural_ulp` so we can reuse its nonnegativity lemma.
@@ -89,7 +92,10 @@ Read this as:
 - “the rounded result” is `(a + b).val`,
 - and the two differ by at most half an ulp of the exact real sum.
 
-Informal: `a.val + b.val ≈[absOnly (eps₃₂(a.val + b.val))] (a + b).val`.
+Informally,
+$\operatorname{val}(a)+\operatorname{val}(b)
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\operatorname{val}(a)+\operatorname{val}(b)))}
+\operatorname{val}(a+b)$.
 -/
 theorem add_approxR (a b : FP32) :
     approxR (a.val + b.val) (a + b).val
@@ -101,7 +107,10 @@ theorem add_approxR (a b : FP32) :
 /--
 `FP32` subtraction, stated as an `≈[t]` fact with `t = absOnly (eps₃₂(exact))`.
 
-Informal: `a.val - b.val ≈[absOnly (eps₃₂(a.val - b.val))] (a - b).val`.
+Informally,
+$\operatorname{val}(a)-\operatorname{val}(b)
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\operatorname{val}(a)-\operatorname{val}(b)))}
+\operatorname{val}(a-b)$.
 -/
 theorem sub_approxR (a b : FP32) :
     approxR (a.val - b.val) (a - b).val
@@ -113,7 +122,10 @@ theorem sub_approxR (a b : FP32) :
 /--
 `FP32` multiplication, stated as an `≈[t]` fact with `t = absOnly (eps₃₂(exact))`.
 
-Informal: `a.val * b.val ≈[absOnly (eps₃₂(a.val * b.val))] (a * b).val`.
+Informally,
+$\operatorname{val}(a)\operatorname{val}(b)
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\operatorname{val}(a)\operatorname{val}(b)))}
+\operatorname{val}(ab)$.
 -/
 theorem mul_approxR (a b : FP32) :
     approxR (a.val * b.val) (a * b).val
@@ -125,7 +137,10 @@ theorem mul_approxR (a b : FP32) :
 /--
 `FP32` division, stated as an `≈[t]` fact with `t = absOnly (eps₃₂(exact))`.
 
-Informal: `a.val / b.val ≈[absOnly (eps₃₂(a.val / b.val))] (a / b).val`.
+Informally,
+$\frac{\operatorname{val}(a)}{\operatorname{val}(b)}
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\operatorname{val}(a)/\operatorname{val}(b)))}
+\operatorname{val}(a/b)$.
 -/
 theorem div_approxR (a b : FP32) :
     approxR (a.val / b.val) (a / b).val
@@ -139,7 +154,10 @@ theorem div_approxR (a b : FP32) :
 /--
 `FP32` `exp` is `Real.exp` followed by rounding; this is the result as an `≈[t]` statement.
 
-Informal: `exp(a.val) ≈[absOnly (eps₃₂(exp(a.val)))] (exp a).val`.
+Informally,
+$\exp(\operatorname{val}(a))
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\exp(\operatorname{val}(a))))}
+\operatorname{val}(\exp a)$.
 -/
 theorem exp_approxR (a : FP32) :
     approxR (Real.exp a.val) (MathFunctions.exp a).val
@@ -152,7 +170,10 @@ theorem exp_approxR (a : FP32) :
 /--
 `FP32` `tanh` as an `≈[t]` statement.
 
-Informal: `tanh(a.val) ≈[absOnly (eps₃₂(tanh(a.val)))] (tanh a).val`.
+Informally,
+$\tanh(\operatorname{val}(a))
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\tanh(\operatorname{val}(a))))}
+\operatorname{val}(\tanh a)$.
 -/
 theorem tanh_approxR (a : FP32) :
     approxR (Real.tanh a.val) (MathFunctions.tanh a).val
@@ -165,7 +186,10 @@ theorem tanh_approxR (a : FP32) :
 /--
 `FP32` `log` as an `≈[t]` statement (using `Real.log` as the exact reference).
 
-Informal: `log(a.val) ≈[absOnly (eps₃₂(log(a.val)))] (log a).val`.
+Informally,
+$\log(\operatorname{val}(a))
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\log(\operatorname{val}(a))))}
+\operatorname{val}(\log a)$.
 -/
 theorem log_approxR (a : FP32) :
     approxR (Real.log a.val) (MathFunctions.log a).val
@@ -178,7 +202,10 @@ theorem log_approxR (a : FP32) :
 /--
 `FP32` `cos` as an `≈[t]` statement.
 
-Informal: `cos(a.val) ≈[absOnly (eps₃₂(cos(a.val)))] (cos a).val`.
+Informally,
+$\cos(\operatorname{val}(a))
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\cos(\operatorname{val}(a))))}
+\operatorname{val}(\cos a)$.
 -/
 theorem cos_approxR (a : FP32) :
     approxR (Real.cos a.val) (MathFunctions.cos a).val
@@ -191,7 +218,10 @@ theorem cos_approxR (a : FP32) :
 /--
 `FP32` `sin` as an `≈[t]` statement.
 
-Informal: `sin(a.val) ≈[absOnly (eps₃₂(sin(a.val)))] (sin a).val`.
+Informally,
+$\sin(\operatorname{val}(a))
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\sin(\operatorname{val}(a))))}
+\operatorname{val}(\sin a)$.
 -/
 theorem sin_approxR (a : FP32) :
     approxR (Real.sin a.val) (MathFunctions.sin a).val
@@ -204,7 +234,10 @@ theorem sin_approxR (a : FP32) :
 /--
 `FP32` `sinh` as an `≈[t]` statement.
 
-Informal: `sinh(a.val) ≈[absOnly (eps₃₂(sinh(a.val)))] (sinh a).val`.
+Informally,
+$\sinh(\operatorname{val}(a))
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\sinh(\operatorname{val}(a))))}
+\operatorname{val}(\sinh a)$.
 -/
 theorem sinh_approxR (a : FP32) :
     approxR (Real.sinh a.val) (MathFunctions.sinh a).val
@@ -217,7 +250,10 @@ theorem sinh_approxR (a : FP32) :
 /--
 `FP32` `cosh` as an `≈[t]` statement.
 
-Informal: `cosh(a.val) ≈[absOnly (eps₃₂(cosh(a.val)))] (cosh a).val`.
+Informally,
+$\cosh(\operatorname{val}(a))
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\cosh(\operatorname{val}(a))))}
+\operatorname{val}(\cosh a)$.
 -/
 theorem cosh_approxR (a : FP32) :
     approxR (Real.cosh a.val) (MathFunctions.cosh a).val
@@ -230,7 +266,10 @@ theorem cosh_approxR (a : FP32) :
 /--
 `FP32` `sqrt` as an `≈[t]` statement.
 
-Informal: `sqrt(a.val) ≈[absOnly (eps₃₂(sqrt(a.val)))] (sqrt a).val`.
+Informally,
+$\sqrt{\operatorname{val}(a)}
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(\sqrt{\operatorname{val}(a)}))}
+\operatorname{val}(\sqrt a)$.
 -/
 theorem sqrt_approxR (a : FP32) :
     approxR (Real.sqrt a.val) (MathFunctions.sqrt a).val
@@ -243,7 +282,10 @@ theorem sqrt_approxR (a : FP32) :
 /--
 `FP32` `abs` as an `≈[t]` statement.
 
-Informal: `|a.val| ≈[absOnly (eps₃₂(|a.val|))] (abs a).val`.
+Informally,
+$|\operatorname{val}(a)|
+\approx_{\operatorname{absOnly}(\varepsilon_{32}(|\operatorname{val}(a)|))}
+\operatorname{val}(|a|)$.
 -/
 theorem abs_approxR (a : FP32) :
     approxR (abs a.val) (MathFunctions.abs a).val

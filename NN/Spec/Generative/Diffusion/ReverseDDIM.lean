@@ -15,9 +15,9 @@ import Mathlib.Data.List.FinRange
 # Reverse DDIM sampler (spec layer)
 
 DDIM (Denoising Diffusion Implicit Models) can be viewed as a **deterministic** sampler that
-reuses the same denoiser `ε_θ(x,t)` but removes per-step noise.
+reuses the same denoiser $\varepsilon_\theta(x,t)$ but removes per-step noise.
 
-This file provides the `η = 0` variant (fully deterministic), which is often used as a simple
+This file provides the $\eta=0$ variant (fully deterministic), which is often used as a simple
 "flow-like" sampler derived from the same diffusion model.
 
 Reference (informal pointer):
@@ -35,12 +35,15 @@ variable {α : Type} [Context α]
 variable {T : Nat} {s : Shape}
 
 /--
-One deterministic DDIM step `x_t -> x_{t-1}` (η = 0).
+One deterministic DDIM step $x_t\to x_{t-1}$ ($\eta=0$).
 
-We reuse the same `x0Pred` reconstruction as DDPM and then recompose `x_{t-1}` using the
-forward-process coefficients at time `t-1`:
+We reuse the same `x0Pred` reconstruction as DDPM and then recompose $x_{t-1}$ using the
+forward-process coefficients at time $t-1$:
 
-`x_{t-1} = sqrt(ᾱ_{t-1}) * x0_pred + sqrt(1-ᾱ_{t-1}) * ε̂`.
+$$
+x_{t-1}=\sqrt{\bar\alpha_{t-1}}\,\widehat{x}_0
+  +\sqrt{1-\bar\alpha_{t-1}}\,\hat\varepsilon.
+$$
 -/
 def ddimStep (sched : VPSchedule α T) (model : EpsModel α s)
     (k : Fin T) (x_t : Tensor α s) : Tensor α s :=
@@ -56,7 +59,7 @@ def ddimStep (sched : VPSchedule α T) (model : EpsModel α s)
   let c1 : α := sqrtNonneg (1 - αbar_prev)
   Tensor.scaleSpec x0Hat c0 + Tensor.scaleSpec epsHat c1
 
-/-- Run the full deterministic DDIM sampler for `T` steps (η = 0). -/
+/-- Run the full deterministic DDIM sampler for $T$ steps ($\eta=0$). -/
 def ddimSample (sched : VPSchedule α T) (model : EpsModel α s) (x_T : Tensor α s) : Tensor α s :=
   (List.finRange T).foldr (fun k x => ddimStep (α := α) (T := T) (s := s) sched model k x) x_T
 

@@ -23,11 +23,14 @@ torch.nn.functional.layer_norm(x, normalized_shape=(1,), weight=w, bias=b)
 
 For every finite scalar `x`, the mathematical contract is:
 
-```text
-mean([x]) = x
-var([x]) = 0
-((x - mean) / sqrt(var + eps)) * weight + bias = bias
-```
+$$
+\begin{aligned}
+\operatorname{mean}([x]) &= x,\\
+\operatorname{var}([x]) &= 0,\\
+\left(\frac{x-\operatorname{mean}}{\sqrt{\operatorname{var}+\varepsilon}}\right)
+  \operatorname{weight}+\operatorname{bias} &= \operatorname{bias}.
+\end{aligned}
+$$
 
 So reverse mode must report zero gradient for `weight` and zero input gradient. This file keeps the
 contract small: the real-valued theorems record the algebra, and the concrete definitions below are

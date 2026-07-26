@@ -20,8 +20,8 @@ autoencoder examples to show where executable training and formal objective theo
 
 The maintained
 [`diffusion` application](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Generative/Diffusion.lean)
-supports prepared CIFAR-10 arrays and converted `64 × 64` image folders. Its compact CIFAR branch
-crops images to `2 × 2` for a fast end-to-end check.
+supports prepared CIFAR-10 arrays and converted $`64\times64` image folders. Its compact CIFAR
+branch crops images to $`2\times2` for a fast end-to-end check.
 
 Prepare CIFAR and run one CPU update:
 
@@ -54,7 +54,7 @@ torchlean diffusion: ok
 
 Why does the input have four channels while the output has three? The clean image has three RGB
 channels. The noised image receives one additional channel containing the normalized timestep.
-For batch `B`, data channels `C`, and spatial extent `S`, the model contract is
+For batch $`B`, data channels $`C`, and spatial extent $`S`, the model contract is
 
 $$`B\times(C+1)\times S
 \longrightarrow
@@ -63,24 +63,25 @@ B\times C\times S.`
 The reusable constructor
 [`nn.models.epsConvNet`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Diffusion.lean)
 is parameterized by arbitrary spatial rank. The runnable command instantiates two spatial axes and
-uses four `1 × 1` convolutions. A stronger residual same-resolution denoiser also exists in the API,
+uses four $`1\times1` convolutions. A stronger residual same-resolution denoiser also exists in the API,
 but it is not the default command path.
 
 # Forward Noising
 
-Let `β_t` be the variance schedule, `α_t=1-β_t`, and
+Let $`\beta_t` be the variance schedule, $`\alpha_t=1-\beta_t`, and
 
 $$`\bar\alpha_t=\prod_{s=0}^{t}\alpha_s.`
 
-The DDPM forward process can sample timestep `t` directly:
+The DDPM forward process can sample timestep $`t` directly:
 
 $$`x_t
 =\sqrt{\bar\alpha_t}\,x_0
 +\sqrt{1-\bar\alpha_t}\,\epsilon,
 \qquad \epsilon\sim\mathcal N(0,I).`
 
-The training sample stores the noised image and timestep as input and the same `ε` as target. The
-network therefore learns an epsilon predictor `ε_θ(x_t,t)` by mean squared error.
+The training sample stores the noised image and timestep as input and the same $`\epsilon` as
+target. The network therefore learns an epsilon predictor $`\epsilon_\theta(x_t,t)` by mean squared
+error.
 
 TorchLean keeps randomness outside the pure noising helper. In
 [`NN.API.Models.Diffusion`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Diffusion.lean),
@@ -200,8 +201,8 @@ state before adding a probabilistic interpretation.
 
 # The VAE Objective And The Current Runtime Example
 
-A VAE introduces an approximate posterior `q_φ(z|x)`, a prior `p(z)`, and the negative evidence
-lower bound
+A VAE introduces an approximate posterior $`q_\phi(z\mid x)`, a prior $`p(z)`, and the negative
+evidence lower bound
 
 $$`\mathcal L_{\mathrm{VAE}}
 =
@@ -210,7 +211,7 @@ $$`\mathcal L_{\mathrm{VAE}}
 +\beta\,D_{\mathrm{KL}}
   \left(q_\phi(z\mid x)\,\|\,p(z)\right).`
 
-For diagonal Gaussian posterior parameters `μ_i` and `σ_i²`, the KL to a standard normal is
+For diagonal Gaussian posterior parameters $`\mu_i` and $`\sigma_i^2`, the KL to a standard normal is
 
 $$`D_{\mathrm{KL}}
 =\frac12\sum_i
@@ -250,7 +251,7 @@ torchlean vae: ok
 # Finite Codebooks In VQ-VAE
 
 VQ-VAE replaces a continuous latent sample by the nearest entry in a finite codebook. If
-`e₁,...,e_K` are code vectors and `z_e(x)` is the encoder output, then
+$`e_1,\ldots,e_K` are code vectors and $`z_e(x)` is the encoder output, then
 
 $$`k^\star
 \in\operatorname*{arg\,min}_{1\le k\le K}
@@ -312,7 +313,7 @@ The `mae` command uses real image masking rather than merely a narrow vector bot
 the image into patches, applies a deterministic mask, embeds visible patch tokens with a compact
 ViT encoder, and trains a decoder head to reconstruct a flattened image prefix.
 
-For a mask set `M`, the finite reconstruction objective has the form
+For a mask set $`M`, the finite reconstruction objective has the form
 
 $$`L_{\mathrm{MAE}}
 =\frac1{|M|}\sum_{i\in M}

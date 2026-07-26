@@ -12,8 +12,8 @@ meta import NN.Examples.Factorization.Common
 /-!
 # Example: QR factorization
 
-`qrSpec A` returns `(Q, R)` with `A = Q · R`, `Q` having orthonormal columns and `R`
-upper-triangular (classical Gram–Schmidt). We check both `A = Q·R` and `Qᵀ·Q = I`.
+`qrSpec A` returns `(Q, R)` with $A=QR$, where $Q$ has orthonormal columns and $R$ is
+upper-triangular (classical Gram–Schmidt). We check both $A=QR$ and $Q^\mathsf{T}Q=I$.
 -/
 
 @[expose] public section
@@ -32,9 +32,9 @@ def Q : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) := Spec.qrQSpec A
 /-- Upper-triangular `R` factor. -/
 def R : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) := Spec.qrRSpec A
 
-/-- Reconstruction error `‖A - Q·R‖_max`. -/
+/-- Reconstruction error $\lVert A-QR\rVert_{\max}$. -/
 def reconErr : Float := maxMatErr A (mm Q R)
-/-- Orthonormality error `‖Qᵀ·Q - I‖_max`. -/
+/-- Orthonormality error $\lVert Q^\mathsf{T}Q-I\rVert_{\max}$. -/
 def orthoErr : Float := maxMatErr (mm (tr Q) Q) (Spec.identityTensorSpec 3)
 
 -- Compiled assertions (fail the build otherwise).
@@ -45,13 +45,15 @@ def orthoErr : Float := maxMatErr (mm (tr Q) Q) (Spec.identityTensorSpec 3)
 
 /-! ## Negative control: full column rank is necessary for orthonormality
 
-`qrSpec_orthonormal` (`Qᵀ Q = 1`) requires full column rank — positive `R`-pivots
-(`0 < R[j,j]`). The matrix below has a dependent column (`col₂ = 2·col₁`), so Gram–Schmidt produces a
-**zero** `Q` column where the pivot vanishes: `A = Q·R` still holds, but `Qᵀ Q` has a `0` on the
+`qrSpec_orthonormal` ($Q^\mathsf{T}Q=I$) requires full column rank — positive $R$-pivots
+($0<R_{jj}$). The matrix below has a dependent column ($\mathrm{col}_2=2\,\mathrm{col}_1$), so
+Gram–Schmidt produces a **zero** $Q$ column where the pivot vanishes: $A=QR$ still holds, but
+$Q^\mathsf{T}Q$ has a zero on the
 diagonal, so orthonormality fails. This separates the two guarantees and shows the rank hypothesis
 genuinely bites. -/
 
-/-- A rank-2 matrix (`col₂ = 2·col₁`): reconstructs, but `Q` cannot be orthonormal. -/
+/-- A rank-2 matrix ($\mathrm{col}_2=2\,\mathrm{col}_1$): reconstructs, but $Q$ cannot be
+orthonormal. -/
 def Adef : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) :=
   mkMat [[1, 2, 0],
          [2, 4, 1],
@@ -62,7 +64,7 @@ def Rdef : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) := Spec.qrRSpec Adef
 
 /-- Reconstruction still holds even without full rank. -/
 def reconErrDef : Float := maxMatErr Adef (mm Qdef Rdef)
-/-- Orthonormality fails: `Qᵀ·Q` has a zero diagonal entry, so it is far from `I`. -/
+/-- Orthonormality fails: $Q^\mathsf{T}Q$ has a zero diagonal entry, so it is far from $I$. -/
 def orthoErrDef : Float := maxMatErr (mm (tr Qdef) Qdef) (Spec.identityTensorSpec 3)
 
 #guard_msgs (drop info) in

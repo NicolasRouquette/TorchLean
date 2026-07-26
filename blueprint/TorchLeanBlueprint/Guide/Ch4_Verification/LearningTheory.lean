@@ -26,7 +26,7 @@ The recurring pattern is:
 The learning theory material is organized around five concrete objects:
 
 - *Randomized mechanism*: a map from inputs to probability measures over outputs; Lean states
-  `(ε, δ)` privacy, pure privacy, monotonicity in `δ`, and post processing.
+  $`(\varepsilon,\delta)` privacy, pure privacy, monotonicity in $`\delta`, and post processing.
 - *Robustness predicate*: a classifier is stable on a perturbation ball; Lean names tensor norms,
   local balls, Lipschitz predicates, and certified robustness.
 - *Algorithmic stability*: replacing one training example changes the learned loss only slightly;
@@ -51,9 +51,9 @@ The central abstraction is a randomized mechanism: a function from inputs of typ
 probability measures over outputs of type `beta`.
 
 An adjacency relation `Adj : α → α → Prop` says which inputs are neighboring datasets or
-neighboring records. The definition of `(ε, δ)`-DP is the standard event inequality: for every
+neighboring records. The definition of $`(\varepsilon,\delta)`-DP is the standard event inequality: for every
 adjacent pair and measurable event `S`, the probability of `M a` landing in `S` is at most
-`exp ε` times the corresponding probability for `M a'`, plus `δ`.
+$`e^\varepsilon` times the corresponding probability for `M a'`, plus $`\delta`.
 
 The definition returns a `ProbabilityMeasure`, which is general enough for discrete mechanisms,
 continuous mechanisms, and randomized training procedures.
@@ -67,8 +67,8 @@ $$`\forall D\sim D',\;\forall S,\qquad
 
 Two closure facts are especially important:
 
-- `differentialPrivacy_mono_delta`: a mechanism that is private for `δ₁` is also private for any looser
-  `δ₂ ≥ δ₁`.
+- `differentialPrivacy_mono_delta`: a mechanism that is private for $`\delta_1` is also private for any
+  looser $`\delta_2\ge\delta_1`.
 - `differentialPrivacy_postprocess`: measurable post processing preserves DP.
 
 The second theorem is the practical bridge to ordinary ML practice. In training code, we often
@@ -129,7 +129,7 @@ The spec side works over TorchLean tensors without committing to one runtime sca
 - local sensitivity ratios.
 
 Proof developments use this vocabulary. For example, a certified robustness claim should say that
-the classifier is constant on an `ε` ball. A failed search attack is evidence, but it is not the
+the classifier is constant on an $`\varepsilon` ball. A failed search attack is evidence, but it is not the
 certificate.
 
 A typical local robustness predicate has the form:
@@ -234,7 +234,7 @@ explicit, then state how much the learned loss can change.
 
 The stability entrypoint also imports
 [NN.MLTheory.LearningTheory.Stability.Dynamics API](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/LearningTheory/Stability/Dynamics.lean).
-This covers recurrence systems, such as `x_{t+1} = f x_t`, and systems driven by inputs, where
+This covers recurrence systems, such as $`x_{t+1}=f(x_t)`, and systems driven by inputs, where
 the next state depends on an input sequence. The spec file
 [Dynamics.Spec](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/LearningTheory/Stability/Dynamics/Spec.lean) names predicates
 such as Lyapunov stability, asymptotic stability, exponential stability, input to state stability,
@@ -258,14 +258,14 @@ loss under bounded inputs.
 The theorem follows the classical strongly convex ERM argument in a small setting, so the proof is
 inspectable:
 
-1. Each example is a bounded pair `(x, y)` with `|x| <= X` and `|y| <= Y`.
+1. Each example is a bounded pair $`(x,y)` with $`\lvert x\rvert\le X` and $`\lvert y\rvert\le Y`.
 2. The closed form fit is
    $`\hat w(S) = \frac{\sum_i x_i y_i}{\sum_i x_i^2 + \lambda N}`.
 3. Replacing one example changes the numerator and denominator by controlled finite sums.
 4. The proof bounds the difference between the two fitted weights.
 5. A difference of squares argument converts the weight change bound into a loss change bound.
 
-The final stability statement has the same form as the general predicate. Writing `N = n + 1`,
+The final stability statement has the same form as the general predicate. Writing $`N=n+1`,
 the proved constant is
 
 $$`\beta
@@ -277,7 +277,7 @@ $$`|\ell(\hat w(S),z)-\ell(\hat w(S'),z)|
 \le
 \frac{4X^2Y^2(\lambda+X^2)^2}{\lambda^3N}.`
 
-The `1/N` dependence comes from the ridge denominator. The stronger dependence on `λ` records the
+The $`1/N` dependence comes from the ridge denominator. The stronger dependence on $`\lambda` records the
 cost of controlling both the fitted weight and the change in its reciprocal denominator. This is
 an explicit valid bound, not a claim that the constant is optimal.
 

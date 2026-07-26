@@ -77,6 +77,7 @@ def trainOnce : IO Unit := do
   -- Inspect the initialized model before any parameter updates.
   let initialPrediction ← trainer.predict (tensorOfList! [2] [0.5, -0.25])
   IO.println s!"initial={Tensor.pretty initialPrediction}"
+  -- Each step averages 16 sample gradients at one parameter point, then updates once.
   -- Training returns a new trainer containing the updated parameters and run history.
   let trained ← trainer.train data { steps := 200, batchSize := 16, logEvery := 25 }
   trained.printSummary

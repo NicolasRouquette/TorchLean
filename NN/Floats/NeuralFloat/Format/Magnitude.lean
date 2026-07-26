@@ -12,8 +12,8 @@ import Mathlib.Analysis.SpecialFunctions.Log.Base
 /-!
 # Radix Magnitude
 
-The magnitude of a nonzero real `x` is the unique integer `e` for which
-`β^(e - 1) ≤ |x| < β^e`. These bounds are the basic bridge between logarithmic magnitude,
+The magnitude of a nonzero real $x$ is the unique integer $e$ for which
+$\beta^{e-1}\le|x|<\beta^e$. These bounds are the basic bridge between logarithmic magnitude,
 canonical exponents, and generic-format rounding.
 -/
 
@@ -57,7 +57,7 @@ theorem abs_lt_neuralBpow_magnitude (β : NeuralRadix) (x : ℝ) (hx : x ≠ 0) 
     abs x < neuralBpow β (neuralMagnitude β x) :=
   (neuralMagnitude_spec β x hx).2
 
-/-- The magnitude of `β^e` is `e + 1`. -/
+/-- The magnitude of $\beta^e$ is $e+1$. -/
 @[simp] theorem neuralMagnitude_bpow (β : NeuralRadix) (e : ℤ) :
     neuralMagnitude β (neuralBpow β e) = e + 1 := by
   have hbpos : 0 < β.toReal := NeuralRadix.pos β

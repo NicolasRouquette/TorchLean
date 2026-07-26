@@ -78,7 +78,8 @@ abbrev RefTy (m : Type → Type) (α : Type)
     (s : Shape) : Type :=
   _root_.Runtime.Autograd.Torch.Ops.Ref (m := m) (α := α) s
 
-/-- SiLU activation (`x ↦ x * sigmoid(x)`), as a backend-generic op.
+/-- SiLU activation
+($x\mapsto x\,\operatorname{sigmoid}(x)$), as a backend-generic op.
 
 PyTorch analogy: `torch.nn.functional.silu`.
 -/
@@ -355,7 +356,8 @@ def flattenKeep0 {α : Type} [Context α] [DecidableEq Shape]
     (s₁ := .dim batch s) (s₂ := .dim batch (.dim (Spec.Shape.size s) .scalar))
     x (by simp [Spec.Shape.size])
 
-/-- Batched affine layer on matrices: `y = x @ Wᵀ + b`, with `x : (N,inDim)`. -/
+/-- Batched affine layer on matrices: $y=xW^\mathsf{T}+b$, with shape
+`(N, inDim)` for $x$. -/
 def linear2d {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {batch inDim outDim : Nat}

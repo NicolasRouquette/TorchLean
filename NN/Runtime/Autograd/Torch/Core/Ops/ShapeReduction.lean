@@ -41,7 +41,6 @@ def sum {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .reduceSum
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.sum (t := t0) (s := sh) x.id
@@ -58,7 +57,6 @@ def flatten {α : Type} (s : EagerSession α) [Inhabited α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .reshape
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.flatten (t := t0) (s := sh) x.id
@@ -79,7 +77,6 @@ def reshape {α : Type} (s : EagerSession α) [Inhabited α] [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .reshape
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.reshape (t := t0) (s₁ := sh1) (s₂ := sh2) x.id h
@@ -96,7 +93,6 @@ def transpose2d {α : Type} (s : EagerSession α) [DecidableEq Shape] {m n : Nat
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .permute
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.transpose2d (t := t0) (m := m) (n := n) x.id
@@ -114,7 +110,6 @@ def swapAdjacentAtDepth {α : Type} (s : EagerSession α) [DecidableEq Shape] {s
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .permute
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.swapAdjacentAtDepth (t := t0) (s := sh) depth x.id
@@ -133,7 +128,6 @@ def transpose3dFirstToLast {α : Type} (s : EagerSession α) [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .permute
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.transpose3dFirstToLast (t := t0) (a := a) (b := b) (c := c) x.id
@@ -152,7 +146,6 @@ def transpose3dLastToFirst {α : Type} (s : EagerSession α) [DecidableEq Shape]
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .permute
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.transpose3dLastToFirst (t := t0) (a := a) (b := b) (c := c) x.id
@@ -171,7 +164,6 @@ def transpose3dLastTwo {α : Type} (s : EagerSession α) [DecidableEq Shape] {a 
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .permute
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.transpose3dLastTwo (t := t0) (a := a) (b := b) (c := c) x.id
@@ -190,7 +182,6 @@ def broadcastTo {α : Type} (s : EagerSession α) [Inhabited α] [Add α] [Zero 
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .broadcast
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.broadcastTo (t := t0) (s₁ := sh1) (s₂ := sh2) cb x.id
@@ -208,7 +199,6 @@ def reduceSum {α : Type} (s : EagerSession α) [Add α] [Zero α] [Inhabited α
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .reduceSum
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.reduceSum (s := sh) axis (t := t0) x.id
@@ -226,7 +216,6 @@ def reduceMean {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let _ ← requireNativeCudaCapsule s .reduceMean
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.reduceMean (s := sh) axis (t := t0) x.id

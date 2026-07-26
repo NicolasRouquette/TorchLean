@@ -106,7 +106,7 @@ missing nouns:
 7. *Which boundary remains trusted?* External search, parser, backend kernel, compiler, or hardware.
 
 The result might then read: “checker `C` accepted parameter artifact `P`, lowered to graph `G`, and
-established class margin `Q` for the box `[lo, hi]` under the graph's declared scalar semantics;
+established class margin `Q` for the box $`[\mathrm{lo},\mathrm{hi}]` under the graph's declared scalar semantics;
 artifact generation and the named native providers remain outside the checked implication.” The
 actual names matter more than this template. The point is that a later reader can replace the
 parameters, box, or backend and know exactly which part of the argument must be repeated.

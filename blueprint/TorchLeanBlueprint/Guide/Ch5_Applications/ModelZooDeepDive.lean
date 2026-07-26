@@ -68,7 +68,7 @@ The command constructs a `CausalTransformerConfig` from the runtime options:
 
 $$`D=32,\qquad H=4,\qquad D_h=D/H=8,\qquad L=2.`
 
-For a batch of token windows `I ∈ Fin V`, the model first gathers embeddings
+For a batch of token windows $`I\in\operatorname{Fin}(V)`, the model first gathers embeddings
 
 $$`E[I]\in\mathbb{R}^{B\times T\times D},`
 
@@ -86,7 +86,7 @@ The final layer normalization and linear projection produce logits
 $$`\operatorname{logits}\in\mathbb{R}^{B\times T\times V}.`
 
 The training target is the same token window shifted by one position. Cross entropy at location
-`t` therefore uses the target character `x_{t+1}`.
+$`t` therefore uses the target character $`x_{t+1}`.
 
 The mask is semantic, not merely a convenient floating-point bias:
 
@@ -179,7 +179,7 @@ Both are ten-class models, but they organize computation differently.
 
 The current
 [`ResNet application`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Vision/ResNet.lean)
-crops each image to `3 × 8 × 8`, lifts it to four hidden channels, applies two shape-preserving
+crops each image to $`3\times8\times8`, lifts it to four hidden channels, applies two shape-preserving
 residual blocks, globally averages the spatial axes, and emits ten logits.
 
 At every residual join, both branches have shape
@@ -195,7 +195,7 @@ typing solves one problem rather than pretending to solve all of them.
 The
 [`ViT application`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Vision/Vit.lean)
 uses a convolution to create patch embeddings, reshapes the patch grid into a token sequence, and
-applies one Transformer encoder block. If the patch output grid is `H' × W'`, the token count is
+applies one Transformer encoder block. If the patch output grid is $`H'\times W'`, the token count is
 
 $$`N=H'W'.`
 
@@ -280,8 +280,8 @@ python3 NN/Examples/Data/plot_fno1d_burgers.py \
 
 ## What The Spectral Layer Computes
 
-Let `v ∈ ℝ^{N×C}` be a field with `C` latent channels. The spectral branch computes a discrete
-Fourier transform, retains `m` modes at each end of the real spectrum, multiplies those modes by
+Let $`v\in\mathbb R^{N\times C}` be a field with $`C` latent channels. The spectral branch computes
+a discrete Fourier transform, retains $`m` modes at each end of the real spectrum, multiplies those modes by
 learned complex weights, and transforms back:
 
 $$`\widehat v_k
@@ -292,8 +292,8 @@ $$`\widehat y_k
 \quad\text{for retained }k,\qquad
 y=\mathcal F^{-1}(\widehat y).`
 
-A pointwise linear branch is added before the activation. The command uses grid `N=32`, width `8`,
-eight retained modes on each side, and one spectral residual block.
+A pointwise linear branch is added before the activation. The command uses grid $`N=32`, width
+$`8`, eight retained modes on each side, and one spectral residual block.
 
 The reusable
 [`FNO constructor`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/FNO.lean)

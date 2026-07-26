@@ -34,7 +34,7 @@ structure Params (α : Type) (n : Nat) where
   θ : Fin n → α
 ```
 
-For state `s`, write `xᵢ ∈ {-1,+1}` for its numeric activation. The net input to neuron `u` is
+For state `s`, write $`x_i\in\{-1,+1\}` for its numeric activation. The net input to neuron `u` is
 
 $$`\operatorname{net}_u(s)=\sum_j W_{uj}x_j.`
 
@@ -131,7 +131,7 @@ therefore progresses whenever a sweep changes the state. Since `State n` is fini
 [`cycleUpdate_no_nontrivial_cycles`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Proofs/Hopfield/Convergence.lean)
 rules out a nontrivial cycle, and `cycleUpdate_exists_fixedpoint_le_card` gives a fixed point within
 at most `Fintype.card (State n)` sweeps. The more explicit
-`cycleUpdate_exists_fixedpoint_le_pow` states the corresponding `2^n` bound.
+`cycleUpdate_exists_fixedpoint_le_pow` states the corresponding $`2^n` bound.
 
 Inspect the exact hypotheses in the Infoview:
 

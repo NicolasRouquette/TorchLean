@@ -24,10 +24,12 @@ This file is a first “bridge step” between:
 
 What is proved here (fully proved):
 
-1. **Exact representability of affine maps** `x ↦ w⋅x + b` by a 2-layer ReLU MLP (width 2),
-   using the identity `relu(u) - relu(-u) = u`.
+1. **Exact representability of affine maps** $x\mapsto w\mathbin{\cdot}x+b$ by a two-layer ReLU
+   MLP of width $2$, using
+   $\operatorname{ReLU}(u)-\operatorname{ReLU}(-u)=u$.
 2. **Ridge lifting**: any 1D 2-layer ReLU MLP can be lifted to an nD Tensor input via
-   `u = w⋅x + c`, by scaling each first-layer weight by `w` and adjusting biases accordingly.
+   $u=w\mathbin{\cdot}x+c$, by scaling each first-layer weight by $w$ and adjusting biases
+   accordingly.
 
 What is *not* proved here: the full classical nD universal approximation theorem for ReLU MLPs.
 That requires substantially more formalization (e.g. piecewise-linear approximation machinery or a
@@ -44,7 +46,7 @@ open Examples
 
 open NN.MLTheory.Proofs.UniversalApproximation
 
-/-- `Tensor ℝ (.dim n .scalar)` viewed as an `n`-vector of real scalars. -/
+/-- `Tensor ℝ (.dim n .scalar)` viewed as an $n$-vector of real scalars. -/
 abbrev TensorVec (n : Nat) : Type := Tensor ℝ (.dim n .scalar)
 
 /-- View a `TensorVec n` as a function `Fin n → ℝ` via `Tensor.dimScalarEquiv`. -/
@@ -59,7 +61,7 @@ lemma toVec_dim_toVec {n : Nat} (x : TensorVec n) :
   | dim f =>
     simp [toVec, Tensor.dimScalarEquiv, Tensor.toScalar]
 
-/-- Dot product `w ⋅ x` for a weight function `w : Fin n → ℝ` and `x : TensorVec n`. -/
+/-- Dot product $w\mathbin{\cdot}x$ for `w : Fin n → ℝ` and `x : TensorVec n`. -/
 noncomputable def dot {n : Nat} (w : Fin n → ℝ) (x : TensorVec n) : ℝ :=
   ∑ j : Fin n, w j * toVec x j
 
@@ -68,7 +70,10 @@ noncomputable def mlpEvalNd {n hidDim : Nat}
     (l1 : LinearSpec ℝ n hidDim) (l2 : LinearSpec ℝ hidDim 1) (x : TensorVec n) : ℝ :=
   extractScalarOutput (Examples.mlpForward l1 l2 x)
 
-/-- Identity `relu u - relu (-u) = u`, used to represent affine maps exactly with ReLU. -/
+/--
+The identity $\operatorname{ReLU}(u)-\operatorname{ReLU}(-u)=u$, used to represent affine maps
+exactly with ReLU.
+-/
 lemma relu_sub_relu_neg (u : ℝ) : relu u - relu (-u) = u := by
   by_cases h : 0 ≤ u
   · have hneg : -u ≤ 0 := by linarith
@@ -79,7 +84,8 @@ lemma relu_sub_relu_neg (u : ℝ) : relu u - relu (-u) = u := by
     simp [relu, Activation.Math.reluSpec, max_eq_right hu, max_eq_left hneg]
 
 /--
-Unfold `mlp_forward` as `linear ∘ relu ∘ linear`.
+Unfold `mlp_forward` as
+$\operatorname{linear}\circ\operatorname{ReLU}\circ\operatorname{linear}$.
 
 This lemma is used as the standard normalization step in “network algebra” proofs.
 -/
@@ -179,7 +185,7 @@ lemma mat_vec_mul_spec_matrixMN_vector
 /--
 First layer for exact affine representability.
 
-Given an affine form `u(x) = w ⋅ x + b`, this layer outputs `[u(x), -u(x)]`.
+Given an affine form $u(x)=w\mathbin{\cdot}x+b$, this layer outputs $[u(x),-u(x)]$.
 -/
 noncomputable def affineIdLayer1 {n : Nat} (w : Fin n → ℝ) (b : ℝ) : LinearSpec ℝ n 2 :=
   { weights := matrixMN 2 n (fun i j => if i.1 = 0 then w j else -w j)
@@ -188,17 +194,19 @@ noncomputable def affineIdLayer1 {n : Nat} (w : Fin n → ℝ) (b : ℝ) : Linea
 /--
 Second layer for exact affine representability.
 
-With hidden activations `[relu(u), relu(-u)]`, this output layer computes `relu(u) - relu(-u) = u`.
+With hidden activations
+$[\operatorname{ReLU}(u),\operatorname{ReLU}(-u)]$, this output layer computes
+$\operatorname{ReLU}(u)-\operatorname{ReLU}(-u)=u$.
 -/
 noncomputable def affineIdLayer2 : LinearSpec ℝ 2 1 :=
   { weights := matrixMN 1 2 (fun _ j => if j.1 = 0 then (1 : ℝ) else (-1 : ℝ))
     bias := vectorN 1 (fun _ => (0 : ℝ)) }
 
-/-- Standard basis vector `e_i : Fin n → ℝ`. -/
+/-- Standard basis vector $e_i\in\mathbb{R}^n$. -/
 noncomputable def stdBasis {n : Nat} (i : Fin n) : Fin n → ℝ :=
   fun j => if j = i then (1 : ℝ) else 0
 
-/-- `dot e_i x = x_i` for the standard basis `stdBasis`. -/
+/-- $\operatorname{dot}(e_i,x)=x_i$ for the standard basis `stdBasis`. -/
 lemma dot_stdBasis {n : Nat} (i : Fin n) (x : TensorVec n) :
     dot (stdBasis (n := n) i) x = toVec x i := by
   classical
@@ -208,7 +216,8 @@ lemma dot_stdBasis {n : Nat} (i : Fin n) (x : TensorVec n) :
 /--
 Exact representability of affine maps by a 2-layer ReLU MLP (width 2).
 
-This is the core “bridge lemma” that turns scalar affine forms `w ⋅ x + b` into MLP evaluations.
+This is the core bridge lemma that turns scalar affine forms $w\mathbin{\cdot}x+b$ into MLP
+evaluations.
 -/
 theorem mlp_eval_affine_id {n : Nat} (w : Fin n → ℝ) (b : ℝ) (x : TensorVec n) :
     mlpEvalNd (n := n) (hidDim := 2) (affineIdLayer1 (n := n) w b) affineIdLayer2 x =
@@ -300,7 +309,7 @@ theorem mlp_eval_affine_id {n : Nat} (w : Fin n → ℝ) (b : ℝ) (x : TensorVe
   -- Finish: `extract_scalar_output` picks the unique element of `Fin 1`.
   simp [extractScalarOutput, hy, Tensor.toScalar]
 
-/-- Exact representability of coordinate projections `x ↦ x_i` by a width-2 ReLU MLP. -/
+/-- Exact representability of coordinate projections $x\mapsto x_i$ by a width-$2$ ReLU MLP. -/
 theorem mlp_eval_coord {n : Nat} (i : Fin n) (x : TensorVec n) :
     mlpEvalNd (n := n) (hidDim := 2) (affineIdLayer1 (n := n) (stdBasis (n := n) i) 0)
         affineIdLayer2 x =
@@ -311,23 +320,27 @@ theorem mlp_eval_coord {n : Nat} (i : Fin n) (x : TensorVec n) :
 /-!
 ## Ridge lifting
 
-Given a 1D MLP `(l1,l2)` and an affine scalar map `u = w⋅x + c`, we build an nD MLP whose
-pre-activations match the 1D pre-activations at `u`. This lets you reuse any 1D approximation
+Given a one-dimensional MLP `(l1,l2)` and an affine scalar map
+$u=w\mathbin{\cdot}x+c$, we build an $n$-dimensional MLP whose pre-activations match the
+one-dimensional pre-activations at $u$. This lets you reuse any one-dimensional approximation
 result for functions of one affine form (“ridge functions”).
 -/
 
 /--
 Lift a 1D first-layer spec to an nD first-layer spec along a ridge direction.
 
-Given a scalar 1D first layer that expects input `u : ℝ`, this constructs an nD first layer that
-feeds `u = w ⋅ x + c`.
+Given a scalar one-dimensional first layer that expects an input $u\in\mathbb{R}$, this constructs
+an $n$-dimensional first layer that feeds $u=w\mathbin{\cdot}x+c$.
 -/
 noncomputable def liftLayer1From1d
     {n hidDim : Nat} (l1 : LinearSpec ℝ 1 hidDim) (w : Fin n → ℝ) (c : ℝ) : LinearSpec ℝ n hidDim :=
   { weights := matrixMN hidDim n (fun i j => matDim1Get l1.weights i * w j)
     bias := vectorN hidDim (fun i => matDim1Get l1.weights i * c + vecGet l1.bias i) }
 
-/-- Lifting lemma: the lifted nD MLP agrees with the 1D MLP evaluated at `dot w x + c`. -/
+/--
+Lifting lemma: the lifted $n$-dimensional MLP agrees with the one-dimensional MLP evaluated at
+$w\mathbin{\cdot}x+c$.
+-/
 theorem mlp_eval_lift_from_1d
     {n hidDim : Nat} (l1 : LinearSpec ℝ 1 hidDim) (l2 : LinearSpec ℝ hidDim 1)
     (w : Fin n → ℝ) (c : ℝ) (x : TensorVec n) :

@@ -12,7 +12,7 @@ meta import NN.Examples.Factorization.Common
 /-!
 # Example: Cholesky factorization
 
-`choleskySpec A` returns the lower-triangular `L` with `A = L · Lᵀ` for a symmetric
+`choleskySpec A` returns the lower-triangular $L$ with $A=LL^\mathsf{T}$ for a symmetric
 positive-definite `A`. Here we factor a 3×3 SPD matrix and check the reconstruction error.
 -/
 
@@ -30,7 +30,7 @@ def A : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) :=
 /-- The Cholesky factor `L` (lower-triangular). -/
 def L : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) := Spec.choleskySpec A
 
-/-- Reconstruction error `‖A - L·Lᵀ‖_max`. -/
+/-- Reconstruction error $\lVert A-LL^\mathsf{T}\rVert_{\max}$. -/
 def reconErr : Float := maxMatErr A (mm L (tr L))
 
 -- Inspect the diagonal of the factor.
@@ -43,7 +43,8 @@ def reconErr : Float := maxMatErr A (mm L (tr L))
 
 /-! ## Negative control: the positive-pivot hypothesis is necessary
 
-`isCholesky_of_pos` requires the executable pivots `L[j,j]` to be positive (`0 < choleskyFn A j j`),
+`isCholesky_of_pos` requires the executable pivots $L_{jj}$ to be positive
+(`0 < choleskyFn A j j`),
 which is exactly the success condition over the reals (SPD is the expected — but here unformalized —
 sufficient condition for it). The matrix below is symmetric but *not* positive-definite (eigenvalues
 `3` and `-1`), so a pivot is non-positive, the diagonal step takes `√(negative)`, and the reconstruction

@@ -14,7 +14,7 @@ be initialized twice with different seeds or interpreted by different runtimes.
 
 We will build three complete architectures:
 
-1. a `2 → 8 → 1` regression MLP;
+1. a $`2\to8\to1` regression MLP;
 2. a small convolutional classifier;
 3. a transformer encoder block.
 
@@ -45,7 +45,7 @@ and
 
 $$`g:s_1\to s_2`,
 
-then `g` may follow `f`. A layer expecting `s_3` cannot be inserted there merely because the two
+then $`g` may follow $`f`. A layer expecting $`s_3` cannot be inserted there merely because the two
 shapes contain the same number of values.
 
 Model builders use:
@@ -407,7 +407,7 @@ A:\operatorname{Tensor}\;\alpha\;[\mathrm{inDim},\mathrm{rank}],
 B:\operatorname{Tensor}\;\alpha\;[\mathrm{rank},\mathrm{outDim}],
 `
 
-and contributes `scale * (A * B)` to the base weight. For example, this function applies a
+and contributes $`\mathrm{scale}\cdot(AB)` to the base weight. For example, this function applies a
 rank-two adapter to a batch of four eight-dimensional inputs:
 
 ```

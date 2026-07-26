@@ -50,9 +50,9 @@ variable {α : Type} [Context α]
 ### Affine bounds in the graph dialect
 
 A `FlatAffineBounds α` stores two affine maps (lower/upper) of the *flattened input vector*:
-\[
+$$
   \ell(x) = A_\ell x + c_\ell,\qquad u(x) = A_u x + c_u.
-\]
+$$
 These are propagated through the graph using local transfer rules.
 
 The certificate checker recomputes these affine maps node-by-node, so the functions below are
@@ -108,12 +108,12 @@ def affSub {n m : Nat} (a b : AffineVec α n m) : AffineVec α n m :=
 /-!
 ### α-CROWN lower relaxation for ReLU
 
-For a pre-activation scalar \(z\in[l,u]\), CROWN/DeepPoly uses:
+For a pre-activation scalar $z\in[l,u]$, CROWN/DeepPoly uses:
 - an *upper* linear envelope (the usual triangular relaxation), and
 - a *lower* linear envelope.
 
-In the unstable crossing case \(l < 0 < u\), the lower relaxation can be parameterized by
-\(\alpha\in[0,1]\) to interpolate between the sound choices \(y \ge 0\) and \(y \ge z\).
+In the unstable crossing case $l < 0 < u$, the lower relaxation can be parameterized by
+$\alpha\in[0,1]$ to interpolate between the sound choices $y \ge 0$ and $y \ge z$.
 
 We encode this by using `alphaRelaxLowerScalar` for the lower bound, and using
 `Runtime.Ops.ReLU.relax_scalar` / `relax_vector` for the upper bound.
@@ -182,18 +182,18 @@ def linearBoundsFromAffine
   Linear transfer rule (sign-splitting).
 
   Suppose the parent node has affine bounds
-  \[
+  $$
     \ell(x) = A_\ell x + c_\ell,\qquad u(x) = A_u x + c_u
-  \]
-  for its output vector, expressed as functions of the *global input* \(x\).
+  $$
+  for its output vector, expressed as functions of the *global input* $x$.
 
-  For a linear layer \(y = Wx + b\), we propagate affine bounds using the standard
-  positive/negative decomposition \(W = W^+ + W^-\), where \(W^+\ge 0\) and \(W^-\le 0\).
+  For a linear layer $y = Wx + b$, we propagate affine bounds using the standard
+  positive/negative decomposition $W = W^+ + W^-$, where $W^+\ge 0$ and $W^-\le 0$.
   Componentwise, this gives the sound enclosure
-  \[
+  $$
     y \le W^+\,u(x) + W^-\,\ell(x) + b,\qquad
     y \ge W^+\,\ell(x) + W^-\,u(x) + b.
-  \]
+  $$
 
   This is exactly the same “sign split” as used in IBP, but applied to affine bounds.
   -/
@@ -238,7 +238,7 @@ This step function handles the verifier core of the IR:
 - `.input`, `.const`, `.detach`
 - `.linear`, `.matmul` (ParamStore-driven linear operators in the verifier dialect)
 - `.relu` (CROWN upper + α-CROWN lower)
-- `.sum` (treated as a \(1\times n\) linear layer)
+- `.sum` (treated as a $1\times n$ linear layer)
 - `.reshape`, `.flatten` (shape-only, guarded by dimensional consistency)
 
 All other node kinds fall back to a conservative **constant** affine enclosure derived from the

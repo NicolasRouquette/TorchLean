@@ -146,9 +146,29 @@ runtime calls a backend derivative kernel while retaining TorchLean's tape struc
 `torchLeanTape` means a local TorchLean rule owns the VJP even if another provider supplied the
 forward value.
 
-A capsule is metadata, not a function pointer. Registering
-`native_cuda.matmul` does not invoke it. The eager dispatch branch must select the capsule and then
-call the matching native tape operation.
+Capsules record contracts. Runtime code supplies a typed `KernelHandler` for the result type of the
+operation. Binding produces an `ExecutableKernel` only when the handler and capsule have equal
+operation, provider, and device fields:
+
+```
+structure KernelHandler (β : Type) where
+  name     : String
+  op       : BackendOp
+  provider : Provider
+  device   : Device
+  execute  : KernelCapsule → IO β
+
+structure ExecutableKernel (β : Type) where
+  capsule             : KernelCapsule
+  handler             : KernelHandler β
+  operation_matches   : handler.op = capsule.op
+  provider_matches    : handler.provider = capsule.provider
+  device_matches      : handler.device = capsule.device
+```
+
+The identity check prevents `native_cuda.matmul` from running the reference CPU closure under that
+name. Numerical correctness remains exactly as strong as the capsule's theorem, checker, test, or
+trusted-boundary evidence.
 
 # Planning, Selection, And Execution
 
@@ -160,6 +180,9 @@ registry
        ↓ profile + availability + assurance gate
 accepted plan
   capsules allowed for this target
+       ↓ bind matching typed handler
+executable kernel
+  operation/provider/device identities agree
        ↓ provider-aware runtime dispatch
 executed operation
   the native symbol actually called
@@ -301,13 +324,15 @@ false = this key has exactly zero softmax numerator
 ```
 
 A fully blocked row returns zero. Native fused attention and the LibTorch adapter must preserve this
-convention. The adapter constructs a boolean CUDA mask rather than replacing `false` by `-1000`.
+convention. The adapter constructs a boolean CUDA mask rather than replacing `false` by $`-1000`.
 
-Why not use a finite sentinel? If an allowed logit is `-5000` and a blocked logit receives `-1000`,
+Why not use a finite sentinel? If an allowed logit is $`-5000` and a blocked logit receives
+$`-1000`,
 the blocked entry becomes *larger* and can dominate softmax. Negative infinity expresses a hard
 support restriction; a finite additive bias expresses a different operation.
 
-The attention regression suite includes masked forward values, `dQ`, `dK`, `dV`, and fully blocked
+The attention regression suite includes masked forward values, $`\mathrm dQ`, $`\mathrm dK`,
+$`\mathrm dV`, and fully blocked
 rows. Those are tests of concrete cases. The pure FlashAttention theorem separately proves that the
 spec-level tiled online-softmax definition equals the ordinary attention specification.
 

@@ -16,7 +16,7 @@ Positive / negative example for the `nn.functional.{exp, log, scale, shift, affi
 ops added for scientific forward models — e.g. the soil-moisture retrieval that
 combines SMAP (Soil Moisture Active Passive) and NISAR (NASA–ISRO Synthetic
 Aperture Radar) observations through the AVS (Attenuation–Volume–Surface) model,
-whose surface term is `exp(-2·b·NDVI)·c·|R|²`.
+whose surface term is $\exp(-2b\,\mathrm{NDVI})\,c\,|R|^2$.
 
 The point is that these ops are differentiated by the **autograd engine**, so a
 forward model written once yields its gradient with no hand-coded derivative.
@@ -37,7 +37,7 @@ form:
 
 * positive controls — the gradient matches the analytic value;
 * negative controls — a deliberately *wrong* analytic value (notably the
-  wrong-sign gradient of `exp(-2x)`) does **not** match. That is exactly the
+  wrong-sign gradient of $\exp(-2x)$) does **not** match. That is exactly the
   defect class — a sign/factor error in a hand-coded Jacobian — that deriving the
   gradient by autograd eliminates.
 
@@ -86,18 +86,18 @@ end
 
 /-! ## Functions under test (written once; gradients come from autograd) -/
 
-/-- `f(x) = eˣ`. -/
+/-- $f(x)=e^x$. -/
 def expFn : autograd.func.Fn Spec.Shape.scalar Spec.Shape.scalar :=
   fun x => nn.functional.exp x
 
-/-- `f(x) = e^{-2x}` — the shape of the AVS canopy two-way transmittance as a
+/-- $f(x)=e^{-2x}$ — the shape of the AVS canopy two-way transmittance as a
 function of the attenuation parameter. -/
 def expNegativeTwoFn : autograd.func.Fn Spec.Shape.scalar Spec.Shape.scalar :=
   fun x => do
     let u ← nn.functional.scale x (-Numbers.two)
     nn.functional.exp u
 
-/-- `f(x) = 3·x + 1` via the scalar-affine op. -/
+/-- $f(x)=3x+1$ via the scalar-affine op. -/
 def affineFn : autograd.func.Fn Spec.Shape.scalar Spec.Shape.scalar :=
   fun x => nn.functional.affine x Numbers.three Numbers.one
 
@@ -106,7 +106,8 @@ def affineFn : autograd.func.Fn Spec.Shape.scalar Spec.Shape.scalar :=
 /-- Absolute-tolerance float compare. -/
 def approx (a b : Float) (tol : Float := 1e-6) : Bool := (a - b).abs ≤ tol
 
-/-- Positive control: `name`'s autograd gradient ≈ expected; throws on mismatch. -/
+/-- Positive control: `name`'s autograd gradient is approximately equal to the expected value;
+throws on mismatch. -/
 def expectGrad (name : String) (got expected : Float) (tol : Float := 1e-6) : IO Unit :=
   if approx got expected tol then
     IO.println s!"[PASS] {name}: grad = {got} ≈ {expected}"

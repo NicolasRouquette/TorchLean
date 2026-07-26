@@ -85,7 +85,7 @@ Consider:
 
 $$`z=x^2+x^2`.
 
-The graph contains two paths from `x` to `z`. Each square contributes `2x`; the addition sends the
+The graph contains two paths from $`x` to $`z`. Each square contributes $`2x`; the addition sends the
 output seed to both parents. The final cotangent is:
 
 $$`\bar x=2x+2x=4x`.
@@ -186,7 +186,9 @@ declares:
 - evidence level.
 
 The planner filters by operation and target, ranks candidates according to the profile, and runs an
-acceptance gate. The accepted capsule is cached in the session and can be printed on first use.
+acceptance gate. The accepted capsule is cached in the session. Before execution, the runtime binds
+it to a typed `KernelHandler` with the same operation, provider, and device; a missing or mismatched
+handler is an error. The capsule can be printed on first use.
 
 Run:
 
@@ -202,21 +204,23 @@ lake -R -K cuda=true exe torchlean quickstart_mlp \
   --device cuda --steps 1 --seed 2026 --show-backend
 ```
 
-The report answers “which provider was selected for this semantic operation?” It does not, by
-itself, prove that the provider implementation satisfies every declared contract. That depends on
-the capsule's evidence and the executor's guards.
+The report answers “which provider was selected for this semantic operation?” The handler binding
+also prevents a native CUDA selection from quietly entering the reference CPU closure. Neither fact
+proves that the provider computes the declared formula. That depends on the capsule's evidence and
+the executor's guards.
 
 # Planning Is Not Execution
 
 Suppose the planner accepts a native CUDA matmul capsule. The executor must still:
 
-1. find the linked native symbol;
-2. verify device availability;
-3. check concrete dimensions and layout;
-4. allocate or reuse buffers;
-5. launch the operation;
-6. turn native failures into Lean errors;
-7. register the output and backward action.
+1. bind the capsule to a matmul handler for native CUDA on the CUDA device;
+2. find the linked native symbol;
+3. verify device availability;
+4. check concrete dimensions and layout;
+5. allocate or reuse buffers;
+6. launch the operation;
+7. turn native failures into Lean errors;
+8. register the output and backward action.
 
 An accepted plan describes admissible execution. It is not a receipt showing that the launch
 completed.
@@ -303,6 +307,20 @@ loss when needed
 
 and return parameter-structured or input-structured derivatives. The high-level trainer uses this
 runtime machinery inside its optimizer loop.
+
+An instantiated `TorchLean.Module` also exposes three paired operations:
+
+```
+TorchLean.Module.lossAndBackward
+TorchLean.Module.stepWithLoss
+TorchLean.Module.stepWithOptimizerAndLoss
+```
+
+`lossAndBackward` returns a scalar loss and parameter gradients from one forward tape.
+`stepWithLoss` applies a plain SGD update from that tape, while `stepWithOptimizerAndLoss` does the
+same for an explicit optimizer state. Both step functions return the loss before the update. This
+keeps the reported value tied to the random choices and saved intermediates that produced the
+gradient.
 
 # From Runtime To Proof
 

@@ -111,8 +111,8 @@ layers available side by side:
 2. the ideal derivative or VJP definition used in a theorem;
 3. the proof that the runtime rule implements that mathematical derivative.
 
-For a scalar loss `L(θ)`, reverse mode does not need to materialize the full Jacobian. Starting with
-the cotangent `1`, each node applies a local VJP:
+For a scalar loss $`L(\theta)`, reverse mode does not need to materialize the full Jacobian. Starting
+with the cotangent $`1`, each node applies a local VJP:
 
 $$`\bar{x}=J_f(x)^\mathsf{T}\bar{y}`.
 

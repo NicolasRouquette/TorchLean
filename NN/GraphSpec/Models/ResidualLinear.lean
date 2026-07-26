@@ -16,10 +16,12 @@ easy to read.
 
 It shows the structural reason we need the DAG IR without dragging in convolution arithmetic:
 
-```
-y   = Linear(x)
-out = ReLU(y + x)
-```
+$$
+\begin{aligned}
+y &= \operatorname{Linear}(x),\\
+\mathrm{out} &= \operatorname{ReLU}(y+x).
+\end{aligned}
+$$
 
 Because `x` is consumed by both the main path and the skip path, a pure chain would have to
 recompute the input path or hide sharing inside a special-purpose combinator. In `GraphSpec.DAG` we
@@ -67,7 +69,9 @@ Residual linear block in DAG form.
 
 In ordinary math notation, this is
 
-`x ↦ relu((W x + b) + x)`.
+$$
+x\mapsto\operatorname{ReLU}(Wx+b+x).
+$$
 
 This is a good first DAG example because the only genuinely DAG-specific feature is sharing the
 input between the main branch and the skip branch.

@@ -30,7 +30,7 @@ Related APIs are organized by object:
   `TensorOptimizer` interface. The Muon proofs separate three facts:
   the momentum buffer recurrence, the backend output used as the update direction, and the
   parameter update equation. Checked backends can provide either an exact certificate
-  `QᵀQ = I` or an approximate certificate bounding `QᵀQ - I` entrywise. QR gives an exact path
+  $Q^\mathsf{T}Q=I$ or an approximate certificate bounding $Q^\mathsf{T}Q-I$ entrywise. QR gives an exact path
   under positive-pivot hypotheses; Newton-Schulz gives a residual-checked approximate path and a
   fixed-point exact path. The detailed theorem handles live in
   `NN.MLTheory.Optimization.Muon` and `NN.MLTheory.Optimization.OptimizerLaws`.

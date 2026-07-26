@@ -9,6 +9,7 @@ module
 public import Std
 
 public import NN.Tests.API.SelfSupervised.BlockMask
+public import NN.Tests.API.GradientAccumulation
 public import NN.Tests.Backend.Profile
 public import NN.Tests.MLTheory.CROWNOperators
 public import NN.Tests.Runtime.Floats.Suite
@@ -47,6 +48,7 @@ def usage : String :=
 def run : IO Unit := do
   IO.println "== TorchLean: curated tests =="
   NN.Tests.API.SelfSupervised.BlockMask.run
+  NN.Tests.API.GradientAccumulation.run
   NN.Tests.Backend.Profile.run
   NN.Tests.MLTheory.CROWNOperators.run
   Tests.Floats.run

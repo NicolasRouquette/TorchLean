@@ -28,7 +28,7 @@ open Tensor
 namespace Session
 
 /--
-Fully-connected (affine) layer on vectors: `y = w·x + b`.
+Fully-connected (affine) layer on vectors: $y=w\mathbin{\cdot}x+b$.
 
 PyTorch analogue: `torch.nn.functional.linear` (weight shape `(outDim, inDim)`).
 -/

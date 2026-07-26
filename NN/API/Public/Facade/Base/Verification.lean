@@ -88,7 +88,7 @@ def lInfBox {α : Type} [NN.API.Semantics.Scalar α] {s : Shape}
   NN.Verification.TorchLean.lInfBox (α := α) center radius
 
 /--
-Build a uniform `ℓ∞` box around a shaped TorchLean input tensor.
+Build a uniform $\ell^\infty$ box around a shaped TorchLean input tensor.
 
 This fills the input shape with the scalar radius `eps`, then flattens it into a verifier box.
 -/
@@ -97,7 +97,8 @@ def lInfBall {α : Type} [NN.API.Semantics.Scalar α] {s : Shape}
   NN.Verification.TorchLean.lInfBall (α := α) center eps
 
 /--
-Seed the compiled verifier input with a uniform `ℓ∞` box around a shaped TorchLean input tensor.
+Seed the compiled verifier input with a uniform $\ell^\infty$ box around a shaped TorchLean input
+tensor.
 -/
 def seedLInfBall {α : Type} [NN.API.Semantics.Scalar α] {s : Shape}
     (compiled : CompiledIR α) (center : _root_.Spec.Tensor α s) (eps : α) : ParamStore α :=
@@ -180,7 +181,8 @@ def backwardObjectiveBoxOrThrow {α : Type} [Context α] [NN.MLTheory.CROWN.Boun
   compiled.backwardObjectiveBoxOrThrow ps ibp xB obj
 
 /--
-Compute the conservative two-class margin lower bound `lo[class0] - hi[class1]`.
+Compute the conservative two-class margin lower bound
+$\mathrm{lo}[\mathrm{class0}]-\mathrm{hi}[\mathrm{class1}]$.
 
 If this is positive, class `class0` is certified against `class1` over the input box.
 -/

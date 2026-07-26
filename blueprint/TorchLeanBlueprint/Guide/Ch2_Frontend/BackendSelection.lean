@@ -22,7 +22,8 @@ $$`
 \text{operation}+\text{profile}+\text{available providers}
 \longrightarrow \text{capsule}
 \longrightarrow \text{audit}
-\longrightarrow \text{accepted kernel}.
+\longrightarrow \text{accepted kernel}
+\longrightarrow \text{typed handler}.
 `
 
 That path, rather than another tour of command-line flags, is the subject of this chapter.
@@ -184,12 +185,16 @@ The implementation follows one explicit path:
 5. `Gate` applies the requested assurance policy. Eager execution receives an `AcceptedKernel` for
    each operation. Graph lowering can similarly produce an `AcceptedGraphPlan` for a later graph
    executor; the current eager runtime does not pretend that this data-level graph plan is executable.
-6. `Report` renders the providers, devices, trust levels, and recheck dispositions for logs and
+6. The eager session binds the selected capsule to a `KernelHandler` with the same operation,
+   provider, and device. If this build has no such handler, execution fails before entering a
+   different provider's code.
+7. `Report` renders the providers, devices, trust levels, and recheck dispositions for logs and
    benchmark records.
 
 These are Lean data structures rather than an informal convention between command-line flags. The
-eager runtime consumes the accepted per-operation value and records the capsule it actually used.
-Inspection tools can retain rejected graph plans and explain why they failed.
+eager runtime consumes the accepted per-operation value, binds it to the implementation it will
+call, and records the capsule it actually used. Inspection tools can retain rejected graph plans
+and explain why they failed.
 
 `AcceptedKernel` and `AcceptedGraphPlan` carry the equality proof that their policy gate returned
 `accepted`; they are not records that a caller can populate while omitting the gate result.
@@ -207,7 +212,7 @@ failures. The evidence inside that audit is what carries the kernel-specific arg
 
 The maintained CUDA wrappers also perform concrete checks at the FFI boundary. Convolution and
 pooling validate rank and dimension conversion, nonzero strides, representable element counts,
-buffer lengths, and operation-specific domains such as finite nonzero smooth-max `β` after
+buffer lengths, and operation-specific domains such as finite nonzero smooth-max $`\beta` after
 conversion to Float32. The C/CUDA boundary repeats critical size and overflow checks. These guards
 prevent malformed launches; they complement rather than replace a mathematical value-refinement
 argument.

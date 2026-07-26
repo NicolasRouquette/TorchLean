@@ -1,6 +1,5 @@
 ---
 title: Verification Bounds
-usemathjax: true
 ---
 
 Verification starts with a concrete promise: a property is checked against the graph, parameters,
@@ -25,7 +24,8 @@ TorchLean represents that question with four concrete objects:
 - a model, written in the same API used for training examples;
 - a compiled `NN.IR.Graph`, so verifier code can traverse named nodes;
 - an input box, with lower and upper bounds for every input coordinate;
-- an output property, usually a margin such as `logit_true - logit_other ≥ 0`.
+- an output property, usually a margin such as
+  $\operatorname{logit}\_{\mathrm{true}}-\operatorname{logit}\_{\mathrm{other}}\geq 0$.
 
 The common path is therefore:
 
@@ -61,7 +61,8 @@ let ps : ParamStore α :=
   { compiled.ps with inputBoxes := compiled.ps.inputBoxes.insert compiled.inputId inputBox }
 ```
 
-The verifier checks every input in the box `[inputCenter - eps, inputCenter + eps]`.
+The verifier checks every input in the box
+$[\mathtt{inputCenter}-\mathtt{eps},\mathtt{inputCenter}+\mathtt{eps}]$.
 
 ```lean
 let ibp := runIBP (α := α) compiled.graph ps
@@ -71,7 +72,8 @@ let some outB := ibp[compiled.outputId]! |
 
 The bound engine returns node-indexed `FlatBox` values. Each box stores a flattened dimension plus
 lower and upper tensors. If the output box satisfies a margin condition such as
-`lo[label] > max hi[other]`, every input in the seed box is certified for that label.
+$\mathrm{lo}[\mathrm{label}]>\max_{\mathrm{other}}\mathrm{hi}[\mathrm{other}]$, every input in the
+seed box is certified for that label.
 
 ## IBP: Propagate Boxes Through The Graph
 
@@ -81,23 +83,25 @@ when its inputs range over their current boxes.
 
 A scalar example captures the idea. Suppose
 
-```text
-x ∈ [-1, 2]
-y = 3 * x + 0.5
-```
+$$
+x \in [-1,2],
+\qquad
+y=3x+0.5.
+$$
 
 IBP computes
 
-```text
-y ∈ [3 * (-1) + 0.5, 3 * 2 + 0.5] = [-2.5, 6.5]
-```
+$$
+y \in [3(-1)+0.5,\;3(2)+0.5]=[-2.5,6.5].
+$$
 
 For a ReLU node, the transformer is monotone:
 
-```text
-z ∈ [l, u]
-relu(z) ∈ [max(0, l), max(0, u)]
-```
+$$
+z \in [\ell,u]
+\quad\Longrightarrow\quad
+\operatorname{ReLU}(z) \in [\max(0,\ell),\max(0,u)].
+$$
 
 For a linear layer, the implementation splits positive and negative weights so each input interval
 is used in the direction that gives the worst case. The result is conservative by design: every true
@@ -109,28 +113,30 @@ coordinates.
 
 ## A Margin Example
 
-Consider a two-logit classifier. To certify class `0` against class `1`, we want:
+Consider a two-logit classifier. To certify class $0$ against class $1$, we want:
 
-```text
-logit_0 - logit_1 ≥ 0
-```
+$$
+\operatorname{logit}_0-\operatorname{logit}_1 \geq 0.
+$$
 
 If IBP gives
 
-```text
-logit_0 ∈ [1.2, 1.8]
-logit_1 ∈ [0.1, 0.7]
-```
+$$
+\operatorname{logit}_0 \in [1.2,1.8],
+\qquad
+\operatorname{logit}_1 \in [0.1,0.7],
+$$
 
-then the margin is at least `1.2 - 0.7 = 0.5`, so the box certifies the property. If instead IBP
+then the margin is at least $1.2-0.7=0.5$, so the box certifies the property. If instead IBP
 gives
 
-```text
-logit_0 ∈ [0.8, 1.4]
-logit_1 ∈ [0.2, 1.0]
-```
+$$
+\operatorname{logit}_0 \in [0.8,1.4],
+\qquad
+\operatorname{logit}_1 \in [0.2,1.0],
+$$
 
-then the lower margin bound is `0.8 - 1.0 = -0.2`. The property is undecided at the IBP-box level.
+then the lower margin bound is $0.8-1.0=-0.2$. The property is undecided at the IBP-box level.
 The model may still be safe; this abstraction was not tight enough for this input box.
 
 ## CROWN-Style Affine Bounds
@@ -141,7 +147,8 @@ linear expression over the input variables.” That preserves more correlation i
 
 CROWN still uses IBP intervals, because nonlinear relaxations need pre-activation ranges. Forward
 CROWN stores affine lower and upper forms for nodes with respect to the chosen input node. Backward
-CROWN starts from one scalar objective, such as `logit_0 - logit_1`, and propagates that objective
+CROWN starts from one scalar objective, such as
+$\operatorname{logit}_0-\operatorname{logit}_1$, and propagates that objective
 back to an input-box bound.
 
 For ReLU, the affine relaxation depends on the pre-activation interval:
@@ -160,7 +167,8 @@ let crown := runCROWN (α := α) compiled.graph ps ctx ibp
 ```
 
 For a margin objective, the backward pass asks for a bound on one scalar expression, such as
-`logit_0 - logit_1`. Instead of bounding every output independently, this lets the verifier push a
+$\operatorname{logit}_0-\operatorname{logit}_1$. Instead of bounding every output independently,
+this lets the verifier push a
 single objective backward through the graph:
 
 ```lean
@@ -305,7 +313,7 @@ The native and external examples produce different kinds of evidence:
 - LiRPA-style fixtures exercise small exported bound artifacts for supported network fragments.
   They are regression fixtures for the checker API and examples of the finite objects Lean can
   reload.
-- α,β-CROWN-style leaf artifacts carry one terminal external-verifier claim into Lean. The checker
+- $\alpha,\beta$-CROWN-style leaf artifacts carry one terminal external-verifier claim into Lean. The checker
   validates the schema, box nesting, array sizes, and witness lower-bound comparison represented in
   that artifact.
 - VNN-COMP-style examples show how a benchmark-shaped network/property pair can enter TorchLean
@@ -329,14 +337,14 @@ checker predicate did this command use?
   [`NN/Verification/TorchLean/IBPWorkflow.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/TorchLean/IBPWorkflow.lean)
 - CROWN operation entry point:
   [`NN/Verification/TorchLean/CrownOpsWorkflow.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/TorchLean/CrownOpsWorkflow.lean)
-- α,β-CROWN-style leaf artifact checker:
+- $\alpha,\beta$-CROWN-style leaf artifact checker:
   [`NN.Verification.Cert.AbCrownLeafCert`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/Cert/AbCrownLeafCert.lean)
 - VNN-COMP-style MNIST entry point:
   [`NN.Verification.VNNComp.MnistFC`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/VNNComp/MnistFC.lean)
 - 3D geometry certificate checker:
   [`NN.Verification.Geometry3D`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/Geometry3D.lean)
 - Verification guide chapter:
-  [Verification and Certificates]({{ '/blueprint/Verification-and-Certificates/Verification/' | relative_url }})
+  [Neural Network Verification]({{ '/blueprint/Verification-and-Certificates/Neural-Network-Verification/' | relative_url }})
 
 The examples provide commands that check the relevant graph, bound, or certificate artifact in
 Lean, rather than relying only on plots or external Python objects.

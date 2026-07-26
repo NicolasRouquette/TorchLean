@@ -26,7 +26,7 @@ The optimization contract has three layers:
 - *Runtime update*: the concrete operation that writes new values into parameter tensors, such as
   one SGD, momentum, or Adam-style step.
 - *Ideal update*: the mathematical map the runtime update is intended to approximate, for example
-  `x ↦ x - η g x`.
+  $`x\mapsto x-\eta g(x)`.
 - *Convergence theorem*: the conditional theorem saying that iterating the ideal map makes progress
   under assumptions such as strong monotonicity, Lipschitzness, and a safe step size.
 
@@ -156,18 +156,18 @@ example (x : ℚ) : step x = x / 2 := by
 ```
 
 Lean prints `2` and `1`. The final theorem proves why: each step halves the distance to the
-minimizer `0`, so the squared distance contracts by a factor of `1/4`. The library theorem replaces
+minimizer $`0`, so the squared distance contracts by a factor of $`1/4`. The library theorem replaces
 this one-dimensional calculation by assumptions on an abstract gradient map.
 
 If `g` is strongly monotone with parameter $`\mu`, Lipschitz with parameter $`L`, and the step size
 $`\eta` is in the safe range, then one step is contractive:
 
-> the distance between `step eta g x` and `step eta g y` is at most `q` times the distance between
-> `x` and `y`.
+> the distance between `step eta g x` and `step eta g y` is at most $`q` times the distance between
+> $`x` and $`y`.
 
 The [linear convergence API](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Optimization/GDLinearConvergence.lean) names the
 predicate `StrongMonotone mu g`. Informally, it says that the inner product of
-`g x - g y` with `x - y` dominates `mu * ||x - y||^2`.
+$`g(x)-g(y)` with $`x-y` dominates $`\mu\lVert x-y\rVert^2`.
 
 The two analytic hypotheses can be read as:
 
@@ -182,7 +182,7 @@ Under these hypotheses, `step_norm_sq_le` proves the one-step inequality. The
 iterates the inequality. Its theorem `dist_sq_iterate_le_of_q_lt_one` is the statement readers
 should remember:
 
-> If the contraction factor `q η μ L` is nonnegative and strictly below one, then repeated gradient
+> If the contraction factor $`q(\eta,\mu,L)` is nonnegative and strictly below one, then repeated gradient
 > descent steps shrink the squared distance to the reference point geometrically.
 
 The mathematical content is in the hypotheses. The Lean theorem keeps those conditions explicit
@@ -222,7 +222,7 @@ strong monotonicity of an abstract gradient map. TorchLean keeps both vocabulari
 bridge between them.
 
 The informal first order strong convexity condition says that `f y` lies above the tangent model at
-`x` plus a quadratic term with coefficient `mu / 2`.
+$`x` plus a quadratic term with coefficient $`\mu/2`.
 
 The [smooth strong convex bridge API](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Optimization/SmoothStrongConvexBridge.lean)
 turns that objective level statement into a gradient map statement. The theorem to recognize is

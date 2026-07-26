@@ -29,19 +29,19 @@ variable {α : Type} [Context α]
 
 /--
 Evidence that `direction` is exactly the output of an orthogonalizer on `buffer` and has column
-Gram matrix `I`.
+Gram matrix $I$.
 -/
 structure ExactCertifiedDirection {m n : Nat}
     (orthogonalizer : Orthogonalizer α (.dim m (.dim n .scalar)))
     (buffer direction : MatrixTensor α m n) : Prop where
   /-- The certified direction is the backend output. -/
   direction_eq : direction = orthogonalizer.apply buffer
-  /-- The certified direction has exact column Gram `I`. -/
+  /-- The certified direction has exact column Gram $I$. -/
   exact_column_gram : HasExactColumnGram direction
 
 /--
 Evidence that `direction` is exactly the output of an orthogonalizer on `buffer` and has an
-entrywise column-Gram residual bounded by `eps`.
+entrywise column-Gram residual bounded by $\varepsilon$.
 -/
 structure ApproxCertifiedDirection {m n : Nat} (eps : α)
     (orthogonalizer : Orthogonalizer α (.dim m (.dim n .scalar)))
@@ -155,7 +155,7 @@ theorem approxCertifiedStep_of_checkedBackend {m n : Nat} {eps : α}
   exact approxCertifiedStep_of_buffer state params grads
     (backend.certified (update state params grads).1.buf hsuccess)
 
-/-- A checked exact backend gives `QᵀQ = I` for the direction used by an update. -/
+/-- A checked exact backend gives $Q^\mathsf{T}Q=I$ for the direction used by an update. -/
 theorem checkedBackend_updateDirection_hasExactColumnGram {m n : Nat}
     (backend : CheckedExactOrthogonalizer α m n)
     (lr momentum : α) (buf params grads : MatrixTensor α m n)

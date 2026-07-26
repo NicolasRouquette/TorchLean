@@ -17,9 +17,9 @@ This file defines an HMM with discrete observations:
 - observations: `nObservations` (discrete symbols)
 
 The model parameters are:
-- initial distribution `π`
-- transition matrix `A`
-- emission matrix `B`
+- initial distribution $\pi$,
+- transition matrix $A$, and
+- emission matrix $B$.
 
 We represent observations as `List (Fin nObservations)` to keep the observation alphabet explicit
 and avoid mixing “probabilities” with “indices” in the scalar type `α`.
@@ -28,11 +28,12 @@ and avoid mixing “probabilities” with “indices” in the scalar type `α`.
 
 We use the conventional HMM notation:
 
-- `π : nStates` initial state distribution
-- `A : nStates × nStates` transition matrix (`A[i,j] = P(z_{t+1}=j | z_t=i)`)
-- `B : nStates × nObservations` emission matrix (`B[i,o] = P(x_t=o | z_t=i)`)
+- $\pi$: initial state distribution,
+- $A$: transition matrix, with $A_{ij}=P(z_{t+1}=j\mid z_t=i)$, and
+- $B$: emission matrix, with $B_{io}=P(x_t=o\mid z_t=i)$.
 
-An observation sequence is `o₀, o₁, ..., o_{T-1}` where each `o_t : Fin nObservations`.
+An observation sequence is $o_0,o_1,\ldots,o_{T-1}$, where each observation is represented by
+`Fin nObservations`.
 
 References:
 
@@ -48,7 +49,8 @@ References:
 PyTorch analogy:
 
 - emissions are categorical distributions (`torch.distributions.Categorical`),
-- the forward algorithm corresponds to multiplying by `A` and reweighting by `B[:, obs_t]`,
+- the forward algorithm corresponds to multiplying by $A$ and reweighting by the emission vector
+  $B_{\mathord{:},o_t}$,
   then summing over previous states (often implemented in log-space in practice).
 
 In practice, PyTorch users often reach for a dedicated HMM library (e.g. `hmmlearn`) or implement
@@ -67,16 +69,16 @@ variable {α : Type} [Context α]
 
 /-- A discrete-observation HMM.
 
-We do not enforce probabilistic validity (nonnegativity / rows summing to `1`) at the type level;
+We do not enforce probabilistic validity (nonnegativity or rows summing to $1$) at the type level;
 that is a modeling assumption, similar to how PyTorch will happily store unconstrained tensors
 until you feed them to a distribution or a loss.
 -/
 structure HMMSpec (α : Type) (nStates nObservations : Nat) where
-  /-- Initial distribution `π`. -/
+  /-- Initial distribution $\pi$. -/
   init_prob : Tensor α (.dim nStates .scalar)
-  /-- Transition matrix `A`. -/
+  /-- Transition matrix $A$. -/
   trans_prob : Tensor α (.dim nStates (.dim nStates .scalar))
-  /-- Emission matrix `B`. -/
+  /-- Emission matrix $B$. -/
   emission_prob : Tensor α (.dim nStates (.dim nObservations .scalar))
 
 /-- Observation sequence as a list of discrete symbols (indices into the observation alphabet). -/
@@ -84,7 +86,7 @@ abbrev ObservationSeq (nObservations : Nat) := List (Fin nObservations)
 
 /-! ## Basic helpers -/
 
-/-- Get emission probability `B[state, obs]` for a discrete observation symbol. -/
+/-- Get the emission probability $B_{\mathtt{state},\mathtt{obs}}$ for a discrete symbol. -/
 def getEmissionProbDiscrete
   {nStates nObservations : Nat}
   (m : HMMSpec α nStates nObservations)
@@ -102,19 +104,30 @@ The forward-pass APIs above are enough to *use* a fixed HMM, but a “fully impl
 should also include classical training. For discrete-observation HMMs, the standard training
 procedure is the Baum–Welch algorithm (an EM procedure):
 
-- **E-step**: run forward–backward to compute expected state occupancies (`γ`) and expected
-  transition counts (`ξ`).
-- **M-step**: normalize those expected counts to update `π`, `A`, and `B`.
+- **E-step**: run forward–backward to compute expected state occupancies $\gamma$ and expected
+  transition counts $\xi$.
+- **M-step**: normalize those expected counts to update $\pi$, $A$, and $B$.
 
 This implementation uses *scaled* forward–backward to reduce numerical underflow:
-each forward message `α_t` is normalized by a scalar `c_t`, and the backward messages divide by
-those same scalars. The sequence likelihood is then `∏_t c_t`, so the log-likelihood is
-`Σ_t log c_t`.
+each forward message $\alpha_t$ is normalized by a scalar $c_t$, and the backward messages divide
+by those same scalars. The sequence likelihood is then $\prod_t c_t$, so the log-likelihood is
+$\sum_t\log c_t$.
 
 Concretely:
 
-- forward recursion (unnormalized): `α̃_{t+1}(j) = B[j, o_{t+1}] * Σ_i α_t(i) * A[i,j]`
-- scaling: `c_t = Σ_j α̃_t(j)` and `α_t = α̃_t / c_t` so that `Σ_j α_t(j) = 1`
+- forward recursion (unnormalized):
+  $$
+  \widetilde{\alpha}_{t+1}(j)
+    = B_{j,o_{t+1}}\sum_i \alpha_t(i)A_{ij};
+  $$
+- scaling:
+  $$
+  c_t=\sum_j\widetilde{\alpha}_t(j),
+  \qquad
+  \alpha_t=\frac{\widetilde{\alpha}_t}{c_t},
+  \qquad
+  \sum_j\alpha_t(j)=1.
+  $$
 
 This is the same basic idea used in many practical HMM implementations (sometimes also expressed as
 log-space forward–backward).
@@ -134,10 +147,11 @@ private def uniformVec {n : Nat} : Tensor α (.dim n .scalar) :=
   | 0 => Tensor.dim (fun k => nomatch k)
   | Nat.succ _ => Tensor.dim (fun _ => Tensor.scalar (1 / (n : α)))
 
-/-- Normalize a nonnegative vector `v` to sum to `1`, returning `(v / sum(v), sum(v))`.
+/-- Normalize a nonnegative vector $v$ to sum to $1$, returning
+$(v/\sum_i v_i,\sum_i v_i)$.
 
-If the sum is `0`, the normalized message is totalized to a uniform vector, while the returned
-scale remains `0`. The zero scale is essential: it records that the observation prefix has
+If the sum is $0$, the normalized message is totalized to a uniform vector, while the returned
+scale remains $0$. The zero scale is essential: it records that the observation prefix has
 probability zero.
 -/
 def normalizeVec {n : Nat} (v : Tensor α (.dim n .scalar)) : (Tensor α (.dim n .scalar) × α) :=
@@ -156,7 +170,7 @@ private def logScales? (scales : List α) : Option α :=
       | some total => if c > 0 then some (total + MathFunctions.log c) else none)
     (some 0)
 
-/-- Emission probabilities `B[:, obs]` as a vector over states. -/
+/-- Emission probabilities $B_{\mathord{:},\mathtt{obs}}$ as a vector over states. -/
 def emissionVec {nStates nObservations : Nat}
   (m : HMMSpec α nStates nObservations) (obs : Fin nObservations) : Tensor α (.dim nStates .scalar)
     :=
@@ -184,12 +198,13 @@ private def forwardStep {nStates nObservations : Nat}
     match get emission_probs s with
     | Tensor.scalar emit_val => Tensor.scalar (emit_val * trans_total))
 
-/-- Scaled forward pass, returning `(α_t, c_t)` for each timestep.
+/-- Scaled forward pass, returning $(\alpha_t,c_t)$ for each timestep.
 
-- Each `α_t` is normalized to sum to `1`.
-- Each `c_t` is the normalization constant used at step `t`.
+- Each $\alpha_t$ is normalized to sum to $1$.
+- Each $c_t$ is the normalization constant used at step $t$.
 
-If you need the total likelihood, multiply the scales: `p(o₀:T-1) = ∏_t c_t`.
+If you need the total likelihood, multiply the scales:
+$p(o_{0:T-1})=\prod_t c_t$.
 -/
 def hmmForwardScaled
   {nStates nObservations : Nat} [Inhabited (Fin nObservations)]
@@ -214,13 +229,16 @@ def hmmForwardScaled
             go alpha os (alpha :: accA) (c :: accC)
       go alpha0 os [alpha0] [c0]
 
-/-- Scaled backward pass, producing normalized backward messages `β_t`.
+/-- Scaled backward pass, producing normalized backward messages $\beta_t$.
 
 The standard backward recursion is:
 
-`β_t(i) = Σ_j A[i,j] * B[j, o_{t+1}] * β_{t+1}(j)`.
+$$
+\beta_t(i)=\sum_j A_{ij}B_{j,o_{t+1}}\beta_{t+1}(j).
+$$
 
-In the scaled variant, we divide by the forward scale `c_{t+1}` so that `α_t ⊙ β_t` stays
+In the scaled variant, we divide by the forward scale $c_{t+1}$ so that
+$\alpha_t\odot\beta_t$ stays
 well-conditioned.
 -/
 private def hmmBackwardScaled
@@ -268,9 +286,11 @@ private def elementwiseMul {n : Nat} (a b : Tensor α (.dim n .scalar)) : Tensor
   mulSpec a b
 
  /--
-Compute the normalized state posterior `gamma_t` from forward/backward messages.
+Compute the normalized state posterior $\gamma_t$ from forward/backward messages.
 
-`gamma_t(i) ∝ alpha_t(i) * beta_t(i)`.
+$$
+\gamma_t(i)\propto\alpha_t(i)\beta_t(i).
+$$
  -/
 private def gammaAt {nStates : Nat}
   (alpha : Tensor α (.dim nStates .scalar)) (beta : Tensor α (.dim nStates .scalar)) : Tensor α
@@ -280,10 +300,13 @@ private def gammaAt {nStates : Nat}
   (normalizeVec (α := α) g).1
 
  /--
-Compute the normalized transition posterior `xi_t` for a single time step.
+Compute the normalized transition posterior $\xi_t$ for a single time step.
 
 Unnormalized:
-`xi(i,j) = alpha_t(i) * A(i,j) * B(j, obs_{t+1}) * beta_{t+1}(j)`.
+$$
+\xi_t(i,j)
+  =\alpha_t(i)A_{ij}B_{j,o_{t+1}}\beta_{t+1}(j).
+$$
  -/
 private def xiAt {nStates nObservations : Nat}
   (m : HMMSpec α nStates nObservations)
@@ -302,7 +325,7 @@ private def xiAt {nStates nObservations : Nat}
   let s := sumSpec xiRaw
   if s > 0 then scaleSpec xiRaw (1 / s) else xiRaw
 
- /-- Sum `xi_t(i,j)` over a list of `xi` matrices (expected transition count). -/
+ /-- Sum $\xi_t(i,j)$ over a list of $\xi$ matrices (expected transition count). -/
 private def sumXi
   {nStates : Nat}
   (xis : List (Tensor α (.dim nStates (.dim nStates .scalar))))
@@ -312,9 +335,9 @@ private def sumXi
     | Tensor.scalar v => acc + v) 0
 
  /--
-Sum `gamma_t(state)` over timesteps where the observation equals a given symbol.
+Sum $\gamma_t(\mathtt{state})$ over timesteps where the observation equals a given symbol.
 
-This yields the expected emission count for `(state, symbol)`.
+This yields the expected emission count for $(\mathtt{state},\mathtt{symbol})$.
  -/
 private def sumGammaWhereObs
   {nStates nObservations : Nat} [DecidableEq (Fin nObservations)]
@@ -438,7 +461,7 @@ def baumWelchEpochSpec
 
 Implementation note:
 we compute the likelihood from the per-timestep scaling factors produced by
-`hmm_forward_scaled`. This avoids the worst underflow behavior of multiplying many small
+`hmmForwardScaled`. This avoids the worst underflow behavior of multiplying many small
 probabilities directly.
 -/
 def hmmForwardSpec
@@ -481,7 +504,9 @@ def hmmInitSpec {nStates nObservations : Nat} :
 /-- Log-likelihood of an observation sequence.
 
 We compute this from the same scaling factors used in the EM implementation:
-`log p(x_{0:T-1}) = Σ_t log c_t`.
+$$
+\log p(x_{0:T-1})=\sum_t\log c_t.
+$$
 -/
 def hmmLogLikelihoodSpec {nStates nObservations : Nat} [Inhabited (Fin nObservations)]
   (m : HMMSpec α nStates nObservations)

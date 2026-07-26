@@ -48,7 +48,7 @@ open _root_.Generative.Diffusion
 variable {α : Type} [Context α]
 variable {T : Nat} {s : Shape}
 
-/-- The VP schedule convention is `ᾱ₀ = 1`. -/
+/-- The VP schedule convention is $\bar{\alpha}_0 = 1$. -/
 @[simp] theorem alphaBar_zero (sched : VPSchedule α T) :
     sched.alphaBar ⟨0, Nat.succ_pos T⟩ = 1 := by
   rfl
@@ -93,7 +93,9 @@ Subtraction algebra for two explicit Euler updates.
 
 The identity
 
-`(x + dt • fx) - (y + dt • fy) = (x - y) + dt • (fx - fy)`
+$$
+(x+\Delta t\,f_x)-(y+\Delta t\,f_y)=(x-y)+\Delta t\,(f_x-f_y)
+$$
 
 is the tensor-level algebraic core behind stability and Lipschitz proofs for ODE samplers. We keep
 it private because users should usually consume the norm and Lipschitz theorems below.
@@ -124,10 +126,14 @@ private theorem sub_add_scaled_eq {s : Shape} (x y fx fy : Tensor ℝ s) (dt : �
 /--
 One explicit Euler step is stable in L2 up to the current state separation plus the RHS separation.
 
-For an ODE `x' = f(x,t)`, the Euler update is `E(x)=x+dt f(x,t)`. This theorem proves the standard
+For an ODE $x'=f(x,t)$, the Euler update is $E(x)=x+\Delta t\,f(x,t)$. This theorem proves the standard
 numerical-analysis estimate
 
-`‖E(x)-E(y)‖₂ ≤ ‖x-y‖₂ + |dt| ‖f(x,t)-f(y,t)‖₂`.
+$$
+\lVert E(x)-E(y)\rVert_2
+\leq \lVert x-y\rVert_2 +
+  |\Delta t|\,\lVert f(x,t)-f(y,t)\rVert_2.
+$$
 
 This proof uses TorchLean's real tensor norm library: the algebraic Euler-difference identity above,
 the L2 triangle inequality, and L2 homogeneity of scalar multiplication. It is the bridge from the
@@ -160,8 +166,8 @@ theorem eulerStep_l2_distance_bound
           rw [Proofs.tensor_l2_norm_scale]
 
 /--
-If the ODE right-hand side is `L`-Lipschitz in L2 at a fixed time, then one Euler step is
-`(1 + |dt| L)`-Lipschitz in L2.
+If the ODE right-hand side is $L$-Lipschitz in L2 at a fixed time, then one Euler step is
+$(1+|\Delta t|L)$-Lipschitz in L2.
 
 This is a quantitative sampler theorem: once we prove or import a Lipschitz bound for the neural
 vector field, this theorem converts it into a certified bound for the actual update used by the
@@ -207,8 +213,8 @@ theorem eulerStep_l2_lipschitz_of_rhs_lipschitz
 /--
 Probability-flow Euler systems inherit the concrete L2 Euler-step Lipschitz bound.
 
-For the PF-ODE vector field `pfOdeRhs sch model`, any certified `L`-Lipschitz bound on the RHS at
-time `t` yields a `(1 + |dt| L)` Lipschitz bound on the `DynamicalSystem.step` used by TorchLean
+For the PF-ODE vector field `pfOdeRhs sch model`, any certified $L$-Lipschitz bound on the RHS at
+time $t$ yields a $(1+|\Delta t|L)$ Lipschitz bound on the `DynamicalSystem.step` used by TorchLean
 trajectories. This is the theorem downstream PF-ODE certificates should target first.
 -/
 theorem pfOdeEulerSystem_l2_lipschitz_of_rhs_lipschitz

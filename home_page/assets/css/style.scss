@@ -125,6 +125,15 @@ body {
   font-size: inherit;
 }
 
+.main-content mjx-container[display="true"] {
+  box-sizing: border-box;
+  display: block !important;
+  width: 100% !important;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .main-content table {
   display: block;
   width: 100%;
@@ -703,6 +712,70 @@ body {
   display: inline-block;
   margin-top: 0.7rem;
   font-weight: 600;
+}
+
+/* The tools page is a directory, so its cards hold several destinations instead
+   of turning the whole card into one ambiguous link. */
+.tool-directory {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  margin: 1.3rem 0 2rem;
+}
+
+.tool-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 1.15rem 1.2rem;
+  border: 1px solid var(--tl-border);
+  border-radius: 8px;
+  background: var(--tl-panel);
+}
+
+.tool-card .tool-kind {
+  margin: 0 0 0.3rem;
+  color: var(--tl-green);
+  font-size: 0.8rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tool-card h2 {
+  margin: 0 0 0.75rem;
+}
+
+.tool-card p {
+  font-size: var(--tl-small-size);
+}
+
+.tool-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.35rem;
+}
+
+.tool-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--tl-border);
+  border-radius: 999px;
+  background: var(--tl-soft);
+  font-size: 0.85rem;
+  font-weight: 650;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.tool-links a:hover {
+  border-color: var(--tl-border-strong);
+  color: var(--tl-ink);
+  text-decoration: none;
 }
 
 .cmd-block {

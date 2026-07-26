@@ -30,7 +30,7 @@ subdomains. TorchLean's helper converts that terminal-domain data into a small J
 for each represented subdomain. TorchLean can parse that JSON and validate several
 properties entirely inside Lean: every leaf box lies inside the declared root input region; every
 leaf marked as verified satisfies the exported local prune test
-(`∃ i, lb[i] > threshold[i]` in the exported fields); and the document is internally consistent
+($`\exists i,\;lb_i>threshold_i` in the exported fields); and the document is internally consistent
 (dimensions, array lengths, and cross-references line up).
 
 These checks focus on the JSON artifact itself: boxes nest correctly, verified leaves satisfy the
@@ -124,7 +124,7 @@ $$`\forall x\in B_\ell,\qquad c^\top f(x)\ge threshold.`
 
 The current checker does not establish that quantified statement. It accepts when the exported
 boxes and witness fields are coherent and every represented leaf passes the finite comparison
-`lb[i] > threshold[i]`. Even if the lower-bound provenance were added, turning the leaves into a
+$`lb_i>threshold_i`. Even if the lower-bound provenance were added, turning the leaves into a
 root-region proof would still require separately checked coverage. In this fragment, the
 certificate is structural.
 
@@ -132,10 +132,10 @@ certificate is structural.
 
 The `v0.1` format intentionally stops at structural checking. Lean checks that every represented
 leaf lies inside the root box, that dimensions and arrays agree, that numeric fields are finite,
-and that every leaf's witness satisfies `∃ i, lb[i] > threshold[i]`.
+and that every leaf's witness satisfies $`\exists i,\;lb_i>threshold_i`.
 
-The current artifact checks `lb_i > threshold_i` for an exported lower bound. A stronger artifact
-would also check that `lb_i` is a sound lower bound for the graph on the leaf.
+The current artifact checks $`lb_i>threshold_i` for an exported lower bound. A stronger artifact
+would also check that $`lb_i` is a sound lower bound for the graph on the leaf.
 
 There are three progressively stronger designs:
 
@@ -213,13 +213,13 @@ Semantics:
   fallback, but that fallback is only the envelope of the represented leaves.
 - Each `leaf` is a sub-box of `root`.
 - The root and every leaf must contain finite coordinates ordered coordinatewise
-  (`lo[i] ≤ hi[i]`), and the leaf array must be nonempty.
+  ($`lo_i\le hi_i`), and the leaf array must be nonempty.
 - `lb` and `threshold` are the lower bounds and thresholds reported by the external producer for
   that leaf at the moment it was pruned or verified.
-- A leaf is considered "verified" iff `∃ i, lb[i] > threshold[i]`.
+- A leaf is considered "verified" iff $`\exists i,\;lb_i>threshold_i`.
   (This matches how `complete_verifier/input_split/branching_domains.py` filters out verified domains.)
 - `witness_idx` and `witness_margin` are a convenience witness for the check above:
-  `witness_margin = lb[witness_idx] - threshold[witness_idx]`.
+  $`witness\_margin=lb_{witness\_idx}-threshold_{witness\_idx}`.
   When `witness_idx` is present, the checker validates that exact coordinate rather than searching
   for a different witness. When `witness_margin` is present, it must accompany the index and agree
   with the recomputed margin up to the schema tolerance.

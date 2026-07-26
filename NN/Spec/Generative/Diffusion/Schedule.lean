@@ -17,13 +17,17 @@ This file defines a discrete-time variance-preserving (VP) schedule for diffusio
 
 We follow the common DDPM-style discrete schedule:
 
-- choose `T` steps and a sequence of `β₀, …, β_{T-1}` with `0 ≤ β_t < 1`,
-- define `α_t := 1 - β_t`,
-- define the cumulative product `ᾱ_0 := 1` and `ᾱ_{t+1} := ᾱ_t * α_t`.
+- choose $T$ steps and a sequence $\beta_0,\ldots,\beta_{T-1}$ with $0\le\beta_t<1$,
+- define $\alpha_t:=1-\beta_t$,
+- define the cumulative product $\bar\alpha_0:=1$ and
+  $\bar\alpha_{t+1}:=\bar\alpha_t\alpha_t$.
 
 Then the forward noising kernel is (informally):
 
-`x_t = sqrt(ᾱ_t) x_0 + sqrt(1-ᾱ_t) ε` where `ε ~ N(0, I)`.
+$$
+x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\varepsilon,
+\qquad \varepsilon\sim\mathcal{N}(0,I).
+$$
 
 We keep the schedule scalar-polymorphic (`Context α`) so the same definitions can be reused under:
 
@@ -48,26 +52,26 @@ variable {α : Type} [Context α]
 
 /-- Discrete VP schedule with `T` diffusion steps. -/
 structure VPSchedule (α : Type) (T : Nat) [Context α] where
-  /-- Per-step variances `β_t` for `t = 0..T-1`. -/
+  /-- Per-step variances $\beta_t$ for $t=0,\ldots,T-1$. -/
   betas : Spec.Vec T α
 
 namespace VPSchedule
 
 variable {T : Nat}
 
-/-- Fetch `β_t` as a scalar. -/
+/-- Fetch $\beta_t$ as a scalar. -/
 def beta (sched : VPSchedule α T) (t : Fin T) : α :=
   Tensor.vecGet sched.betas t
 
-/-- `α_t := 1 - β_t`. -/
+/-- $\alpha_t:=1-\beta_t$. -/
 def alpha (sched : VPSchedule α T) (t : Fin T) : α :=
   1 - sched.beta t
 
 /--
-Compute `ᾱ_t` for `t : Fin (T+1)` with the convention:
+Compute $\bar\alpha_t$ for `t : Fin (T+1)` with the convention:
 
-- `ᾱ_0 = 1`,
-- `ᾱ_{t+1} = ᾱ_t * α_t`.
+- $\bar\alpha_0=1$,
+- $\bar\alpha_{t+1}=\bar\alpha_t\alpha_t$.
 
 Implementation note: define an auxiliary recursion on `Nat`, then package it as a `Fin` function.
 -/
@@ -81,14 +85,14 @@ def alphaBar (sched : VPSchedule α T) (t : Fin (T + 1)) : α :=
         go k hk' * sched.alpha i
   go t.1 t.2
 
-/-- Vector form of `alphaBar` (length `T+1`). -/
+/-- Vector form of `alphaBar` (length $T+1$). -/
 def alphaBarVec (sched : VPSchedule α T) : Spec.Vec (T + 1) α :=
   Spec.vectorTensor (fun t => sched.alphaBar t)
 
 /--
-Convert a discrete time index `t : Fin (T+1)` into a scalar time `t/T ∈ [0,1]` (when `T > 0`).
+Convert a discrete time index `t : Fin (T+1)` into a scalar time $t/T\in[0,1]$ (when $T>0$).
 
-If `T = 0`, we define the time as `0` (the only index is `t = 0`).
+If $T=0$, we define the time as $0$ (the only index is $t=0$).
 -/
 def timeOfIndex (t : Fin (T + 1)) : α :=
   match T with
@@ -104,7 +108,8 @@ explicit control over schedules.
 -/
 
 /--
-Linear `β` schedule over `T` steps: `β_t` interpolates from `β_start` to `β_end`.
+Linear $\beta$ schedule over $T$ steps: $\beta_t$ interpolates from $\beta_{\mathrm{start}}$ to
+$\beta_{\mathrm{end}}$.
 
 Note: this is a small spec helper. Popular schedules in the diffusion literature often use
 variants such as cosine schedules or continuous VP schedules; add those as separate named specs

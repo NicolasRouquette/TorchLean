@@ -20,7 +20,7 @@ concern:
 
 - `Types`: `IEEE32Exec`/`Interval32` aliases, boundary casts, and checked scalar primitives;
 - `Returns`: checked discounted backups and fixed-horizon returns;
-- `Advantage`: checked TD residuals, GAE(λ), and advantage normalization;
+- `Advantage`: checked TD residuals, $\operatorname{GAE}(\lambda)$, and advantage normalization;
 - `PPO`: checked importance ratios and clipped PPO objective pieces;
 - `Intervals`: outward-rounded interval enclosures for return/GAE/PPO diagnostics.
 

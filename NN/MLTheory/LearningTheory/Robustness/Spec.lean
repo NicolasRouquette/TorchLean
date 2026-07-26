@@ -57,9 +57,9 @@ variable {α : Type} [Context α]
 /-! ## Norms on spec tensors -/
 
 /--
-`L∞` norm of a shape-indexed tensor.
+$L^\infty$ norm of a shape-indexed tensor.
 
-If you flatten the tensor entries into a vector `tᵢ`, this is `maxᵢ |tᵢ|`.
+If you flatten the tensor entries into a vector $t_i$, this is $\max_i |t_i|$.
 -/
 def tensorLinfNorm {s : Shape} (t : Tensor α s) : α :=
   match s with
@@ -72,9 +72,10 @@ def tensorLinfNorm {s : Shape} (t : Tensor α s) : α :=
         0
 
 /--
-`L2` (Euclidean) norm of a shape-indexed tensor.
+$L^2$ (Euclidean) norm of a shape-indexed tensor.
 
-If you flatten the tensor entries into a vector `tᵢ`, this is `sqrt (∑ᵢ tᵢ²)`.
+If you flatten the tensor entries into a vector $t_i$, this is
+$\sqrt{\sum_i t_i^2}$.
 -/
 def tensorL2Norm {s : Shape} (t : Tensor α s) : α :=
   MathFunctions.sqrt (tensor_l2_norm_squared t)
@@ -94,7 +95,9 @@ where
 /--
 Distance induced by a tensor norm:
 
-`dist(t1,t2) = ‖t1 - t2‖`.
+$$
+\operatorname{dist}(t_1,t_2)=\lVert t_1-t_2\rVert.
+$$
 -/
 def tensorDistance (norm : ∀ {s : Shape}, Tensor α s → α) {s : Shape}
     (t1 t2 : Tensor α s) : α :=
@@ -129,9 +132,11 @@ where
   simp [tensorDistance]
 
 /--
-Closed `ε`-ball around `center` for the given norm:
+Closed $\varepsilon$-ball around `center` for the given norm:
 
-`{ t | dist(center,t) ≤ ε }`.
+$$
+\{t\mid \operatorname{dist}(\mathrm{center},t)\leq\varepsilon\}.
+$$
 -/
 def tensorBall (norm : ∀ {s : Shape}, Tensor α s → α) {s : Shape}
     (center : Tensor α s) (ε : α) : Set (Tensor α s) :=
@@ -142,8 +147,8 @@ def tensorBall (norm : ∀ {s : Shape}, Tensor α s → α) {s : Shape}
 /--
 Lipschitz continuity (global), phrased using `tensor_distance`.
 
-If `f` is `L`-Lipschitz and `tensor_distance norm₁ x₀ x ≤ ε`, then
-`tensor_distance norm₂ (f x₀) (f x) ≤ L*ε`.
+If $f$ is $L$-Lipschitz and $d_1(x_0,x)\leq\varepsilon$, then
+$d_2(f(x_0),f(x))\leq L\varepsilon$.
 -/
 def isLipschitzContinuous {s₁ s₂ : Shape}
     (f : Tensor α s₁ → Tensor α s₂)
@@ -154,7 +159,7 @@ def isLipschitzContinuous {s₁ s₂ : Shape}
     tensorDistance norm₂ (f x) (f y) ≤ L * tensorDistance norm₁ x y
 
 /--
-Local Lipschitz continuity within the `ε`-ball around `x₀`.
+Local Lipschitz continuity within the $\varepsilon$-ball around $x_0$.
 -/
 def isLocallyLipschitz {s₁ s₂ : Shape}
     (f : Tensor α s₁ → Tensor α s₂)
@@ -166,10 +171,10 @@ def isLocallyLipschitz {s₁ s₂ : Shape}
     tensorDistance norm₂ (f x) (f y) ≤ L * tensorDistance norm₁ x y
 
 /--
-Adversarial robustness at a point `x₀`.
+Adversarial robustness at a point $x_0$.
 
-`f` is `(ε,δ)`-robust at `x₀` if every input within distance `ε` of `x₀` maps to an output within
-distance `δ` of `f x₀`.
+$f$ is $(\varepsilon,\delta)$-robust at $x_0$ if every input within distance $\varepsilon$ of
+$x_0$ maps to an output within distance $\delta$ of $f(x_0)$.
 -/
 def isAdversariallyRobust {s₁ s₂ : Shape}
     (f : Tensor α s₁ → Tensor α s₂)
@@ -181,7 +186,8 @@ def isAdversariallyRobust {s₁ s₂ : Shape}
     tensorDistance norm₂ (f x₀) (f x) ≤ δ
 
 /--
-Certified robustness for a classifier: the prediction is constant on the `ε`-ball around `x₀`.
+Certified robustness for a classifier: the prediction is constant on the $\varepsilon$-ball around
+$x_0$.
 
 For neural networks, `classifier` is typically `argmax` on a logits tensor.
 -/
@@ -204,7 +210,7 @@ def isUniformlyRobust {s₁ s₂ : Shape}
   ∀ x₀ ∈ dataset, isAdversariallyRobust f norm₁ norm₂ x₀ ε δ
 
 /--
-Contraction mapping under a norm: `f` shrinks distances by `contraction_factor < 1`.
+Contraction mapping under a norm: $f$ shrinks distances by a factor $c<1$.
 
 This is a standard sufficient condition for convergence of iterated dynamics and robustness of
 fixed points.
@@ -221,7 +227,10 @@ Sensitivity ratio for a specific additive perturbation.
 
 This is the local “output change divided by input change” quantity:
 
-`‖f(x) - f(x + perturbation)‖ / ‖perturbation‖`.
+$$
+\frac{\lVert f(x)-f(x+\mathrm{perturbation})\rVert}
+     {\lVert\mathrm{perturbation}\rVert}.
+$$
 -/
 def sensitivity {s₁ s₂ : Shape}
     (f : Tensor α s₁ → Tensor α s₂)

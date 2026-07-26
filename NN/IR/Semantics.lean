@@ -216,7 +216,7 @@ We enforce:
 - the input dynamic value has shape `(inDim)`, and
 - the node's declared outShape matches `(outDim)`.
 
-The actual math is the usual affine map: `y = W·x + b`.
+The actual math is the usual affine map: $y=Wx+b$.
 -/
 def evalLinear {α : Type} [Context α] [DecidableEq Shape]
     (payload : Payload α) (id : Nat) (x : DVal α) (outShape : Shape) : Except String (DVal α) := do
@@ -239,8 +239,13 @@ def evalLinear {α : Type} [Context α] [DecidableEq Shape]
 /--
 Evaluate a `conv2d` node from the external payload.
 
-The output shape is computed with the standard (no dilation) formula:
-`out = ⌊(in + 2*pad - k)/stride⌋ + 1` for each spatial dimension.
+The output shape is computed with the standard (no dilation) formula
+$$
+\mathrm{out}=\left\lfloor
+  \frac{\mathrm{in}+2\,\mathrm{pad}-k}{\mathrm{stride}}
+\right\rfloor+1
+$$
+for each spatial dimension.
 -/
 def evalConv2D {α : Type} [Context α] [DecidableEq Shape]
     (payload : Payload α) (id : Nat) (x : DVal α) : Except String (DVal α) := do
@@ -301,7 +306,7 @@ def evalBatchNorm2DNchwEval {α : Type} [Context α] [DecidableEq Shape]
       | s =>
           throw s!"IR eval: batch_norm2d_nchw_eval expects NCHW input, got {repr s}"
 
-/-- Deterministic LayerNorm used by the IR evaluator (gamma=1, beta=0). -/
+/-- Deterministic LayerNorm used by the IR evaluator ($\gamma=1$, $\beta=0$). -/
 def layernormPure {α : Type} [Context α]
     (seqLen embedDim : Nat) (x : Tensor α (Shape.dim seqLen (Shape.dim embedDim Shape.scalar))) :
     Except String (Tensor α (Shape.dim seqLen (Shape.dim embedDim Shape.scalar))) := do

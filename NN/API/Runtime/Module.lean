@@ -72,7 +72,8 @@ export _root_.Runtime.Autograd.TorchLean.Module.RuntimeInit
    kaimingLinearWeight)
 end RuntimeInit
 export _root_.Runtime.Autograd.TorchLean.Module.ScalarModule
-  (create forward backward step initOptim stepWith params setParams trainSGD trainWith meanLoss)
+  (create forward lossAndBackward backward stepWithLoss step initOptim stepWith
+   stepWithOptimizerAndLoss params setParams trainSGD trainWith meanLoss)
 export _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef
   (forwardWithParams instantiate instantiateFloat instantiateFloatWithRuntimePlan
    instantiateFloatWithRuntimeInit)

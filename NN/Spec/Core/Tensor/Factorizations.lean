@@ -16,16 +16,16 @@ This file provides **real**, shape-indexed reference implementations of the two 
 matrix factorizations that classical / scientific ML models (Gaussian processes, kernel ridge
 regression, PCA, least squares) depend on, and which were previously missing from the spec layer:
 
-- `choleskySpec`   — Cholesky factorization `A = L · Lᵀ` (lower-triangular `L`), proved for
+- `choleskySpec`   — Cholesky factorization $A=LL^\mathsf{T}$ (lower-triangular $L$), proved for
                      matrices with positive executable Cholesky pivots.
-- `qrSpec`         — QR factorization `A = Q · R` via classical Gram–Schmidt; under positive
-                     executable `R` pivots, `Q` has orthonormal columns and `R` is upper-triangular.
+- `qrSpec`         — QR factorization $A=QR$ via classical Gram–Schmidt; under positive executable
+                     $R$ pivots, $Q$ has orthonormal columns and $R$ is upper-triangular.
 
 It also provides the linear solves that ride on the Cholesky factor:
 
 - `triSolveLowerFn` / `triSolveUpperFn` — forward / back triangular substitution;
-- `cholSolveFn`    — solve `A · x = b` from a Cholesky factor of `A`;
-- `solveRidgeSpec` — the Tikhonov / kernel-ridge solve `(K + γ·I) · x = b`.
+- `cholSolveFn`    — solve $Ax=b$ from a Cholesky factor of $A$;
+- `solveRidgeSpec` — the Tikhonov / kernel-ridge solve $(K+\gamma I)x=b$.
 
 ## Verification scope
 
@@ -34,7 +34,7 @@ reconstruction and structural theorems (`IsCholesky` / `IsQR`, lower- and upper-
 orthonormality) in `NN.Proofs.Tensor.Basic.Factorizations*`, under their stated positive-pivot
 success hypotheses. The triangular- and ridge-solve helpers above (`triSolveLowerFn`,
 `triSolveUpperFn`, `cholSolveFn`, `solveRidgeSpec`) are **executable APIs only**: this PR does *not*
-yet prove their correctness (no `triSolveLower · x = b` / `solveRidge` correctness theorem has
+yet prove their correctness (no triangular-solve or `solveRidge` correctness theorem has
 landed). They follow the standard substitution formulas over the readable function representation
 and are exercised by `#eval` examples, but should not be read as carrying a verified-correctness
 guarantee.
@@ -92,14 +92,14 @@ def normFn {p : Nat} (v : Fin p → α) : α :=
 /-! ## Cholesky factorization
 
 For an input whose executable Cholesky pivots are positive, compute the lower-triangular `L` with
-`A = L · Lᵀ`. Symmetric positive-definiteness is the standard sufficient condition, but the theorem
+$A=LL^\mathsf{T}$. Symmetric positive-definiteness is the standard sufficient condition, but the theorem
 in this file family is stated against the executable positive-pivot success condition.
 
 The columns are computed left to right. Column `j` uses only columns `0 .. j-1`:
 
-- diagonal:  `L[j,j] = sqrt(A[j,j] - Σ_{k<j} L[j,k]²)`
-- below:     `L[i,j] = (A[i,j] - Σ_{k<j} L[i,k]·L[j,k]) / L[j,j]`   for `i > j`
-- above:     `L[i,j] = 0`                                           for `i < j`
+- diagonal: $L_{jj}=\sqrt{A_{jj}-\sum_{k<j}L_{jk}^2}$
+- below: $L_{ij}=(A_{ij}-\sum_{k<j}L_{ik}L_{jk})/L_{jj}$ for $i>j$
+- above: $L_{ij}=0$ for $i<j$
 
 ### Trust boundary: the `@[implemented_by]` performance hooks
 
@@ -123,7 +123,8 @@ rather than a closure that re-evaluates the whole prefix. The closure form below
 clean (and is what the proofs reason about), but reading the full factor `L` from it re-evaluates
 columns exponentially — ruinous in the interpreter (`#eval`). It is *intended* to compute the same
 factor strictly; this equivalence is **trusted, not proved** (see the trust-boundary note above), with
-the numeric examples (`A = L·Lᵀ`, the ridge-solve residual ≈ 0) as evidence rather than a proof.
+the numeric examples ($A=LL^\mathsf{T}$ and ridge-solve residual $\approx0$) as evidence rather
+than a proof.
 -/
 def choleskyColsImpl {n : Nat} (A : Fin n → Fin n → α) : List (Fin n → α) :=
   let cols : Array (Array α) := (List.finRange n).foldl (fun cols j =>
@@ -169,7 +170,8 @@ def choleskyColsFn {n : Nat} (A : Fin n → Fin n → α) : List (Fin n → α) 
         (A i j - s) / Ljj
     cols ++ [colj]) []
 
-/-- Cholesky factor as a function: `L[i,j] = (choleskyColsFn A)[j] i`. -/
+/-- Cholesky factor as a function:
+$L_{ij}=(\mathtt{choleskyColsFn}(A))_j(i)$. -/
 def choleskyFn {n : Nat} (A : Fin n → Fin n → α) : Fin n → Fin n → α :=
   let cols := choleskyColsFn A
   fun i j => (cols.getD j.val (fun _ => 0)) i
@@ -186,24 +188,26 @@ def choleskySpec {n : Nat} (A : Tensor α (.dim n (.dim n .scalar))) :
 
 /-! ## Triangular solves and the kernel-ridge (Tikhonov) linear solve
 
-Once `A` is factored as `A = L · Lᵀ` (Cholesky), the linear system `A · x = b` is solved by two
-triangular substitutions: forward-solve `L · z = b`, then back-solve `Lᵀ · x = z`. Each substitution
+Once $A$ is factored as $A=LL^\mathsf{T}$ (Cholesky), the linear system $Ax=b$ is solved by two
+triangular substitutions: forward-solve $Lz=b$, then back-solve $L^\mathsf{T}x=z$. Each substitution
 visits the unknowns in an order such that, when row `i` is reached, every unknown it depends on has
 already been computed; the accumulator `acc` holds those values and `0` everywhere else, so the dot
 `dotFn (row i) acc` is exactly the required partial sum (the not-yet-solved and structurally-zero
 terms drop out). -/
 
-/-- Forward substitution: solve `L · y = b` for a lower-triangular `L` with nonzero diagonal.
-Unknowns are visited `0, 1, …, n-1`; when row `i` is reached `acc` holds `y₀ … yᵢ₋₁` (and `0`
-elsewhere), so `dotFn (L i) acc = Σ_{k<i} L[i,k]·yₖ` by lower-triangularity. -/
+/-- Forward substitution: solve $Ly=b$ for a lower-triangular $L$ with nonzero diagonal.
+Unknowns are visited $0,1,\ldots,n-1$; when row $i$ is reached, `acc` holds
+$y_0,\ldots,y_{i-1}$ (and $0$ elsewhere), so
+$\mathtt{dotFn}(L_i,\mathtt{acc})=\sum_{k<i}L_{ik}y_k$ by lower-triangularity. -/
 def triSolveLowerFn {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fin n → α :=
   (List.finRange n).foldl
     (fun acc i => Function.update acc i ((b i - dotFn (L i) acc) / L i i))
     (fun _ => 0)
 
-/-- Back substitution: solve `U · x = y` for an upper-triangular `U` with nonzero diagonal.
-Unknowns are visited `n-1, …, 1, 0`; when row `i` is reached `acc` holds `xᵢ₊₁ … xₙ₋₁` (and `0`
-elsewhere), so `dotFn (U i) acc = Σ_{k>i} U[i,k]·xₖ` by upper-triangularity. -/
+/-- Back substitution: solve $Ux=y$ for an upper-triangular $U$ with nonzero diagonal.
+Unknowns are visited $n-1,\ldots,1,0$; when row $i$ is reached, `acc` holds
+$x_{i+1},\ldots,x_{n-1}$ (and $0$ elsewhere), so
+$\mathtt{dotFn}(U_i,\mathtt{acc})=\sum_{k>i}U_{ik}x_k$ by upper-triangularity. -/
 def triSolveUpperFn {n : Nat} (U : Fin n → Fin n → α) (y : Fin n → α) : Fin n → α :=
   (List.finRange n).reverse.foldl
     (fun acc i => Function.update acc i ((y i - dotFn (U i) acc) / U i i))
@@ -217,7 +221,8 @@ It materializes `L` into a strict `Array (Array α)` once, then runs both triang
 the `Function.update` accumulator chain on every step, which is ruinous in the interpreter (`#eval`) when
 `L` is itself an unmaterialized closure (e.g. `choleskyFn` of a kernel matrix). It is *intended* to
 compute the same solution strictly; this equivalence is **trusted, not proved** (see the trust-boundary
-note above), with the numeric examples (the ridge residual ≈ 0) as evidence rather than a proof. -/
+note above), with the numeric examples (the ridge residual $\approx0$) as evidence rather than a
+proof. -/
 def cholSolveImpl {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fin n → α :=
   let La : Array (Array α) := Array.ofFn (fun i : Fin n => Array.ofFn (fun j : Fin n => L i j))
   let Lent : Nat → Nat → α := fun i j => (La.getD i #[]).getD j 0
@@ -235,8 +240,8 @@ def cholSolveImpl {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fi
     xs.set! iv ((z.getD iv 0 - s) / Lent iv iv)) (Array.replicate n 0)
   fun i => x.getD i.val 0
 
-/-- Solve `A · x = b` given a Cholesky factor `L` of `A` (so `A = L · Lᵀ`): forward-solve
-`L · z = b`, then back-solve `Lᵀ · x = z`.
+/-- Solve $Ax=b$ given a Cholesky factor $L$ of $A$ (so $A=LL^\mathsf{T}$): forward-solve
+$Lz=b$, then back-solve $L^\mathsf{T}x=z$.
 
 The runtime implementation is `cholSolveImpl` (strict arrays); the closure form here is what the
 correctness proofs reason about. The two are intended to compute the same solution — trusted, not
@@ -245,18 +250,20 @@ proved; see the trust-boundary note above. -/
 def cholSolveFn {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fin n → α :=
   triSolveUpperFn (fun i k => L k i) (triSolveLowerFn L b)
 
-/-- The regularized matrix `K + γ·I` as a function. For a symmetric PSD kernel `K` and `γ > 0`
+/-- The regularized matrix $K+\gamma I$ as a function. For a symmetric PSD kernel $K$ and
+$\gamma>0$,
 this is symmetric positive-definite, so its Cholesky factorization succeeds. -/
 def addScaledIdFn {n : Nat} (K : Fin n → Fin n → α) (γ : α) : Fin n → Fin n → α :=
   fun i j => K i j + (if i = j then γ else 0)
 
 /--
 Strict, array-backed runtime implementation of `solveRidgeFn` (registered via `@[implemented_by]`).
-It factors `K + γ·I = L·Lᵀ` and runs both triangular substitutions entirely over `Array`s, so no step
+It factors $K+\gamma I=LL^\mathsf{T}$ and runs both triangular substitutions entirely over
+`Array`s, so no step
 materializes the deep `Fin n → α` closures the functional definition builds — those re-evaluate
 columns / the substitution accumulator exponentially, which is ruinous in the interpreter (`#eval`).
 Intended to be the same linear solve; this equivalence is **trusted, not proved** (see the
-trust-boundary note above), with the numeric examples (residual `(K+γ·I)·x − b ≈ 0`) as evidence
+trust-boundary note above), with the numeric examples (residual $(K+\gamma I)x-b\approx0$) as evidence
 rather than a proof.
 -/
 def solveRidgeImpl {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n → α) : Fin n → α :=
@@ -291,8 +298,8 @@ def solveRidgeImpl {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n �
     xs.set! iv ((z.getD iv 0 - s) / Lent iv iv)) (Array.replicate n 0)
   fun i => x.getD i.val 0
 
-/-- The Tikhonov-regularized (kernel-ridge) solve `(K + γ·I)·x = b`, via the Cholesky factorization
-of `K + γ·I`.
+/-- The Tikhonov-regularized (kernel-ridge) solve $(K+\gamma I)x=b$, via the Cholesky factorization
+of $K+\gamma I$.
 
 The runtime implementation is `solveRidgeImpl` (strict arrays); the closure form here, built from the
 `choleskyFn` / `triSolve*` pieces the correctness proofs reason about. The two are intended to compute
@@ -301,20 +308,21 @@ the same solution — trusted, not proved; see the trust-boundary note above. -/
 def solveRidgeFn {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n → α) : Fin n → α :=
   cholSolveFn (choleskyFn (addScaledIdFn K γ)) b
 
-/-- Tensor-level kernel-ridge solve: `(K + γ·I)·x = b`.
+/-- Tensor-level kernel-ridge solve: $(K+\gamma I)x=b$.
 
-PyTorch analogue: `torch.linalg.solve(K + γ·I, b)` (specialized to the SPD Cholesky path). -/
+PyTorch analogue: `torch.linalg.solve(K + gamma * I, b)` (specialized to the SPD Cholesky path). -/
 def solveRidgeSpec {n : Nat} (K : Tensor α (.dim n (.dim n .scalar))) (γ : α)
     (b : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
   ofVecFn (solveRidgeFn (toMatFn K) γ (toVecFn b))
 
 /-! ## QR factorization (classical Gram–Schmidt)
 
-For `A : m × n`, compute classical Gram–Schmidt factors. Under positive executable `R` pivots, the
-proved real theorem gives `A = Q · R`, `Q` with orthonormal columns, and upper-triangular `R`. This
-uses **classical** Gram–Schmidt: each `r[k,j] = qₖ · aⱼ` is the inner product against the *original*
-column `aⱼ`, and all projections are subtracted in a single pass (modified Gram–Schmidt would instead
-dot each `qₖ` against the running residual). In exact real arithmetic the two coincide; the classical
+For $A\in\mathbb{R}^{m\times n}$, compute classical Gram–Schmidt factors. Under positive executable
+$R$ pivots, the proved real theorem gives $A=QR$, with $Q$ having orthonormal columns and $R$
+upper-triangular. This uses **classical** Gram–Schmidt: each $r_{kj}=q_k^\mathsf{T}a_j$ is the inner
+product against the *original* column $a_j$, and all projections are subtracted in a single pass
+(modified Gram–Schmidt would instead dot each $q_k$ against the running residual). In exact real
+arithmetic the two coincide; the classical
 form is what the recurrence below implements and what the reconstruction proof matches.
 -/
 
@@ -359,9 +367,9 @@ def qrRSpec {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) :
   ofMatFn (fun k j => (st.rcols.getD j.val (fun _ => 0)) k)
 
 /--
-QR factorization candidate of `A : m × n` via classical Gram–Schmidt. Over `ℝ`, the full
-`A = Q · R`, orthonormal-column, and upper-triangular specification is proved under positive
-executable `R` pivots.
+QR factorization candidate of $A\in\mathbb{R}^{m\times n}$ via classical Gram–Schmidt. Over `ℝ`,
+the full $A=QR$, orthonormal-column, and upper-triangular specification is proved under positive
+executable $R$ pivots.
 
 PyTorch analogue: `torch.linalg.qr(A)`.
 -/

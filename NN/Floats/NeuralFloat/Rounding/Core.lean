@@ -74,7 +74,9 @@ noncomputable def neuralNearestEven : ℝ → ℤ := fun x =>
 Valid rounding mode predicate.
 -/
 class NeuralValidRnd (rnd : ℝ → ℤ) : Prop where
+  /-- The rounding rule preserves the order of its real inputs. -/
   monotone : ∀ x y, x ≤ y → rnd x ≤ rnd y
+  /-- Every integer is fixed by the rounding rule. -/
   id : ∀ n : ℤ, rnd n = n
 
 /--
@@ -84,6 +86,7 @@ This matches "round-to-nearest" style roundings (ties can be resolved arbitraril
 `|rnd x - x| ≤ 1/2` for all `x`.
 -/
 class NeuralValidRndToNearest (rnd : ℝ → ℤ) : Prop extends NeuralValidRnd rnd where
+  /-- Rounding changes a real input by at most one half on the integer grid. -/
   abs_sub_le_half : ∀ x : ℝ, abs ((rnd x : ℝ) - x) ≤ (2⁻¹ : ℝ)
 
 /--

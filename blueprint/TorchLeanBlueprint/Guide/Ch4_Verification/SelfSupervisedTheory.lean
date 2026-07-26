@@ -222,7 +222,7 @@ This unnormalized finite spread differs from the sample variance or standard dev
 VICReg paper. It captures the property needed here: collapsed representations have zero spread in
 every coordinate.
 
-For floor `γ`, the guard is
+For floor $`\gamma`, the guard is
 
 $$`G_\gamma(z)
 =\sum_{j=0}^{d-1}
@@ -255,7 +255,7 @@ open NN.MLTheory.SelfSupervised
 #check graphSSLObjective_collapsed_positive
 ```
 
-Remove `hgamma`, or set `gamma = 0`, and the strict positivity claim is false: a collapsed
+Remove `hgamma`, or set $`\gamma=0`, and the strict positivity claim is false: a collapsed
 representation pays zero. Remove `hd`, and a zero-dimensional embedding has no guarded
 coordinates. Both hypotheses are mathematically necessary for this theorem.
 
@@ -268,7 +268,7 @@ subtraction:
 $$`\operatorname{varianceFloorPenalty}(\gamma,v)=\gamma-v,`
 
 which is truncated at zero by the semantics of `Nat.sub`. It is therefore the discrete analogue of
-`max(0, γ-v)`, without the square and without a statistical variance estimator.
+$`\max(0,\gamma-v)`, without the square and without a statistical variance estimator.
 
 For `d` collapsed coordinates:
 
@@ -276,7 +276,7 @@ $$`\operatorname{varianceTerm}
   \bigl(\gamma,[0,\ldots,0]\bigr)=d\gamma.`
 
 `varianceTerm_collapsed_positive` proves positivity when there is at least one coordinate and
-`γ > 0`. `vicregObjective` combines already-computed invariance, variance, and covariance
+$`\gamma>0`. `vicregObjective` combines already-computed invariance, variance, and covariance
 summaries with natural-number weights. The Barlow-style declarations similarly encode finite
 diagonal and off-diagonal penalties, not the full floating cross-correlation computation.
 

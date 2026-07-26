@@ -140,8 +140,9 @@ def sliceLeadingAxisRangeSpec {α : Type} {n : Nat} {s : Shape}
 /-- Backward (adjoint) of `concat_leading_axis_spec`.
 
 If `y = concat_leading_axis_spec x1 x2`, then in reverse-mode we split the upstream gradient `δy` into:
-- `δx1` = the first `n` entries of `δy`,
-- `δx2` = the last  `m` entries of `δy`. -/
+
+- $\delta x_1$: the first $n$ entries of $\delta y$,
+- $\delta x_2$: the last $m$ entries of $\delta y$. -/
 def concatLeadingAxisBackwardSpec {α : Type} {n m : Nat} {s : Shape}
   (δ : Tensor α (.dim (n + m) s)) :
   Tensor α (.dim n s) × Tensor α (.dim m s) :=

@@ -20,11 +20,15 @@ works over any commutative semiring. In particular, it applies to exact backends
 
 The correctness notion is the standard reverse-mode / forward-mode adjointness law:
 
-  ⟪ JVP(x, dx), δ ⟫ = ⟪ dx, VJP(x, δ) ⟫
+$$
+\left\langle \operatorname{JVP}(x,dx),\delta\right\rangle
+=\left\langle dx,\operatorname{VJP}(x,\delta)\right\rangle.
+$$
 
-where `⟪·,·⟫` is the tensor dot-product from `NN/Proofs/Tensor/Algebra.lean`.
+where $\langle\cdot,\cdot\rangle$ is the tensor dot product from
+`NN/Proofs/Tensor/Algebra.lean`.
 
-## Why this is separate from the ℝ file
+## Why this is separate from the $\mathbb R$ file
 
 Many ML ops are definable over a commutative semiring (addition/multiplication/linear maps), and
 their reverse-mode rules can be proved from algebraic identities alone. This file isolates that
@@ -82,8 +86,10 @@ namespace OpSpecCorrect
 /--
 Composition preserves VJP/JVP correctness (reverse-mode chain rule).
 
-Informally: if `f` and `g` satisfy `⟪JVP,·⟫ = ⟪·,VJP⟫`, then so does `g ∘ f`, with the obvious
-composed JVP and VJP.
+Informally, if $f$ and $g$ satisfy
+$\langle\operatorname{JVP},\cdot\rangle
+=\langle\cdot,\operatorname{VJP}\rangle$,
+then so does $g\circ f$, with the obvious composed JVP and VJP.
 -/
 def compose {α : Type} [CommSemiring α] {σ τ υ : Shape}
   (f : OpSpecCorrect (α := α) σ τ) (g : OpSpecCorrect (α := α) τ υ) :
@@ -103,7 +109,8 @@ end OpSpecCorrect
 /--
 Elementwise multiplication is self-adjoint with respect to the algebraic tensor dot-product.
 
-Informally: `⟪dx ⊙ df, δ⟫ = ⟪dx, df ⊙ δ⟫`.
+Informally,
+$\langle dx\odot df,\delta\rangle=\langle dx,df\odot\delta\rangle$.
 This is the main identity used to justify elementwise backward rules in a backend-generic way.
 -/
 private theorem dot_elemwise_adjoint {α : Type} [CommSemiring α] {s : Shape}
@@ -184,9 +191,9 @@ def linearCorrect {α : Type} [CommSemiring α]
 }
 
 /--
-Correctness of scaling by a constant: forward and backward are both `x ↦ c • x`.
+Correctness of scaling by a constant: forward and backward are both $x\mapsto cx$.
 
-PyTorch analogue: `c * x` (with broadcasting aligned to shape).
+PyTorch analogue: $cx$ (with broadcasting aligned to shape).
 -/
 def scaleCorrect {α : Type} [CommSemiring α] {s : Shape} (c : α) :
   OpSpecCorrect (α := α) s s :=
@@ -206,7 +213,7 @@ def scaleCorrect {α : Type} [CommSemiring α] {s : Shape} (c : α) :
 /--
 Correctness of pointwise multiplication by a fixed tensor `rhs`.
 
-PyTorch analogue: `x * rhs` (elementwise).
+PyTorch analogue: $x\odot\operatorname{rhs}$ (elementwise).
 -/
 def mulCorrect {α : Type} [CommSemiring α] {s : Shape} (rhs : Tensor α s) :
   OpSpecCorrect (α := α) s s :=
@@ -228,7 +235,8 @@ variable {α : Type} [CommSemiring α] [Sub α] [Div α] [Coe Nat α]
 /--
 Basic mean-squared error (MSE) scalar value:
 
-`mse(predicted, target) = (∑ (predicted - target)^2) / meanDenom`.
+$\operatorname{mse}(\widehat y,y)
+=\sum_i(\widehat y_i-y_i)^2/\operatorname{meanDenom}$.
 
 This local definition is used only to define the loss `OpSpec`.
 -/

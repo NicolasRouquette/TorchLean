@@ -87,7 +87,8 @@ def hingeLossMean {n : Nat} (scores : Tensor α (.dim n .scalar)) (y : Tensor α
 
 /-- L2-regularized SVM objective (primal, soft-margin style).
 
-We use the common "½λ‖w‖² + mean hinge" form.
+We use the common objective
+$\frac12\lambda\lVert w\rVert^2+\operatorname{mean}(\text{hinge loss})$.
 -/
 def LinearSVM.objective {n p : Nat} (lambda : α) (m : LinearSVM p α)
   (X : Tensor α (.dim n (.dim p .scalar))) (y : Tensor α (.dim n .scalar)) : α :=

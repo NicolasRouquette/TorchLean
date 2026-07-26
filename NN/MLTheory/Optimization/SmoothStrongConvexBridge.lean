@@ -26,32 +26,35 @@ import Mathlib.Tactic.Ring
 
 TorchLean's GD convergence theorems are stated at the operator level:
 
-* `g` is `μ`-strongly monotone, and
-* `g` is `L`-Lipschitz.
+* $g$ is $\mu$-strongly monotone, and
+* $g$ is $L$-Lipschitz.
 
-To apply them to gradient descent on an objective `f`, we need to instantiate `g = ∇f`.
+To apply them to gradient descent on an objective $f$, we need to instantiate $g=\nabla f$.
 
-Mathlib's global definition `Gradient.gradient f x` is total (it returns `0` if the derivative does
+Mathlib's global definition `Gradient.gradient f x` is total (it returns $0$ if the derivative does
 not exist), so for optimization theory we typically assume differentiability and reason using the
 standard *first-order* characterization of strong convexity.
 
 This file provides the key local bridge lemma:
 
-If `f` satisfies the first-order strong convexity inequality (using the gradient) then `∇f` is
-`μ`-strongly monotone in the sense needed by `GDLinearConvergence`.
+If $f$ satisfies the first-order strong convexity inequality (using the gradient), then $\nabla f$
+is $\mu$-strongly monotone in the sense needed by `GDLinearConvergence`.
 
 What this file *does* now provide is a concrete bridge from mathlib's `StrongConvexOn` definition
 to a first-order inequality, under a `DifferentiableAt` assumption at the base point `x`.
 
 In other words, the chain we can use is:
 
-`StrongConvexOn univ μ f` + `DifferentiableAt ℝ f x`
-  ⇒ `FirstOrderStrongConvex μ f` (at `x`)
-  ⇒ `StrongMonotone μ (∇ f)`.
+$$
+\operatorname{StrongConvexOn}(\mathbb{R}^n,\mu,f) +
+  \operatorname{DifferentiableAt}(f,x)
+\Longrightarrow \operatorname{FirstOrderStrongConvex}(\mu,f)\text{ at }x
+\Longrightarrow \operatorname{StrongMonotone}(\mu,\nabla f).
+$$
 
 The remaining (separate) “smoothness” bridge for the Lipschitz-gradient assumption can be done
 later via bounds on `fderiv` (mean value theorem / operator norm bounds) or by importing an
-appropriate `L`-smoothness development.
+appropriate $L$-smoothness development.
 -/
 
 @[expose] public section
@@ -65,13 +68,16 @@ open scoped RealInnerProductSpace Gradient
 variable {E : Type} [NormedAddCommGroup E] [InnerProductSpace ℝ E] [CompleteSpace E]
 
 /--
-First-order strong convexity with parameter `μ`, stated using the gradient.
+First-order strong convexity with parameter $\mu$, stated using the gradient.
 
 This is the familiar inequality:
 
-`f y ≥ f x + ⟪∇f x, y - x⟫ + (μ/2)‖y-x‖²`.
+$$
+f(y)\geq f(x)+\langle\nabla f(x),y-x\rangle
+  +\frac{\mu}{2}\lVert y-x\rVert^2.
+$$
 
-It is a standard characterization of `μ`-strong convexity for differentiable functions on
+It is a standard characterization of $\mu$-strong convexity for differentiable functions on
 Euclidean/Hilbert spaces.
 -/
 def FirstOrderStrongConvex (μ : ℝ) (f : E → ℝ) : Prop :=
@@ -80,19 +86,19 @@ def FirstOrderStrongConvex (μ : ℝ) (f : E → ℝ) : Prop :=
 /--
 First-order strong convexity at a fixed base point `x`.
 
-This is the same inequality as `FirstOrderStrongConvex`, but quantified only over `y`.
+This is the same inequality as `FirstOrderStrongConvex`, but quantified only over $y$.
 It is the natural statement you get from convex analysis under a `DifferentiableAt` hypothesis at
-`x`.
+$x$.
 -/
 def FirstOrderStrongConvexAt (μ : ℝ) (f : E → ℝ) (x : E) : Prop :=
   ∀ y, f y ≥ f x + ⟪(∇ f) x, y - x⟫ + (μ / 2) * ‖y - x‖ ^ 2
 
 /--
-`StrongConvexOn univ μ f` plus differentiability at `x` implies the first-order strong convexity
-inequality at `x`.
+`StrongConvexOn univ μ f` plus differentiability at $x$ implies the first-order strong convexity
+inequality at $x$.
 
 This is the standard convex-analysis “supporting hyperplane” argument applied to
-`g(z) = f(z) - (μ/2)‖z‖²`, which is convex when `f` is strongly convex.
+$g(z)=f(z)-(\mu/2)\lVert z\rVert^2$, which is convex when $f$ is strongly convex.
 -/
 theorem firstOrderStrongConvexAt_of_strongConvexOn_univ (μ : ℝ) {f : E → ℝ}
     (hsc : StrongConvexOn (s := (Set.univ : Set E)) μ f) {x : E}
@@ -240,9 +246,9 @@ theorem firstOrderStrongConvexAt_of_strongConvexOn_univ (μ : ℝ) {f : E → �
   simpa [FirstOrderStrongConvexAt] using this
 
 /--
-`FirstOrderStrongConvex` implies the gradient is `μ`-strongly monotone.
+`FirstOrderStrongConvex` implies the gradient is $\mu$-strongly monotone.
 
-This is the exact operator-side fact needed to use `GD.step_norm_sq_le` with `g = ∇f`.
+This is the exact operator-side fact needed to use `GD.step_norm_sq_le` with $g=\nabla f$.
 -/
 theorem strongMonotone_gradient_of_firstOrderStrongConvex (μ : ℝ) {f : E → ℝ}
     (h : FirstOrderStrongConvex (μ := μ) f) :

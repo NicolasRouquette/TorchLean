@@ -78,8 +78,8 @@ Current coverage includes ordinary first-order optimizers and newer optimizer-ad
   is the generic `TensorOptimizer`/`StepSpec` interface.
 - **Muon.** Muon is treated as an optimizer with an explicit orthogonalization backend. The proof
   separates the momentum buffer recurrence, the backend output used as the update direction, and
-  the parameter update equation. A backend can provide an exact certificate such as `QᵀQ = I`, or
-  an approximate certificate bounding `QᵀQ - I` entrywise.
+  the parameter update equation. A backend can provide an exact certificate such as
+  $Q^\mathsf{T}Q=I$, or an approximate certificate bounding $Q^\mathsf{T}Q-I$ entrywise.
 - **GaLore.** GaLore is treated as projected-gradient machinery. The proof object names the
   projection and also names the optimizer applied after projection, so the update equation remains
   explicit.

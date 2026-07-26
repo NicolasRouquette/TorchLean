@@ -29,25 +29,31 @@ This file is a self-contained, fully formalized worked example:
 At a high level, the uniform stability proof follows the standard “strongly convex ERM is stable”
 template, specialized to the 1D closed-form ridge solution:
 
-1. Express `ŵ(S)` and `ŵ(S')` as ratios of sums `sumXY / (sumXX + λ*N)`.
+1. Express $\widehat w(S)$ and $\widehat w(S')$ as ratios of sums
+   $\mathrm{sumXY}/(\mathrm{sumXX}+\lambda N)$.
 2. Bound how much the numerator `sumXY` and denominator `sumXX` can change when one example is
    replaced (via a simple finite-sum perturbation lemma).
-3. Bound the change in the reciprocal of the denominator, hence bound `|ŵ(S) - ŵ(S')|`.
-4. Translate a bound on `|w-w'|` into a bound on the loss change for the squared loss
-   `(w*x - y)^2` by factoring a difference of squares.
+3. Bound the change in the reciprocal of the denominator, hence bound
+   $|\widehat w(S)-\widehat w(S')|$.
+4. Translate a bound on $|w-w'|$ into a bound on the loss change for the squared loss
+   $(wx-y)^2$ by factoring a difference of squares.
 
 ## Ridge regression in 1D (math)
 
-Each example is a pair `(x,y) ∈ ℝ×ℝ`. For a dataset `S` of size `N`, ridge regression (with
-regularization parameter `λ > 0`) minimizes the regularized squared loss
+Each example is a pair $(x,y)\in\mathbb R\times\mathbb R$. For a dataset $S$ of size $N$, ridge
+regression with regularization parameter $\lambda>0$ minimizes
 
-`(1/N) * ∑ᵢ (w*xᵢ - yᵢ)² + λ*w²`.
+$$
+\frac1N\sum_i(wx_i-y_i)^2+\lambda w^2.
+$$
 
 In 1D, the minimizer has the familiar closed form
 
-`ŵ(S) = (∑ᵢ xᵢ yᵢ) / (∑ᵢ xᵢ² + λ*N)`.
+$$
+\widehat w(S)=\frac{\sum_i x_i y_i}{\sum_i x_i^2+\lambda N}.
+$$
 
-In this file we set `N = n+1` (so indices are `Fin (n+1)`), because “remove-at” and “replace-at”
+In this file we set $N=n+1$ (so indices are `Fin (n+1)`), because “remove-at” and “replace-at”
 operations are most convenient in that convention in our `Dataset` library.
 
 ## Datasets as tensors
@@ -57,15 +63,16 @@ We use `Dataset.get S i` to access the `i`-th example.
 
 ## Stability statement (informal)
 
-Let `S'` be `S` with one example replaced. If inputs are bounded by `|x| ≤ X` and `|y| ≤ Y`, then
-for any test point `z` we bound
+Let $S'$ be $S$ with one example replaced. If inputs satisfy $|x|\le X$ and $|y|\le Y$, then
+for any test point $z$ we bound
 
-`|ℓ(ŵ(S), z) - ℓ(ŵ(S'), z)|`
+$|\ell(\widehat w(S),z)-\ell(\widehat w(S'),z)|$,
 
-where `ℓ(w,(x,y)) = (w*x - y)²`.
+where $\ell(w,(x,y))=(wx-y)^2$.
 
-The final bound is explicit (a rational expression in `X,Y,λ,N`) and matches the expected scaling
-for strongly convex regularized ERM: it is `O(1/(λ*N))` up to problem-dependent constants.
+The final bound is explicit (a rational expression in $X,Y,\lambda,N$) and matches the expected
+scaling for strongly convex regularized ERM: it is $O(1/(\lambda N))$ up to problem-dependent
+constants.
 
 This is intended as a small, fully proved example that can be cited in documentation/papers.
 
@@ -94,7 +101,7 @@ variable {n : Nat}
 /-! ## Bounded examples -/
 
 /--
-An example `(x,y)` together with bounds `|x| ≤ X` and `|y| ≤ Y`.
+An example $(x,y)$ together with bounds $|x|\le X$ and $|y|\le Y$.
 
 This lets us state stability bounds as theorems with explicit constants in terms of `X` and `Y`.
 -/
@@ -114,16 +121,16 @@ reused uniformly throughout the proof (instead of repeating assumptions).
 /-- The `y` coordinate of a bounded example. -/
 @[simp] def y (z : BoundedExample X Y) : ℝ := z.1.2
 
-/-- The `x` coordinate satisfies the declared bound `|x| ≤ X`. -/
+/-- The `x` coordinate satisfies the declared bound $|x|\le X$. -/
 theorem abs_x_le (z : BoundedExample X Y) : |z.x| ≤ X := z.2.1
-/-- The `y` coordinate satisfies the declared bound `|y| ≤ Y`. -/
+/-- The `y` coordinate satisfies the declared bound $|y|\le Y$. -/
 theorem abs_y_le (z : BoundedExample X Y) : |z.y| ≤ Y := z.2.2
 
-/-- The declared bound `X` is nonnegative (because `|x| ≤ X`). -/
+/-- The declared bound `X` is nonnegative because $|x|\le X$. -/
 theorem X_nonneg (z : BoundedExample X Y) : 0 ≤ X :=
   le_trans (abs_nonneg z.x) z.abs_x_le
 
-/-- The declared bound `Y` is nonnegative (because `|y| ≤ Y`). -/
+/-- The declared bound `Y` is nonnegative because $|y|\le Y$. -/
 theorem Y_nonneg (z : BoundedExample X Y) : 0 ≤ Y :=
   le_trans (abs_nonneg z.y) z.abs_y_le
 
@@ -135,24 +142,25 @@ section
 
 variable {X Y : ℝ}
 
-/-- Sum of squares `∑ xᵢ²`. -/
+/-- Sum of squares $\sum_i x_i^2$. -/
 def sumXX (S : Dataset (n + 1) (BoundedExample X Y)) : ℝ :=
   ∑ i ∈ (Finset.univ : Finset (Fin (n + 1))), (Dataset.get S i).x ^ 2
 
-/-- Cross-term sum `∑ xᵢ yᵢ`. -/
+/-- Cross-term sum $\sum_i x_i y_i$. -/
 def sumXY (S : Dataset (n + 1) (BoundedExample X Y)) : ℝ :=
   ∑ i ∈ (Finset.univ : Finset (Fin (n + 1))), (Dataset.get S i).x * (Dataset.get S i).y
 
 /--
 Closed-form 1D ridge fit.
 
-`ridgeFit1D λ S = (∑ xᵢ yᵢ) / (∑ xᵢ² + λ*N)` where `N = n+1`.
+$\operatorname{ridgeFit1D}(\lambda,S)
+=\frac{\sum_i x_i y_i}{\sum_i x_i^2+\lambda N}$, where $N=n+1$.
 -/
 def ridgeFit1D (lam : ℝ) (S : Dataset (n + 1) (BoundedExample X Y)) : ℝ :=
   let N : ℝ := ((n + 1 : Nat) : ℝ)
   (sumXY (n := n) S) / (sumXX (n := n) S + lam * N)
 
-/-- Squared loss `ℓ(w,(x,y)) = (w*x - y)²`. -/
+/-- Squared loss $\ell(w,(x,y))=(wx-y)^2$. -/
 def sqLoss (w : ℝ) (z : BoundedExample X Y) : ℝ :=
   (w * z.x - z.y) ^ 2
 
@@ -230,7 +238,7 @@ local to the proof.
 
 def N : ℝ := ((n + 1 : Nat) : ℝ)
 
-/-! `N = n+1` is positive as a real number. -/
+/-! $N=n+1$ is positive as a real number. -/
 lemma N_pos : 0 < N (n := n) := by
   simpa [N] using (Nat.cast_pos.mpr (Nat.succ_pos n))
 
@@ -244,7 +252,7 @@ private lemma sumXX_nonneg (S : Dataset (n + 1) (BoundedExample X Y)) :
   simpa using this
 
 /-!
-The ridge denominator `sumXX(S) + λ*N` is positive when `λ > 0`.
+The ridge denominator $\operatorname{sumXX}(S)+\lambda N$ is positive when $\lambda>0$.
 
 This ensures the closed-form ratio is well-defined and lets us use order properties of division.
 -/
@@ -255,7 +263,8 @@ private lemma denom_pos (hlam : 0 < lam) (S : Dataset (n + 1) (BoundedExample X 
   linarith
 
 /-!
-Lower bound on the ridge denominator: `λ*N ≤ sumXX(S) + λ*N`.
+Lower bound on the ridge denominator:
+$\lambda N\le\operatorname{sumXX}(S)+\lambda N$.
 
 We use this to replace the (dataset-dependent) denominator with a uniform lower bound.
 -/
@@ -267,7 +276,7 @@ private lemma denom_lower (S : Dataset (n + 1) (BoundedExample X Y)) :
 /-!
 Absolute bound on the cross-term sum `sumXY`.
 
-This is a simple consequence of the bounds `|x| ≤ X` and `|y| ≤ Y`.
+This is a simple consequence of the bounds $|x|\le X$ and $|y|\le Y$.
 -/
 private lemma abs_sumXY_le (S : Dataset (n + 1) (BoundedExample X Y)) :
     |sumXY (n := n) S| ≤ N (n := n) * X * Y := by
@@ -302,7 +311,7 @@ private lemma abs_sumXY_le (S : Dataset (n + 1) (BoundedExample X Y)) :
           ring_nf
 
 /-!
-Replacing one example changes `sumXY` by at most `2*X*Y`.
+Replacing one example changes `sumXY` by at most $2XY$.
 
 This is the “numerator perturbation” bound for the ridge closed form.
 -/
@@ -342,7 +351,7 @@ private lemma abs_sumXY_sub_replaceAt_le (S : Dataset (n + 1) (BoundedExample X 
     _ = 2 * X * Y := by ring
 
 /-!
-Replacing one example changes `sumXX` by at most `2*X^2`.
+Replacing one example changes `sumXX` by at most $2X^2$.
 
 This is the “denominator perturbation” bound for the ridge closed form.
 -/
@@ -388,7 +397,7 @@ private lemma abs_sumXX_sub_replaceAt_le (S : Dataset (n + 1) (BoundedExample X 
 /-!
 Bound the magnitude of the fitted ridge weight.
 
-This is a coarse bound of the form `|ŵ(S)| ≤ (X*Y)/λ`.
+This is a coarse bound of the form $|\widehat w(S)|\le XY/\lambda$.
 -/
 private lemma abs_w_le (hlam : 0 < lam) (S : Dataset (n + 1) (BoundedExample X Y)) :
     |ridgeFit1D (n := n) (X := X) (Y := Y) lam S| ≤ (X * Y) / lam := by
@@ -420,10 +429,10 @@ private lemma abs_w_le (hlam : 0 < lam) (S : Dataset (n + 1) (BoundedExample X Y
           field_simp [N, hNne, (ne_of_gt hlam)]
 
 /-!
-Bound the residual `|ŵ(S)*x - y|` at a test point.
+Bound the residual $|\widehat w(S)x-y|$ at a test point.
 
 This is another coarse bound used at the very end when bounding the loss change via
-`(e-e')*(e+e')` for `e = w*x-y`.
+$(e-e')(e+e')$ for $e=wx-y$.
 -/
 private lemma abs_residual_le (hlam : 0 < lam) (S : Dataset (n + 1) (BoundedExample X Y)) (z :
   BoundedExample X Y) :
@@ -464,9 +473,9 @@ set_option maxHeartbeats 1000000 in
 /--
 **Uniform stability of 1D ridge regression (bounded inputs, squared loss).**
 
-Assume `λ > 0`. Then the ridge estimator `ridgeFit1D λ` is uniformly stable (in the replace-one
-sense) for the squared loss, with an explicit bound `β` that scales like `1/(λ * N)` where
-`N = n+1`.
+Assume $\lambda>0$. Then the ridge estimator `ridgeFit1D λ` is uniformly stable in the replace-one
+sense for the squared loss, with an explicit bound $\beta$ that scales like $1/(\lambda N)$, where
+$N=n+1$.
 
 The stability notion used here is `UniformStableReplace` from `Stability.Core`.
 -/

@@ -17,7 +17,7 @@ $$`y(x_1,x_2)
   =0.8\,\operatorname{ReLU}(x_1+x_2)
    -0.4\,\operatorname{ReLU}(x_2-x_1)+0.2`
 
-on a grid in `[-1,1]^2`. This target is a useful first case for three reasons. Its nonlinearity rules
+on a grid in $`[-1,1]^2`. This target is a useful first case for three reasons. Its nonlinearity rules
 out a single affine layer, while its ReLU form lets a small ReLU network represent it
 without approximation-theory distractions. Finally, its two-dimensional input lets us inspect every
 shape and parameter without pages of indices.
@@ -145,7 +145,7 @@ smaller purpose-built variants.
 
 # What Happens During One Step
 
-For one sampled pair `(x,y)`, the runtime performs:
+For one sampled pair $`(x,y)`, the runtime performs:
 
 1. read the current four parameter tensors;
 2. compute `Linear -> ReLU -> Linear`;
@@ -161,7 +161,7 @@ The mathematical forward map is
 $$`f_\theta(x)
   =W_2\,\operatorname{ReLU}(W_1x+b_1)+b_2`.
 
-The loss for a single example is a scalar function of `θ`, even though the prediction has shape
+The loss for a single example is a scalar function of $`\theta`, even though the prediction has shape
 `[1]`. Reverse mode computes vector-Jacobian products from that scalar back to all four tensors.
 Adam then uses those gradients and its optimizer state to construct the next payload.
 
@@ -234,12 +234,12 @@ saved exact-bits payload. Reusing the initial payload after training would verif
 
 # An Input Region Instead Of One Point
 
-A forward prediction answers "what did the model return at `x`?" Verification usually asks a
+A forward prediction answers "what did the model return at $`x`?" Verification usually asks a
 quantified question. Around the held-out point
 
 $$`c=(0.25,-0.75)`,
 
-an `L∞` ball of radius `ε` is the box
+an $`\ell_\infty` ball of radius $`\varepsilon` is the box
 
 $$`B_\varepsilon(c)
  =\{x\mid |x_i-c_i|\leq\varepsilon\text{ for }i=1,2\}`.
@@ -253,7 +253,7 @@ For this one-output regression model, a useful property might be
 $$`\forall x\in B_\varepsilon(c),\qquad
   |f_\theta(x)-0.2|\leq\delta`.
 
-A computed output interval `[l,u]` supports this claim when
+A computed output interval $`[\ell,u]` supports this claim when
 
 $$`0.2-\delta\leq l
   \quad\text{and}\quad

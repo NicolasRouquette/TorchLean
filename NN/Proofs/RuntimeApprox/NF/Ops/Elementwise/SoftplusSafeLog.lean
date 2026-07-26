@@ -34,14 +34,18 @@ variable {rnd : ℝ → ℤ} [NeuralValidRndToNearest rnd]
 local notation "R" => TorchLean.Floats.NF β fexp rnd
 
 /-!
-`NFBackend.safeLog` is a clamped log surrogate `log (max x ε)` with an unconditional forward bound.
+`NFBackend.safeLog` is a clamped log surrogate $\log(\max(x,\varepsilon))$ with an unconditional
+forward bound.
 
 For smooth activations that *use* `log` (notably `softplus` and `safe_log`), we route the outer log
 through `safeLog` at a known lower bound:
 
-* `softplus(x) = log(1 + exp x)` and `1 + exp x ≥ 1`, so `softplus = safeLog 1 (1 + exp x)`;
-* `safe_log(x) = log(softplus(x) + ε)` and `softplus(x) + ε ≥ ε`, so `safe_log = safeLog ε
-  (softplus(x) + ε)`.
+* $\operatorname{softplus}(x)=\log(1+\exp x)$ and $1+\exp x\ge 1$, so
+  $\operatorname{softplus}(x)=\operatorname{safeLog}(1,1+\exp x)$;
+* $\operatorname{safeLog}(x)=\log(\operatorname{softplus}(x)+\varepsilon)$ and
+  $\operatorname{softplus}(x)+\varepsilon\ge\varepsilon$, so
+  $\operatorname{safeLog}(x)
+  =\operatorname{safeLog}(\varepsilon,\operatorname{softplus}(x)+\varepsilon)$.
 
 This avoids needing a separate `log` approximation lemma while remaining extensionally equal on
 `ℝ` for the intended arguments.

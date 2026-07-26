@@ -141,7 +141,7 @@ def discountedReturnsIntervals32 {n : Nat}
   Tensor.dim (fun i : Fin n => Tensor.scalar (out[i.val]!))
 
 /--
-Outward-rounded interval enclosure for fixed-horizon GAE(λ).
+Outward-rounded interval enclosure for fixed-horizon $\operatorname{GAE}(\lambda)$.
 
 This is useful as a coarse numerical diagnostic alongside
 `generalizedAdvantageEstimationVecIEEE32ExecChecked`.

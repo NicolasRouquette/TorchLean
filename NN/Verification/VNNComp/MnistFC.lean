@@ -145,7 +145,7 @@ def requireFile (label path : String) : IO Unit := do
       s!"missing {label}: {path}\n\n{usage}"
 
 /--
-Weights for one exported fully-connected layer (`y = Wx + b`).
+Weights for one exported fully-connected layer ($y=Wx+b$).
 
 This is the lightest data structure we need to rebuild a CROWN `Graph` for MNIST-FC.
 -/
@@ -397,7 +397,8 @@ def boxesForObjective (g : Graph) (ps : ParamStore Float) (xB : FlatBox Float)
 /--
 Try to refute a single spec row using a backward CROWN objective bound.
 
-We build an objective `obj = row` and lower-bound `rowᵀ y` over the input box. If the lower bound is
+We build an objective $\mathrm{obj}=\mathrm{row}$ and lower-bound
+$\mathrm{row}^{\mathsf{T}}y$ over the input box. If the lower bound is
 strictly greater than `rhs`, then the constraint `rowᵀ y <= rhs` cannot hold.
 -/
 def refutesRowByCROWNObjective

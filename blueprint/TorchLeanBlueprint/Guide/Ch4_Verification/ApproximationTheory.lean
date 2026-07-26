@@ -38,9 +38,9 @@ The one-dimensional construction is easier to understand in hinge notation. Let
 
 $$`H(x)=b_0+\sum_{i=0}^{N-1} c_i\,\operatorname{ReLU}(x-t_i).`
 
-Each term changes the slope at one knot `tᵢ`. By choosing knots on a sufficiently fine mesh and
-choosing `cᵢ` from changes in the piecewise-linear slope, `H` interpolates a Lipschitz target.
-The same expression is a one-hidden-layer network: the first linear layer computes `x - tᵢ`, ReLU
+Each term changes the slope at one knot $`t_i`. By choosing knots on a sufficiently fine mesh and
+choosing $`c_i` from changes in the piecewise-linear slope, $`H` interpolates a Lipschitz target.
+The same expression is a one-hidden-layer network: the first linear layer computes $`x-t_i`, ReLU
 applies the hinges, and the second linear layer forms their weighted sum.
 
 The theorem
@@ -63,8 +63,8 @@ theorem relu_universal_approximation_Icc
         |f x - mlpEval1d hidDim l1 l2 x| < ε
 ```
 
-The assumptions are not decoration. `a < b` gives a nonempty interval with positive length.
-`L > 0` and `h_lip` provide a quantitative continuity bound. `ε > 0` is needed before a finite
+The assumptions are not decoration. $`a<b` gives a nonempty interval with positive length.
+$`L>0` and `h_lip` provide a quantitative continuity bound. $`\varepsilon>0` is needed before a finite
 mesh can be chosen. The conclusion supplies an actual TorchLean `LinearSpec` pair, not merely an
 unnamed continuous approximating function.
 
@@ -233,7 +233,7 @@ That topological argument answers a broad representation question, but it does n
 same explicit width formula as the one-dimensional Lipschitz construction. The two proofs are
 complementary:
 
-- the hinge mesh exposes parameters and a rate on `[a,b]`;
+- the hinge mesh exposes parameters and a rate on $`[a,b]`;
 - the coordinate-subalgebra proof handles compact multidimensional domains at a more abstract
   level.
 

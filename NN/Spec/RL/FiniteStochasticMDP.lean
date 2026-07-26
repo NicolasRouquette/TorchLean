@@ -59,7 +59,7 @@ variable {nStates nActions : Nat}
 structure MDP (nStates nActions : Nat) where
   /-- Canonical reset state. -/
   initialState : Fin nStates
-  /-- Transition probabilities `P(. | s, a)` over the finite next-state space. -/
+  /-- Transition probabilities $P(\mathord{\cdot}\mid s,a)$ over the finite next-state space. -/
   transitionProb : Fin nStates → Fin nActions → Tensor ℝ (.dim nStates .scalar)
   /-- Immediate reward `r(s, a)`. -/
   reward : Fin nStates → Fin nActions → ℝ
@@ -83,7 +83,7 @@ structure Valid {nStates nActions : Nat} (mdp : MDP nStates nActions) : Prop whe
   /-- Discount factor is strictly less than `1`. -/
   discount_lt_one : mdp.discount < 1
 
-/-- Expected next-state value under `P(. | s, a)`. -/
+/-- Expected next-state value under $P(\mathord{\cdot}\mid s,a)$. -/
 def expectedNextValue
     (mdp : MDP nStates nActions)
     (values : ValueFunction ℝ nStates)
@@ -105,7 +105,8 @@ def actionValue
     (bootstrap := expectedNextValue mdp values state action)
     (done := mdp.terminated state action)
 
-/-- All state-action values `Q_v(s, ·)` for a fixed state and candidate value function. -/
+/-- All state-action values $Q_v(s,\mathord{\cdot})$ for a fixed state and candidate value
+function. -/
 def actionValues
     (mdp : MDP nStates nActions)
     (values : ValueFunction ℝ nStates)

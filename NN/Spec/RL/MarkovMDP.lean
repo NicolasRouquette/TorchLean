@@ -25,7 +25,7 @@ Why this layer exists (and why it is separate from the finite-state tensor MDPs)
 
 This file stays focused:
 
-- deterministic policies `π : S → A`,
+- deterministic policies $\pi:S\to A$,
 - Markov-kernel transitions for next states,
 - real-valued rewards, discounting, and an optional per-(state,action) terminal flag.
 
@@ -69,11 +69,12 @@ abbrev ValueFunction (S : Type) : Type := S → ℝ
 /-- Deterministic policy (measurability assumptions live in proofs, not in the raw definition). -/
 abbrev Policy (S A : Type) : Type := S → A
 
-/-- Discounted MDP specified by a Markov kernel `P(. | s, a)` plus reward/termination metadata. -/
+/-- Discounted MDP specified by a Markov kernel $P(\mathord{\cdot}\mid s,a)$ plus
+reward/termination metadata. -/
 structure MDP (S A : Type) [MeasurableSpace S] [MeasurableSpace A] where
   /-- Canonical reset state. -/
   initialState : S
-  /-- Transition kernel: `P(. | s, a)` as a measure on next states. -/
+  /-- Transition kernel: $P(\mathord{\cdot}\mid s,a)$ as a measure on next states. -/
   transition : Kernel (S × A) S
   /-- Immediate reward `r(s, a)`. -/
   reward : S → A → ℝ
@@ -84,7 +85,7 @@ structure MDP (S A : Type) [MeasurableSpace S] [MeasurableSpace A] where
 
 /-- Well-formedness assumptions for a Markov-kernel MDP. -/
 structure Valid (mdp : MDP S A) : Prop where
-  /-- Transition kernel is Markov: each `P(. | s, a)` is a probability measure. -/
+  /-- Transition kernel is Markov: each $P(\mathord{\cdot}\mid s,a)$ is a probability measure. -/
   isMarkov : IsMarkovKernel mdp.transition
   /-- Reward is measurable as a function of `(s,a)`. -/
   measurable_reward : Measurable (fun sa : S × A => mdp.reward sa.1 sa.2)
@@ -95,11 +96,12 @@ structure Valid (mdp : MDP S A) : Prop where
   /-- Discount factor is strictly less than `1`. -/
   discount_lt_one : mdp.discount < 1
 
-/-- The transition measure `P(. | s, a)` obtained by applying the Markov kernel. -/
+/-- The transition measure $P(\mathord{\cdot}\mid s,a)$ obtained by applying the Markov kernel. -/
 noncomputable def transitionMeasure (mdp : MDP S A) (state : S) (action : A) : Measure S :=
   mdp.transition (state, action)
 
-/-- Expected next-state value `E[v(s_{t+1}) | s_t = s, a_t = a]`. -/
+/-- Expected next-state value
+$\mathbb{E}[v(s_{t+1})\mid s_t=s,\ a_t=a]$. -/
 noncomputable def expectedNextValue
     (mdp : MDP S A)
     (values : ValueFunction S)

@@ -21,7 +21,7 @@ namespace NN.Verification.Util.Array
 
 open NN.Verification.Json
 
-/-- Boolean `≤` on floats, for executable artifact checks. -/
+/-- Boolean $\leq$ on floats, for executable artifact checks. -/
 def floatLe (x y : Float) : Bool :=
   decide (x ≤ y)
 
@@ -30,7 +30,8 @@ def floatLt (x y : Float) : Bool :=
   decide (x < y)
 
 /--
-Check pointwise containment `[lo, hi] ⊆ [rootLo, rootHi]` for JSON-style float arrays.
+Check pointwise containment
+$[\mathrm{lo},\mathrm{hi}]\subseteq[\mathrm{rootLo},\mathrm{rootHi}]$ for JSON-style float arrays.
 
 The helper is strict about lengths through `allPairwise`: mismatched arrays are rejected.
 -/
@@ -40,7 +41,8 @@ def boxWithin (rootLo rootHi lo hi : Array Float) : Bool :=
 /--
 Check whether a lower-bound vector refutes a threshold vector at some coordinate.
 
-This is the executable form of `∃ i, threshold[i] < lowerBound[i]`.
+This is the executable form of
+$\exists i,\ \mathrm{threshold}[i]<\mathrm{lowerBound}[i]$.
 -/
 def refutesThreshold (lowerBound threshold : Array Float) : Bool :=
   anyPairwise lowerBound threshold (fun lb thr => floatLt thr lb)

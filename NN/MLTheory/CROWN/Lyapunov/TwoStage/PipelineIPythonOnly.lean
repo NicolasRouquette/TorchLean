@@ -19,9 +19,14 @@ This file corresponds to **Figure 7 (i)** in the TorchLean paper (`arXiv:2602.22
 - Lean’s role is to assign a precise meaning to the exported numbers and derive the usual
   “Lyapunov inequalities hold on region R” statement under a single oracle trust boundary.
 
-Concretely, the trusted boundary is:
-`crown_oracle : CrownOracleWitness lyap cert →
-  (∀ x ∈ R, V_lo ≤ V(x) ≤ V_hi) ∧ (∀ x ∈ R, Vdot_lo ≤ V̇(x) ≤ Vdot_hi)`.
+Concretely, `crown_oracle` supplies the bounds
+
+$$
+\forall x\in R,\quad
+V_{\mathrm{lo}}\leq V(x)\leq V_{\mathrm{hi}}
+\quad\text{and}\quad
+\dot V_{\mathrm{lo}}\leq\dot V(x)\leq\dot V_{\mathrm{hi}}.
+$$
 
 Everything after that is ordinary real arithmetic.
 -/

@@ -16,7 +16,8 @@ A backend capsule is TorchLean's unit of delegation to fast code.
 The capsule records the contract TorchLean expects from a foreign implementation: which operation
 it implements, which spec it refines, what layout and shape
 conventions are assumed, how the value/VJP claims are justified, and what trust level the planner
-must account for. The contract does not prove the implementation.
+must account for. The contract does not prove the implementation. At runtime, a capsule is paired
+with a typed handler whose operation, provider, and device must agree with the selected contract.
 -/
 
 @[expose] public section
@@ -253,20 +254,71 @@ end ContractClaim
 
 /-- A contract-carrying fast kernel or reference implementation. -/
 structure KernelCapsule where
+  /-- Name used in selection reports and runtime errors. -/
+  name : String
+  /-- Backend operation implemented by this capsule. -/
+  op : BackendOp
+  /-- Provider responsible for the implementation. -/
+  provider : Provider
+  /-- Device on which the implementation runs. -/
+  device : Device
+  /-- Assurance level the planner must accept before selection. -/
+  trustLevel : TrustLevel
+  /-- Whether the capsule supplies forward execution. -/
+  supportsForward : Bool := true
+  /-- Form of reverse-mode support supplied by the capsule. -/
+  vjpMode : VJPMode := .none
+  /-- Shape-safety claim and its evidence. -/
+  shapeContract : ContractDescriptor
+  /-- Tensor-layout claim and its evidence. -/
+  layoutContract : ContractDescriptor
+  /-- Forward-value refinement claim and its evidence. -/
+  valueContract : ContractDescriptor
+  /-- Reverse-mode refinement claim and its evidence. -/
+  vjpContract : ContractDescriptor
+  /-- Floating-point behavior advertised for numerical audits. -/
+  numericalPolicy : NumericalPolicy := {}
+  /-- Optional human-readable details not used by selection. -/
+  notes : String := ""
+  deriving Repr
+
+/--
+An executable implementation for one backend operation.
+
+The result type is local to the call site, so this structure also accommodates operations whose
+Lean signatures differ. The capsule argument gives specialized handlers access to numerical and
+VJP policy after the common identity checks have succeeded.
+-/
+structure KernelHandler (β : Type) where
   name : String
   op : BackendOp
   provider : Provider
   device : Device
-  trustLevel : TrustLevel
-  supportsForward : Bool := true
-  vjpMode : VJPMode := .none
-  shapeContract : ContractDescriptor
-  layoutContract : ContractDescriptor
-  valueContract : ContractDescriptor
-  vjpContract : ContractDescriptor
-  numericalPolicy : NumericalPolicy := {}
-  notes : String := ""
-  deriving Repr
+  execute : KernelCapsule → IO β
+
+/--
+A selected capsule paired with a handler for the same operation, provider, and device.
+
+These equalities certify dispatch identity only. Numerical correctness remains exactly as strong as
+the capsule's `ContractEvidence`; binding a handler does not turn tests or a trusted boundary into a
+proof.
+-/
+structure ExecutableKernel (β : Type) where
+  capsule : KernelCapsule
+  handler : KernelHandler β
+  operation_matches : handler.op = capsule.op
+  provider_matches : handler.provider = capsule.provider
+  device_matches : handler.device = capsule.device
+
+namespace KernelHandler
+
+/-- Whether a runtime handler has the identity advertised by a selected capsule. -/
+def matchesCapsule {β : Type} (handler : KernelHandler β) (capsule : KernelCapsule) : Bool :=
+  handler.op == capsule.op &&
+    handler.provider == capsule.provider &&
+    handler.device == capsule.device
+
+end KernelHandler
 
 namespace KernelCapsule
 
@@ -296,6 +348,33 @@ def validateEagerRequest (c : KernelCapsule) (op : BackendOp) (device : Device) 
     throw s!"capsule `{c.name}` implements `{c.op.name}`, not `{op.name}`"
   unless c.device == device do
     throw s!"capsule `{c.name}` targets `{c.device.cliName}`, not `{device.cliName}`"
+
+/--
+Pair a selected contract with the runtime handler that will execute it.
+
+The returned equalities prevent an executor for one operation or provider from being presented as
+another merely because both happen to share a Lean result type.
+-/
+def bind {β : Type} (c : KernelCapsule) (handler : KernelHandler β) :
+    Except String (ExecutableKernel β) := do
+  if hop : handler.op = c.op then
+    if hprovider : handler.provider = c.provider then
+      if hdevice : handler.device = c.device then
+        pure
+          ({ capsule := c
+             handler
+             operation_matches := hop
+             provider_matches := hprovider
+             device_matches := hdevice } : ExecutableKernel β)
+      else
+        throw <| s!"handler `{handler.name}` targets `{handler.device.cliName}`, but capsule " ++
+          s!"`{c.name}` targets `{c.device.cliName}`"
+    else
+      throw <| s!"handler `{handler.name}` uses provider `{reprStr handler.provider}`, but capsule " ++
+        s!"`{c.name}` selects `{reprStr c.provider}`"
+  else
+    throw <| s!"handler `{handler.name}` implements `{handler.op.name}`, but capsule `{c.name}` " ++
+      s!"implements `{c.op.name}`"
 
 /-- Whether the assurance policy admits this capsule. -/
 def allowedBy (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
@@ -334,6 +413,14 @@ def admissible (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
     c.matchesDevice cfg && c.matchesVJP cfg
 
 end KernelCapsule
+
+namespace ExecutableKernel
+
+/-- Invoke the handler bound to a selected capsule. -/
+def run {β : Type} (kernel : ExecutableKernel β) : IO β :=
+  kernel.handler.execute kernel.capsule
+
+end ExecutableKernel
 
 /--
 Pick an admissible capsule for a typed operation.

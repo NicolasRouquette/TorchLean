@@ -30,7 +30,8 @@ namespace Session
 /--
 Rectified Linear Unit (ReLU) activation.
 
-This is a pointwise nonlinearity, `relu(x) = max(x, 0)`, recorded as part of the session’s autograd
+This is the pointwise nonlinearity $\operatorname{ReLU}(x)=\max(x,0)$, recorded as part of the
+session’s autograd
 graph.
 
 PyTorch analogy: `torch.relu(x)` / `torch.nn.functional.relu(x)`.
@@ -101,7 +102,8 @@ def logSoftmax {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
       _root_.Runtime.Autograd.Torch.Internal.SessionIR.logSoftmax (α := α) sess (sh := sh) x
 
 /--
-Softplus activation, applied pointwise: `softplus(x) = log(1 + exp(x))`.
+Softplus activation, applied pointwise:
+$\operatorname{softplus}(x)=\log(1+\exp x)$.
 
 PyTorch analogy: `torch.nn.functional.softplus(x)`.
 -/
@@ -143,7 +145,8 @@ def log {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
       _root_.Runtime.Autograd.Torch.Internal.SessionIR.log (α := α) sess (sh := sh) x
 
 /--
-Elementwise "safe log" surrogate: `safe_log(x; ε) = log(softplus(x) + ε)`.
+Elementwise safe-log surrogate:
+$\operatorname{safeLog}(x;\varepsilon)=\log(\operatorname{softplus}(x)+\varepsilon)$.
 
 We use this when we want something log-like but would rather not carry side conditions about inputs
 being strictly positive.

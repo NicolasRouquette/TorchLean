@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - ".github/workflows/blueprint.yml"
+      - "**/*.lean"
       - "blueprint/**"
       - "home_page/**"
       - "scripts/docs/**"
@@ -17,6 +18,7 @@ on:
     branches: ["main"]
     paths:
       - ".github/workflows/blueprint.yml"
+      - "**/*.lean"
       - "blueprint/**"
       - "home_page/**"
       - "scripts/docs/**"
@@ -87,7 +89,7 @@ jobs:
         run: |
           rm -rf .lake/build/doc-data .lake/build/api-docs.db
           DISABLE_EQUATIONS=1 ~/.elan/bin/lake -R -Kenv=dev build TorchLeanDocs:docs
-      
+
       - name: Detect homepage folder
         id: check_home_page
         run: |
@@ -104,8 +106,11 @@ jobs:
           cd blueprint
           ~/.elan/bin/lake exe cache get || true
           rm -f ~/.cache/mathlib/*.ltar || true
-          ~/.elan/bin/lake exe blueprint-gen --output ../_out/blueprint
+          ~/.elan/bin/lake exe vbp build --output ../_out/blueprint
+          ~/.elan/bin/lake exe vbp check --site ../_out/blueprint
           cd ..
+          test -s _out/blueprint/html-multi/-verso-data/blueprint-manifest.json
+          test -s _out/blueprint/html-multi/-verso-data/blueprint-html-cache.json
           if [ -d blueprint/TorchLeanBlueprint/Guide/Assets ]; then
             mkdir -p _out/blueprint/html-multi/Guide/Assets
             cp -r blueprint/TorchLeanBlueprint/Guide/Assets/* _out/blueprint/html-multi/Guide/Assets/
@@ -135,7 +140,6 @@ jobs:
           python3 scripts/checks/dependency_audit.py \
             --root "$PWD" \
             --json home_page/graphs/dependency-audit.json \
-            --markdown home_page/graphs/dependency-audit.md \
             --fail-on-error
 
       - name: Build interactive import graph HTML
@@ -167,7 +171,25 @@ jobs:
         working-directory: home_page
         env:
           JEKYLL_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: JEKYLL_ENV=production bundle exec jekyll build
+        run: |
+          JEKYLL_ENV=production bundle exec jekyll build
+          content_pages=0
+          while IFS= read -r -d '' page; do
+            if grep -Fq "<main" "$page"; then
+              content_pages=$((content_pages + 1))
+              grep -Fq "mathjax@3/es5/tex-chtml.js" "$page" || {
+                echo "error: MathJax is not loaded by $page" >&2
+                exit 1
+              }
+            fi
+          done < <(
+            find _site -type f -name "*.html" \
+              ! -path "_site/blueprint/*" \
+              ! -path "_site/docs/*" \
+              ! -path "_site/importgraph/*" \
+              -print0
+          )
+          test "$content_pages" -gt 0
 
       - name: "Upload website (API documentation, blueprint and any home page)"
         if: github.event_name != 'pull_request'

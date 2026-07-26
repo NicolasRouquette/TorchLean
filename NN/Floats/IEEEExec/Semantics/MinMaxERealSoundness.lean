@@ -26,10 +26,14 @@ For interval endpoint soundness, we interpret float32 values in the extended rea
 
 This file provides the bridge lemmas used by interval arithmetic proofs:
 
-```
-toEReal (minimum x y) = min (toEReal x) (toEReal y)
-toEReal (maximum x y) = max (toEReal x) (toEReal y)
-```
+$$
+\begin{aligned}
+\operatorname{toEReal}(\min(x,y))
+  &=\min(\operatorname{toEReal}(x),\operatorname{toEReal}(y)),\\
+\operatorname{toEReal}(\max(x,y))
+  &=\max(\operatorname{toEReal}(x),\operatorname{toEReal}(y)).
+\end{aligned}
+$$
 
 including the overflow cases where one of `x`/`y` is an infinity.
 

@@ -44,6 +44,13 @@ UPSTREAM_DOCGEN_BASE = "https://leanprover-community.github.io/mathlib4_docs/"
 
 HREF_RE = re.compile(r'href="([^"]+)"')
 
+DOCGEN_MATHJAX_TEX_OPTIONS = r'''    packages: {"[-]": ["noundefined"]},
+    macros: {
+      llbracket: "{\\lbrack\\!\\lbrack}",
+      rrbracket: "{\\rbrack\\!\\rbrack}",
+    },
+'''
+
 
 DOC_THEME_SCRIPT = """
 <script>
@@ -296,6 +303,7 @@ def write_index(docs: Path) -> None:
       <a href="../blueprint/">Guide</a>
       <a href="../examples/">Examples</a>
       <a href="../graphs/">Graphs</a>
+      <a href="../tools/">Tools</a>
     </div>
     <button class="tl-doc-theme-toggle" type="button" data-doc-theme-toggle aria-label="Use dark theme" title="Use dark theme">Dark</button>
     <form id="search_form">
@@ -1319,10 +1327,10 @@ def rename_docgen_header(docs: Path) -> None:
 
         # Header links are relative to each generated page.  `docs_root` points
         # back to `/docs/`; `site_root` points back to the Jekyll site root.
+        depth = len(path.relative_to(docs).parent.parts)
+        docs_root = "../" * depth if depth else "./"
+        site_root = docs_root + "../"
         if "tl-docsite-links" not in updated and '<h2 class="header_filename' in updated:
-            depth = len(path.relative_to(docs).parent.parts)
-            docs_root = "../" * depth if depth else "./"
-            site_root = docs_root + "../"
             links = (
                 '<div class="tl-docsite-links" aria-label="TorchLean site links">'
                 f'<a href="{docs_root}index.html">Docs Home</a>'
@@ -1330,9 +1338,21 @@ def rename_docgen_header(docs: Path) -> None:
                 f'<a href="{site_root}blueprint/">Guide</a>'
                 f'<a href="{site_root}examples/">Examples</a>'
                 f'<a href="{site_root}graphs/">Graphs</a>'
+                f'<a href="{site_root}tools/">Tools</a>'
                 "</div>"
             )
             updated = updated.replace('<h2 class="header_filename', links + '<h2 class="header_filename', 1)
+        elif "tl-docsite-links" in updated and ">Tools</a>" not in updated:
+            # Keep repeated polish runs useful after the cross-site navigation
+            # grows. Existing generated pages may already contain the wrapper,
+            # so append the new destination instead of treating them as done.
+            links_start = updated.find(
+                '<div class="tl-docsite-links" aria-label="TorchLean site links">'
+            )
+            links_end = updated.find("</div>", links_start)
+            if links_start != -1 and links_end != -1:
+                tools_link = f'<a href="{site_root}tools/">Tools</a>'
+                updated = updated[:links_end] + tools_link + updated[links_end:]
 
         if "data-doc-theme-toggle" not in updated and '<h2 class="header_filename' in updated:
             theme_button = (
@@ -1352,6 +1372,58 @@ def rename_docgen_header(docs: Path) -> None:
             path.write_text(updated, encoding="utf-8")
 
 
+def configure_math_runtime(docs: Path) -> None:
+    """Add the small TeX compatibility layer used by TorchLean docstrings."""
+    config = docs / "mathjax-config.js"
+    if not config.is_file():
+        raise SystemExit(f"missing DocGen MathJax configuration: {config}")
+
+    text = config.read_text(encoding="utf-8")
+    if DOCGEN_MATHJAX_TEX_OPTIONS in text:
+        return
+
+    anchor = '    displayMath: [["$$", "$$"]],\n'
+    if anchor not in text:
+        raise SystemExit(f"cannot extend the DocGen MathJax configuration: {config}")
+    config.write_text(
+        text.replace(anchor, anchor + DOCGEN_MATHJAX_TEX_OPTIONS, 1),
+        encoding="utf-8",
+    )
+
+
+def validate_math_runtime(docs: Path) -> None:
+    """Require MathJax on every generated page that has document content."""
+    config = docs / "mathjax-config.js"
+    if not config.is_file() or config.stat().st_size == 0:
+        raise SystemExit(f"missing DocGen MathJax configuration: {config}")
+
+    config_text = config.read_text(encoding="utf-8")
+    if 'inlineMath: [["$", "$"]]' not in config_text or 'displayMath: [["$$", "$$"]]' not in config_text:
+        raise SystemExit(f"DocGen MathJax configuration does not enable dollar delimiters: {config}")
+    if DOCGEN_MATHJAX_TEX_OPTIONS not in config_text:
+        raise SystemExit(f"DocGen MathJax compatibility macros are not configured: {config}")
+
+    missing: list[Path] = []
+    content_pages = 0
+    for path in docs.rglob("*.html"):
+        text = path.read_text(encoding="utf-8")
+        if "<main" not in text:
+            continue
+        content_pages += 1
+        if (
+            "mathjax-config.js" not in text
+            or "mathjax@3/es5/tex-mml-chtml.js" not in text
+        ):
+            missing.append(path)
+
+    if content_pages == 0:
+        raise SystemExit(f"no DocGen content pages found under {docs}")
+    if missing:
+        sample = ", ".join(str(path) for path in missing[:5])
+        suffix = "" if len(missing) <= 5 else f" (and {len(missing) - 5} more)"
+        raise SystemExit(f"MathJax is not loaded by every DocGen content page: {sample}{suffix}")
+
+
 def main() -> None:
     """Entry point used by `scripts/docs/build_site.sh` and local preview loops."""
     parser = argparse.ArgumentParser()
@@ -1367,6 +1439,8 @@ def main() -> None:
     add_nav_hint(docs)
     rename_docgen_header(docs)
     rewrite_missing_nn_links(docs)
+    configure_math_runtime(docs)
+    validate_math_runtime(docs)
 
 
 if __name__ == "__main__":

@@ -48,7 +48,7 @@ lemma get2_identityTensorSpec_real {n : Nat} (i j : Fin n) :
           exact h (Fin.ext hv)
         simp [identityTensorSpec, get2_eq, get_eq, h, hval]
 
-/-- Entry rule for matrix-shaped tensor addition over `ℝ`. -/
+/-- Entry rule for matrix-shaped tensor addition over $\mathbb{R}$. -/
 lemma get2_addSpec_real {m n : Nat} (A B : MatrixTensor ℝ m n) (i : Fin m) (j : Fin n) :
     get2 (addSpec A B) i j = get2 A i j + get2 B i j := by
   cases A with
@@ -65,7 +65,7 @@ lemma get2_addSpec_real {m n : Nat} (A B : MatrixTensor ℝ m n) (i : Fin m) (j 
             | scalar b =>
               simp [addSpec, map2Spec, get2_eq, get_eq, hA, hB, hAj, hBj]
 
-/-- Entry rule for matrix-shaped tensor scaling over `ℝ`. -/
+/-- Entry rule for matrix-shaped tensor scaling over $\mathbb{R}$. -/
 lemma get2_scaleSpec_real {m n : Nat} (A : MatrixTensor ℝ m n) (c : ℝ)
     (i : Fin m) (j : Fin n) :
     get2 (scaleSpec A c) i j = get2 A i j * c := by
@@ -77,7 +77,7 @@ lemma get2_scaleSpec_real {m n : Nat} (A : MatrixTensor ℝ m n) (c : ℝ)
       | scalar a =>
         simp [scaleSpec, mapSpec, get2_eq, get_eq, hrow, hcol]
 
-/-- Entry rule for matrix-shaped tensor subtraction over `ℝ`. -/
+/-- Entry rule for matrix-shaped tensor subtraction over $\mathbb{R}$. -/
 lemma get2_subSpec_real {m n : Nat} (A B : MatrixTensor ℝ m n) (i : Fin m) (j : Fin n) :
     get2 (subSpec A B) i j = get2 A i j - get2 B i j := by
   cases A with
@@ -211,7 +211,7 @@ theorem scale_hasExactColumnGram_of_square_eq_one {m n : Nat}
 
 /--
 Scaling an exact-column-orthogonal real matrix gives an approximate Gram certificate whenever
-`|k^2 - 1|` is bounded by the requested tolerance.
+$|k^2-1|$ is bounded by the requested tolerance.
 -/
 theorem scale_hasApproxColumnGram_of_exact_column_gram_of_square_error {m n : Nat}
     (Q : MatrixTensor ℝ m n) (k eps : ℝ)
@@ -296,8 +296,7 @@ theorem scale_hasApproxColumnGram_of_exact_column_gram_of_square_error {m n : Na
       _ ≤ eps := heps
 
 /--
-If `QᵀQ = I`, then one column-oriented Newton-Schulz step returns
-`(a + b + c) Q`.
+If $Q^\mathsf{T}Q=I$, then one column-oriented Newton-Schulz step returns $(a+b+c)Q$.
 -/
 theorem newtonSchulzStep_eq_scale_sum_of_exact_column_gram {m n : Nat}
     (coeffs : NewtonSchulzCoeffs ℝ) (Q : MatrixTensor ℝ m n)
@@ -337,7 +336,7 @@ theorem newtonSchulzFixedPoint_of_exact_column_gram_of_coeff_sum_one {m n : Nat}
       ring
 
 /--
-If `QᵀQ = I` and `(a + b + c)^2 = 1`, then one column-oriented Newton-Schulz step still has exact
+If $Q^\mathsf{T}Q=I$ and $(a+b+c)^2=1$, then one column-oriented Newton-Schulz step still has exact
 column Gram.
 -/
 theorem newtonSchulzStep_hasExactColumnGram_of_exact_column_gram_of_sum_square_one {m n : Nat}
@@ -349,8 +348,8 @@ theorem newtonSchulzStep_hasExactColumnGram_of_exact_column_gram_of_sum_square_o
   exact scale_hasExactColumnGram_of_square_eq_one Q (coeffs.a + coeffs.b + coeffs.c) hgram hsquare
 
 /--
-If `QᵀQ = I` and `|(a + b + c)^2 - 1| ≤ eps`, then one column-oriented Newton-Schulz step has
-entrywise Gram residual bounded by `eps`.
+If $Q^\mathsf{T}Q=I$ and $|(a+b+c)^2-1|\leq\varepsilon$, then one column-oriented Newton-Schulz
+step has entrywise Gram residual bounded by $\varepsilon$.
 -/
 theorem newtonSchulzStep_hasApproxColumnGram_of_exact_column_gram_of_sum_square_error {m n : Nat}
     (coeffs : NewtonSchulzCoeffs ℝ) (Q : MatrixTensor ℝ m n) (eps : ℝ)
@@ -377,7 +376,7 @@ theorem newtonSchulzFixedPointCheckedExact_success_of_coeff_sum_one {m n : Nat}
   exact ⟨hgram, newtonSchulzFixedPoint_of_exact_column_gram_of_coeff_sum_one coeffs buffer hgram hsum⟩
 
 /--
-For real coefficients with `a + b + c = 1`, exact column Gram of the fresh momentum buffer is
+For real coefficients with $a+b+c=1$, exact column Gram of the fresh momentum buffer is
 enough to certify a Newton-Schulz Muon update exactly.
 -/
 theorem update_has_exact_certified_step_newtonSchulz_exact_gram_checked {m n : Nat}
@@ -413,8 +412,8 @@ theorem update_has_exact_certified_step_newtonSchulz_exact_gram_checked {m n : N
         params grads).1.buf hgram hsum)
 
 /--
-For real coefficients with `a + b + c = 1`, exact column Gram of the fresh momentum buffer gives
-`QᵀQ = I` for the actual Newton-Schulz update direction.
+For real coefficients with $a+b+c=1$, exact column Gram of the fresh momentum buffer gives
+$Q^\mathsf{T}Q=I$ for the actual Newton-Schulz update direction.
 -/
 theorem update_newtonSchulz_exact_gram_direction_has_exact_column_gram_checked {m n : Nat}
     (coeffs : NewtonSchulzCoeffs ℝ) (steps : Nat)
@@ -450,7 +449,7 @@ theorem update_newtonSchulz_exact_gram_direction_has_exact_column_gram_checked {
         params grads).1.buf hgram hsum)
 
 /--
-Initialized version: exact column Gram of the first fresh momentum buffer and `a + b + c = 1`
+Initialized version: exact column Gram of the first fresh momentum buffer and $a+b+c=1$
 certify the first Newton-Schulz Muon step exactly.
 -/
 theorem init_has_exact_certified_step_newtonSchulz_exact_gram_checked {m n : Nat}
@@ -545,7 +544,7 @@ theorem update_has_exact_certified_step_qr {m n : Nat}
 
 /--
 Concrete QR-backed direction theorem: if the fresh momentum buffer has positive QR pivots, the
-actual direction used by the Muon update has column Gram `I`.
+actual direction used by the Muon update has column Gram $I$.
 -/
 theorem update_qr_direction_has_exact_column_gram {m n : Nat}
     (lr momentum : ℝ) (buf params grads : MatrixTensor ℝ m n)
@@ -591,7 +590,7 @@ theorem init_has_exact_certified_step_qr {m n : Nat}
 
 /--
 Initialized QR-backed direction theorem: if the first fresh momentum buffer has positive QR pivots,
-the first initialized Muon update direction has column Gram `I`.
+the first initialized Muon update direction has column Gram $I$.
 -/
 theorem init_qr_direction_has_exact_column_gram {m n : Nat}
     (lr momentum : ℝ) (params grads : MatrixTensor ℝ m n)

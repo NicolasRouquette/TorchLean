@@ -12,9 +12,14 @@ public import NN.Floats.NeuralFloat.Rounding.Core
 # Affine Quantization
 
 This module gives one affine quantizer for real scalars. For a positive scale
-`s`, zero point `z`, and integer code interval `[qmin, qmax]`, quantization and reconstruction are
+$s$, zero point $z$, and integer code interval $[q_{\min},q_{\max}]$, quantization and
+reconstruction are
 
-`Q(x) = clamp(round(x / s) + z, qmin, qmax)` and `D(k) = s (k - z)`.
+$$
+Q(x)=\operatorname{clamp}\!\left(\operatorname{round}(x/s)+z,q_{\min},q_{\max}\right),
+\qquad
+D(k)=s(k-z).
+$$
 
 Theorems below cover code-range safety, monotonicity, in-range code round trips, and the half-step
 reconstruction bound when saturation is inactive. The shape-polymorphic tensor lift belongs to the

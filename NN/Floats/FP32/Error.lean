@@ -30,7 +30,8 @@ The pattern is always:
 
 - compute the exact real result,
 - apply the `FP32` rounding operator,
-- bound the rounding error by `eps₃₂ x` (half an ulp at `x`; see `NN/Floats/FP32/Notation.lean`).
+- bound the rounding error by $\varepsilon_{32}(x)$, half an ulp at $x$; see
+  `NN/Floats/FP32/Notation.lean`.
 
 Important nuance: these are **local** statements about a *single* rounding step. Whole-network
 bounds typically combine these with:
@@ -68,14 +69,14 @@ This is the “one thing we use everywhere”: once you know an operation is def
 result”, the proof goal reduces to an instance of this lemma.
 
 Informal: if `fl32(x)` denotes rounding `x : ℝ` to the binary32 grid, then
-`|fl32(x) - x| ≤ eps₃₂(x)`.
+$|\operatorname{fl}_{32}(x)-x|\le\varepsilon_{32}(x)$.
 -/
 theorem round_abs_error (x : ℝ) :
     abs (round₃₂ x - x) ≤ eps₃₂ x := by
   simpa [round₃₂, round32, rnd32] using
     (neural_error_bound_ulp (β := binaryRadix) (fexp := fexp32) (rnd := rnd32) x)
 
-/-- Normal binary32 rounding has relative error at most the unit roundoff `2^-24`. -/
+/-- Normal binary32 rounding has relative error at most the unit roundoff $2^{-24}$. -/
 theorem round_relative_error_of_normal (x : ℝ) (hx : x ≠ 0)
     (hnormal : minNormal ≤ abs x) :
     ErrorBounds.relativeError x (round₃₂ x) hx ≤ neuralBpow binaryRadix (-24) := by
@@ -94,7 +95,8 @@ Addition: `FP32` adds in `ℝ` and then rounds once.
 
 This lemma isolates the rounding error introduced by that last step.
 
-Informal: `|fl32(a+b) - (a+b)| ≤ eps₃₂(a+b)`.
+Informally,
+$|\operatorname{fl}_{32}(a+b)-(a+b)|\le\varepsilon_{32}(a+b)$.
 -/
 theorem add_abs_error (a b : FP32) :
     abs ((a + b).val - (a.val + b.val)) ≤
@@ -119,7 +121,8 @@ theorem add_residual_isRepresentable (a b : FP32)
 /--
 Subtraction: one real subtraction followed by one rounding step.
 
-Informal: `|fl32(a-b) - (a-b)| ≤ eps₃₂(a-b)`.
+Informally,
+$|\operatorname{fl}_{32}(a-b)-(a-b)|\le\varepsilon_{32}(a-b)$.
 -/
 theorem sub_abs_error (a b : FP32) :
     abs ((a - b).val - (a.val - b.val)) ≤
@@ -130,7 +133,8 @@ theorem sub_abs_error (a b : FP32) :
 /--
 Multiplication: one real multiplication followed by one rounding step.
 
-Informal: `|fl32(a*b) - (a*b)| ≤ eps₃₂(a*b)`.
+Informally,
+$|\operatorname{fl}_{32}(ab)-ab|\le\varepsilon_{32}(ab)$.
 -/
 theorem mul_abs_error (a b : FP32) :
     abs ((a * b).val - (a.val * b.val)) ≤
@@ -143,7 +147,8 @@ Division: one real division followed by one rounding step.
 
 This does *not* say division is “well-conditioned”; it only isolates the rounding stage.
 
-Informal: `|fl32(a/b) - (a/b)| ≤ eps₃₂(a/b)`.
+Informally,
+$\left|\operatorname{fl}_{32}(a/b)-a/b\right|\le\varepsilon_{32}(a/b)$.
 -/
 theorem div_abs_error (a b : FP32) :
     abs ((a / b).val - (a.val / b.val)) ≤
@@ -159,7 +164,9 @@ In `FP32`, transcendental functions are specified as: apply the real function, t
 That is *not* how hardware/libm is implemented, but it is exactly the right abstraction for proofs:
 it gives a clear mathematical meaning and a one-rounding-step error theorem.
 
-Informal: `|fl32(exp(x)) - exp(x)| ≤ eps₃₂(exp(x))`, and similarly for the other functions below.
+Informally,
+$|\operatorname{fl}_{32}(\exp x)-\exp x|\le\varepsilon_{32}(\exp x)$,
+and similarly for the other functions below.
 -/
 theorem exp_abs_error (a : FP32) :
     abs ((MathFunctions.exp a).val - Real.exp a.val) ≤
@@ -170,7 +177,8 @@ theorem exp_abs_error (a : FP32) :
 /--
 `tanh` in the proof model: real `tanh` followed by rounding.
 
-Informal: `|fl32(tanh(x)) - tanh(x)| ≤ eps₃₂(tanh(x))`.
+Informally,
+$|\operatorname{fl}_{32}(\tanh x)-\tanh x|\le\varepsilon_{32}(\tanh x)$.
 -/
 theorem tanh_abs_error (a : FP32) :
     abs ((MathFunctions.tanh a).val - Real.tanh a.val) ≤
@@ -184,7 +192,8 @@ theorem tanh_abs_error (a : FP32) :
 Domain note: the inequality is about rounding error around `Real.log a.val`; it does not assert
 anything about `a.val > 0`.
 
-Informal: `|fl32(log(x)) - log(x)| ≤ eps₃₂(log(x))`.
+Informally,
+$|\operatorname{fl}_{32}(\log x)-\log x|\le\varepsilon_{32}(\log x)$.
 -/
 theorem log_abs_error (a : FP32) :
     abs ((MathFunctions.log a).val - Real.log a.val) ≤
@@ -195,7 +204,8 @@ theorem log_abs_error (a : FP32) :
 /--
 `cos` in the proof model: real `cos` followed by rounding.
 
-Informal: `|fl32(cos(x)) - cos(x)| ≤ eps₃₂(cos(x))`.
+Informally,
+$|\operatorname{fl}_{32}(\cos x)-\cos x|\le\varepsilon_{32}(\cos x)$.
 -/
 theorem cos_abs_error (a : FP32) :
     abs ((MathFunctions.cos a).val - Real.cos a.val) ≤
@@ -206,7 +216,8 @@ theorem cos_abs_error (a : FP32) :
 /--
 `sin` in the proof model: real `sin` followed by rounding.
 
-Informal: `|fl32(sin(x)) - sin(x)| ≤ eps₃₂(sin(x))`.
+Informally,
+$|\operatorname{fl}_{32}(\sin x)-\sin x|\le\varepsilon_{32}(\sin x)$.
 -/
 theorem sin_abs_error (a : FP32) :
     abs ((MathFunctions.sin a).val - Real.sin a.val) ≤
@@ -217,7 +228,8 @@ theorem sin_abs_error (a : FP32) :
 /--
 `sinh` in the proof model: real `sinh` followed by rounding.
 
-Informal: `|fl32(sinh(x)) - sinh(x)| ≤ eps₃₂(sinh(x))`.
+Informally,
+$|\operatorname{fl}_{32}(\sinh x)-\sinh x|\le\varepsilon_{32}(\sinh x)$.
 -/
 theorem sinh_abs_error (a : FP32) :
     abs ((MathFunctions.sinh a).val - Real.sinh a.val) ≤
@@ -228,7 +240,8 @@ theorem sinh_abs_error (a : FP32) :
 /--
 `cosh` in the proof model: real `cosh` followed by rounding.
 
-Informal: `|fl32(cosh(x)) - cosh(x)| ≤ eps₃₂(cosh(x))`.
+Informally,
+$|\operatorname{fl}_{32}(\cosh x)-\cosh x|\le\varepsilon_{32}(\cosh x)$.
 -/
 theorem cosh_abs_error (a : FP32) :
     abs ((MathFunctions.cosh a).val - Real.cosh a.val) ≤
@@ -239,7 +252,8 @@ theorem cosh_abs_error (a : FP32) :
 /--
 `sqrt` in the proof model: real `sqrt` followed by rounding.
 
-Informal: `|fl32(sqrt(x)) - sqrt(x)| ≤ eps₃₂(sqrt(x))`.
+Informally,
+$|\operatorname{fl}_{32}(\sqrt{x})-\sqrt{x}|\le\varepsilon_{32}(\sqrt{x})$.
 -/
 theorem sqrt_abs_error (a : FP32) :
     abs ((MathFunctions.sqrt a).val - Real.sqrt a.val) ≤
@@ -250,10 +264,11 @@ theorem sqrt_abs_error (a : FP32) :
 /--
 `abs` in the proof model: real absolute value followed by rounding.
 
-Even though `|x|` is exact over `ℝ`, we still round the result because this is a “round after every
+Even though $|x|$ is exact over $\mathbb R$, we still round the result because this is a “round after every
 primitive” semantics.
 
-Informal: `|fl32(|x|) - |x|| ≤ eps₃₂(|x|)`.
+Informally,
+$\left|\operatorname{fl}_{32}(|x|)-|x|\right|\le\varepsilon_{32}(|x|)$.
 -/
 theorem abs_abs_error (a : FP32) :
     abs ((MathFunctions.abs a).val - |a.val|) ≤

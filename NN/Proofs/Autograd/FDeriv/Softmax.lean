@@ -19,7 +19,7 @@ public import Mathlib.Analysis.InnerProductSpace.Calculus
 
 Fréchet-derivative facts for **axis softmax** on Euclidean vectors.
 
-This is the analytic (ℝ) ingredient used to justify attention-style row softmax nodes
+This is the analytic ($\mathbb R$) ingredient used to justify attention-style row softmax nodes
 (`Vec n → Vec n`) in the tape/DAG autograd proofs.
 
 ## References

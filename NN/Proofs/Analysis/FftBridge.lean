@@ -14,16 +14,16 @@ public import Mathlib.Analysis.RCLike.Sqrt
 # Runtime FFT transport lemmas (`NN.Runtime.*.Fft` → mathlib `ℂ`)
 
 `NN.Runtime.Autograd.TorchLean.Fft` defines FFT/IFFT matrices using “twiddle factors” written as
-`cos θ ± i sin θ` so the definitions work for TorchLean’s runtime complex scalar
+$\cos\theta\pm i\sin\theta$ so the definitions work for TorchLean’s runtime complex scalar
 `TorchLean.Complex β`.
 
 For the **exact** DFT inversion proof we instead worked in mathlib’s `ℂ` using primitive roots of
-unity (`ωₙ = exp(-2πi/n)`), since that is where the classical algebraic facts live.
+unity ($\omega_n=\exp(-2\pi i/n)$), since that is where the classical algebraic facts live.
 
 This file bridges the two views:
 
-- on `ℂ`, TorchLean’s `twiddle` factor is exactly `ωₙ^(j*k)`,
-- on `ℂ`, TorchLean’s `twiddleInv` factor is exactly `ζₙ^(j*k)`,
+- on `ℂ`, TorchLean’s `twiddle` factor is exactly $\omega_n^{jk}$,
+- on `ℂ`, TorchLean’s `twiddleInv` factor is exactly $\zeta_n^{jk}$,
 - therefore the runtime DFT/IDFT *matrices* (viewed entrywise) coincide with the matrices in
   `NN.Proofs.Analysis.Fft`.
 
@@ -124,7 +124,7 @@ local instance : Context ℂ := {
 open Runtime.Autograd.TorchLean.NN
 
 /--
-TorchLean's runtime FFT uses `sqrt(-1)` as its scalar-polymorphic imaginary unit.
+TorchLean's runtime FFT uses $\sqrt{-1}$ as its scalar-polymorphic imaginary unit.
 
 When we instantiate the runtime definitions at mathlib `ℂ`, that value is the usual
 `Complex.I`.
@@ -141,11 +141,11 @@ development.
 
 TorchLean runtime definition:
 
-`cos θ - I * sin θ`
+$\cos\theta-i\sin\theta$
 
 Exact DFT definition:
 
-`ωₙ^(j*k) = exp(-2π i j k / n)`.
+$\omega_n^{jk}=\exp(-2\pi ijk/n)$.
 
 The proof is just Euler's formula plus scalar normalization of the exponent.
 -/
@@ -217,7 +217,7 @@ Runtime inverse twiddle factors match the positive-frequency root powers from th
 development.
 
 This is the inverse-direction analogue of `twiddle_eq_omega_pow`: the runtime
-`cos θ + I * sin θ` term is `ζₙ^(j*k)`.
+$\cos\theta+i\sin\theta$ term is $\zeta_n^{jk}$.
 -/
 theorem twiddleInv_eq_zeta_pow (n j k : Nat) (hn : n ≠ 0) :
     Runtime.Autograd.TorchLean.NN.FFT1D.twiddleInv (α := ℂ) n j k =

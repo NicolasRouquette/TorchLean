@@ -13,7 +13,8 @@ public import NN.Spec.Core.FloatInstances
 # Checked Float32 TD Residuals, GAE, and Advantage Normalization
 
 This module contains the advantage-estimation pieces that sit on top of checked discounted backups:
-TD residuals, fixed-horizon GAE(λ), and z-score normalization. Keeping these separate from plain
+TD residuals, fixed-horizon $\operatorname{GAE}(\lambda)$, and z-score normalization. Keeping these
+separate from plain
 returns makes it clearer which routines are value-learning recurrences and which are PPO pipeline
 preprocessing.
 
@@ -156,7 +157,8 @@ theorem tdResidualIEEE32ExecChecked_eq_ok
         simp [out0, htargetEq, Spec.RL.tdResidual, Spec.RL.tdTarget, HSub.hSub, Sub.sub]
 
 /--
-Checked fixed-horizon Generalized Advantage Estimation (GAE(λ)), specialized to `IEEE32Exec`.
+Checked fixed-horizon Generalized Advantage Estimation ($\operatorname{GAE}(\lambda)$), specialized
+to `IEEE32Exec`.
 
 This is the checked/finite counterpart to `Runtime.RL.Core.generalizedAdvantageEstimationVec`.
 

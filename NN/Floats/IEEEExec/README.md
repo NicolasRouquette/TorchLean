@@ -24,7 +24,7 @@ kernels and their soundness proofs:
 
 - `DirectedRoundingSoundness/`: soundness of directed dyadic and rational rounding and the
   endpoint operations for addition, multiplication, fused multiply-add, division, and square
-  root. The statements use `EReal`, so endpoint overflow to `±∞` remains a valid enclosure.
+  root. The statements use `EReal`, so endpoint overflow to $\pm\infty$ remains a valid enclosure.
 - `Semantics/MinMaxERealSoundness.lean`: order lemmas used by endpoint min/max rules.
 
 The interval *API layer* that uses these results lives in `NN/Floats/Interval/`.
@@ -45,7 +45,7 @@ Bridge files connect these on the finite, no overflow path:
 - `Bridge/Expressions.lean`: expression-level refinement that composes operation lemmas once.
 - `Bridge/FP32Total.lean`: packages finite refinement and proved special-value rules using
   `toReal?`.
-- `Bridge/ERealTotal.lean`: an `EReal` interpretation that distinguishes `+∞` and `-∞` while
+- `Bridge/ERealTotal.lean`: an `EReal` interpretation that distinguishes $+\infty$ and $-\infty$ while
   representing NaN as `none`.
 - `Bridge/RuntimeFloat32.lean`: an assumption-based interface relating Lean runtime `Float32` to
   `IEEE32Exec`. Exact bit agreement is restricted to finite inputs and finite results. Classification

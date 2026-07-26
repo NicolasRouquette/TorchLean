@@ -64,7 +64,8 @@ def softmaxModel : nn.Sequential softmaxXShape softmaxYShape :=
 /-- Parameter shapes for `softmaxModel`. -/
 def softmaxParamShapes : List Spec.Shape := nn.paramShapes softmaxModel
 
-/-- Example margin functional on softmax outputs (`lo0 - hi1`). -/
+/-- Example margin functional on softmax outputs
+($\mathrm{lo}_0-\mathrm{hi}_1$). -/
 def softmaxMargin {α : Type} [Context α]
     (lo hi : Tensor α softmaxYShape) : α :=
   let lo0 := _root_.Spec.Tensor.vecGet lo fin0!
@@ -165,7 +166,9 @@ def mseYShape : Spec.Shape := .dim mseOutDim .scalar
 /-- Parameter shapes for the MSE-loss workflow forwardProgram (`[W,b,target]`). -/
 def mseParamShapes : List Spec.Shape := [mseWShape, mseBShape, mseYShape]
 
-/-- TorchLean forwardProgram: `yhat = linear(x); mse_loss(yhat, target)` returning a scalar. -/
+/-- TorchLean forward program computing
+$\widehat{y}=\operatorname{linear}(x)$ and
+$\operatorname{mse\_loss}(\widehat{y},\mathrm{target})$, returning a scalar. -/
 def mseLossModel {α : Type} [Context α] [DecidableEq Spec.Shape] :
     _root_.Runtime.Autograd.TorchLean.Program α (mseParamShapes ++ [mseXShape])
       _root_.TorchLean.Shape.scalar :=

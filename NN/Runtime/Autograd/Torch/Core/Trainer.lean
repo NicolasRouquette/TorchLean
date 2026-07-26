@@ -492,8 +492,10 @@ Bundle a scalar-loss training loop for a fixed parameter pack and input signatur
 
 This is the low-level trainer object used by module-backed execution:
 - `forward` computes a scalar loss,
-- `backward` computes gradients w.r.t. parameters,
-- `step` applies an optimizer update (typically SGD),
+- `lossAndBackward` computes that loss and its parameter gradients from one tape,
+- `backward` exposes just the gradients when the loss is not needed,
+- `stepWithLoss` applies an SGD update and returns the loss from the same tape,
+- `step` applies the update without requiring callers to read the loss,
 - `getParams` reads current parameter values.
 -/
 structure ScalarTrainer (α : Type) (paramShapes inputShapes : List Shape) where
@@ -501,8 +503,13 @@ structure ScalarTrainer (α : Type) (paramShapes inputShapes : List Shape) where
   params : ParamList α paramShapes
   /-- Compute the scalar loss for a curried input pack. -/
   forward : Curried.Fn α inputShapes (IO (Tensor α Shape.scalar))
+  /-- Compute the scalar loss and parameter gradients from one forward tape. -/
+  lossAndBackward :
+    Curried.Fn α inputShapes (IO (Tensor α Shape.scalar × TList α paramShapes))
   /-- Compute gradients aligned with `paramShapes` for a curried input pack. -/
   backward : Curried.Fn α inputShapes (IO (TList α paramShapes))
+  /-- Apply one SGD-style update and return the loss used to compute that update. -/
+  stepWithLoss : α → Curried.Fn α inputShapes (IO (Tensor α Shape.scalar))
   /-- Apply one SGD-style update for a curried input pack. -/
   step : α → Curried.Fn α inputShapes (IO Unit)
   /--
@@ -512,6 +519,9 @@ structure ScalarTrainer (α : Type) (paramShapes inputShapes : List Shape) where
   `none` and should use the generic optimizer wrappers.
   -/
   adamStep? : Option (α → α → α → α → Curried.Fn α inputShapes (IO Unit)) := none
+  /-- CUDA-native Adam update that also returns the loss from its forward tape. -/
+  adamStepWithLoss? :
+    Option (α → α → α → α → Curried.Fn α inputShapes (IO (Tensor α Shape.scalar))) := none
   /--
   Optional AdamW update path.
 
@@ -519,6 +529,10 @@ structure ScalarTrainer (α : Type) (paramShapes inputShapes : List Shape) where
   decay. Other backends expose `none` and should use the generic optimizer wrappers.
   -/
   adamWStep? : Option (α → α → α → α → α → Curried.Fn α inputShapes (IO Unit)) := none
+  /-- CUDA-native AdamW update that also returns the loss from its forward tape. -/
+  adamWStepWithLoss? :
+    Option (α → α → α → α → α →
+      Curried.Fn α inputShapes (IO (Tensor α Shape.scalar))) := none
   /-- Read current parameter values, synchronizing device mirrors if needed. -/
   getParams : IO (TList α paramShapes)
 
@@ -627,78 +641,127 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
                     ++ s!"{Shape.pretty s}, got "
                     ++ s!"{Shape.pretty any.s})"
 
+        let runTape (xs : TList α inputShapes) : IO (Runtime.Autograd.Tape α) := do
+          let pv ← ParamList.values (α := α) ps
+          let args := Proofs.Autograd.Algebra.TList.append (α := α) (ss₁ := paramShapes)
+            (ss₂ := inputShapes) pv xs
+          let (tape, _ctx) := Runtime.Autograd.Compiled.compile (α := α) (Γ := Γ) (ss := ssFull)
+            fullGraph args
+          pure tape
         let forward : Curried.Fn α inputShapes (IO (Tensor α Shape.scalar)) :=
-          Curried.curry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar)) (fun xs => do
-            let pv ← ParamList.values (α := α) ps
-            let args := Proofs.Autograd.Algebra.TList.append (α := α) (ss₁ := paramShapes) (ss₂ :=
-              inputShapes) pv xs
-            let (tape, _ctx) := Runtime.Autograd.Compiled.compile (α := α) (Γ := Γ) (ss := ssFull)
-              fullGraph args
-            getScalarFromTape tape)
-        let backward : Curried.Fn α inputShapes (IO (TList α paramShapes)) :=
-          Curried.curry (α := α) (ss := inputShapes) (β := IO (TList α paramShapes)) (fun xs => do
-            let pv ← ParamList.values (α := α) ps
-            let args := Proofs.Autograd.Algebra.TList.append (α := α) (ss₁ := paramShapes) (ss₂ :=
-              inputShapes) pv xs
-            let (tape, _ctx) := Runtime.Autograd.Compiled.compile (α := α) (Γ := Γ) (ss := ssFull)
-              fullGraph args
+          Curried.curry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar))
+            (fun xs => runTape xs >>= getScalarFromTape)
+        let lossAndBackward :
+            Curried.Fn α inputShapes
+              (IO (Tensor α Shape.scalar × TList α paramShapes)) :=
+          Curried.curry (α := α) (ss := inputShapes)
+            (β := IO (Tensor α Shape.scalar × TList α paramShapes)) (fun xs => do
+            let tape ← runTape xs
+            let lossValue ← getScalarFromTape tape
             let grads ← okOrThrow (Runtime.Autograd.Compiled.backwardDenseAllFromOutput (α := α) (Γ
               := Γ) (ss := ssFull) tape)
-            gradsPrefix (ss := paramShapes) grads 0)
+            let paramGrads ← gradsPrefix (ss := paramShapes) grads 0
+            pure (lossValue, paramGrads))
+        let backward : Curried.Fn α inputShapes (IO (TList α paramShapes)) :=
+          Curried.curry (α := α) (ss := inputShapes) (β := IO (TList α paramShapes))
+            (fun xs => do
+              let tape ← runTape xs
+              let grads ← okOrThrow
+                (Runtime.Autograd.Compiled.backwardDenseAllFromOutput
+                  (α := α) (Γ := Γ) (ss := ssFull) tape)
+              gradsPrefix (ss := paramShapes) grads 0)
+        let stepWithLoss (lr : α) :
+            Curried.Fn α inputShapes (IO (Tensor α Shape.scalar)) :=
+          Curried.curry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar))
+            (fun xs => do
+              let (lossValue, grads) ← Curried.uncurry (α := α) (ss := inputShapes)
+                (β := IO (Tensor α Shape.scalar × TList α paramShapes)) lossAndBackward xs
+              ParamList.sgdStep (α := α) (ss := paramShapes) ps lr grads
+              pure lossValue)
         let step (lr : α) : Curried.Fn α inputShapes (IO Unit) :=
           Curried.curry (α := α) (ss := inputShapes) (β := IO Unit) (fun xs => do
-            let g ← Curried.uncurry (α := α) (ss := inputShapes) (β := IO (TList α paramShapes))
-              backward xs
-            ParamList.sgdStep (α := α) (ss := paramShapes) ps lr g)
+            let _ ← Curried.uncurry (α := α) (ss := inputShapes)
+              (β := IO (Tensor α Shape.scalar)) (stepWithLoss lr) xs
+            pure ())
         pure
           { params := ps
             forward := forward
+            lossAndBackward := lossAndBackward
             backward := backward
+            stepWithLoss := stepWithLoss
             step := step
             adamStep? := none
+            adamStepWithLoss? := none
             adamWStep? := none
+            adamWStepWithLoss? := none
             getParams := ParamList.values (α := α) (ss := paramShapes) ps }
     | .eager =>
         let sess ← Internal.EagerSession.new (α := α) opts
         let adamStateRef ← IO.mkRef (Std.HashMap.emptyWithCapacity : Internal.EagerSession.CudaAdamState)
         let lossEager := loss (m := Internal.EagerM α)
+        let recordLoss (xs : TList α inputShapes) :
+            IO (TensorRef α Shape.scalar × RefList (TensorRef α) paramShapes) := do
+          sess.resetTape
+          (do
+            let pRefs ← Internal.useParams (α := α) (ss := paramShapes) ps
+            let xRefs ← Internal.useInputs (α := α) (ss := inputShapes) xs
+            let allRefs := RefList.append (ss₁ := paramShapes) (ss₂ := inputShapes) pRefs xRefs
+            let lossRef ← CurriedRef.uncurry (ss := paramShapes ++ inputShapes) lossEager allRefs
+            pure (lossRef, pRefs)) |>.run sess
+        let finishCudaStep : IO Unit := do
+          Internal.EagerSession.releaseCudaTapeAfterOptimizerStep sess
+          sess.cudaTape.set Runtime.Autograd.Cuda.Tape.empty
+          sess.paramsByLeaf.set (Std.HashMap.emptyWithCapacity)
+          sess.nats.set #[]
+          Internal.EagerSession.collectCudaAllocator
         let forward : Curried.Fn α inputShapes (IO (Tensor α Shape.scalar)) :=
           Curried.curry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar)) (fun xs => do
-            sess.resetTape
-            let lossRef ← (do
-              let pRefs ← Internal.useParams (α := α) (ss := paramShapes) ps
-              let xRefs ← Internal.useInputs (α := α) (ss := inputShapes) xs
-              let allRefs := RefList.append (ss₁ := paramShapes) (ss₂ := inputShapes) pRefs xRefs
-              CurriedRef.uncurry (ss := paramShapes ++ inputShapes) (lossEager) allRefs) |>.run sess
+            let (lossRef, _) ← recordLoss xs
             Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef)
-        let backward : Curried.Fn α inputShapes (IO (TList α paramShapes)) :=
-          Curried.curry (α := α) (ss := inputShapes) (β := IO (TList α paramShapes)) (fun xs => do
-            sess.resetTape
-            let (lossRef, pRefs) ← (do
-              let pRefs ← Internal.useParams (α := α) (ss := paramShapes) ps
-              let xRefs ← Internal.useInputs (α := α) (ss := inputShapes) xs
-              let allRefs := RefList.append (ss₁ := paramShapes) (ss₂ := inputShapes) pRefs xRefs
-              let lossRef ← CurriedRef.uncurry (ss := paramShapes ++ inputShapes) (lossEager) allRefs
-              pure (lossRef, pRefs)) |>.run sess
+        let lossAndBackward :
+            Curried.Fn α inputShapes
+              (IO (Tensor α Shape.scalar × TList α paramShapes)) :=
+          Curried.curry (α := α) (ss := inputShapes)
+            (β := IO (Tensor α Shape.scalar × TList α paramShapes)) (fun xs => do
+            let (lossRef, pRefs) ← recordLoss xs
+            let lossValue ←
+              Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef
             let grads ← Internal.EagerSession.backwardScalarDenseAll (α := α) sess lossRef
-            Internal.gradsOfRefs (α := α) (ss := paramShapes) grads pRefs)
+            let paramGrads ← Internal.gradsOfRefs (α := α) (ss := paramShapes) grads pRefs
+            pure (lossValue, paramGrads))
+        let backward : Curried.Fn α inputShapes (IO (TList α paramShapes)) :=
+          Curried.curry (α := α) (ss := inputShapes) (β := IO (TList α paramShapes))
+            (fun xs => do
+              let (lossRef, pRefs) ← recordLoss xs
+              let grads ← Internal.EagerSession.backwardScalarDenseAll (α := α) sess lossRef
+              Internal.gradsOfRefs (α := α) (ss := paramShapes) grads pRefs)
+        let stepWithLoss (lr : α) :
+            Curried.Fn α inputShapes (IO (Tensor α Shape.scalar)) :=
+          Curried.curry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar))
+            (fun xs => do
+              if opts.usesCuda then
+                let (lossRef, _) ← recordLoss xs
+                let lossValue ←
+                  Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef
+                let gradsDev ←
+                  Internal.EagerSession.backwardScalarParamGradsCuda (α := α) sess lossRef
+                Internal.EagerSession.sgdStepAllCudaMap (α := α) sess lr gradsDev
+                Internal.EagerSession.releaseCudaGradMap gradsDev
+                finishCudaStep
+                pure lossValue
+              else
+                let (lossValue, grads) ← Curried.uncurry (α := α) (ss := inputShapes)
+                  (β := IO (Tensor α Shape.scalar × TList α paramShapes)) lossAndBackward xs
+                ParamList.sgdStep (α := α) (ss := paramShapes) ps lr grads
+                pure lossValue)
         let step (lr : α) : Curried.Fn α inputShapes (IO Unit) :=
           Curried.curry (α := α) (ss := inputShapes) (β := IO Unit) (fun xs => do
             if opts.usesCuda then
-              sess.resetTape
-              let lossRef ← (do
-                let pRefs ← Internal.useParams (α := α) (ss := paramShapes) ps
-                let xRefs ← Internal.useInputs (α := α) (ss := inputShapes) xs
-                let allRefs := RefList.append (ss₁ := paramShapes) (ss₂ := inputShapes) pRefs xRefs
-                CurriedRef.uncurry (ss := paramShapes ++ inputShapes) (lossEager) allRefs) |>.run sess
+              let (lossRef, _) ← recordLoss xs
               let gradsDev ← Internal.EagerSession.backwardScalarParamGradsCuda (α := α) sess lossRef
               Internal.EagerSession.sgdStepAllCudaMap (α := α) sess lr gradsDev
               Internal.EagerSession.releaseCudaGradMap gradsDev
-              Internal.EagerSession.releaseCudaTapeAfterOptimizerStep sess
-              sess.cudaTape.set Runtime.Autograd.Cuda.Tape.empty
-              sess.paramsByLeaf.set (Std.HashMap.emptyWithCapacity)
-              sess.nats.set #[]
-              Internal.EagerSession.collectCudaAllocator
+              finishCudaStep
             else
               let g ← Curried.uncurry (α := α) (ss := inputShapes) (β := IO (TList α paramShapes))
                 backward xs
@@ -707,51 +770,75 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
           if opts.usesCuda then
             some (fun lr beta1 beta2 epsilon =>
               Curried.curry (α := α) (ss := inputShapes) (β := IO Unit) (fun xs => do
-                sess.resetTape
-                let lossRef ← (do
-                  let pRefs ← Internal.useParams (α := α) (ss := paramShapes) ps
-                  let xRefs ← Internal.useInputs (α := α) (ss := inputShapes) xs
-                  let allRefs := RefList.append (ss₁ := paramShapes) (ss₂ := inputShapes) pRefs xRefs
-                  CurriedRef.uncurry (ss := paramShapes ++ inputShapes) (lossEager) allRefs) |>.run sess
+                let (lossRef, _) ← recordLoss xs
                 let gradsDev ← Internal.EagerSession.backwardScalarParamGradsCuda (α := α) sess lossRef
                 Internal.EagerSession.adamStepAllCudaMap (α := α) sess adamStateRef lr beta1 beta2
                   epsilon gradsDev
                 Internal.EagerSession.releaseCudaGradMap gradsDev
-                Internal.EagerSession.releaseCudaTapeAfterOptimizerStep sess
-                sess.cudaTape.set Runtime.Autograd.Cuda.Tape.empty
-                sess.paramsByLeaf.set (Std.HashMap.emptyWithCapacity)
-                sess.nats.set #[]
-                Internal.EagerSession.collectCudaAllocator))
+                finishCudaStep))
+          else
+            none
+        let adamStepWithLoss? :
+            Option (α → α → α → α →
+              Curried.Fn α inputShapes (IO (Tensor α Shape.scalar))) :=
+          if opts.usesCuda then
+            some (fun lr beta1 beta2 epsilon =>
+              Curried.curry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar))
+                (fun xs => do
+                  let (lossRef, _) ← recordLoss xs
+                  let lossValue ←
+                    Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef
+                  let gradsDev ←
+                    Internal.EagerSession.backwardScalarParamGradsCuda (α := α) sess lossRef
+                  Internal.EagerSession.adamStepAllCudaMap (α := α) sess adamStateRef lr beta1
+                    beta2 epsilon gradsDev
+                  Internal.EagerSession.releaseCudaGradMap gradsDev
+                  finishCudaStep
+                  pure lossValue))
           else
             none
         let adamWStep? : Option (α → α → α → α → α → Curried.Fn α inputShapes (IO Unit)) :=
           if opts.usesCuda then
             some (fun lr weightDecay beta1 beta2 epsilon =>
               Curried.curry (α := α) (ss := inputShapes) (β := IO Unit) (fun xs => do
-                sess.resetTape
-                let lossRef ← (do
-                let pRefs ← Internal.useParams (α := α) (ss := paramShapes) ps
-                let xRefs ← Internal.useInputs (α := α) (ss := inputShapes) xs
-                let allRefs := RefList.append (ss₁ := paramShapes) (ss₂ := inputShapes) pRefs xRefs
-                CurriedRef.uncurry (ss := paramShapes ++ inputShapes) (lossEager) allRefs) |>.run sess
+                let (lossRef, _) ← recordLoss xs
                 let gradsDev ← Internal.EagerSession.backwardScalarParamGradsCuda (α := α) sess lossRef
                 Internal.EagerSession.adamWStepAllCudaMap (α := α) sess adamStateRef lr weightDecay
                   beta1 beta2 epsilon gradsDev
                 Internal.EagerSession.releaseCudaGradMap gradsDev
-                Internal.EagerSession.releaseCudaTapeAfterOptimizerStep sess
-                sess.cudaTape.set Runtime.Autograd.Cuda.Tape.empty
-                sess.paramsByLeaf.set (Std.HashMap.emptyWithCapacity)
-                sess.nats.set #[]
-                Internal.EagerSession.collectCudaAllocator))
+                finishCudaStep))
+          else
+            none
+        let adamWStepWithLoss? :
+            Option (α → α → α → α → α →
+              Curried.Fn α inputShapes (IO (Tensor α Shape.scalar))) :=
+          if opts.usesCuda then
+            some (fun lr weightDecay beta1 beta2 epsilon =>
+              Curried.curry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar))
+                (fun xs => do
+                  let (lossRef, _) ← recordLoss xs
+                  let lossValue ←
+                    Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef
+                  let gradsDev ←
+                    Internal.EagerSession.backwardScalarParamGradsCuda (α := α) sess lossRef
+                  Internal.EagerSession.adamWStepAllCudaMap (α := α) sess adamStateRef lr
+                    weightDecay beta1 beta2 epsilon gradsDev
+                  Internal.EagerSession.releaseCudaGradMap gradsDev
+                  finishCudaStep
+                  pure lossValue))
           else
             none
         pure
           { params := ps
             forward := forward
+            lossAndBackward := lossAndBackward
             backward := backward
+            stepWithLoss := stepWithLoss
             step := step
             adamStep? := adamStep?
+            adamStepWithLoss? := adamStepWithLoss?
             adamWStep? := adamWStep?
+            adamWStepWithLoss? := adamWStepWithLoss?
             getParams := ParamList.valuesSynced (α := α) (ss := paramShapes) ps })
 end Torch
 end Autograd

@@ -16,18 +16,18 @@ We use this file as the mathlib-backed anchor for diffusion probability theory.
 
 It formalizes a standard fact used implicitly throughout diffusion models:
 
-If `Z` is standard Gaussian in a finite-dimensional Euclidean space `E`, then
+If $Z$ is standard Gaussian in a finite-dimensional Euclidean space $E$, then
 
-`x_t := c0 • x0 + c1 • Z`
+$x_t = c_0 x_0 + c_1 Z$
 
-is Gaussian for any fixed `x0 : E` and scalar coefficients `c0,c1 : ℝ`.
+is Gaussian for any fixed $x_0 \in E$ and scalar coefficients $c_0,c_1 \in \mathbb{R}$.
 
 In the DDPM/VP setting, the usual coefficients are:
 
-- `c0 = sqrt(ᾱ_t)`
-- `c1 = sqrt(1-ᾱ_t)`
+- $c_0 = \sqrt{\bar{\alpha}_t}$
+- $c_1 = \sqrt{1-\bar{\alpha}_t}$
 
-At the spec layer (`NN.Spec.Generative.Diffusion.ForwardProcess`), we treat the noise `ε` as an
+At the spec layer (`NN.Spec.Generative.Diffusion.ForwardProcess`), we treat the noise $\varepsilon$ as an
 explicit tensor input. This file provides the probability-theory side: when that noise is sampled
 from `stdGaussian`, the resulting distribution is Gaussian.
 
@@ -56,11 +56,11 @@ local notation "E" => EuclideanSpace ℝ ι
 /--
 Forward noising measure in a finite-dimensional Euclidean space:
 
-`x ↦ c0 • x0 + c1 • x`, where `x ~ stdGaussian`.
+$x \mapsto c_0 x_0 + c_1 x$, where $x$ follows the standard Gaussian law.
 
 We define it as a composition of:
-- a linear map (`x ↦ c1 • x`), and
-- a translation (`y ↦ y + c0 • x0`),
+- a linear map $x \mapsto c_1 x$, and
+- a translation $y \mapsto y + c_0 x_0$,
 
 so that Gaussian-closure lemmas in mathlib apply directly.
 -/

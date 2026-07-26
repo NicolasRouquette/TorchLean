@@ -34,7 +34,7 @@ namespace ExampleDataset
 def mkVec1 (x : IEEE32Exec) : Spec.Tensor IEEE32Exec XShape :=
   Spec.Tensor.dim (fun _ : Fin 1 => Spec.Tensor.ofScalar x)
 
-/-- A concrete dataset with `N = 2` examples (so `n = 1` in the `N = n+1` convention). -/
+/-- A concrete dataset with $N=2$ examples (so $n=1$ in the $N=n+1$ convention). -/
 def S : Dataset 2 ExampleIEEE32Vec1 :=
   Dataset.ofFn (n := 2) (Z := ExampleIEEE32Vec1) (fun i =>
     Fin.cases

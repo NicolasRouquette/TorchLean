@@ -16,7 +16,9 @@ public import NN.Spec.Core.TensorOps
 LoRA is a parameter-efficient adapter for linear layers: instead of updating the full weight matrix
 `W`, training learns two small matrices `A` and `B` and uses
 
-`W_eff = W + scale * (A * B)`.
+$$
+W_{\mathrm{eff}}=W+\mathrm{scale}\,AB.
+$$
 
 The convention in this file matches the rest of TorchLean's linear specs, where row-batch inputs
 multiply a weight matrix on the right. If a base linear layer uses `W : inDim × outDim`, then:
@@ -44,7 +46,8 @@ namespace LoRA
 /--
 LoRA adapter parameters for a linear weight matrix of shape `inDim × outDim`.
 
-The usual LoRA scaling is `alpha / rank`; TorchLean keeps the final scalar as an explicit `scale`
+The usual LoRA scaling is $\alpha/r$, where $r$ is the rank; TorchLean keeps the final scalar as
+an explicit `scale`
 argument so callers can choose that convention, a schedule, or a test value.
 -/
 structure Params (α : Type) (inDim rank outDim : Nat) where
@@ -53,7 +56,7 @@ structure Params (α : Type) (inDim rank outDim : Nat) where
   /-- Up projection from the adapter rank into the model output dimension. -/
   B : Tensor α (.dim rank (.dim outDim .scalar))
 
-/-- The low-rank matrix `scale * (A * B)` added to a base linear weight. -/
+/-- The low-rank matrix $\mathrm{scale}\,AB$ added to a base linear weight. -/
 def delta {α : Type} [Add α] [Mul α] [Zero α]
     {inDim rank outDim : Nat} (p : Params α inDim rank outDim) (scale : α) :
     Tensor α (.dim inDim (.dim outDim .scalar)) :=

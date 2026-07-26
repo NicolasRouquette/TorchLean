@@ -63,7 +63,7 @@ open TorchLean.Floats.IEEE754.IEEE32Exec
 open TorchLean.Floats.Interval.Comparison
 open TorchLean.Floats.Interval.Comparison.RealInterval
 
-/-- JSON expression for `x^2 + 0.1*x - 0.5`, in the safe Arb expression language. -/
+/-- JSON expression for $x^2+0.1x-0.5$, in the safe Arb expression language. -/
 def polynomialExpr : Lean.Json :=
   Lean.Json.mkObj [
     ("op", Lean.Json.str "sub"),

@@ -26,7 +26,7 @@ with the mathematics before opening the general theorem stack.
 # A Complete Robustness Run
 
 The bundled robustness workflow constructs a two-output network, compiles it to TorchLean's
-canonical IR, places an `L∞` box of radius `0.1` around `[1, 1]`, and computes both IBP and CROWN
+canonical IR, places an $`\ell_\infty` box of radius `0.1` around `[1, 1]`, and computes both IBP and CROWN
 bounds:
 
 ```
@@ -55,10 +55,10 @@ at most `-1.8`. Consequently,
 $$`\inf_{x\in X}(f_0(x)-f_1(x))\ge 1.8-(-1.8)=3.6>0.`
 
 For this example there is no mystery hidden in those numbers. Each input coordinate lies in
-`[0.9,1.1]`; the first layer adds them, so its preactivation lies in `[1.8,2.2]`. That interval is
-strictly positive, hence ReLU is the identity throughout the box. The output weights are `1` and
-`-1`, giving logits in `[1.8,2.2]` and `[-2.2,-1.8]`. The margin is twice the hidden value and lies
-in `[3.6,4.4]`. IBP is exact on this tiny path because the ReLU phase never changes.
+$`[0.9,1.1]`; the first layer adds them, so its preactivation lies in $`[1.8,2.2]`. That interval is
+strictly positive, hence ReLU is the identity throughout the box. The output weights are $`1` and
+$`-1`, giving logits in $`[1.8,2.2]` and $`[-2.2,-1.8]`. The margin is twice the hidden value and lies
+in $`[3.6,4.4]`. IBP is exact on this tiny path because the ReLU phase never changes.
 
 The printed `true` is useful, but it is not itself the theorem. To turn the run into a proof, we
 must connect the compiled graph to the source model, the propagated boxes to the graph denotation,
@@ -112,8 +112,8 @@ the usual sign split gives
 $$`\ell_y=W^+\ell+W^-u+b,\qquad
 u_y=W^+u+W^-\ell+b,`
 
-where `W^+ = max(W,0)` and `W^- = min(W,0)`. Monotone activations transform endpoints; ReLU maps
-`[\ell,u]` to `[max(0,\ell),max(0,u)]`. Elementwise multiplication needs all endpoint products.
+where $`W^+=\max(W,0)` and $`W^-=\min(W,0)`. Monotone activations transform endpoints; ReLU maps
+$`[\ell,u]` to $`[\max(0,\ell),\max(0,u)]`. Elementwise multiplication needs all endpoint products.
 
 The generic real soundness theorem is `cert_encloses_semantics`. It requires:
 
@@ -168,14 +168,14 @@ claims separate prevents a successful training log from being mistaken for a rob
 # CROWN, Alpha-CROWN, And Alpha-Beta-CROWN
 
 CROWN propagates affine lower and upper forms rather than only boxes. At an uncertain ReLU with
-`l < 0 < u`, the secant upper relaxation is
+$`\ell<0<u`, the secant upper relaxation is
 
 $$`\operatorname{ReLU}(z)
-\le \frac{u}{u-l}(z-l),`
+\le \frac{u}{u-\ell}(z-\ell),`
 
-while a lower relaxation may use a slope `alpha` constrained to a valid range. Alpha-CROWN
+while a lower relaxation may use a slope $`\alpha` constrained to a valid range. Alpha-CROWN
 optimizes these slopes. Alpha-beta-CROWN additionally records branch phases: an active branch uses
-`z >= 0`, and an inactive branch uses `z <= 0`.
+$`z\ge 0`, and an inactive branch uses $`z\le 0`.
 
 TorchLean's generic theorem `crown_checker_encloses_semantics` takes an exact
 `CrownCertLocalOK` hypothesis and a separate `CrownTransferSound` proof. The local transfer
@@ -215,8 +215,8 @@ Suppose a sound bound procedure produces, for every `x` in the input box,
 
 $$`f_y(x)\ge L_y,\qquad f_j(x)\le U_j.`
 
-Then `L_y-U_j>0` proves the pairwise class margin. A multiclass certificate repeats this for every
-`j != y`. The arithmetic is elementary; the substantive obligations are that:
+Then $`L_y-U_j>0` proves the pairwise class margin. A multiclass certificate repeats this for every
+$`j\ne y`. The arithmetic is elementary; the substantive obligations are that:
 
 - the bounds enclose the exact graph semantics;
 - the graph denotes the intended model;
@@ -224,7 +224,7 @@ Then `L_y-U_j>0` proves the pairwise class margin. A multiclass certificate repe
 - any rounded or native execution is related to the exact graph.
 
 For a rounded implementation with coordinate errors
-`|f_i^run(x)-f_i(x)| <= epsilon_i`, the transferred margin is
+$`\lvert f_i^{\mathrm{run}}(x)-f_i(x)\rvert\le\varepsilon_i`, the transferred margin is
 
 $$`f_y^{run}(x)-f_j^{run}(x)
 \ge L_y-U_j-\varepsilon_y-\varepsilon_j.`

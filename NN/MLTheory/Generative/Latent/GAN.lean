@@ -23,9 +23,9 @@ verification work.
 
 The mathematical reason this file is more compact than the VAE/VQ-VAE theory files is that the
 public spec deliberately chooses the LSGAN square-loss objective rather than the original minimax
-`log D + log(1-D)` objective.  That keeps the executable Lean surface total over every supported
+$\log D+\log(1-D)$ objective.  That keeps the executable Lean surface total over every supported
 scalar backend; logarithmic GAN objectives belong in a domain-restricted layer with explicit
-`0 < D(x) < 1` assumptions.  The facts below are therefore the safe core: they make the
+$0<D(x)<1$ assumptions.  The facts below are therefore the safe core: they make the
 generator/discriminator composition and the score-regression targets transparent, without smuggling
 analytic side conditions into a total spec.
 
@@ -73,7 +73,8 @@ the discriminator's "fake" target; it tries to move generated samples onto the r
 /--
 LSGAN discriminator loss splits into real-score and fake-score regression terms.
 
-The first term pushes `D(x_real)` toward `1`; the second pushes `D(G(z))` toward `0`.  Keeping this
+The first term pushes $D(x_{\mathrm{real}})$ toward $1$; the second pushes $D(G(z))$ toward $0$.
+Keeping this
 as a named theorem gives downstream examples and proof files a stable reference point for the game
 semantics, instead of requiring them to unfold the spec directly.
 -/

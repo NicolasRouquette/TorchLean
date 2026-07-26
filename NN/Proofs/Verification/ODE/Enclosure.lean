@@ -90,7 +90,7 @@ We implement this by reducing to mathlib’s 1D *fencing theorem*
 2. a lower fence via the same argument applied to `-u`.
 -/
 
-/-- Helper: on `[0,T]`, we have `1 + t > 0` (used to pick ε scaled by `(1+t)`). -/
+/-- Helper: on $[0,T]$, we have $1+t>0$ (used to pick $\varepsilon$ scaled by $1+t$). -/
 private lemma one_add_pos_of_mem_Icc {T t : ℝ} (ht : t ∈ Icc 0 T) : 0 < (1 + t) := by
   have : 0 ≤ t := ht.1
   linarith

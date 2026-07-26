@@ -155,9 +155,10 @@ def convActPool (leading : Spec.Shape := .scalar) {d inChannels : Nat}
 /--
 Residual/skip-connection layer as a single `LayerDef`.
 
-Given `inner : Seq s s`, this builds a layer that computes `x |-> inner(x) + x`.
+Given `inner : Seq s s`, this builds a layer that computes
+$x \mapsto \operatorname{inner}(x) + x$.
 
-PyTorch analogue: `x + f(x)` blocks used throughout ResNets and Transformers.
+PyTorch analogue: $x + f(x)$ blocks used throughout ResNets and Transformers.
 -/
 def residualLayer {s : Spec.Shape} (inner : Sequential s s) : LayerDef s s :=
   let ps := TorchLean.LayerCore.Seq.paramShapes inner
@@ -196,7 +197,7 @@ def residual {s : Spec.Shape} (inner : Sequential s s) : Sequential s s :=
 /-!
 ## Branching (skip connections)
 
-`Seq` is linear, but we sometimes want a PyTorch-like `x |-> f(x) + g(x)` block.
+`Seq` is linear, but we sometimes want a PyTorch-like $x \mapsto f(x) + g(x)$ block.
 
 We expose this as a single `LayerDef` whose parameter list is `params(f) ++ params(g)` and whose
 forward pass runs both programs and adds their outputs.
@@ -205,7 +206,7 @@ forward pass runs both programs and adds their outputs.
 /--
 Combine two sequential branches into a single layer that adds their outputs.
 
-The resulting layer runs both `f` and `g` on the same input `x` and returns `f(x) + g(x)`.
+The resulting layer runs both `f` and `g` on the same input $x$ and returns $f(x) + g(x)$.
 Parameters are concatenated as `params(f) ++ params(g)`.
 -/
 def addBranchesLayer {σ τ : Spec.Shape} (f g : Sequential σ τ) : LayerDef σ τ :=
@@ -263,7 +264,8 @@ def addBranchesLayer {σ τ : Spec.Shape} (f g : Sequential σ τ) : LayerDef σ
 /--
 Combine two models with the same input/output shapes by summing their outputs.
 
-This is a typed residual-add block: `addBranches f g` represents the model `x ↦ f(x) + g(x)`,
+This is a typed residual-add block: `addBranches f g` represents the model
+$x \mapsto f(x) + g(x)$,
 and its parameter list is the concatenation of the two branches’ parameter lists.
 -/
 def addBranches {σ τ : Spec.Shape} (f g : Sequential σ τ) : Sequential σ τ :=

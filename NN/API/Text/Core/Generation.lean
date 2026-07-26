@@ -51,7 +51,8 @@ def greedyIndex (scores : Array Float) : Nat :=
   (topKIndices scores 1).head?.getD 0
 
 /--
-Apply a repetition penalty by subtracting `repeatPenalty * count(token)` for tokens
+Apply a repetition penalty by subtracting
+$\mathrm{repeatPenalty}\,\mathrm{count}(\mathrm{token})$ for tokens
 appearing in `recent`.
 
 This is a local sampling heuristic; it is not the same as the presence or frequency penalties used by
@@ -249,7 +250,7 @@ def decodeArgmaxBatchLogits {α : Type} [LT α]
 /--
 Causal (autoregressive) attention mask of shape `(seqLen × seqLen)`.
 
-Entry `(i, j)` is `true` iff `j ≤ i`, meaning position `i` may attend to itself and earlier
+Entry $(i,j)$ is `true` iff $j \leq i$, meaning position $i$ may attend to itself and earlier
 positions but not to future positions.
 -/
 def causalMask (seqLen : Nat) : Spec.Tensor Bool (.dim seqLen (.dim seqLen .scalar)) :=

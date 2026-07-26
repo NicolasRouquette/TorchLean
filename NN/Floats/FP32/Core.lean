@@ -16,11 +16,12 @@ import Mathlib.Algebra.Order.Algebra
 # `FP32`: TorchLean's proof-oriented float32 semantics
 
 `FP32` is a proof-oriented float32 semantics: it models float computations as real-number operations
-(`ℝ`) followed by rounding to a fixed binary32 grid after each primitive operation. This
+over $\mathbb{R}$ followed by rounding to a fixed binary32 grid after each primitive operation. This
 abstraction is designed to support compositional rounding-error bounds over long computations.
 
 What this model *does* cover:
-- binary radix (`β = 2`)
+
+- binary radix $\beta=2$
 - IEEE-754-like binary32 exponent/precision parameters, including gradual underflow
 - rounding to nearest with ties-to-even
 
@@ -44,9 +45,9 @@ Exponent function for the gradual-underflow part of IEEE-754 binary32, expressed
 Two numbers here matter:
 
 - `prec = 24`: binary32 has 23 stored fraction bits, but 24 bits of precision for *normal* numbers
-  once you include the implicit leading `1`.
-- `emin = -149`: the smallest positive *subnormal* is `2^-149`. Using `emin = -149` is the usual
-  way to encode gradual underflow in this “rounding-on-ℝ” model.
+  once you include the implicit leading $1$.
+- `emin = -149`: the smallest positive *subnormal* is $2^{-149}$. Using `emin = -149` is the usual
+  way to encode gradual underflow in this “rounding on $\mathbb{R}$” model.
 
 `FLTExp` has no upper exponent bound. Overflow and the transition to infinity belong to
 `IEEE32Exec`, not this exponent function.
@@ -75,7 +76,7 @@ instance : NeuralValidRndToNearest rnd32 := by
   infer_instance
 
 /--
-`FP32`: finite float32 rounding model, as a rounded-`ℝ` value.
+`FP32`: finite float32 rounding model, as a rounded real value.
 
 This is the type you want if you are proving numerical stability/error bounds without dealing with
 NaN/Inf behavior.
@@ -141,7 +142,7 @@ theorem div_toReal_eq_computed (a b : FP32) :
   exact round_eq_computed (a.val / b.val)
 
 /--
-The largest finite IEEE-754 binary32 magnitude, `(2 - 2^-23) * 2^127`.
+The largest finite IEEE-754 binary32 magnitude, $(2-2^{-23})2^{127}$.
 
 This is a bridge guard, not a maximum of `FP32`: the proof-oriented `FLTExp (-149) 24` model has
 gradual underflow but no upper exponent bound.  Executable IEEE binary32 operations must establish
@@ -163,7 +164,7 @@ theorem ieeeMaxFinite_lt_bpow_128 :
   norm_num [ieeeMaxFinite_eq, neuralBpow, binaryRadix, NeuralRadix.toReal]
 
 /--
-Convenience constant: the smallest positive normal binary32 number (approximately `2^-126`).
+Convenience constant: the smallest positive normal binary32 number (approximately $2^{-126}$).
 
 Subnormals exist below this; this constant is mainly useful when you want to distinguish
 “normal-range” arguments from “subnormal-range” arguments in proofs.
@@ -171,7 +172,7 @@ Subnormals exist below this; this constant is mainly useful when you want to dis
 noncomputable def minNormal : ℝ :=
   neuralBpow binaryRadix (-(2^(NeuralPrecision.expBits NeuralPrecision.ieeeSingle - 1) : ℤ) + 2)
 
-/-- The binary32 minimum normal value is `2^-126`. -/
+/-- The binary32 minimum normal value is $2^{-126}$. -/
 @[simp] theorem minNormal_eq_bpow : minNormal = neuralBpow binaryRadix (-126) := by
   norm_num [minNormal, NeuralPrecision.expBits]
 

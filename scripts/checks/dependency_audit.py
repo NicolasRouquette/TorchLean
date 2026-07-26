@@ -203,6 +203,45 @@ def mask_comments_and_strings(text: str) -> str:
     return "".join(out)
 
 
+def mask_fenced_code_blocks(text: str) -> str:
+    """Hide Markdown/Verso code fences while preserving offsets and line numbers.
+
+    Verso guide bodies are Lean syntax, so an example line such as ``import NN`` is visible to a
+    shallow source scanner even though Lean never executes it as an import command. Fences may use
+    backticks or tildes and may carry a language name on the opening line.
+    """
+
+    out: list[str] = []
+    fence_char: str | None = None
+    fence_width = 0
+
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        stripped = body.lstrip()
+
+        if fence_char is None:
+            match = re.match(r"(`{3,}|~{3,})", stripped)
+            if match is None:
+                out.append(line)
+                continue
+            marker = match.group(1)
+            fence_char = marker[0]
+            fence_width = len(marker)
+        else:
+            closing = re.fullmatch(
+                rf"\s*{re.escape(fence_char)}{{{fence_width},}}\s*",
+                body,
+            )
+            if closing is not None:
+                fence_char = None
+                fence_width = 0
+
+        # Keep every newline in place so reported source locations remain exact.
+        out.append("".join(ch if ch in "\r\n" else " " for ch in line))
+
+    return "".join(out)
+
+
 def layer_of(module: str) -> str:
     """Collapse a module name to the coarse layer used in graph summaries."""
     parts = module.split(".")
@@ -242,7 +281,8 @@ def parse_file(root: pathlib.Path, path: pathlib.Path) -> tuple[list[ImportEdge]
         or rel in {"NN.lean", "NN/Docs.lean", "NN/CI/ComparatorAll.lean"}
     )
 
-    visible_text = mask_comments_and_strings(path.read_text(encoding="utf-8"))
+    raw_text = path.read_text(encoding="utf-8")
+    visible_text = mask_comments_and_strings(mask_fenced_code_blocks(raw_text))
     for line_no, line in enumerate(visible_text.splitlines(), start=1):
         if m := IMPORT_RE.match(line):
             public = bool(m.group(1))
@@ -319,7 +359,7 @@ def code_stats(root: pathlib.Path, files: list[pathlib.Path]) -> dict:
         raw_lines = raw.splitlines()
         # Count declaration-like headers only after comments and strings are hidden,
         # so examples in docstrings do not inflate the public statistics.
-        visible_lines = mask_comments_and_strings(raw).splitlines()
+        visible_lines = mask_comments_and_strings(mask_fenced_code_blocks(raw)).splitlines()
         layer = layer_of(module_name(root, path))
 
         total_lines += len(raw_lines)

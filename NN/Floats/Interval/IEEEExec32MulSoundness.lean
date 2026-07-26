@@ -22,9 +22,10 @@ public import NN.Floats.Interval.RealBounds
 endpoints and outward-rounded arithmetic. Interval multiplication is implemented with the classical
 “4-corner” rule:
 
-```
-[a,b] * [c,d] ⊆ [ min(ac, ad, bc, bd),  max(ac, ad, bc, bd) ].
-```
+$$
+[a,b]\,[c,d]\subseteq
+\left[\min\{ac,ad,bc,bd\},\max\{ac,ad,bc,bd\}\right].
+$$
 
 In our executable implementation, each corner product is computed using directed rounding:
 - `mulDown` for lower endpoints,
@@ -147,8 +148,9 @@ private lemma isNaN_mulUp_eq_false_of_isFinite (x y : IEEE32Exec)
 /--
 Soundness of `Interval32.mul` w.r.t. real multiplication:
 
-If `x ∈ [A.lo, A.hi]` and `y ∈ [B.lo, B.hi]` (interpreted as real intervals), then
-`x*y` lies in the real interval concretization of `Interval32.mul A B`.
+If $x\in[A.\mathtt{lo},A.\mathtt{hi}]$ and
+$y\in[B.\mathtt{lo},B.\mathtt{hi}]$ (interpreted as real intervals), then $xy$ lies in the real
+interval concretization of `Interval32.mul A B`.
 
 The endpoints are interpreted in `EReal` so that overflow to `±∞` remains a sound enclosure.
 -/

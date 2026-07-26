@@ -139,14 +139,14 @@ Fields:
 - `logEvery`: progress printing frequency (`0` disables logging).
 -/
 structure TrainConfig where
-  /-- Number of training steps. -/
+  /-- Number of optimizer updates. -/
   steps : Nat
   /--
-  Number of samples consumed by one public training step.
+  Number of dataset items consumed by one training step.
 
-  The in-memory supervised loop applies one optimizer update per sample in the group, while
-  reporting/logging at the outer step cadence. Loader-backed training uses the loader batches
-  directly.
+  The loop differentiates every item at the same parameter point, averages the resulting gradient
+  packs, and performs one optimizer update. If each item is already a fixed-size tensor minibatch,
+  keep this value at `1` for one vectorized forward/backward pass per update.
   -/
   batchSize : Nat := 1
   /-- Optimizer configuration. -/
@@ -229,7 +229,7 @@ Epoch-based training configuration for `trainLoader` (data-loader training).
 Fields:
 - `epochs`: number of epochs (each epoch iterates once over the loader),
 - `optimizer`: optimizer hyperparameters,
-- `scheduler`: optional learning-rate schedule (applied per step/epoch depending on helper),
+- `scheduler`: optional learning-rate schedule applied once per epoch,
 - `logEvery`: progress printing frequency (`0` disables logging).
 -/
 structure LoaderTrainConfig where
@@ -277,6 +277,12 @@ def mapStateList {State : Type → Spec.Shape → Type} {α : Type} :
 def adamStateWithLR {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
     API.TorchLean.Optim.StateList _root_.Optim.Adam.State α paramShapes →
     API.TorchLean.Optim.StateList _root_.Optim.Adam.State α paramShapes :=
+  mapStateList (ss := paramShapes) (fun st => { st with lr := lr })
+
+/-- Set the learning rate field of every plain-SGD optimizer state entry to `lr`. -/
+def sgdStateWithLR {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
+    API.TorchLean.Optim.StateList _root_.Optim.SGD.State α paramShapes →
+    API.TorchLean.Optim.StateList _root_.Optim.SGD.State α paramShapes :=
   mapStateList (ss := paramShapes) (fun st => { st with lr := lr })
 
 /-- Set the learning rate field of every momentum-SGD optimizer state entry to `lr`. -/

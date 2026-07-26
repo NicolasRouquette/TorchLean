@@ -152,23 +152,23 @@ scalar polymorphism and mixed precision.
 
 # From One Output To A Statement
 
-Suppose the trained model has parameters `θ`, its graph is `g`, and the two input features vary in a
-box `B`. A range statement might be
+Suppose the trained model has parameters $`\theta`, its graph is $`g`, and the two input features
+vary in a box $`B`. A range statement might be
 
 $$`\forall x\in B,\qquad
   |\operatorname{denote}(g,\theta,x)_0-y^\star|\leq\delta`.
 
 This line records the details that are easy to lose in prose:
 
-- `g` identifies the operation graph;
-- `θ` identifies the concrete trained parameters;
-- `B` identifies the quantified input convention;
+- $`g` identifies the operation graph;
+- $`\theta` identifies the concrete trained parameters;
+- $`B` identifies the quantified input convention;
 - `denote` identifies the scalar and operator semantics;
-- index `0`, target `y⋆`, and tolerance `δ` identify the output property.
+- index $`0`, target $`y^\star`, and tolerance $`\delta` identify the output property.
 
 An interval pass can compute lower and upper output bounds. A Boolean check can then confirm that the
-whole interval lies in `[y⋆-δ,y⋆+δ]`. The last ingredient is a soundness theorem saying that the
-computed interval really encloses `denote` for this graph.
+whole interval lies in $`[y^\star-\delta,y^\star+\delta]`. The last ingredient is a soundness theorem
+saying that the computed interval really encloses `denote` for this graph.
 
 The guide uses the following vocabulary throughout:
 

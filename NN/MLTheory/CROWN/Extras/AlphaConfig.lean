@@ -13,7 +13,7 @@ public import NN.Spec.Core.Tensor
 /-!
 # α-CROWN configuration
 
-This file defines data structures for \(\alpha\)-optimized CROWN bounds (as in \(\alpha\)-CROWN /
+This file defines data structures for $\alpha$-optimized CROWN bounds (as in $\alpha$-CROWN /
 auto\_LiRPA): per-neuron relaxation parameters that can be tuned externally to tighten affine
 relaxations.
 
@@ -170,8 +170,11 @@ def reluWithAlpha (l u : α) (alphas : NeuronAlpha α) : α × α × α × α :=
       -- denominator in the secant formula and use the exact zero map.
       (Numbers.zero, Numbers.zero, Numbers.zero, Numbers.zero)
 
-/-- Gradient of output bounds w.r.t. alpha (for optimization).
-    For ReLU: ∂bound/∂α = x for lower bound (where y = αx). -/
+/-- Gradient of output bounds with respect to $\alpha$.
+
+For the ReLU lower bound $y=\alpha x$, the derivative is
+$\partial\,\mathrm{bound}/\partial\alpha=x$.
+-/
 structure AlphaGradient (α : Type) where
   /-- Gradient for lower alpha -/
   grad_lower : α

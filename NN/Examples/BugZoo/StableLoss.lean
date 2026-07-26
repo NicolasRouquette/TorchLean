@@ -89,7 +89,8 @@ theorem crossEntropyLogits_uses_logSoftmax {s : Spec.Shape}
   rfl
 
 /--
-The logits-loss gradient spec is the familiar `softmax(logits) - target`, averaged over the
+The logits-loss gradient spec is the familiar
+$\operatorname{softmax}(\mathrm{logits})-\mathrm{target}$, averaged over the
 non-class axes. The last axis is the class distribution and is summed, not averaged.
 
 Verified AD can only prove the gradient for the loss we actually specify. This theorem makes the

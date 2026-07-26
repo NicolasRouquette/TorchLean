@@ -22,8 +22,6 @@ variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)
 Fold, sum/product/mean/variance, axis reductions, and last-axis reductions.
 -/
 
-/-! ## Reductions -/
-
 /-- Left fold over all tensor elements. -/
 def tensorFoldlSpec {α β : Type} (f : β → α → β) (init : β) : ∀ {s : Shape}, Tensor α s → β
   | Shape.scalar, Tensor.scalar value => f init value
@@ -72,7 +70,7 @@ def anySpec {s : Shape} (p : α → Bool) (t : Tensor α s) : Bool :=
 def allSpec {s : Shape} (p : α → Bool) (t : Tensor α s) : Bool :=
   tensorFoldlSpec (fun acc x => acc && p x) true t
 
-/-- Dot product: `sum (a ⊙ b)`. -/
+/-- Dot product: $\sum_i a_i b_i$. -/
 def dotSpec {s : Shape} (a b : Tensor α s) : α :=
   sumSpec (mulSpec a b)
 
@@ -354,7 +352,8 @@ def reduceSumSquared {n s} (axis : Nat) (t : Tensor α (.dim n s)) (h : Shape.re
 /-- Variance-reduction along a given axis (population variance, divides by `n`).
 
 The reduced axis is centered first and squared second. This two-pass arrangement avoids the
-catastrophic cancellation of `E[X²] - E[X]²` when values are large but tightly clustered.
+catastrophic cancellation of $\mathbb{E}[X^2]-\mathbb{E}[X]^2$ when values are large but tightly
+clustered.
 -/
 def reduceVar
   {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.reducibleAlong axis s) :

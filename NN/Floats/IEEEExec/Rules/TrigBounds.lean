@@ -15,12 +15,12 @@ import Mathlib.Analysis.Complex.Trigonometric
 `IEEE32Exec.Trig.sinCosTaylorSmall` uses a reduced-input Taylor kernel (degree 13/12). The theorems
 below are coarse analytic facts about separate degree-three/two baselines; they are not an accuracy
 contract for the executable kernel. For many proofs these baseline bounds are still useful on
-`|x| ≤ 1`.
+$|x|\le 1$.
 
 Mathlib provides clean, reusable bounds for the first nontrivial truncations:
 
-- `Real.sin_bound`: `|sin x - (x - x^3/6)| ≤ |x|^5/100` for `|x| ≤ 1`,
-- `Real.cos_bound`: `|cos x - (1 - x^2/2)| ≤ |x|^4 * (5/96)` for `|x| ≤ 1`.
+- `Real.sin_bound`: $|\sin x-(x-x^3/6)|\le |x|^5/100$ for $|x|\le 1$;
+- `Real.cos_bound`: $|\cos x-(1-x^2/2)|\le |x|^4(5/96)$ for $|x|\le 1$.
 
 These are coarse but robust and are often sufficient as a local ingredient in larger numerical
 proofs. Tighter bounds for higher-degree truncations can be added later if needed.
@@ -33,11 +33,11 @@ namespace IEEE32Exec
 
 noncomputable section
 
-/-- Quadratic Taylor approximation `1 - x^2/2` used as a baseline for `cos`. -/
+/-- Quadratic Taylor approximation $1-x^2/2$ used as a baseline for `cos`. -/
 def cosTaylor2 (x : ℝ) : ℝ :=
   1 - x ^ 2 / 2
 
-/-- Cubic Taylor approximation `x - x^3/6` used as a baseline for `sin`. -/
+/-- Cubic Taylor approximation $x-x^3/6$ used as a baseline for `sin`. -/
 def sinTaylor2 (x : ℝ) : ℝ :=
   x - x ^ 3 / 6
 

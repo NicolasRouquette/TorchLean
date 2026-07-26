@@ -36,9 +36,10 @@ local notation "R" => TorchLean.Floats.NF β fexp rnd
 /--
 Scalar forward bound for the scalar logistic-form NF `softmax` node.
 
-Here the node computes the scalar logistic-like function `exp(x) / (exp(x) + 1)`, implemented using
-`exp`, `+`, and division (denominator is ≥ 1). We keep the public node name stable for the NF graph,
-but the mathematical function is `Activation.Math.logisticSpec`, not axis softmax.
+Here the node computes the scalar logistic-like function
+$\exp(x)/(\exp(x)+1)$, implemented using `exp`, `+`, and division (the denominator is $\ge 1$).
+We keep the public node name stable for the NF graph, but the mathematical function is
+`Activation.Math.logisticSpec`, not axis softmax.
 -/
 def softmaxBoundScalar (eps : ℝ) (xR : R) : ℝ :=
   let numR : R := MathFunctions.exp xR

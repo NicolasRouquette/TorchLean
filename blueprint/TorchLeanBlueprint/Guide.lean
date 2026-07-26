@@ -1,4 +1,7 @@
 import VersoManual
+import VersoBlueprint
+import VersoBlueprint.Commands.Graph
+import TorchLeanBlueprint.FormalizationMap
 import TorchLeanBlueprint.Guide.Ch1_Introduction.Overview
 import TorchLeanBlueprint.Guide.Ch1_Introduction.Motivation
 import TorchLeanBlueprint.Guide.Ch1_Introduction.API_Tour
@@ -50,6 +53,7 @@ import TorchLeanBlueprint.Guide.Ch5_Applications.CLI
 import TorchLeanBlueprint.Guide.Ch6_Conclusion.Conclusion
 
 open Verso.Genre Manual
+open Informal
 
 #doc (Manual) "TorchLean" =>
 %%%
@@ -252,3 +256,29 @@ artifact supports and where that support stops.
 {include 2 TorchLeanBlueprint.Guide.Ch5_Applications.CLI}
 
 {include 2 TorchLeanBlueprint.Guide.Ch6_Conclusion.Conclusion}
+
+
+# Formalization Map
+
+The chapters below trace the main definitions, executable boundaries, and proved results through
+TorchLean. This is a declaration-level map: an edge records a mathematical or implementation
+dependency between selected entries, and theorem proof dependencies are tracked separately from
+statement dependencies. The website's Graphs tab remains the place to inspect Lean module
+imports.
+
+The selection favors declarations that explain an entire subsystem. Small helper lemmas stay in the
+API reference, where their full statements and source locations are easier to inspect.
+
+{include 2 TorchLeanBlueprint.FormalizationMap.Foundations}
+
+{include 2 TorchLeanBlueprint.FormalizationMap.Numerics}
+
+{include 2 TorchLeanBlueprint.FormalizationMap.Runtime}
+
+{include 2 TorchLeanBlueprint.FormalizationMap.Backends}
+
+{include 2 TorchLeanBlueprint.FormalizationMap.Verification}
+
+{include 2 TorchLeanBlueprint.FormalizationMap.Applications}
+
+{blueprint_graph}
