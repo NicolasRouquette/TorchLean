@@ -434,14 +434,20 @@ the 1 MiB cap. It then reads `cacheBytes` from the allocator telemetry and asser
 * **on CUDA, capped** — the cap is the *binding* constraint: the workload exceeds it, yet the cache
   filled to within one block of it (`block ≤ cacheBytes` and `cacheBytes + block > cap`) rather than
   growing to the full 8 MiB;
-* **on CUDA, control** (`cap = 0`, unset) — every returned block stays cached
-  (`cacheBytes = totalReturned`): the unbounded growth the cap exists to bound.
+* **on CUDA, control** (`cap = 0`, unset, or a malformed/overflowing value the strict native
+  parser rejects) — every returned block stays cached (`cacheBytes = totalReturned`): the
+  unbounded growth the cap exists to bound.
 
 Selected in a forked child by `TORCHLEAN_CUDA_CACHE_PROBE=cache-cap` (see `NN.Tests.run`). -/
 def runCacheCapProbe : IO Unit := do
   IO.println "== cuda block-cache byte-cap probe =="
   let capStr ← IO.getEnv "TORCHLEAN_CUDA_CACHE_CAP_BYTES"
-  let capBytes : UInt64 := (capStr.bind (·.toNat?)).map UInt64.ofNat |>.getD 0
+  -- Mirror the native parser's strict semantics: only a digit string that fits the native word is
+  -- a cap; malformed or overflowing values are rejected and leave the cache unbounded (cap 0).
+  let capBytes : UInt64 :=
+    match capStr.bind (·.toNat?) with
+    | some nn => if nn < UInt64.size then UInt64.ofNat nn else 0
+    | none => 0
   let n : UInt32 := 65536                              -- 256 KiB per block (float32)
   let blockBytes : UInt64 := UInt64.ofNat (n.toNat * 4)
   let k : Nat := 32                                    -- 8 MiB of returns, far past a 1 MiB cap
@@ -490,7 +496,12 @@ fixed before the process's first cache operation; the test therefore forks the s
 * **capped** — `TORCHLEAN_CUDA_CACHE_CAP_BYTES=1048576` bounds an 8 MiB return workload to a 1 MiB
   cache;
 * **control** — `TORCHLEAN_CUDA_CACHE_CAP_BYTES=0` (explicitly unbounded), so the same workload
-  caches the full 8 MiB (the unbounded growth the cap fixes).
+  caches the full 8 MiB (the unbounded growth the cap fixes);
+* **malformed** — `TORCHLEAN_CUDA_CACHE_CAP_BYTES=1MiB` is rejected by the strict native parser,
+  so the cache stays unbounded and behaves exactly like the control. This pins the rejection: a
+  prefix-parsing reader would instead take the leading `1` as a one-byte cap and cache nothing;
+* **overflow** — a value past the native word size is likewise rejected rather than truncated or
+  saturated, so the cache again behaves like the control.
 
 Both children pass the cap explicitly, so neither inherits a stray `TORCHLEAN_CUDA_CACHE_CAP_BYTES`
 from the parent environment — in particular the control child is pinned to `0`, not left to inherit
@@ -524,6 +535,20 @@ def runCacheCapTest : IO Unit := do
     throw <| IO.userError
       s!"block-cache cap: control child failed (exit {control.exitCode}); stderr:\n{control.stderr}"
   IO.println "  control: with no cap the full workload is cached, as designed ✓"
+  -- malformed: rejected outright by the strict parser, so the cache stays unbounded. A
+  -- prefix-parsing reader would take the leading "1" as a one-byte cap and cache nothing; the
+  -- child asserts the control (fully cached) outcome instead.
+  let malformed ← fork "1MiB"
+  if malformed.exitCode != 0 then
+    throw <| IO.userError
+      s!"block-cache cap: malformed-value child failed (exit {malformed.exitCode}); stderr:\n{malformed.stderr}"
+  IO.println "  malformed: non-numeric cap rejected, cache stays unbounded ✓"
+  -- overflow: past the native word, rejected rather than truncated or saturated.
+  let overflow ← fork "99999999999999999999999999"
+  if overflow.exitCode != 0 then
+    throw <| IO.userError
+      s!"block-cache cap: overflow-value child failed (exit {overflow.exitCode}); stderr:\n{overflow.stderr}"
+  IO.println "  overflow: oversized cap rejected, cache stays unbounded ✓"
 
 def run : IO Unit := do
   IO.println "=== CUDA runtime stress suite ==="

@@ -90,7 +90,9 @@ static size_t g_torchlean_cuda_cache_bytes = 0;
 // Optional byte cap on the reuse cache, read once from the environment.
 // `TORCHLEAN_CUDA_CACHE_CAP_BYTES` is the maximum total bytes the cache may hold; 0 (the default)
 // leaves it unbounded, preserving the prior behaviour exactly. When set, a returned block that would
-// grow the cache past the cap is freed immediately instead of cached.
+// grow the cache past the cap is freed immediately instead of cached. The value must be a plain
+// decimal byte count; a malformed or overflowing value is rejected with a warning and leaves the
+// cache unbounded, rather than being silently misread as some other cap.
 //
 // The environment is read exactly once, under `pthread_once`, so concurrent first callers cannot
 // race on the parse: the initializer runs on a single thread while the others block, and the value
@@ -99,9 +101,40 @@ static size_t g_torchlean_cuda_cache_bytes = 0;
 static size_t g_torchlean_cuda_cache_cap_value = 0;
 static pthread_once_t g_torchlean_cuda_cache_cap_once = PTHREAD_ONCE_INIT;
 
+// Strict decimal parser for the cap: accepts exactly a non-empty digit string whose value fits
+// in `size_t` — no sign, no whitespace, no base prefix — and reports malformed or overflowing
+// input instead of guessing. A hand-rolled loop rather than `strtoull` also keeps this file free
+// of the glibc >= 2.38 `__isoc23_strtoull` symbol redirection, so the object stays self-contained.
+static bool torchlean_cuda_parse_cache_cap(const char* s, size_t* out) {
+  size_t value = 0;
+  for (const char* p = s; *p; ++p) {
+    if (*p < '0' || *p > '9') {
+      return false;
+    }
+    const size_t digit = (size_t)(*p - '0');
+    if (value > (SIZE_MAX - digit) / 10) {
+      return false;
+    }
+    value = value * 10 + digit;
+  }
+  *out = value;
+  return true;
+}
+
 static void torchlean_cuda_cache_byte_cap_init(void) {
   const char* v = getenv("TORCHLEAN_CUDA_CACHE_CAP_BYTES");
-  g_torchlean_cuda_cache_cap_value = (v && v[0]) ? (size_t)strtoull(v, NULL, 10) : (size_t)0;
+  if (!v || !v[0]) {
+    return;  // unset or empty: the cache stays unbounded (cap 0)
+  }
+  size_t parsed = 0;
+  if (torchlean_cuda_parse_cache_cap(v, &parsed)) {
+    g_torchlean_cuda_cache_cap_value = parsed;
+  } else {
+    fprintf(stderr,
+            "TorchLean CUDA warning: ignoring TORCHLEAN_CUDA_CACHE_CAP_BYTES='%s': "
+            "expected an unsigned decimal byte count; the cache stays unbounded\n",
+            v);
+  }
 }
 
 static size_t torchlean_cuda_cache_byte_cap(void) {
