@@ -82,6 +82,65 @@ static pthread_mutex_t g_torchlean_cuda_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 static torchlean_cuda_cached_block* g_torchlean_cuda_cache = nullptr;
 static size_t g_torchlean_cuda_cache_count = 0;
 static size_t g_torchlean_cuda_cache_cap = 0;
+// Total device bytes currently held in the reuse cache (sum of the cached blocks' byte sizes),
+// guarded by `g_torchlean_cuda_cache_mutex`. The cache holds buffers Lean has already dropped, so
+// these bytes are NOT counted in `live_bytes`; left unbounded the cache can grow without limit.
+static size_t g_torchlean_cuda_cache_bytes = 0;
+
+// Optional byte cap on the reuse cache, read once from the environment.
+// `TORCHLEAN_CUDA_CACHE_CAP_BYTES` is the maximum total bytes the cache may hold; 0 (the default)
+// leaves it unbounded, preserving the prior behaviour exactly. When set, a returned block that would
+// grow the cache past the cap is freed immediately instead of cached. The value must be a plain
+// decimal byte count; a malformed or overflowing value is rejected with a warning and leaves the
+// cache unbounded, rather than being silently misread as some other cap.
+//
+// The environment is read exactly once, under `pthread_once`, so concurrent first callers cannot
+// race on the parse: the initializer runs on a single thread while the others block, and the value
+// is published before any caller observes it. (A plain function-local static assigned after its
+// declaration would be a data race, and would depend on `-fthreadsafe-statics` being enabled.)
+static size_t g_torchlean_cuda_cache_cap_value = 0;
+static pthread_once_t g_torchlean_cuda_cache_cap_once = PTHREAD_ONCE_INIT;
+
+// Strict decimal parser for the cap: accepts exactly a non-empty digit string whose value fits
+// in `size_t` — no sign, no whitespace, no base prefix — and reports malformed or overflowing
+// input instead of guessing. A hand-rolled loop rather than `strtoull` also keeps this file free
+// of the glibc >= 2.38 `__isoc23_strtoull` symbol redirection, so the object stays self-contained.
+static bool torchlean_cuda_parse_cache_cap(const char* s, size_t* out) {
+  size_t value = 0;
+  for (const char* p = s; *p; ++p) {
+    if (*p < '0' || *p > '9') {
+      return false;
+    }
+    const size_t digit = (size_t)(*p - '0');
+    if (value > (SIZE_MAX - digit) / 10) {
+      return false;
+    }
+    value = value * 10 + digit;
+  }
+  *out = value;
+  return true;
+}
+
+static void torchlean_cuda_cache_byte_cap_init(void) {
+  const char* v = getenv("TORCHLEAN_CUDA_CACHE_CAP_BYTES");
+  if (!v || !v[0]) {
+    return;  // unset or empty: the cache stays unbounded (cap 0)
+  }
+  size_t parsed = 0;
+  if (torchlean_cuda_parse_cache_cap(v, &parsed)) {
+    g_torchlean_cuda_cache_cap_value = parsed;
+  } else {
+    fprintf(stderr,
+            "TorchLean CUDA warning: ignoring TORCHLEAN_CUDA_CACHE_CAP_BYTES='%s': "
+            "expected an unsigned decimal byte count; the cache stays unbounded\n",
+            v);
+  }
+}
+
+static size_t torchlean_cuda_cache_byte_cap(void) {
+  pthread_once(&g_torchlean_cuda_cache_cap_once, torchlean_cuda_cache_byte_cap_init);
+  return g_torchlean_cuda_cache_cap_value;
+}
 
 // Reuse exact-size buffers only after CUDA has recorded that all earlier work using the block has
 // completed. This lowers allocator pressure during long training loops without forcing a global
@@ -115,6 +174,7 @@ static float* torchlean_cuda_take_cached_block(size_t n) {
                                                "cudaEventDestroy cached buffer reuse failed");
       g_torchlean_cuda_cache[i] = g_torchlean_cuda_cache[g_torchlean_cuda_cache_count - 1];
       g_torchlean_cuda_cache_count--;
+      g_torchlean_cuda_cache_bytes -= (size_t)torchlean_float_bytes_for(n);
       torchlean_cuda_unlock(&g_torchlean_cuda_cache_mutex,
                             "pthread_mutex_unlock buffer cache failed");
       return data;
@@ -149,9 +209,31 @@ static void torchlean_cuda_return_cached_block(size_t n, float* data) {
     torchlean_cuda_free_best_effort(data, "cudaFree uncached buffer after event-record failure failed");
     return;
   }
+  const size_t incoming = (size_t)torchlean_float_bytes_for(n);
+  const size_t cap = torchlean_cuda_cache_byte_cap();
+  bool over_cap = false;
   torchlean_cuda_lock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_lock buffer return failed");
-  torchlean_cuda_cache_push({n, data, ready});
+  // Overflow-safe form of `g_torchlean_cuda_cache_bytes + incoming > cap`: the sum is never formed,
+  // so it cannot wrap `size_t`. A single incoming block larger than the cap trips it directly;
+  // otherwise `cap - incoming` is a well-defined non-negative headroom that the current total must
+  // not exceed.
+  if (cap != 0 &&
+      (incoming > cap || g_torchlean_cuda_cache_bytes > cap - incoming)) {
+    over_cap = true;
+  } else {
+    torchlean_cuda_cache_push({n, data, ready});
+    g_torchlean_cuda_cache_bytes += incoming;
+  }
   torchlean_cuda_unlock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_unlock buffer return failed");
+  if (over_cap) {
+    // Caching this block would grow the process-global cache past the byte cap, so free it now
+    // instead. The just-recorded event signals when pending work on the block completes; wait on it
+    // before releasing the device memory, exactly as the flush path does, so an in-flight kernel
+    // never reads freed memory.
+    torchlean_cuda_synchronize_event_best_effort(ready, "cudaEventSynchronize over-cap buffer failed");
+    torchlean_cuda_destroy_event_best_effort(ready, "cudaEventDestroy over-cap buffer failed");
+    torchlean_cuda_free_best_effort(data, "cudaFree over-cap buffer failed");
+  }
 }
 
 static void torchlean_cuda_flush_cached_blocks(void) {
@@ -161,6 +243,7 @@ static void torchlean_cuda_flush_cached_blocks(void) {
   g_torchlean_cuda_cache = nullptr;
   g_torchlean_cuda_cache_count = 0;
   g_torchlean_cuda_cache_cap = 0;
+  g_torchlean_cuda_cache_bytes = 0;
   torchlean_cuda_unlock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_unlock buffer flush failed");
 
   for (size_t i = 0; i < count; ++i) {
@@ -774,6 +857,14 @@ extern "C" LEAN_EXPORT uint64_t torchlean_cuda_allocator_device_total_bytes(uint
   size_t totalBytes = 0;
   cudaError_t err = cudaMemGetInfo(&freeBytes, &totalBytes);
   return err == cudaSuccess ? (uint64_t)totalBytes : 0u;
+}
+
+extern "C" LEAN_EXPORT uint64_t torchlean_cuda_allocator_cache_bytes(uint32_t u) {
+  (void)u;
+  torchlean_cuda_lock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_lock cache-bytes query failed");
+  uint64_t bytes = (uint64_t)g_torchlean_cuda_cache_bytes;
+  torchlean_cuda_unlock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_unlock cache-bytes query failed");
+  return bytes;
 }
 
 extern "C" LEAN_EXPORT uint32_t torchlean_cuda_buffer_size(b_lean_obj_arg BObj) {

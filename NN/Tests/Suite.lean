@@ -46,15 +46,21 @@ def usage : String :=
     ]
 
 def run : IO Unit := do
-  IO.println "== TorchLean: curated tests =="
-  NN.Tests.API.SelfSupervised.BlockMask.run
-  NN.Tests.API.GradientAccumulation.run
-  NN.Tests.Backend.Profile.run
-  NN.Tests.MLTheory.CROWNOperators.run
-  Tests.Floats.run
-  Tests.Rationals.Suite.run
-  Tests.Cuda.run
-  IO.println "== TorchLean: all curated tests passed =="
+  -- Fork-child mode for the block-cache byte cap. A child launched by
+  -- `Tests.Cuda.Stress.runCacheCapTest` re-enters here with the cap fixed in its environment and
+  -- runs only the cache probe, then exits, so the parent can inspect the outcome.
+  match ← IO.getEnv "TORCHLEAN_CUDA_CACHE_PROBE" with
+  | some "cache-cap" => Tests.Cuda.Stress.runCacheCapProbe
+  | _ =>
+    IO.println "== TorchLean: curated tests =="
+    NN.Tests.API.SelfSupervised.BlockMask.run
+    NN.Tests.API.GradientAccumulation.run
+    NN.Tests.Backend.Profile.run
+    NN.Tests.MLTheory.CROWNOperators.run
+    Tests.Floats.run
+    Tests.Rationals.Suite.run
+    Tests.Cuda.run
+    IO.println "== TorchLean: all curated tests passed =="
 
 def main (args : List String) : IO Unit := do
   match args with
