@@ -6,11 +6,19 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Data.Core
+public import NN.API.Data.Dataset
+public import NN.API.Data.Bands
+public import NN.API.Data.Training
+public import NN.API.Data.Loaders
+public import NN.API.Data.Sources
+public import NN.API.Data.Synthetic
+public import NN.API.Data.TensorDataset
+public import NN.API.Data.Text
+public import NN.API.Data.Transforms
 
 /-!
-# `NN.API.Data`
+# Data
 
-Import entrypoint for datasets, loaders, and file sources. Definitions live in
-`NN.API.Data.Core`; data transforms live in `NN.API.Data.Transforms`.
+Typed datasets, minibatch loaders, file-backed sources, text batches, sample transforms, and
+checkpoint operations.
 -/

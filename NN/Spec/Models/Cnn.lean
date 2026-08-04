@@ -75,7 +75,7 @@ Matches the standard formula:
 `out = (in - k) / stride + 1`.
 -/
 abbrev poolOut (input kernel stride : Nat) : Nat :=
-  Spec.Shape.slidingWindowOutDim input kernel stride 0
+  Spec.poolOutDim input kernel stride 0
 
 /-- Output height after the first convolution stage. -/
 abbrev firstConvOutHeight (inH kH stride1 padding1 : Nat) : Nat :=
@@ -238,7 +238,7 @@ def cnnForward
       (CNN.featSize outC inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolstride1
         poolstride2)
       outC)
-  (x : MultiChannelImage inC inH inW α) :
+  (x : Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
   Tensor α (.dim outC .scalar) :=
   let net := cnnSpec conv1_spec conv2_spec pool1_spec pool2_spec linearSpec
   SpecChain.forward (α:=α) net x
@@ -390,7 +390,7 @@ def CNN2Spec.forward
   {cfg : CNN2Config} {inC inH inW : Nat}
   {h_inC : inC ≠ 0} {hCfg : cfg.WF}
   (m : CNN2Spec (α := α) cfg inC inH inW h_inC hCfg)
-  (x : Spec.MultiChannelImage inC inH inW α) :
+  (x : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
   Tensor α (.dim cfg.outDim .scalar) :=
   let y1 := Spec.conv2dSpec (α := α) m.conv1 x
   let r1 := Activation.reluSpec y1
@@ -417,10 +417,10 @@ def CNN2Spec.backward
   {cfg : CNN2Config} {inC inH inW : Nat}
   {h_inC : inC ≠ 0} {hCfg : cfg.WF}
   (m : CNN2Spec (α := α) cfg inC inH inW h_inC hCfg)
-  (x : Spec.MultiChannelImage inC inH inW α)
+  (x : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
   (grad_output : Tensor α (.dim cfg.outDim .scalar)) :
   (CNN2Grads cfg inC inH inW α ×
-   Spec.MultiChannelImage inC inH inW α) :=
+   Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :=
 
   -- Forward reconstruction.
   let y1 := Spec.conv2dSpec (α := α) m.conv1 x
@@ -439,9 +439,7 @@ def CNN2Spec.backward
     CNN.featShape cfg.c2 inH inW cfg.kH cfg.kW cfg.stride1 cfg.padding1 cfg.stride2 cfg.padding2
       cfg.poolKH cfg.poolKW cfg.poolStride1 cfg.poolStride2
 
-  let d_p2 : Spec.MultiChannelImage cfg.c2
-      (CNN.secondPoolOutHeight inH cfg.kH cfg.stride1 cfg.padding1 cfg.stride2 cfg.padding2 cfg.poolKH cfg.poolStride1 cfg.poolStride2)
-      (CNN.secondPoolOutWidth inW cfg.kW cfg.stride1 cfg.padding1 cfg.stride2 cfg.padding2 cfg.poolKW cfg.poolStride1 cfg.poolStride2) α :=
+  let d_p2 : Spec.Tensor α (.dim cfg.c2 (.dim (CNN.secondPoolOutHeight inH cfg.kH cfg.stride1 cfg.padding1 cfg.stride2 cfg.padding2 cfg.poolKH cfg.poolStride1 cfg.poolStride2) (.dim (CNN.secondPoolOutWidth inW cfg.kW cfg.stride1 cfg.padding1 cfg.stride2 cfg.padding2 cfg.poolKW cfg.poolStride1 cfg.poolStride2) .scalar))) :=
     Tensor.unflattenSpec featShape d_flat
 
   -- Pool2 backward.

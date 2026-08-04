@@ -77,7 +77,7 @@ Save the snippet as `FloatPlayground.lean` in the repository root and run:
 lake env lean FloatPlayground.lean
 ```
 
-There are two quick variations worth trying. Replace $`b` by $`2`; both parenthesizations now
+There are two quick variations worth trying. Replace $`b` by $`2`; both parenthesizations
 return $`2`, because $`2^{24}+2` is representable. Replace it by the binary32 value $`0.5`; both
 paths lose the small addend. The interesting case $`b=1` sits exactly at the tie between
 neighboring values.
@@ -427,7 +427,7 @@ by themselves certify every executable `sin`, `cos`, or `tanh` input.
 
 # Following One Addition Through The Layers
 
-The addition above can now be read four ways.
+The addition above has four useful interpretations.
 
 First, the ideal real expression is
 

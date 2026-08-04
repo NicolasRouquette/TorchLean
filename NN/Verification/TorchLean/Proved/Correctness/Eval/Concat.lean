@@ -48,7 +48,7 @@ theorem evalAt_concat_binary_eq
       (Graph.evalConcat (α := α) 2 (binaryNodeOut (.concat axis) out) axis
           [DVal.mk (α := α) s₁ lhs, DVal.mk (α := α) s₂ rhs]).bind
         (Graph.normalizeNodeOutput (α := α) 2 (binaryNodeOut (.concat axis) out)) := by
-  simp [Graph.evalAt, binaryGraphOut, binaryNodeOut, Graph.getNode, Graph.getNode?,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, binaryGraphOut, binaryNodeOut, Graph.getNode, Graph.getNode?,
     Graph.normalizeNodeOutput, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /--

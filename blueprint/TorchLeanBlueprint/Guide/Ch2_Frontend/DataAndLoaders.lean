@@ -100,7 +100,7 @@ mean_loss(before) = 1.367492
 mean_loss(after) = 0.323823
 ```
 
-“Dataset size = 5” now counts materialized minibatches, not source rows. Each item already has input
+“Dataset size = 5” counts materialized minibatches, not source rows. Each item already has input
 shape `[5,2]` and target shape `[5,1]`.
 
 The constructor in
@@ -223,7 +223,7 @@ shown paths:
 
 ```
 import NN.API.Text.Bpe
-open NN.API.text
+open TorchLean.text
 
 def inspectBpe : IO Unit := do
   let tok ← Gpt2Bpe.load

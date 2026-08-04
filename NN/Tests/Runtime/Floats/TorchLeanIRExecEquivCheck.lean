@@ -32,8 +32,236 @@ namespace Tests
 namespace Floats
 namespace TorchLeanIRExecEquivCheck
 
+/-- Hard-mask IBP keeps blocked entries exact and avoids uncertified transcendental rounding. -/
+def checkHardMaskedSoftmaxIbpBoundary : IO Unit := do
+  let logitsLo : Tensor Float (.dim 3 .scalar) := tensor! [-2.0, 0.0, 1.0]
+  let logitsHi : Tensor Float (.dim 3 .scalar) := tensor! [3.0, 4.0, 5.0]
+  let mixedMask : Tensor Bool (.dim 3 .scalar) := tensor! [true, false, true]
+  let singletonMask : Tensor Bool (.dim 3 .scalar) := tensor! [false, true, false]
+  let (mixedLo, mixedHi) :=
+    NN.MLTheory.CROWN.Graph.ibpHardMaskedSoftmaxLastTensor logitsLo logitsHi mixedMask
+  let (singletonLo, singletonHi) :=
+    NN.MLTheory.CROWN.Graph.ibpHardMaskedSoftmaxLastTensor logitsLo logitsHi singletonMask
+  let checkVector (label : String) (actual expected : Tensor Float (.dim 3 .scalar)) : IO Unit :=
+    for i in List.finRange 3 do
+      assertApprox s!"{label}[{i.val}]" (vecVal actual i) (vecVal expected i) 0.0
+  checkVector "mixed hard-mask lower" mixedLo (tensor! [0.0, 0.0, 0.0])
+  checkVector "mixed hard-mask upper" mixedHi (tensor! [1.0, 0.0, 1.0])
+  checkVector "singleton hard-mask lower" singletonLo (tensor! [0.0, 1.0, 0.0])
+  checkVector "singleton hard-mask upper" singletonHi (tensor! [0.0, 1.0, 0.0])
+
+/-- Higher-rank softmax values are bounded row-wise, but its derivative pass is vector-only. -/
+def checkSoftmaxDerivativeShapeGuard : IO Unit := do
+  let matrixShape : Shape := .dim 2 (.dim 2 .scalar)
+  let graph : NN.IR.Graph :=
+    { nodes := #[
+        { id := 0, parents := [], kind := .input, outShape := matrixShape },
+        { id := 1, parents := [0], kind := .softmax 1, outShape := matrixShape }
+      ] }
+  let flat : Tensor Float (.dim 4 .scalar) := tensor! [0.0, 0.0, 0.0, 0.0]
+  let inputBox : NN.MLTheory.CROWN.FlatBox Float := { dim := 4, lo := flat, hi := flat }
+  let params : NN.MLTheory.CROWN.Graph.ParamStore Float :=
+    { inputBoxes := Std.HashMap.emptyWithCapacity.insert 0 inputBox }
+  let values := NN.MLTheory.CROWN.Graph.runIBP (g := graph) (ps := params)
+  unless values[1]!.isSome do
+    throw <| IO.userError "matrix softmax value IBP unexpectedly failed"
+  let first := NN.MLTheory.CROWN.Graph.runFirstDerivative1D graph params values
+  let directional :=
+    NN.MLTheory.CROWN.Graph.runDirectionalDerivative graph params values inputBox
+  let second := NN.MLTheory.CROWN.Graph.runSecondDerivative1D graph params values first
+  unless first[1]!.isNone && directional[1]!.isNone && second[1]!.isNone do
+    throw <| IO.userError "matrix softmax used the vector-only derivative transfer rule"
+
+/-- Finite-precision graph checks fail closed when no directed nonlinear enclosure is available. -/
+def checkNonlinearBoundCapabilities : IO Unit := do
+  let shape : Shape := .dim 2 .scalar
+  let inputBox : NN.MLTheory.CROWN.FlatBox Float :=
+    { dim := 2, lo := tensor! [1.0, 4.0], hi := tensor! [2.0, 9.0] }
+  let params : NN.MLTheory.CROWN.Graph.ParamStore Float :=
+    { inputBoxes := Std.HashMap.emptyWithCapacity.insert 0 inputBox }
+  let unaryGraph (kind : NN.IR.OpKind) : NN.IR.Graph :=
+    { nodes := #[
+        { id := 0, parents := [], kind := .input, outShape := shape },
+        { id := 1, parents := [0], kind := kind, outShape := shape }
+      ] }
+
+  let expBoxes := NN.MLTheory.CROWN.Graph.runIBP (unaryGraph .exp) params
+  unless expBoxes[1]!.isNone do
+    throw <| IO.userError "Float exp IBP accepted an uncertified host transcendental"
+
+  let sqrtBoxes := NN.MLTheory.CROWN.Graph.runIBP (unaryGraph .sqrt) params
+  unless sqrtBoxes[1]!.isSome do
+    throw <| IO.userError "Float sqrt IBP rejected its outward-widened enclosure"
+
+  let softmaxGraph := unaryGraph (.softmax 0)
+  let softmaxBoxes := NN.MLTheory.CROWN.Graph.runIBP softmaxGraph params
+  unless softmaxBoxes[1]!.isSome do
+    throw <| IO.userError "Float softmax IBP failed to return its codomain enclosure"
+  let softmaxDeriv := NN.MLTheory.CROWN.Graph.runFirstDerivative1D softmaxGraph params softmaxBoxes
+  unless softmaxDeriv[1]!.isNone do
+    throw <| IO.userError "Float softmax derivative used exact-scalar coupled arithmetic"
+
+  let reluGraph := unaryGraph .relu
+  let reluBoxes := NN.MLTheory.CROWN.Graph.runIBP reluGraph params
+  let affine := NN.MLTheory.CROWN.Graph.runAffine reluGraph params
+    { inputId := 0, inputDim := 2 } reluBoxes
+  match affine[1]! with
+  | none => throw <| IO.userError "ReLU affine fallback was not produced"
+  | some upper =>
+    if hIn : upper.inDim = 2 then
+      if hOut : upper.outDim = 2 then
+        let affIn := NN.MLTheory.CROWN.Graph.castAffineIn (α := Float) hIn upper.aff
+        let aff22 := NN.MLTheory.CROWN.Graph.castAffineOut (α := Float) hOut affIn
+        assertApprox "ReLU constant affine coefficient"
+          (matVal aff22.A ⟨0, by decide⟩ ⟨0, by decide⟩) 0.0 0.0
+        assertApprox "ReLU constant affine endpoint"
+          (vecVal aff22.c ⟨0, by decide⟩) 2.0 0.0
+      else
+        throw <| IO.userError s!"ReLU affine output dimension was {upper.outDim}, expected 2"
+    else
+      throw <| IO.userError s!"ReLU affine input dimension was {upper.inDim}, expected 2"
+
+/-- Rounded CROWN keeps an affine coefficient through a linear node using outward arithmetic. -/
+def checkDirectedBackwardLinear : IO Unit := do
+  let shape : Shape := .dim 1 .scalar
+  let graph : NN.IR.Graph :=
+    { nodes := #[
+        { id := 0, parents := [], kind := .input, outShape := shape },
+        { id := 1, parents := [0], kind := .linear, outShape := shape }
+      ] }
+  let inputBox : NN.MLTheory.CROWN.FlatBox Float :=
+    { dim := 1, lo := tensor! [-1.0], hi := tensor! [1.0] }
+  let params : NN.MLTheory.CROWN.Graph.ParamStore Float :=
+    { inputBoxes := Std.HashMap.emptyWithCapacity.insert 0 inputBox
+      linearWB := Std.HashMap.emptyWithCapacity.insert 1
+        { m := 1, n := 1, w := tensor! [[2.0]], b := tensor! [0.0] } }
+  let ibp := NN.MLTheory.CROWN.Graph.runIBP graph params
+  let objective : NN.MLTheory.CROWN.Graph.FlatVec Float := { n := 1, v := tensor! [1.0] }
+  let ctx : NN.MLTheory.CROWN.Graph.AffineCtx := { inputId := 0, inputDim := 1 }
+  let some bounds :=
+      NN.MLTheory.CROWN.Graph.runCROWNBackwardObjective graph params ctx ibp 1 objective
+    | throw <| IO.userError "directed backward CROWN failed on a linear graph"
+  let lowerCoeff := getAtOrZero bounds.loAff.A [0, 0]
+  let upperCoeff := getAtOrZero bounds.hiAff.A [0, 0]
+  if lowerCoeff == 0.0 || upperCoeff == 0.0 then
+    throw <| IO.userError "directed backward CROWN discarded the linear input coefficient"
+  let objectiveBox ←
+    match NN.MLTheory.CROWN.Graph.evalBackwardObjectiveBox? bounds inputBox 1 with
+    | .ok box => pure box
+    | .error e => throw <| IO.userError e
+  let some outputBox := ibp[1]!
+    | throw <| IO.userError "linear IBP did not produce an output box"
+  unless getAtOrZero objectiveBox.lo [0] ≤ getAtOrZero outputBox.lo [0] do
+    throw <| IO.userError "directed backward lower bound does not enclose linear IBP"
+  unless getAtOrZero outputBox.hi [0] ≤ getAtOrZero objectiveBox.hi [0] do
+    throw <| IO.userError "directed backward upper bound does not enclose linear IBP"
+
+/--
+Check that batched attention lowers to the same operation as the mathematical attention spec.
+
+The token and head dimensions are deliberately different. This catches an invalid direct reshape
+from `(tokens, heads * headDim)` to `(heads, tokens, headDim)`, which can otherwise look plausible
+in shape-only tests.
+-/
+def checkBatchedAttentionLowering : IO Unit := do
+  let batch : Nat := 2
+  let n : Nat := 3
+  let numHeads : Nat := 2
+  let headDim : Nat := 2
+  let dModel : Nat := numHeads * headDim
+  have hBatch : batch ≠ 0 := by decide
+  have hSeq : n ≠ 0 := by decide
+
+  let weightShape : Shape := .dim dModel (.dim dModel .scalar)
+  let inputShape : Shape := .dim batch (.dim n (.dim dModel .scalar))
+  let sampleShape : Shape := .dim n (.dim dModel .scalar)
+
+  let matrix (scale offset : Float) : Tensor Float weightShape :=
+    Tensor.dim (fun i =>
+      Tensor.dim (fun j =>
+        Tensor.scalar (offset + scale * Float.ofNat (1 + i.val * dModel + j.val))))
+  let sample (offset : Float) : Tensor Float sampleShape :=
+    Tensor.dim (fun i =>
+      Tensor.dim (fun j =>
+        Tensor.scalar (offset + 0.05 * Float.ofNat (1 + i.val * dModel + j.val))))
+
+  let wq := matrix 0.013 (-0.09)
+  let wk := matrix (-0.017) 0.11
+  let wv := matrix 0.019 (-0.04)
+  let wo := matrix 0.023 0.02
+  let x : Tensor Float inputShape :=
+    Tensor.dim (fun b => sample (0.3 * Float.ofNat b.val))
+
+  let paramShapes : List Shape := [weightShape, weightShape, weightShape, weightShape]
+  let params : Runtime.Autograd.Torch.TList Float paramShapes :=
+    .cons wq (.cons wk (.cons wv (.cons wo .nil)))
+  let mha : Spec.MultiHeadAttention Float numHeads dModel headDim :=
+    { Wq := wq, Wk := wk, Wv := wv, Wo := wo }
+  let checkMask
+      (label : String)
+      (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) : IO Unit := do
+    let prog :
+        Runtime.Autograd.TorchLean.Program Float (paramShapes ++ [inputShape]) inputShape :=
+      fun {m} _ _ wqR wkR wvR woR xR =>
+        Runtime.Autograd.Torch.batchedMultiHeadAttention
+          (m := m) (α := Float) (batch := batch) (n := n)
+          (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
+          hBatch hSeq wqR wkR wvR woR xR mask
+
+    let compiled ←
+      match NN.Verification.TorchLean.compileForward
+          (α := Float) (paramShapes := paramShapes) (inShape := inputShape)
+          (outShape := inputShape) prog params with
+      | .error e =>
+          throw <| IO.userError s!"{label} attention lowering compile failed: {e}"
+      | .ok c => pure c
+    let payload : NN.IR.Payload Float :=
+      NN.Verification.TorchLean.payloadOfParamStore (α := Float) compiled.ps
+    if mask.isSome then
+      let hasHardMask := compiled.graph.nodes.any fun node =>
+        match node.kind with
+        | .hardMaskedSoftmax _ => true
+        | _ => false
+      unless hasHardMask do
+        throw <| IO.userError
+          s!"{label} attention lowering did not emit a hard-masked-softmax node"
+    let yIR : Tensor Float inputShape ←
+      match NN.IR.Graph.denote (α := Float) (g := compiled.graph) (payload := payload)
+          (input := NN.IR.DVal.mk (α := Float) inputShape x)
+          (outputId := compiled.outputId) with
+      | .error e => throw <| IO.userError s!"{label} attention lowering denote failed: {e}"
+      | .ok out =>
+          match NN.IR.Graph.expectShape (α := Float) (expected := inputShape) out with
+          | .ok y => pure y
+          | .error e => throw <| IO.userError s!"{label} attention lowering output mismatch: {e}"
+
+    let ySpec : Tensor Float inputShape :=
+      Tensor.dim (fun b =>
+        Spec.MultiHeadAttention.forward (α := Float) (n := n) (h1 := hSeq)
+          (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
+          mha (sample (0.3 * Float.ofNat b.val)) mask)
+
+    let yIRFlat := Tensor.flattenSpec yIR
+    let ySpecFlat := Tensor.flattenSpec ySpec
+    for i in List.finRange (Spec.Shape.size inputShape) do
+      assertApprox s!"{label} attention lowering[{i.val}]"
+        (vecVal yIRFlat i) (vecVal ySpecFlat i) 2e-5
+
+    -- An exact input box must remain evaluable by IBP.  In particular, a fully blocked mask may
+    -- not leave an inverse whose interval contains zero.
+    let inputBox := NN.Verification.TorchLean.lInfBall (α := Float) x 0.0
+    let boxes := compiled.runIBP (compiled.seedInputBox inputBox)
+    let _ ← compiled.outputBoxOrThrow boxes
+
+  checkMask "unmasked"
+  checkMask "fully blocked" (some (Spec.allFalseMask n n))
+
 def run : IO Unit := do
   IO.println "torchlean_ir_exec_equiv_check: begin"
+  checkHardMaskedSoftmaxIbpBoundary
+  checkSoftmaxDerivativeShapeGuard
+  checkNonlinearBoundCapabilities
+  checkDirectedBackwardLinear
 
   let inDim : Nat := 2
   let hidDim : Nat := 3
@@ -109,6 +337,8 @@ def run : IO Unit := do
 
   for i in List.finRange outDim do
     assertApprox s!"ir/exec forward[{i.val}]" (vecVal yIR i) (vecVal yExec i) 1e-6
+
+  checkBatchedAttentionLowering
 
   IO.println "torchlean_ir_exec_equiv_check: ok"
 

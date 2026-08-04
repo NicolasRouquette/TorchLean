@@ -60,7 +60,6 @@ open Proofs.Autograd.Algebra
 open NN.IR
 open IRExec
 
-set_option maxHeartbeats 1200000 in
 /-- Correctness lemma for the `.mse_loss` node compiler. -/
 theorem buildFrom_denoteAllFrom_mse_loss
     {α : Type} [Context α] [DecidableEq Shape]
@@ -199,7 +198,7 @@ theorem buildFrom_denoteAllFrom_mse_loss
                                     --
                                     -- Reduce the node fetch first so the large `OpKind` match
                                     -- collapses to the `.mse_loss` branch.
-                                    unfold NN.IR.Graph.evalAt
+                                    unfold NN.IR.Graph.evalAt NN.IR.Graph.evalNode
                                     simp (config := { failIfUnchanged := false }) [hN]
                                     have hMSE :
                                         NN.IR.Graph.mseLossDVal (α := α) i vals0[yId]! vals0[tId]! =
@@ -216,6 +215,7 @@ theorem buildFrom_denoteAllFrom_mse_loss
                                         (getIdx (α := α) (xs := ctx) it)
                                     simp (config := { failIfUnchanged := false })
                                       [hMSE, hOut, nodeData, mkFwdNode,
+                                        NN.IR.Graph.normalizeNodeOutput,
                                         Tensor.eqRec_eq_cast_shape, Tensor.cast_shape_self,
                                         Tensor.cast_shape_proof_irrel,
                                         NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk]

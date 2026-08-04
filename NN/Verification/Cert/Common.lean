@@ -8,6 +8,7 @@ module
 
 public import NN.MLTheory.CROWN.Graph
 public import NN.MLTheory.CROWN.Extras.BoundOpsIEEE32Exec
+public import NN.MLTheory.CROWN.Proofs.GraphCrownCertSoundness
 public import NN.Runtime.PyTorch.Import.Core
 public import NN.Spec.Core.Utils
 public import NN.Verification.Util.FloatApprox
@@ -55,25 +56,31 @@ def finiteVec (n : Nat) (v : Fin n → Float) : Bool :=
 def finiteMatrix (rows cols : Nat) (A : Fin rows → Fin cols → Float) : Bool :=
   (List.finRange rows).all fun i => (List.finRange cols).all fun j => (A i j).isFinite
 
-/-- Bitwise equality for flat binary32 tensors. -/
-def exactEqTensor {n : Nat} (t u : Tensor IEEE32Exec (.dim n .scalar)) : Bool :=
-  match t, u with
-  | .dim ft, .dim fu =>
-      (List.finRange n).all (fun i =>
-        match ft i, fu i with
-        | .scalar a, .scalar b => decide (a = b))
+/-- Bitwise equality for shape-indexed binary32 tensors. -/
+def exactEqTensor : {s : Shape} → Tensor IEEE32Exec s → Tensor IEEE32Exec s → Bool
+  | .scalar, .scalar a, .scalar b => decide (a = b)
+  | .dim n _, .dim xs, .dim ys =>
+      (List.finRange n).all fun i => exactEqTensor (xs i) (ys i)
 
-/-- Bitwise equality for binary32 matrices. -/
-def exactEqMatrix {m n : Nat}
-    (A B : Tensor IEEE32Exec (.dim m (.dim n .scalar))) : Bool :=
-  match A, B with
-  | .dim rA, .dim rB =>
-      (List.finRange m).all (fun i =>
-        match rA i, rB i with
-        | .dim cA, .dim cB =>
-            (List.finRange n).all (fun j =>
-              match cA j, cB j with
-              | .scalar a, .scalar b => decide (a = b)))
+/-- A successful bitwise tensor comparison proves equality at every rank. -/
+theorem exactEqTensor_eq_true {s : Shape} {t u : Tensor IEEE32Exec s}
+    (h : exactEqTensor t u = true) : t = u := by
+  induction s with
+  | scalar =>
+      cases t with
+      | scalar a =>
+          cases u with
+          | scalar b =>
+              simpa [exactEqTensor] using of_decide_eq_true h
+  | dim n s ih =>
+      cases t with
+      | dim xs =>
+          cases u with
+          | dim ys =>
+              simp only [exactEqTensor, List.all_eq_true] at h
+              congr
+              funext i
+              exact ih (h i (List.mem_finRange i))
 
 /--
 Whether `outer` contains `inner` componentwise.
@@ -100,7 +107,21 @@ def flatBoxContains (outer inner : FlatBox IEEE32Exec) : Bool :=
 
 /-- Bitwise equality for affine vectors, componentwise on matrix `A` and offset `c`. -/
 def exactEqAffineVec {n m : Nat} (a b : AffineVec IEEE32Exec n m) : Bool :=
-  exactEqMatrix (m := m) (n := n) a.A b.A && exactEqTensor (n := m) a.c b.c
+  exactEqTensor a.A b.A && exactEqTensor a.c b.c
+
+/-- A successful bitwise affine-vector comparison proves equality of both affine components. -/
+theorem exactEqAffineVec_eq_true {n m : Nat} {a b : AffineVec IEEE32Exec n m}
+    (h : exactEqAffineVec a b = true) : a = b := by
+  simp only [exactEqAffineVec, Bool.and_eq_true] at h
+  cases a with
+  | mk aA ac =>
+      cases b with
+      | mk bA bc =>
+          have hA : aA = bA := exactEqTensor_eq_true h.1
+          have hc : ac = bc := exactEqTensor_eq_true h.2
+          cases hA
+          cases hc
+          rfl
 
 /-- Bitwise equality for flattened affine lower/upper bounds. -/
 def exactEqFlatAffineBounds (B1 B2 : FlatAffineBounds IEEE32Exec) : Bool :=
@@ -115,6 +136,131 @@ def exactEqFlatAffineBounds (B1 B2 : FlatAffineBounds IEEE32Exec) : Bool :=
               exactEqAffineVec (n := n1) (m := m1) hi1 hi2
     else false
   else false
+
+/--
+A successful bitwise affine-bound comparison proves equality of the dependent records, including
+their input and output dimensions.
+-/
+theorem exactEqFlatAffineBounds_eq_true
+    {B1 B2 : FlatAffineBounds IEEE32Exec}
+    (h : exactEqFlatAffineBounds B1 B2 = true) : B1 = B2 := by
+  unfold exactEqFlatAffineBounds at h
+  split at h
+  next hin =>
+    split at h
+    next hout =>
+      cases B1 with
+      | mk n1 m1 lo1 hi1 =>
+          cases B2 with
+          | mk n2 m2 lo2 hi2 =>
+              simp only at hin hout
+              subst n2
+              subst m2
+              simp only [Bool.and_eq_true] at h
+              have hlo : lo1 = lo2 := exactEqAffineVec_eq_true h.1
+              have hhi : hi1 = hi2 := exactEqAffineVec_eq_true h.2
+              cases hlo
+              cases hhi
+              rfl
+    next => simp at h
+  next => simp at h
+
+/-- Bitwise equality for optional affine bounds, used by the pure replay checker. -/
+def exactEqOptionalAffineBounds
+    (a b : Option (FlatAffineBounds IEEE32Exec)) : Bool :=
+  match a, b with
+  | none, none => true
+  | some a, some b => exactEqFlatAffineBounds a b
+  | _, _ => false
+
+/-- Successful optional comparison proves equality of the optional affine bounds. -/
+theorem exactEqOptionalAffineBounds_eq_true
+    {a b : Option (FlatAffineBounds IEEE32Exec)}
+    (h : exactEqOptionalAffineBounds a b = true) : a = b := by
+  cases a with
+  | none => cases b <;> simp_all [exactEqOptionalAffineBounds]
+  | some a =>
+      cases b with
+      | none => simp_all [exactEqOptionalAffineBounds]
+      | some b =>
+          apply congrArg some
+          exact exactEqFlatAffineBounds_eq_true h
+
+/-!
+## Proved local replay
+
+The diagnostic node checkers below replay bounds incrementally so that they can report the first
+bad node. The final acceptance decision also runs this pure check against the complete imported
+certificate. Its soundness theorem supplies exactly the `CrownCertLocalOK` hypothesis expected by
+the graph-level CROWN theorem.
+-/
+
+/--
+Check that every affine entry is exactly the result of applying `step` to the imported certificate.
+
+This is intentionally narrower than the complete certificate checker: parsing, IBP containment,
+shape checks, and domain checks remain separate executable obligations. This predicate is the
+local-replay component whose proposition-level meaning is `CrownCertLocalOK`.
+-/
+def crownLocalReplayAccepts
+    (g : Graph)
+    (step : Array (Option (FlatAffineBounds IEEE32Exec)) → Nat →
+      Option (FlatAffineBounds IEEE32Exec))
+    (cert : Array (Option (FlatAffineBounds IEEE32Exec))) : Bool :=
+  if hsize : cert.size = g.nodes.size then
+    (List.finRange g.nodes.size).all fun i =>
+      exactEqOptionalAffineBounds
+        (cert[i.val]'(by rw [hsize]; exact i.isLt))
+        (step cert i.val)
+  else
+    false
+
+/-- Successful pure replay constructs the local-consistency hypothesis used by CROWN soundness. -/
+theorem crownLocalReplayAccepts_eq_true
+    (g : Graph)
+    (step : Array (Option (FlatAffineBounds IEEE32Exec)) → Nat →
+      Option (FlatAffineBounds IEEE32Exec))
+    (cert : Array (Option (FlatAffineBounds IEEE32Exec)))
+    (haccept : crownLocalReplayAccepts g step cert = true) :
+    NN.MLTheory.CROWN.Graph.CrownCertSoundness.CrownCertLocalOK
+      (g := g) (step := step) cert := by
+  unfold crownLocalReplayAccepts at haccept
+  split at haccept
+  next hsize =>
+    refine ⟨hsize, ?_⟩
+    intro id hid
+    simp only [List.all_eq_true] at haccept
+    have hentry := haccept ⟨id, hid⟩ (List.mem_finRange ⟨id, hid⟩)
+    have heq := exactEqOptionalAffineBounds_eq_true hentry
+    have hidCert : id < cert.size := by rw [hsize]; exact hid
+    rw [getElem!_pos cert id hidCert]
+    exact heq
+  next => simp at haccept
+
+/--
+Combine the diagnostic checks with pure local replay. Acceptance of the combined decision always
+supplies the proposition-level local CROWN consistency condition.
+-/
+def crownCertificateAccepts
+    (g : Graph)
+    (step : Array (Option (FlatAffineBounds IEEE32Exec)) → Nat →
+      Option (FlatAffineBounds IEEE32Exec))
+    (cert : Array (Option (FlatAffineBounds IEEE32Exec)))
+    (diagnosticsOk : Bool) : Bool :=
+  diagnosticsOk && crownLocalReplayAccepts g step cert
+
+/-- The complete Boolean acceptance decision implies local CROWN consistency. -/
+theorem crownCertificateAccepts_eq_true
+    (g : Graph)
+    (step : Array (Option (FlatAffineBounds IEEE32Exec)) → Nat →
+      Option (FlatAffineBounds IEEE32Exec))
+    (cert : Array (Option (FlatAffineBounds IEEE32Exec)))
+    (diagnosticsOk : Bool)
+    (haccept : crownCertificateAccepts g step cert diagnosticsOk = true) :
+    NN.MLTheory.CROWN.Graph.CrownCertSoundness.CrownCertLocalOK
+      (g := g) (step := step) cert := by
+  simp only [crownCertificateAccepts, Bool.and_eq_true] at haccept
+  exact crownLocalReplayAccepts_eq_true g step cert haccept.2
 
 /-- Parse a flat interval box (two arrays of floats) from JSON. -/
 def parseFlatBox? (dim : Nat) (j : Json) : IO (Option (FlatBox IEEE32Exec)) := do

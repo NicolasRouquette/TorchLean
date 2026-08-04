@@ -192,7 +192,7 @@ TorchLean therefore gives several numerical interpretations distinct names:
 
 A real-valued enclosure theorem cannot be silently relabeled as a theorem about every GPU execution.
 A bridge theorem or an explicit backend contract must carry the result across that boundary. Later
-chapters develop these numerical layers in detail; for now, the important habit is to ask which
+chapters develop these numerical layers in detail. The important habit is to ask which
 arithmetic appears in the statement.
 
 Even an algebraically equivalent formula can make a runtime contract safer. Smooth-max pooling,

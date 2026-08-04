@@ -101,9 +101,9 @@ open TorchLean
 #check TorchLean.Data.tensorDataset
 #check TorchLean.Loss.mse
 #check TorchLean.Metrics.argmax?
-#check TorchLean.classical.knn.Model
-#check TorchLean.classical.randomForest.regression.Model
-#check TorchLean.classical.pca.forward
+#check Spec.KNN
+#check random_forest.Numeric.RegressionForestSpec
+#check Spec.pcaForwardSpec
 LEAN
 run "$LAKE" build +NN.API
 run "$LAKE" env lean "$public_api_check"

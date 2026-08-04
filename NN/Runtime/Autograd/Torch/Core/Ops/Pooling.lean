@@ -130,7 +130,7 @@ def smoothMaxPool {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [
 def maxPool2d {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  IO (TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+  IO (TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
     .scalar)))) := do
   if stride == 0 then
     throw <| IO.userError "torch: max_pool2d requires stride > 0"
@@ -150,7 +150,7 @@ def maxPool2d {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     let strideU32 ← okOrThrow <| Runtime.Autograd.Cuda.AnyBuffer.natToU32Checked stride
     let paddingU32 : UInt32 := 0
     let outSh : Shape :=
-      .dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar))
+      .dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.unary (t := t0) "max_pool2d" x.id
@@ -167,8 +167,8 @@ def maxPool2d {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
 def maxPool2dPad {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  IO (TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
-    (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) := do
+  IO (TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride padding)
+    (.dim (Spec.poolOutDim inW kW stride padding) .scalar)))) := do
   if stride == 0 then
     throw <| IO.userError "torch: max_pool2d with padding requires stride > 0"
   let cpu := do
@@ -188,8 +188,8 @@ def maxPool2dPad {α : Type} (s : EagerSession α) [Context α] [DecidableEq Sha
     let strideU32 ← okOrThrow <| Runtime.Autograd.Cuda.AnyBuffer.natToU32Checked stride
     let paddingU32 ← okOrThrow <| Runtime.Autograd.Cuda.AnyBuffer.natToU32Checked padding
     let outSh : Shape :=
-      .dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
-        (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))
+      .dim inC (.dim (Spec.poolOutDim inH kH stride padding)
+        (.dim (Spec.poolOutDim inW kW stride padding) .scalar))
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.unary (t := t0) "max_pool2d_pad" x.id
@@ -211,7 +211,7 @@ def smoothMaxPool2d {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α)
   [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) (beta : α) :
-  IO (TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+  IO (TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
     .scalar)))) := do
   let cpu := do
     let t0 ← s.tape.get
@@ -235,7 +235,7 @@ def smoothMaxPool2d {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α)
 def avgPool2d {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (x : TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  IO (TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+  IO (TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
     .scalar)))) := do
   let cpu := do
     let t0 ← s.tape.get
@@ -257,8 +257,8 @@ def avgPool2d {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
 def avgPool2dPad {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride padding : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (x : TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  IO (TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
-    (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) := do
+  IO (TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride padding)
+    (.dim (Spec.poolOutDim inW kW stride padding) .scalar)))) := do
   let cpu := do
     let t0 ← s.tape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.avgPool2dPad (t := t0)

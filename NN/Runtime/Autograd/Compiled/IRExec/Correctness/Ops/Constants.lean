@@ -99,7 +99,7 @@ theorem buildFrom_denoteAllFrom_const
           cases hOut
           have hShape :
               (NN.IR.DVal.mk (α := α) n.outShape t).shape = n.outShape := rfl
-          simp [NN.IR.Graph.evalAt, hN, hk, hT, input, hShape, throw, throwThe,
+          simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hT, input, hShape, throw, throwThe,
             MonadExceptOf.throw, Except.instMonad, Except.bind, Except.pure, nodeData]
           try rfl
         have hStep :

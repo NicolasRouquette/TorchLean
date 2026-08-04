@@ -21,7 +21,7 @@ from typing import Iterable
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
-LINT_SCOPE_SENTINEL = REPO_ROOT / "NN/MLTheory/CROWN/Lyapunov/Oracle.lean"
+LINT_SCOPE_SENTINEL = REPO_ROOT / "NN/MLTheory/CROWN/Lyapunov/Certificate.lean"
 
 # External trees that may exist in a developer checkout but are not part of TorchLean's core sources
 # and must not affect repo policy/CI. These are user-cloned repos outside TorchLean's source tree.
@@ -35,7 +35,6 @@ VENDORED_DIR_NAMES = {
 
 # Keep the trusted boundary explicit: axioms must be quarantined, named, and documented.
 ALLOWED_AXIOMS = {
-    "NN/MLTheory/CROWN/Lyapunov/Oracle.lean": {"crown_oracle"},
     "NN/Runtime/Autograd/Engine/Cuda/Trusted.lean": {"instNonemptyBuffer"},
 }
 
@@ -52,7 +51,10 @@ REMOVED_COMPATIBILITY_PATHS = {
     "NN/Examples/Verification/LiRPA.lean",
     "NN/GraphSpec/Models/TorchLean/Fno1d.lean",
     "NN/Library.lean",
-    "NN/API/Public/Facade/Trainer/Verify.lean",
+    "NN/API/TorchLean/Trainer/Verify.lean",
+    "NN/API/TorchLean/Data/DotInfo.lean",
+    "NN/MLTheory/CROWN/Lyapunov/Oracle.lean",
+    "NN/MLTheory/CROWN/Tactics/CrownOracle.lean",
     "NN/Spec/Layers/Pooling/Aliases.lean",
     "NN/Verification/TorchLean/Verified.lean",
 }
@@ -284,16 +286,24 @@ PUBLIC_GUIDE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "public guides should say `Trainer.stepEpochLR`, not `train.stepEpochLR`.",
     ),
     (
-        re.compile(r"\btrain\.Manual\b"),
-        "public guides should say `Trainer.Manual` for escape-hatch code, not `train.Manual`.",
+        re.compile(r"\bNN\.API\.nn\b"),
+        "public guides should use the canonical `TorchLean.nn` namespace.",
     ),
     (
-        re.compile(r"\bNN\.API\.train\.Manual\b"),
-        "public guides should not teach the internal `NN.API.train.Manual` namespace; explain it as a manual runtime escape hatch.",
+        re.compile(r"\bNN\.API\.Models\.TrainFixed\b"),
+        "fixed-sample training now lives at `TorchLean.Trainer.FixedSample`.",
     ),
 ]
 
 PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"\bNN\.API\.nn\b"),
+        "public examples should use the canonical `TorchLean.nn` namespace.",
+    ),
+    (
+        re.compile(r"\bNN\.API\.Models\.TrainFixed\b"),
+        "public examples should use `TorchLean.Trainer.FixedSample`.",
+    ),
     (
         re.compile(r"\bsample\.Supervised\b"),
         "public examples should use `SupervisedSample`, not the internal `sample.Supervised` spelling.",
@@ -984,7 +994,8 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                 LINT_SCOPE_SENTINEL,
                 None,
                 None,
-                "repo linter is not rooted at TorchLean; expected to see NN/MLTheory/CROWN/Lyapunov/Oracle.lean.",
+                "repo linter is not rooted at TorchLean; expected to see "
+                "NN/MLTheory/CROWN/Lyapunov/Certificate.lean.",
             )
         )
 
@@ -1199,13 +1210,25 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         (
             re.compile(
                 r"\b(?:SequentialModel|ModelBuilder|modelParamShapes|LossReduction)\b|"
-                r"\bTorchLean\.ParamTensors\b|\bNN\.API\.TensorPack\b"
+                r"\bTorchLean\.ParamTensors\b"
             ),
             "removed API alias found; use the canonical `nn`, `Module`, `Loss`, or `TensorPack` name.",
+        ),
+        (
+            re.compile(
+                r"\b(?:NativeOptimizerCheckpoint|CudaAdamSchema|saveNativeOptimizerState|"
+                r"loadNativeOptimizerState|projectedSGDUpdate_identity_eq_sgd|"
+                r"update_identity_param_eq_momentumSGD)\b"
+            ),
+            "removed checkpoint or definitional-theorem name found; use the shared optimizer-state checkpoint API.",
         ),
         (re.compile(r"\bby\s+omega\b"), "`omega` is banned in TorchLean; prefer `linarith`/`nlinarith`/`grind` or small arithmetic lemmas."),
         (re.compile(r"^\s*omega\b", flags=re.MULTILINE), "`omega` is banned in TorchLean; prefer `linarith`/`nlinarith`/`grind` or small arithmetic lemmas."),
         (re.compile(r"\bsimp\s*\[\s*\*(\s*[,\]])"), "`simp [*]` is banned; prefer `simp [h₁, h₂]` or `simp (config := ...)` with explicit hypotheses."),
+        (
+            re.compile(r"\bset_option\s+maxHeartbeats\b"),
+            "proof-level `maxHeartbeats` overrides are not allowed; split the declaration or isolate expensive normalization behind reusable lemmas.",
+        ),
         (
             re.compile(r"^\s*public\s+import\s+Mathlib\.Tactic\b", flags=re.MULTILINE),
             "Do not `public import Mathlib.Tactic.*`; import the specific tactic modules you use (non-public).",
@@ -1307,7 +1330,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         is_shape_generic_public_api = any(
             rel.startswith(prefix)
             for prefix in (
-                "NN/API/Public/",
+                "NN/API/TorchLean/",
                 "NN/API/Models/",
                 "NN/API/Samples/",
             )
@@ -1329,7 +1352,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                         )
                     )
 
-        if rel.startswith("NN/API/Public/Facade/Trainer/Train/") and rel.endswith(".lean"):
+        if rel.startswith("NN/API/TorchLean/Trainer/Train/") and rel.endswith(".lean"):
             if "(opts : Options)" in masked and "(opts : TrainOptions" in masked:
                 findings.append(
                     Finding(
@@ -1341,11 +1364,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                     )
                 )
 
-        if (
-            rel.startswith("NN/API/")
-            and rel.count("/") == 2
-            and rel.endswith(".lean")
-        ):
+        if rel == "NN/API/TorchLean/Trainer/Train.lean":
             m = TOP_LEVEL_API_DECL_RE.search(masked)
             if m:
                 line, col = _line_col(text, m.start())
@@ -1355,113 +1374,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                         path,
                         line,
                         col,
-                        "top-level `NN/API/*.lean` files must be import entrypoints only; move implementation declarations into a matching subfolder.",
-                    )
-                )
-
-        if (
-            rel.startswith("NN/API/Public/")
-            and rel.count("/") == 3
-            and rel.endswith(".lean")
-        ):
-            m = TOP_LEVEL_API_DECL_RE.search(masked)
-            if m:
-                line, col = _line_col(text, m.start())
-                findings.append(
-                    Finding(
-                        "ERROR",
-                        path,
-                        line,
-                        col,
-                        "direct `NN/API/Public/*.lean` files must be import entrypoints only; move implementation declarations into a matching subfolder.",
-                    )
-                )
-
-        if (
-            rel.startswith("NN/API/Public/Facade/")
-            and rel.count("/") == 4
-            and rel.endswith(".lean")
-        ):
-            m = TOP_LEVEL_API_DECL_RE.search(masked)
-            if m:
-                line, col = _line_col(text, m.start())
-                findings.append(
-                    Finding(
-                        "ERROR",
-                        path,
-                        line,
-                        col,
-                        "direct `NN/API/Public/Facade/*.lean` files must be import entrypoints only; move implementation declarations into a matching subfolder.",
-                    )
-                )
-
-        if rel == "NN/API/Public/Facade/Base/Core.lean":
-            m = TOP_LEVEL_API_DECL_RE.search(masked)
-            if m:
-                line, col = _line_col(text, m.start())
-                findings.append(
-                    Finding(
-                        "ERROR",
-                        path,
-                        line,
-                        col,
-                        "`NN.API.Public.Facade.Base.Core` must stay an import-only aggregator; put base API implementation in `NN.API.Public.Facade.Base.*` modules.",
-                    )
-                )
-
-        if rel == "NN/API/Public/Facade/Runtime/Core.lean":
-            m = TOP_LEVEL_API_DECL_RE.search(masked)
-            if m:
-                line, col = _line_col(text, m.start())
-                findings.append(
-                    Finding(
-                        "ERROR",
-                        path,
-                        line,
-                        col,
-                        "`NN.API.Public.Facade.Runtime.Core` must stay an import-only aggregator; put runtime API implementation in `NN.API.Public.Facade.Runtime.*` modules.",
-                    )
-                )
-
-        if rel == "NN/API/Public/Facade/NN/Core.lean":
-            m = TOP_LEVEL_API_DECL_RE.search(masked)
-            if m:
-                line, col = _line_col(text, m.start())
-                findings.append(
-                    Finding(
-                        "ERROR",
-                        path,
-                        line,
-                        col,
-                        "`NN.API.Public.Facade.NN.Core` must stay an import-only aggregator; put neural-network API implementation in `NN.API.Public.Facade.NN.*` modules.",
-                    )
-                )
-
-        if rel == "NN/API/Public/Facade/Data/Core.lean":
-            m = TOP_LEVEL_API_DECL_RE.search(masked)
-            if m:
-                line, col = _line_col(text, m.start())
-                findings.append(
-                    Finding(
-                        "ERROR",
-                        path,
-                        line,
-                        col,
-                        "`NN.API.Public.Facade.Data.Core` must stay an import-only aggregator; put data API implementation in `NN.API.Public.Facade.Data.*` modules.",
-                    )
-                )
-
-        if rel == "NN/API/Public/Facade/Trainer/Train.lean":
-            m = TOP_LEVEL_API_DECL_RE.search(masked)
-            if m:
-                line, col = _line_col(text, m.start())
-                findings.append(
-                    Finding(
-                        "ERROR",
-                        path,
-                        line,
-                        col,
-                        "`NN.API.Public.Facade.Trainer.Train` must stay an import-only aggregator; put training implementation in `NN.API.Public.Facade.Trainer.Train.*` modules.",
+                        "`NN.API.Runtime.Trainer.Train` must stay an import-only aggregator; put training implementation in `NN.API.Runtime.Trainer.Train.*` modules.",
                     )
                 )
 
@@ -1471,8 +1384,8 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                     line, col = _line_col(text, m.start())
                     findings.append(Finding("ERROR", path, line, col, msg))
 
-        if rel == "NN/API/Public.lean" and re.search(
-            r"^\s*public\s+import\s+NN\.API\.Public\.Training\s*$", masked, flags=re.MULTILINE
+        if rel == "NN/API/Neural.lean" and re.search(
+            r"^\s*public\s+import\s+NN\.API\.Training\s*$", masked, flags=re.MULTILINE
         ):
             findings.append(
                 Finding(
@@ -1480,16 +1393,16 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                     path,
                     None,
                     None,
-                    "`NN.API.Public` must not re-export `NN.API.Public.Training`; use `TorchLean.Trainer` for ordinary code and import the advanced training module explicitly when needed.",
+                    "`NN.API.Neural` must not re-export `NN.API.Trainer`; use `TorchLean.Trainer` for ordinary code and import the advanced training module explicitly when needed.",
                 )
             )
         is_trainer_api = (
-            rel == "NN/API/Public/Facade/Trainer.lean"
-            or rel.startswith("NN/API/Public/Facade/Trainer/")
+            rel == "NN/API/TorchLean/Trainer.lean"
+            or rel.startswith("NN/API/TorchLean/Trainer/")
         )
-        is_training_entrypoint = rel == "NN/API/Public/Training.lean"
+        is_training_entrypoint = rel == "NN/API/Training.lean"
         if re.search(
-            r"^\s*public\s+import\s+NN\.API\.Public\.Training\s*$", masked, flags=re.MULTILINE
+            r"^\s*public\s+import\s+NN\.API\.Training\s*$", masked, flags=re.MULTILINE
         ) and not (is_trainer_api or is_training_entrypoint):
             findings.append(
                 Finding(
@@ -1497,7 +1410,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                     path,
                     None,
                     None,
-                    "`NN.API.Public.Training` should only be imported by the Trainer API; keep the callback-heavy training layer out of broad application API imports.",
+                    "`NN.API.Trainer` should only be imported by the Trainer API; keep the callback-heavy training layer out of broad application API imports.",
                 )
             )
 

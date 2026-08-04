@@ -3,6 +3,7 @@ title: Updates
 ---
 
 <nav class="timeline-nav" aria-label="TorchLean update timeline">
+  <a href="#august-2026-autograd-cuda">August 2026</a>
   <a href="#july-2026-refactor">July 2026</a>
   <a href="#june-2026-reliability">June 2026 reliability</a>
   <a href="#june-2026-lean-431">Lean 4.31</a>
@@ -14,6 +15,52 @@ title: Updates
 </nav>
 
 <div class="updates-timeline">
+
+<article class="update-card" id="august-2026-autograd-cuda" markdown="1">
+  <div class="update-date">August 2026</div>
+  <div class="update-body" markdown="1">
+
+## Exact Tape Derivatives and CUDA Cache Limits
+
+The exact autograd proof reaches the compiled tape. For a real algebraic graph, dense reverse
+accumulation returns the graph's full cotangent context, and its input block is the adjoint Fréchet
+derivative of forward evaluation applied to the output seed. The pointwise theorem permits
+piecewise-smooth operators when the chosen execution point satisfies their differentiability and
+domain hypotheses.
+
+The connection uses an exact correspondence between the analytic graph and the real algebraic graph
+with a trivial environment. Conversion preserves forward evaluation, JVPs, and reverse
+accumulation, and both graph conversions round-trip. The theorem can be inspected without importing
+an executable backend:
+
+```lean
+import NN.Proofs.Autograd.Runtime.Link.FDeriv
+
+#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_adjoint_fderiv
+#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_adjoint_fderiv_at
+```
+
+This result concerns the exact tape over `Real`. Native `Float` and CUDA executions still require
+the numerical-refinement assumptions described in the runtime-approximation chapter.
+
+The CUDA allocator also has an optional byte limit for released buffers retained for reuse:
+
+```bash
+TORCHLEAN_CUDA_CACHE_CAP_BYTES=$((512 * 1024 * 1024)) \
+  lake -K cuda=true exe torchlean gpt2 --device cuda --steps 100
+```
+
+`AllocatorStats.cacheBytes` reports reusable device memory separately from live tensors, while
+`cacheCapBytes` reports the parsed limit. A block that would exceed the limit is synchronized and
+freed. The cap is fixed when the allocator first reads it; `0` or an unset variable means
+unbounded.
+
+The CUDA stress suite runs the allocator in fresh subprocesses and checks a finite limit, an
+explicit unbounded control, malformed input, and integer overflow. Its assertion uses the limit
+reported by the native allocator rather than reproducing the native parser in Lean.
+
+  </div>
+</article>
 
 <article class="update-card" id="july-2026-refactor" markdown="1">
   <div class="update-date">July 2026</div>
@@ -30,17 +77,23 @@ enough to expose bugs that the small examples never reached.
 
 ### Imports and File Layout
 
-Most model code now starts with `import NN`. The old `NN.Library` and `NN.Entrypoint.*` forwarding
+Most model code starts with `import NN`. The old `NN.Library` and `NN.Entrypoint.*` forwarding
 modules are gone. Focused imports such as `NN.Spec`, `NN.Runtime`, `NN.Floats`, and
 `NN.Verification` still lead directly to their declarations. The model zoo remains part of
 TorchLean.
 
 We also broke up several files that had become difficult to navigate. Training, data handling,
 schedulers, CROWN propagation, graph compilation, runtime operations, normalization, Muon, and
-floating-point semantics now live in smaller modules with narrower imports. The API tree is
-about 300 lines smaller and the guide is more than 5,000 lines shorter. The proof tree is larger
-because it now includes numerical certificates, rounded backpropagation, optimizer contracts, and
-new floating-point results.
+floating-point semantics moved into smaller modules with narrower imports. The API tree is about
+300 lines smaller and the guide is more than 5,000 lines shorter. The proof tree grew to include
+numerical certificates, rounded backpropagation, optimizer contracts, and new floating-point
+results.
+
+The public neural-network API has one owner. Seeded layer builders and model-zoo constructors are
+declared under `TorchLean.nn`; `NN.API` gathers them without redeclaring their names.
+Fixed-sample training lives under `TorchLean.Trainer.FixedSample`. Inside the runtime, mutable
+parameter storage and optimizer checkpoint schemas have their own modules, separate from trainer
+execution and CUDA Adam serialization.
 
 <div class="update-grid">
   <section>
@@ -55,25 +108,61 @@ new floating-point results.
     <h3>Models</h3>
     <p>
       CNNs, ResNets, ViTs, FNOs, transformers, GPT, Mamba, recurrent models, generative models,
-      reinforcement learning, and self-supervised examples all remain available. They now use the
+      reinforcement learning, and self-supervised examples all remain available. They use the
       same tensor and layer API instead of carrying model-specific forwarding stacks.
     </p>
   </section>
   <section>
     <h3>Training</h3>
     <p>
-      Optimizers now share one stateful tensor interface. We kept laws that say something useful
+      Optimizers share one stateful tensor interface. We kept laws that say something useful
       about update rules and stream composition, and removed generated tables and `rfl` theorems
       that only repeated a definition.
     </p>
   </section>
 </div>
 
-The trainer now treats `batchSize` as the number of dataset items per optimizer update. For
+The trainer treats `batchSize` as the number of dataset items per optimizer update. For
 an ordinary dataset those items are samples. For `Data.batchDataset`, each item is already a typed
 tensor minibatch, so `batchSize := 1` keeps one vectorized pass per update. Larger values accumulate
 gradients across several items. Logged pre-update loss comes from the same forward tapes as the
 gradients; training no longer runs a second forward pass just for logging.
+
+Transformer batches use one batch-aware attention tape node instead of asking the host to run
+the attention layer once per sample. The eager CUDA path folds batch and head axes into batched
+matrix multiplications, applies TorchLean's hard-masked softmax, and computes the local VJP in
+TorchLean. The specification and proof-compiled graph still define the operation as a leading-axis
+map of ordinary attention. A regression compares the vectorized forward value, input gradient, and
+shared weight gradients with repeated single-sample execution.
+
+Layer normalization and tanh-approximate GELU follow the same rule: one TorchLean operation,
+one local VJP, and fused CUDA kernels for the numerical work. In a two-step GPT-2-small trace with
+batch 6 and context 1024, local profiling showed fewer kernel launches while leaving the
+matrix-multiplication schedule unchanged. The CUDA parity suite checks forward values and gradients
+against the CPU path; the native kernels remain inside the documented runtime boundary. Timing
+claims belong with a retained benchmark configuration and trace, so this update records the
+implementation and regression coverage rather than presenting one workstation run as a general
+speedup.
+
+Matrix backward no longer materializes transposed copies before calling cuBLAS. The runtime
+passes logical transpose flags to the same batched-matrix primitive used by linear layers,
+projection weights, and ordinary `matmul`. Focused traces confirm that these temporary transpose
+kernels disappear, and parity tests compare the resulting forward values and gradients with the
+existing path.
+
+CUDA Adam and AdamW state can be saved independently of parameter checkpoints. The binary
+format records optimizer hyperparameters, parameter shapes, mutability flags, moment tensors, and
+step counters using explicit little-endian fields. Loading rejects mismatched models, changed
+moment parameters, duplicate state entries, truncation, and trailing data. Writes close and flush a
+fresh sibling file before renaming it over the destination. The parameter-schema codec is shared by
+backend-owned optimizer checkpoints; the CUDA Adam-family codec supplies the format-specific
+configuration and moment payload.
+
+Discrete model inputs have their own typed path through programs, modules, evaluators,
+trainers, and checkpoints. CharGPT passes token ids and targets as `Tensor Nat`; the old
+floating-point transport and conversion step are gone. The causal Transformer API supports either
+an independent vocabulary head or an output projection tied to the embedding table. In the tied
+form, lookup and output gradients accumulate into the same parameter.
 
 ### Floating-Point Semantics
 
@@ -88,7 +177,7 @@ directed and nearest rounding, round-to-odd, ULPs and neighboring values, double
 subtraction, and absolute and relative error bounds. Flocq influenced the layout. TorchLean's
 definitions and proofs are written in Lean.
 
-Sterbenz subtraction now covers gradual underflow and has a binary32 specialization. Every finite
+Sterbenz subtraction covers gradual underflow and has a binary32 specialization. Every finite
 `IEEE32Exec` bit pattern is proved representable in that specification, so the executable Sterbenz
 theorem can identify nearby subtraction with the exact real difference. Finite executable values
 also expose a checked ULP exponent, and an absorption theorem connects an unchanged binary32
@@ -108,13 +197,13 @@ explicit.
 
 ### Whole-Graph Numerical Certificates
 
-TorchLean can now build a numerical trace over the canonical `NN.IR.Graph`. Source intervals use
+TorchLean can build a numerical trace over the canonical `NN.IR.Graph`. Source intervals use
 exact binary32 endpoints. The checker reconstructs
 outward-rounded ranges for supported arithmetic, activations, directed square root, reductions,
 matrix multiplication, pooling, MSE, and stable softmax; malformed domains and non-finite ranges
 fail at the node that produced them.
 
-Range rules now live in an operation registry. The same traversal handles any architecture after
+Range rules live in an operation registry. The same traversal handles any architecture after
 lowering. Before propagation, a coverage pass lists
 the exact nodes whose primitives lack a range contract. Custom registries are named and the name is
 stored in the certificate, so an artifact cannot be replayed under a different set of rules.
@@ -126,19 +215,19 @@ implementation-dependent, so their matrix products, convolutions, normalizations
 scans, and attention kernels cannot accidentally inherit a proof for a different reduction order.
 
 The bit-level replay evaluates every graph intermediate with `IEEE32Exec`, checks its shape and
-range, and rejects NaN or infinity. A checked certificate now stores the exact graph it was checked
+range, and rejects NaN or infinity. A checked certificate stores the exact graph it was checked
 against, so replay cannot substitute a different graph. A separate proved real execution supplies
 the semantic enclosure; combining it with the bit-level replay yields an entrywise error trace for
 every node. The deep-dive example includes successful arithmetic, reduction, matmul, LayerNorm,
 `abs -> sqrt`, and softmax traces, together with deliberately tampered, invalid-domain, and
-wrong-reduction-policy cases. It now ends with a complete two-layer MLP: ten graph nodes pass
+wrong-reduction-policy cases. It ends with a complete two-layer MLP: ten graph nodes pass
 coverage, range generation, backend-capsule audit, and bit-level replay. The
 [numerical-runtime walkthrough]({{ '/examples/numerical-runtime/' | relative_url }}) follows that
 run from source enclosures to its checked output.
 
 ### Rounded Backpropagation and Optimizers
 
-The numerical proof now continues past the forward graph. Proof-bearing reverse nodes carry both
+The numerical proof continues past the forward graph. Proof-bearing reverse nodes carry both
 their ideal VJP and their rounded VJP error transformer. The global reverse theorem composes those
 local bounds through gradient accumulation and connects the result to executable autograd
 `GraphData`.
@@ -174,13 +263,18 @@ Attention, native CUDA, portable reference code, and optional LibTorch providers
 capsule modules. Another provider can extend a profile with its own module. Model definitions
 continue to request operations instead of provider-specific kernels.
 
-Capsules are now connected to runtime code through typed handlers. Before an operation runs, the
+Typed handlers connect capsules to runtime code. Before an operation runs, the
 session checks that the selected capsule and handler agree on operation, provider, and device. A
 missing binding fails explicitly instead of allowing the backend report and executed closure to
 disagree. This guarantees dispatch identity. Kernel correctness still has the evidence and trust
 level shown in the capsule.
 
-Capability names are now rank-polymorphic operation families. Convolution, pooling, reduction,
+Verified implementations use a separate typed path. A `ProofCarryingKernel` contains the function
+that runs and a proof that it equals one explicit Lean specification. The verified planner keeps
+that theorem in the selected result. Ordinary capsule metadata cannot acquire verified status by
+setting a trust tag after the proof has been erased.
+
+Capability names are rank-polymorphic operation families. Convolution, pooling, reduction,
 permutation, slicing, gathering, and matrix multiplication each have one backend capability; rank,
 axes, padding, strides, and index tensors remain in the graph payload. Numerical certificates use
 their own transfer keys where two payloads need different interval rules, so provider discovery no
@@ -203,7 +297,7 @@ requested provider is unavailable, TorchLean reports that fact instead of silent
   <section>
     <h3>Losses and masks</h3>
     <p>
-      Huber loss and Smooth L1 now have their intended, distinct scaling. Hard attention masks use
+      Huber loss and Smooth L1 have their intended, distinct scaling. Hard attention masks use
       exact exclusion in the softmax semantics: a blocked entry contributes zero numerator. The old
       finite <code>-1000</code> masking convention was removed from attention paths and examples.
     </p>
@@ -223,7 +317,10 @@ requested provider is unavailable, TorchLean reports that fact instead of silent
       are checked by recomputing the complete <code>IEEE32Exec</code> trace from the trusted graph,
       parameters, and input box; an artifact may widen that trace but may not shrink it. CROWN and
       $\alpha,\beta$-CROWN affine entries are compared exactly with a sequential replay instead of being
-      propagated from certificate-supplied parents.
+      propagated from certificate-supplied parents. A theorem turns successful exact replay into
+      the local-consistency proposition used by the generic CROWN soundness development. Relating that
+      binary32 replay to real-valued enclosure still requires the stated finite-precision refinement
+      assumptions.
     </p>
   </section>
   <section>
@@ -231,14 +328,14 @@ requested provider is unavailable, TorchLean reports that fact instead of silent
     <p>
       HMM normalization records zero probability for an impossible observation, and log-likelihood
       is partial at that boundary. GMM covariance matrices must be symmetric positive definite,
-      mixture weights must be positive and normalized, and singular inversion now fails rather
+      mixture weights must be positive and normalized, and singular inversion fails rather
       than returning the identity. The covariance gradients use the transpose-correct formulas.
     </p>
   </section>
   <section>
     <h3>Attention and diffusion</h3>
     <p>
-      Multi-head attention now reshapes sequence data to
+      Multi-head attention reshapes sequence data to
       <code>(sequence, heads, head-dimension)</code> before exchanging the sequence and head axes.
       The probability-flow ODE uses the required one-half score coefficient, and its Euler sampler
       visits time points in descending order from the noisy endpoint.
@@ -257,7 +354,7 @@ requested provider is unavailable, TorchLean reports that fact instead of silent
   <section>
     <h3>Formats and smooth pooling</h3>
     <p>
-      A radix now carries a proof that its base is at least two, and a format precision carries a
+      A radix carries a proof that its base is at least two, and a format precision carries a
       proof that it is positive. Checked constructors reject bad integers at configuration
       boundaries. Smooth max pooling uses a sign-aware pivot for both positive and negative
       inverse temperatures on CPU and CUDA. Zero, non-finite, or unrepresentable inverse
@@ -266,14 +363,45 @@ requested provider is unavailable, TorchLean reports that fact instead of silent
   </section>
 </div>
 
-The graph evaluator and verifier compiler are now split by operation. Their coverage theorems still
+Rounded CROWN no longer discards every backward objective to a constant interval. For algebraic
+nodes it carries lower and upper coefficient vectors with directed arithmetic, including the sign
+of each input interval when the final affine form is evaluated. Nonlinear or unsupported nodes
+still fall back to their checked IBP boxes. This improves the executable bound without pretending
+that an unproved floating-point transfer is exact.
+
+The arithmetic interface separates implementation from proof. `BoundOps` provides executable
+lower and upper operations; `LawfulBoundOps` proves that those operations enclose exact real
+addition, subtraction, and multiplication. Real and `FP32` endpoints have lawful instances. Host
+`Float` remains an explicitly trusted execution boundary, while IEEE special values are handled by
+finite-path theorems instead of a blanket ordered instance.
+
+The Lyapunov workflow no longer contains a repository-wide oracle axiom. Python output records a
+region and numerical margins, and generated Lean files may prove arithmetic facts about those
+numbers. A stability theorem additionally requires `LyapunovCert.ValidFor`, whose fields prove that
+the reported intervals enclose the named Lyapunov function and orbital derivative throughout that
+region.
+
+The graph evaluator and verifier compiler are split by operation. Their coverage theorems still
 range over the full operation vocabulary, so adding a new file does not weaken the statement being
 proved. We removed theorems tied to incidental list lengths and retained small definitional lemmas
 only when later correctness proofs actually use them.
 
+Convolution and pooling shape inference share one channel-first spatial contract over an
+arbitrary list of spatial axes. Fixed-window `maxPool2d` and `avgPool2d` remain familiar API names,
+but their forward, JVP, and VJP definitions are dependent-shape adapters over the N-dimensional
+pooling semantics. Adaptive pooling remains two-dimensional because variable-size binning is a
+different operation. The current IR still has two-dimensional convolution and pooling operators;
+their height and width checks specialize the shared spatial contract instead of copying `CHW`
+formulas through inference and verification.
+
+Verification artifact readers share one finite box-region parser. It rejects non-finite
+coordinates, negative radii, mismatched dimensions, reversed intervals, incomplete field pairs,
+and mixed endpoint/center schemas. Format-specific checkers can require the exact endpoint schema;
+the alpha-beta-CROWN leaf checker does so before checking nesting and threshold witnesses.
+
 ### Lean 4.32
 
-TorchLean now builds with Lean, mathlib, DocGen, and Verso 4.32. During the upgrade we replaced the
+TorchLean builds with Lean, mathlib, DocGen, and Verso 4.32. During the upgrade we replaced the
 deprecated `Lean.RBMap` with `Std.TreeMap`, used mathlib's stronger sine remainder estimate, and made
 several dependent casts explicit. Proof-valued runtime helpers are theorems when they serve as
 opaque evidence; constructors that must compute remain reducible `abbrev`s. We fixed the new
@@ -282,7 +410,7 @@ linters rather than suppressing them.
 ### Runtime Scaling and CUDA Ownership
 
 The small examples had hidden an expensive habit: large parameters were first expanded into nested
-Lean values and only then copied into the execution engine. Parameters and gradients are now
+Lean values and only then copied into the execution engine. Parameters and gradients are
 materialized directly where they will run. We also stopped generic convolution backward from
 rebuilding the same derivative structure, and taught CUDA attention and fused FNO paths to release
 temporary buffers as soon as their contribution is consumed.
@@ -290,17 +418,17 @@ temporary buffers as soon as their contribution is consumed.
 The most useful failure came from sparse reverse mode. A pure expression allocating a one-element
 CUDA seed could be shared by Lean, even though backward consumed and released the native buffer.
 The next use then referred to storage that was no longer alive. Seeds that cross an ownership
-boundary now come from an effectful constructor, and transfers between gradient maps use explicit
+boundary come from an effectful constructor, and transfers between gradient maps use explicit
 copy-and-release operations. A stress test repeats this path and fails if live CUDA allocation
 grows or a supposedly fresh seed is reused.
 
 A second lifetime problem was in the FFI signatures themselves. Buffer and array inputs were being
 passed as owned Lean objects to native functions that treated them as borrowed, so neither side
-released the wrapper reference. The declarations now mark those inputs as borrowed. Separate
+released the wrapper reference. The declarations mark those inputs as borrowed. Separate
 payload and wrapper counters make the distinction visible, and the stress suite checks thousands
 of allocations for matching finalization counts.
 
-Shape-erased CUDA values now compare the native buffer length with the recorded tensor shape before
+Shape-erased CUDA values compare the native buffer length with the recorded tensor shape before
 an operation runs. Dense and sparse backward also reject output seeds or initial gradients with the
 wrong length. The stress suite covers each rejected case.
 
@@ -313,22 +441,23 @@ machine. They are not a general performance promise.
 
 ### Documentation and Validation
 
-The Guide and API reference now follow the new module layout. Installation has separate notes for
+The Guide and API reference follow the new module layout. Installation has separate notes for
 Linux, macOS, WSL2, native Windows, CUDA, and optional LibTorch support, and the floating-point and
 backend chapters explain where a theorem ends and a runtime assumption begins. Repository checks
 build `NN` directly; `NN.Library` no longer exists.
 
 The Guide ends with a map of 61 definitions and 48 theorems. Its 110 dependency edges distinguish
 statement dependencies from proof dependencies, and every node links back to its Lean declaration.
-The first view groups the map into 17 parts; the full view shows all 109 entries. The CROWN
-Lyapunov oracle is the only incomplete node, and the page labels it as an assumption.
+The first view groups the map into 17 parts; the full view shows all 109 entries. Lyapunov results
+consume an explicit `LyapunovCert.ValidFor` proof, so a producer's JSON flags cannot become a
+stability theorem by themselves.
 
 The Graphs page contains the module-import explorer and build-performance link. The Tools page links
 LeanProfiler and TorchLean Verified Examples. LeanProfiler includes a TorchLean model run, Perfetto
 trace output, and JSON comparisons. The verified examples cover batch-invariant inference and a
 verifiable transformer checkpoint.
 
-The import explorer now ignores fenced guide examples, so an `import` shown in a tutorial is not
+The import explorer ignores fenced guide examples, so an `import` shown in a tutorial is not
 mistaken for a source-module dependency.
 
 Wide tables are wrapped during the documentation build, and the Guide's equations render with
@@ -379,7 +508,7 @@ direct, and moved duplicated PINN training code into shared helpers.
   <section>
     <h3>Runtime checks</h3>
     <p>
-      CUDA and CPU stubs now use shared checked size arithmetic for products,
+      CUDA and CPU stubs use shared checked size arithmetic for products,
       byte counts, and additions at the Lean FFI boundary. Broadcast, reduction,
       swap, gather/scatter, attention, convolution/pooling, tensor-copy, and
       spectral-convolution paths reject impossible sizes before allocation or
@@ -389,7 +518,7 @@ direct, and moved duplicated PINN training code into shared helpers.
   <section>
     <h3>Proof API</h3>
     <p>
-      The graph CROWN certificate theorem now returns the enclosure for the
+      The graph CROWN certificate theorem returns the enclosure for the
       node being checked. The IEEE32 version records the no-self-dependency
       condition on the evaluator trace, and the two-layer MLP CROWN code exposes
       the affine forms used by <code>boundAffineCrown</code>.
@@ -398,14 +527,14 @@ direct, and moved duplicated PINN training code into shared helpers.
   <section>
     <h3>PINNs</h3>
     <p>
-      Python PINN trainers now share dataset loading, MLP construction,
+      Python PINN trainers share dataset loading, MLP construction,
       expression evaluation, gradients, constant parsing, and export helpers
       through <code>scripts/verification/pinn/pinn_common.py</code>.
     </p>
   </section>
 </div>
 
-The focused API import now exposes the short `TorchLean.*` namespaces directly.
+The focused API import exposes the short `TorchLean.*` namespaces directly.
 With `import NN.API`, users get `TorchLean.nn`, `TorchLean.optim`,
 `TorchLean.Trainer`, `TorchLean.Data`, `TorchLean.Loss`, and
 `TorchLean.Metrics` without importing the broader `NN` umbrella.
@@ -436,7 +565,7 @@ racecheck hazards on the exercised runtime suite.
 
 <p class="update-kicker">Toolchain alignment</p>
 <p class="update-summary">
-TorchLean now builds with <code>leanprover/lean4:v4.31.0</code>. The root Lake
+TorchLean builds with <code>leanprover/lean4:v4.31.0</code>. The root Lake
 manifest, Mathlib pin, documentation generator pin, Verso blueprint toolchain,
 website metadata, README, and formalization metadata were moved together.
 </p>
@@ -498,7 +627,7 @@ The examples and website pages were rebuilt against the new module layout.
 
 <p class="update-kicker">Training loops, streams, initialization</p>
 <p class="update-summary">
-Longer examples now use the same public runtime API for initialization, minibatches, optimizer
+Longer examples use the same public runtime API for initialization, minibatches, optimizer
 steps, logging, and checkpoint-style parameter files.
 </p>
 
@@ -528,7 +657,7 @@ steps, logging, and checkpoint-style parameter files.
   </section>
 </div>
 
-The runtime documentation now follows the same path as the examples: initialize parameters, produce
+The runtime documentation follows the same path as the examples: initialize parameters, produce
 batches, run forward/autograd, update parameters, save reports, and state the native or external
 boundary when a backend is selected.
 
@@ -556,7 +685,7 @@ can be released after the step finishes.
 <div class="update-grid">
   <section>
     <h3>Step counts</h3>
-    <p>Loader-based model commands now treat <code>--steps</code> as optimizer updates.</p>
+    <p>Loader-based model commands treat <code>--steps</code> as optimizer updates.</p>
   </section>
   <section>
     <h3>Buffer lifetime</h3>

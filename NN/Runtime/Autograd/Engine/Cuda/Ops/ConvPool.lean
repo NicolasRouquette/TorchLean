@@ -298,8 +298,8 @@ def maxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   let stride32 ← u32 stride
   let pad32 : UInt32 := 0
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
-  let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride 0
-  let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride 0
+  let outH : Nat := Spec.poolOutDim inH kH stride 0
+  let outW : Nat := Spec.poolOutDim inW kW stride 0
   let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
   let _ ← numelU32 outShape
@@ -331,8 +331,8 @@ def maxPool2dPad {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} {h2 : 
   let stride32 ← u32 stride
   let pad32 ← u32 padding
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
-  let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride padding
-  let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride padding
+  let outH : Nat := Spec.poolOutDim inH kH stride padding
+  let outW : Nat := Spec.poolOutDim inW kW stride padding
   let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
   let _ ← numelU32 outShape
@@ -424,8 +424,8 @@ def smoothMaxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW �
   let stride32 ← u32 stride
   let pad32 : UInt32 := 0
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
-  let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride 0
-  let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride 0
+  let outH : Nat := Spec.poolOutDim inH kH stride 0
+  let outW : Nat := Spec.poolOutDim inW kW stride 0
   let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
   let _ ← numelU32 outShape
@@ -466,8 +466,8 @@ def smoothMaxPool2dPad {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} 
   let stride32 ← u32 stride
   let pad32 ← u32 padding
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
-  let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride padding
-  let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride padding
+  let outH : Nat := Spec.poolOutDim inH kH stride padding
+  let outW : Nat := Spec.poolOutDim inW kW stride padding
   let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
   let _ ← numelU32 outShape
@@ -563,8 +563,8 @@ def avgPool2d {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   let stride32 ← u32 stride
   let pad32 : UInt32 := 0
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
-  let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride 0
-  let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride 0
+  let outH : Nat := Spec.poolOutDim inH kH stride 0
+  let outW : Nat := Spec.poolOutDim inW kW stride 0
   let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
   let _ ← numelU32 outShape
@@ -596,8 +596,8 @@ def avgPool2dPad {kH kW inH inW inC stride padding : Nat} (h1 : kH ≠ 0) (h2 : 
   let stride32 ← u32 stride
   let pad32 ← u32 padding
   let x ← requireValue (t := t) xId (.dim inC (.dim inH (.dim inW .scalar)))
-  let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride padding
-  let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride padding
+  let outH : Nat := Spec.poolOutDim inH kH stride padding
+  let outW : Nat := Spec.poolOutDim inW kW stride padding
   let _ ← numelU32 (Shape.ofList [outH, outW])
   let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
   let _ ← numelU32 outShape

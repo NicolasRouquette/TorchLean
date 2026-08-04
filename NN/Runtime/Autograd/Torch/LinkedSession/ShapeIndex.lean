@@ -101,10 +101,10 @@ PyTorch comparison: `torch.nn.functional.max_pool2d` (for NCHW-like layouts, her
 def maxPool2d {α : Type} (s : SessionIR α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  IO (TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+  IO (TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
     .scalar)))) :=
   commitGraphM (α := α) s
-    (β := TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+    (β := TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
       .scalar))))
     (fun {Γ} {ss} xv nat g => do
       let (v, st') ← runGraphM (α := α) (Γ := Γ)
@@ -125,10 +125,10 @@ pooling window with inverse-temperature `beta` and returning the expected value.
 def smoothMaxPool2d {α : Type} (s : SessionIR α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) (beta : α) :
-  IO (TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+  IO (TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
     .scalar)))) :=
   commitGraphM (α := α) s
-    (β := TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+    (β := TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
       .scalar))))
     (fun {Γ} {ss} xv nat g => do
       let (v, st') ← runGraphM (α := α) (Γ := Γ)
@@ -148,10 +148,10 @@ PyTorch comparison: `torch.nn.functional.avg_pool2d` (for NCHW-like layouts, her
 def avgPool2d {α : Type} (s : SessionIR α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (x : TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  IO (TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+  IO (TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
     .scalar)))) :=
   commitGraphM (α := α) s
-    (β := TensorRef α (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+    (β := TensorRef α (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
       .scalar))))
     (fun {Γ} {ss} xv nat g => do
       let (v, st') ← runGraphM (α := α) (Γ := Γ)
@@ -619,7 +619,7 @@ def gatherVecNat {α : Type} (s : SessionIR α) [Add α] [Zero α] [DecidableEq 
   commitGraphM (α := α) s (β := TensorRef α (.dim k .scalar)) (fun {Γ} {ss} xv nat g => do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
       (Runtime.Autograd.Compiled.GraphM.gatherVecNat (α := α) (Γ := Γ) (n := n) (k := k) { id :=
-        x.id } idx)
+        x.id } (fun _ => idx))
       ss g
     let ⟨ss', g'⟩ := st'
     let st1 : SessionIRState α := { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
@@ -638,7 +638,7 @@ def gatherRowsNat {α : Type} (s : SessionIR α) [Add α] [Zero α] [DecidableEq
     do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
       (Runtime.Autograd.Compiled.GraphM.gatherRowsNat (α := α) (Γ := Γ) (rows := rows) (cols :=
-        cols) (k := k) { id := x.id } idx)
+        cols) (k := k) { id := x.id } (fun _ => idx))
       ss g
     let ⟨ss', g'⟩ := st'
     let st1 : SessionIRState α := { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }

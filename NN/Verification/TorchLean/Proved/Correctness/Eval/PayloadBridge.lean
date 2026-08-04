@@ -317,14 +317,14 @@ theorem evalConv2D_from_paramStore
         (DVal.mk (α := α) outShape
           (Spec.conv2dSpec (α := α) (layer := cfg.spec) (input := x))) := by
   have hInfer :
-      OpContracts.inferConv2dCHWOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
+      OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
           cfg.padding (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) =
         Except.ok
           (.dim cfg.outC
             (.dim (Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding)
               (.dim (Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding) .scalar))) := by
-    simp [OpContracts.inferConv2dCHWOutShape, OpContracts.checkPositive,
-      OpContracts.conv2dCHWOutShape, OpContracts.slideOutPad, cfg.hIn, cfg.hKH,
+    simp [OpContracts.inferConv2dOutShape, OpContracts.checkPositive,
+      OpContracts.inferConvOutShape, Shape.toList, Shape.ofList, OpContracts.inferSlidingWindowDims, OpContracts.inferSlidingWindowDims.go, OpContracts.slideOutPad, cfg.hIn, cfg.hKH,
       cfg.hKW, cfg.hStride, hHeight, hWidth, Bind.bind, Except.bind, Pure.pure,
       Except.pure]
   simp [Graph.evalConv2D,
@@ -415,7 +415,7 @@ theorem evalAt_const_from_paramStore_of_getNode
         (vals := vals) (i := i)
       =
       Except.ok (DVal.mk (α := α) s (Tensor.unflattenSpec (α := α) (s := s) v)) := by
-  simp [Graph.evalAt, hNode,
+  simp [Graph.evalAt, Graph.evalNode, hNode,
     evalConst_from_paramStore (ps := ps) (id := id) (s := s) (v := v) hStore,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
@@ -435,7 +435,7 @@ theorem evalAt_const_missing_from_paramStore_of_getNode
         (vals := vals) (i := i)
       =
       Except.error s!"IR eval: missing const payload for node {id}" := by
-  simp [Graph.evalAt, hNode,
+  simp [Graph.evalAt, Graph.evalNode, hNode,
     evalConst_missing_from_paramStore (ps := ps) (id := id) (s := s) hMissing,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
@@ -469,7 +469,7 @@ theorem evalAt_linear_from_paramStore_of_getNode
         (DVal.mk (α := α) (.dim outDim .scalar)
           (Tensor.addSpec (α := α)
             (Spec.matVecMulSpec (α := α) (m := outDim) (n := inDim) W x) b)) := by
-  simp [Graph.evalAt, hNode, Graph.evalLinear,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalLinear,
     payloadOfParamStore_linear?_some (ps := ps) (id := id)
       ({ m := outDim, n := inDim, w := W, b := b } :
         NN.MLTheory.CROWN.Graph.LinParams α) hStore,
@@ -494,7 +494,7 @@ theorem evalAt_linear_missing_from_paramStore_of_getNode
         (vals := vals) (i := i)
       =
       Except.error s!"IR eval: missing linear payload for node {id}" := by
-  simp [Graph.evalAt, hNode, Graph.evalLinear,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalLinear,
     payloadOfParamStore_linear?_none (ps := ps) (id := id) hMissing,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
   rfl
@@ -543,24 +543,24 @@ theorem evalAt_conv2d_from_paramStore_of_getNode
     · exfalso
       simp [Graph.expectShape, DVal.shape, hEq] at hParent
   have hInfer :
-      OpContracts.inferConv2dCHWOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
+      OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
           cfg.padding vals[pId]!.fst =
         Except.ok
           (.dim cfg.outC
             (.dim (Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding)
               (.dim (Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding) .scalar))) := by
-    change OpContracts.inferConv2dCHWOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
+    change OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
         cfg.padding vals[pId]!.shape =
       Except.ok
         (.dim cfg.outC
           (.dim (Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding)
             (.dim (Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding) .scalar)))
     rw [hParentShape]
-    simp [OpContracts.inferConv2dCHWOutShape, OpContracts.checkPositive,
-      OpContracts.conv2dCHWOutShape, OpContracts.slideOutPad, cfg.hIn, cfg.hKH,
+    simp [OpContracts.inferConv2dOutShape, OpContracts.checkPositive,
+      OpContracts.inferConvOutShape, Shape.toList, Shape.ofList, OpContracts.inferSlidingWindowDims, OpContracts.inferSlidingWindowDims.go, OpContracts.slideOutPad, cfg.hIn, cfg.hKH,
       cfg.hKW, cfg.hStride, hHeight, hWidth, Bind.bind, Except.bind, Pure.pure,
       Except.pure]
-  simp [Graph.evalAt, hNode, Graph.evalConv2D,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalConv2D,
     payloadOfParamStore_conv2d?_some (ps := ps) (id := id) cfg hStore,
     irConv2DOfGraphParams, hParent, hInfer, shapeBNe_refl,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
@@ -589,7 +589,7 @@ theorem evalAt_conv2d_missing_from_paramStore_of_getNode
         (vals := vals) (i := i)
       =
       Except.error s!"IR eval: missing conv2d payload for node {id}" := by
-  simp [Graph.evalAt, hNode, Graph.evalConv2D,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalConv2D,
     payloadOfParamStore_conv2d?_none (ps := ps) (id := id) hMissing,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
   rfl
@@ -630,7 +630,7 @@ theorem evalAt_batchNorm2dNchwEval_from_paramStore_of_getNode
   have hShapeFst :
       vals[pId]!.fst = Shape.dim n (Shape.dim c (Shape.dim h (Shape.dim w Shape.scalar))) := by
     simpa [DVal.shape] using hParentShape
-  simp [Graph.evalAt, hNode, Graph.evalBatchNorm2DNchwEval,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalBatchNorm2DNchwEval,
     payloadOfParamStore_batchNorm2dNchwEval?_some (ps := ps) (id := id)
       ({ c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps } :
         NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α) hStore,
@@ -656,7 +656,7 @@ theorem evalAt_batchNorm2dNchwEval_missing_from_paramStore_of_getNode
         (vals := vals) (i := i)
       =
       Except.error s!"IR eval: missing batch_norm2d_nchw_eval payload for node {id}" := by
-  simp [Graph.evalAt, hNode, Graph.evalBatchNorm2DNchwEval,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalBatchNorm2DNchwEval,
     payloadOfParamStore_batchNorm2dNchwEval?_none (ps := ps) (id := id) hMissing,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
   rfl

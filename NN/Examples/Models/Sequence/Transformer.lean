@@ -85,7 +85,7 @@ def sample (corpus : String) : SupervisedSample Float σ τ :=
 
 /-- Train the Transformer encoder with the public `Trainer` surface. -/
 def train (opts : Options) (corpusFlags : RealData.TextCorpusFlags)
-    (flags : ModelZoo.LoggedTrainFlags) : IO Unit := do
+    (flags : CLI.Training.RunOptions) : IO Unit := do
   let corpus ← RealData.TextCorpusFlags.read exeName corpusFlags
   let trainer :=
     Trainer.new model <|
@@ -95,7 +95,7 @@ def train (opts : Options) (corpusFlags : RealData.TextCorpusFlags)
   let trainData := Data.floatSamples [sample corpus]
   let trained ← trainer.train
     trainData
-    (ModelZoo.LoggedTrainFlags.trainOptions flags
+    (CLI.Training.RunOptions.toTrainerOptions flags
       (title := "Transformer text training")
       (notes := #[s!"corpus={corpusFlags.path}"]))
   trained.printSummary

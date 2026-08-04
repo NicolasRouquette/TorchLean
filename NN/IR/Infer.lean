@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+public import NN.IR.HardMask
 public import NN.IR.OpContracts
 public import NN.Spec.Core.TensorReductionShape
 
@@ -108,19 +109,19 @@ def inferNodeOutShape (n : Node) (parentShapes : List Shape) : Except String Sha
       | _ => throw s!"{n.kind.tag}: expected 2 parents"
   | .maxPool2d kH kW stride =>
       match parentShapes with
-      | [s] => OpContracts.inferPool2dCHWOutShape "max_pool2d" kH kW stride s
+      | [s] => OpContracts.inferPool2dOutShape "max_pool2d" kH kW stride 0 s
       | _ => throw "max_pool2d: expected 1 parent"
   | .maxPool2dPad kH kW stride padding =>
       match parentShapes with
-      | [s] => OpContracts.inferPool2dCHWOutShapePad "max_pool2d_pad" kH kW stride padding s
+      | [s] => OpContracts.inferPool2dOutShape "max_pool2d_pad" kH kW stride padding s
       | _ => throw "max_pool2d_pad: expected 1 parent"
   | .avgPool2d kH kW stride =>
       match parentShapes with
-      | [s] => OpContracts.inferPool2dCHWOutShape "avg_pool2d" kH kW stride s
+      | [s] => OpContracts.inferPool2dOutShape "avg_pool2d" kH kW stride 0 s
       | _ => throw "avg_pool2d: expected 1 parent"
   | .avgPool2dPad kH kW stride padding =>
       match parentShapes with
-      | [s] => OpContracts.inferPool2dCHWOutShapePad "avg_pool2d_pad" kH kW stride padding s
+      | [s] => OpContracts.inferPool2dOutShape "avg_pool2d_pad" kH kW stride padding s
       | _ => throw "avg_pool2d_pad: expected 1 parent"
   | .broadcastTo s₁ s₂ =>
       match parentShapes with
@@ -168,7 +169,7 @@ def inferNodeOutShape (n : Node) (parentShapes : List Shape) : Except String Sha
       | _ => throw "linear: expected 1 parent"
   | .conv2d inC outC kH kW stride padding =>
       match parentShapes with
-      | [s] => OpContracts.inferConv2dCHWOutShape inC outC kH kW stride padding s
+      | [s] => OpContracts.inferConv2dOutShape inC outC kH kW stride padding s
       | _ => throw "conv2d: expected 1 parent"
   | .batchNorm2dNchwEval channels =>
       match parentShapes with
@@ -182,6 +183,12 @@ def inferNodeOutShape (n : Node) (parentShapes : List Shape) : Except String Sha
       match parentShapes with
       | [s] => OpContracts.checkAxisValid axis s *> pure s
       | _ => throw "softmax: expected 1 parent"
+  | .hardMaskedSoftmax mask =>
+      match parentShapes with
+      | [s] =>
+          let _ ← NN.IR.HardMask.validateAs mask s
+          pure s
+      | _ => throw "hard_masked_softmax: expected 1 parent"
   | .layernorm axis =>
       match parentShapes with
       | [s] =>

@@ -370,8 +370,8 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool2d_fwd(
     lean_internal_panic("torchlean_cuda_maxpool2d_fwd: kH/kW must be > 0");
   }
 
-  uint32_t outH = outDim(inH, kH, stride, padding);
-  uint32_t outW = outDim(inW, kW, stride, padding);
+  uint32_t outH = poolOutDim(inH, kH, stride, padding);
+  uint32_t outW = poolOutDim(inW, kW, stride, padding);
 
   size_t inElems = checked_mul3_size((size_t)inC, (size_t)inH, (size_t)inW, "torchlean_cuda_conv_pool: input size overflow");
   size_t outElems = checked_mul3_size((size_t)inC, (size_t)outH, (size_t)outW, "torchlean_cuda_conv_pool: output size overflow");
@@ -423,8 +423,8 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_maxpool2d_bwd(
     lean_internal_panic("torchlean_cuda_maxpool2d_bwd: kH/kW must be > 0");
   }
 
-  uint32_t outH = outDim(inH, kH, stride, padding);
-  uint32_t outW = outDim(inW, kW, stride, padding);
+  uint32_t outH = poolOutDim(inH, kH, stride, padding);
+  uint32_t outW = poolOutDim(inW, kW, stride, padding);
 
   size_t inElems = checked_mul3_size((size_t)inC, (size_t)inH, (size_t)inW, "torchlean_cuda_conv_pool: input size overflow");
   size_t outElems = checked_mul3_size((size_t)inC, (size_t)outH, (size_t)outW, "torchlean_cuda_conv_pool: output size overflow");
@@ -1904,8 +1904,8 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_fwd(
     lean_internal_panic("torchlean_cuda_smooth_maxpool2d_fwd: kH/kW must be > 0");
   }
 
-  uint32_t outH = outDim(inH, kH, stride, padding);
-  uint32_t outW = outDim(inW, kW, stride, padding);
+  uint32_t outH = poolOutDim(inH, kH, stride, padding);
+  uint32_t outW = poolOutDim(inW, kW, stride, padding);
 
   size_t inElems = checked_mul3_size((size_t)inC, (size_t)inH, (size_t)inW, "torchlean_cuda_conv_pool: input size overflow");
   size_t outElems = checked_mul3_size((size_t)inC, (size_t)outH, (size_t)outW, "torchlean_cuda_conv_pool: output size overflow");
@@ -1974,8 +1974,8 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_smooth_maxpool2d_bwd(
     lean_internal_panic("torchlean_cuda_smooth_maxpool2d_bwd: kH/kW must be > 0");
   }
 
-  uint32_t outH = outDim(inH, kH, stride, padding);
-  uint32_t outW = outDim(inW, kW, stride, padding);
+  uint32_t outH = poolOutDim(inH, kH, stride, padding);
+  uint32_t outW = poolOutDim(inW, kW, stride, padding);
 
   size_t inElems = checked_mul3_size((size_t)inC, (size_t)inH, (size_t)inW, "torchlean_cuda_conv_pool: input size overflow");
   size_t outElems = checked_mul3_size((size_t)inC, (size_t)outH, (size_t)outW, "torchlean_cuda_conv_pool: output size overflow");
@@ -2134,8 +2134,8 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_avgpool2d_fwd(
     lean_internal_panic("torchlean_cuda_avgpool2d_fwd: kH/kW must be > 0");
   }
 
-  uint32_t outH = outDim(inH, kH, stride, padding);
-  uint32_t outW = outDim(inW, kW, stride, padding);
+  uint32_t outH = poolOutDim(inH, kH, stride, padding);
+  uint32_t outW = poolOutDim(inW, kW, stride, padding);
 
   size_t inElems = checked_mul3_size((size_t)inC, (size_t)inH, (size_t)inW, "torchlean_cuda_conv_pool: input size overflow");
   size_t outElems = checked_mul3_size((size_t)inC, (size_t)outH, (size_t)outW, "torchlean_cuda_conv_pool: output size overflow");
@@ -2184,8 +2184,8 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_avgpool2d_bwd(
     lean_internal_panic("torchlean_cuda_avgpool2d_bwd: kH/kW must be > 0");
   }
 
-  uint32_t outH = outDim(inH, kH, stride, padding);
-  uint32_t outW = outDim(inW, kW, stride, padding);
+  uint32_t outH = poolOutDim(inH, kH, stride, padding);
+  uint32_t outW = poolOutDim(inW, kW, stride, padding);
 
   size_t inElems = checked_mul3_size((size_t)inC, (size_t)inH, (size_t)inW, "torchlean_cuda_conv_pool: input size overflow");
   size_t outElems = checked_mul3_size((size_t)inC, (size_t)outH, (size_t)outW, "torchlean_cuda_conv_pool: output size overflow");

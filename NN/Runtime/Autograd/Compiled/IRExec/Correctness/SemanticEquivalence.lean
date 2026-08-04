@@ -42,8 +42,6 @@ This module ties the per-op correctness lemmas together into the recursive prese
 
 - The proof mirrors `buildFrom` branch-by-branch. It is verbose, but this "same shape as code"
   style makes regressions easier to diagnose when new ops are added.
-- Heartbeat limits are explicit because elaboration cost here is dominated by large dependent
-  pattern matches and branch-specific simp normalizations.
 - This is one of the slower proof modules in TorchLean. The theorem recursively walks an IR graph,
   dispatches every supported node kind, and maintains equality between an untyped IR value table and
   a typed compiled context. Even simple operator branches can become expensive once shape equality,
@@ -70,7 +68,6 @@ open Proofs.Autograd.Algebra
 open NN.IR
 open IRExec
 
-set_option maxHeartbeats 12000000 in
 /--
 Recursive semantic preservation lemma for `buildFrom`.
 
@@ -297,6 +294,11 @@ private theorem buildFrom_preserves_denotation
               exact buildFrom_denoteAllFrom_softmax (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (n := n)
                 (axis := axis) hN hk hi hBuild0 tail
+          | hardMaskedSoftmax mask =>
+              exact buildFrom_denoteAllFrom_hardMaskedSoftmax
+                (α := α) (g := g) (payload := payload) (gd := gd) (i := i)
+                (st' := st') (x := x) (n := n) (mask := mask)
+                hN hk hi hBuild0 tail
             | layernorm axis =>
                 exact buildFrom_denoteAllFrom_layernorm (α := α) (g := g) (payload := payload)
                   (gd := gd) (i := i) (st' := st') (x := x) (n := n) (axis := axis)
@@ -406,7 +408,7 @@ theorem execGraphOfIR_semantics_eq
                   NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                       (input := NN.IR.DVal.mk (α := α) n0.outShape x) (vals := #[]) (i := 0) =
                     .ok (NN.IR.DVal.mk (α := α) n0.outShape x) := by
-                simp [NN.IR.Graph.evalAt, hN0, hk0, NN.IR.Graph.expectShape,
+                simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN0, hk0, NN.IR.Graph.expectShape,
                   NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                   throw_eq_error]
                 rfl

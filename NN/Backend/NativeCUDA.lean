@@ -26,7 +26,7 @@ namespace NativeCUDA
 
 /-- Build a checked native-CUDA capsule with explicit FFI, value, VJP, and layout contracts. -/
 def nativeCapsule
-    (name : String) (op : BackendOp) (specName valueSummary vjpSummary : String)
+    (name : String) (op : BackendOp) (valueSummary vjpSummary : String)
     (vjpMode : VJPMode := .backendVJP) : KernelCapsule :=
   { name
     op
@@ -44,13 +44,14 @@ def nativeCapsule
         summary := "CUDA buffers are contiguous flat float32 buffers."
         evidence := .runtimeGuard "flat row-major Cuda.Buffer layout checks" }
     valueContract :=
-      { claim := .valueRefinement op specName
+      { claim := .valueRefinement op
         summary := valueSummary
         evidence := .testSuite "NN.Tests.Runtime.Cuda.Suite" }
     vjpContract :=
-      { claim := .vjpRefinement op specName vjpMode
-        summary := vjpSummary
-        evidence := .testSuite "NN.Tests.Runtime.Cuda.Suite" }
+      match vjpMode with
+      | .none => ContractDescriptor.vjpUnavailable op vjpSummary
+      | mode => ContractDescriptor.tested
+          (.vjpRefinement op mode) vjpSummary "NN.Tests.Runtime.Cuda.Suite"
     numericalPolicy :=
       { rounding := .nearestEven
         subnormals := .implementationDefined
@@ -63,7 +64,6 @@ def nativePointwiseCapsule (op : BackendOp) : KernelCapsule :=
   nativeCapsule
     s!"native_cuda.{op.name}"
     op
-    s!"Spec.{op.name}"
     s!"Native CUDA `{op.name}` follows the pointwise tensor contract."
     s!"Native CUDA `{op.name}` VJP is checked through runtime autograd tests."
 
@@ -72,7 +72,6 @@ def nativeReductionCapsule (op : BackendOp) : KernelCapsule :=
   { nativeCapsule
     s!"native_cuda.{op.name}"
     op
-    s!"IR.{op.name} / Spec reduction contract"
     s!"Native CUDA `{op.name}` follows the explicit reduction shape contract."
     s!"Native CUDA `{op.name}` adjoint is checked through runtime gradient tests." with
     numericalPolicy.reduction := .implementationDefined }
@@ -83,9 +82,9 @@ This covers matrix products, affine layers, convolutions, losses, and average po
 parallel trees, fused multiply-add, cuBLAS/cuDNN algorithms, or architecture-specific schedules;
 the capsule therefore records the reduction as implementation-defined instead of pretending it is
 the reference left fold. -/
-def nativeAccumulationCapsule (name : String) (op : BackendOp) (specName valueSummary vjpSummary :
+def nativeAccumulationCapsule (name : String) (op : BackendOp) (valueSummary vjpSummary :
     String) (vjpMode : VJPMode := .backendVJP) : KernelCapsule :=
-  { nativeCapsule name op specName valueSummary vjpSummary vjpMode with
+  { nativeCapsule name op valueSummary vjpSummary vjpMode with
     numericalPolicy.reduction := .implementationDefined }
 
 /-- Build the standard native-CUDA capsule for a shape or layout transformation. -/
@@ -93,16 +92,14 @@ def nativeViewCapsule (op : BackendOp) : KernelCapsule :=
   nativeCapsule
     s!"native_cuda.{op.name}"
     op
-    s!"IR.{op.name} shape/layout contract"
     s!"Native CUDA `{op.name}` follows the explicit shape/layout contract."
     s!"Native CUDA `{op.name}` adjoint is checked through runtime gradient tests."
 
 /-- Build a native-CUDA forward-only capsule with no registered reverse derivative. -/
-def nativeForwardOnlyCapsule (op : BackendOp) (specName valueSummary : String) : KernelCapsule :=
+def nativeForwardOnlyCapsule (op : BackendOp) (valueSummary : String) : KernelCapsule :=
   nativeCapsule
     s!"native_cuda.{op.name}"
     op
-    specName
     valueSummary
     s!"Native CUDA `{op.name}` is a forward-only capsule with no registered VJP."
     .none
@@ -112,7 +109,6 @@ def nativeConvPoolCapsule (op : BackendOp) : KernelCapsule :=
   nativeCapsule
     s!"native_cuda.{op.name}"
     op
-    s!"Spec.{op.name} / channel-first convolution-pooling contract"
     s!"Native CUDA `{op.name}` follows the channel-first runtime contract."
     s!"Native CUDA `{op.name}` VJP is checked by CUDA runtime coverage."
 
@@ -126,7 +122,6 @@ def matmul : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.matmul"
     .matmul
-    "Spec.matmul / IR.matmul"
     "Matrix products agree with the row-major runtime contract."
     "Backward products are checked through autograd/runtime parity."
 
@@ -135,7 +130,6 @@ def relu : KernelCapsule :=
   nativeCapsule
     "native_cuda.relu"
     .relu
-    "Spec.relu / pointwise max(x, 0)"
     "ReLU forward follows the pointwise activation contract."
     "ReLU VJP is checked through runtime autograd tests."
 
@@ -144,7 +138,6 @@ def gelu : KernelCapsule :=
   nativeCapsule
     "native_cuda.gelu"
     .gelu
-    "Spec.gelu / pointwise Gaussian error linear unit"
     "GELU forward follows the documented runtime approximation contract."
     "GELU VJP is checked through runtime autograd tests."
 
@@ -185,7 +178,6 @@ def logSoftmax : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.log_softmax"
     .logSoftmax
-    "Spec.logSoftmax"
     "Log-softmax kernels follow the stable row/axis normalization contract."
     "Log-softmax VJPs are checked through runtime autograd tests."
 
@@ -194,9 +186,18 @@ def softmax : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.softmax"
     .softmax
-    "Spec.softmax"
     "Softmax kernels follow the row/axis normalization contract."
     "Softmax VJPs are checked through runtime autograd tests."
+
+/-- Native CUDA hard-masked row softmax. -/
+def hardMaskedSoftmax : KernelCapsule :=
+  nativeAccumulationCapsule
+    "native_cuda.hard_masked_softmax"
+    .hardMaskedSoftmax
+    ("The kernel normalizes over allowed entries and writes zeros at blocked coordinates. " ++
+      "A fully blocked row returns zeros.")
+    ("The local VJP uses the softmax Jacobian evaluated at the masked output; blocked " ++
+      "coordinates therefore receive zero gradient.")
 
 /-- Native-CUDA sum reduction. -/
 def reduceSum : KernelCapsule := nativeReductionCapsule .reduceSum
@@ -222,14 +223,12 @@ def scatterAdd : KernelCapsule := nativeViewCapsule .scatterAdd
 def randUniform : KernelCapsule :=
   nativeForwardOnlyCapsule
     .randUniform
-    "IR.randUniform"
     "Native CUDA deterministic random-uniform buffers follow the seeded runtime contract."
 
 /-- Native-CUDA seeded Bernoulli-mask generation. -/
 def bernoulliMask : KernelCapsule :=
   nativeForwardOnlyCapsule
     .bernoulliMask
-    "IR.bernoulliMask"
     "Native CUDA deterministic Bernoulli masks follow the seeded runtime contract."
 
 /-- Native CUDA layer normalization. -/
@@ -237,7 +236,6 @@ def layerNorm : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.layer_norm"
     .layerNorm
-    "Spec.layerNorm"
     "LayerNorm follows the per-row normalization contract."
     "LayerNorm VJP is checked by CUDA runtime coverage."
 
@@ -246,7 +244,6 @@ def batchNorm : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.batch_norm"
     .batchNorm
-    "Spec.batchNorm"
     "BatchNorm follows the channel-first normalization contract."
     "BatchNorm VJP is checked by CUDA runtime coverage."
 
@@ -255,7 +252,6 @@ def conv : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.conv"
     .conv
-    "Spec.conv"
     "Convolution follows the generic channel-first runtime contract."
     "Convolution VJP is checked by CUDA runtime coverage."
 
@@ -264,7 +260,6 @@ def convTranspose : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.conv_transpose"
     .convTranspose
-    "Spec.convTranspose"
     "Transpose convolution follows the generic channel-first runtime contract."
     "Transpose-convolution VJP is checked by CUDA runtime coverage."
 
@@ -277,7 +272,6 @@ def smoothMaxPool : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.smooth_max_pool"
     .smoothMaxPool
-    "Spec.smoothMaxPool"
     "Smooth max pooling uses finite nonzero beta and stable max/min-shifted window weights."
     "Forward and VJP stability are checked against the reference runtime at overflow-scale inputs."
 
@@ -286,7 +280,6 @@ def avgPool : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.avg_pool"
     .avgPool
-    "Spec.avgPool"
     "Average-pooling follows the channel-first window contract."
     "Average-pooling VJP is checked by CUDA runtime coverage."
 
@@ -295,7 +288,6 @@ def linear : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.linear"
     .linear
-    "Spec.linear"
     "Linear layer kernels follow the matvec/matmul plus bias contract."
     "Linear VJP is checked by CUDA runtime coverage."
 
@@ -304,7 +296,6 @@ def mseLoss : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.mse_loss"
     .mseLoss
-    "Spec.mseLoss"
     "MSE loss follows the mean squared residual contract."
     "MSE VJP is checked by CUDA runtime coverage."
 
@@ -313,7 +304,6 @@ def fftFno : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.fft_fno"
     .fftFno
-    "packed rFFT and FNO spectral-convolution contracts"
     "Packed rFFT/irFFT and spectral convolution follow the documented half-spectrum contract."
     "Spectral-convolution VJPs are checked against finite differences."
 
@@ -322,7 +312,6 @@ def selectiveScan : KernelCapsule :=
   nativeAccumulationCapsule
     "native_cuda.selective_scan"
     .selectiveScan
-    "diagonal selective-scan recurrence contract"
     "Selective scan forward follows the diagonal recurrence contract."
     "No generic VJP capsule is registered yet."
     .none
@@ -352,6 +341,7 @@ def capsules : List KernelCapsule :=
   , safeLog
   , logSoftmax
   , softmax
+  , hardMaskedSoftmax
   , reduceSum
   , reduceMean
   , reshape

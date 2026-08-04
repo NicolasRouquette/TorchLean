@@ -133,7 +133,10 @@ For the broader backend design, read
 [Backend Selection and Trust]({{ '/blueprint/Runtime___-Autograd___-and-Interop/Choosing-How-A-Model-Runs/' | relative_url }}).
 For long CUDA training runs, model commands also expose allocator telemetry through
 `--cuda-mem-watch N`; longer runs choose a small default cadence so device-memory behavior is visible
-while the example is running.
+while the example is running. The report separates live tensor storage from released blocks kept for
+reuse. Set `TORCHLEAN_CUDA_CACHE_CAP_BYTES` before launch to bound that reuse cache; the
+[GPU chapter]({{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }})
+shows the command and explains the allocator fields.
 
 The command registry is:
 

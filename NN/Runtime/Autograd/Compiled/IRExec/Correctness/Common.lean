@@ -377,7 +377,8 @@ theorem evalAt_matmul_ok
     simp only [MatmulOperands.leftDVal, MatmulOperands.rightDVal,
       MatmulOperands.resultDVal, MatmulOperands.resultAtShape,
       NN.IR.DVal.mk, NN.IR.DVal.shape, NN.IR.DVal.tensor] at hGetA hGetB hOut ⊢ <;>
-    simp [NN.IR.Graph.evalAt, hN, hk, hp, hGetA, hGetB, hOut, throw_eq_error,
+    simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput,
+      hN, hk, hp, hGetA, hGetB, hOut, throw_eq_error,
       NN.IR.DVal.mk, NN.IR.DVal.shape, NN.IR.DVal.tensor]
 
 /--
@@ -492,7 +493,8 @@ theorem evalAt_axisReduction_ok
   cases hShape
   have hTensor : vals[pId]!.snd = pT := eq_of_heq hTensorHeq
   cases operation <;>
-    simp [AxisReductionKind.toOpKind, AxisReductionKind.denote, NN.IR.Graph.evalAt,
+    simp [AxisReductionKind.toOpKind, AxisReductionKind.denote, NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput,
+      NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput,
       hN, hk, hp, throw_eq_error, hAxis, hOut, hTensor, Pure.pure, Except.pure]
 
 /-- `evalAt_axisReduction_ok` specialized to summation. -/

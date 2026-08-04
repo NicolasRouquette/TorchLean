@@ -24,7 +24,7 @@ After `lake update`, their license files are available under `.lake/packages/` a
 | Batteries, Aesop, Qq, ProofWidgets, LeanSearchClient, importGraph, plausible, Cli, leansqlite, MD4Lean, BibtexQuery, UnicodeBasic | Lean ecosystem packages pulled directly or transitively for proofs, tactics, widgets, documentation, dependency analysis, and command-line tooling. | Their license files are fetched with the Lake package cache. |
 | doc-gen4 | Generates the API documentation built with `lake build NN:docs`. | Source project: `leanprover/doc-gen4`, Apache-2.0 licensed. |
 | Verso, VersoBlueprint, SubVerso, Illuminate | Build the TorchLean guide/blueprint documentation. | Upstream Lean documentation tooling. |
-| Comparator, lean4export, Lean4Checker | Optional proof-checking/export infrastructure used by verifier and sandboxed-checker workflows. | Upstream Lean projects pinned in the Lake manifests. |
+| Lean4Checker | Optional kernel-level checking infrastructure used by verification workflows. | Upstream Lean project pinned in the Lake manifests. |
 | CUDA toolkit, cuBLAS, cuFFT | Optional external NVIDIA libraries used when building with `lake build -K cuda=true`. | Users provide their own CUDA installation. |
 | PyTorch, ATen, libtorch, ONNX tooling | Optional runtime/import/export providers for checkpoints, graph capture, IR exchange, and fast forward kernels. | PyTorch/ATen/libtorch and ONNX remain external systems; TorchLean checks imported JSON/IR artifacts and documents runtime trust boundaries separately. |
 | Jekyll and Ruby gems | Website build tooling for `home_page/`. | Used to build the public site. |

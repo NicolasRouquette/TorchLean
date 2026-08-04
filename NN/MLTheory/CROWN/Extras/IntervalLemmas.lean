@@ -5,7 +5,12 @@ Authors: TorchLean Team
 -/
 module
 
+public import Mathlib.Analysis.Calculus.Deriv.MeanValue
 public import Mathlib.Analysis.SpecialFunctions.Pow.Real
+public import Mathlib.Analysis.SpecialFunctions.Sigmoid
+public import Mathlib.Analysis.SpecialFunctions.Trigonometric.DerivHyp
+public import NN.Floats.Interval.RealBounds
+public import NN.MLTheory.CROWN.BoundOps
 
 /-!
 # Interval arithmetic lemmas (ℝ)
@@ -22,6 +27,48 @@ It is primarily intended as a small toolbox for proof scripts and examples; it l
 
 
 namespace NN.MLTheory.CROWN.IntervalLemmas
+
+/-! ### Monotone nonlinear functions -/
+
+/-- The real sigmoid written in the form used by `NonlinearBoundOps`. -/
+noncomputable def realSigmoid (x : ℝ) : ℝ :=
+  1 / (1 + Real.exp (-x))
+
+/-- The real sigmoid is monotone. -/
+theorem monotone_realSigmoid : Monotone realSigmoid := by
+  intro a b hab
+  simpa [realSigmoid, Real.sigmoid, div_eq_mul_inv] using Real.sigmoid_monotone hab
+
+/-- Derivative of real hyperbolic tangent. -/
+theorem hasDerivAt_real_tanh (x : ℝ) :
+    HasDerivAt Real.tanh (1 / (Real.cosh x) ^ 2) x := by
+  have hdiv :
+      HasDerivAt (Real.sinh * Real.cosh⁻¹)
+        ((Real.cosh x * Real.cosh x - Real.sinh x * Real.sinh x) /
+          (Real.cosh x) ^ 2) x := by
+    simpa [div_eq_mul_inv] using
+      (Real.hasDerivAt_sinh x).div (Real.hasDerivAt_cosh x) (Real.cosh_pos x).ne'
+  have htanh :
+      HasDerivAt Real.tanh
+        ((Real.cosh x * Real.cosh x - Real.sinh x * Real.sinh x) /
+          (Real.cosh x) ^ 2) x := by
+    convert hdiv using 1
+    funext y
+    simp [Real.tanh_eq_sinh_div_cosh, div_eq_mul_inv]
+  have hIdentity : Real.cosh x * Real.cosh x - Real.sinh x * Real.sinh x = 1 := by
+    simpa [pow_two, mul_assoc, mul_left_comm, mul_comm] using Real.cosh_sq_sub_sinh_sq x
+  simpa [hIdentity, div_eq_mul_inv, one_div, pow_two, mul_assoc, mul_left_comm, mul_comm]
+    using htanh
+
+/-- The real hyperbolic tangent is strictly monotone. -/
+theorem strictMono_real_tanh : StrictMono Real.tanh := by
+  refine strictMono_of_deriv_pos fun x ↦ ?_
+  rw [(hasDerivAt_real_tanh x).deriv]
+  exact one_div_pos.mpr (sq_pos_of_pos (Real.cosh_pos x))
+
+/-- The real hyperbolic tangent is monotone. -/
+theorem monotone_real_tanh : Monotone Real.tanh :=
+  strictMono_real_tanh.monotone
 
 /-! ### Basic Interval Membership -/
 
@@ -53,133 +100,6 @@ theorem interval_sub_sound {x y a b c d : ℝ}
   constructor
   · exact sub_le_sub hx.1 hy.2
   · exact sub_le_sub hx.2 hy.1
-
-/-! ### Multiplication Interval Soundness -/
-
-/-- Helper: minimum of four values -/
-def minOfFour (p q r s : ℝ) : ℝ := min (min p q) (min r s)
-
-/-- Helper: maximum of four values -/
-def maxOfFour (p q r s : ℝ) : ℝ := max (max p q) (max r s)
-
-/-- For multiplication, the enclosing interval is
-
-$$
-[\min(ac,ad,bc,bd),\max(ac,ad,bc,bd)].
-$$
-
-The proof splits into nine cases according to the signs of the interval endpoints:
-
-1. $a\ge 0,\ c\ge 0$: $\min=ac,\ \max=bd$.
-2. $a\ge 0,\ c<0\le d$: $\min=bc,\ \max=bd$.
-3. $a\ge 0,\ d<0$: $\min=bc,\ \max=ad$.
-4. $a<0\le b,\ c\ge 0$: $\min=ad,\ \max=bd$.
-5. $a<0\le b,\ c<0\le d$: $\min=\min(ad,bc),\ \max=\max(ac,bd)$.
-6. $a<0\le b,\ d<0$: $\min=bc,\ \max=ac$.
-7. $b<0,\ c\ge 0$: $\min=ad,\ \max=bc$.
-8. $b<0,\ c<0\le d$: $\min=ad,\ \max=ac$.
-9. $b<0,\ d<0$: $\min=bd,\ \max=ac$.
-
-The extrema of the bilinear function $xy$ over $[a,b]\times[c,d]$ occur at the corners.
--/
-theorem interval_mul_sound {x y a b c d : ℝ}
-    (hx : inInterval x a b) (hy : inInterval y c d) :
-    inInterval (x * y) (minOfFour (a*c) (a*d) (b*c) (b*d)) (maxOfFour (a*c) (a*d) (b*c) (b*d)) := by
-  -- The key insight: for bilinear f(x,y) = xy over [a,b] × [c,d], extrema occur at corners.
-  -- For fixed y, f(x,y) = xy is linear in x, achieving min/max at x=a or x=b.
-  -- Similarly for fixed x. So global extrema are at corners.
-  unfold inInterval minOfFour maxOfFour
-  have hab : a ≤ b := le_trans hx.1 hx.2
-  have hcd : c ≤ d := le_trans hy.1 hy.2
-  constructor
-  · -- Lower bound: x*y ≥ min of corner products
-    -- Step 1: For fixed y, min over x∈[a,b] of xy is min(ay, by)
-    have h_xy_ge_min_ab : min (a*y) (b*y) ≤ x * y := by
-      by_cases hy_nonneg : 0 ≤ y
-      · -- y ≥ 0: min(ay, by) = ay since a ≤ b
-        have hmin_eq : min (a*y) (b*y) = a*y := min_eq_left (mul_le_mul_of_nonneg_right hab
-          hy_nonneg)
-        rw [hmin_eq]
-        exact mul_le_mul_of_nonneg_right hx.1 hy_nonneg
-      · -- y < 0: min(ay, by) = by since a ≤ b implies ay ≥ by
-        push Not at hy_nonneg
-        have hmin_eq : min (a*y) (b*y) = b*y := min_eq_right (mul_le_mul_of_nonpos_right hab
-          (le_of_lt hy_nonneg))
-        rw [hmin_eq]
-        exact mul_le_mul_of_nonpos_right hx.2 (le_of_lt hy_nonneg)
-    -- Step 2: Show minOfFour(...) ≤ min(ay, by)
-    have h_min4_le : min (min (a*c) (a*d)) (min (b*c) (b*d)) ≤ min (a*y) (b*y) := by
-      by_cases hy_nonneg : 0 ≤ y
-      · -- y ≥ 0: min(ay, by) = ay, need minOfFour ≤ ay
-        have hmin_ab : min (a*y) (b*y) = a*y := min_eq_left (mul_le_mul_of_nonneg_right hab
-          hy_nonneg)
-        rw [hmin_ab]
-        by_cases ha_nonneg : 0 ≤ a
-        · -- a ≥ 0, y ≥ 0: ac ≤ ay since c ≤ y
-          have : a*c ≤ a*y := mul_le_mul_of_nonneg_left hy.1 ha_nonneg
-          exact le_trans (le_trans (min_le_left _ _) (min_le_left _ _)) this
-        · -- a < 0, y ≥ 0: ad ≤ ay since y ≤ d and a < 0
-          push Not at ha_nonneg
-          have : a*d ≤ a*y := mul_le_mul_of_nonpos_left hy.2 (le_of_lt ha_nonneg)
-          exact le_trans (le_trans (min_le_left _ _) (min_le_right _ _)) this
-      · -- y < 0: min(ay, by) = by
-        push Not at hy_nonneg
-        have hmin_ab : min (a*y) (b*y) = b*y := min_eq_right (mul_le_mul_of_nonpos_right hab
-          (le_of_lt hy_nonneg))
-        rw [hmin_ab]
-        by_cases hb_nonneg : 0 ≤ b
-        · -- b ≥ 0, y < 0: bc ≤ by since c ≤ y and b ≥ 0
-          have : b*c ≤ b*y := mul_le_mul_of_nonneg_left hy.1 hb_nonneg
-          exact le_trans (le_trans (min_le_right _ _) (min_le_left _ _)) this
-        · -- b < 0, y < 0: bd ≤ by since y ≤ d and b < 0
-          push Not at hb_nonneg
-          have : b*d ≤ b*y := mul_le_mul_of_nonpos_left hy.2 (le_of_lt hb_nonneg)
-          exact le_trans (le_trans (min_le_right _ _) (min_le_right _ _)) this
-    exact le_trans h_min4_le h_xy_ge_min_ab
-  · -- Upper bound: x*y ≤ max of corner products
-    -- Step 1: For fixed y, max over x∈[a,b] of xy is max(ay, by)
-    have h_xy_le_max_ab : x * y ≤ max (a*y) (b*y) := by
-      by_cases hy_nonneg : 0 ≤ y
-      · -- y ≥ 0: max(ay, by) = by since a ≤ b
-        have hmax_eq : max (a*y) (b*y) = b*y := max_eq_right (mul_le_mul_of_nonneg_right hab
-          hy_nonneg)
-        rw [hmax_eq]
-        exact mul_le_mul_of_nonneg_right hx.2 hy_nonneg
-      · -- y < 0: max(ay, by) = ay since a ≤ b implies ay ≥ by
-        push Not at hy_nonneg
-        have hmax_eq : max (a*y) (b*y) = a*y := max_eq_left (mul_le_mul_of_nonpos_right hab
-          (le_of_lt hy_nonneg))
-        rw [hmax_eq]
-        exact mul_le_mul_of_nonpos_right hx.1 (le_of_lt hy_nonneg)
-    -- Step 2: Show max(ay, by) ≤ maxOfFour(...)
-    have h_max_le_max4 : max (a*y) (b*y) ≤ max (max (a*c) (a*d)) (max (b*c) (b*d)) := by
-      by_cases hy_nonneg : 0 ≤ y
-      · -- y ≥ 0: max(ay, by) = by, need by ≤ maxOfFour
-        have hmax_ab : max (a*y) (b*y) = b*y := max_eq_right (mul_le_mul_of_nonneg_right hab
-          hy_nonneg)
-        rw [hmax_ab]
-        by_cases hb_nonneg : 0 ≤ b
-        · -- b ≥ 0, y ≥ 0: by ≤ bd since y ≤ d
-          have : b*y ≤ b*d := mul_le_mul_of_nonneg_left hy.2 hb_nonneg
-          exact le_trans this (le_trans (le_max_right _ _) (le_max_right _ _))
-        · -- b < 0, y ≥ 0: by ≤ bc since c ≤ y and b < 0
-          push Not at hb_nonneg
-          have : b*y ≤ b*c := mul_le_mul_of_nonpos_left hy.1 (le_of_lt hb_nonneg)
-          exact le_trans this (le_trans (le_max_left _ _) (le_max_right _ _))
-      · -- y < 0: max(ay, by) = ay
-        push Not at hy_nonneg
-        have hmax_ab : max (a*y) (b*y) = a*y := max_eq_left (mul_le_mul_of_nonpos_right hab
-          (le_of_lt hy_nonneg))
-        rw [hmax_ab]
-        by_cases ha_nonneg : 0 ≤ a
-        · -- a ≥ 0, y < 0: ay ≤ ad since y ≤ d and a ≥ 0
-          have : a*y ≤ a*d := mul_le_mul_of_nonneg_left hy.2 ha_nonneg
-          exact le_trans this (le_trans (le_max_right _ _) (le_max_left _ _))
-        · -- a < 0, y < 0: ay ≤ ac since c ≤ y and a < 0
-          push Not at ha_nonneg
-          have : a*y ≤ a*c := mul_le_mul_of_nonpos_left hy.1 (le_of_lt ha_nonneg)
-          exact le_trans this (le_trans (le_max_left _ _) (le_max_left _ _))
-    exact le_trans h_xy_le_max_ab h_max_le_max4
 
 /-! ### ReLU Interval Soundness -/
 
@@ -297,5 +217,209 @@ theorem interval_abs_sound {x l u : ℝ} (h : inInterval x l u) :
       calc -x ≤ -l := neg_le_neg h.1
            _ ≤ |l| := neg_le_abs l
            _ ≤ max |l| |u| := le_max_left _ _
+
+/-! ### Directed endpoint arithmetic -/
+
+section Directed
+
+variable {α : Type} [Context α] [BoundOps α] [LawfulBoundOps α]
+
+/-- Exact real meaning of an endpoint supplied by its lawful directed-arithmetic instance. -/
+abbrev semanticValue (x : α) : ℝ := LawfulBoundOps.toReal x
+
+/-- `BoundOps.min2` selects the smaller endpoint in the mathematical interpretation. -/
+theorem value_min2 (a b : α) :
+    semanticValue (BoundOps.min2 a b) = min (semanticValue a) (semanticValue b) := by
+  by_cases h : a > b
+  · have hv : semanticValue b ≤ semanticValue a :=
+      le_of_lt ((LawfulBoundOps.lt_iff b a).mp h)
+    simp [BoundOps.min2, h, min_eq_right hv]
+  · have hv : semanticValue a ≤ semanticValue b := by
+      apply le_of_not_gt
+      intro hba
+      exact h ((LawfulBoundOps.lt_iff b a).mpr hba)
+    simp [BoundOps.min2, h, min_eq_left hv]
+
+/-- `BoundOps.max2` selects the larger endpoint in the mathematical interpretation. -/
+theorem value_max2 (a b : α) :
+    semanticValue (BoundOps.max2 a b) = max (semanticValue a) (semanticValue b) := by
+  by_cases h : a > b
+  · have hv : semanticValue b ≤ semanticValue a :=
+      le_of_lt ((LawfulBoundOps.lt_iff b a).mp h)
+    simp [BoundOps.max2, h, max_eq_left hv]
+  · have hv : semanticValue a ≤ semanticValue b := by
+      apply le_of_not_gt
+      intro hba
+      exact h ((LawfulBoundOps.lt_iff b a).mpr hba)
+    simp [BoundOps.max2, h, max_eq_right hv]
+
+/-- Directed endpoint addition encloses exact real addition. -/
+theorem directed_add_sound {x y a b c d : α}
+    (hx : inInterval (semanticValue x) (semanticValue a) (semanticValue b))
+    (hy : inInterval (semanticValue y) (semanticValue c) (semanticValue d)) :
+    inInterval (semanticValue x + semanticValue y)
+      (semanticValue (BoundOps.addDown a c)) (semanticValue (BoundOps.addUp b d)) := by
+  constructor
+  · exact (LawfulBoundOps.addDown_le a c).trans (add_le_add hx.1 hy.1)
+  · exact (add_le_add hx.2 hy.2).trans (LawfulBoundOps.le_addUp b d)
+
+/-- Directed endpoint subtraction encloses exact real subtraction. -/
+theorem directed_sub_sound {x y a b c d : α}
+    (hx : inInterval (semanticValue x) (semanticValue a) (semanticValue b))
+    (hy : inInterval (semanticValue y) (semanticValue c) (semanticValue d)) :
+    inInterval (semanticValue x - semanticValue y)
+      (semanticValue (BoundOps.subDown a d)) (semanticValue (BoundOps.subUp b c)) := by
+  constructor
+  · exact (LawfulBoundOps.subDown_le a d).trans (sub_le_sub hx.1 hy.2)
+  · exact (sub_le_sub hx.2 hy.1).trans (LawfulBoundOps.le_subUp b c)
+
+/--
+The outward-rounded four-corner rule encloses exact real multiplication.
+
+This is the scalar fact needed by rounded IBP and backward CROWN. It depends only on the declared
+endpoint interpretation and directed-operation laws; it does not assume that rounded scalars form a
+ring or that reassociation is exact.
+-/
+theorem directed_mul_sound {x y a b c d : α}
+    (hx : inInterval (semanticValue x) (semanticValue a) (semanticValue b))
+    (hy : inInterval (semanticValue y) (semanticValue c) (semanticValue d)) :
+    inInterval (semanticValue x * semanticValue y)
+      (semanticValue (BoundOps.min2
+        (BoundOps.min2 (BoundOps.mulDown a c) (BoundOps.mulDown a d))
+        (BoundOps.min2 (BoundOps.mulDown b c) (BoundOps.mulDown b d))))
+      (semanticValue (BoundOps.max2
+        (BoundOps.max2 (BoundOps.mulUp a c) (BoundOps.mulUp a d))
+        (BoundOps.max2 (BoundOps.mulUp b c) (BoundOps.mulUp b d)))) := by
+  have hExact := TorchLean.Floats.Interval.mul_bounds_Icc
+    (semanticValue a) (semanticValue b) (semanticValue c) (semanticValue d)
+    (semanticValue x) (semanticValue y) hx hy
+  constructor
+  · rw [value_min2, value_min2, value_min2]
+    calc
+      min
+          (min (semanticValue (BoundOps.mulDown a c))
+            (semanticValue (BoundOps.mulDown a d)))
+          (min (semanticValue (BoundOps.mulDown b c))
+            (semanticValue (BoundOps.mulDown b d))) ≤
+          min
+            (min (semanticValue a * semanticValue c) (semanticValue a * semanticValue d))
+            (min (semanticValue b * semanticValue c) (semanticValue b * semanticValue d)) :=
+        min_le_min
+          (min_le_min (LawfulBoundOps.mulDown_le a c) (LawfulBoundOps.mulDown_le a d))
+          (min_le_min (LawfulBoundOps.mulDown_le b c) (LawfulBoundOps.mulDown_le b d))
+      _ ≤ semanticValue x * semanticValue y := by
+        simpa [TorchLean.Floats.Interval.minOfFourReal] using hExact.1
+  · rw [value_max2, value_max2, value_max2]
+    refine (show semanticValue x * semanticValue y ≤
+      max (max (semanticValue a * semanticValue c) (semanticValue a * semanticValue d))
+        (max (semanticValue b * semanticValue c) (semanticValue b * semanticValue d)) by
+        simpa [TorchLean.Floats.Interval.maxOfFourReal] using hExact.2).trans
+      (max_le_max (max_le_max ?_ ?_) (max_le_max ?_ ?_))
+    · exact LawfulBoundOps.le_mulUp a c
+    · exact LawfulBoundOps.le_mulUp a d
+    · exact LawfulBoundOps.le_mulUp b c
+    · exact LawfulBoundOps.le_mulUp b d
+
+end Directed
+
+/-! ### Nonlinear transfer laws over the reals -/
+
+private theorem unaryEnclosure_of_monotone (f : ℝ → ℝ) (hf : Monotone f) :
+    UnaryEnclosure (α := ℝ) f (fun lo hi ↦ some (f lo, f hi)) := by
+  intro lo hi outLo outHi x hout hxLo hxHi
+  have hpair : outLo = f lo ∧ outHi = f hi := by
+    simpa using Option.some.inj hout.symm
+  rcases hpair with ⟨rfl, rfl⟩
+  exact ⟨hf hxLo, hf hxHi⟩
+
+private theorem unaryEnclosure_of_unit_range (f : ℝ → ℝ)
+    (hf : ∀ x, -1 ≤ f x ∧ f x ≤ 1) :
+    UnaryEnclosure (α := ℝ) f (fun _ _ ↦ some (-1, 1)) := by
+  intro lo hi outLo outHi x hout _ _
+  have hpair : outLo = -1 ∧ outHi = 1 := by
+    simpa using Option.some.inj hout.symm
+  rcases hpair with ⟨rfl, rfl⟩
+  exact hf x
+
+/-- Exact real nonlinear transfers satisfy their mathematical interval contracts. -/
+noncomputable instance instLawfulNonlinearBoundOpsReal : LawfulNonlinearBoundOps ℝ where
+  divBounds_enclosure := by
+    intro aLo aHi bLo bHi outLo outHi x y hout hxLo hxHi hyLo hyHi
+    change
+      (if bLo > 0 || 0 > bHi then
+        some
+          (min (min (aLo / bLo) (aLo / bHi)) (min (aHi / bLo) (aHi / bHi)),
+            max (max (aLo / bLo) (aLo / bHi)) (max (aHi / bLo) (aHi / bHi)))
+      else none) = some (outLo, outHi) at hout
+    split at hout
+    next hAvoidsZero =>
+      have hpair :
+          outLo = min (min (aLo / bLo) (aLo / bHi)) (min (aHi / bLo) (aHi / bHi)) ∧
+          outHi = max (max (aLo / bLo) (aLo / bHi)) (max (aHi / bLo) (aHi / bHi)) := by
+        simpa using Option.some.inj hout.symm
+      rcases hpair with ⟨rfl, rfl⟩
+      have hside : bHi < 0 ∨ 0 < bLo := by
+        have hz : 0 < bLo ∨ bHi < 0 := by
+          simpa using hAvoidsZero
+        exact hz.elim Or.inr Or.inl
+      have hExact := TorchLean.Floats.Interval.div_bounds_Icc
+        aLo aHi bLo bHi x y ⟨hxLo, hxHi⟩ ⟨hyLo, hyHi⟩ hside
+      change
+        min (min (aLo / bLo) (aLo / bHi)) (min (aHi / bLo) (aHi / bHi)) ≤ x / y ∧
+          x / y ≤ max (max (aLo / bLo) (aLo / bHi)) (max (aHi / bLo) (aHi / bHi))
+      simpa only [TorchLean.Floats.Interval.minOfFourReal,
+        TorchLean.Floats.Interval.maxOfFourReal] using hExact
+    next hIncludesZero => simp at hout
+  expBounds_enclosure := by
+    change UnaryEnclosure (α := ℝ) Real.exp (fun lo hi ↦ some (Real.exp lo, Real.exp hi))
+    exact unaryEnclosure_of_monotone Real.exp Real.exp_monotone
+  logBounds_enclosure := by
+    intro lo hi outLo outHi x hout hxLo hxHi
+    change (if lo > 0 then some (Real.log lo, Real.log hi) else none) =
+      some (outLo, outHi) at hout
+    split at hout
+    next hlo =>
+      have hpair : outLo = Real.log lo ∧ outHi = Real.log hi := by
+        simpa using Option.some.inj hout.symm
+      rcases hpair with ⟨rfl, rfl⟩
+      exact ⟨Real.log_le_log hlo hxLo, Real.log_le_log (hlo.trans_le hxLo) hxHi⟩
+    next hnlo => simp at hout
+  sqrtBounds_enclosure := by
+    intro lo hi outLo outHi x hout hxLo hxHi
+    change (if hi < 0 then none else some (Real.sqrt (max lo 0), Real.sqrt hi)) =
+      some (outLo, outHi) at hout
+    split at hout
+    next hhi => simp at hout
+    next hnhi =>
+      have hpair : outLo = Real.sqrt (max lo 0) ∧ outHi = Real.sqrt hi := by
+        simpa using Option.some.inj hout.symm
+      rcases hpair with ⟨rfl, rfl⟩
+      have hLower : Real.sqrt (max lo 0) = Real.sqrt lo := by
+        by_cases hlo : lo ≤ 0
+        · simp [max_eq_right hlo, Real.sqrt_eq_zero_of_nonpos hlo]
+        · simp [max_eq_left (le_of_not_ge hlo)]
+      rw [hLower]
+      exact ⟨Real.sqrt_le_sqrt hxLo, Real.sqrt_le_sqrt hxHi⟩
+  sigmoidBounds_enclosure := by
+    change UnaryEnclosure (α := ℝ) realSigmoid
+      (fun lo hi ↦ some (realSigmoid lo, realSigmoid hi))
+    exact unaryEnclosure_of_monotone realSigmoid monotone_realSigmoid
+  tanhBounds_enclosure := by
+    change UnaryEnclosure (α := ℝ) Real.tanh (fun lo hi ↦ some (Real.tanh lo, Real.tanh hi))
+    exact unaryEnclosure_of_monotone Real.tanh monotone_real_tanh
+  sinBounds_enclosure := by
+    change UnaryEnclosure (α := ℝ) Real.sin (fun _ _ ↦ some (-1, 1))
+    exact unaryEnclosure_of_unit_range Real.sin fun x ↦ ⟨Real.neg_one_le_sin x, Real.sin_le_one x⟩
+  cosBounds_enclosure := by
+    change UnaryEnclosure (α := ℝ) Real.cos (fun _ _ ↦ some (-1, 1))
+    exact unaryEnclosure_of_unit_range Real.cos fun x ↦ ⟨Real.neg_one_le_cos x, Real.cos_le_one x⟩
+  layerNormAbsBound_sound := by
+    intro n radius hout
+    change some (Real.sqrt n) = some radius at hout
+    change Real.sqrt n ≤ radius
+    exact le_of_eq (Option.some.inj hout)
+  coupledDerivatives_exact := by
+    intro _
+    rfl
 
 end NN.MLTheory.CROWN.IntervalLemmas

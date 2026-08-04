@@ -177,7 +177,7 @@ theorem buildFrom_denoteAllFrom_detach
                             NN.IR.DVal.mk, hEq, throw_eq_error, Except.instMonad, Except.bind,
                             Except.pure, hOk]
                         · cases (hEq hOut)
-                      simp [NN.IR.Graph.evalAt, hN, hk, hp, pV, hExpect, hOut,
+                      simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, pV, hExpect, hOut,
                         nodeData, mkFwdNode, NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                         throw_eq_error, Except.instMonad, Except.bind, Except.pure]
 

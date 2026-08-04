@@ -109,7 +109,6 @@ lemma size3_eq (h m n : Nat) :
 /-- Flattened size of `h` many `m×n` matrices (row-major): `h * (m*n)`. -/
 abbrev HMatSize (h m n : Nat) : Nat := h * Matmul.matSize m n
 
-set_option maxHeartbeats 1000000 in
 /-- Bilinear map for batched matmul, packaged as `A →L (B →L A ⬝ B)` in flattened form. -/
 def matmulBilin {h m n p : Nat} :
     Vec (HMatSize h m n) →L[ℝ] Vec (HMatSize h n p) →L[ℝ] Vec (HMatSize h m p) := by

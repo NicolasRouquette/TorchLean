@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Proofs.GraphCertSoundness.IntervalLemmas
+public import NN.MLTheory.CROWN.Extras.IntervalLemmas
 
 /-!
 # Nonlinear IBP Soundness Lemmas
@@ -26,76 +27,6 @@ open NN.MLTheory.CROWN
 namespace CertSoundness
 
 noncomputable section
-
-/-!
-### Sigmoid monotonicity (via Mathlib’s `Real.sigmoid`)
-
-Our `Activation.Math.sigmoid_spec` definition over `ℝ` is exactly the Mathlib sigmoid function.
-So we can reuse its monotonicity lemma.
--/
-
-/-- Monotonicity of the real sigmoid used by graph IBP certificates. -/
-theorem sigmoid_mono_real : Monotone (Activation.Math.sigmoidSpec (α := ℝ)) := by
-  intro a b hab
-  -- rewrite to `Real.sigmoid` and apply `Real.sigmoid_monotone`
-  -- `Real.sigmoid x = (1 + exp (-x))⁻¹` and our definition is `1 / (1 + exp (-x))`.
-  simpa [Activation.Math.sigmoidSpec, Real.sigmoid, MathFunctions.exp, div_eq_mul_inv] using
-    Real.sigmoid_monotone hab
-
-/-!
-### Tanh monotonicity (proved from calculus in Mathlib)
-
-Mathlib does not expose a `Real.tanh_monotone` lemma under that name. We prove it here:
-
-1. Use the identity `tanh x = sinh x / cosh x`.
-2. Differentiate the quotient, using `d/dx sinh = cosh` and `d/dx cosh = sinh`.
-3. Simplify the derivative using `cosh^2 - sinh^2 = 1`.
-4. Conclude strict monotonicity from `deriv > 0`, hence monotonicity.
--/
-
-/-- Derivative of real `tanh`, stated in the form needed for monotonicity. -/
-theorem hasDerivAt_tanh_real (x : ℝ) :
-    HasDerivAt Real.tanh (1 / (Real.cosh x) ^ 2) x := by
-  -- Start from `sinh / cosh` and use the quotient rule.
-  have hdiv :
-      HasDerivAt (Real.sinh * Real.cosh⁻¹)
-        ((Real.cosh x * Real.cosh x - Real.sinh x * Real.sinh x) / (Real.cosh x) ^ 2) x := by
-    simpa [div_eq_mul_inv] using
-      (Real.hasDerivAt_sinh x).div (Real.hasDerivAt_cosh x) (by exact (Real.cosh_pos x).ne')
-  -- Transfer the derivative to `Real.tanh` using `tanh = sinh/cosh`.
-  have ht : (fun y : ℝ => Real.tanh y) = fun y : ℝ => Real.sinh y / Real.cosh y := by
-    funext y
-    simp [Real.tanh_eq_sinh_div_cosh]
-  have ht' :
-      HasDerivAt (fun y : ℝ => Real.tanh y)
-        ((Real.cosh x * Real.cosh x - Real.sinh x * Real.sinh x) / (Real.cosh x) ^ 2) x := by
-    rw [ht]
-    change HasDerivAt (Real.sinh * Real.cosh⁻¹)
-      ((Real.cosh x * Real.cosh x - Real.sinh x * Real.sinh x) / (Real.cosh x) ^ 2) x
-    exact hdiv
-  -- Simplify `(cosh*cosh - sinh*sinh)` to `1`, yielding the stated derivative.
-  have hId : Real.cosh x * Real.cosh x - Real.sinh x * Real.sinh x = 1 := by
-    -- `cosh x ^ 2 - sinh x ^ 2 = 1` is in Mathlib.
-    -- Rewrite products as squares.
-    simpa [pow_two, mul_assoc, mul_left_comm, mul_comm] using (Real.cosh_sq_sub_sinh_sq x)
-  -- Finish.
-  simpa [hId, div_eq_mul_inv, one_div, pow_two, mul_assoc, mul_left_comm, mul_comm] using ht'
-
-theorem tanh_strictMono_real : StrictMono Real.tanh := by
-  -- Use the standard calculus lemma: `deriv > 0` everywhere implies strict monotonicity.
-  refine strictMono_of_deriv_pos ?_
-  intro x
-  have hderiv : deriv Real.tanh x = 1 / (Real.cosh x) ^ 2 :=
-    (hasDerivAt_tanh_real x).deriv
-  -- `cosh x > 0`, so `1/(cosh x)^2 > 0`.
-  have hpos : 0 < (Real.cosh x) ^ 2 := by
-    have : 0 < Real.cosh x := Real.cosh_pos x
-    nlinarith
-  -- Conclude.
-  simpa [hderiv] using (one_div_pos.mpr hpos)
-
-theorem tanh_mono_real : Monotone Real.tanh :=
-  tanh_strictMono_real.monotone
 
 /-!
 ### Soundness of `Runtime.Ops.IBP.map_minmax` for monotone scalar functions

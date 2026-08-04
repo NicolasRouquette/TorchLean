@@ -6,10 +6,10 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
+public import NN.API.Seeded
 
 /-!
-# Kolmogorov-Arnold Network Helpers
+# Kolmogorov-Arnold Networks
 
 KAN layers replace each scalar edge by a small trainable one-dimensional function. TorchLean keeps
 that structure visible: an edge family first expands every scalar input into basis features, and the
@@ -27,8 +27,8 @@ References:
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
+
 
 open Spec Tensor
 
@@ -51,14 +51,6 @@ structure KANEdgeFamily where
   /-- Basis expansion for an unbatched vector of length `inDim`. -/
   basis : (inDim : Nat) → nn.Sequential (.dim inDim .scalar)
     (.dim (inDim * basisDim) .scalar)
-
-namespace KANEdgeFamily
-
-/-- Spec.Shape of the edge-basis expansion for `inDim` scalar inputs. -/
-abbrev basisShape (edge : KANEdgeFamily) (inDim : Nat) : Spec.Shape :=
-  .dim (inDim * edge.basisDim) .scalar
-
-end KANEdgeFamily
 
 /--
 Configuration for triangular piecewise-linear KAN edge bases.
@@ -103,32 +95,33 @@ def basisLayer (cfg : KANPiecewiseLinear) (inDim : Nat) :
                 Spec.Tensor.dim (fun _ =>
                   Spec.Tensor.dim (fun _ =>
                     Spec.Tensor.scalar (0 : α)))
-              let xBasis ← TorchLean.scale (m := m) (α := α) x ((cfg.inputScale : Nat) : α)
-              let out0 ← TorchLean.const (m := m) (α := α) zeros
+              let xBasis ← _root_.Runtime.Autograd.Torch.scale (m := m) (α := α) x
+                ((cfg.inputScale : Nat) : α)
+              let out0 ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) zeros
               let out ← (List.finRange cfg.gridSize).foldlM (init := out0) (fun acc k => do
                 let centerT : Spec.Tensor α (.dim inDim .scalar) :=
                   Spec.Tensor.dim (fun _ => Spec.Tensor.scalar ((k.val : Nat) : α))
                 let oneT : Spec.Tensor α (.dim inDim .scalar) :=
                   Spec.Tensor.dim (fun _ => Spec.Tensor.scalar (1 : α))
-                let c ← TorchLean.const (m := m) (α := α) centerT
-                let ones ← TorchLean.const (m := m) (α := α) oneT
-                let shifted ← TorchLean.sub (m := m) (α := α) xBasis c
-                let dist ← TorchLean.abs (m := m) (α := α) shifted
-                let raw ← TorchLean.sub (m := m) (α := α) ones dist
-                let basis ← TorchLean.relu (m := m) (α := α) raw
-                TorchLean.scatterAddRow (m := m) (α := α)
+                let c ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) centerT
+                let ones ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) oneT
+                let shifted ← _root_.Runtime.Autograd.Torch.sub (m := m) (α := α) xBasis c
+                let dist ← _root_.Runtime.Autograd.Torch.abs (m := m) (α := α) shifted
+                let raw ← _root_.Runtime.Autograd.Torch.sub (m := m) (α := α) ones dist
+                let basis ← _root_.Runtime.Autograd.Torch.relu (m := m) (α := α) raw
+                _root_.Runtime.Autograd.Torch.scatterAddRow (m := m) (α := α)
                   (rows := cfg.gridSize) (cols := inDim) acc basis k)
-              let flat ← TorchLean.reshape (m := m) (α := α)
+              let flat ← _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := .dim cfg.gridSize (.dim inDim .scalar))
                 (s₂ := .dim (cfg.gridSize * inDim) .scalar)
                 out (by
                   simp [Spec.Shape.size, Nat.mul_comm])
-              TorchLean.reshape (m := m) (α := α)
+              _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := .dim (cfg.gridSize * inDim) .scalar)
                 (s₂ := .dim (inDim * cfg.gridSize) .scalar)
                 flat (by
                   simp [Spec.Shape.size, Nat.mul_comm])
-            ) : m (TorchLean.RefTy (m := m) (α := α)
+            ) : m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
               (.dim (inDim * cfg.gridSize) .scalar)))
     }
 
@@ -198,5 +191,4 @@ def KAN (cfg : KANConfig) :
 end models
 end nn
 
-end API
-end NN
+end TorchLean

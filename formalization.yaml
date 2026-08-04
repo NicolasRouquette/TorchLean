@@ -123,10 +123,6 @@ trust_boundaries:
         Provides the nonemptiness witness Lean needs for opaque extern
         declarations returning the CUDA buffer type; real buffers still come
         from explicit FFI constructors/copy operations.
-    - name: NN.MLTheory.CROWN.Lyapunov.crown_oracle
-      purpose: >
-        Assumes an external CROWN oracle witness establishes the stated
-        Lyapunov certificate bounds.
   opaque_runtime_declarations:
     description: >
       CUDA buffers, kernel entrypoints, external oracles, and selected executable

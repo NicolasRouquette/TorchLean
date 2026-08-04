@@ -9,7 +9,7 @@ module
 public import NN.Floats.Arb.Oracle
 public import NN.Floats.Interval.IEEEExec32ArbTrans
 public import NN.Floats.Interval.Comparison
-public import NN.API.CLI.Core
+public import NN.API.CLI
 public import Std
 
 /-!

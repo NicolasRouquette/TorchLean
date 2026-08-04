@@ -71,6 +71,7 @@ def evalAtCoverageWitnesses : List OpKind :=
     .sin,
     .cos,
     .softmax 0,
+    .hardMaskedSoftmax { shape := .scalar, allowed := #[true] },
     .layernorm 0,
     .reshape .scalar .scalar,
     .flatten .scalar,

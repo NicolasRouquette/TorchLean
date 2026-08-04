@@ -6,17 +6,16 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Common
-public import NN.API.Core
+public import NN.API.Scalar
 public import NN.API.Data
 public import NN.API.Data.Transforms
 public import NN.API.Init
 public import NN.API.Macros
-public import NN.API.Public
+public import NN.API.Neural
 public import NN.API.Runtime
-public import NN.API.Samples
-public import NN.API.Samples.Bands
-public import NN.API.TorchLean.Schedulers
+public import NN.API.Data.Bands
+public import NN.API.Data.Synthetic
+public import NN.API.Trainer.Scheduler
 public import NN.GraphSpec
 public import NN.Spec
 public import NN.IR

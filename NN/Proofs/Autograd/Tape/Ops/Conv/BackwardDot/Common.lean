@@ -59,10 +59,6 @@ open scoped BigOperators
 
 noncomputable section
 
--- This file performs large but routine finite-sum rearrangements; give the kernel-bridge proofs
--- enough heartbeats for the full convolution index algebra.
-set_option maxHeartbeats 12000000
-
 -- Shared dot-product and index lemmas used by the convolution backward-dot proofs.
 
 lemma dot_add_right {s : Shape} (a b c : Tensor ℝ s) :
@@ -156,10 +152,8 @@ lemma conv2d_bias_deriv_get
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
-    (input : Spec.MultiChannelImage inC inH inW ℝ)
-    (δ : Spec.MultiChannelImage outC
-      (Shape.slidingWindowOutDim inH kH stride padding)
-      (Shape.slidingWindowOutDim inW kW stride padding) ℝ)
+    (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
+    (δ : Spec.Tensor ℝ (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar))))
     (oc : Fin outC) :
     getAtOrZero (Spec.conv2dBiasDerivSpec (α := ℝ) (layer := layer) (input := input)
       (grad_output := δ)) [oc.val]
@@ -237,11 +231,9 @@ lemma dot_biasBroadcast_eq_dot_bias_deriv
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
-    (input : Spec.MultiChannelImage inC inH inW ℝ)
+    (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (db : Tensor ℝ (.dim outC .scalar))
-    (δ : Spec.MultiChannelImage outC
-      (Shape.slidingWindowOutDim inH kH stride padding)
-      (Shape.slidingWindowOutDim inW kW stride padding) ℝ) :
+    (δ : Spec.Tensor ℝ (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :
     dot (biasBroadcast
           (outC := outC)
           (outH := (Shape.slidingWindowOutDim inH kH stride padding))
@@ -444,6 +436,101 @@ lemma sum_comm {α β : Type} [Fintype α] [Fintype β] (f : α → β → ℝ) 
   simpa using (Finset.sum_comm (s := (Finset.univ : Finset α)) (t := (Finset.univ : Finset β)) (f :=
     f))
 
+/-- Move the third index of a finite triple sum to the outside. -/
+lemma sum_third_first
+    {α β γ : Type} [Fintype α] [Fintype β] [Fintype γ]
+    (f : α → β → γ → ℝ) :
+    (∑ a : α, ∑ b : β, ∑ c : γ, f a b c) =
+      ∑ c : γ, ∑ a : α, ∑ b : β, f a b c := by
+  classical
+  calc
+    (∑ a : α, ∑ b : β, ∑ c : γ, f a b c) =
+        ∑ a : α, ∑ c : γ, ∑ b : β, f a b c := by
+      refine Fintype.sum_congr _ _ ?_
+      intro a
+      exact sum_comm (fun b c => f a b c)
+    _ = ∑ c : γ, ∑ a : α, ∑ b : β, f a b c :=
+      sum_comm (fun a c => ∑ b : β, f a b c)
+
+/-- Move the fourth index of a finite quadruple sum to the outside. -/
+lemma sum_fourth_first
+    {α β γ δ : Type} [Fintype α] [Fintype β] [Fintype γ] [Fintype δ]
+    (f : α → β → γ → δ → ℝ) :
+    (∑ a : α, ∑ b : β, ∑ c : γ, ∑ d : δ, f a b c d) =
+      ∑ d : δ, ∑ a : α, ∑ b : β, ∑ c : γ, f a b c d := by
+  classical
+  calc
+    (∑ a : α, ∑ b : β, ∑ c : γ, ∑ d : δ, f a b c d) =
+        ∑ a : α, ∑ b : β, ∑ d : δ, ∑ c : γ, f a b c d := by
+      refine Fintype.sum_congr _ _ ?_
+      intro a
+      refine Fintype.sum_congr _ _ ?_
+      intro b
+      exact sum_comm (fun c d => f a b c d)
+    _ = ∑ a : α, ∑ d : δ, ∑ b : β, ∑ c : γ, f a b c d := by
+      refine Fintype.sum_congr _ _ ?_
+      intro a
+      exact sum_comm (fun b d => ∑ c : γ, f a b c d)
+    _ = ∑ d : δ, ∑ a : α, ∑ b : β, ∑ c : γ, f a b c d :=
+      sum_comm (fun a d => ∑ b : β, ∑ c : γ, f a b c d)
+
+/-- Reorder the eight indices used when expanding the Conv2D input adjoint. -/
+lemma sum_eight_conv_input_order
+    {α β γ δ ε ζ η θ : Type}
+    [Fintype α] [Fintype β] [Fintype γ] [Fintype δ]
+    [Fintype ε] [Fintype ζ] [Fintype η] [Fintype θ]
+    (f : α → β → γ → δ → ε → ζ → η → θ → ℝ) :
+    (∑ a : α, ∑ b : β, ∑ c : γ, ∑ d : δ,
+      ∑ e : ε, ∑ z : ζ, ∑ g : η, ∑ h : θ, f a b c d e z g h) =
+    ∑ d : δ, ∑ e : ε, ∑ z : ζ, ∑ a : α,
+      ∑ g : η, ∑ h : θ, ∑ b : β, ∑ c : γ, f a b c d e z g h := by
+  classical
+  calc
+    (∑ a : α, ∑ b : β, ∑ c : γ, ∑ d : δ,
+        ∑ e : ε, ∑ z : ζ, ∑ g : η, ∑ h : θ, f a b c d e z g h) =
+      ∑ d : δ, ∑ a : α, ∑ b : β, ∑ c : γ,
+        ∑ e : ε, ∑ z : ζ, ∑ g : η, ∑ h : θ, f a b c d e z g h :=
+      sum_fourth_first (fun a b c d =>
+        ∑ e : ε, ∑ z : ζ, ∑ g : η, ∑ h : θ, f a b c d e z g h)
+    _ = ∑ d : δ, ∑ e : ε, ∑ a : α, ∑ b : β, ∑ c : γ,
+          ∑ z : ζ, ∑ g : η, ∑ h : θ, f a b c d e z g h := by
+      refine Fintype.sum_congr _ _ ?_
+      intro d
+      exact sum_fourth_first (fun a b c e =>
+        ∑ z : ζ, ∑ g : η, ∑ h : θ, f a b c d e z g h)
+    _ = ∑ d : δ, ∑ e : ε, ∑ z : ζ, ∑ a : α, ∑ b : β, ∑ c : γ,
+          ∑ g : η, ∑ h : θ, f a b c d e z g h := by
+      refine Fintype.sum_congr _ _ ?_
+      intro d
+      refine Fintype.sum_congr _ _ ?_
+      intro e
+      exact sum_fourth_first (fun a b c z =>
+        ∑ g : η, ∑ h : θ, f a b c d e z g h)
+    _ = ∑ d : δ, ∑ e : ε, ∑ z : ζ, ∑ a : α, ∑ g : η, ∑ b : β, ∑ c : γ,
+          ∑ h : θ, f a b c d e z g h := by
+      refine Fintype.sum_congr _ _ ?_
+      intro d
+      refine Fintype.sum_congr _ _ ?_
+      intro e
+      refine Fintype.sum_congr _ _ ?_
+      intro z
+      refine Fintype.sum_congr _ _ ?_
+      intro a
+      exact sum_third_first (fun b c g => ∑ h : θ, f a b c d e z g h)
+    _ = ∑ d : δ, ∑ e : ε, ∑ z : ζ, ∑ a : α, ∑ g : η, ∑ h : θ,
+          ∑ b : β, ∑ c : γ, f a b c d e z g h := by
+      refine Fintype.sum_congr _ _ ?_
+      intro d
+      refine Fintype.sum_congr _ _ ?_
+      intro e
+      refine Fintype.sum_congr _ _ ?_
+      intro z
+      refine Fintype.sum_congr _ _ ?_
+      intro a
+      refine Fintype.sum_congr _ _ ?_
+      intro g
+      exact sum_third_first (fun b c h => f a b c d e z g h)
+
 -- ---------------------------------------------------------------------------
 -- Conv2D padding helper (matches the spec's `if padding = 0 then cast else pad`)
 -- ---------------------------------------------------------------------------
@@ -459,8 +546,8 @@ https://pytorch.org/docs/stable/generated/torch.nn.functional.conv2d.html
 -/
 
 def paddedInput {inC inH inW padding : Nat}
-    (input : Spec.MultiChannelImage inC inH inW ℝ) :
-    Spec.MultiChannelImage inC (inH + 2 * padding) (inW + 2 * padding) ℝ :=
+    (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))) :
+    Spec.Tensor ℝ (.dim inC (.dim (inH + 2 * padding) (.dim (inW + 2 * padding) .scalar))) :=
   if h4 : padding = 0 then
     tensorCast
       (Shape.dim inC (Shape.dim (inH + 2 * padding) (Shape.dim (inW + 2 * padding) .scalar)))
@@ -471,7 +558,7 @@ def paddedInput {inC inH inW padding : Nat}
 
 lemma get_at_or_zero_paddedInput
     {inC inH inW padding : Nat}
-    (img : Spec.MultiChannelImage inC inH inW ℝ) (c : Fin inC) (p q : Nat) :
+    (img : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))) (c : Fin inC) (p q : Nat) :
     getAtOrZero (paddedInput (inC := inC) (inH := inH) (inW := inW) (padding := padding) img)
       [c.val, p, q]
       =
@@ -489,7 +576,7 @@ lemma get_at_or_zero_paddedInput
 
 lemma mkInputIdx_match_eq_paddedInput
     {inC inH inW stride padding : Nat}
-    (img : Spec.MultiChannelImage inC inH inW ℝ) (c : Fin inC)
+    (img : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))) (c : Fin inC)
     (oi di oj dj : Nat) :
     (match Private.mkInputIdx? [oi, oj] [di, dj] [stride, stride] [padding, padding] with
       | none => (0 : ℝ)
@@ -508,7 +595,7 @@ lemma mkInputIdx_match_eq_paddedInput
 
 lemma sum_shift_eq_paddedInput
     {inC inH inW padding : Nat}
-    (x : Spec.MultiChannelImage inC inH inW ℝ) (ic : Fin inC) (p q : Nat) :
+    (x : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))) (ic : Fin inC) (p q : Nat) :
     (∑ i : Fin inH, ∑ j : Fin inW,
         if (p = i.val + padding ∧ q = j.val + padding) then getAtOrZero x [ic.val, i.val, j.val]
           else 0)
@@ -665,6 +752,32 @@ lemma sum_shift_eq_paddedInput
         exact (Nat.not_lt_of_ge hvp') (this ▸ i.isLt)
       simp [hp, rhs0, hfalse, vp, vq]
 
+/-- Collapse the shifted input indicator while carrying a constant scalar factor. -/
+lemma sum_shift_mul_eq_paddedInput_mul
+    {inC inH inW padding : Nat}
+    (x : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
+    (ic : Fin inC) (p q : Nat) (c : ℝ) :
+    (∑ i : Fin inH, ∑ j : Fin inW,
+        getAtOrZero x [ic.val, i.val, j.val] *
+          (if p = i.val + padding ∧ q = j.val + padding then c else 0)) =
+      getAtOrZero
+          (paddedInput (inC := inC) (inH := inH) (inW := inW) (padding := padding) x)
+          [ic.val, p, q] * c := by
+  classical
+  calc
+    (∑ i : Fin inH, ∑ j : Fin inW,
+        getAtOrZero x [ic.val, i.val, j.val] *
+          (if p = i.val + padding ∧ q = j.val + padding then c else 0)) =
+      (∑ i : Fin inH, ∑ j : Fin inW,
+        if p = i.val + padding ∧ q = j.val + padding then
+          getAtOrZero x [ic.val, i.val, j.val]
+        else 0) * c := by
+      simp only [mul_ite, mul_zero, Finset.sum_mul, ite_mul, zero_mul]
+    _ = getAtOrZero
+          (paddedInput (inC := inC) (inH := inH) (inW := inW) (padding := padding) x)
+          [ic.val, p, q] * c := by
+      rw [sum_shift_eq_paddedInput]
+
 /-!
 Output shape helpers (no dilation): these are the standard “convolution arithmetic” formulas.
 They are kept as definitions so later statements can share the same expression.
@@ -685,7 +798,7 @@ lemma conv2d_spec_noBias_get
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (dKernel : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))))
-    (input : Spec.MultiChannelImage inC inH inW ℝ)
+    (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (oc : Fin outC) (i : Fin (outH inH kH stride padding)) (j : Fin (outW inW kW stride padding)) :
     let layerK : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := dKernel, bias := fill (0 : ℝ) (.dim outC .scalar) }
@@ -744,8 +857,8 @@ lemma conv2d_kernel_deriv_get
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
-    (input : Spec.MultiChannelImage inC inH inW ℝ)
-    (δ : Spec.MultiChannelImage outC (outH inH kH stride padding) (outW inW kW stride padding) ℝ)
+    (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
+    (δ : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar))))
     (oc : Fin outC) (ic : Fin inC) (di : Fin kH) (dj : Fin kW) :
     getAtOrZero (Spec.conv2dKernelDerivSpec (α := ℝ) (layer := layer) (input := input)
       (grad_output := δ))
@@ -776,8 +889,8 @@ lemma conv2d_input_deriv_get
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
-    (input : Spec.MultiChannelImage inC inH inW ℝ)
-    (δ : Spec.MultiChannelImage outC (outH inH kH stride padding) (outW inW kW stride padding) ℝ)
+    (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
+    (δ : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar))))
     (ic : Fin inC) (i : Fin inH) (j : Fin inW) :
     getAtOrZero (Spec.conv2dInputDerivSpec (α := ℝ) (layer := layer) (input := input)
       (grad_output := δ))
@@ -797,8 +910,8 @@ lemma conv2d_input_deriv_get
                 0) := by
   classical
   unfold Spec.conv2dInputDerivSpec
-  simp (config := { maxSteps := 2000000 })
-    [outH, outW, ic.isLt, i.isLt, j.isLt, Spec.finRange_foldl_add_acc, add_comm, mul_comm]
+  simp only [getAtOrZero, ic.isLt, i.isLt, j.isLt, ↓reduceDIte]
+  simp only [Spec.finRange_foldl_add_acc, zero_add]
   rfl
 
 

@@ -217,8 +217,8 @@ import NN.API
 open TorchLean
 ```
 
-Use the complete umbrella when one file genuinely combines application code with proofs,
-verification, floating-point semantics, backends, or widgets:
+Use the complete library import when one file combines application code with proofs, verification,
+floating-point semantics, backends, or widgets:
 
 ```
 import NN

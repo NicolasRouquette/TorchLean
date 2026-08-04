@@ -6,7 +6,9 @@ Authors: TorchLean Team
 
 module
 
+public import NN.IR.HardMask
 public import NN.Runtime.Autograd.Compiled.IRExec.Helpers
+public import NN.Spec.Layers.Attention
 
 /-!
 # IR Node Lowering
@@ -517,7 +519,7 @@ def buildFrom
                   -- declared output shape below.
                   let expectedIn : Shape := .dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))
                   let _ ←
-                    OpContracts.inferConv2dCHWOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
+                    OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
                       cfg.padding expectedIn
                   let ix ← parentIdx xId expectedIn
                   let outH : Nat := Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding
@@ -643,6 +645,21 @@ def buildFrom
                 Activation.softmaxSpec (α := α) (getIdx (α := α) (xs := ctx) ip)
               pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: softmax expects 1 parent ({n.summary})"
+      | .hardMaskedSoftmax mask =>
+          match n.parents with
+          | [pId] => do
+              let ip ← parentIdx pId τ
+              let allowed ←
+                match NN.IR.HardMask.toTensorAs? mask τ with
+                | .ok value => pure value
+                | .error msg =>
+                    throw s!"IRExec: node {i}: hard_masked_softmax: {msg} ({n.summary})"
+              let forward := fun ctx : TList α ([inShape] ++ ss) =>
+                Spec.hardMaskedSoftmaxLastSpec
+                  (getIdx (α := α) (xs := ctx) ip) allowed
+              pure <| fwd forward
+          | _ =>
+              throw s!"IRExec: node {i}: hard_masked_softmax expects 1 parent ({n.summary})"
       | .layernorm axis =>
           match n.parents with
           | [pId] => do

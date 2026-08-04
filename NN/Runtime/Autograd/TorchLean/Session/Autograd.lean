@@ -192,7 +192,7 @@ def jvpDenseAll {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
 Apply a dense SGD step to all learnable parameters.
 
 This is an optimizer helper used by examples; for a higher-level API see
-  `NN.API.TorchLean.Trainer`.
+  `TorchLean.Trainer.Manual`.
 -/
 def sgdStepAll {α : Type} (s : Session α)
   [Sub α] [Mul α] [Add α] [Zero α] [DecidableEq Shape]
@@ -212,7 +212,7 @@ def withFreshTape {α β : Type} (s : Session α) (act : IO β) : IO β := do
 Build one scalar-loss graph, run backward on it, and apply a dense SGD step.
 
 This is the "session-style training step" helper for imperative workflows that are lower-level than
-`API.TorchLean.Trainer`, but should still avoid manual
+`_root_.TorchLean.Trainer.Manual`, but should still avoid manual
 `resetTape` / `backwardScalarDenseAll` / `sgdStepAll` wiring.
 -/
 def sgdStepScalarGraph {α : Type} (s : Session α)

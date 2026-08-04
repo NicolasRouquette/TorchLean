@@ -164,7 +164,6 @@ def crossEntropyOneHotLast {Γ : List Shape} {m n : Nat}
             -- fold back through `CtxVec.single` and `inner_add_right`
             simp [inner_add_right, hA, hB])
 
-set_option maxHeartbeats 2000000 in
 /-- `NodeFDerivCorrect` for `cross_entropy_one_hot_last` (one-hot targets; last-axis reduction). -/
 def crossEntropyOneHotLastFderiv {Γ : List Shape} {m n : Nat}
     (logits target : Idx Γ (.dim m (.dim n .scalar))) :

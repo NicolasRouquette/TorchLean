@@ -122,6 +122,7 @@ inductive BackendOp where
   | safeLog
   | logSoftmax
   | softmax
+  | hardMaskedSoftmax
   | reduceSum
   | reduceMean
   | reshape
@@ -174,6 +175,7 @@ def name : BackendOp → String
   | .safeLog => "safe_log"
   | .logSoftmax => "log_softmax"
   | .softmax => "softmax"
+  | .hardMaskedSoftmax => "hard_masked_softmax"
   | .reduceSum => "reduce_sum"
   | .reduceMean => "reduce_mean"
   | .reshape => "reshape"
@@ -243,7 +245,13 @@ structure AssurancePolicy where
 
 namespace AssurancePolicy
 
-/-- Proof-oriented policy: every capsule must be verified and every obligation proof-backed. -/
+/--
+Proof-oriented policy reserved for typed, proof-carrying implementations.
+
+No maintained runtime capsule currently satisfies this policy: guards, tests, fuzzing, and trusted
+boundaries are all rejected. A future verified capsule must connect its implementation semantics to
+the operation contract directly instead of attaching an arbitrary proposition as metadata.
+-/
 def verified : AssurancePolicy := {}
 
 /--

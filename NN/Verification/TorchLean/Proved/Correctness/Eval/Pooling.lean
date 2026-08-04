@@ -114,7 +114,7 @@ theorem evalAt_pool2d_eq
   cases op <;>
     simp [Pool2DOperation.contractName, Pool2DOperation.padding] at hHeight hWidth <;>
     simp [Pool2DOperation.toOpKind, Pool2DOperation.outShape, Pool2DOperation.denote,
-      Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?, Graph.expectShape,
+      Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?, Graph.expectShape,
       hkH, hkW, hs, hHeight, hWidth, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Local IR semantics for unpadded max-pooling over CHW tensors. -/

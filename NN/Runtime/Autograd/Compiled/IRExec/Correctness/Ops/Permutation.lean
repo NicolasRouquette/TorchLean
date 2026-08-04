@@ -182,7 +182,7 @@ theorem buildFrom_denoteAllFrom_permute
                                 -- Expand `evalAt` to the permute branch, rewrite `permuteDVal` by `hPermute'`,
                                 -- then discharge the dependent shape check via `hShape`.
                                 simp (config := { failIfUnchanged := false })
-                                  [NN.IR.Graph.evalAt, hN, hk, hp, hGet, throw_eq_error]
+                                  [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet, throw_eq_error]
                                 -- Rewrite the `permuteDVal` call to its computed `.ok` value, reduce the
                                 -- `Except` do-block, and select the success branch using `hShape`.
                                 erw [hPermute0]

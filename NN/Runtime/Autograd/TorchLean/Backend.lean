@@ -61,7 +61,7 @@ export _root_.Runtime.Autograd.Torch
    maxPool2d maxPool2dPad smoothMaxPool2d avgPool2d avgPool2dPad
    relu silu gelu sigmoid tanh softmax softplus exp log inv detach safeLog logSoftmax
    sum flatten
-   linear mseLoss layerNorm batchnormChannelFirst multiHeadAttention
+   linear mseLoss layerNorm batchnormChannelFirst multiHeadAttention batchedMultiHeadAttention
    conv convTranspose conv2d convTranspose2d
    randUniform bernoulliMask)
 
@@ -105,26 +105,11 @@ namespace Private
 def emptyLeadingAxis {α : Type} (s : Shape) : Tensor α (.dim 0 s) :=
   Tensor.dim (fun i : Fin 0 => Fin.elim0 i)
 
-/-- Remove a leading singleton dimension: `(1 × s) → s`. -/
-def squeezeLeadingAxis {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {s : Shape} (x : RefTy (m := m) (α := α) (.dim 1 s)) :
-    m (RefTy (m := m) (α := α) s) :=
-  _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α) (s₁ := .dim 1 s) (s₂ := s) x (by
-    simp [Spec.Shape.size])
-
-/-- Add a leading singleton dimension: `s → (1 × s)`. -/
-def unsqueezeLeadingAxis {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {s : Shape} (x : RefTy (m := m) (α := α) s) :
-    m (RefTy (m := m) (α := α) (.dim 1 s)) :=
-  _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α) (s₁ := s) (s₂ := .dim 1 s) x (by
-    simp [Spec.Shape.size])
-
 /--
 Map a per-sample op over the leading batch dimension.
 
-This is a convenience for lifting single-sample ops (e.g. convolution) to batch-first tensors.
+This adapts the shared leading-axis traversal to the TorchLean `Ops` interface. It is a convenience
+for lifting single-sample operations, such as convolution, to batch-first tensors.
 -/
 def mapBatch0 {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
@@ -132,27 +117,7 @@ def mapBatch0 {α : Type} [Context α] [DecidableEq Shape]
     (x : RefTy (m := m) (α := α) (.dim batch s))
     (f : RefTy (m := m) (α := α) s → m (RefTy (m := m) (α := α) t)) :
     m (RefTy (m := m) (α := α) (.dim batch t)) :=
-  match batch with
-  | 0 =>
-      _root_.Runtime.Autograd.Torch.const (m := m) (α := α) (s := .dim 0 t) (emptyLeadingAxis (α := α) t)
-  | batch+1 => do
-      let head1 ←
-        _root_.Runtime.Autograd.Torch.sliceLeadingAxisRange (m := m) (α := α)
-          (nDim := batch+1) (s := s)
-          (start := 0) (len := 1) (by simp) x
-      let head ← squeezeLeadingAxis (m := m) (α := α) (s := s) head1
-      let yhead ← f head
-      let yhead1 ← unsqueezeLeadingAxis (m := m) (α := α) (s := t) yhead
-      let tail ←
-        _root_.Runtime.Autograd.Torch.sliceLeadingAxisRange (m := m) (α := α)
-          (nDim := batch+1) (s := s)
-          (start := 1) (len := batch) (by simp) x
-      let ytail ← mapBatch0 (m := m) (α := α) (batch := batch) (s := s) (t := t) tail f
-      let y ←
-        _root_.Runtime.Autograd.Torch.concatLeadingAxis (m := m) (α := α)
-          (nDim := 1) (mDim := batch) (s := t) yhead1 ytail
-      -- `concat_leading_axis` returns `1 + batch`; rewrite to `batch + 1` for the caller.
-      return (by simpa [Nat.one_add] using y)
+  _root_.Runtime.Autograd.Torch.mapLeadingAxis (m := m) (α := α) f x
 
 /-- Convert a boolean tensor mask to a `{0,1}` tensor (same shape). -/
 def boolMask01 {α : Type} [Context α] : ∀ {s : Shape}, Tensor Bool s → Tensor α s
@@ -296,13 +261,26 @@ def layerNorm {α : Type} [Context α] [DecidableEq Shape]
     (gamma : RefTy (m := m) (α := α) (.dim embedDim .scalar))
     (beta : RefTy (m := m) (α := α) (.dim embedDim .scalar)) :
     m (RefTy (m := m) (α := α) (.dim batch (.dim seqLen (.dim embedDim .scalar)))) :=
-  Private.mapBatch0 (m := m) (α := α)
-    (batch := batch) (s := .dim seqLen (.dim embedDim .scalar))
-    (t := .dim seqLen (.dim embedDim .scalar))
-    x
-    (fun x1 =>
-      _root_.Runtime.Autograd.Torch.layerNorm (m := m) (α := α)
-        (seqLen := seqLen) (embedDim := embedDim) h_seq_pos h_embed_pos x1 gamma beta)
+  match batch with
+  | 0 =>
+      _root_.Runtime.Autograd.Torch.const (m := m) (α := α)
+        (s := .dim 0 (.dim seqLen (.dim embedDim .scalar)))
+        (Private.emptyLeadingAxis (α := α) (.dim seqLen (.dim embedDim .scalar)))
+  | batch + 1 => do
+      let rows := (batch + 1) * seqLen
+      have h_rows_pos : rows > 0 := Nat.mul_pos (Nat.succ_pos batch) h_seq_pos
+      let xRows ←
+        _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
+          (s₁ := .dim (batch + 1) (.dim seqLen (.dim embedDim .scalar)))
+          (s₂ := .dim rows (.dim embedDim .scalar)) x (by
+            simp [rows, Spec.Shape.size, Nat.mul_assoc])
+      let yRows ←
+        _root_.Runtime.Autograd.Torch.layerNorm (m := m) (α := α)
+          (seqLen := rows) (embedDim := embedDim) h_rows_pos h_embed_pos xRows gamma beta
+      _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
+        (s₁ := .dim rows (.dim embedDim .scalar))
+        (s₂ := .dim (batch + 1) (.dim seqLen (.dim embedDim .scalar))) yRows (by
+          simp [rows, Spec.Shape.size, Nat.mul_assoc])
 
 /--
 Batched multi-head self-attention.
@@ -319,13 +297,16 @@ def multiHeadAttention {α : Type} [Context α] [DecidableEq Shape]
     (wo : RefTy (m := m) (α := α) (.dim (numHeads * headDim) (.dim dModel .scalar)))
     (x : RefTy (m := m) (α := α) (.dim batch (.dim n (.dim dModel .scalar))))
     (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    m (RefTy (m := m) (α := α) (.dim batch (.dim n (.dim dModel .scalar)))) := do
-  Private.mapBatch0 (m := m) (α := α)
-    (batch := batch) (s := .dim n (.dim dModel .scalar)) (t := .dim n (.dim dModel .scalar)) x
-    (fun xRow =>
-      _root_.Runtime.Autograd.Torch.multiHeadAttention (m := m) (α := α)
-        (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
-        h1 wq wk wv wo xRow (mask := mask))
+    m (RefTy (m := m) (α := α) (.dim batch (.dim n (.dim dModel .scalar)))) :=
+  match batch with
+  | 0 =>
+      _root_.Runtime.Autograd.Torch.const (m := m) (α := α)
+        (s := .dim 0 (.dim n (.dim dModel .scalar)))
+        (Private.emptyLeadingAxis (α := α) (.dim n (.dim dModel .scalar)))
+  | batch + 1 =>
+      _root_.Runtime.Autograd.Torch.batchedMultiHeadAttention (m := m) (α := α)
+        (batch := batch + 1) (n := n) (numHeads := numHeads) (dModel := dModel)
+        (headDim := headDim) (by simp) h1 wq wk wv wo x (mask := mask)
 
 /-- Multi-head attention followed by a trainable bias on the output feature axis. -/
 def multiHeadAttentionOutputBias {α : Type} [Context α] [DecidableEq Shape]
@@ -383,6 +364,20 @@ In practice:
 abbrev Program (α : Type) [Context α] [DecidableEq Shape] (ss : List Shape) (τ : Shape) : Type 1 :=
   ∀ {m : Type → Type}, [Monad m] → [Ops (m := m) (α := α)] →
     CurriedRef (fun s => RefTy (m := m) (α := α) s) ss (m (RefTy (m := m) (α := α) τ))
+
+/--
+A backend-polymorphic program with differentiable tensor inputs followed by discrete tensor inputs.
+
+The two input lists make the scalar distinction part of the type. Parameters and continuous model
+inputs use the backend scalar `α`; token ids, labels, and gather indices use `Nat`. This prevents a
+runtime from accidentally treating discrete data as differentiable floating-point values.
+-/
+abbrev ProgramWithNatInputs (α : Type) [Context α] [DecidableEq Shape]
+    (ss natSs : List Shape) (τ : Shape) : Type 1 :=
+  ∀ {m : Type → Type}, [Monad m] → [Ops (m := m) (α := α)] →
+    CurriedRef (fun s => RefTy (m := m) (α := α) s) ss
+      (CurriedRef (fun s => _root_.Runtime.Autograd.Torch.NatTensorRef
+        (m := m) (α := α) s) natSs (m (RefTy (m := m) (α := α) τ)))
 
 end TorchLean
 end Autograd

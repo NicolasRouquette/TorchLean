@@ -164,7 +164,7 @@ def asciiAllowed (c : Char) : Bool :=
 
 /-- Fitted predictor for a runtime-sized character GPT model. -/
 abbrev Predictor (batch seqLen vocab : Nat) :=
-  Tensor.T Float (.dim (batch * seqLen) .scalar) →
+  Tensor.T Nat (.dim (batch * seqLen) .scalar) →
     IO (Tensor.T Float (shape![batch, seqLen, vocab]))
 
 /-- Autoregressively extend character token ids using a trained CharGPT model. -/
@@ -194,8 +194,8 @@ partial def generateSampledFromIds
   let b0 : Fin batch := ⟨0, Nat.pos_of_ne_zero hBatch⟩
   text.autoregressiveTokenIds seqLen padId promptIds gen
     (fun padded predPos => do
-        let x : Tensor.T Float (.dim (batch * seqLen) .scalar) :=
-          Data.causalLmTokenIdFloatVec (α := Float) batch seqLen padded
+        let x : Tensor.T Nat (.dim (batch * seqLen) .scalar) :=
+          Tensor.vectorFromArray (batch * seqLen) padded.toArray padId
         let logits ← predict x
         pure (text.batchLogitScoresAt logits b0 predPos))
     (allowId := allowId)
@@ -263,8 +263,6 @@ def main (args : List String) : IO UInt32 := do
       let batch := train.batch
       let seqLen := train.seqLen
 
-      let σ : Shape := .dim (batch * seqLen) .scalar
-      let τ : Shape := shape![batch, seqLen, vocab]
       let cfg : nn.models.CausalTransformerConfig :=
         { batch := batch
           seqLen := seqLen
@@ -278,25 +276,28 @@ def main (args : List String) : IO UInt32 := do
           normFirst := true
           attentionOutputBias := true
           parameterInit? := some (.normal 0.0 0.02) }
-      if seqLen = 0 then
-        throw <| IO.userError s!"{exeName}: --seq-len must be positive"
-      if cfg.dModel = 0 then
-        throw <| IO.userError s!"{exeName}: model width must be positive"
-      let invalidModel : nn.Sequential σ τ :=
-        nn.of
-          { kind := "InvalidCharGptConfiguration"
-            paramShapes := []
-            initParams := .nil
-            paramRequiresGrad := []
-            forward := fun _ {α} _ _ =>
-              fun {m} _ _ =>
-                fun _x => _root_.Runtime.Autograd.Torch.const
-                  (m := m) (α := α) (Spec.zeros α τ) }
-      let model : nn.Sequential σ τ :=
-        if hSeq : seqLen = 0 then invalidModel
-        else if hModel : cfg.dModel = 0 then invalidModel
-        else nn.run train.seed <|
-          nn.models.causalTransformerTokenId cfg (h_seqLen := hSeq) (h_dModel := hModel)
+      let seqWitness : Fin seqLen ←
+        if h : 0 < seqLen then
+          pure ⟨0, h⟩
+        else
+          throw <| IO.userError s!"{exeName}: --seq-len must be positive"
+      let modelWitness : Fin cfg.dModel ←
+        if h : 0 < cfg.dModel then
+          pure ⟨0, h⟩
+        else
+          throw <| IO.userError s!"{exeName}: model width must be positive"
+      have hSeq : seqLen ≠ 0 := by
+        intro h
+        rw [h] at seqWitness
+        exact Fin.elim0 seqWitness
+      have hModel : cfg.dModel ≠ 0 := by
+        intro h
+        rw [h] at modelWitness
+        exact Fin.elim0 modelWitness
+      let body : nn.Sequential (nn.models.causalEmbeddingShape cfg)
+          (nn.models.causalVocabularyShape cfg) :=
+        nn.run train.seed <|
+          nn.models.causalTransformerFromEmbeddings cfg (h_seqLen := hSeq) (h_dModel := hModel)
 
       let allTokens := (tok.encode corpus).toArray
       let split := allTokens.size * 9 / 10
@@ -305,52 +306,65 @@ def main (args : List String) : IO UInt32 := do
       if trainTokens.size <= seqLen || valTokens.size <= seqLen then
         throw <| IO.userError s!"{exeName}: corpus split is too short for context length {seqLen}"
 
-      let mkBatchSample (step : Nat) : SupervisedSample Float σ σ :=
-        Data.causalLmTokenIdSampleRowsFromTokenArray
-          (α := Float) batch seqLen trainTokens train.seed step (padId := 0)
-      let mkValSample (step : Nat) : SupervisedSample Float σ σ :=
-        Data.causalLmTokenIdSampleRowsFromTokenArray
-          (α := Float) batch seqLen valTokens (train.seed + 1000003) step (padId := 0)
-      let trainDef := nn.models.causalTransformerTokenIdLmScalarModuleDef cfg model
-      let evalDef := nn.models.causalTransformerTokenIdLmScalarModuleDefWithMode .eval cfg model
+      let mkBatchSample (step : Nat) :=
+        Data.causalLmTokenBatchFromTokenArray
+          batch seqLen trainTokens train.seed step (padId := 0)
+      let mkValSample (step : Nat) :=
+        Data.causalLmTokenBatchFromTokenArray
+          batch seqLen valTokens (train.seed + 1000003) step (padId := 0)
+      let trainDef := nn.models.causalTransformerTokenScalarModuleDef cfg body
+      let evalDef := nn.models.causalTransformerTokenScalarModuleDefWithMode .eval cfg body
       let module ← TorchLean.Module.instantiateFloat trainDef opts
       match train.loadParams? with
       | none => pure ()
       | some path =>
-          Checkpoint.loadModuleParamBits module path
+          Checkpoint.loadModuleParams module path
           IO.println s!"  loaded params: {path}"
       let optimizer := _root_.Runtime.Autograd.TorchLean.Optim.adamw
-        (α := Float) (paramShapes := nn.paramShapes model)
+        (α := Float) (paramShapes := nn.models.causalTransformerTokenParamShapes cfg body)
         train.lr 0.01 0.9 0.999 1e-8
       let optimizerState ← TorchLean.Module.initOptim module optimizer
       let optimizerStateRef ← IO.mkRef optimizerState
       let storedScalarCount :=
-        (nn.paramShapes model).foldl (fun total shape => total + Shape.size shape) 0
+        (nn.models.causalTransformerTokenParamShapes cfg body).foldl
+          (fun total shape => total + Shape.size shape) 0
       let trainableParameterCount :=
-        (List.zip (nn.paramShapes model) (nn.paramRequiresGrad model)).foldl
+        (List.zip (nn.models.causalTransformerTokenParamShapes cfg body)
+          (true :: nn.paramRequiresGrad body)).foldl
           (fun total entry => if entry.2 then total + Shape.size entry.1 else total) 0
       IO.println s!"  trainable_parameters={trainableParameterCount}"
       if storedScalarCount != trainableParameterCount then
         IO.println s!"  non_trainable_state_scalars={storedScalarCount - trainableParameterCount}"
       let evalLoss : IO Float := do
         let losses ← (List.range evalIters).mapM fun i => do
+          let (tokens, targets) := mkValSample i
           let loss ← TorchLean.Module.forwardWithParams
-            evalDef opts module.trainer.params (mkValSample i)
+            evalDef opts module.trainer.params .nil (.cons tokens (.cons targets .nil))
           pure (Spec.Tensor.toScalar loss)
         pure (losses.foldl (· + ·) 0.0 / Float.ofNat losses.length)
       let beforeLoss ← evalLoss
       IO.println s!"  step 0: val loss={beforeLoss}"
       for step in [0:train.steps] do
         let state ← optimizerStateRef.get
-        let state' ← TorchLean.Module.stepWith module optimizer state (mkBatchSample step)
+        let (tokens, targets) := mkBatchSample step
+        let state' ← TorchLean.Module.stepWith module optimizer state .nil
+          (.cons tokens (.cons targets .nil))
         optimizerStateRef.set state'
         let done := step + 1
         if evalEvery != 0 && (done % evalEvery == 0 || done == train.steps) then
           let loss ← evalLoss
           IO.println s!"  step {done}: val loss={loss}"
       let afterLoss ← evalLoss
-      let predict := fun (x : Tensor.T Float σ) => do
-        nn.forward model opts .eval module.trainer.params x
+      let forwardProgram : _root_.Runtime.Autograd.TorchLean.ProgramWithNatInputs Float
+          (nn.models.causalTransformerTokenParamShapes cfg body ++ [])
+          [nn.models.causalTokenShape cfg] (nn.models.causalVocabularyShape cfg) := by
+        rw [List.append_nil]
+        exact fun {m} _ _ =>
+          nn.models.causalTransformerTokenProgram cfg body (α := Float) (m := m)
+      let evaluator ← TorchLean.Module.withParams forwardProgram
+        opts module.trainer.params
+      let predict := fun (x : Tensor.T Nat (nn.models.causalTokenShape cfg)) =>
+        TorchLean.Module.evaluateT evaluator .nil (.cons x .nil)
       let promptIds := tok.encode train.prompt
       let allowId : Nat → Bool :=
         if train.asciiOnly then
@@ -365,7 +379,7 @@ def main (args : List String) : IO UInt32 := do
       match train.saveParams? with
       | none => pure ()
       | some path =>
-          Checkpoint.saveModuleParamBits module path
+          Checkpoint.saveModuleParams module path
           IO.println s!"  wrote params: {path}"
       IO.println s!"  vocab={vocab} (unique chars)"
       IO.println s!"  architecture=width {width}, heads {heads}, layers {layers}, dropout {dropout}"

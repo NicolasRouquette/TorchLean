@@ -102,8 +102,8 @@ Run the robustness check once under a chosen scalar backend `α`.
 This compiles the TorchLean program to the verifier IR, then computes output bounds with IBP and an
 affine/CROWN-style pass.
 -/
-def runOnce {α : Type} [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [ToString α]
-    [Runtime.Scalar α] [BoundOps α] : IO Unit := do
+def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
+    [Runtime.FromFloat α] [BoundOps α] : IO Unit := do
   let cast : Float → α := Runtime.ofFloat
   -- These in-source constants make the TorchLean-native verifier path fully inspectable.
   -- Data-backed robustness uses
@@ -120,8 +120,8 @@ def runOnce {α : Type} [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [To
   let outputBias : Tensor α outputBiasShape :=
     NN.Tensor.ofListOfLength (α := α) [2] [cast 0.0, cast 0.0] (by rfl)
 
-  let params : nn.ParamTensors α paramShapes :=
-    nn.ParamTensors.quad hiddenWeight hiddenBias outputWeight outputBias
+  let params : TensorPack α paramShapes :=
+    tensorpack.quad hiddenWeight hiddenBias outputWeight outputBias
 
   let compiled ←
     match Verification.compileProgram

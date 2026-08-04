@@ -388,8 +388,8 @@ The mask is deterministic. In the typed `blockMask` call, the policy and tensor 
 agree by construction. A zero period or zero block width hides nothing; the lower-level coordinate
 helpers likewise treat a rank mismatch or out-of-bounds coordinate as visible rather than sampling
 a fallback mask. Randomized mask selection should choose the period/offset or another explicit mask
-from recorded generator state. The coordinate theorems `NN.API.ssl.blockMask_hidden_scalar_eq_zero` and
-`NN.API.ssl.blockMask_visible_scalar_eq_input` then describe exactly what the executable
+from recorded generator state. The coordinate theorems `TorchLean.ssl.blockMask_hidden_scalar_eq_zero` and
+`TorchLean.ssl.blockMask_visible_scalar_eq_input` then describe exactly what the executable
 transformation did.
 
 # Add A Low-Rank Linear Adapter Explicitly

@@ -130,7 +130,7 @@ MaxPool2D on `CHW` tensors (parameter-free).
 
 Output shapes follow the standard pooling size formulas:
 
-`outH = Spec.Shape.slidingWindowOutDim inH kH stride 0` and similarly for `outW`.
+`outH = Spec.poolOutDim inH kH stride 0` and similarly for `outW`.
 
 PyTorch analogy: `torch.nn.functional.max_pool2d` (with matching `kernel_size` / `stride`).
  -/
@@ -139,7 +139,7 @@ def maxPool2d
     {h_kH : kH ≠ 0} {h_kW : kW ≠ 0} {hStride : stride ≠ 0} :
     Primitive []
       (.dim inC (.dim inH (.dim inW .scalar)))
-      (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar))) :=
+      (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))) :=
   { name := s!"max_pool2d(k={kH}x{kW},s={stride})"
     specFwd := fun {α} _ctx _params x =>
       let layer : Spec.MaxPool2DSpec kH kW stride h_kH h_kW hStride := {}
@@ -243,7 +243,7 @@ def maxPool2d
     (kH kW inH inW inC stride : Nat)
     {h_kH : kH ≠ 0} {h_kW : kW ≠ 0} {hStride : stride ≠ 0} :
     Graph [] (.dim inC (.dim inH (.dim inW .scalar)))
-      (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar))) :=
+      (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))) :=
   .prim (Primitive.maxPool2d (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride
     := stride)
     (h_kH := h_kH) (h_kW := h_kW) (hStride := hStride))

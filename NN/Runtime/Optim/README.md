@@ -39,9 +39,8 @@ Adadelta. Optimizer-adjacent extension points use explicit runtime names:
 - `optim.galore.projectedSGD` is the GaLore-style projected-gradient path. The projection is
   explicit, and the optimizer applied after projection is still named.
 
-The exact API names live under `NN/API/Public/Facade/Runtime/Optim.lean`,
-`TorchLean.optim` and `NN/API/TorchLean/Schedulers.lean`. Runtime implementation
-files should stay focused on the update equations and state transitions.
+Import `NN.API` and use `TorchLean.optim` and `TorchLean.schedulers`. Runtime implementation files
+remain focused on update equations and state transitions.
 
 ## Proof Boundary
 

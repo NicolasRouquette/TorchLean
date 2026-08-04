@@ -64,7 +64,7 @@ theorem evalAt_axisReduction_eq
         (DVal.mk (α := α) (Tensor.shapeAfterSum s axis)
           (op.denote axis x hAxis.down)) := by
   cases op <;>
-    simp [AxisReductionOperation.toOpKind, AxisReductionOperation.denote, Graph.evalAt,
+    simp [AxisReductionOperation.toOpKind, AxisReductionOperation.denote, Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput,
       unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?, hAxisLookup, Bind.bind,
       Except.bind, Pure.pure, Except.pure]
 

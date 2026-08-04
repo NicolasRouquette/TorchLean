@@ -84,8 +84,8 @@ verification statements and floating-point error statements compile together thr
 
 Notes:
 - The tactic frontends for external certificate tooling are kept out of this umbrella; import them
-  explicitly when needed. The oracle-backed Lyapunov interface itself is re-exported here as part
-  of the current `NN.MLTheory` surface.
+  explicitly when needed. The Lyapunov certificate semantics are re-exported here as part of the
+  current `NN.MLTheory` surface.
 - This module does not define additional convenience APIs; those belong in `NN.Runtime` or
   `NN.Examples` rather than the theory layer.
 -/

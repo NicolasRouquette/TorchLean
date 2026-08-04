@@ -122,7 +122,7 @@ theorem buildFrom_denoteAllFrom_add
                           NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                               (input := input) (vals := vals0) (i := i) =
                             .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                        simp [NN.IR.Graph.evalAt, hN, hk, hp, hGetA, hGetB,
+                        simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGetA, hGetB,
                           Graph.expectShape_mk, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                           NN.IR.DVal.mk, Tensor.eqRec_proof_irrel, nodeData, mkFwdNode,
                           throw_eq_error, Except.instMonad, Except.bind, Except.pure]
@@ -216,7 +216,7 @@ theorem buildFrom_denoteAllFrom_sub
                           NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                               (input := input) (vals := vals0) (i := i) =
                             .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                        simp [NN.IR.Graph.evalAt, hN, hk, hp, hGetA, hGetB,
+                        simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGetA, hGetB,
                           Graph.expectShape_mk, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                           NN.IR.DVal.mk, nodeData, mkFwdNode, throw_eq_error,
                           Except.instMonad, Except.bind, Except.pure]
@@ -310,7 +310,7 @@ theorem buildFrom_denoteAllFrom_mul_elem
                           NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                               (input := input) (vals := vals0) (i := i) =
                             .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                        simp [NN.IR.Graph.evalAt, hN, hk, hp, hGetA, hGetB,
+                        simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGetA, hGetB,
                           Graph.expectShape_mk, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                           NN.IR.DVal.mk, nodeData, mkFwdNode, throw_eq_error,
                           Except.instMonad, Except.bind, Except.pure]
@@ -404,7 +404,7 @@ theorem buildFrom_denoteAllFrom_max_elem
                           NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                               (input := input) (vals := vals0) (i := i) =
                             .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                        simp [NN.IR.Graph.evalAt, hN, hk, hp, hGetA, hGetB,
+                        simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGetA, hGetB,
                           Graph.expectShape_mk, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                           NN.IR.DVal.mk, nodeData, mkFwdNode, throw_eq_error,
                           Except.instMonad, Except.bind, Except.pure]
@@ -498,7 +498,7 @@ theorem buildFrom_denoteAllFrom_min_elem
                           NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                               (input := input) (vals := vals0) (i := i) =
                             .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                        simp [NN.IR.Graph.evalAt, hN, hk, hp, hGetA, hGetB,
+                        simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGetA, hGetB,
                           Graph.expectShape_mk, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                           NN.IR.DVal.mk, nodeData, mkFwdNode, throw_eq_error,
                           Except.instMonad, Except.bind, Except.pure]

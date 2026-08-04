@@ -195,7 +195,7 @@ def ViTSpec.forward
   {cfg : ViTConfig} {inC inH inW : Nat}
   {h_inC : inC ≠ 0} {hCfg : cfg.WF}
   (m : ViTSpec (α := α) cfg inC inH inW h_inC hCfg)
-  (x : MultiChannelImage inC inH inW α)
+  (x : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
   (h_tok : ViTPatchCount inH inW cfg.patchH cfg.patchW cfg.stride cfg.padding > 0) :
   Tensor α (.dim cfg.numClasses .scalar) :=
   let outH := ViTPatchOutH inH cfg.patchH cfg.stride cfg.padding
@@ -261,11 +261,11 @@ def ViTSpec.backward
   {cfg : ViTConfig} {inC inH inW : Nat}
   {h_inC : inC ≠ 0} {hCfg : cfg.WF}
   (m : ViTSpec (α := α) cfg inC inH inW h_inC hCfg)
-  (x : MultiChannelImage inC inH inW α)
+  (x : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
   (grad_output : Tensor α (.dim cfg.numClasses .scalar))
   (h_tok : ViTPatchCount inH inW cfg.patchH cfg.patchW cfg.stride cfg.padding > 0) :
   (ViTGrads cfg inC inH inW α ×
-   MultiChannelImage inC inH inW α) :=
+   Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :=
 
   let outH := ViTPatchOutH inH cfg.patchH cfg.stride cfg.padding
   let outW := ViTPatchOutW inW cfg.patchW cfg.stride cfg.padding
@@ -413,7 +413,7 @@ def ViTClsSpec.forward
   {cfg : ViTConfig} {inC inH inW : Nat}
   {h_inC : inC ≠ 0} {hCfg : cfg.WF}
   (m : ViTClsSpec (α := α) cfg inC inH inW h_inC hCfg)
-  (x : MultiChannelImage inC inH inW α) :
+  (x : Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
   Tensor α (.dim cfg.numClasses .scalar) :=
   let outH := ViTPatchOutH inH cfg.patchH cfg.stride cfg.padding
   let outW := ViTPatchOutW inW cfg.patchW cfg.stride cfg.padding
@@ -466,10 +466,10 @@ def ViTClsSpec.backward
   {cfg : ViTConfig} {inC inH inW : Nat}
   {h_inC : inC ≠ 0} {hCfg : cfg.WF}
   (m : ViTClsSpec (α := α) cfg inC inH inW h_inC hCfg)
-  (x : MultiChannelImage inC inH inW α)
+  (x : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
   (grad_output : Tensor α (.dim cfg.numClasses .scalar)) :
   (ViTClsGrads cfg inC inH inW α ×
-   MultiChannelImage inC inH inW α) :=
+   Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :=
 
   let outH := ViTPatchOutH inH cfg.patchH cfg.stride cfg.padding
   let outW := ViTPatchOutW inW cfg.patchW cfg.stride cfg.padding

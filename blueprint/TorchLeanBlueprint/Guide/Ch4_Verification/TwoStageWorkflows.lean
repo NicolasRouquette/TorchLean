@@ -114,8 +114,8 @@ generation and numerical checking occur:
 
 - [`twostage-pythononly-certgen`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIPythonOnly.lean)
   invokes the external CROWN producer and writes a Lean module. The generated bounds enter through
-  `CrownOracleWitness`; Lean proves the final real inequalities from that oracle witness and the
-  sign conditions, but does not replay the external verifier.
+  `LyapunovCert`; Lean proves their numeric sign conditions. The final stability theorem is
+  parameterized by `LyapunovCert.ValidFor`, because this path does not replay the external verifier.
 - [`twostage-hybrid-van-stage2`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIIHybrid.lean)
   treats PyTorch's bit-exact float32 parameter export as an untrusted initialization, then performs
   refinement and the final IBP/CROWN box check in Lean with `IEEE32Exec`.

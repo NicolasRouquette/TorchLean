@@ -172,7 +172,7 @@ Deep dives import a subsystem explicitly when they inspect its internal objects:
 | API area | Use |
 | --- | --- |
 | `TorchLean` | Model, tensor, data, training, runtime, text, and RL names. |
-| `NN.API.Public` | Application API modules; ordinary examples should not import this directly. |
+| `NN.API.Neural` | Application API modules; ordinary examples should not import this directly. |
 | `NN.Tensor` | Typed tensor constructors and semantics below the application API. |
 | `NN.API.Runtime` | Runtime subsystem access for code that is explicitly extending the runtime layer. |
 | `NN.Verification` | Verification APIs and theorems. |

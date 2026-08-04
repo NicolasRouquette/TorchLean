@@ -39,14 +39,16 @@ def multiHeadAttention
     {h1 : n ≠ 0}
     (seedW : Nat := 0)
     (weightInit? : Option Torch.Init.Scheme := none)
+    (outputWeightInit? : Option Torch.Init.Scheme := none)
     (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
     LayerDef (.dim batch (.dim n (.dim dModel .scalar)))
       (.dim batch (.dim n (.dim dModel .scalar))) :=
   let projDim := numHeads * headDim
   let wProjShape : Shape := .dim dModel (.dim projDim .scalar)
   let wOShape : Shape := .dim projDim (.dim dModel .scalar)
-  let projInit := weightInit?.getD (.xavierUniform projDim dModel)
-  let outInit := weightInit?.getD (.xavierUniform dModel projDim)
+  let projInit := weightInit?.getD (.xavierUniform dModel projDim)
+  let outInit := outputWeightInit?.orElse (fun _ => weightInit?)
+    |>.getD (.xavierUniform projDim dModel)
   let wq0 : Tensor Float wProjShape := Torch.Init.tensor projInit (seed := seedW)
   let wk0 : Tensor Float wProjShape := Torch.Init.tensor projInit (seed := seedW + 1)
   let wv0 : Tensor Float wProjShape := Torch.Init.tensor projInit (seed := seedW + 2)
@@ -81,6 +83,7 @@ def multiHeadAttentionOutputBias
     {h1 : n ≠ 0}
     (seedW : Nat := 0)
     (weightInit? : Option Torch.Init.Scheme := none)
+    (outputWeightInit? : Option Torch.Init.Scheme := none)
     (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
     LayerDef (.dim batch (.dim n (.dim dModel .scalar)))
       (.dim batch (.dim n (.dim dModel .scalar))) :=
@@ -88,8 +91,9 @@ def multiHeadAttentionOutputBias
   let wProjShape : Shape := .dim dModel (.dim projDim .scalar)
   let wOShape : Shape := .dim projDim (.dim dModel .scalar)
   let bOShape : Shape := .dim dModel .scalar
-  let projInit := weightInit?.getD (.xavierUniform projDim dModel)
-  let outInit := weightInit?.getD (.xavierUniform dModel projDim)
+  let projInit := weightInit?.getD (.xavierUniform dModel projDim)
+  let outInit := outputWeightInit?.orElse (fun _ => weightInit?)
+    |>.getD (.xavierUniform projDim dModel)
   let wq0 : Tensor Float wProjShape := Torch.Init.tensor projInit (seed := seedW)
   let wk0 : Tensor Float wProjShape := Torch.Init.tensor projInit (seed := seedW + 1)
   let wv0 : Tensor Float wProjShape := Torch.Init.tensor projInit (seed := seedW + 2)

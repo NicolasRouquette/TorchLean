@@ -24,7 +24,7 @@ Curated umbrella for deep-dive TorchLean examples.
 
 These files are not beginner introductory examples. They cover cross-cutting boundaries:
 
-- float/runtime semantics and Arb-backed interval comparison;
+- float/runtime semantics, numerical certificates, and Arb-backed interval comparison;
 - GraphSpec lowering into the training API;
 - IR axis semantics and PyTorch export;
 - the “one semantic universe” contract connecting execution, CROWN/IBP, and widgets;

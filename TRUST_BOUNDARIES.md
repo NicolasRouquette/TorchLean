@@ -42,9 +42,6 @@ and trust level stated by the capsule.
 
 ## Lean Axioms
 
-- `NN/MLTheory/CROWN/Lyapunov/Oracle.lean`: `crown_oracle` assumes an external CROWN
-  checker has produced a `CrownOracleWitness lyap cert`; given that witness, the certificate
-  soundly bounds `V` and `Vdot` over the stated region.
 - `NN/Runtime/Autograd/Engine/Cuda/Trusted.lean`: `instNonemptyBuffer` is the nonemptiness witness
   Lean needs for opaque extern declarations returning `Cuda.Buffer`. It does not allocate or
   validate a CUDA buffer; real buffers still come from explicit FFI constructors/copy operations.
@@ -55,7 +52,6 @@ You can inspect theorem dependencies inside Lean with:
 
 ```lean
 #print axioms Runtime.Autograd.Cuda.instNonemptyBuffer
-#print axioms NN.MLTheory.CROWN.Lyapunov.crown_oracle
 ```
 
 For an audit from the shell:
@@ -77,14 +73,12 @@ Important examples include:
   contract for bit-level agreement on finite inputs and finite results, plus classification
   agreement for special values. NaN payload propagation is deliberately not assumed.
 - `NN.MLTheory.CROWN.Graph.CrownCertSoundness.CrownTransferSound`, the transfer-rule soundness
-  assumption used by graph-CROWN certificate theorems for backend/oracle-dependent relaxations.
+  assumption used by graph-CROWN certificate theorems for backend-dependent relaxations.
 - `NN.MLTheory.Proofs.UniversalApproximation.FloatIntervalApprox.OpsExact.Sound`, the local
   operation level exact interval soundness contract for finite IEEE32 interval arithmetic.
 
 ## Opaque Non-FFI Declarations
 
-- `NN.MLTheory.CROWN.Lyapunov.CrownOracleWitness` is an abstract witness type for the external
-  Lyapunov oracle.
 - `NN.MLTheory.CROWN.betaAt` is an executable wrapper around a length-checked beta-phase array
   lookup. It keeps the checker executable without exposing brittle `Array.get!` internals to every
   proof.
@@ -140,17 +134,25 @@ Important examples include:
   runtimes may choose different tie-breaking policies.
 - FlashAttention has a fused-operator denotation for proofs in
   `NN/Spec/Layers/FlashAttention.lean`: over the spec semantics it denotes the same masked scaled
-  dot-product attention as the standard `QKᵀ -> mask -> softmax -> PV` graph. The CUDA eager
-  multi-head attention path can use native fused runtime kernels exposed through
+  dot-product attention as the standard `QKᵀ -> mask -> softmax -> PV` graph. The checked CUDA
+  profile uses the composed TorchLean path: cuBLAS evaluates the matrix products, TorchLean applies
+  hard-masked softmax, and the TorchLean tape evaluates the local backward rule. A separate direct
+  native implementation is exposed through
   `NN/Runtime/Autograd/Engine/Cuda/Kernels.lean` and implemented in
-  `csrc/cuda/kernels/torchlean_cuda_kernels.cu`. Those kernels favor clarity and correctness: fused
-  forward/VJP kernels over already-split heads, not a production clone of Dao-AILab's tiled
-  implementation. The Lean equalities cover the denotational target; online-softmax tiling, CUDA
-  memory behavior, and float32 arithmetic remain part of the native runtime boundary. TorchLean
-  regression-tests the fused kernels against the composed attention path, and theorem claims should
-  cite the spec denotation rather than the CUDA machine code. References: FlashAttention
+  `csrc/cuda/kernels/torchlean_cuda_kernels.cu`. It computes forward and VJP values over
+  already-split heads, but it is not a production clone of Dao-AILab's IO-tiled algorithm and is
+  retained for parity checks and small inputs. The Lean equalities cover the denotational target;
+  cuBLAS execution, native CUDA memory behavior, and float32 arithmetic remain runtime boundaries.
+  TorchLean regression-tests the direct and composed paths, and theorem claims should cite the spec
+  denotation rather than CUDA machine code. References: FlashAttention
   (arXiv:2205.14135), FlashAttention-2 (arXiv:2307.08691), FlashAttention-3 (arXiv:2407.08608),
   and the Dao-AILab `flash-attention` implementation.
+- Batched attention has the denotation of a leading-axis map of the single-sample attention
+  operation. The proof-compiled graph and verifier lowering retain those single-sample nodes. The
+  eager CUDA implementation folds the batch and head axes for batched matrix multiplication and
+  records one TorchLean tape node whose VJP sums shared projection-weight gradients over the batch.
+  This is a scheduling refinement backed by regression tests, not a proof of the cuBLAS machine
+  execution.
 - Boolean attention masks use hard masking throughout the spec semantics: blocked entries
   contribute zero softmax numerator, matching true `-inf` masking at the denotational level. The
   CUDA attention kernels implement that same hard-mask convention. Separate finite additive-bias
@@ -173,7 +175,7 @@ Important examples include:
 - Transcendental functions such as `exp`, `log`, and `tanh` are deterministic approximations unless
   a file states a stronger theorem for a specific operation.
 
-Kernel capsules now record four numerical choices: rounding, subnormal handling, contraction/FMA,
+Kernel capsules record four numerical choices: rounding, subnormal handling, contraction/FMA,
 and reduction order. These fields are audited contract data, not proof evidence. Portable reference
 accumulations advertise their fixed left fold. Native CUDA and LibTorch matrix products, convolutions,
 normalizations, pooling operations, FFT/FNO paths, scans, and attention advertise
@@ -216,10 +218,11 @@ Use the float layers as follows:
   TorchLean tape node, and uses TorchLean's local VJP. The forward value is still trusted under the
   capsule's runtime agreement assumption. TorchLean does not maintain a LibTorch-autograd profile;
   tape ownership, gradient extraction, and optimizer handoff remain in the TorchLean runtime.
-- CROWN/Lyapunov certificate generation is an external evidence producer when used through the
-  oracle-backed workflow. Lean isolates that assumption behind `crown_oracle`; theorem claims should
-  state exactly which certificate predicate was checked and which external completeness assumption is
-  being used.
+- CROWN/Lyapunov certificate generation is an external evidence producer. Generated Lean modules
+  prove their numeric sign margins, while the final stability theorem requires an explicit
+  `LyapunovCert.ValidFor` proof connecting those numbers to the named Lean functions. A checked
+  graph workflow can establish that predicate; a Python-only workflow must state it as a local
+  assumption rather than inheriting a repository-wide axiom.
 - The Arb / `python-flint` integration under `NN/Floats/Arb/` is an external subprocess backend. It
   can produce high-quality interval evidence, but an Arb response is still an oracle result unless
   the relevant certificate is independently checked in Lean.

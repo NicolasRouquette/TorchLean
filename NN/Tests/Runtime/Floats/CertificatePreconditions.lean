@@ -8,6 +8,7 @@ module
 
 public import NN.Tests.Runtime.Floats.Utils
 public import NN.Verification.Cert.Common
+public import NN.Verification.Cert.CROWNNodeCert
 public import NN.Verification.Cert.IBPNodeCert
 public import NN.Verification.ODE.Parse
 public import NN.Verification.PINN.PdeParse
@@ -58,6 +59,21 @@ def parseJson! (s : String) : IO Json := do
   | .ok j => pure j
   | .error e => throw <| IO.userError s!"bad test JSON: {e}"
 
+/-- Parse a certificate input box and fail the test when the schema is rejected. -/
+def parseInputRegion! (source : String) : IO NN.Verification.Json.BoxRegion := do
+  let json ← parseJson! source
+  let inputResult : Except String Json :=
+    match json.getObjVal? "input" with
+    | .ok input => .ok input
+    | .error _ => json.getObjVal? "region"
+  let input ←
+    match inputResult with
+    | .ok input => pure input
+    | .error e => throw <| IO.userError s!"input-region parser rejected a valid fixture: {e}"
+  match NN.Verification.Json.expectBoxRegionE "input" input with
+  | .ok region => pure region
+  | .error e => throw <| IO.userError s!"input-region parser rejected a valid fixture: {e}"
+
 /-- Compare a computed scalar interval pair with its exact expected endpoints. -/
 def expectFloatPair (msg : String) (actual : Option (Float × Float))
     (expected : Float × Float) : IO Unit := do
@@ -107,6 +123,31 @@ def logGraph : _root_.NN.IR.Graph :=
     ] }
 
 def run : IO Unit := do
+  let centerRegion ← parseInputRegion!
+    "{\"input\":{\"center\":[1.0,2.0,3.0],\"eps\":0.25}}"
+  expect "center/epsilon input region did not infer its dimension"
+    (centerRegion.dim == 3 && centerRegion.lo == #[0.75, 1.75, 2.75] &&
+      centerRegion.hi == #[1.25, 2.25, 3.25])
+  let boxRegion ← parseInputRegion!
+    "{\"region\":{\"lo\":[-1.0,0.0],\"hi\":[1.0,2.0]}}"
+  expect "endpoint input region did not infer its dimension"
+    (boxRegion.dim == 2 && boxRegion.lo.size == 2 && boxRegion.hi.size == 2)
+  expectRejected "malformed input dimension was treated as absent" <|
+    parseInputRegion! "{\"input\":{\"dim\":\"two\",\"lo\":[0.0,0.0],\"hi\":[1.0,1.0]}}"
+  expectRejected "declared input dimension did not constrain endpoint lengths" <|
+    parseInputRegion! "{\"input\":{\"dim\":3,\"lo\":[0.0,0.0],\"hi\":[1.0,1.0]}}"
+  expectRejected "mismatched input endpoint lengths were accepted" <|
+    parseInputRegion! "{\"input\":{\"lo\":[0.0],\"hi\":[1.0,2.0]}}"
+  expectRejected "negative input radius was accepted" <|
+    parseInputRegion! "{\"input\":{\"center\":[0.0,0.0],\"eps\":-0.5}}"
+  expectRejected "reversed input interval was accepted" <|
+    parseInputRegion! "{\"input\":{\"lo\":[1.0],\"hi\":[0.0]}}"
+  expectRejected "mixed input-region schemas were accepted" <|
+    parseInputRegion!
+      "{\"input\":{\"lo\":[0.0],\"hi\":[1.0],\"center\":[0.5],\"eps\":0.5}}"
+  expectRejected "endpoint input region accepted an unrelated radius" <|
+    parseInputRegion! "{\"input\":{\"lo\":[0.0],\"hi\":[1.0],\"eps\":0.5}}"
+
   IO.println "certificate_preconditions: begin"
 
   let goodAlpha ← parseJson! "[0.0, 0.75]"
@@ -187,8 +228,8 @@ def run : IO Unit := do
   let positiveRun := runIBP logGraph (emptyStore.seedInputBox 0 positive)
   expect "IBP evaluated raw log across its nonpositive domain boundary"
     (nonPositiveRun[1]!.isNone)
-  expect "IBP failed to evaluate raw log on a positive interval"
-    (positiveRun[1]!.isSome)
+  expect "IEEE32Exec log was accepted without a directed transcendental implementation"
+    (positiveRun[1]!.isNone)
 
   let inputGraph : _root_.NN.IR.Graph := { nodes := #[inputNode 0 2] }
   let authoritative := flatBox (fun _ => 0.0) (fun _ => 1.0)
@@ -200,6 +241,20 @@ def run : IO Unit := do
   let outwardAccepted ←
     NN.Verification.IBPNodeCert.checkIBPNode inputGraph #[some authoritative] #[some outward] 0
   expect "an outward-widened certificate interval was rejected" outwardAccepted
+
+  let ctx : AffineCtx := { inputId := 0, inputDim := 2 }
+  let crownCert : CROWNNodeCoreCertificate :=
+    { ctx := ctx
+      ibp := #[some authoritative]
+      crown := #[some (boundsIdentity (α := IEEE32Exec) 2)]
+      alpha := #[none] }
+  expect "a complete exact alpha-CROWN replay was rejected"
+    (NN.Verification.CROWNNodeCert.certificateAccepts crownCert inputGraph emptyStore
+      #[some authoritative] true)
+  let missingCrown := { crownCert with crown := #[none] }
+  expect "an alpha-CROWN certificate with a missing affine entry was accepted"
+    (!(NN.Verification.CROWNNodeCert.certificateAccepts missingCrown inputGraph emptyStore
+      #[some authoritative] true))
 
   IO.println "certificate_preconditions: ok"
 

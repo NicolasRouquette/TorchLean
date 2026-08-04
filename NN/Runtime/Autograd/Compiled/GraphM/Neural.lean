@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Compiled.GraphM.ShapeIndex
+public import NN.Runtime.Autograd.LeadingAxis
 
 /-!
 # GraphM Neural Layers
@@ -211,6 +212,33 @@ def multiHeadAttention {α : Type} {Δ : Type} [Context α]
         TList.add (α := α) (ss := Γ ++ ss) z2
           (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim n (.dim dModel .scalar)) ix dx) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := (.dim n (.dim dModel .scalar))) g node
+
+/--
+Leading-axis map of the proved multi-head-attention node.
+
+The compiled graph intentionally records the per-sample nodes. This keeps its forward, JVP, and
+VJP definitions inherited directly from `multiHeadAttention`, while an eager device backend may
+execute the same map as one batched contraction.
+-/
+def batchedMultiHeadAttention {α : Type} {Δ : Type} [Context α]
+  [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
+  {Γ : List Shape} {batch n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
+  (wq : Var (.dim dModel (.dim (numHeads * headDim) .scalar)))
+  (wk : Var (.dim dModel (.dim (numHeads * headDim) .scalar)))
+  (wv : Var (.dim dModel (.dim (numHeads * headDim) .scalar)))
+  (wo : Var (.dim (numHeads * headDim) (.dim dModel .scalar)))
+  (x : Var (.dim batch (.dim n (.dim dModel .scalar))))
+  (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
+  MWith α Δ Γ (Var (.dim batch (.dim n (.dim dModel .scalar)))) :=
+  _root_.Runtime.Autograd.mapLeadingAxisWith
+    (const (α := α) (Δ := Δ) (Γ := Γ) <| Tensor.dim (fun i : Fin 0 => Fin.elim0 i))
+    (fun x start len h =>
+      sliceLeadingAxisRange (α := α) (Δ := Δ) (Γ := Γ) x start len h)
+    (fun x h => reshape (α := α) (Δ := Δ) (Γ := Γ) x h)
+    (fun x y => concatLeadingAxis (α := α) (Δ := Δ) (Γ := Γ) x y)
+    (fun sample => multiHeadAttention (α := α) (Δ := Δ) (Γ := Γ)
+      h1 wq wk wv wo sample mask)
+    x
 
 end GraphM
 end Compiled

@@ -139,12 +139,13 @@ def attentionScaleDenom (dModel : Nat) : α :=
 
 TorchLean encodes the usual "true `-∞` before softmax" behavior without requiring the tensor scalar
 type itself to contain infinities. Instead of replacing blocked logits by a finite sentinel, we form
-softmax numerators directly:
+stable softmax numerators directly. If `rowMax` is the greatest allowed score in the row, then
 
-`numerator_j = if mask_j then exp(score_j) else 0`.
+`numerator_j = if mask_j then exp(score_j - rowMax) else 0`.
 
 This is exactly what `exp(-∞)=0` contributes to softmax. Blocked positions therefore have exactly
-zero attention mass, which is the property causal proofs need.
+zero attention mass, which is the property causal proofs need. A row with no allowed positions is
+defined to contain only zeros.
 -/
 
 /-- Maximum allowed score in one hard-masked row, or `none` when every entry is blocked. -/
@@ -195,6 +196,15 @@ def hardMaskedSoftmaxSpec {nQ nK : Nat}
   match scores, mask with
   | Tensor.dim scoreRows, Tensor.dim maskRows =>
       Tensor.dim (fun i => hardMaskedSoftmaxVecSpec (scoreRows i) (maskRows i))
+
+/-- Hard-masked softmax along the last axis, lifted over any number of leading dimensions. -/
+def hardMaskedSoftmaxLastSpec : {s : Shape} → Tensor α s → Tensor Bool s → Tensor α s
+  | .scalar, Tensor.scalar _score, Tensor.scalar allowed =>
+      Tensor.scalar (if allowed then Numbers.one else Numbers.zero)
+  | .dim _ .scalar, scores, mask => hardMaskedSoftmaxVecSpec scores mask
+  | .dim n inner, Tensor.dim scores, Tensor.dim mask =>
+      Tensor.dim (fun i : Fin n =>
+        hardMaskedSoftmaxLastSpec (s := inner) (scores i) (mask i))
 
 /-- VJP/JVP helper for a softmax-like row-normalization when the forward weights are already known.
 

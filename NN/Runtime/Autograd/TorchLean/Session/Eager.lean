@@ -358,7 +358,7 @@ def maxPool2d {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar)))) :=
+    (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) :=
   _root_.Runtime.Autograd.Torch.Internal.EagerSession.maxPool2d (α := α) s.inner
     (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
     (h1 := h1) (h2 := h2) x
@@ -374,7 +374,7 @@ def smoothMaxPool2d {α : Type} (s : EagerSession α) [Context α] [DecidableEq 
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) (beta :
     α) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar)))) :=
+    (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) :=
   _root_.Runtime.Autograd.Torch.Internal.EagerSession.smoothMaxPool2d (α := α) s.inner
     (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
     (h1 := h1) (h2 := h2) x beta
@@ -388,7 +388,7 @@ def avgPool2d {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar)))) :=
+    (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) :=
   _root_.Runtime.Autograd.Torch.Internal.EagerSession.avgPool2d (α := α) s.inner
     (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
     h1 h2 x

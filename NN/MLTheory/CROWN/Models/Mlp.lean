@@ -440,7 +440,8 @@ theorem ibp_linear_sound_real {m n : Nat}
       subDown := (· - ·)
       subUp := (· - ·)
       mulDown := (· * ·)
-      mulUp := (· * ·) }
+      mulUp := (· * ·)
+      supportsExactAffineReassociation := true }
   -- Unpack structures
   cases W with
   | dim rows =>
@@ -860,7 +861,6 @@ theorem ibp_linear_sound_real {m n : Nat}
                               simpa [instBO, BoundOps.addUp] using (add_le_add hsumU hbiU)
                             -- Rewrite the goal into the scalar conjunction and finish with
                             -- `h1`/`h2`.
-                            -- First, simplify the row/bias matches.
                             simp (config := { iota := true }) [hrow, hblo, hbhi, hbv]
                             -- Finish the scalar containment goal via `Tensor.toScalar`.
                             have hcontains_scalar_iff (loT hiT yT : Tensor ℝ Shape.scalar) :

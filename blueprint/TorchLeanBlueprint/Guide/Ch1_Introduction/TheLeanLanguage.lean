@@ -200,7 +200,7 @@ tensors share exactly the same shape.
 
 # Shape Errors Appear While The Model Is Built
 
-Now add a valid model:
+Add a valid model:
 
 ```
 def model : nn.M (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=

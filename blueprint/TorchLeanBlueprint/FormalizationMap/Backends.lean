@@ -6,8 +6,8 @@ import NN.Runtime.Autograd.Engine
 import NN.Runtime.Autograd.Torch
 import NN.Runtime.Autograd.TorchLean
 import NN.Runtime.Autograd.Train
-import NN.API.Runtime.Training
-import NN.API.TorchLean.Schedulers
+import NN.API.Trainer.Manual
+import NN.API.Trainer.Scheduler
 import NN.Runtime.PyTorch
 
 open Verso.Genre
@@ -28,6 +28,22 @@ Kernel contracts, providers, and dispatch.
 A kernel capsule records an operation, provider, device, forward and VJP support, numerical policy,
 and evidence for its shape, layout, value, and VJP claims. It states the contract expected from an
 implementation; it does not prove that implementation.
+:::
+
+:::definition "proof_carrying_kernel" (parent := "backend_selection") (lean := "NN.Backend.ProofCarryingKernel")
+A proof-carrying kernel packages a typed implementation with a pointwise proof that it equals one
+explicit Lean specification. The typed verified planner retains that proof; converting the object
+to ordinary capsule metadata does not.
+:::
+
+:::theorem "verified_kernel_execution" (parent := "backend_selection") (lean := "NN.Backend.VerifiedPlannedKernel.run_eq_specification")
+Executing a kernel selected by the typed verified planner returns the value of the specification
+that indexes the selected kernel.
+:::
+
+:::proof "verified_kernel_execution"
+The selected object retains the original {uses "proof_carrying_kernel"}[refinement field], so the
+result follows by applying that field to the input.
 :::
 
 :::definition "cuda_native_boundary" (parent := "backend_selection") (lean := "Runtime.Autograd.Cuda.Buffer")
@@ -104,12 +120,12 @@ conversion. The trainer owns a shape-indexed mutable parameter pack and runs its
 generic optimizer state is passed to and returned from update methods rather than stored here.
 :::
 
-:::definition "supervised_training_state" (parent := "training_runtime") (lean := "NN.API.TorchLean.Supervised.Stepper")
+:::definition "supervised_training_state" (parent := "training_runtime") (lean := "TorchLean.Trainer.Manual.Stepper")
 `Stepper` holds a supervised runner, a one-sample update closure, an epoch-over-list closure, and
 a step counter.
 :::
 
-:::definition "supervised_training_constructor" (parent := "training_runtime") (lean := "NN.API.TorchLean.Supervised.stepper")
+:::definition "supervised_training_constructor" (parent := "training_runtime") (lean := "TorchLean.Trainer.Manual.stepper")
 The supervised stepper constructor builds
 {uses "supervised_training_state"}[the stateful training loop] around
 {uses "runtime_module_training"}[a scalar module]. It selects an optimizer, applies an optional

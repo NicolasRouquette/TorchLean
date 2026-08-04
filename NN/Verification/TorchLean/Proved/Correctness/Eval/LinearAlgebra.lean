@@ -63,7 +63,7 @@ theorem evalAt_matmul_eq
       =
       Except.ok (DVal.mk (α := α) outShape (op.denote left right)) := by
   cases op <;>
-    simp [MatmulOperation.denote, Graph.evalAt, binaryGraphOut, binaryNodeOut, Graph.getNode,
+    simp [MatmulOperation.denote, Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, binaryGraphOut, binaryNodeOut, Graph.getNode,
       Graph.getNode?, Graph.expectShape, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Local IR semantics for rank-2 matrix multiplication. -/

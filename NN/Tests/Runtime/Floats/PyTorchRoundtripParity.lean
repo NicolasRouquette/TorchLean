@@ -134,7 +134,7 @@ def parityScript : String :=
     ]
 
 def leanMlp : IO (Array Float) := do
-  let j ← NN.API.Json.parseFile mlpJson
+  let j ← TorchLean.Json.parseFile mlpJson
   let some sd := Import.MLPPyTorch.loadMlpStateDict 2 3 1 j
     | throw (IO.userError "pytorch_roundtrip_parity: failed to load MLP state dict")
   let x : Tensor Float (.dim 2 .scalar) := tensor! [0.5, 0.8]
@@ -142,7 +142,7 @@ def leanMlp : IO (Array Float) := do
   pure #[vecVal y ⟨0, by decide⟩]
 
 def leanCnn : IO (Array Float) := do
-  let j ← NN.API.Json.parseFile cnnJson
+  let j ← TorchLean.Json.parseFile cnnJson
   let some sd := Import.CNNPyTorch.loadCnnStateDict 1 2 3 3 8 j
     | throw (IO.userError "pytorch_roundtrip_parity: failed to load CNN state dict")
   let conv1 : Conv2DSpec 1 2 3 3 1 1 Float (by decide) (by decide) (by decide) :=
@@ -150,9 +150,9 @@ def leanCnn : IO (Array Float) := do
   let conv2 : Conv2DSpec 2 2 3 3 1 1 Float (by decide) (by decide) (by decide) :=
     { kernel := sd.convW2, bias := sd.convB2 }
   let pool1 : MaxPool2DSpec 2 2 2 (by decide) (by decide) (by decide) :=
-    { kernelHeight := 2, kernelWidth := 2, stride := 2 }
+    {}
   let pool2 : MaxPool2DSpec 2 2 2 (by decide) (by decide) (by decide) :=
-    { kernelHeight := 2, kernelWidth := 2, stride := 2 }
+    {}
   let linear : LinearSpec Float 8 2 := { weights := sd.linearW, bias := sd.linearB }
   let net := Models.cnnWithReluSpec (α := Float)
     (inH := 8) (inW := 8) conv1 conv2 pool1 pool2 linear
@@ -165,7 +165,7 @@ def leanCnn : IO (Array Float) := do
   pure #[vecVal y ⟨0, by decide⟩, vecVal y ⟨1, by decide⟩]
 
 def leanTransformer : IO (Array Float) := do
-  let j ← NN.API.Json.parseFile transformerJson
+  let j ← TorchLean.Json.parseFile transformerJson
   let some sd := Import.TransformerPyTorch.loadTransformerEncoderStateDict 2 1 2 j
     | throw (IO.userError "pytorch_roundtrip_parity: failed to load Transformer state dict")
   let layer : TransformerEncoderLayer 1 2 2 Float :=

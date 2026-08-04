@@ -59,16 +59,19 @@ def inputSize : Nat := 4
 def hiddenSize : Nat := 2
 
 /-- Shared shape/config record for the reusable RNN-with-head constructor. -/
-def cfg : nn.models.SeqRnnHeadConfig :=
-  { seqLen := seqLen, inputSize := inputSize, hiddenSize := hiddenSize }
+def cfg : nn.models.RecurrentConfig :=
+  { seqLen := seqLen
+    inputSize := inputSize
+    hiddenSize := hiddenSize
+    outputSize := inputSize }
 
 /-- Input shape: one token vector per timestep. -/
 abbrev σ :=
-  nn.models.seqRnnHeadInShape cfg
+  nn.models.recurrentInShape cfg
 
 /-- Output shape: one prediction row per timestep. -/
 abbrev τ :=
-  nn.models.seqRnnHeadOutShape cfg
+  nn.models.recurrentOutShape cfg
 
 /-- Vanilla RNN followed by a time-distributed linear output head. -/
 def model : nn.M (nn.Sequential σ τ) :=
@@ -81,7 +84,7 @@ def sample (corpus : String) : SupervisedSample Float σ τ :=
 
 /-- Train the vanilla RNN with the public `Trainer` surface. -/
 def train (opts : Options) (corpusFlags : RealData.TextCorpusFlags)
-    (flags : ModelZoo.LoggedTrainFlags) : IO Unit := do
+    (flags : CLI.Training.RunOptions) : IO Unit := do
   let corpus ← RealData.TextCorpusFlags.read exeName corpusFlags
   let trainer :=
     Trainer.new model <|
@@ -91,7 +94,7 @@ def train (opts : Options) (corpusFlags : RealData.TextCorpusFlags)
   let trainData := Data.floatSamples [sample corpus]
   let trained ← trainer.train
     trainData
-    (ModelZoo.LoggedTrainFlags.trainOptions flags
+    (CLI.Training.RunOptions.toTrainerOptions flags
       (title := "RNN text training")
       (notes := #[s!"corpus={corpusFlags.path}"]))
   trained.printSummary

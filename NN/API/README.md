@@ -40,15 +40,14 @@ Related APIs are organized by object:
 * **LoRA** is adapter/parameterization structure. It lives under `TorchLean.Adapters.LoRA`, so
   examples keep adapter weights and optimizer state separate.
 
-For application code, import `NN.API` and use the `TorchLean` namespace. Files that also use
-proofs, verification, graph specifications, or backend internals can import the complete `NN`
-umbrella. TorchLean's implementation uses narrower modules to keep subsystem dependencies explicit.
+For application code, import `NN.API` and use the `TorchLean` namespace. A file that also needs
+proofs, verification, graph specifications, or backend internals can import `NN`. Focused imports
+remain available when only one subsystem is needed.
 
-Neural architectures and classical models have different interfaces because they are different
-kinds of object. Trainable neural constructors live under `TorchLean.nn.models`. Existing KNN,
-random-forest, Naive Bayes, SVM, GMM, PCA, regression, gradient-boosted-tree, HMM, and Hopfield
-definitions are available under `TorchLean.classical`. These are aliases to the mathematical model
-definitions in `NN.Spec.Models`, not copied implementations.
+Trainable neural constructors live under `TorchLean.nn.models`. KNN, random-forest, Naive Bayes,
+SVM, GMM, PCA, regression, gradient-boosted-tree, HMM, and Hopfield definitions retain their
+original names from `NN.Spec.Models`. `NN.API` imports those definitions directly instead of
+maintaining a second namespace of aliases.
 
 ## Application API
 
@@ -109,7 +108,7 @@ When an example needs lower-level control, use the runtime API deliberately:
 - `TorchLean.Module.*` for manually instantiated modules and custom losses.
 - `TorchLean.Runtime.*` for scalar/backend options and runtime plumbing.
 - `TorchLean.Data.*` for shape-checked loaders and batch streams.
-- `TorchLean.Verification.*` for certificate/checker entrypoints.
+- `TorchLean.Verification.*` for compiling checks and reading their results.
 
 ## Related References
 

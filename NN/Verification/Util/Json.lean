@@ -44,17 +44,17 @@ Use this at checker boundaries instead of repeating `IO.FS.readFile` and `Json.p
 tool. The file path is included in parse errors.
 -/
 def readJsonFile (path : String) : IO Json :=
-  NN.API.Json.parseFile (System.FilePath.mk path)
+  TorchLean.Json.parseFile (System.FilePath.mk path)
 
 /-- Ensure a JSON value is an object. -/
 def expectObj (j : Json) (ctx : String) : IO Json := do
-  match NN.API.Json.expectObjE ctx j with
+  match TorchLean.Json.expectObjE ctx j with
   | .ok _ => pure j
   | .error e => throw <| IO.userError e
 
 /-- Extract a required field from a JSON object. -/
 def expectField (j : Json) (k : String) (ctx : String) : IO Json := do
-  match NN.API.Json.expectFieldE ctx k j with
+  match TorchLean.Json.expectFieldE ctx k j with
   | .ok v => pure v
   | .error e => throw <| IO.userError e
 
@@ -65,24 +65,24 @@ def readJsonObjectFile (path : String) (ctx : String := "top-level") : IO Json :
 
 /-- Extract an optional field from a JSON object. -/
 def optionalField? (j : Json) (k : String) (ctx : String) : IO (Option Json) := do
-  let o ← fromExcept <| NN.API.Json.expectObjE ctx j
+  let o ← fromExcept <| TorchLean.Json.expectObjE ctx j
   pure <| Std.TreeMap.Raw.get? o k
 
 /-- Require a JSON string in an `IO` parser, preserving contextual error messages. -/
 def expectString (j : Json) (ctx : String) : IO String :=
-  fromExcept <| NN.API.Json.expectStringE ctx j
+  fromExcept <| TorchLean.Json.expectStringE ctx j
 
 /-- Require a natural number, accepting either JSON numeric syntax or a decimal string. -/
 def expectNat (j : Json) (ctx : String) : IO Nat :=
-  fromExcept <| NN.API.Json.expectNatE ctx j
+  fromExcept <| TorchLean.Json.expectNatE ctx j
 
 /-- Require a JSON array and return its entries. -/
 def expectArray (j : Json) (ctx : String) : IO (Array Json) :=
-  fromExcept <| NN.API.Json.expectArrayE ctx j
+  fromExcept <| TorchLean.Json.expectArrayE ctx j
 
 /-- Parse a `Nat` from a JSON number or decimal string. -/
 def asNat? (j : Json) : Option Nat :=
-  match NN.API.Json.expectNatE "Nat" j with
+  match TorchLean.Json.expectNatE "Nat" j with
   | .ok n => some n
   | .error _ => none
 
@@ -116,17 +116,99 @@ def expectFiniteFloatE (ctx : String) (j : Json) : Except String Float :=
   | some x => pure x
   | none => throw s!"{ctx}: expected finite float"
 
+/-- Parse a JSON array of finite floats in an `Except` parser. -/
+def expectFiniteFloatArrayE (ctx : String) (j : Json) : Except String (Array Float) := do
+  let xs ← TorchLean.Json.expectArrayE ctx j
+  xs.mapIdxM fun i x => expectFiniteFloatE s!"{ctx}[{i}]" x
+
+/-- A finite axis-aligned region parsed from a verification artifact. -/
+structure BoxRegion where
+  /-- Declared dimension, or the inferred endpoint-array length when `dim` is absent. -/
+  dim : Nat
+  /-- Lower coordinate bounds. -/
+  lo : Array Float
+  /-- Upper coordinate bounds. -/
+  hi : Array Float
+  deriving Repr
+
+namespace BoxRegion
+
+/-- Check the dimensional and ordering invariants of an axis-aligned region. -/
+def validate (ctx : String) (region : BoxRegion) : Except String Unit := do
+  unless region.lo.size = region.dim && region.hi.size = region.dim do
+    throw <| s!"{ctx}: dimension {region.dim} does not match endpoint lengths " ++
+      s!"{region.lo.size} and {region.hi.size}"
+  for i in [0:region.dim] do
+    let lo := region.lo[i]!
+    let hi := region.hi[i]!
+    unless lo.isFinite && hi.isFinite && lo <= hi do
+      throw s!"{ctx}: invalid interval at coordinate {i}: [{lo}, {hi}]"
+
+end BoxRegion
+
+/--
+Parse either `{lo, hi}` or `{center, eps}` notation for a finite axis-aligned region.
+
+When `dim` is absent, it is inferred from the endpoint or center array. When present, it must be a
+natural number equal to the resulting endpoint lengths. The parser also rejects negative radii,
+non-finite values, incomplete schemas, and intervals whose lower endpoint exceeds the upper one.
+Keeping these checks here gives certificate consumers one well-formed region type instead of
+several subtly different parsers.
+-/
+def expectBoxRegionE (ctx : String) (j : Json) : Except String BoxRegion := do
+  let obj <- TorchLean.Json.expectObjE ctx j
+  let declaredDim? <- match Std.TreeMap.Raw.get? obj "dim" with
+    | none => pure none
+    | some dimJson => some <$> TorchLean.Json.expectNatE s!"{ctx}.dim" dimJson
+  let lo? := Std.TreeMap.Raw.get? obj "lo"
+  let hi? := Std.TreeMap.Raw.get? obj "hi"
+  let center? := Std.TreeMap.Raw.get? obj "center"
+  let eps? := Std.TreeMap.Raw.get? obj "eps"
+  let region <- match lo?, hi?, center?, eps? with
+  | some loJson, some hiJson, none, none =>
+      let lo ← expectFiniteFloatArrayE s!"{ctx}.lo" loJson
+      let hi ← expectFiniteFloatArrayE s!"{ctx}.hi" hiJson
+      pure { dim := declaredDim?.getD lo.size, lo, hi }
+  | none, none, some centerJson, some epsJson =>
+      let center ← expectFiniteFloatArrayE s!"{ctx}.center" centerJson
+      let radius ← expectFiniteFloatE s!"{ctx}.eps" epsJson
+      pure
+        { dim := declaredDim?.getD center.size
+          lo := center.map (· - radius)
+          hi := center.map (· + radius) }
+  | some _, none, _, _ =>
+      throw s!"{ctx}: field `lo` requires a matching `hi` field"
+  | none, some _, _, _ =>
+      throw s!"{ctx}: field `hi` requires a matching `lo` field"
+  | some _, some _, _, _ =>
+      throw s!"{ctx}: endpoint fields (`lo`, `hi`) cannot be combined with `center` or `eps`"
+  | none, none, some _, none =>
+      throw s!"{ctx}: field `center` requires a matching `eps` field"
+  | none, none, none, some _ =>
+      throw s!"{ctx}: field `eps` requires either `center` or endpoint fields"
+  | none, none, none, none =>
+      throw s!"{ctx}: expected either (`lo`, `hi`) or (`center`, `eps`)"
+  region.validate ctx
+  pure region
+
+/-- Parse the exact endpoint schema `{lo, hi}`, with an optional matching `dim` field. -/
+def expectEndpointBoxRegionE (ctx : String) (j : Json) : Except String BoxRegion := do
+  let obj ← TorchLean.Json.expectObjE ctx j
+  if (Std.TreeMap.Raw.get? obj "center").isSome || (Std.TreeMap.Raw.get? obj "eps").isSome then
+    throw s!"{ctx}: expected endpoint fields (`lo`, `hi`), not `center` or `eps`"
+  expectBoxRegionE ctx j
+
 /-- Extract a floating-point-valued field in an `Except` parser. -/
 def expectFieldFloatE (ctx key : String) (j : Json) : Except String Float := do
-  expectFloatE s!"{ctx}.{key}" (← NN.API.Json.expectFieldE ctx key j)
+  expectFloatE s!"{ctx}.{key}" (← TorchLean.Json.expectFieldE ctx key j)
 
 /-- Extract a finite floating-point-valued field in an `Except` parser. -/
 def expectFieldFiniteFloatE (ctx key : String) (j : Json) : Except String Float := do
-  expectFiniteFloatE s!"{ctx}.{key}" (← NN.API.Json.expectFieldE ctx key j)
+  expectFiniteFloatE s!"{ctx}.{key}" (← TorchLean.Json.expectFieldE ctx key j)
 
 /-- Extract a string-valued field in an `Except` parser. -/
 def expectFieldStringE (ctx key : String) (j : Json) : Except String String := do
-  NN.API.Json.expectStringE s!"{ctx}.{key}" (← NN.API.Json.expectFieldE ctx key j)
+  TorchLean.Json.expectStringE s!"{ctx}.{key}" (← TorchLean.Json.expectFieldE ctx key j)
 
 /-- Decode a JSON boolean if the value is exactly `true` or `false`. -/
 def parseBool? (j : Json) : Option Bool :=
@@ -205,7 +287,7 @@ def expectFieldArray (j : Json) (k : String) (ctx : String) : IO (Array Json) :=
 
 /-- Extract an optional array-valued field in an `Except` parser, using `#[]` when absent/null. -/
 def optionalFieldArrayD (ctx key : String) (j : Json) : Except String (Array Json) := do
-  let o ← NN.API.Json.expectObjE ctx j
+  let o ← TorchLean.Json.expectObjE ctx j
   match Std.TreeMap.Raw.get? o key with
   | none => pure #[]
   | some .null => pure #[]

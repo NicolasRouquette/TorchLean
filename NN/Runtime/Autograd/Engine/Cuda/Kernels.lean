@@ -108,16 +108,64 @@ Output is row-major of length `rows*cols`, with `out[i, j] = vec[i]`.
 opaque broadcastVecToCols (vec : @& Buffer) (rows cols : UInt32) : Buffer
 
 /--
-Batched matrix multiply over row-major buffers.
+Layer normalization over the columns of a row-major `(rows, cols)` buffer.
 
-Input:
-- `A`: length `batch*m*n` representing `batch` matrices of shape `(m, n)` (row-major)
-- `B`: length `batch*n*p` representing `batch` matrices of shape `(n, p)` (row-major)
-Output:
-- length `batch*m*p` representing `batch` matrices of shape `(m, p)` (row-major)
+`gamma` and `beta` each have length `cols`. The result is `(output, normalized, invStd)`, where
+`normalized` has shape `(rows, cols)` and `invStd` has length `rows`. Keeping these two values is
+enough for TorchLean's layer-normalization VJP; the native kernel does not create or own an
+autograd graph.
 -/
-@[extern "torchlean_cuda_buffer_bmm"]
-opaque bmm (A B : @& Buffer) (batch m n p : UInt32) : Buffer
+@[extern "torchlean_cuda_buffer_layer_norm_fwd"]
+opaque layerNormFwd
+    (x gamma beta : @& Buffer) (rows cols : UInt32) (invCols epsilon : Float) :
+    Buffer × Buffer × Buffer
+
+/--
+TorchLean's layer-normalization VJP evaluated by a fused buffer kernel.
+
+Given the upstream derivative, cached normalized values and inverse standard deviations, and
+`gamma`, returns `(dX, dGamma, dBeta)`. The formula and parent association remain part of the
+TorchLean tape; this primitive only evaluates that formula.
+-/
+@[extern "torchlean_cuda_buffer_layer_norm_bwd"]
+opaque layerNormBwd
+    (dOut normalized invStd gamma : @& Buffer) (rows cols : UInt32)
+    (colsScale invCols : Float) : Buffer × Buffer × Buffer
+
+/--
+Batched matrix multiply over row-major buffers, optionally transposing either logical operand.
+
+The logical multiplication always has shape `(batch, m, n) × (batch, n, p)`. When
+`transposeA = 1`, the stored shape of `A` is `(batch, n, m)`; when `transposeB = 1`, the stored
+shape of `B` is `(batch, p, n)`. Other flag values are rejected by the native boundary.
+
+cuBLAS consumes these layouts directly. In particular, backward rules can request `Aᵀ B` or
+`A Bᵀ` without first allocating a transposed buffer.
+-/
+@[extern "torchlean_cuda_buffer_bmm_with_transpose"]
+opaque bmmWithTranspose (A B : @& Buffer) (batch m n p transposeA transposeB : UInt32) : Buffer
+
+/-- Batched matrix multiplication `A B` for ordinary row-major operands. -/
+def bmm (A B : Buffer) (batch m n p : UInt32) : Buffer :=
+  bmmWithTranspose A B batch m n p 0 0
+
+/--
+Batched multiplication `A Bᵀ`.
+
+`A` is stored as `(batch, m, n)` and `B` as `(batch, p, n)`; the result has shape
+`(batch, m, p)`.
+-/
+def bmmRightTranspose (A B : Buffer) (batch m n p : UInt32) : Buffer :=
+  bmmWithTranspose A B batch m n p 0 1
+
+/--
+Batched multiplication `Aᵀ B`.
+
+`A` is stored as `(batch, n, m)` and `B` as `(batch, n, p)`; the result has shape
+`(batch, m, p)`.
+-/
+def bmmLeftTranspose (A B : Buffer) (batch m n p : UInt32) : Buffer :=
+  bmmWithTranspose A B batch m n p 1 0
 
 /--
 Real-valued 1D FFT over row-major batches, returning a packed half-spectrum.

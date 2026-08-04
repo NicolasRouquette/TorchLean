@@ -98,7 +98,7 @@ theorem evalAt_batchNorm2dNchwEval_eq
       Except.ok
         (DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
           (batchNorm2dNchwEvalTensor (α := α) gamma beta mean var eps x)) := by
-  simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
     Graph.evalBatchNorm2DNchwEval, singletonBatchNorm2DNchwEvalPayload, Graph.expectShape,
     batchNorm2dNchwEvalTensor, shapeBNe_refl,
     Bind.bind, Except.bind, Pure.pure, Except.pure]

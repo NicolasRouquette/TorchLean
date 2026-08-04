@@ -57,7 +57,7 @@ an unreachable totality fallback.
 def greedyActionFromLogits {α : Type} [LT α] [DecidableRel ((· > ·) : α → α → Prop)]
     {nActions : Nat} [Fact (0 < nActions)]
     (logits : Tensor α (.dim nActions .scalar)) : Fin nActions :=
-  match Runtime.Autograd.TorchLean.Metrics.argmax? (α := α) (n := nActions) logits with
+  match _root_.TorchLean.Metrics.argmax? (α := α) (n := nActions) logits with
   | some a => a
   | none =>
       -- This branch is unreachable when `nActions > 0`, but it keeps the API total.

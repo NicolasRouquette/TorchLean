@@ -93,34 +93,6 @@ def requireScalarValue {a : Type} [DecidableEq Shape]
 
 This is a small tensor-level update used by many tests.
 -/
-/--
-Single-tensor SGD update rule.
-
-Given a parameter tensor `param`, its gradient tensor `grad`, and a learning rate `lr`, compute:
-
-`param - lr * grad`.
-
-This is plain SGD (no momentum, weight decay, etc.); higher-level optimizers live in
-`NN.Runtime.Autograd.Train.Optim`.
--/
-def sgdUpdateTensor {a : Type} [Sub a] [Mul a] {s : Shape}
-  (param grad : Tensor a s) (lr : a) : Tensor a s :=
-  Tensor.subSpec param (Tensor.scaleSpec grad lr)
-
-/--
-The SGD helper is the same formula as the canonical pure optimizer.
-
-We keep `sgdUpdateTensor` because it has a small algebraic signature (`Sub`/`Mul`) that is convenient
-in tests, but this theorem pins it to the canonical optimizer equation used by the runtime
-optimizer layer.
--/
-theorem sgdUpdateTensor_eq_optimSGD {a : Type} [Context a]
-    [DecidableRel ((· > ·) : a → a → Prop)] {s : Shape}
-    (param grad : Tensor a s) (lr : a) :
-    sgdUpdateTensor param grad lr =
-      _root_.Optim.SGD.update (α := a) (s := s) { lr := lr } param grad := by
-  rfl
-
 end Train
 end Autograd
 end Runtime

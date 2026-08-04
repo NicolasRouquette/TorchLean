@@ -8,7 +8,7 @@ module
 
 public import NN.Spec
 public import NN.API.Macros
-public import NN.API.Public.TensorPack
+public import NN.API.TensorPack
 public import NN.MLTheory.CROWN.Core
 public import NN.MLTheory.CROWN.Graph
 public import NN.MLTheory.CROWN.Lyapunov.TwoStage.Core
@@ -89,7 +89,7 @@ def lossProg (width : Nat) :
       TorchLean.Program β (paramShapes width ++ [xShape]) Shape.scalar :=
   Core.lossProgram width
 
-def initParamsF (width : Nat) : NN.API.TorchLean.TensorPack Float (paramShapes width) :=
+def initParamsF (width : Nat) : _root_.TorchLean.TensorPack Float (paramShapes width) :=
   let wC : Tensor Float (.dim uDim (.dim xDim .scalar)) :=
     _root_.Runtime.Autograd.Torch.Init.xavierW uDim xDim (seed := 0)
   let bC : Tensor Float (.dim uDim .scalar) :=
@@ -135,10 +135,10 @@ def run (width : Nat) (args : List String) : IO Unit := do
   for i in [0:stage1Steps] do
     let (seed', x) := sampleStateVector seed rad
     seed := seed'
-    let xs : NN.API.TorchLean.TensorPack α [xShape] := tensorpack! x
+    let xs : _root_.TorchLean.TensorPack α [xShape] := tensorpack! x
     let currentLoss := _root_.Runtime.Autograd.Torch.scalarOf (←
-      _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr xs)
-    _root_.Runtime.Autograd.Torch.ScalarTrainer.stepT tr lr xs
+      _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr xs .nil)
+    _root_.Runtime.Autograd.Torch.ScalarTrainer.stepT tr lr xs .nil
     if i % 5 = 0 then
       IO.println s!"[stage1] step {i}: loss={currentLoss}"
 
@@ -151,10 +151,10 @@ def run (width : Nat) (args : List String) : IO Unit := do
     for _k in [0:pgdSteps] do
       x := CompiledLossAnalysis.projectedGradientStep
         width cLoss params x pgdStepSize rad
-    let xs : NN.API.TorchLean.TensorPack α [xShape] := tensorpack! x
+    let xs : _root_.TorchLean.TensorPack α [xShape] := tensorpack! x
     let lossFound := _root_.Runtime.Autograd.Torch.scalarOf (←
-      _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr xs)
-    _root_.Runtime.Autograd.Torch.ScalarTrainer.stepT tr lr xs
+      _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr xs .nil)
+    _root_.Runtime.Autograd.Torch.ScalarTrainer.stepT tr lr xs .nil
     IO.println s!"[stage2] round {round}: loss={lossFound}"
 
   let params ← tr.getParams

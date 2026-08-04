@@ -68,26 +68,27 @@ def paramShapes : List Spec.Shape :=
 /-- TorchLean program: `mha -> layer_norm -> mse_loss`, returning a scalar loss. -/
 def modelLoss {α : Type} [Context α] [DecidableEq Spec.Shape] :
     _root_.Runtime.Autograd.TorchLean.Program α (paramShapes ++ [xShape])
-      _root_.TorchLean.Shape.scalar :=
+      Spec.Shape.scalar :=
   fun {m} _ _ =>
     fun wq wk wv wo gamma beta target x =>
       (do
-        let y ← Ops.multiHeadAttention (m := m) (α := α)
-          (batch := batch) (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
+        let y ← _root_.Runtime.Autograd.TorchLean.multiHeadAttention (m := m) (α := α)
+          (batch := batch) (n := n) (numHeads := numHeads) (dModel := dModel)
+          (headDim := headDim)
           (h1 := by decide) wq wk wv wo x (mask := none)
-        let yLn ← Ops.layerNorm (m := m) (α := α)
+        let yLn ← _root_.Runtime.Autograd.TorchLean.layerNorm (m := m) (α := α)
           (batch := batch) (seqLen := n) (embedDim := dModel) (h_seq_pos := by decide)
           (h_embed_pos := by decide)
           y gamma beta
         Ops.mseLoss (m := m) (α := α) (s := xShape) yLn target
-        : m (Ops.RefTy (m := m) (α := α) _root_.TorchLean.Shape.scalar))
+        : m (Ops.RefTy (m := m) (α := α) Spec.Shape.scalar))
 
 /-- Runtime-selected typed runner used by the CLI entrypoint. -/
-def runMain {α : Type} [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [ToString α]
-    [Runtime.Scalar α] [BoundOps α] (withCrown : Bool) : IO Unit := do
+def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
+    [Runtime.FromFloat α] [BoundOps α] (withCrown : Bool) : IO Unit := do
   let cast : Float → α := Runtime.ofFloat
-  let params : nn.ParamTensors α paramShapes :=
-    nn.ParamTensors.septuple
+  let params : TensorPack α paramShapes :=
+    tensorpack.septuple
       (NN.Tensor.ofListOfLength (α := α) [2, 2]
         [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl))
       (NN.Tensor.ofListOfLength (α := α) [2, 2]
@@ -106,7 +107,7 @@ def runMain {α : Type} [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [To
   let compiled ←
     match Verification.compileProgram
           (α := α) (paramShapes := paramShapes) (σ := xShape)
-          (τ := _root_.TorchLean.Shape.scalar)
+          (τ := Spec.Shape.scalar)
           (modelLoss (α := α)) params with
     | .ok c => pure c
     | .error e => throw <| IO.userError e
@@ -152,13 +153,13 @@ def runMain {α : Type} [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [To
 
 /-- Runtime-selected typed runner for the default IBP-only path. -/
 def runMainDefault {α : Type}
-    [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [ToString α] [Runtime.Scalar α]
+    [_root_.Context α] [DecidableEq Spec.Shape] [ToString α] [Runtime.FromFloat α]
     [BoundOps α] : IO Unit :=
   runMain (α := α) false
 
 /-- Runtime-selected typed runner for the heavier IBP+CROWN path. -/
 def runMainWithCrown {α : Type}
-    [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [ToString α] [Runtime.Scalar α]
+    [_root_.Context α] [DecidableEq Spec.Shape] [ToString α] [Runtime.FromFloat α]
     [BoundOps α] : IO Unit :=
   runMain (α := α) true
 

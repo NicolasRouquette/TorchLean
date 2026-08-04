@@ -113,11 +113,11 @@ lake exe cache get
 lake build
 ```
 
-Use `import NN.API` for model, data, and training code. It provides the application-facing
-`TorchLean.nn`, `TorchLean.classical`, `TorchLean.Data`, `TorchLean.Trainer`, and
-`TorchLean.optim` namespaces. Use `import NN` when the same file also needs verification, proofs,
-or backend infrastructure; focused imports such as `NN.GraphSpec`, `NN.Runtime`, or `NN.Proofs`
-are available for subsystem work.
+Use `import NN.API` for model, data, and training code. It provides `TorchLean.nn`,
+`TorchLean.Data`, `TorchLean.Trainer`, and `TorchLean.optim`, together with the mathematical model
+definitions in `Spec`. Use `import NN` when the same file also needs verification, proofs, or
+backend infrastructure; focused imports such as `NN.GraphSpec`, `NN.Runtime`, or `NN.Proofs` are
+available for subsystem work.
 
 Downstream model and training files should start from:
 
@@ -148,8 +148,7 @@ require TorchLean from "../TorchLean"
 
 ## Repository Map
 
-- `NN.lean`: canonical umbrella import for model, tensor, data, training, verification,
-  and proof workflows.
+- `NN.lean`: complete import for model, tensor, data, training, verification, and proof workflows.
 - `NN/API`: the application API exported by `import NN.API` and included by `import NN`.
 - `NN/Spec`: mathematical tensor, layer, model, and dynamical-system definitions.
 - `NN/Runtime`: executable autograd, optimizers, training loops, CUDA boundary,

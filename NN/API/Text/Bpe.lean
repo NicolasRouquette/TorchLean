@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API.Json
-public import NN.API.Text
+public import NN.API.Text.Tokenizer
 public import NN.API.Text.Unicode
 public import Std.Data.HashMap
 
@@ -30,8 +30,7 @@ than Lean's ASCII-oriented `Char.isAlpha` / `Char.isDigit` helpers.
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
 namespace text
 namespace Gpt2Bpe
 
@@ -296,7 +295,7 @@ def encodeFragment (tok : Tokenizer) (fragment : String) : Except String (List N
   List.mapM (fun p =>
     match vocabId? tok p with
     | some id => pure id
-    | none => NN.API.Json.fail s!"BPE piece is absent from vocab: {repr p}") pieces
+    | none => TorchLean.Json.fail s!"BPE piece is absent from vocab: {repr p}") pieces
 
 /-- Encode text using the loaded GPT-2 BPE files. -/
 def encode (tok : Tokenizer) (text : String) : Except String (List Nat) := do
@@ -308,10 +307,10 @@ def decode? (tok : Tokenizer) (ids : List Nat) : Except String String := do
   let escaped ← ids.mapM (fun id =>
     match tokenString? tok id with
     | some s => pure s
-    | none => NN.API.Json.fail s!"BPE token id is absent from vocab: {id}")
+    | none => TorchLean.Json.fail s!"BPE token id is absent from vocab: {id}")
   match byteDecode? (String.join escaped) with
   | some s => pure s
-  | none => NN.API.Json.fail "BPE decoded bytes were not valid UTF-8"
+  | none => TorchLean.Json.fail "BPE decoded bytes were not valid UTF-8"
 
 /-- Total display-oriented decoder: invalid ids/UTF-8 decode to an empty string. -/
 def decodeD (tok : Tokenizer) (ids : List Nat) : String :=
@@ -320,7 +319,7 @@ def decodeD (tok : Tokenizer) (ids : List Nat) : String :=
   | .error _ => ""
 
 /-- Adapt a loaded GPT-2 BPE tokenizer to the generic text-tokenizer interface. -/
-def asTextTokenizer (tok : Tokenizer) : NN.API.text.Tokenizer where
+def asTextTokenizer (tok : Tokenizer) : TorchLean.text.Tokenizer where
   vocabSize := tok.vocab.size
   encode := fun s =>
     match encode tok s with
@@ -332,10 +331,10 @@ def asTextTokenizer (tok : Tokenizer) : NN.API.text.Tokenizer where
 
 /-- Parse GPT-2 `vocab.json` as an array of `(token, id)` entries. -/
 def parseVocab (j : Json) : Except String (Array VocabEntry) := do
-  let o ← NN.API.Json.expectObjE "vocab.json" j
+  let o ← TorchLean.Json.expectObjE "vocab.json" j
   let entries := Std.TreeMap.Raw.toList o
   entries.toArray.mapM (fun (tok, idJ) => do
-    let id ← NN.API.Json.expectNatE s!"vocab id for {repr tok}" idJ
+    let id ← TorchLean.Json.expectNatE s!"vocab id for {repr tok}" idJ
     pure { token := tok, id := id })
 
 /-!
@@ -387,10 +386,10 @@ def combineSurrogate (hi lo : Nat) : Nat :=
 /-- Fuel-bounded worker for JSON string parsing with escape handling. -/
 def parseJsonStringAux (cs : Array Char) : Nat → Nat → List Char →
     Except String (String × Nat)
-  | 0, _, _ => NN.API.Json.fail "vocab.json: string parser exhausted fuel"
+  | 0, _, _ => TorchLean.Json.fail "vocab.json: string parser exhausted fuel"
   | fuel + 1, i, acc =>
       if i ≥ cs.size then
-        NN.API.Json.fail "vocab.json: unterminated JSON string"
+        TorchLean.Json.fail "vocab.json: unterminated JSON string"
       else
         let c := charAtD cs i
         if c == '"' then
@@ -398,7 +397,7 @@ def parseJsonStringAux (cs : Array Char) : Nat → Nat → List Char →
         else if c == '\\' then
           let j := i + 1
           if j ≥ cs.size then
-            NN.API.Json.fail "vocab.json: unterminated JSON escape"
+            TorchLean.Json.fail "vocab.json: unterminated JSON escape"
           else
             match charAtD cs j with
             | '"' => parseJsonStringAux cs fuel (j + 1) ('"' :: acc)
@@ -411,7 +410,7 @@ def parseJsonStringAux (cs : Array Char) : Nat → Nat → List Char →
             | 't' => parseJsonStringAux cs fuel (j + 1) ('\t' :: acc)
             | 'u' =>
                 match parseHex4? cs (j + 1) with
-                | none => NN.API.Json.fail "vocab.json: invalid unicode escape"
+                | none => TorchLean.Json.fail "vocab.json: invalid unicode escape"
                 | some hi =>
                     let afterHi := j + 5
                     if 0xD800 ≤ hi && hi ≤ 0xDBFF &&
@@ -423,18 +422,18 @@ def parseJsonStringAux (cs : Array Char) : Nat → Nat → List Char →
                             parseJsonStringAux cs fuel (afterHi + 6)
                               (Char.ofNat (combineSurrogate hi lo) :: acc)
                           else
-                            NN.API.Json.fail "vocab.json: invalid low surrogate"
-                      | none => NN.API.Json.fail "vocab.json: invalid low surrogate escape"
+                            TorchLean.Json.fail "vocab.json: invalid low surrogate"
+                      | none => TorchLean.Json.fail "vocab.json: invalid low surrogate escape"
                     else
                       parseJsonStringAux cs fuel afterHi (Char.ofNat hi :: acc)
-            | esc => NN.API.Json.fail s!"vocab.json: unsupported escape \\{esc}"
+            | esc => TorchLean.Json.fail s!"vocab.json: unsupported escape \\{esc}"
         else
           parseJsonStringAux cs fuel (i + 1) (c :: acc)
 
 /-- Parse a JSON string beginning at index `i`. -/
 def parseJsonStringAt (cs : Array Char) (i : Nat) : Except String (String × Nat) := do
   if charAtD cs i != '"' then
-    NN.API.Json.fail "vocab.json: expected JSON string"
+    TorchLean.Json.fail "vocab.json: expected JSON string"
   parseJsonStringAux cs (cs.size - i + 1) (i + 1) []
 
 /-- Parse a natural-number literal beginning at index `i`. -/
@@ -453,23 +452,23 @@ def parseNatAt (cs : Array Char) (i : Nat) : Except String (Nat × Nat) := do
   if seen then
     pure (n, j)
   else
-    NN.API.Json.fail "vocab.json: expected natural number"
+    TorchLean.Json.fail "vocab.json: expected natural number"
 
 /-- Fuel-bounded loop for the specialized GPT-2 `vocab.json` object parser. -/
 def parseVocabTextLoop (cs : Array Char) : Nat → Nat → Array VocabEntry →
     Except String (Array VocabEntry)
-  | 0, _, _ => NN.API.Json.fail "vocab.json: parser exhausted fuel"
+  | 0, _, _ => TorchLean.Json.fail "vocab.json: parser exhausted fuel"
   | fuel + 1, i, acc => do
       let i := skipJsonWs cs i
       if i ≥ cs.size then
-        NN.API.Json.fail "vocab.json: unexpected end of file"
+        TorchLean.Json.fail "vocab.json: unexpected end of file"
       else if charAtD cs i == '}' then
         pure acc
       else
         let (tok, i) ← parseJsonStringAt cs i
         let i := skipJsonWs cs i
         if charAtD cs i != ':' then
-          NN.API.Json.fail "vocab.json: expected ':'"
+          TorchLean.Json.fail "vocab.json: expected ':'"
         else
           let i := skipJsonWs cs (i + 1)
           let (id, i) ← parseNatAt cs i
@@ -480,14 +479,14 @@ def parseVocabTextLoop (cs : Array Char) : Nat → Nat → Array VocabEntry →
           else if charAtD cs i == '}' then
             pure acc
           else
-            NN.API.Json.fail "vocab.json: expected ',' or '}'"
+            TorchLean.Json.fail "vocab.json: expected ',' or '}'"
 
 /-- Parse GPT-2 `vocab.json` directly from text. -/
 def parseVocabText (s : String) : Except String (Array VocabEntry) := do
   let cs := s.toList.toArray
   let i := skipJsonWs cs 0
   if charAtD cs i != '{' then
-    NN.API.Json.fail "vocab.json: expected top-level object"
+    TorchLean.Json.fail "vocab.json: expected top-level object"
   parseVocabTextLoop cs (cs.size + 1) (i + 1) #[]
 
 /-- Build the token-to-id lookup table stored in a loaded GPT-2 BPE tokenizer. -/
@@ -618,5 +617,4 @@ def localizeBpeTokens (lv : LocalBpeVocab) (tokens : Array Nat) : Array Nat :=
   tokens.map (fun id => lv.toLocal id)
 
 end text
-end API
-end NN
+end TorchLean

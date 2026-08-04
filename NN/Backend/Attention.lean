@@ -24,67 +24,85 @@ namespace NN
 namespace Backend
 namespace Attention
 
-/-- Shared op tag for scaled dot-product attention capsules. -/
-def scaledDotProductOp : BackendOp := .scaledDotProductAttention
+/--
+Composed TorchLean attention path.
 
-/-- Composed TorchLean attention path: slower, but aligned with the hard-mask spec. -/
+TorchLean owns the tape and local VJP. CUDA batched matrix multiplication evaluates the two dense
+contractions, while TorchLean's hard-masked softmax supplies the attention weights. Unlike the
+direct reference kernel, this implementation has the expected quadratic dependence on sequence
+length.
+-/
 def torchLeanComposed : KernelCapsule :=
   { name := "torchlean.composed_attention"
-    op := scaledDotProductOp
+    op := .scaledDotProductAttention
     provider := .torchLean
     device := .cuda
     trustLevel := .checked
     supportsForward := true
     vjpMode := .torchLeanTape
     shapeContract :=
-      ContractDescriptor.guarded (.shapeSafety scaledDotProductOp)
-        "Q/K/V have shape (heads, n, headDim); optional mask broadcasts to (heads, n, n)."
+      ContractDescriptor.guarded (.shapeSafety .scaledDotProductAttention)
+        ("Q/K/V have logical shape (batch, heads, n, headDim), with batch optional; the runtime " ++
+          "folds (batch, heads) for BMM and broadcasts the mask over that folded axis.")
         "Runtime.Autograd.Cuda.requireValue plus checked UInt32 dimensions"
     layoutContract :=
-      ContractDescriptor.guarded (.layoutCompatibility scaledDotProductOp .flatRowMajor)
-        "Flat row-major buffers; head axis is the batch axis for bmm."
+      ContractDescriptor.guarded
+        (.layoutCompatibility .scaledDotProductAttention .flatRowMajor)
+        "Flat row-major buffers; the folded (batch, head) axis is the BMM batch axis."
         "Buffer.swapAdjacentAtDepth and bmm shape checks"
     valueContract :=
       ContractDescriptor.tested
-        (.valueRefinement scaledDotProductOp "Spec.scaledDotProductAttention")
+        (.valueRefinement .scaledDotProductAttention)
         "Composed bmm, hard-masked row softmax, and bmm."
         "NN.Tests.Runtime.Cuda.Attention"
     vjpContract :=
       ContractDescriptor.tested
-        (.vjpRefinement scaledDotProductOp "Spec.scaledDotProductAttentionBackward" .torchLeanTape)
-        "TorchLean tape VJP through the composed attention expression."
+        (.vjpRefinement .scaledDotProductAttention .torchLeanTape)
+        ("TorchLean tape VJP through the composed expression, summing shared weight gradients " ++
+          "over the leading batch.")
         "Runtime autograd attention tests"
     numericalPolicy :=
       { rounding := .nearestEven
         subnormals := .implementationDefined
         contraction := .implementationDefined
         reduction := .implementationDefined }
-    notes := "This is the proof-aligned fallback path: masked entries have zero softmax numerator." }
+    notes :=
+      "This is the checked CUDA default: masked entries have zero softmax numerator and " ++
+        "TorchLean owns the local VJP. cuBLAS supplies the dense contractions inside the " ++
+        "composed operation." }
 
-/-- Native fused attention path: faster than the composed fallback, still a CUDA runtime boundary. -/
-def nativeFlashAttention : KernelCapsule :=
-  { name := "native_cuda.flash_attention"
-    op := scaledDotProductOp
+/--
+Direct native CUDA reference path.
+
+The implementation computes attention without materializing the score matrix, but it is not the
+IO-tiled FlashAttention algorithm. Its backward kernel recomputes row statistics and is intended
+for parity checks and small inputs rather than large-model training.
+-/
+def nativeDirectAttention : KernelCapsule :=
+  { name := "native_cuda.direct_attention"
+    op := .scaledDotProductAttention
     provider := .nativeCuda
     device := .cuda
     trustLevel := .checked
     supportsForward := true
     vjpMode := .backendVJP
     shapeContract :=
-      ContractDescriptor.guarded (.shapeSafety scaledDotProductOp)
-        "Q/K/V have shape (heads, n, headDim); optional mask broadcasts to (heads, n, n)."
+      ContractDescriptor.guarded (.shapeSafety .scaledDotProductAttention)
+        ("Q/K/V use a folded (batch, head, n, headDim) layout; the optional mask broadcasts " ++
+          "over the folded batch-head axis.")
         "torchlean_cuda_buffer_flash_attention_* size checks"
     layoutContract :=
-      ContractDescriptor.guarded (.layoutCompatibility scaledDotProductOp .flatRowMajor)
-        "Flat row-major buffers; head axis is the batch axis."
+      ContractDescriptor.guarded
+        (.layoutCompatibility .scaledDotProductAttention .flatRowMajor)
+        "Flat row-major buffers; the folded batch-head axis is the kernel batch axis."
         "Cuda.Buffer shape/size FFI checks"
     valueContract :=
-      ContractDescriptor.tested (.valueRefinement scaledDotProductOp "Spec.flashAttention")
+      ContractDescriptor.tested (.valueRefinement .scaledDotProductAttention)
         "Direct CUDA fused attention with hard-mask zero-numerator semantics."
         "NN.Tests.Runtime.Cuda.Attention"
     vjpContract :=
       ContractDescriptor.tested
-        (.vjpRefinement scaledDotProductOp "Spec.flashAttentionBackward" .backendVJP)
+        (.vjpRefinement .scaledDotProductAttention .backendVJP)
         "CUDA VJP kernels return dQ, dK, and dV for the fused operator."
         "NN.Tests.Runtime.Cuda.Attention"
     numericalPolicy :=
@@ -92,24 +110,27 @@ def nativeFlashAttention : KernelCapsule :=
         subnormals := .implementationDefined
         contraction := .fused
         reduction := .implementationDefined }
-    notes := "This is the default fused CUDA capsule until a planner explicitly selects LibTorch." }
+    notes :=
+      "A direct reference implementation retained for parity checks and small inputs; it is not " ++
+      "the checked CUDA default." }
 
 /-- LibTorch SDPA forward provider while TorchLean keeps the graph/tape boundary. -/
 def libTorchSDPAForward : KernelCapsule :=
   { name := "libtorch.sdpa_forward"
-    op := scaledDotProductOp
+    op := .scaledDotProductAttention
     provider := .libTorch
     device := .cuda
     trustLevel := .trustedExternal
     supportsForward := true
     vjpMode := .torchLeanTape
     shapeContract :=
-      ContractDescriptor.guarded (.shapeSafety scaledDotProductOp)
-        "Q/K/V are checked as (heads, n, headDim); optional mask as (heads, n, n)."
+      ContractDescriptor.guarded (.shapeSafety .scaledDotProductAttention)
+        ("Q/K/V are checked after folding batch and head axes; the optional mask is broadcast " ++
+          "over that folded axis.")
         "torchlean_libtorch_sdpa_fwd size checks"
     layoutContract :=
       ContractDescriptor.guarded
-        (.layoutCompatibility scaledDotProductOp .libTorchCudaView)
+        (.layoutCompatibility .scaledDotProductAttention .libTorchCudaView)
         "TorchLean CUDA buffers are wrapped by LibTorch from_blob and copied back contiguous."
         "contiguous CUDA tensor views"
         [.nativeSymbol
@@ -118,12 +139,12 @@ def libTorchSDPAForward : KernelCapsule :=
             buildTarget? := some "torchlean_libtorch_sdpa_so" }]
     valueContract :=
       ContractDescriptor.trusted
-        (.valueRefinement scaledDotProductOp "scaled_dot_product_attention with hard boolean masking")
+        (.valueRefinement .scaledDotProductAttention)
         "LibTorch scaled_dot_product_attention forward."
         "LibTorch/CUDA SDPA implementation"
     vjpContract :=
       ContractDescriptor.guarded
-        (.vjpRefinement scaledDotProductOp "TorchLean attention tape VJP" .torchLeanTape)
+        (.vjpRefinement .scaledDotProductAttention .torchLeanTape)
         "TorchLean records the node and keeps the backward boundary inside TorchLean."
         "backend profile requires vjpMode=torchLeanTape"
     numericalPolicy :=
@@ -132,12 +153,13 @@ def libTorchSDPAForward : KernelCapsule :=
         contraction := .implementationDefined
         reduction := .implementationDefined }
     notes :=
-      "LibTorch provides the forward value; TorchLean records the node and evaluates its local VJP." }
+      "LibTorch provides the forward value; TorchLean records the node and evaluates its local " ++
+        "VJP." }
 
 /-- Built-in attention capsules in default planner order. Optional external providers register
 their own capsules in their provider modules. -/
 def capsules : List KernelCapsule :=
-  [nativeFlashAttention, torchLeanComposed]
+  [nativeDirectAttention, torchLeanComposed]
 
 end Attention
 end Backend

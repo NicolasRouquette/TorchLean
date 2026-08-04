@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
+public import NN.API.Seeded
 
 /-!
 # Residual Convolutional Classifier
@@ -17,8 +17,8 @@ global average pooling reduces every spatial axis before the classifier head.
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
+
 namespace nn
 namespace models
 
@@ -101,5 +101,4 @@ def resnet {d : Nat} (cfg : ResNetConfig d)
 
 end models
 end nn
-end API
-end NN
+end TorchLean

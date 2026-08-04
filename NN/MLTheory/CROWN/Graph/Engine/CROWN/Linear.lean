@@ -12,8 +12,9 @@ public import NN.MLTheory.CROWN.Graph.Engine.Affine
 # Forward CROWN Bounds
 
 This module computes lower and upper affine bounds for each graph node. The pass is
-DeepPoly/CROWN-style: linear nodes compose exactly, nonlinear nodes attach local relaxations, and
-unsupported cases fall back to constant affine bounds derived from the already-computed IBP box.
+Linear nodes compose affine lower and upper forms. Operator-specific rules may retain more
+dependence, while unsupported or numerically unjustified cases fall back to constant affine bounds
+derived from the already-computed IBP box.
 -/
 
 public section

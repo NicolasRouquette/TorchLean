@@ -19,6 +19,7 @@ open NN.IR
 
 variable {α : Type} [Context α]
 variable [BoundOps α]
+variable [NonlinearBoundOps α]
 
 open BoundOps
 
@@ -28,7 +29,11 @@ open BoundOps
 Graph traversal and output-box evaluation for the forward CROWN pass.
 -/
 
-/-- Run the basic CROWN affine-bounds pass; requires prior IBP for per-node intervals. -/
+/--
+Run the forward CROWN affine-bounds pass from previously computed node intervals.
+
+Nodes without a justified affine transfer retain their IBP enclosure as a constant affine bound.
+-/
 def runCROWN (g : Graph) (ps : ParamStore α) (ctx : AffineCtx)
     (ibp : Array (Option (FlatBox α))) : Array (Option (FlatAffineBounds α)) :=
   let init := Array.replicate g.nodes.size none
@@ -58,6 +63,7 @@ Run IBP, run forward CROWN, and evaluate the output affine bounds on the selecte
 This is the common "forward CROWN output box" workflow. It keeps callers from open-coding the same
 output-array lookup and input-dimension proof checks around `runCROWN`.
 -/
+@[noinline, nospecialize]
 def outputBoxCROWN? (g : Graph) (ps : ParamStore α) (xB : FlatBox α)
     (inputId outputId inputDim : Nat) : Except String (FlatBox α) := do
   let ibp := runIBP (α := α) g ps

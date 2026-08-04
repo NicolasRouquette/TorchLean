@@ -36,7 +36,6 @@ variable {rnd : ℝ → ℤ} [NeuralValidRndToNearest rnd]
 
 local notation "R" => TorchLean.Floats.NF β fexp rnd
 
-set_option maxHeartbeats 12000000
 
 /--
 Pointwise error bound for the Conv2D **bias** gradient (NF runtime vs spec).
@@ -46,8 +45,8 @@ This bound is a replay of the bias-gradient summation with per-term error `epsδ
 -/
 def conv2dBiasPointBound
     {outC kH kW stride padding inH inW : Nat}
-    (δR : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) R)
+    (δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar))))
     (epsδ : ℝ)
     (out_ch : Fin outC) : ℝ :=
   let out_h := conv2dOutH inH kH stride padding
@@ -71,12 +70,12 @@ theorem approx_conv2d_bias_point
     {kernelS : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {kernelR : Tensor R (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {biasS : Tensor ℝ (.dim outC .scalar)} {biasR : Tensor R (.dim outC .scalar)}
-    {inputS : Spec.MultiChannelImage inC inH inW ℝ}
-    {inputR : Spec.MultiChannelImage inC inH inW R}
-    {δS : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) ℝ}
-    {δR : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) R}
+    {inputS : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))}
+    {inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar)))}
+    {δS : Spec.Tensor ℝ (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar)))}
+    {δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar)))}
     {epsδ : ℝ}
     (hδ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) δS δR epsδ)
     (out_ch : Fin outC) :
@@ -300,8 +299,8 @@ This packages `conv2dBiasPointBound` into a `Tensor` so later `approxT` statemen
 -/
 def conv2dBiasBoundTensor
     {outC kH kW stride padding inH inW : Nat}
-    (δR : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) R)
+    (δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar))))
     (epsδ : ℝ) : Tensor ℝ (.dim outC .scalar) :=
   Tensor.dim (fun out_ch =>
     Tensor.scalar <| abs <|
@@ -322,9 +321,9 @@ The bound is a replay of this accumulation with per-term errors derived from `ep
 -/
 def conv2dKernelPointBound
     {inC outC kH kW stride padding inH inW : Nat}
-    (inputR : Spec.MultiChannelImage inC inH inW R)
-    (δR : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) R)
+    (inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar))))
+    (δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar))))
     (epsX epsδ : ℝ)
     (out_ch : Fin outC) (in_ch : Fin inC) (di : Fin kH) (dj : Fin kW) : ℝ :=
   let out_h := conv2dOutH inH kH stride padding
@@ -367,12 +366,12 @@ theorem approx_conv2d_kernel_point
     {kernelS : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {kernelR : Tensor R (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {biasS : Tensor ℝ (.dim outC .scalar)} {biasR : Tensor R (.dim outC .scalar)}
-    {inputS : Spec.MultiChannelImage inC inH inW ℝ}
-    {inputR : Spec.MultiChannelImage inC inH inW R}
-    {δS : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) ℝ}
-    {δR : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) R}
+    {inputS : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))}
+    {inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar)))}
+    {δS : Spec.Tensor ℝ (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar)))}
+    {δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar)))}
     {epsX epsδ : ℝ}
     (hX : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS inputR
       epsX)
@@ -718,9 +717,9 @@ lemmas can use a single global bound via `linfNorm`.
 -/
 def conv2dKernelBoundTensor
     {inC outC kH kW stride padding inH inW : Nat}
-    (inputR : Spec.MultiChannelImage inC inH inW R)
-    (δR : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) R)
+    (inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar))))
+    (δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar))))
     (epsX epsδ : ℝ) :
     Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))) :=
   Tensor.dim (fun out_ch =>
@@ -749,12 +748,12 @@ theorem approxT_conv2d_bias_deriv_spec
     {kernelS : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {kernelR : Tensor R (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {biasS : Tensor ℝ (.dim outC .scalar)} {biasR : Tensor R (.dim outC .scalar)}
-    {inputS : Spec.MultiChannelImage inC inH inW ℝ}
-    {inputR : Spec.MultiChannelImage inC inH inW R}
-    {δS : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) ℝ}
-    {δR : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) R}
+    {inputS : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))}
+    {inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar)))}
+    {δS : Spec.Tensor ℝ (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar)))}
+    {δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar)))}
     {epsδ : ℝ}
     (hδ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) δS δR epsδ) :
     let layerS : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
@@ -848,12 +847,12 @@ theorem approxT_conv2d_kernel_deriv_spec
     {kernelS : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {kernelR : Tensor R (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {biasS : Tensor ℝ (.dim outC .scalar)} {biasR : Tensor R (.dim outC .scalar)}
-    {inputS : Spec.MultiChannelImage inC inH inW ℝ}
-    {inputR : Spec.MultiChannelImage inC inH inW R}
-    {δS : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) ℝ}
-    {δR : Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) R}
+    {inputS : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))}
+    {inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar)))}
+    {δS : Spec.Tensor ℝ (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar)))}
+    {δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar)))}
     {epsX epsδ : ℝ}
     (hX : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS inputR
       epsX)

@@ -34,6 +34,7 @@ open NN.IR
 
 /-- Compile a TorchLean forward model (single distinguished input) to both IR and executable SSA
   graph. -/
+@[noinline, nospecialize]
 def compileForwardExec
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape outShape : Shape}

@@ -1328,16 +1328,16 @@ def sameRangeTrace (checked : Array CheckedNodeRange) (raw : Array NodeRange) : 
 
 /-- Untrusted certificate data.
 
-The audit field is a data-only snapshot: theorem and checker proof terms remain in TorchLean and
-are reconstructed by replanning the graph under `profileName`. This separation makes the artifact
-portable without allowing it to manufacture backend evidence.
+The audit field records the data selected by backend planning. The checker replans the graph under
+`profileName` and compares the complete audit, so an artifact cannot choose its own provider,
+trust level, or evidence classification.
 -/
 structure GraphNumericalCertificate where
   profileName : String
   registryName : String
   sources : Array SourceRange
   ranges : Array NodeRange
-  audit : ExecutionAuditSnapshot
+  audit : ExecutionAudit
 
 instance : Repr GraphNumericalCertificate where
   reprPrec certificate _ := Std.Format.text <|
@@ -1361,8 +1361,8 @@ structure CheckedCertificate where
   backendPlan : AcceptedGraphPlan
   /-- Proof that the reconstructed trace matches every range row claimed by `raw`. -/
   rangesMatch : sameRangeTrace ranges raw.ranges = true
-  /-- Proof that the accepted plan's audit snapshot is the one stored in `raw`. -/
-  auditMatch : backendPlan.audit.snapshot = raw.audit
+  /-- Proof that the accepted plan's audit is the one stored in `raw`. -/
+  auditMatch : backendPlan.audit = raw.audit
 
 instance : Repr CheckedCertificate where
   reprPrec certificate _ := repr certificate.raw
@@ -1382,7 +1382,7 @@ def toRaw (profile : BackendProfile) (registry : GraphRangeRegistry)
     registryName := registry.name
     sources
     ranges := eraseRangeTrace ranges
-    audit := plan.audit.snapshot }
+    audit := plan.audit }
 
 /-- Obtain an accepted backend plan or report the acceptance-gate failures. -/
 def acceptedPlan (profile : BackendProfile) (graph : Graph) : Except String AcceptedGraphPlan := do
@@ -1418,7 +1418,7 @@ def checkWith (registry : GraphRangeRegistry) (profile : BackendProfile)
   let plan <- acceptedPlan profile graph
   let ranges <- buildRangeTraceWith registry graph sources plan
   if hRanges : sameRangeTrace ranges raw.ranges then
-    if hAudit : plan.audit.snapshot = raw.audit then
+    if hAudit : plan.audit = raw.audit then
       pure
         { graph
           raw

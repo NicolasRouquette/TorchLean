@@ -19,8 +19,6 @@ These are non-differentiable evaluation helpers for examples (e.g. accuracy).
 @[expose] public section
 
 
-namespace Runtime
-namespace Autograd
 namespace TorchLean
 
 open Spec
@@ -64,5 +62,3 @@ def correctOneHot? {α : Type} [LT α] [DecidableRel ((· > ·) : α → α → 
 end Metrics
 
 end TorchLean
-end Autograd
-end Runtime

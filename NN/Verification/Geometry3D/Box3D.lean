@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
+public import NN.API.Seeded
 public import NN.Verification.Util.FloatApprox
 public import NN.Verification.Util.Json
 public import NN.Verification.Util.Tensor

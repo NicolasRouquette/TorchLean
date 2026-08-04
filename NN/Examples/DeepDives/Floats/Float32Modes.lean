@@ -110,7 +110,7 @@ abbrev OutPack (α : Type) :=
   TensorPack α OutShapes
 
 def runOnce {α : Type}
-    [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [ToString α] [Runtime.Scalar α]
+    [_root_.Context α] [DecidableEq Spec.Shape] [ToString α] [Runtime.FromFloat α]
     (tag : String) : IO (OutPack α) := do
   -- TorchLean examples typically treat `Float` as the "host literal" type, then inject those
   -- literals into

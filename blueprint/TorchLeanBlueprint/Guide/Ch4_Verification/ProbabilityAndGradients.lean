@@ -272,7 +272,7 @@ example :
   sigmoid_deriv_correct 0
 ```
 
-Both examples compile without goals. Now replace `2` by `0` in the ReLU example. Lean asks for
+Both examples compile without goals. Replace `2` by `0` in the ReLU example. Lean asks for
 $`0\ne0`, which cannot be proved. A runtime autograd system may choose a subgradient convention at
 the kink, as PyTorch does, but that convention is not an ordinary `HasDerivAt` theorem.
 

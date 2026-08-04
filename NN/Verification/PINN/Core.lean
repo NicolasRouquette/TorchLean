@@ -46,21 +46,17 @@ open Json
 /-- Require a JSON object field in an `Except` parser. -/
 def expectFieldObjE (ctx key : String) (j : Json) :
     Except String (Std.TreeMap.Raw String Json compare) := do
-  NN.API.Json.expectObjE s!"{ctx}.{key}" (← NN.API.Json.expectFieldE ctx key j)
+  TorchLean.Json.expectObjE s!"{ctx}.{key}" (← TorchLean.Json.expectFieldE ctx key j)
 
 /-- Require a JSON array field in an `Except` parser. -/
 def expectFieldArrayE (ctx key : String) (j : Json) : Except String (Array Json) := do
-  NN.API.Json.expectArrayE s!"{ctx}.{key}" (← NN.API.Json.expectFieldE ctx key j)
-
-/-- Require a JSON array whose entries are all finite floats. -/
-def expectFloatArrayE (ctx : String) (j : Json) : Except String (Array Float) := do
-  let xs ← NN.API.Json.expectArrayE ctx j
-  xs.mapIdxM (fun i x => NN.Verification.Json.expectFiniteFloatE s!"{ctx}[{i}]" x)
+  TorchLean.Json.expectArrayE s!"{ctx}.{key}" (← TorchLean.Json.expectFieldE ctx key j)
 
 /-- Require a float-array field. -/
 def expectFieldFloatArrayE (ctx key : String) (j : Json) :
     Except String (Array Float) := do
-  expectFloatArrayE s!"{ctx}.{key}" (← NN.API.Json.expectFieldE ctx key j)
+  NN.Verification.Json.expectFiniteFloatArrayE s!"{ctx}.{key}"
+    (← TorchLean.Json.expectFieldE ctx key j)
 
 /-- Require an interval object `{ "lo": ..., "hi": ... }`. -/
 def expectIntervalPairE (ctx : String) (j : Json) : Except String (Float × Float) := do
@@ -89,9 +85,9 @@ def expectIntervalPairArrayE (ctx : String) (j : Json) (expected : Nat) :
 def expectUBoundsEntryE (ctx : String) (j : Json) :
     Except String (Float × (Float × Float) × (Float × Float) × (Float × Float)) := do
   let x ← NN.Verification.Json.expectFieldFiniteFloatE ctx "x" j
-  let uMinus ← expectIntervalPairE s!"{ctx}.u_minus" (← NN.API.Json.expectFieldE ctx "u_minus" j)
-  let u ← expectIntervalPairE s!"{ctx}.u" (← NN.API.Json.expectFieldE ctx "u" j)
-  let uPlus ← expectIntervalPairE s!"{ctx}.u_plus" (← NN.API.Json.expectFieldE ctx "u_plus" j)
+  let uMinus ← expectIntervalPairE s!"{ctx}.u_minus" (← TorchLean.Json.expectFieldE ctx "u_minus" j)
+  let u ← expectIntervalPairE s!"{ctx}.u" (← TorchLean.Json.expectFieldE ctx "u" j)
+  let uPlus ← expectIntervalPairE s!"{ctx}.u_plus" (← TorchLean.Json.expectFieldE ctx "u_plus" j)
   pure (x, uMinus, u, uPlus)
 
 /-- Configuration parsed from a PINN certificate JSON. -/
@@ -232,8 +228,8 @@ def hessian2D (g : Graph) (ps : ParamStore Float)
   -- X direction
   let d2x : Option (Float × Float) :=
     let seedX := FlatBox.ofTensor (NN.Tensor.oneHotNat (α := Float) inDim 0)
-    let d1x := NN.MLTheory.CROWN.Graph.runDerivDirectional (α:=Float) g ps ibp seedX
-    let d2x := NN.MLTheory.CROWN.Graph.runDeriv2D (α:=Float) g ps ibp d1x
+    let d1x := NN.MLTheory.CROWN.Graph.runDirectionalDerivative (α:=Float) g ps ibp seedX
+    let d2x := NN.MLTheory.CROWN.Graph.runSecondDerivative1D (α:=Float) g ps ibp d1x
     match d2x[5]? with
     | some (some B) => some (Spec.Tensor.sumSpec B.lo, Spec.Tensor.sumSpec B.hi)
     | _ => none
@@ -241,8 +237,8 @@ def hessian2D (g : Graph) (ps : ParamStore Float)
   let d2y : Option (Float × Float) :=
     if inDim ≥ 2 then
       let seedY := FlatBox.ofTensor (NN.Tensor.oneHotNat (α := Float) inDim 1)
-      let d1y := NN.MLTheory.CROWN.Graph.runDerivDirectional (α:=Float) g ps ibp seedY
-      let d2y := NN.MLTheory.CROWN.Graph.runDeriv2D (α:=Float) g ps ibp d1y
+      let d1y := NN.MLTheory.CROWN.Graph.runDirectionalDerivative (α:=Float) g ps ibp seedY
+      let d2y := NN.MLTheory.CROWN.Graph.runSecondDerivative1D (α:=Float) g ps ibp d1y
       match d2y[5]? with
       | some (some B) => some (Spec.Tensor.sumSpec B.lo, Spec.Tensor.sumSpec B.hi)
       | _ => none
@@ -261,7 +257,7 @@ def laplacianBounds2D (g : Graph) (ps : ParamStore Float) : Option (Float × Flo
 /-- Parse the JSON certificate consumed by the PINN verification CLI. -/
 def parseCert (j : Json) : Except String (PinnCfg × (List (Float × Float)) × (List (Float × Float))
   × (List (Float × (Float×Float) × (Float×Float) × (Float×Float)))) := do
-  let _ ← NN.API.Json.expectObjE "PINN certificate" j
+  let _ ← TorchLean.Json.expectObjE "PINN certificate" j
   let po ← expectFieldObjE "PINN certificate" "pinn" j
   let pdeStr ←
     match Std.TreeMap.Raw.get? po "pde" with
@@ -277,9 +273,9 @@ def parseCert (j : Json) : Except String (PinnCfg × (List (Float × Float)) × 
   let nPts := ptsA.size
   let pts : Spec.Tensor Float (.dim nPts .scalar) :=
     Spec.Tensor.dim (fun i => Spec.Tensor.scalar ptsA[i])
-  let rb ← NN.API.Json.expectFieldE "PINN certificate" "residual_bounds" j
+  let rb ← TorchLean.Json.expectFieldE "PINN certificate" "residual_bounds" j
   let resPairs ← expectIntervalPairArrayE "PINN certificate.residual_bounds" rb nPts
-  let derivJ ← NN.API.Json.expectFieldE "PINN certificate" "residual_bounds_deriv" j
+  let derivJ ← TorchLean.Json.expectFieldE "PINN certificate" "residual_bounds_deriv" j
   let resPairsDeriv ←
     expectIntervalPairArrayE "PINN certificate.residual_bounds_deriv" derivJ nPts
   let ubA ← expectFieldArrayE "PINN certificate" "u_bounds" j

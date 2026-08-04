@@ -74,7 +74,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
         (seed := flags.seed)
   trainer.train
     (data flags)
-    (ModelZoo.TrainFlags.trainOptions flags.toModelTrainFlags
+    (CLI.Training.OptimizerOptions.toTrainerOptions flags.toOptimizerOptions
       (title := "Autoencoder CIFAR reconstruction")
       (notes := RealData.cifarClassifierNotes cfg.batch flags))
 

@@ -21,7 +21,7 @@ cannot accidentally restore image-specific rank assumptions.
 
 namespace NN.Tests.API.SelfSupervised.BlockMask
 
-open NN.API NN.API.ssl NN.Tensor
+open TorchLean TorchLean.ssl NN.Tensor
 
 def expect (tag : String) (ok : Bool) : IO Unit := do
   unless ok do

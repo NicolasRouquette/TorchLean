@@ -37,12 +37,12 @@ They are backend-generic: eager tape and compiled SSA/DAG both work.
 @[expose] public section
 
 
-namespace Runtime
-namespace Autograd
 namespace TorchLean
 
 open Spec
 open Tensor
+open _root_.Runtime.Autograd.Torch
+open _root_.Runtime.Autograd.TorchLean
 
 namespace Loss
 
@@ -196,27 +196,71 @@ def rowTargetFlatIndices (rows classes : Nat) (target : Tensor Nat (.dim rows .s
         | Tensor.scalar cls => Tensor.scalar (r.val * classes + cls))
 
 /--
-Negative log-likelihood for a matrix of log-probabilities and integer row labels.
+Unreduced negative log-likelihood for integer row labels.
 
-`logProbs` has shape `(rows × classes)` and `target[r]` is the class id for row `r`.  This is the
-integer-label counterpart of `nllOneHot`; it avoids materializing a one-hot target matrix.
+`logProbs` has shape `(rows × classes)` and `target[r]` is the class id for row `r`. The result
+contains one loss per row. Keeping this operation unreduced is useful for masked language modeling,
+sample weighting, and any caller that needs to choose its own normalization.
 -/
-def nllRowsNat {α : Type} [Context α] [DecidableEq Shape]
+def nllRowsNatUnreduced {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {rows classes : Nat}
     (logProbs : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
-    (target : Tensor Nat (.dim rows .scalar))
-    (reduction : Reduction := .mean) :
-    m (RefTy (m := m) (α := α) Shape.scalar) := do
+    (target : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
+      (.dim rows .scalar)) :
+    m (RefTy (m := m) (α := α) (.dim rows .scalar)) := do
   let flat ← reshape (m := m) (α := α)
     (s₁ := .dim rows (.dim classes .scalar))
     (s₂ := .dim (rows * classes) .scalar)
     logProbs (by
       simp [Spec.Shape.size])
+  let flatTarget := _root_.Runtime.Autograd.Torch.mapNatTensor (m := m) (α := α)
+    (rowTargetFlatIndices rows classes) target
   let picked ← gatherVecNat (m := m) (α := α)
-    (n := rows * classes) (k := rows) flat (rowTargetFlatIndices rows classes target)
-  let neg ← scale (m := m) (α := α) (s := .dim rows .scalar) picked (-1)
-  reduce (m := m) (α := α) (s := .dim rows .scalar) neg reduction
+    (n := rows * classes) (k := rows) flat flatTarget
+  scale (m := m) (α := α) (s := .dim rows .scalar) picked (-1)
+
+/--
+Negative log-likelihood for a matrix of log-probabilities and integer row labels.
+
+This is the integer-label counterpart of `nllOneHot`; it avoids materializing a one-hot target
+matrix and then applies the requested mean or sum reduction over rows.
+-/
+def nllRowsNat {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {rows classes : Nat}
+    (logProbs : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
+    (target : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
+      (.dim rows .scalar))
+    (reduction : Reduction := .mean) :
+    m (RefTy (m := m) (α := α) Shape.scalar) := do
+  let losses ← nllRowsNatUnreduced (m := m) (α := α)
+    (rows := rows) (classes := classes) logProbs target
+  reduce (m := m) (α := α) (s := .dim rows .scalar) losses reduction
+
+/--
+Weighted negative log-likelihood for integer row labels.
+
+The result is
+
+`∑ r, weights[r] * (-logProbs[r, target[r]])`.
+
+No implicit normalization is performed. Use weights that sum to one for a weighted mean, zeros to
+exclude rows, or arbitrary nonnegative weights for a weighted sum. Making the normalization
+explicit avoids a hidden division-by-zero convention when every row is masked.
+-/
+def nllRowsNatWeighted {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {rows classes : Nat}
+    (logProbs : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
+    (target : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
+      (.dim rows .scalar))
+    (weights : RefTy (m := m) (α := α) (.dim rows .scalar)) :
+    m (RefTy (m := m) (α := α) Shape.scalar) := do
+  let losses ← nllRowsNatUnreduced (m := m) (α := α)
+    (rows := rows) (classes := classes) logProbs target
+  let weighted ← mul (m := m) (α := α) (s := .dim rows .scalar) losses weights
+  sum (m := m) (α := α) (s := .dim rows .scalar) weighted
 
 /--
 Cross-entropy for row-wise logits with integer labels.
@@ -228,13 +272,37 @@ def crossEntropyRowsNat {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {rows classes : Nat}
     (logits : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
-    (target : Tensor Nat (.dim rows .scalar))
+    (target : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
+      (.dim rows .scalar))
     (reduction : Reduction := .mean) (ε : α := Numbers.epsilon) :
     m (RefTy (m := m) (α := α) Shape.scalar) := do
   let logp ← logSoftmax (m := m) (α := α) (s := .dim rows (.dim classes .scalar))
     logits (ε := ε)
   nllRowsNat (m := m) (α := α) (rows := rows) (classes := classes)
     logp target (reduction := reduction)
+
+/--
+Weighted row-wise cross entropy with integer labels.
+
+This computes log-softmax, selects the target class in each row, multiplies by the caller-provided
+row weights, and sums. It is the runtime primitive used by loss masks and packed variable-length
+sequences; it is not specific to language models. The operation is a linear weighted sum for any
+scalar weights. Callers that interpret it as a weighted cross-entropy mean must provide
+nonnegative weights with sum one.
+-/
+def crossEntropyRowsNatWeighted {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {rows classes : Nat}
+    (logits : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
+    (target : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
+      (.dim rows .scalar))
+    (weights : RefTy (m := m) (α := α) (.dim rows .scalar))
+    (ε : α := Numbers.epsilon) :
+    m (RefTy (m := m) (α := α) Shape.scalar) := do
+  let logp ← logSoftmax (m := m) (α := α) (s := .dim rows (.dim classes .scalar))
+    logits (ε := ε)
+  nllRowsNatWeighted (m := m) (α := α) (rows := rows) (classes := classes)
+    logp target weights
 
 /--
 Binary cross-entropy with logits (elementwise), using the stable identity:
@@ -286,5 +354,3 @@ def bce {α : Type} [Context α] [DecidableEq Shape]
 end Loss
 
 end TorchLean
-end Autograd
-end Runtime

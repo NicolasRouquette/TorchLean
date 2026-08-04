@@ -7,8 +7,8 @@ open Verso.Genre Manual
 tag := "backend-selection"
 %%%
 
-The previous page selected CPU, CUDA, or an optional provider through the runtime API. Now we can look
-at the less visible question: when a graph asks for matrix multiplication, attention, or a
+The previous page selected CPU, CUDA, or an optional provider through the runtime API. A less visible
+question remains: when a graph asks for matrix multiplication, attention, or a
 reduction, how does TorchLean decide which implementation is allowed to answer?
 
 A device name is not enough. One CUDA build may contain a hand-written kernel, a cuBLAS call, and a
@@ -26,7 +26,7 @@ $$`
 \longrightarrow \text{typed handler}.
 `
 
-That path, rather than another tour of command-line flags, is the subject of this chapter.
+This chapter follows that path from an operation request to the handler that executes it.
 
 # Kernel Capsules
 
@@ -82,28 +82,27 @@ The complete installation and platform guide includes a
 
 # Looking Inside A Capsule
 
-Each capsule has four obligations: shape, layout, forward value, and VJP. An obligation may point to
-a Lean theorem, an executable checker, a native source symbol, a fuzz oracle, or an explicit trusted
-boundary.
+Each capsule has four obligations: shape, layout, forward value, and VJP. The current registry
+records runtime guards, regression suites, fuzz oracles, and explicit trusted boundaries. Source
+references identify the implementation being discussed; they are provenance, not evidence of
+correctness.
 
 The obligation itself is a structured `ContractClaim`: shape safety, compatibility with a named
 tensor layout, refinement of a forward specification, or refinement of a VJP specification. The
 free-form note is there for readers; the planner works with the structured claim.
 
 Before planning, TorchLean checks that each descriptor has the right obligation kind and operation,
-and that a VJP descriptor names the capsule's declared VJP mode. Thus a value theorem placed in the
-shape field is rejected rather than counted as shape evidence. The registry author must still ensure
-that the proposition carried by theorem or checker evidence is the intended formalization of the
-structured claim; a capsule note is documentation, not a proof link.
+and that a VJP descriptor names the capsule's declared VJP mode. Thus a value test placed in the
+shape field is rejected rather than counted as shape evidence. A forward-only capsule uses a
+separate `vjpUnavailable` claim; it cannot describe `.none` as though it were a VJP refinement.
 
 The distinction matters:
 
-- *theorem evidence* contains a Lean proposition and its proof term;
-- *checker evidence* contains an accepted result and a soundness proof for its Lean proposition;
 - *runtime-guard evidence* records validation performed at an execution boundary;
 - *test evidence* records a regression or differential test suite;
 - *fuzz evidence* records sampled differential testing, not a universal statement;
 - *trusted external evidence* names code whose correctness is assumed for the claim;
+- *not applicable* records an obligation that the capsule intentionally does not provide;
 - *missing evidence* prevents acceptance under the normal strict policies.
 
 Numerical policy is recorded separately from evidence. It states which rounding mode, subnormal
@@ -112,9 +111,18 @@ portable matrix-product capsule records the fixed left fold used by the tensor s
 the CUDA capsule records an implementation-dependent reduction. A range proof for one order cannot
 therefore be reused for the other merely because both capsules implement `matmul`.
 
-Source paths and native symbols identify the code behind a capsule. Strict acceptance asks for
-proof-bearing theorem or checker evidence; ordinary maintained profiles may also allow named guards
-and test coverage.
+Source paths and native symbols identify the code behind a capsule. The maintained profiles accept
+the guards and tests appropriate to their runtime paths. The stricter `verified` policy uses a
+different entrypoint: `planVerifiedKernel` selects a `ProofCarryingKernel` whose type contains both
+the implementation and its pointwise refinement theorem. Erasing that object to ordinary capsule
+metadata also erases the proof, so the metadata planner rejects a capsule merely labelled
+`verified`. No maintained production kernel is registered through the proof-carrying entrypoint yet.
+
+```
+#check NN.Backend.ProofCarryingKernel
+#check NN.Backend.planVerifiedKernel
+#check NN.Backend.VerifiedPlannedKernel.run_eq_specification
+```
 
 # A Real Attention Theorem
 
@@ -143,8 +151,9 @@ derivative rule used by the optimizer.
 TorchLean distinguishes three VJP modes:
 
 - `none`: no gradient is requested;
-- `torchLeanTape`: TorchLean records the node and applies its local backward rule;
-- `backendVJP`: TorchLean owns the tape, while a named backend kernel computes the local VJP.
+- `torchLeanTape`: TorchLean owns the tape and backward traversal; each capsule declares whether its
+  local VJP is expressed through TorchLean operations or a named backend kernel;
+- `backendVJP`: require capsules whose local VJP is computed by a backend kernel.
 
 The preferred external-forward design is therefore precise: a provider may compute a fast forward
 value, TorchLean records the same operation on its tape, and TorchLean applies the backward rule.
@@ -199,16 +208,17 @@ and explain why they failed.
 `AcceptedKernel` and `AcceptedGraphPlan` carry the equality proof that their policy gate returned
 `accepted`; they are not records that a caller can populate while omitting the gate result.
 
-The strict policy allows proof-bearing theorem and checker evidence. Runtime policies can also
-permit guards, regression tests, fuzzing, or a named external dependency. The gate itself has a
-small Lean theorem:
+Runtime policies state whether guards, regression tests, fuzzing, or a named external dependency
+are acceptable for a run. The `verified` policy rejects all of those engineering evidence classes.
+The gate itself has a small Lean theorem:
 
 ```
 #check ExecutionAudit.gate_eq_accepted_iff_gateFailures_eq_nil
 ```
 
 This theorem says exactly what the policy function does: it accepts precisely when the audit has no
-failures. The evidence inside that audit is what carries the kernel-specific argument.
+failures. It proves the gate's behavior, not the numerical correctness of a selected foreign
+kernel.
 
 The maintained CUDA wrappers also perform concrete checks at the FFI boundary. Convolution and
 pooling validate rank and dimension conversion, nonzero strides, representable element counts,

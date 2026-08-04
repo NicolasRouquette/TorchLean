@@ -521,6 +521,15 @@ def expectCudaResultError {α : Type} (label : String) : Except String α → IO
   | .error _ => pure ()
   | .ok _ => throw <| IO.userError s!"{label}: expected rejection"
 
+/-- Require a pooling operation with invalid geometry to produce the specified empty shape. -/
+def expectCudaEmptyOutput (label : String) (expectedShape : Shape)
+    (result : Except String (Runtime.Autograd.Cuda.Tape × Nat)) : IO Unit := do
+  let (tape, id) ← Utils.okOrThrow result
+  let output ← Utils.okOrThrow <|
+    Runtime.Autograd.Cuda.Tape.requireValue tape id expectedShape
+  unless Runtime.Autograd.Cuda.Buffer.size output = 0 do
+    throw <| IO.userError s!"{label}: expected an empty native buffer"
+
 /-- Check the stable two-dimensional smooth-max formula at scales where $\beta x$ overflows FP32. -/
 def runSmoothMaxPool2dStabilityCase (beta expectedSign : Float)
     (expectedDx : Tensor Float (shape![1, 1, 2])) : IO Unit := do
@@ -742,9 +751,9 @@ def runBoundaryGeometryChecks : IO Unit := do
   let (tinyTape, tinyId) :=
     Runtime.Autograd.Cuda.Tape.empty.leaf (Utils.tensorToAnyBuffer tinyInput)
 
-  -- Each spatial axis would be 65537. Reject the product before an FFI allocation or launch.
+  -- Pooling padding beyond half the kernel is outside the valid domain and totalizes to empty.
   let hugePadding : Nat := 32768
-  expectCudaResultError "max_pool2d_pad oversized output"
+  expectCudaEmptyOutput "max_pool2d_pad excessive padding" (shape![1, 0, 0])
     (Runtime.Autograd.Cuda.Tape.maxPool2dPad (t := tinyTape)
       (kH := 1) (kW := 1) (inH := 1) (inW := 1) (inC := 1) (stride := 1)
       (padding := hugePadding) (h1 := by decide) (h2 := by decide) tinyId)
@@ -766,7 +775,7 @@ def runBoundaryGeometryChecks : IO Unit := do
     { s := shape![0, 1, 1], buf := Runtime.Autograd.Cuda.Buffer.zeros 0 }
   let (emptyChannelTape, emptyChannelId) :=
     Runtime.Autograd.Cuda.Tape.empty.leaf emptyChannelInput
-  expectCudaResultError "max_pool2d_pad oversized spatial output with zero channels"
+  expectCudaEmptyOutput "max_pool2d_pad excessive padding with zero channels" (shape![0, 0, 0])
     (Runtime.Autograd.Cuda.Tape.maxPool2dPad (t := emptyChannelTape)
       (kH := 1) (kW := 1) (inH := 1) (inW := 1) (inC := 0) (stride := 1)
       (padding := hugePadding) (h1 := by decide) (h2 := by decide) emptyChannelId)

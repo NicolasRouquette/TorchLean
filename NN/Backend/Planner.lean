@@ -24,6 +24,8 @@ executable command buffers without changing the contract story.
 namespace NN
 namespace Backend
 
+universe u v
+
 /-- A backend choice for one graph operation or fused operation. -/
 structure PlannedKernel where
   op : BackendOp
@@ -65,6 +67,58 @@ def planOps (cfg : ExecutionConfig) (registry : List KernelCapsule)
 def planOpsAvailable (cfg : ExecutionConfig) (availability : Availability)
     (registry : List KernelCapsule) (ops : List BackendOp) : Except String ExecutionPlan :=
   planOps cfg (availability.filterCapsules registry) ops
+
+/-! ## Typed verified planning -/
+
+/--
+A proof-bearing kernel selected without erasing its implementation or refinement theorem.
+
+Unlike `PlannedKernel`, this type is indexed by the exact Lean specification implemented by the
+kernel. The `selectable` field records device, provider, VJP, contract-shape, and proof-oriented
+policy checks. Execution can therefore recover the refinement theorem directly.
+-/
+structure VerifiedPlannedKernel (ι : Type u) (ο : Type v) (op : BackendOp)
+    (specification : ι → ο) (cfg : ExecutionConfig) where
+  kernel : ProofCarryingKernel ι ο op specification
+  selectable : kernel.selectable cfg = true
+
+namespace VerifiedPlannedKernel
+
+/-- Execute the selected typed implementation. -/
+def run {ι : Type u} {ο : Type v} {op : BackendOp} {specification : ι → ο}
+    {cfg : ExecutionConfig} (planned : VerifiedPlannedKernel ι ο op specification cfg)
+    (input : ι) : ο :=
+  planned.kernel.run input
+
+/-- Verified planning preserves the kernel's exact Lean specification. -/
+theorem run_eq_specification {ι : Type u} {ο : Type v} {op : BackendOp}
+    {specification : ι → ο} {cfg : ExecutionConfig}
+    (planned : VerifiedPlannedKernel ι ο op specification cfg) (input : ι) :
+    planned.run input = specification input :=
+  planned.kernel.run_eq_specification input
+
+end VerifiedPlannedKernel
+
+/--
+Select a proof-bearing implementation while retaining its refinement theorem.
+
+This is the only planner entrypoint for `AssurancePolicy.verified`. The ordinary planner works with
+erased capsule metadata and therefore rejects capsules whose trust level is merely labelled
+`verified`.
+-/
+def planVerifiedKernel {ι : Type u} {ο : Type v} {op : BackendOp}
+    {specification : ι → ο} (cfg : ExecutionConfig)
+    (kernels : List (ProofCarryingKernel ι ο op specification)) :
+    Except String (VerifiedPlannedKernel ι ο op specification cfg) :=
+  match kernels with
+  | [] =>
+      throw <| s!"no selectable proof-carrying kernel for op {op.name} on device " ++
+        s!"{cfg.device.cliName}"
+  | kernel :: rest =>
+      if h : kernel.selectable cfg = true then
+        pure { kernel, selectable := h }
+      else
+        planVerifiedKernel cfg rest
 
 end Backend
 end NN

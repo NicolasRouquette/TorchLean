@@ -18,8 +18,8 @@ Shared core for the **TwoStage neural-controller / neural-Lyapunov workflows**.
 This directory (`NN/MLTheory/CROWN/Lyapunov/TwoStage/`) is the Lean counterpart of the “three
 pipeline” workflow in the TorchLean paper (`arXiv:2602.22631`, Figure 7):
 
-- (i) **Python-only**: PyTorch + α/β-CROWN produce numeric bounds; Lean *checks* the resulting
-  certificate (trusted boundary = oracle statement).
+- (i) **Python-only**: PyTorch + α/β-CROWN produce numeric bounds; a Lean result is conditional on
+  a proof that the imported certificate is valid for the stated model and region.
 - (ii) **Hybrid**: Stage-1 training in PyTorch, exported as *float32 bit patterns*; Stage-2
   refinement + the final IBP/CROWN check run inside TorchLean under exact `IEEE32Exec` semantics.
 - (iii) **All-in-Lean**: both stages run inside TorchLean under `IEEE32Exec`; the final IBP/CROWN
@@ -92,6 +92,108 @@ $$
 The last line uses the van der Pol-like dynamics. We compute $\nabla V$ analytically for the
 one-hidden-layer tanh network followed by a square, so training needs only first-order AD.
 -/
+
+/-- Evaluate the controller and return its scalar control output. -/
+@[noinline, nospecialize]
+def controllerOutput
+    {β : Type} [Context β] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [TorchLean.Ops (m := m) (α := β)]
+    (wC : TorchLean.RefTy (m := m) (α := β) (.dim uDim (.dim xDim .scalar)))
+    (bC : TorchLean.RefTy (m := m) (α := β) (.dim uDim .scalar))
+    (x : TorchLean.RefTy (m := m) (α := β) xShape)
+    (scaleU : β) : m (TorchLean.RefTy (m := m) (α := β) Shape.scalar) := do
+  let uPre ← TorchLean.linear (m := m) (α := β) (inDim := xDim) (outDim := uDim) wC bC x
+  let uT ← TorchLean.tanh (m := m) (α := β) (s := uShape) uPre
+  let uVec ← TorchLean.scale (m := m) (α := β) (s := uShape) uT (c := scaleU)
+  TorchLean.gatherScalar (m := m) (α := β) (n := uDim) uVec fin0!
+
+/-- Evaluate the Lyapunov network together with its analytic gradient in the state coordinates. -/
+@[noinline, nospecialize]
+def lyapunovValueAndGradient
+    {β : Type} [Context β] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [TorchLean.Ops (m := m) (α := β)]
+    (width : Nat)
+    (w1 : TorchLean.RefTy (m := m) (α := β) (.dim width (.dim xDim .scalar)))
+    (b1 : TorchLean.RefTy (m := m) (α := β) (.dim width .scalar))
+    (w2 : TorchLean.RefTy (m := m) (α := β) (.dim 1 (.dim width .scalar)))
+    (b2 : TorchLean.RefTy (m := m) (α := β) (.dim 1 .scalar))
+    (x : TorchLean.RefTy (m := m) (α := β) xShape)
+    (oneS : TorchLean.RefTy (m := m) (α := β) Shape.scalar)
+    (two : β) :
+    m (TorchLean.RefTy (m := m) (α := β) Shape.scalar ×
+      TorchLean.RefTy (m := m) (α := β) xShape) := do
+  let z1 ← TorchLean.linear (m := m) (α := β) (inDim := xDim) (outDim := width) w1 b1 x
+  let h1 ← TorchLean.tanh (m := m) (α := β) (s := .dim width .scalar) z1
+  let sVec ← TorchLean.linear (m := m) (α := β) (inDim := width) (outDim := 1) w2 b2 h1
+  let s0 ← TorchLean.gatherScalar (m := m) (α := β) (n := 1) sVec fin0!
+  let V ← TorchLean.mul (m := m) (α := β) (s := Shape.scalar) s0 s0
+
+  let w2Row ← TorchLean.gatherRow (m := m) (α := β) (rows := 1) (cols := width) w2 fin0!
+  let h1Sq ← TorchLean.mul (m := m) (α := β) (s := .dim width .scalar) h1 h1
+  let oneW ← TorchLean.broadcastTo (m := m) (α := β) (s₁ := Shape.scalar)
+    (s₂ := .dim width .scalar) (Shape.CanBroadcastTo.scalar_to_any (.dim width .scalar)) oneS
+  let dh ← TorchLean.sub (m := m) (α := β) (s := .dim width .scalar) oneW h1Sq
+  let gHidden ← TorchLean.mul (m := m) (α := β) (s := .dim width .scalar) w2Row dh
+  let gHiddenM ← TorchLean.reshape (m := m) (α := β)
+    (s₁ := .dim width .scalar) (s₂ := .dim width (.dim 1 .scalar)) gHidden (by
+      simp [_root_.Spec.Shape.size])
+  let w1T ← TorchLean.transpose2d (m := m) (α := β) (mDim := width) (nDim := xDim) w1
+  let dsM ← TorchLean.matmul (m := m) (α := β) (mDim := xDim) (nDim := width) (pDim := 1)
+    w1T gHiddenM
+  let ds ← TorchLean.reshape (m := m) (α := β)
+    (s₁ := .dim xDim (.dim 1 .scalar)) (s₂ := xShape) dsM (by
+      simp [xShape, _root_.Spec.Shape.size])
+  let k ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) s0 (c := two)
+  let kV ← TorchLean.broadcastTo (m := m) (α := β) (s₁ := Shape.scalar) (s₂ := xShape)
+    (Shape.CanBroadcastTo.scalar_to_any xShape) k
+  let gradV ← TorchLean.mul (m := m) (α := β) (s := xShape) kV ds
+  pure (V, gradV)
+
+/-- Evaluate the closed-loop van der Pol-like dynamics at `x`. -/
+@[noinline, nospecialize]
+def closedLoopDynamics
+    {β : Type} [Context β] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [TorchLean.Ops (m := m) (α := β)]
+    (x : TorchLean.RefTy (m := m) (α := β) xShape)
+    (u0 oneS : TorchLean.RefTy (m := m) (α := β) Shape.scalar)
+    (mu one : β) : m (TorchLean.RefTy (m := m) (α := β) xShape) := do
+  let x1 ← TorchLean.gatherScalar (m := m) (α := β) (n := xDim) x fin0!
+  let x2 ← TorchLean.gatherScalar (m := m) (α := β) (n := xDim) x fin1!
+  let x1Sq0 ← TorchLean.mul (m := m) (α := β) (s := Shape.scalar) x1 x1
+  let oneMinus ← TorchLean.sub (m := m) (α := β) (s := Shape.scalar) oneS x1Sq0
+  let term0 ← TorchLean.mul (m := m) (α := β) (s := Shape.scalar) oneMinus x2
+  let term ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) term0 (c := mu)
+  let negx1 ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) x1 (c := (-one))
+  let dx2pre ← TorchLean.add (m := m) (α := β) (s := Shape.scalar) negx1 term
+  let dx2 ← TorchLean.add (m := m) (α := β) (s := Shape.scalar) dx2pre u0
+  let x2V ← TorchLean.reshape (m := m) (α := β) (s₁ := Shape.scalar)
+    (s₂ := .dim 1 .scalar) x2 (by simp [_root_.Spec.Shape.size])
+  let dx2V ← TorchLean.reshape (m := m) (α := β) (s₁ := Shape.scalar)
+    (s₂ := .dim 1 .scalar) dx2 (by simp [_root_.Spec.Shape.size])
+  TorchLean.concatVectors (m := m) (α := β) (nDim := 1) (mDim := 1) x2V dx2V
+
+/-- Form the positivity and decrease penalties from `V`, `∇V`, and the closed-loop dynamics. -/
+@[noinline, nospecialize]
+def lossFromDynamics
+    {β : Type} [Context β] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [TorchLean.Ops (m := m) (α := β)]
+    (x : TorchLean.RefTy (m := m) (α := β) xShape)
+    (V : TorchLean.RefTy (m := m) (α := β) Shape.scalar)
+    (gradV dynamics : TorchLean.RefTy (m := m) (α := β) xShape)
+    (cV cD : β) : m (TorchLean.RefTy (m := m) (α := β) Shape.scalar) := do
+  let prod ← TorchLean.mul (m := m) (α := β) (s := xShape) gradV dynamics
+  let Vdot ← TorchLean.sum (m := m) (α := β) (s := xShape) prod
+  let xSqV ← TorchLean.mul (m := m) (α := β) (s := xShape) x x
+  let xSq ← TorchLean.sum (m := m) (α := β) (s := xShape) xSqV
+  let posScaled ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) xSq (c := cV)
+  let posExpr ← TorchLean.sub (m := m) (α := β) (s := Shape.scalar) posScaled V
+  let posPenalty ← TorchLean.relu (m := m) (α := β) (s := Shape.scalar) posExpr
+  let decScaled ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) V (c := cD)
+  let decExpr ← TorchLean.add (m := m) (α := β) (s := Shape.scalar) Vdot decScaled
+  let decPenalty ← TorchLean.relu (m := m) (α := β) (s := Shape.scalar) decExpr
+  TorchLean.add (m := m) (α := β) (s := Shape.scalar) posPenalty decPenalty
+
+@[noinline, nospecialize]
 def lossProgram (width : Nat) :
     ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
       TorchLean.Program β (paramShapes width ++ [xShape]) Shape.scalar :=
@@ -106,76 +208,11 @@ def lossProgram (width : Nat) :
           let one : β := ((1 : Nat) : β)
           let two : β := ((2 : Nat) : β)
 
-          -- controller: u = scaleU * tanh(Wc x + bc) ∈ R^1
-          let uPre ← TorchLean.linear (m := m) (α := β) (inDim := xDim) (outDim := uDim) wC bC x
-          let uT ← TorchLean.tanh (m := m) (α := β) (s := uShape) uPre
-          let uVec ← TorchLean.scale (m := m) (α := β) (s := uShape) uT (c := scaleU)
-          let u0 ← TorchLean.gatherScalar (m := m) (α := β) (n := uDim) uVec fin0!
-
-          -- Lyapunov: V = (w2 · tanh(W1 x + b1) + b2)^2
-          let z1 ← TorchLean.linear (m := m) (α := β) (inDim := xDim) (outDim := width) w1 b1 x
-          let h1 ← TorchLean.tanh (m := m) (α := β) (s := .dim width .scalar) z1
-          let sVec ← TorchLean.linear (m := m) (α := β) (inDim := width) (outDim := 1) w2 b2 h1
-          let s0 ← TorchLean.gatherScalar (m := m) (α := β) (n := 1) sVec fin0!
-          let V ← TorchLean.mul (m := m) (α := β) (s := Shape.scalar) s0 s0
-
-          -- gradV = 2*s0 * W1^T (w2Row ⊙ (1 - tanh(z1)^2))
-          let w2Row ← TorchLean.gatherRow (m := m) (α := β) (rows := 1) (cols := width) w2 fin0!
-          let h1Sq ← TorchLean.mul (m := m) (α := β) (s := .dim width .scalar) h1 h1
           let oneS ← TorchLean.const (m := m) (α := β) (s := Shape.scalar) (Tensor.scalar one)
-          let oneW ← TorchLean.broadcastTo (m := m) (α := β) (s₁ := Shape.scalar) (s₂ := .dim width
-            .scalar)
-            (Shape.CanBroadcastTo.scalar_to_any (.dim width .scalar)) oneS
-          let dh ← TorchLean.sub (m := m) (α := β) (s := .dim width .scalar) oneW h1Sq
-          let gHidden ← TorchLean.mul (m := m) (α := β) (s := .dim width .scalar) w2Row dh
-
-          let gHiddenM ← TorchLean.reshape (m := m) (α := β)
-            (s₁ := .dim width .scalar) (s₂ := .dim width (.dim 1 .scalar)) gHidden (by simp
-              [_root_.Spec.Shape.size])
-          let w1T ← TorchLean.transpose2d (m := m) (α := β) (mDim := width) (nDim := xDim) w1
-          let dsM ← TorchLean.matmul (m := m) (α := β) (mDim := xDim) (nDim := width) (pDim := 1)
-            w1T gHiddenM
-          let ds ← TorchLean.reshape (m := m) (α := β)
-            (s₁ := .dim xDim (.dim 1 .scalar)) (s₂ := xShape) dsM (by
-              simp [xShape, _root_.Spec.Shape.size])
-
-          let k ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) s0 (c := two)
-          let kV ← TorchLean.broadcastTo (m := m) (α := β) (s₁ := Shape.scalar) (s₂ := xShape)
-            (Shape.CanBroadcastTo.scalar_to_any xShape) k
-          let gradV ← TorchLean.mul (m := m) (α := β) (s := xShape) kV ds
-
-          -- dynamics f(x,u): dx1 = x2, dx2 = -x1 + mu*(1-x1^2)*x2 + u
-          let x1 ← TorchLean.gatherScalar (m := m) (α := β) (n := xDim) x fin0!
-          let x2 ← TorchLean.gatherScalar (m := m) (α := β) (n := xDim) x fin1!
-          let x1Sq0 ← TorchLean.mul (m := m) (α := β) (s := Shape.scalar) x1 x1
-          let oneMinus ← TorchLean.sub (m := m) (α := β) (s := Shape.scalar) oneS x1Sq0
-          let term0 ← TorchLean.mul (m := m) (α := β) (s := Shape.scalar) oneMinus x2
-          let term ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) term0 (c := mu)
-          let negx1 ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) x1 (c := (-one))
-          let dx2pre ← TorchLean.add (m := m) (α := β) (s := Shape.scalar) negx1 term
-          let dx2 ← TorchLean.add (m := m) (α := β) (s := Shape.scalar) dx2pre u0
-
-          let x2V ← TorchLean.reshape (m := m) (α := β) (s₁ := Shape.scalar) (s₂ := .dim 1 .scalar)
-            x2 (by simp [_root_.Spec.Shape.size])
-          let dx2V ← TorchLean.reshape (m := m) (α := β) (s₁ := Shape.scalar) (s₂ := .dim 1 .scalar)
-            dx2 (by simp [_root_.Spec.Shape.size])
-          let fVec ← TorchLean.concatVectors (m := m) (α := β) (nDim := 1) (mDim := 1) x2V dx2V
-
-          let prod ← TorchLean.mul (m := m) (α := β) (s := xShape) gradV fVec
-          let Vdot ← TorchLean.sum (m := m) (α := β) (s := xShape) prod
-
-          let xSqV ← TorchLean.mul (m := m) (α := β) (s := xShape) x x
-          let xSq ← TorchLean.sum (m := m) (α := β) (s := xShape) xSqV
-
-          -- penalties
-          let posScaled ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) xSq (c := cV)
-          let posExpr ← TorchLean.sub (m := m) (α := β) (s := Shape.scalar) posScaled V
-          let posPenalty ← TorchLean.relu (m := m) (α := β) (s := Shape.scalar) posExpr
-
-          let decScaled ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) V (c := cD)
-          let decExpr ← TorchLean.add (m := m) (α := β) (s := Shape.scalar) Vdot decScaled
-          let decPenalty ← TorchLean.relu (m := m) (α := β) (s := Shape.scalar) decExpr
-          TorchLean.add (m := m) (α := β) (s := Shape.scalar) posPenalty decPenalty
+          let u0 ← controllerOutput (m := m) wC bC x scaleU
+          let (V, gradV) ← lyapunovValueAndGradient (m := m) width w1 b1 w2 b2 x oneS two
+          let dynamics ← closedLoopDynamics (m := m) x u0 oneS mu one
+          lossFromDynamics (m := m) x V gradV dynamics cV cD
           : m (TorchLean.RefTy (m := m) (α := β) Shape.scalar))
 
 end NN.MLTheory.CROWN.Lyapunov.TwoStage.Core

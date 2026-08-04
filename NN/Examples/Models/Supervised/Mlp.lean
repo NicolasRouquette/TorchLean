@@ -97,7 +97,7 @@ def train (opts : Options) (flags : ModelZoo.CsvTrainFlags) :
         (seed := flags.seed)
   trainer.train
     (data flags.csvPath flags.seed)
-    (ModelZoo.TrainFlags.trainOptions flags.toModelTrainFlags
+    (CLI.Training.OptimizerOptions.toTrainerOptions flags.toOptimizerOptions
       (title := "MLP tabular training")
       (notes := #[s!"dataset={flags.csvPath}", s!"lr={flags.lr}",
         s!"steps={flags.steps}", s!"batch={batch}"]))

@@ -193,7 +193,7 @@ executable binary32 and native kernels.
 
 # Verification and Certificates
 
-We can now state the verification question precisely:
+This gives a precise verification question:
 
 $$`\forall x\in B,\qquad P(\operatorname{denote}(g,\theta,x))`.
 

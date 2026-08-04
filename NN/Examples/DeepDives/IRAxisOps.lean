@@ -92,7 +92,7 @@ def concatMiddleAxisGraph : NN.IR.Graph :=
   -- The concat example uses `rand_uniform` sources, so the input node only fixes the graph's
   -- single-input interface for the shared runner.
   { nodes := #[
-      { id := 0, parents := [], kind := .input, outShape := _root_.TorchLean.Shape.scalar }
+      { id := 0, parents := [], kind := .input, outShape := Spec.Shape.scalar }
     , { id := 1, parents := [], kind := .randUniform (seed := 0), outShape := baseRankThreeShape }
     , { id := 2, parents := [], kind := .randUniform (seed := 1), outShape := widerMiddleAxisShape }
     , { id := 3, parents := [1, 2], kind := .concat (axis := 1), outShape := concatenatedMiddleAxisShape }
@@ -114,7 +114,7 @@ def firstScalars {α : Type} [ToString α] : List α → String
         ++ "]"
 
 def runOne
-    {α : Type} [Runtime.SemanticScalar α] [DecidableEq Shape] [ToString α] [Runtime.Scalar α]
+    {α : Type} [_root_.Context α] [DecidableEq Shape] [ToString α] [Runtime.FromFloat α]
     (tag : String)
     (g : NN.IR.Graph)
     (payload : NN.IR.Payload α)
@@ -166,15 +166,14 @@ def runOne
       s!"{tag}: spec/compiled outShape mismatch: spec={repr sSpec}, compiled={repr sExec}"
 
 def runOnce
-    {α : Type} [Runtime.SemanticScalar α] [DecidableEq Shape] [ToString α] [Runtime.Scalar α]
+    {α : Type} [_root_.Context α] [DecidableEq Shape] [ToString α] [Runtime.FromFloat α]
     : IO Unit := do
   let payload : NN.IR.Payload α := {}
 
   -- A small but nontrivial 2×3×4 input tensor.
-  let x234 : Spec.Tensor α baseRankThreeShape ←
-    CLI.orThrow "ir_axis_ops:input234" <|
-      Tensor.tensorFGen (α := α) Runtime.ofFloat [2, 3, 4] (fun i =>
-        (Float.ofNat i) / 10.0 - 1.0)
+  let x234 : Spec.Tensor α baseRankThreeShape :=
+    Tensor.generateFromFloat (α := α) Runtime.ofFloat [2, 3, 4] (fun i =>
+      (Float.ofNat i) / 10.0 - 1.0)
 
   IO.println ""
   IO.println "== IR axis ops tutorial =="
@@ -193,14 +192,14 @@ def runOnce
 
   IO.println ""
   IO.println "-- concat axis=1: [2,3,4] ++ [2,5,4] -> [2,8,4]"
-  let x0 : Spec.Tensor α _root_.TorchLean.Shape.scalar :=
+  let x0 : Spec.Tensor α Spec.Shape.scalar :=
     Spec.Tensor.scalar (Runtime.ofFloat (α := α) 0.0)
   runOne (α := α) (tag := "concat_middle_axis") (g := concatMiddleAxisGraph) (payload := payload)
-    (inputShape := _root_.TorchLean.Shape.scalar) (x := x0) (outputId := ⟨3, by decide⟩)
+    (inputShape := Spec.Shape.scalar) (x := x0) (outputId := ⟨3, by decide⟩)
 
 /-- Runtime-selected entrypoint body for the axis-ops tutorial. -/
 def runSelected
-    {α : Type} [Runtime.SemanticScalar α] [DecidableEq Shape] [ToString α] [Runtime.Scalar α]
+    {α : Type} [_root_.Context α] [DecidableEq Shape] [ToString α] [Runtime.FromFloat α]
     (rest : List String) : IO Unit := do
   CLI.requireNoArgs "ir_axis_ops" rest
   runOnce (α := α)

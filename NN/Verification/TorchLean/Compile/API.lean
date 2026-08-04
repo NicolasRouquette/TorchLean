@@ -86,6 +86,7 @@ def CompiledIR.affineCtx? {α : Type} [Context α] (compiled : CompiledIR α) :
 
 /-- Run IBP on a compiled verifier graph. -/
 def CompiledIR.runIBP {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
+    [NN.MLTheory.CROWN.NonlinearBoundOps α]
     (compiled : CompiledIR α)
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α) :
     Array (Option (NN.MLTheory.CROWN.FlatBox α)) :=
@@ -131,6 +132,7 @@ def CompiledIR.outputCROWN? {α : Type} [Context α]
 
 /-- Run forward CROWN and evaluate the compiled verifier output on a selected input box. -/
 def CompiledIR.outputBoxCROWN? {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
+    [NN.MLTheory.CROWN.NonlinearBoundOps α]
     (compiled : CompiledIR α) (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (xB : NN.MLTheory.CROWN.FlatBox α) :
     Except String (NN.MLTheory.CROWN.FlatBox α) := do
@@ -140,6 +142,7 @@ def CompiledIR.outputBoxCROWN? {α : Type} [Context α] [NN.MLTheory.CROWN.Bound
 
 /-- Run forward CROWN for a compiled verifier graph, throwing an `IO.userError` on failure. -/
 def CompiledIR.outputBoxCROWNOrThrow {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
+    [NN.MLTheory.CROWN.NonlinearBoundOps α]
     (compiled : CompiledIR α) (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (xB : NN.MLTheory.CROWN.FlatBox α) :
     IO (NN.MLTheory.CROWN.FlatBox α) := do
@@ -175,6 +178,7 @@ def refListConstOfTList {α : Type} [Context α] :
   | _s :: ss, .cons t ts => .cons (.const t) (refListConstOfTList (ss := ss) ts)
 
 /-- Compile a TorchLean forward model with a single distinguished input (the last argument). -/
+@[noinline, nospecialize]
 def compileForward
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape outShape : Shape}

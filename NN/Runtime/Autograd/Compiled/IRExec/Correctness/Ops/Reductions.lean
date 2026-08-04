@@ -123,7 +123,7 @@ theorem buildFrom_denoteAllFrom_broadcastTo
                           (Graph.expectShape_sigma (α := α) (s := s₁)
                             (t := getIdx (α := α) (xs := ctx) ip))
                       cases hOut
-                      simp [NN.IR.Graph.evalAt, hN, hk, hp, hExp, hCan,
+                      simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hExp, hCan,
                         NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                         nodeData, mkFwdNode,
                         throw_eq_error,
@@ -144,10 +144,8 @@ theorem buildFrom_denoteAllFrom_broadcastTo
                     simp [hOut] at hBuild
                     try cases hBuild
 
-set_option maxHeartbeats 12000000 in
 -- The proof below follows the inline `reduceSum` branch in
--- `...Correctness.SemanticEquivalence` and needs a higher heartbeat budget because `simp` unfolds
--- a large dependent match in `NN.IR.Graph.evalAt`.
+-- `...Correctness.SemanticEquivalence`.
 /-- Correctness lemma for `.reduceSum axis` lowering. -/
 theorem buildFrom_denoteAllFrom_reduceSum
     {α : Type} [Context α] [DecidableEq Shape]
@@ -263,9 +261,7 @@ theorem buildFrom_denoteAllFrom_reduceSum
                         simp [hCondNe] at hBuild
                         try cases hBuild
 
-set_option maxHeartbeats 12000000 in
--- Like `buildFrom_denoteAllFrom_reduceSum`, we keep the proof shape close to the implementation
--- and raise `maxHeartbeats` to accommodate the `evalAt` simp normalization.
+-- Like `buildFrom_denoteAllFrom_reduceSum`, this proof follows the implementation branch closely.
 /-- Correctness lemma for `.reduceMean axis` lowering. -/
 theorem buildFrom_denoteAllFrom_reduceMean
     {α : Type} [Context α] [DecidableEq Shape]
@@ -459,7 +455,7 @@ theorem buildFrom_denoteAllFrom_sum
                           vals0[pId]! =
                             (⟨s, getIdx (α := α) (xs := ctx) ip⟩ : NN.IR.DVal α) := by
                         simpa [NN.IR.DVal.mk] using hGet
-                      simp [NN.IR.Graph.evalAt, hN, hk, hp]
+                      simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp]
                       rw [hGet']
                       simp [hOut, nodeData, mkFwdNode,
                         NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,

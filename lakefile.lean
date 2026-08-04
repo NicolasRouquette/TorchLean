@@ -333,14 +333,6 @@ lean_exe transcendentals_check where
 require «doc-gen4» from git
   "https://github.com/leanprover/doc-gen4" @ "v4.32.0"
 
--- Comparator: a sandboxed judge for untrusted Lean proof submissions.
--- We pin versions compatible with TorchLean's Lean toolchain.
-require lean4export from git
-  "https://github.com/leanprover/lean4export" @ "8554815c2dc6b7abe99ec1f08849c9759ba77947"
-
-require Comparator from git
-  "https://github.com/leanprover/comparator" @ "fd2e25de155523dbce1f35d410511f9f63998461"
-
 -- Keep `mathlib` last so Mathlib’s dependency versions win, which is required for cache tooling.
 require mathlib from git
   "https://github.com/leanprover-community/mathlib4" @ "v4.32.0"

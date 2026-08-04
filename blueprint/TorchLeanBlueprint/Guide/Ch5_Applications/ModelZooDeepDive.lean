@@ -68,7 +68,8 @@ The command constructs a `CausalTransformerConfig` from the runtime options:
 
 $$`D=32,\qquad H=4,\qquad D_h=D/H=8,\qquad L=2.`
 
-For a batch of token windows $`I\in\operatorname{Fin}(V)`, the model first gathers embeddings
+For a batch of token windows $`I\in\mathbb{N}^{B\times T}`, the model first checks that every token
+id is smaller than $`V`$ and gathers embeddings
 
 $$`E[I]\in\mathbb{R}^{B\times T\times D},`
 
@@ -86,7 +87,10 @@ The final layer normalization and linear projection produce logits
 $$`\operatorname{logits}\in\mathbb{R}^{B\times T\times V}.`
 
 The training target is the same token window shifted by one position. Cross entropy at location
-$`t` therefore uses the target character $`x_{t+1}`.
+$`t`$ therefore uses the target character $`x_{t+1}`. Token ids and targets enter the runtime as
+`Tensor Nat`; they are not transported through floating-point tensors. The reusable GPT API also
+supports tying the output projection to the embedding table. This CharGPT command uses an
+independent output head.
 
 The mask is semantic, not merely a convenient floating-point bias:
 

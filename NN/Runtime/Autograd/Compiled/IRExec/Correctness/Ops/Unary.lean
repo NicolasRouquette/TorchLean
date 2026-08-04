@@ -107,7 +107,7 @@ theorem buildFrom_denoteAllFrom_abs
                   NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                       (input := input) (vals := vals0) (i := i) =
                     .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
+                simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet, Graph.expectShape_mk,
                   NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk, nodeData, mkFwdNode,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
               exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
@@ -180,7 +180,7 @@ theorem buildFrom_denoteAllFrom_sqrt
                   NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                       (input := input) (vals := vals0) (i := i) =
                     .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
+                simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet, Graph.expectShape_mk,
                   NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk, nodeData, mkFwdNode,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
               exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
@@ -253,7 +253,7 @@ theorem buildFrom_denoteAllFrom_inv
                   NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                       (input := input) (vals := vals0) (i := i) =
                     .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                simp [NN.IR.Graph.evalAt, hN, hk, hp, hGet, Graph.expectShape_mk,
+                simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet, Graph.expectShape_mk,
                   NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk, nodeData, mkFwdNode,
                   throw_eq_error, Except.instMonad, Except.bind, Except.pure]
               exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)

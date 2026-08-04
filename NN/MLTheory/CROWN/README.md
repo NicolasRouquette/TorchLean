@@ -60,6 +60,34 @@ imports a graph, attaches an input box, computes per-node IBP boxes, and then pr
 forms for a selected output or objective. Operator files provide the transfer rules; proof files say
 which rules have soundness statements or which assumptions remain.
 
+Endpoint arithmetic is organized by four interfaces in `BoundOps.lean`. `BoundOps` contains the
+executable lower and upper operations. `LawfulBoundOps` interprets their endpoints as real numbers
+and proves that each lower result is below the exact operation and each upper result is above it.
+Sound arithmetic lemmas require both interfaces; defining executable operations alone does not
+establish an enclosure theorem. `NonlinearBoundOps` contains interval transfers for division,
+square root, transcendental functions, bounded activations, and layer normalization. A backend
+returns `none` when it has no justified enclosure. The graph pass then leaves that node unresolved;
+it does not substitute an ordinary host-library value. `LawfulNonlinearBoundOps` proves that every
+successful nonlinear transfer encloses the corresponding real operation and relates the
+layer-normalization and coupled-derivative flags to explicit mathematical obligations.
+
+The current instances make the numerical boundary visible:
+
+- real endpoints use exact arithmetic and satisfy `LawfulBoundOps` definitionally;
+- `FP32` rounds exact-real endpoints outward to the binary32 grid and has a proved
+  `LawfulBoundOps` instance;
+- `IEEE32Exec` uses proved directed binary32 division and square root, while exponential and
+  logarithmic transfers remain unavailable. Finite-path soundness is stated in the IEEE semantics
+  modules rather than as a global ordered instance over NaNs and infinities;
+- host `Float` widens basic binary64 operations by one adjacent value and does not claim directed
+  transcendental-library results or provide a global `LawfulBoundOps` instance.
+
+Forward affine CROWN uses a constant affine form when only an IBP enclosure is justified. This is
+less precise than an analytic relaxation but preserves the checked interval. Objective-dependent
+backward CROWN performs algebraic coefficient propagation; a result over an executable floating
+type is not, by itself, a theorem about rounded runtime execution. Such a claim still needs the
+finite-precision bridge described in `NN/Proofs/RuntimeApprox`.
+
 Use this split when adding operators:
 
 1. Add the executable interval/affine transfer rule.
@@ -72,6 +100,12 @@ That keeps runtime diagnostics, accepted certificates, and theorem-backed graph 
 while preserving the distinction between execution evidence, checker acceptance, and theorem-backed
 graph claims.
 
+For node certificates, the executable α-CROWN and α/β-CROWN commands finish with a pure complete
+replay. `certificateAccepts_eq_true` and `AlphaBetaCROWNNodeCertificate.accepts_eq_true` turn a
+successful binary32 replay into `CrownCertLocalOK`. The result is a theorem about the imported
+`IEEE32Exec` transcript. Applying a real-semantic enclosure theorem additionally requires the
+appropriate transfer and finite-precision refinement hypotheses.
+
 ## Subfolders
 
 - `Graph/`: graph engine, backward propagation, and graph-level theorem statements.
@@ -80,12 +114,13 @@ graph claims.
   canonical `IBP.matPos`/`IBP.matNeg` weight decomposition lives in `Core.lean` and is shared by
   interval and graph-CROWN linear rules.
 - `Cert/`: alpha/alpha-beta certificate structures.
-- `Lyapunov/`: controller and Lyapunov-oriented CROWN workflows, including the oracle boundary.
+- `Lyapunov/`: controller and Lyapunov-oriented CROWN workflows. Imported numerical bounds support
+  a theorem only after the caller proves `LyapunovCert.ValidFor`.
   The two Lean-executed pipelines share compiled gradient search and loss-box verification through
   `Lyapunov/TwoStage/CompiledLossAnalysis.lean` (`projectedGradientStep` and `checkLossBox`).
 - `Proofs/`: soundness theorems and proof layer overviews.
 - `Extras/`: optional helpers and proof toolboxes.
-- `Tactics/`: small tactic support for CROWN oracle-style workflows.
+- `Tactics/`: diagnostic commands for running an external producer and inspecting its certificates.
 
 ## Optional Modules
 

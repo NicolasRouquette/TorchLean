@@ -41,7 +41,7 @@ def containsWithTol (u lo hi tol : Float) : Bool :=
 
 /-- Read the second coordinate, accepting either `y` for 2D data or `t` for 1D-in-time data. -/
 def getYorT (j : Json) : Except String Float := do
-  let o ← NN.API.Json.expectObjE "dataset point" j
+  let o ← TorchLean.Json.expectObjE "dataset point" j
   match Std.TreeMap.Raw.get? o "y" with
   | some _ => NN.Verification.Json.expectFieldFiniteFloatE "dataset point" "y" j
   | none => NN.Verification.Json.expectFieldFiniteFloatE "dataset point" "t" j

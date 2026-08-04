@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Core.Basic
+public import NN.API.Scalar
 public import NN.Verification.TorchLean.Compile.API
 
 /-!
@@ -30,9 +30,9 @@ runtime and proof-only dtypes are rejected instead of receiving ordinary round-t
 arithmetic through an implicit fallback.
 -/
 def withBoundDType
-    (dtype : NN.API.DType)
-    (k : ∀ {α : Type}, [NN.API.Semantics.Scalar α] → [DecidableEq Spec.Shape] →
-      [ToString α] → [NN.API.Runtime.Scalar α] → [BoundOps α] → IO Unit) :
+    (dtype : TorchLean.Runtime.DType)
+    (k : ∀ {α : Type}, [_root_.Context α] → [DecidableEq Spec.Shape] →
+      [ToString α] → [_root_.TorchLean.Runtime.FromFloat α] → [BoundOps α] → IO Unit) :
     IO Unit := do
   match dtype with
   | .float =>
@@ -49,17 +49,17 @@ def withBoundDType
 /-- Parse and log a dtype, then run `withBoundDType`. -/
 def runWithBoundDType
     (title : String) (args : List String)
-    (k : ∀ {α : Type}, [NN.API.Semantics.Scalar α] → [DecidableEq Spec.Shape] →
-      [ToString α] → [NN.API.Runtime.Scalar α] → [BoundOps α] → IO Unit) :
+    (k : ∀ {α : Type}, [_root_.Context α] → [DecidableEq Spec.Shape] →
+      [ToString α] → [_root_.TorchLean.Runtime.FromFloat α] → [BoundOps α] → IO Unit) :
     IO Unit := do
   IO.println s!"=== {title} workflow ==="
   let (dtype, rest) ←
-    match NN.API.DType.parseAndStrip args with
+    match TorchLean.Runtime.DType.parseAndStrip args with
     | .ok parsed => pure parsed
     | .error msg => throw <| IO.userError msg
   unless rest.isEmpty do
     throw <| IO.userError s!"unexpected arguments: {rest}"
-  NN.API.DType.log dtype
+  TorchLean.Runtime.DType.log dtype
   withBoundDType dtype (fun {α} => k (α := α))
 
 end NN.Verification.TorchLean

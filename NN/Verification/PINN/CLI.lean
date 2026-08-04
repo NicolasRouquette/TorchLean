@@ -153,8 +153,8 @@ def computePrimsAt (g : Graph) (ps : ParamStore Float) (uMethod : UBoundsMethod 
     | _ => true
   -- First/second derivative along X (dir 0)
   let seedX := FlatBox.ofTensor (NN.Tensor.oneHotNat (α := Float) inDim 0)
-  let d1x := runDerivDirectional (α:=Float) g ps ibp seedX
-  let d2x := runDeriv2D (α:=Float) g ps ibp d1x
+  let d1x := runDirectionalDerivative (α:=Float) g ps ibp seedX
+  let d2x := runSecondDerivative1D (α:=Float) g ps ibp d1x
   let d1xOpt := (NN.MLTheory.CROWN.Graph.outputBox? d1x outId).toOption
   let d2xOpt := (NN.MLTheory.CROWN.Graph.outputBox? d2x outId).toOption
   let (duX, d2uX) :=
@@ -167,7 +167,7 @@ def computePrimsAt (g : Graph) (ps : ParamStore Float) (uMethod : UBoundsMethod 
   let duY : Option (Float × Float) :=
     if hasY then
       let seedY := FlatBox.ofTensor (NN.Tensor.oneHotNat (α := Float) inDim 1)
-      let d1y := runDerivDirectional (α:=Float) g ps ibp seedY
+      let d1y := runDirectionalDerivative (α:=Float) g ps ibp seedY
       match NN.MLTheory.CROWN.Graph.outputBox? d1y outId with
       | .ok dyB => some (Spec.Tensor.sumSpec dyB.lo, Spec.Tensor.sumSpec dyB.hi)
       | .error _ => none
@@ -175,8 +175,8 @@ def computePrimsAt (g : Graph) (ps : ParamStore Float) (uMethod : UBoundsMethod 
   let d2uY : Option (Float × Float) :=
     if hasY then
       let seedY := FlatBox.ofTensor (NN.Tensor.oneHotNat (α := Float) inDim 1)
-      let d1y := runDerivDirectional (α:=Float) g ps ibp seedY
-      let d2y := runDeriv2D (α:=Float) g ps ibp d1y
+      let d1y := runDirectionalDerivative (α:=Float) g ps ibp seedY
+      let d2y := runSecondDerivative1D (α:=Float) g ps ibp d1y
       match NN.MLTheory.CROWN.Graph.outputBox? d2y outId with
       | .ok d2yB => some (Spec.Tensor.sumSpec d2yB.lo, Spec.Tensor.sumSpec d2yB.hi)
       | .error _ => none

@@ -1816,7 +1816,8 @@ theorem alphaCrown_transfer_sound
       ..
     | .broadcastTo .. | .reduceSum _ | .reduceMean _ | .conv2d .. | .batchNorm2dNchwEval _
       | .tanh | .sigmoid | .exp | .log | .sin | .cos
-    | .softmax _ | .layernorm _ | .concat _ | .swap_first_two | .transpose3dLastTwo | .mseLoss =>
+    | .softmax _ | .hardMaskedSoftmax _ | .layernorm _ | .concat _ | .swap_first_two |
+      .transpose3dLastTwo | .mseLoss =>
       by
         -- Unsupported ops: `alphaCrownStepNode?` can only succeed via the IBP-derived constant
         -- enclosure.

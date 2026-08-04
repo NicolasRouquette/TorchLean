@@ -70,7 +70,7 @@ theorem evalAt_shapeOperation_eq
       =
       Except.ok (DVal.mk (α := α) outShape (op.denote x)) := by
   cases op <;>
-    simp_all [ShapeOperation.toOpKind, ShapeOperation.denote, Graph.evalAt, unaryGraphOut,
+    simp_all [ShapeOperation.toOpKind, ShapeOperation.denote, Graph.evalAt, Graph.evalNode, unaryGraphOut,
       unaryNodeOut, Graph.getNode, Graph.getNode?, Graph.expectShape, Bind.bind, Except.bind,
       Pure.pure, Except.pure]
 

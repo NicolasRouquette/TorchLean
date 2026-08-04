@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.SelfSupervised.Core
+public import NN.API.SelfSupervised.MaskedPrediction
 
 /-!
 # Arbitrary-Rank Block Masks
@@ -30,8 +30,7 @@ Lean.
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
 namespace ssl
 
 open Spec Tensor
@@ -220,7 +219,7 @@ def blockMaeSample {d : Nat} (batch reconDim : Nat) (shape : Vector Nat d)
       (.dim batch (.dim reconDim .scalar)) :=
   TorchLean.Sample.mk
     (blockMaskBatch batch shape blocks period offset x)
-    (_root_.NN.API.tensor.flattenBatchPrefix batch reconDim hRecon x)
+    (TorchLean.Tensor.flattenBatchPrefix batch reconDim hRecon x)
 
 /-- The model input of a block-MAE sample is exactly the masked source batch. -/
 theorem blockMaeSample_input_eq_mask {d : Nat} (batch reconDim : Nat)
@@ -237,7 +236,7 @@ theorem blockMaeSample_target_eq_source_prefix {d : Nat} (batch reconDim : Nat)
     (hRecon : reconDim ≤ Spec.Shape.size (Spec.Shape.ofList shape.toList))
     (x : Spec.Tensor Float (.dim batch (Spec.Shape.ofList shape.toList))) :
     TorchLean.Sample.y (blockMaeSample batch reconDim shape blocks period offset hRecon x) =
-      _root_.NN.API.tensor.flattenBatchPrefix batch reconDim hRecon x := by
+      TorchLean.Tensor.flattenBatchPrefix batch reconDim hRecon x := by
   rfl
 
 /-- Every decoder coordinate participates in the compact reconstruction objective. -/
@@ -283,5 +282,4 @@ theorem blockMaeRow_predictive_objective_eq_maeLoss {d : Nat} (batch reconDim : 
     loss
 
 end ssl
-end API
-end NN
+end TorchLean

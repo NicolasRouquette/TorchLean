@@ -189,7 +189,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
         (seed := flags.seed)
   trainer.train
     (data flags)
-    (ModelZoo.TrainFlags.trainOptions flags.toModelTrainFlags
+    (CLI.Training.OptimizerOptions.toTrainerOptions flags.toOptimizerOptions
       (title := "MAE CIFAR masked reconstruction")
       (notes := RealData.cifarClassifierNotes cfg.encoder.batch flags
         #[s!"maskPeriod={maskPeriod}", s!"maskOffset={maskOffset}"]))

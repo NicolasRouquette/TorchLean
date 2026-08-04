@@ -6,11 +6,11 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Common
+public import NN.API.CLI
 public import NN.Runtime.Training.Log
 
 /-!
-# RL CLI Helpers (API)
+# RL Command-Line Options
 
 TorchLean's runnable RL examples (`NN/Examples/Models/RL/*`) share one CLI shape:
 
@@ -26,9 +26,7 @@ CartPole/Pong/GridWorld examples.
 
 @[expose] public section
 
-namespace NN
-namespace API
-
+namespace TorchLean
 namespace rl
 namespace cli
 
@@ -75,6 +73,4 @@ def parsePpoFlags (exeName : String) (args : List String)
 
 end cli
 end rl
-
-end API
-end NN
+end TorchLean

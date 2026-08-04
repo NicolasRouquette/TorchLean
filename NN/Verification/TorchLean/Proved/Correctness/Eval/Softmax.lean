@@ -27,6 +27,21 @@ namespace Correctness
 
 namespace IRStep
 
+/-- Local IR semantics for stable last-axis softmax with a hard Boolean mask. -/
+theorem evalAt_hardMaskedSoftmax_eq
+    {α : Type} [Context α] [DecidableEq Shape]
+    {s : Shape} (scores : Tensor α s) (allowed : Tensor Bool s) :
+    Graph.evalAt (α := α)
+        (g := unaryGraphOut (.hardMaskedSoftmax (NN.IR.HardMask.ofTensor allowed)) s s)
+        (payload := {})
+        (input := DVal.mk (α := α) s scores)
+        (vals := #[DVal.mk (α := α) s scores]) (i := 1)
+      =
+      Except.ok
+        (DVal.mk (α := α) s (Spec.hardMaskedSoftmaxLastSpec scores allowed)) := by
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
+    Graph.expectShape, Bind.bind, Except.bind, Pure.pure, Except.pure]
+
 /-- Local IR semantics for last-axis softmax. -/
 theorem evalAt_softmax_last_axis_eq
     {α : Type} [Context α] [DecidableEq Shape]
@@ -39,7 +54,7 @@ theorem evalAt_softmax_last_axis_eq
         (vals := #[DVal.mk (α := α) s x]) (i := 1)
       =
       Except.ok (DVal.mk (α := α) s (Activation.softmaxSpec (α := α) x)) := by
-  simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
     Graph.expectShape, hAxis, hLast, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Local IR semantics for non-last-axis softmax through the evaluator's permutation path. -/
@@ -68,7 +83,7 @@ theorem evalAt_softmax_permuted_axis_eq
         (vals := #[DVal.mk (α := α) s x]) (i := 1)
       =
       Except.ok (DVal.mk (α := α) s y) := by
-  simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
     Graph.expectShape, hAxis, hNotLast, hToLast, hBack,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
   have hXLast' : Graph.permuteDVal (α := α) (v := ⟨s, x⟩) permToLast = .ok xLast := by

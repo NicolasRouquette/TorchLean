@@ -40,7 +40,7 @@ This file provides the key local bridge lemma:
 If $f$ satisfies the first-order strong convexity inequality (using the gradient), then $\nabla f$
 is $\mu$-strongly monotone in the sense needed by `GDLinearConvergence`.
 
-What this file *does* now provide is a concrete bridge from mathlib's `StrongConvexOn` definition
+This file provides a concrete bridge from mathlib's `StrongConvexOn` definition
 to a first-order inequality, under a `DifferentiableAt` assumption at the base point `x`.
 
 In other words, the chain we can use is:

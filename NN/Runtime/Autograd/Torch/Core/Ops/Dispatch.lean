@@ -79,29 +79,6 @@ def dispatchCudaOpt {α β : Type} (s : EagerSession α) (op : NN.Backend.Backen
     (cpu : IO β) (cuda : IO (Option β)) : IO β :=
   dispatchCudaCapsuleOpt s op [.nativeCuda] cpu (fun _ => cuda)
 
-/--
-Validate one float-encoded token id and return the corresponding `Nat`.
-
-This is intentionally stricter than `Float.floor`: language-model targets are discrete labels, so a
-fractional value is almost certainly a bad dataset or adapter boundary. Rejecting it here prevents a
-quiet change of class label before the embedding or cross-entropy code sees the id.
--/
-def natOfTokenFloat (i : Nat) (x : Float) : IO Nat := do
-  if x.isNaN || x.isInf then
-    throw <| IO.userError s!"torch: token id at index {i} is not finite"
-  else if x < 0.0 then
-    throw <| IO.userError s!"torch: token id at index {i} is negative: {x}"
-  else
-    let y := Float.floor x
-    if y != x then
-      throw <| IO.userError s!"torch: token id at index {i} is not an integer: {x}"
-    else
-      let n := y.toUInt64.toNat
-      if Float.ofNat n == x then
-        pure n
-      else
-        throw <| IO.userError s!"torch: token id at index {i} is outside the supported Nat range: {x}"
-
 end EagerSession
 
 end Internal

@@ -65,7 +65,6 @@ open Proofs.Autograd.Algebra
 open NN.IR
 open IRExec
 
-set_option maxHeartbeats 1200000 in
 /-- Correctness lemma for the `.layernorm` node compiler. -/
 theorem buildFrom_denoteAllFrom_layernorm
     {α : Type} [Context α] [DecidableEq Shape]
@@ -190,7 +189,7 @@ theorem buildFrom_denoteAllFrom_layernorm
                                 by
                           -- Focused simplification of the `.layernorm` branch of the evaluator.
                           simp (config := { failIfUnchanged := false })
-                            [NN.IR.Graph.evalAt, hN, hk, hp, hExp, hParams, view2D, hNumel,
+                            [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hExp, hParams, view2D, hNumel,
                               NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
                               throw_eq_error,
                               nodeData, mkFwdNode]
@@ -224,8 +223,7 @@ theorem buildFrom_denoteAllFrom_layernorm
               · exact False.elim <|
                   throw_bind_ne_ok (by simpa [hp, hParams, view2D, hNumel] using hBuild)
 
-set_option maxHeartbeats 1200000 in
-set_option maxRecDepth 10000 in
+set_option maxRecDepth 3000 in
 /-- Correctness lemma for eval-mode NCHW BatchNorm2d lowering. -/
 theorem buildFrom_denoteAllFrom_batchNorm2dNchwEval
     {α : Type} [Context α] [DecidableEq Shape]
@@ -324,7 +322,7 @@ theorem buildFrom_denoteAllFrom_batchNorm2dNchwEval
                                 (input := input) (vals := vals0) (i := i) =
                               .ok (NN.IR.DVal.mk (α := α) n.outShape
                                 (nodeData.forward ctx ())) := by
-                          simp [NN.IR.Graph.evalAt, hN, hk, hp, hBatch, expected, hOut,
+                          simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hBatch, expected, hOut,
                             normalized, nodeData, getIRValue, shape_bne_refl, NN.IR.DVal.shape,
                             NN.IR.DVal.tensor, NN.IR.DVal.mk]
                           congr 1

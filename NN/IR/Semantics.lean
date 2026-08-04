@@ -6,12 +6,14 @@ Authors: TorchLean Team
 
 module
 
+public import NN.IR.HardMask
 public import NN.IR.Payload
 public import NN.Runtime.Context
 public import NN.Runtime.Autograd.TorchLean.Random
 public import NN.Spec.Core.Shape
 public import NN.Spec.Core.Tensor.Packed
 public import NN.Spec.Layers.Activation
+public import NN.Spec.Layers.Attention
 public import NN.Spec.Layers.Normalization
 public import NN.Spec.Layers.Pooling
 
@@ -253,7 +255,7 @@ def evalConv2D {α : Type} [Context α] [DecidableEq Shape]
   | none => throw s!"IR eval: missing conv2d payload for node {id}"
   | some cfg =>
       let _ ←
-        OpContracts.inferConv2dCHWOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride cfg.padding
+        OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride cfg.padding
           x.shape
       let xT ← expectShape (α := α)
         (expected := Shape.dim cfg.inC (Shape.dim cfg.inH (Shape.dim cfg.inW Shape.scalar))) x
@@ -489,22 +491,15 @@ theorem normalizeNodeOutput_nodeShape {α : Type} [Context α] [DecidableEq Shap
   simp [normalizeNodeOutput, DVal.shape, DVal.tensor, Pure.pure, Except.pure]
 
 /--
-Evaluate node `i` given already computed parent values `vals`.
+Evaluate a known node from its already computed parent values.
 
-This is the core “one step” of the denotational semantics:
-- lookup the node,
-- read its parent values from `vals` (using the topo/id invariant),
-- apply the corresponding spec-layer operation,
-- enforce that the produced shape matches the node’s declared `outShape`.
-
-This function assumes the graph is structurally well-formed (ids are in bounds and parents are
-strictly smaller ids). `denoteAll` performs that check up front.
+Keeping operator dispatch separate from graph lookup lets local correctness proofs reduce only the
+selected `OpKind` branch. The caller remains responsible for the graph's topological invariant.
 -/
-def evalAt
+def evalNode
     {α : Type} [Context α] [DecidableEq Shape]
-    (g : Graph) (payload : Payload α) (input : DVal α) (vals : Array (DVal α)) (i : Nat) :
+    (payload : Payload α) (input : DVal α) (vals : Array (DVal α)) (i : Nat) (n : Node) :
     Except String (DVal α) := do
-  let n ← g.getNode i
   let getParent (pid : Nat) : DVal α := vals[pid]!
   let v : DVal α ←
     match n.kind with
@@ -945,6 +940,19 @@ def evalAt
               pure (DVal.mk (α := α) n.outShape y)
         | _ =>
             throw s!"IR eval: node {i}: softmax expects 1 parent ({n.summary})"
+    | .hardMaskedSoftmax mask =>
+        match n.parents with
+        | [pId] => do
+            let scores ← expectShape (α := α) (expected := n.outShape) (getParent pId)
+            let allowed ←
+              match NN.IR.HardMask.toTensorAs? mask n.outShape with
+              | .ok value => pure value
+              | .error msg =>
+                  throw s!"IR eval: node {i}: hard_masked_softmax: {msg} ({n.summary})"
+            pure <| DVal.mk (α := α) n.outShape <|
+              hardMaskedSoftmaxLastSpec scores allowed
+        | _ =>
+            throw s!"IR eval: node {i}: hard_masked_softmax expects 1 parent ({n.summary})"
     | .layernorm axis =>
         match n.parents with
         | [pId] => do
@@ -1024,13 +1032,19 @@ def evalAt
           | [yId, tId] =>
               mseLossDVal (α := α) i (getParent yId) (getParent tId)
           | _ => throw s!"IR eval: node {i}: mse_loss expects 2 parents ({n.summary})"
-  if h : v.shape = n.outShape then
-    -- Normalize the returned value’s shape tag to the node’s declared `outShape`.
-    pure (DVal.mk (α := α) n.outShape (h ▸ v.tensor))
-  else
-    throw <|
-      s!"IR eval: node {i}: produced shape mismatch: produced={repr v.shape}, " ++
-        s!"declared={repr n.outShape} ({n.summary})"
+  normalizeNodeOutput (α := α) i n v
+
+/--
+Evaluate node `i` after checking the graph's id discipline and retrieving the corresponding node.
+
+`denoteAll` checks the full graph structure before repeatedly calling this one-step evaluator.
+-/
+def evalAt
+    {α : Type} [Context α] [DecidableEq Shape]
+    (g : Graph) (payload : Payload α) (input : DVal α) (vals : Array (DVal α)) (i : Nat) :
+    Except String (DVal α) := do
+  let n ← g.getNode i
+  evalNode (α := α) payload input vals i n
 
 /--
 Evaluate nodes `i, i+1, ...` given already computed prefix values `vals`.

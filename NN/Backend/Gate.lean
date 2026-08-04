@@ -32,8 +32,7 @@ def AssurancePolicy.acceptsDisposition (p : AssurancePolicy) (d : EvidenceDispos
   | .fuzzed => p.allowFuzzed
   | .guarded => p.allowRuntimeGuards
   | .tested => p.allowTestEvidence
-  | .proved => true
-  | .checked => true
+  | .notApplicable => true
 
 /-- Why a candidate plan was rejected by an acceptance gate. -/
 inductive GateFailure where

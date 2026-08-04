@@ -6,11 +6,11 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
+public import NN.API.Seeded
 public import NN.Spec.Models.Mamba
 
 /-!
-# Mamba Model Helpers (API)
+# Mamba Models
 
 Reusable configuration, model constructors, and text helpers for Mamba-style sequence models.
 
@@ -21,8 +21,8 @@ utilities; runnable training examples use the autograd constructor.
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
+
 
 open Spec Tensor
 
@@ -36,18 +36,6 @@ structure MambaTextConfig where
   ssmStateDim : Nat
   convWidth : Nat
 deriving Repr
-
-/-- One-hot token vector shape. -/
-abbrev mambaTokenVec (cfg : MambaTextConfig) : Spec.Shape :=
-  .dim cfg.vocab .scalar
-
-/-- Compact hidden-state shape. -/
-abbrev mambaStateVec (cfg : MambaTextConfig) : Spec.Shape :=
-  .dim cfg.stateDim .scalar
-
-/-- Full selective-scan state shape. -/
-abbrev mambaFullState (cfg : MambaTextConfig) : Spec.Shape :=
-  .dim cfg.stateDim (.dim cfg.ssmStateDim .scalar)
 
 /-- Sequence-major one-hot token matrix shape. -/
 abbrev mambaTokenMat (cfg : MambaTextConfig) (seqLen : Nat) : Spec.Shape :=
@@ -144,5 +132,4 @@ def mambaTrainingOffsets (tokenCount seqLen windows : Nat) : List Nat :=
 end models
 end nn
 
-end API
-end NN
+end TorchLean

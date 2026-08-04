@@ -28,7 +28,7 @@ open TorchLean
 /-- Parsed runtime and training settings for quickstart commands. -/
 structure RuntimeTrain where
   /-- Logged training flags parsed from `--steps`, `--log`, and related options. -/
-  train : ModelZoo.LoggedTrainFlags
+  train : CLI.Training.RunOptions
   /-- Runtime settings parsed from dtype/backend/device flags. -/
   run : Trainer.RunConfig
   /-- Public trainer training options derived from the parsed flags. -/
@@ -50,9 +50,9 @@ def parseRuntimeTrain
     (logEvery : Nat := 0) :
     IO RuntimeTrain := do
   let (train, args) ← CLI.orThrow exeName <|
-    ModelZoo.parseLoggedTrainFlags exeName args defaultLogJson defaultSteps
+    CLI.Training.RunOptions.parse exeName args defaultLogJson defaultSteps
   let trainOptions :=
-    ModelZoo.LoggedTrainFlags.trainOptionsWhenLogRequested train args
+    CLI.Training.RunOptions.toTrainerOptionsWhenRequested train args
       (logEvery := logEvery)
   let run ← Trainer.RunConfig.parseRuntimeArgsOrThrow exeName args
     { optimizer := optimizer }

@@ -6,14 +6,13 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.SelfSupervised
 public import NN.API.Models.Generative
 public import NN.API.Models.Vit
 
 /-!
 # Self-Supervised Model Constructors
 
-Most SSL machinery belongs in `NN.API.ssl`: masks, tensor-to-training-sample transforms, and
+Most SSL machinery belongs in `TorchLean.ssl`: masks, tensor-to-training-sample transforms, and
 objective-facing helpers should work with any compatible model.
 
 This file keeps architecture-level conveniences. The compact MAE constructor below is useful for
@@ -22,8 +21,8 @@ examples, but the SSL idea itself is not tied to this model.
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
+
 
 open Spec Tensor
 
@@ -72,7 +71,7 @@ This is a real image/patch transformer path:
 3. one transformer encoder block,
 4. a linear pixel decoder from encoded patch tokens to a reconstruction vector.
 
-The masking objective is provided by `NN.API.ssl.blockMaeSample`. Its axis policy is independent of
+The masking objective is provided by `TorchLean.ssl.blockMaeSample`. Its axis policy is independent of
 the model architecture and spatial rank, so this constructor uses the same checked operation as
 signal, volume, and higher-dimensional masked-prediction models.
 -/
@@ -104,7 +103,7 @@ def vitMaskedAutoencoder {d : Nat} (cfg : VitMaeConfig d)
 Compact vector masked autoencoder.
 
 Architecturally this reuses the vector autoencoder body; the self-supervised part is in
-`NN.API.ssl.vectorMaeSample` or `NN.API.ssl.tensorPrefixMaeSample`, which mask the input while
+`TorchLean.ssl.vectorMaeSample` or `TorchLean.ssl.tensorPrefixMaeSample`, which mask the input while
 keeping the original tensor content as the target.
 -/
 def vectorMaskedAutoencoder (cfg : VectorGenerativeConfig) :
@@ -114,5 +113,4 @@ def vectorMaskedAutoencoder (cfg : VectorGenerativeConfig) :
 end models
 end nn
 
-end API
-end NN
+end TorchLean

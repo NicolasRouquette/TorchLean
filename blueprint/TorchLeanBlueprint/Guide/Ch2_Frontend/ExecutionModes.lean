@@ -331,6 +331,7 @@ Without this information, two loss curves may be incomparable even when both are
 
 Sources:
 
-- [NN/API/Runtime/Module.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Runtime/Module.lean);
+- [NN/API/Module/Execution.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Module/Execution.lean);
 - [Core/Types.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Torch/Core/Types.lean);
-- [Core/Trainer.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Torch/Core/Trainer.lean).
+- [Core/Trainer.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Torch/Core/Trainer.lean);
+- [Trainer/Parameters.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Torch/Core/Trainer/Parameters.lean).

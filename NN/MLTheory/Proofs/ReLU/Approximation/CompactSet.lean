@@ -703,7 +703,6 @@ theorem signCoeff_eq_two_pow_iff_bijective {d : Nat} (p : Fin d → Fin d) :
 
 /-! ## Polarization identity -/
 
-set_option maxHeartbeats 1000000 in
 /--
 Polarization identity for products (algebraic form).
 

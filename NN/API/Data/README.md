@@ -1,6 +1,6 @@
-# `NN.API.Data`
+# `TorchLean.Data`
 
-`NN.API.Data` is TorchLean's public data API.
+`TorchLean.Data` contains typed datasets, loaders, file sources, and transforms.
 
 The data boundary is focused:
 

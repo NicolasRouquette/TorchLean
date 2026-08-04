@@ -39,11 +39,9 @@ def matmul {m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tape × Nat) := do
   binary (t := t) "matmul" aId bId σ₁ σ₂ τ
     (forward := fun a b => Buffer.bmm a b one32 m32 n32 p32)
     (backward := fun a b dLdy =>
-      let bT := Buffer.transpose2d b n32 p32
-      let aT := Buffer.transpose2d a m32 n32
-      let dA := Buffer.bmm dLdy bT one32 m32 p32 n32
-      let dB := Buffer.bmm aT dLdy one32 n32 m32 p32
-      (Buffer.releaseThen bT dA, Buffer.releaseThen aT dB))
+      let dA := Buffer.bmmRightTranspose dLdy b one32 m32 p32 n32
+      let dB := Buffer.bmmLeftTranspose a dLdy one32 n32 m32 p32
+      (dA, dB))
 
 /-- Batched matrix multiply for `(batch,m,n) × (batch,n,p)` CUDA buffers. -/
 def bmm {batch m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tape × Nat) := do
@@ -54,18 +52,12 @@ def bmm {batch m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tape × Nat) :=
   let σ₁ : Shape := .dim batch (.dim m (.dim n .scalar))
   let σ₂ : Shape := .dim batch (.dim n (.dim p .scalar))
   let τ : Shape := .dim batch (.dim m (.dim p .scalar))
-  let dimsA : Array Nat := #[batch, m, n]
-  let dimsB : Array Nat := #[batch, n, p]
   binary (t := t) "bmm" aId bId σ₁ σ₂ τ
     (forward := fun a b => Buffer.bmm a b b32 m32 n32 p32)
     (backward := fun a b dLdy =>
-      let depthLast : UInt32 := 1
-      let bT := Buffer.swapAdjacentAtDepth b dimsB depthLast   -- (batch,p,n)
-      let aT := Buffer.swapAdjacentAtDepth a dimsA depthLast   -- (batch,n,m)
-      let dA := Buffer.bmm dLdy bT b32 m32 p32 n32
-      -- dB = aᵀ @ dLdy  (batch,n,m) * (batch,m,p) -> (batch,n,p)
-      let dB := Buffer.bmm aT dLdy b32 n32 m32 p32
-      (Buffer.releaseThen bT dA, Buffer.releaseThen aT dB))
+      let dA := Buffer.bmmRightTranspose dLdy b b32 m32 p32 n32
+      let dB := Buffer.bmmLeftTranspose a dLdy b32 n32 m32 p32
+      (dA, dB))
 
 /--
 Fused real-FFT spectral convolution used by the CUDA FNO1D path.
@@ -138,8 +130,7 @@ def linear {outDim inDim : Nat} (t : Tape) (wId bId xId : Nat) : Result (Tape ×
         let g := dLdy.buf
         let dW := Buffer.bmm g xBuf one32 out32 one32 in32
         let db := Buffer.copy g
-        let wT := Buffer.transpose2d wBuf out32 in32
-        let dx := Buffer.releaseThen wT <| Buffer.bmm wT g one32 in32 out32 one32
+        let dx := Buffer.bmmLeftTranspose wBuf g one32 in32 out32 one32
         pure
           [ (wId, { s := .dim outDim (.dim inDim .scalar), buf := dW })
           , (bId, { s := .dim outDim .scalar, buf := db })

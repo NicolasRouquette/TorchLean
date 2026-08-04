@@ -253,7 +253,7 @@ def maxPool2d
     (kH kW inH inW inC stride : Nat)
     {h1 : kH ≠ 0} {h2 : kW ≠ 0} :
     LayerDef (.dim inC (.dim inH (.dim inW .scalar)))
-      (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar))) :=
+      (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))) :=
   { kind := s!"MaxPool2d({kH}x{kW})"
     paramShapes := []
     initParams := .nil
@@ -274,7 +274,7 @@ def maxPool2dPad
     (kH kW inH inW inC stride padding : Nat)
     {h1 : kH ≠ 0} {h2 : kW ≠ 0} :
     LayerDef (.dim inC (.dim inH (.dim inW .scalar)))
-      (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))) :=
+      (.dim inC (.dim (Spec.poolOutDim inH kH stride padding) (.dim (Spec.poolOutDim inW kW stride padding) .scalar))) :=
   { kind := s!"MaxPool2d({kH}x{kW}, padding={padding})"
     paramShapes := []
     initParams := .nil
@@ -295,7 +295,7 @@ def avgPool2d
     (kH kW inH inW inC stride : Nat)
     (h1 : kH ≠ 0) (h2 : kW ≠ 0) :
     LayerDef (.dim inC (.dim inH (.dim inW .scalar)))
-      (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar))) :=
+      (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))) :=
   { kind := s!"AvgPool2d({kH}x{kW})"
     paramShapes := []
     initParams := .nil
@@ -316,7 +316,7 @@ def avgPool2dPad
     (kH kW inH inW inC stride padding : Nat)
     (h1 : kH ≠ 0) (h2 : kW ≠ 0) :
     LayerDef (.dim inC (.dim inH (.dim inW .scalar)))
-      (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))) :=
+      (.dim inC (.dim (Spec.poolOutDim inH kH stride padding) (.dim (Spec.poolOutDim inW kW stride padding) .scalar))) :=
   { kind := s!"AvgPool2d({kH}x{kW}, padding={padding})"
     paramShapes := []
     initParams := .nil

@@ -259,9 +259,9 @@ private def importCNN : IO Unit := do
     hKH hKW :=
     { kernel := sd.convW2, bias := sd.convB2 }
   let pool1 : _root_.Spec.MaxPool2DSpec cnnPoolKH cnnPoolKW cnnPoolStride1 hPoolH hPoolW hPoolStride1 :=
-    { kernelHeight := cnnPoolKH, kernelWidth := cnnPoolKW, stride := cnnPoolStride1 }
+    {}
   let pool2 : _root_.Spec.MaxPool2DSpec cnnPoolKH cnnPoolKW cnnPoolStride2 hPoolH hPoolW hPoolStride2 :=
-    { kernelHeight := cnnPoolKH, kernelWidth := cnnPoolKW, stride := cnnPoolStride2 }
+    {}
   let linear : _root_.Spec.LinearSpec Float cnnFlatSize cnnOutC := { weights := sd.linearW, bias :=
     sd.linearB }
 

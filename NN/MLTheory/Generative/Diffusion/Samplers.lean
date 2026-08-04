@@ -286,7 +286,11 @@ theorem ddimStepSystem_contracts_of_step_contracts
       norm factor) :
     NN.Spec.Dynamics.isContractive (ddimStepSystem (T := T) (s := s) sched model k)
       norm factor := by
-  simpa [NN.Spec.Dynamics.isContractive, ddimStepSystem] using h
+  rcases h with ⟨hfactor, hstep⟩
+  refine ⟨hfactor, ?_⟩
+  intro x y
+  simpa [NN.Spec.Dynamics.distance, ddimStepSystem,
+    NN.MLTheory.Robustness.Spec.tensor_distance_eq_norm_sub_spec] using hstep x y
 
 /--
 A contractive PF-ODE Euler update remains contractive after packaging it as a `DynamicalSystem`.
@@ -304,6 +308,10 @@ theorem pfOdeEulerSystem_contracts_of_step_contracts
       norm factor) :
     NN.Spec.Dynamics.isContractive (pfOdeEulerSystem (s := s) sch model t dt)
       norm factor := by
-  simpa [NN.Spec.Dynamics.isContractive, pfOdeEulerSystem] using h
+  rcases h with ⟨hfactor, hstep⟩
+  refine ⟨hfactor, ?_⟩
+  intro x y
+  simpa [NN.Spec.Dynamics.distance, pfOdeEulerSystem,
+    NN.MLTheory.Robustness.Spec.tensor_distance_eq_norm_sub_spec] using hstep x y
 
 end NN.MLTheory.Generative.Diffusion

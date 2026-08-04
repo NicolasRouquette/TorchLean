@@ -291,10 +291,6 @@ structure ContractHolds (c : Contract obsShape nActions) (t : Transition obsShap
   observation : ObservationHolds (obsShape := obsShape) (nActions := nActions) c t.observation
   nextObservation : ObservationHolds (obsShape := obsShape) (nActions := nActions) c t.nextObservation
 
-/-- Alias: Prop-level validity of a transition under `c`. -/
-abbrev ValidTransition (c : Contract obsShape nActions) (t : Transition obsShape nActions) : Prop :=
-  ContractHolds (obsShape := obsShape) (nActions := nActions) c t
-
 end PropContract
 
 

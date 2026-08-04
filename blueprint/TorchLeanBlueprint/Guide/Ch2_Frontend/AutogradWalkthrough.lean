@@ -431,7 +431,7 @@ and why the canonical verification IR is a different artifact.
 
 References:
 
-- [NN/API/Public/Autograd/Core.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Public/Autograd/Core.lean);
+- [NN/API/Autograd.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Autograd.lean);
 - Baydin et al.,
   [Automatic Differentiation in Machine Learning](https://arxiv.org/abs/1502.05767);
 - [PyTorch autograd reference](https://docs.pytorch.org/docs/stable/autograd.html).

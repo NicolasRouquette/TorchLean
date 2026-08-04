@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.IR.Graph
+public import NN.Spec.Layers.Pooling
 
 /-!
 # Operation Contracts
@@ -28,7 +29,7 @@ contract here first and call it from inference/semantics instead of copying the 
 
 namespace NN.IR
 
-open Spec
+open _root_.Spec
 
 /-!
 ## Small shape utilities
@@ -318,11 +319,11 @@ def inferConcatOutShape (axis : Nat) (parents : List Shape) : Except String Shap
   go axis parents
 
 /-!
-## Pooling/Conv2D shape arithmetic (CHW-only)
+## Sliding-window shape arithmetic
 
-These formulas mirror the spec/runtime conventions (CHW tensors, no dilation, symmetric padding).
-Centralizing them gives inference, evaluation, verification, and export code a shared convention
-for convolution and pooling shapes.
+Convolution and pooling preserve a leading channel axis, but their admissible padding domains are
+not identical. The contracts below share validation and traversal while retaining the correct
+output formula for each operation family.
 -/
 
 /-- Output length for a 1D sliding-window op without padding:
@@ -348,68 +349,89 @@ def checkWindowFits (tag axis : String) (inLen k padding : Nat) : Except String 
   else
     pure ()
 
-/-- Output shape for CHW pooling without padding. -/
-def pool2dCHWOutShape (c inH inW kH kW stride : Nat) : Shape :=
-  let outH := slideOut inH kH stride
-  let outW := slideOut inW kW stride
-  .dim c (.dim outH (.dim outW .scalar))
+/--
+Infer the output lengths of a channel-first sliding-window operation.
 
-/-- Output shape for CHW pooling with symmetric padding. -/
-def pool2dCHWOutShapePad (c inH inW kH kW stride padding : Nat) : Shape :=
-  let outH := slideOutPad inH kH stride padding
-  let outW := slideOutPad inW kW stride padding
-  .dim c (.dim outH (.dim outW .scalar))
+The four lists describe the input length, kernel width, stride, and symmetric padding on each
+spatial axis. Their lengths must agree. Invalid kernels, strides, and windows are rejected before
+`Nat` subtraction can hide the error by saturating at zero.
+-/
+def inferSlidingWindowDims (tag : String) (axisNames : List String)
+    (inputs kernels strides paddings : List Nat) : Except String (List Nat) :=
+  go axisNames inputs kernels strides paddings
+where
+  go : List String → List Nat → List Nat → List Nat → List Nat → Except String (List Nat)
+    | [], [], [], [], [] => pure []
+    | axis :: axes, input :: inputs, kernel :: kernels, stride :: strides,
+        padding :: paddings => do
+        checkPositive tag s!"{axis} kernel" kernel
+        checkPositive tag s!"{axis} stride" stride
+        checkWindowFits tag axis input kernel padding
+        let rest ← go axes inputs kernels strides paddings
+        pure (slideOutPad input kernel stride padding :: rest)
+    | _, _, _, _, _ =>
+        throw s!"{tag}: axis-name, input, kernel, stride, and padding ranks must agree"
 
-/-- Output shape for CHW conv2d (single-image, no batch dim). -/
-def conv2dCHWOutShape (outC inH inW kH kW stride padding : Nat) : Shape :=
-  let outH := slideOutPad inH kH stride padding
-  let outW := slideOutPad inW kW stride padding
-  .dim outC (.dim outH (.dim outW .scalar))
+/--
+Infer pooling output lengths while enforcing the same basic window checks as graph validation.
 
-/-- Infer the output shape for CHW pooling without padding, from a parent shape. -/
-def inferPool2dCHWOutShape (tag : String) (kH kW stride : Nat) (parent : Shape) : Except String
-  Shape := do
-  checkPositive tag "kH" kH
-  checkPositive tag "kW" kW
-  checkPositive tag "stride" stride
-  match parent with
-  | .dim c (.dim inH (.dim inW .scalar)) =>
-      checkWindowFits tag "height" inH kH 0
-      checkWindowFits tag "width" inW kW 0
-      pure (pool2dCHWOutShape c inH inW kH kW stride)
-  | s =>
-      throw s!"{tag}: expected input shape (C,H,W), got {repr s}"
+Unlike convolution, pooling uses `poolOutDim`, which assigns an empty output to empty input
+axes and to padding outside the pooling domain.
+-/
+def inferPoolingDims (tag : String) (axisNames : List String)
+    (inputs kernels strides paddings : List Nat) : Except String (List Nat) :=
+  go axisNames inputs kernels strides paddings
+where
+  go : List String → List Nat → List Nat → List Nat → List Nat → Except String (List Nat)
+    | [], [], [], [], [] => pure []
+    | axis :: axes, input :: inputs, kernel :: kernels, stride :: strides,
+        padding :: paddings => do
+        checkPositive tag s!"{axis} kernel" kernel
+        checkPositive tag s!"{axis} stride" stride
+        checkWindowFits tag axis input kernel padding
+        let rest ← go axes inputs kernels strides paddings
+        pure (poolOutDim input kernel stride padding :: rest)
+    | _, _, _, _, _ =>
+        throw s!"{tag}: axis-name, input, kernel, stride, and padding ranks must agree"
 
-/-- Infer the output shape for CHW pooling with padding, from a parent shape. -/
-def inferPool2dCHWOutShapePad (tag : String) (kH kW stride padding : Nat) (parent : Shape) :
+/-- Infer a channel-first pooling shape for an arbitrary number of spatial dimensions. -/
+def inferPoolOutShape (tag : String) (axisNames : List String) (kernels strides paddings : List Nat)
+    (parent : Shape) : Except String Shape := do
+  match parent.toList with
+  | [] => throw s!"{tag}: expected a channel axis followed by spatial axes, got scalar"
+  | channels :: inputs =>
+      let outputs ← inferPoolingDims tag axisNames inputs kernels strides paddings
+      pure (Shape.ofList (channels :: outputs))
+
+/--
+Infer a channel-first convolution shape for an arbitrary number of spatial dimensions.
+
+The declared input-channel count is checked against the leading input axis. The output-channel
+count becomes the leading output axis; all remaining axes are inferred by
+`inferSlidingWindowDims`.
+-/
+def inferConvOutShape (tag : String) (inChannels outChannels : Nat)
+    (axisNames : List String) (kernels strides paddings : List Nat) (parent : Shape) :
     Except String Shape := do
-  checkPositive tag "kH" kH
-  checkPositive tag "kW" kW
-  checkPositive tag "stride" stride
-  match parent with
-  | .dim c (.dim inH (.dim inW .scalar)) =>
-      checkWindowFits tag "height" inH kH padding
-      checkWindowFits tag "width" inW kW padding
-      pure (pool2dCHWOutShapePad c inH inW kH kW stride padding)
-  | s =>
-      throw s!"{tag}: expected input shape (C,H,W), got {repr s}"
+  checkPositive tag "inChannels" inChannels
+  match parent.toList with
+  | [] => throw s!"{tag}: expected a channel axis followed by spatial axes, got scalar"
+  | actualInChannels :: inputs =>
+      if inChannels != actualInChannels then
+        throw s!"{tag}: input-channel mismatch: op={inChannels} vs input={actualInChannels}"
+      let outputs ← inferSlidingWindowDims tag axisNames inputs kernels strides paddings
+      pure (Shape.ofList (outChannels :: outputs))
 
-/-- Infer the output shape for CHW Conv2D, checking the declared `inC` against the parent shape. -/
-def inferConv2dCHWOutShape (inC outC kH kW stride padding : Nat) (parent : Shape) : Except String
-    Shape := do
-  checkPositive "conv2d" "inC" inC
-  checkPositive "conv2d" "kH" kH
-  checkPositive "conv2d" "kW" kW
-  checkPositive "conv2d" "stride" stride
-  match parent with
-  | .dim inC' (.dim inH (.dim inW .scalar)) =>
-      if inC != inC' then
-        throw s!"conv2d: inC mismatch: op={inC} vs input={inC'}"
-      checkWindowFits "conv2d" "height" inH kH padding
-      checkWindowFits "conv2d" "width" inW kW padding
-      pure (conv2dCHWOutShape outC inH inW kH kW stride padding)
-  | s =>
-      throw s!"conv2d: expected input shape (inC,inH,inW), got {repr s}"
+/-- Infer the output of the current two-dimensional pooling IR operators. -/
+def inferPool2dOutShape (tag : String) (kH kW stride padding : Nat) (parent : Shape) :
+    Except String Shape :=
+  inferPoolOutShape tag ["height", "width"] [kH, kW] [stride, stride] [padding, padding] parent
+
+/-- Infer the output of the current two-dimensional convolution IR operator. -/
+def inferConv2dOutShape (inC outC kH kW stride padding : Nat) (parent : Shape) :
+    Except String Shape :=
+  inferConvOutShape "conv2d" inC outC ["height", "width"] [kH, kW]
+    [stride, stride] [padding, padding] parent
 
 /-- Output shape for eval-mode BatchNorm2d on NCHW tensors. -/
 def inferBatchNorm2dNchwEvalOutShape (channels : Nat) (parent : Shape) : Except String Shape := do

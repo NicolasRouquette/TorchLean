@@ -92,7 +92,7 @@ share.
 - Reuse the Lean IR semantics after import. Elementwise ops, reshape/flatten/broadcast/sum, direct
   leading-axis concat plus generic concat through the shared evaluator, axis reductions, axis
   permutation, supported transpose forms, rank-2/3 matmul, softmax through the evaluator's
-  axis-permutation path, and eval-mode NCHW BatchNorm now have theorem-level IR evaluator bridge
+  axis-permutation path, and eval-mode NCHW BatchNorm have theorem-level IR evaluator bridge
   facts. Payload-backed `linear`, no-dilation `conv2d`, payload-backed constants, and eval-mode
   NCHW BatchNorm are also covered at the actual one-step `Graph.evalAt` path as well as at their
   helper evaluators. CHW pooling has the same local bridge to its spec operations. LayerNorm is

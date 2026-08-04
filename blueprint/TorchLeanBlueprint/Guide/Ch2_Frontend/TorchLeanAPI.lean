@@ -57,8 +57,8 @@ question:
   * `Verification`
   * model-to-IR compilation and IBP/CROWN helpers
 *
-  * `classical`
-  * classical and statistical model APIs
+  * `Spec`
+  * mathematical definitions for classical and statistical models
 :::
 
 The lowercase `nn.linear`, `nn.relu`, and `optim.adam` names are the canonical spellings.
@@ -314,10 +314,10 @@ derivative behavior.
 The distinction is analogous to an embedded differentiable language: operations must register the
 semantics needed by execution and AD.
 
-# Classical Models Use The Same Tensor Foundation
+# Classical Models
 
-The `classical` namespace covers statistical and classical ML models that do not need a neural
-layer stack. They still use general tensors, explicit shapes, and declared numerical semantics.
+Statistical and classical ML models do not need a neural layer stack. Their definitions live in
+`Spec`, alongside the tensor mathematics they use.
 
 Keeping these models in the library does not require pretending they are neural networks. What
 they share with the neural code is the shape-indexed tensor foundation and explicit data, not one
@@ -331,19 +331,20 @@ tie-breaking by neighbor order.
 import NN.API
 
 open TorchLean
+open Spec
 
 def point (x y : Float) : Tensor.T Float (shape![2]) :=
   tensor! [x, y]
 
-def labels : classical.knn.Model Float String 2 :=
-  classical.knn.fromData Float String 2 3 [
+def labels : KNN Float String 2 :=
+  KNN.fromData Float String 2 3 [
     (point 0.0 0.0, "blue"),
     (point 0.0 1.0, "blue"),
     (point 3.0 3.0, "orange"),
     (point 3.0 4.0, "orange")
   ]
 
-#eval classical.knn.classify Float String 2 labels (point 0.2 0.1)
+#eval classify Float String 2 labels (point 0.2 0.1)
 -- "blue"
 ```
 
@@ -492,4 +493,4 @@ interfaces without requiring backend or proof internals.
 Lean's
 [source-file and module reference](https://lean-lang.org/doc/reference/latest/Source-Files-and-Modules/)
 explains how these imports determine the environment in which a file elaborates. With the common
-path now in one place, the next chapter keeps this same model and changes only how it executes.
+path in one place, the next chapter keeps this same model and changes only how it executes.

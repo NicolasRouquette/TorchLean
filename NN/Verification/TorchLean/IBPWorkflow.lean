@@ -62,11 +62,11 @@ def model : nn.Sequential xShape yShape :=
 def paramShapes : List Spec.Shape := nn.paramShapes model
 
 /-- Runtime-selected typed runner used by the CLI entrypoint. -/
-def runMain {α : Type} [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [ToString α]
-    [Runtime.Scalar α] [BoundOps α] : IO Unit := do
+def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
+    [Runtime.FromFloat α] [BoundOps α] : IO Unit := do
   let cast : Float → α := Runtime.ofFloat
-  let params : nn.ParamTensors α paramShapes :=
-    nn.ParamTensors.quad
+  let params : TensorPack α paramShapes :=
+    tensorpack.quad
       (NN.Tensor.ofListOfLength (α := α) [3, 2]
         [cast 0.1, cast 0.2, cast 0.3, cast 0.4, cast 0.5, cast 0.6] (by rfl))
       (NN.Tensor.ofListOfLength (α := α) [3]

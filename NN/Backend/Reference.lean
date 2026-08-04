@@ -25,7 +25,7 @@ namespace Reference
 
 /-- Build a checked portable CPU capsule with explicit value, VJP, shape, and layout contracts. -/
 def referenceCapsule
-    (name : String) (op : BackendOp) (specName valueSummary vjpSummary : String)
+    (name : String) (op : BackendOp) (valueSummary vjpSummary : String)
     (vjpMode : VJPMode := .torchLeanTape) : KernelCapsule :=
   { name
     op
@@ -43,13 +43,14 @@ def referenceCapsule
         summary := "Portable paths use TorchLean's canonical tensor representation."
         evidence := .runtimeGuard "typed tensor layout" }
     valueContract :=
-      { claim := .valueRefinement op specName
+      { claim := .valueRefinement op
         summary := valueSummary
         evidence := .testSuite "NN.Tests.Runtime.Floats.Suite" }
     vjpContract :=
-      { claim := .vjpRefinement op specName vjpMode
-        summary := vjpSummary
-        evidence := .testSuite "NN.Tests.Runtime.Floats.Suite" }
+      match vjpMode with
+      | .none => ContractDescriptor.vjpUnavailable op vjpSummary
+      | mode => ContractDescriptor.tested
+          (.vjpRefinement op mode) vjpSummary "NN.Tests.Runtime.Floats.Suite"
     numericalPolicy :=
       { rounding := .scalarContext
         subnormals := .implementationDefined
@@ -62,7 +63,6 @@ def referencePointwiseCapsule (op : BackendOp) : KernelCapsule :=
   referenceCapsule
     s!"reference.{op.name}"
     op
-    s!"Spec.{op.name}"
     s!"Reference `{op.name}` follows the pointwise tensor contract."
     s!"TorchLean tape supplies the `{op.name}` VJP where differentiable."
 
@@ -71,7 +71,6 @@ def referenceReductionCapsule (op : BackendOp) : KernelCapsule :=
   { referenceCapsule
     s!"reference.{op.name}"
     op
-    s!"IR.{op.name} / Spec reduction contract"
     s!"Reference `{op.name}` follows the explicit reduction shape contract."
     s!"TorchLean tape supplies the `{op.name}` adjoint where differentiable." with
     numericalPolicy.reduction := .fixedLeft }
@@ -81,9 +80,9 @@ def referenceReductionCapsule (op : BackendOp) : KernelCapsule :=
 Matrix products, affine layers, convolutions, and averaging operations all reduce several products
 or samples into one output entry. Keeping this constructor separate from pointwise kernels prevents
 the numerical audit from incorrectly reporting that reduction order is irrelevant. -/
-def referenceAccumulationCapsule (name : String) (op : BackendOp) (specName valueSummary
+def referenceAccumulationCapsule (name : String) (op : BackendOp) (valueSummary
     vjpSummary : String) : KernelCapsule :=
-  { referenceCapsule name op specName valueSummary vjpSummary with
+  { referenceCapsule name op valueSummary vjpSummary with
     numericalPolicy.reduction := .fixedLeft }
 
 /-- Build the standard portable capsule for a shape or layout transformation. -/
@@ -91,16 +90,14 @@ def referenceViewCapsule (op : BackendOp) : KernelCapsule :=
   referenceCapsule
     s!"reference.{op.name}"
     op
-    s!"IR.{op.name} shape/layout contract"
     s!"Reference `{op.name}` follows the explicit shape/layout contract."
     s!"TorchLean tape supplies the `{op.name}` adjoint where differentiable."
 
 /-- Build a portable forward-only capsule with no registered reverse derivative. -/
-def referenceForwardOnlyCapsule (op : BackendOp) (specName valueSummary : String) : KernelCapsule :=
+def referenceForwardOnlyCapsule (op : BackendOp) (valueSummary : String) : KernelCapsule :=
   referenceCapsule
     s!"reference.{op.name}"
     op
-    specName
     valueSummary
     s!"Reference `{op.name}` is a forward-only capsule with no registered VJP."
     .none
@@ -110,7 +107,6 @@ def referenceConvPoolCapsule (op : BackendOp) : KernelCapsule :=
   referenceCapsule
     s!"reference.{op.name}"
     op
-    s!"Spec.{op.name} / channel-first convolution-pooling contract"
     s!"Reference `{op.name}` follows the channel-first runtime contract."
     s!"TorchLean tape supplies the `{op.name}` VJP where differentiable."
 
@@ -124,7 +120,6 @@ def relu : KernelCapsule :=
   referenceCapsule
     "reference.relu"
     .relu
-    "Spec.relu / pointwise max(x, 0)"
     "Reference ReLU follows pointwise tensor semantics."
     "TorchLean tape supplies the VJP."
 
@@ -133,7 +128,6 @@ def gelu : KernelCapsule :=
   referenceCapsule
     "reference.gelu"
     .gelu
-    "Spec.gelu"
     "Reference GELU follows the documented runtime approximation contract."
     "TorchLean tape supplies the VJP."
 
@@ -178,7 +172,6 @@ def logSoftmax : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.log_softmax"
     .logSoftmax
-    "Spec.logSoftmax"
     "Reference log-softmax follows the stable row/axis normalization contract."
     "TorchLean tape supplies the VJP."
 
@@ -187,9 +180,17 @@ def softmax : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.softmax"
     .softmax
-    "Spec.softmax"
     "Reference softmax follows the row/axis normalization contract."
     "TorchLean tape supplies the VJP."
+
+/-- Reference hard-masked softmax with exact zero weight at blocked coordinates. -/
+def hardMaskedSoftmax : KernelCapsule :=
+  referenceAccumulationCapsule
+    "reference.hard_masked_softmax"
+    .hardMaskedSoftmax
+    ("Reference hard-masked softmax normalizes over allowed coordinates and returns zero for " ++
+      "fully blocked rows.")
+    "TorchLean tape supplies the masked-softmax VJP with the mask treated as constant."
 
 /-- Reference sum reduction. -/
 def reduceSum : KernelCapsule := referenceReductionCapsule .reduceSum
@@ -215,14 +216,12 @@ def scatterAdd : KernelCapsule := referenceViewCapsule .scatterAdd
 def randUniform : KernelCapsule :=
   referenceForwardOnlyCapsule
     .randUniform
-    "IR.randUniform"
     "Reference deterministic random-uniform tensors follow the seeded spec/runtime contract."
 
 /-- Reference seeded Bernoulli-mask generation. -/
 def bernoulliMask : KernelCapsule :=
   referenceForwardOnlyCapsule
     .bernoulliMask
-    "IR.bernoulliMask"
     "Reference deterministic Bernoulli masks follow the seeded spec/runtime contract."
 
 /-- Reference matmul path. -/
@@ -230,7 +229,6 @@ def matmul : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.matmul"
     .matmul
-    "Spec.matmul / IR.matmul"
     "Portable matmul follows the spec-level matrix product contract."
     "TorchLean tape supplies the VJP."
 
@@ -239,7 +237,6 @@ def linear : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.linear"
     .linear
-    "Spec.linear"
     "Reference linear follows the matvec/matmul plus bias contract."
     "TorchLean tape supplies the VJP."
 
@@ -248,7 +245,6 @@ def mseLoss : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.mse_loss"
     .mseLoss
-    "Spec.mseLoss"
     "Reference MSE follows the mean squared residual contract."
     "TorchLean tape supplies the VJP."
 
@@ -257,7 +253,6 @@ def layerNorm : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.layer_norm"
     .layerNorm
-    "Spec.layerNorm"
     "Reference LayerNorm follows the per-row normalization contract."
     "TorchLean tape supplies the VJP."
 
@@ -266,7 +261,6 @@ def batchNorm : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.batch_norm"
     .batchNorm
-    "Spec.batchNorm"
     "Reference BatchNorm follows the channel-first normalization contract."
     "TorchLean tape supplies the VJP."
 
@@ -275,7 +269,6 @@ def conv : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.conv"
     .conv
-    "Spec.conv"
     "Reference convolution follows the generic channel-first contract."
     "TorchLean tape supplies the VJP."
 
@@ -284,7 +277,6 @@ def convTranspose : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.conv_transpose"
     .convTranspose
-    "Spec.convTranspose"
     "Reference transpose convolution follows the generic channel-first contract."
     "TorchLean tape supplies the VJP."
 
@@ -297,7 +289,6 @@ def smoothMaxPool : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.smooth_max_pool"
     .smoothMaxPool
-    "Spec.smoothMaxPool"
     "Reference smooth max pooling uses stable max/min-shifted window weights."
     "TorchLean tape supplies the VJP."
 
@@ -306,7 +297,6 @@ def avgPool : KernelCapsule :=
   referenceAccumulationCapsule
     "reference.avg_pool"
     .avgPool
-    "Spec.avgPool"
     "Reference average-pooling follows the channel-first window contract."
     "TorchLean tape supplies the VJP."
 
@@ -327,12 +317,11 @@ def attention : KernelCapsule :=
       "Reference attention uses TorchLean tensor semantics rather than a foreign layout."
       "typed tensor layout"
     valueContract := ContractDescriptor.tested
-      (.valueRefinement .scaledDotProductAttention "Spec.scaledDotProductAttention")
+      (.valueRefinement .scaledDotProductAttention)
       "Composed reference attention uses hard-mask zero-numerator semantics."
       "NN.Tests.Runtime.Floats.Suite"
     vjpContract := ContractDescriptor.tested
-      (.vjpRefinement .scaledDotProductAttention "Spec.scaledDotProductAttentionBackward"
-        .torchLeanTape)
+      (.vjpRefinement .scaledDotProductAttention .torchLeanTape)
       "TorchLean tape supplies the composed VJP."
       "NN.Tests.Runtime.Floats.Suite"
     numericalPolicy :=
@@ -369,6 +358,7 @@ def capsules : List KernelCapsule :=
   , safeLog
   , logSoftmax
   , softmax
+  , hardMaskedSoftmax
   , reduceSum
   , reduceMean
   , reshape

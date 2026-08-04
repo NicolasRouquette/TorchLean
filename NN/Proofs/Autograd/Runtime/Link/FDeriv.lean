@@ -27,11 +27,12 @@ The two developments are stated on *different graph types*: the algebraic
 `Algebra.TList ℝ Γ`), and their `eval`/`jvpCtx`/`backpropCtx` recursions mirror each other
 node for node — what has been missing is the formal connection. This file supplies it:
 
-* **The slice isomorphism.** `Algebra.Node.toReal` / `Algebra.Graph.toReal` specialize an
+* **The real, environment-free slice.** `Algebra.Node.toReal` / `Algebra.Graph.toReal` specialize an
   algebraic graph at `α := ℝ` and a fixed environment `d : Δ` to an analytic graph;
   `Node.toAlgebra` / `Graph.toAlgebra` embed an analytic graph back as the `Δ := Unit` slice,
-  and the round trip is the identity (`toAlgebra_toReal`). The analytic model is therefore
-  *exactly* the environment-free `ℝ` slice of the algebraic model. The commutation lemmas
+  and both round trips are identities on that slice (`toAlgebra_toReal` and
+  `toReal_toAlgebra`). The analytic model is therefore exactly the environment-free `ℝ` slice of
+  the algebraic model. The commutation lemmas
   `toReal_eval`, `toReal_jvpCtx`, `toReal_backpropCtx` show the specialization preserves all
   three semantics.
 * **Input-prefix extraction.** `TList.takeLeft` reads the input (`Γ`-prefix) block out of a
@@ -55,10 +56,6 @@ Throughout, "reverse pass" means the exact tape model: the `Tape.backwardDenseFr
 `Runtime/Autograd` instantiated at the exact carrier `α := ℝ`. Nothing in this file is a
 statement about the native `Float` evaluation or the CUDA execution path; relating those to the
 exact model is a separate (approximation) concern.
-
-A natural follow-up enabled by the round-trip lemmas would be to re-found the analytic model
-as an abbreviation of the algebraic one at `α := ℝ`, `Δ := Unit` (as already done for
-`TList`); the lemmas here are the correctness specification such a consolidation must satisfy.
 -/
 
 @[expose] public section
@@ -311,6 +308,13 @@ def Graph.toReal {Δ : Type} {Γ : List Shape} :
     (node : _root_.Proofs.Autograd.Node Γ τ) (d : Unit) :
     Node.toReal (node.toAlgebra) d = node := rfl
 
+/-- Specializing an algebraic node with a trivial environment and embedding it back is the identity. -/
+@[simp] theorem Node.toReal_toAlgebra {Γ : List Shape} {τ : Shape}
+    (node : Node (α := ℝ) (Δ := Unit) (Γ := Γ) τ) :
+    _root_.Proofs.Autograd.Node.toAlgebra (Node.toReal node ()) = node := by
+  cases node
+  rfl
+
 /-- The round trip through the algebraic model is the identity on analytic graphs. -/
 @[simp] theorem Graph.toAlgebra_toReal {Γ : List Shape} :
     ∀ {ss : List Shape} (g : _root_.Proofs.Autograd.Graph Γ ss) (d : Unit),
@@ -319,6 +323,15 @@ def Graph.toReal {Δ : Type} {Γ : List Shape} :
   | _, .snoc g node, d => by
       simp [_root_.Proofs.Autograd.Graph.toAlgebra, Graph.toReal,
         Graph.toAlgebra_toReal g d]
+
+/-- Specializing an algebraic graph with a trivial environment and embedding it back is the identity. -/
+@[simp] theorem Graph.toReal_toAlgebra {Γ : List Shape} :
+    ∀ {ss : List Shape} (g : Graph (α := ℝ) (Δ := Unit) (Γ := Γ) ss),
+      _root_.Proofs.Autograd.Graph.toAlgebra (Graph.toReal g ()) = g
+  | _, .nil => rfl
+  | _, .snoc g node => by
+      simp [_root_.Proofs.Autograd.Graph.toAlgebra, Graph.toReal,
+        Graph.toReal_toAlgebra g]
 
 namespace Graph
 

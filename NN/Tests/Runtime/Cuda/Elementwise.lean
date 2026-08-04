@@ -15,7 +15,7 @@ public import NN.Tests.Runtime.Cuda.Utils
 # CUDA Kernel Coverage: Elementwise Ops
 
 One small composite forward/backward test that exercises the full elementwise surface
-(`add/sub/mul/scale/abs/sqrt/clamp/max/min/relu/sigmoid/tanh/softplus/exp/log/inv/safe_log`)
+(`add/sub/mul/scale/abs/sqrt/clamp/max/min/relu/sigmoid/tanh/gelu/softplus/exp/log/inv/safe_log`)
 plus `sum`.
 -/
 
@@ -119,6 +119,90 @@ def run : IO Unit := do
   let gotTails ← Utils.cudaValue (s := tailShape) tailTape2 tanhId
   let expectedTails : Tensor Float tailShape := tensorOfList! [2] [1.0, -1.0]
   Utils.assertTensorApprox (s := tailShape) "tanh finite tails" gotTails expectedTails
+
+  -- GELU is one semantic tape node and one pointwise kernel in each direction. Check both against
+  -- the spec-backed CPU tape over the nonlinear center and saturated tails.
+  let geluShape : Shape := shape![7]
+  let geluInput : Tensor Float geluShape :=
+    tensorOfList! [7] [-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0]
+  let geluCpu0 : Tape Float := Tape.empty
+  let (geluCpu1, geluCpuInputId) :=
+    Tape.leaf (t := geluCpu0) geluInput (name := some "gelu input")
+  let (geluCpu2, geluCpuOutputId) ← Utils.okOrThrow <|
+    Tape.gelu (α := Float) (t := geluCpu1) (s := geluShape) geluCpuInputId
+  let geluCpuOutput ← Utils.cpuValue (s := geluShape) geluCpu2 geluCpuOutputId
+  let geluSeedCpu : Runtime.AnyTensor Float :=
+    AnyTensor.mk (Spec.fill (α := Float) 1.0 geluShape)
+  let geluCpuGrads ← Utils.okOrThrow <|
+    Tape.backwardDenseAll (α := Float) (t := geluCpu2) geluCpuOutputId geluSeedCpu
+  let geluCpuGrad ← Utils.cpuGrad (s := geluShape) geluCpuGrads geluCpuInputId
+
+  let geluCuda0 : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
+  let (geluCuda1, geluCudaInputId) :=
+    Runtime.Autograd.Cuda.Tape.leaf
+      (t := geluCuda0) (Utils.tensorToAnyBuffer geluInput) (name := some "gelu input")
+  let (geluCuda2, geluCudaOutputId) ← Utils.okOrThrow <|
+    Runtime.Autograd.Cuda.Tape.gelu (t := geluCuda1) (s := geluShape) geluCudaInputId
+  let geluCudaOutput ← Utils.cudaValue (s := geluShape) geluCuda2 geluCudaOutputId
+  let geluSeedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
+    { s := geluShape, buf := Runtime.Autograd.Cuda.Buffer.full 7 1.0 }
+  let geluCudaGrads ← Utils.okOrThrow <|
+    Runtime.Autograd.Cuda.Tape.backwardDenseAll
+      (t := geluCuda2) geluCudaOutputId geluSeedCuda
+  let geluCudaGrad ← Utils.cudaGrad (s := geluShape) geluCudaGrads geluCudaInputId
+
+  Utils.assertTensorApprox
+    (s := geluShape) "fused GELU forward" geluCudaOutput geluCpuOutput (tol := 3e-5)
+  Utils.assertTensorApprox
+    (s := geluShape) "fused GELU backward" geluCudaGrad geluCpuGrad (tol := 3e-5)
+
+  -- The fused optimizer primitive must preserve the staged AdamW computation it replaces.
+  let optimShape : Shape := shape![4]
+  let params : Tensor Float optimShape := tensorOfList! [4] [1.0, -2.0, 0.5, 4.0]
+  let gradient : Tensor Float optimShape := tensorOfList! [4] [0.2, -0.1, 0.4, -0.3]
+  let firstMoment : Tensor Float optimShape := tensorOfList! [4] [0.01, -0.02, 0.03, -0.04]
+  let secondMoment : Tensor Float optimShape := tensorOfList! [4] [0.2, 0.1, 0.4, 0.3]
+  let paramsBuf := Utils.tensorToBuffer params
+  let gradientBuf := Utils.tensorToBuffer gradient
+  let firstMomentBuf := Utils.tensorToBuffer firstMoment
+  let secondMomentBuf := Utils.tensorToBuffer secondMoment
+  let beta1 : Float := 0.9
+  let beta2 : Float := 0.999
+  let oneMinusBeta1 : Float := 1.0 - beta1
+  let oneMinusBeta2 : Float := 1.0 - beta2
+  let firstMomentCorrection : Float := 1.0 / (1.0 - beta1)
+  let secondMomentCorrection : Float := 1.0 / (1.0 - beta2)
+  let epsilon : Float := 1e-8
+  let learningRate : Float := 3e-4
+  let weightDecay : Float := 0.1
+
+  let mScaled := Runtime.Autograd.Cuda.Buffer.scale firstMomentBuf beta1
+  let expectedM := Runtime.Autograd.Cuda.Buffer.axpy mScaled gradientBuf oneMinusBeta1
+  let gradientSquared := Runtime.Autograd.Cuda.Buffer.mul gradientBuf gradientBuf
+  let vScaled := Runtime.Autograd.Cuda.Buffer.scale secondMomentBuf beta2
+  let expectedV := Runtime.Autograd.Cuda.Buffer.axpy vScaled gradientSquared oneMinusBeta2
+  let mHat := Runtime.Autograd.Cuda.Buffer.scale expectedM firstMomentCorrection
+  let vHat := Runtime.Autograd.Cuda.Buffer.scale expectedV secondMomentCorrection
+  let sqrtVHat := Runtime.Autograd.Cuda.Buffer.sqrt vHat
+  let epsilonBuf := Runtime.Autograd.Cuda.Buffer.full 4 epsilon
+  let denominator := Runtime.Autograd.Cuda.Buffer.add sqrtVHat epsilonBuf
+  let normalizedUpdate := Runtime.Autograd.Cuda.Buffer.div mHat denominator
+  let decayedParams :=
+    Runtime.Autograd.Cuda.Buffer.axpy paramsBuf paramsBuf (-(learningRate * weightDecay))
+  let expectedParams :=
+    Runtime.Autograd.Cuda.Buffer.axpy decayedParams normalizedUpdate (-learningRate)
+  let (gotParams, gotM, gotV) := Runtime.Autograd.Cuda.Buffer.adamStep
+    paramsBuf gradientBuf firstMomentBuf secondMomentBuf
+    beta1 oneMinusBeta1 beta2 oneMinusBeta2
+    firstMomentCorrection secondMomentCorrection epsilon
+    (-(learningRate * weightDecay)) (-learningRate)
+
+  Utils.assertTensorApprox (s := optimShape) "fused AdamW parameters"
+    (← Utils.bufferToTensor gotParams) (← Utils.bufferToTensor expectedParams) (tol := 1e-6)
+  Utils.assertTensorApprox (s := optimShape) "fused AdamW first moment"
+    (← Utils.bufferToTensor gotM) (← Utils.bufferToTensor expectedM) (tol := 1e-6)
+  Utils.assertTensorApprox (s := optimShape) "fused AdamW second moment"
+    (← Utils.bufferToTensor gotV) (← Utils.bufferToTensor expectedV) (tol := 1e-6)
 
 end Elementwise
 end Cuda

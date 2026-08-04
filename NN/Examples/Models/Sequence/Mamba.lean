@@ -124,7 +124,7 @@ def trainOnText (opts : Options) (input : String)
   let cudaMemWatch := ModelZoo.effectiveCudaMemWatch opts train.steps train.cudaMemWatch
   let trained ← trainer.train
     (Data.floatSampleArray samples)
-    (ModelZoo.TrainFlags.trainOptions train.toModelTrainFlags
+    (CLI.Training.OptimizerOptions.toTrainerOptions train.toOptimizerOptions
       (title := "Mamba text training")
       (notes := #[ModelZoo.deviceNote opts, s!"windows={train.windows}",
         s!"cuda_mem_watch={cudaMemWatch}"])).disableLog

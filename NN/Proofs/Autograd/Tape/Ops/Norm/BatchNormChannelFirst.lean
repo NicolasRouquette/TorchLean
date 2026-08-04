@@ -52,7 +52,6 @@ namespace BatchNormChannelFirst
 open TapeNodes
 open TapeNodes.ShapeOps
 
-set_option maxHeartbeats 1200000
 
 /-- Channel-first tensor shape `C×H×W`. -/
 abbrev CHWShape (channels height width : Nat) : Shape :=

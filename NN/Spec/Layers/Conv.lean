@@ -596,10 +596,8 @@ is not spatially flipped).
 def conv2dSpec {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Conv2DSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : MultiChannelImage inC inH inW α) :
-    MultiChannelImage outC
-      (Shape.slidingWindowOutDim inH kH stride padding)
-      (Shape.slidingWindowOutDim inW kW stride padding) α := by
+    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
+    Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar))) := by
   have _ := h1
   have _ := h2
   have _ := h3
@@ -643,11 +641,9 @@ def conv2dKernelDerivSpec
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Conv2DSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : MultiChannelImage inC inH inW α)
+    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
     (grad_output :
-      MultiChannelImage outC
-        (Shape.slidingWindowOutDim inH kH stride padding)
-        (Shape.slidingWindowOutDim inW kW stride padding) α) :
+      Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :
     Tensor α (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))) := by
   have _ := h1
   have _ := h2
@@ -678,11 +674,9 @@ def conv2dBiasDerivSpec
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Conv2DSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : MultiChannelImage inC inH inW α)
+    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
     (grad_output :
-      MultiChannelImage outC
-        (Shape.slidingWindowOutDim inH kH stride padding)
-        (Shape.slidingWindowOutDim inW kW stride padding) α) :
+      Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :
     Tensor α (.dim outC .scalar) := by
   have _ := h1
   have _ := h2
@@ -703,12 +697,10 @@ def conv2dInputDerivSpec
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Conv2DSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : MultiChannelImage inC inH inW α)
+    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
     (grad_output :
-      MultiChannelImage outC
-        (Shape.slidingWindowOutDim inH kH stride padding)
-        (Shape.slidingWindowOutDim inW kW stride padding) α) :
-    MultiChannelImage inC inH inW α := by
+      Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :
+    Tensor α (.dim inC (.dim inH (.dim inW .scalar))) := by
   have _ := h1
   have _ := h2
   have _ := h3
@@ -741,14 +733,12 @@ def conv2dBackwardSpec
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Conv2DSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : MultiChannelImage inC inH inW α)
+    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
     (grad_output :
-      MultiChannelImage outC
-        (Shape.slidingWindowOutDim inH kH stride padding)
-        (Shape.slidingWindowOutDim inW kW stride padding) α) :
+      Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :
     (Tensor α (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))) ×
      Tensor α (.dim outC .scalar) ×
-       MultiChannelImage inC inH inW α) := by
+       Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) := by
     have _ := h1
     have _ := h2
     have _ := h3
@@ -807,10 +797,8 @@ This is written as an output-indexed sum (no in-place updates), matching the sta
 def convTranspose2dSpec {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC > 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : ConvTranspose2DSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : MultiChannelImage inC inH inW α) :
-    MultiChannelImage outC
-      (convTransposeOutDim inH kH stride padding)
-      (convTransposeOutDim inW kW stride padding) α := by
+    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
+    Tensor α (.dim outC (.dim (convTransposeOutDim inH kH stride padding) (.dim (convTransposeOutDim inW kW stride padding) .scalar))) := by
   have _ := h1
   have _ := h2
   have _ := h3
@@ -834,11 +822,9 @@ def convTranspose2dSpec {inC outC kH kW stride padding inH inW : Nat}
 /-- Gradient of ConvTranspose2D output w.r.t. the kernel weights. -/
 def convTranspose2dWeightsDerivSpec {inC outC kH kW stride padding inH inW : Nat}
     {_h1 : inC > 0} {_h2 : kH ≠ 0} {_h3 : kW ≠ 0}
-    (input : MultiChannelImage inC inH inW α)
+    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
     (grad_output :
-      MultiChannelImage outC
-        (convTransposeOutDim inH kH stride padding)
-        (convTransposeOutDim inW kW stride padding) α) :
+      Tensor α (.dim outC (.dim (convTransposeOutDim inH kH stride padding) (.dim (convTransposeOutDim inW kW stride padding) .scalar)))) :
     ConvTransposeKernel outC inC kH kW α := by
   let grad_output' :
       Tensor α
@@ -859,9 +845,7 @@ def convTranspose2dWeightsDerivSpec {inC outC kH kW stride padding inH inW : Nat
 /-- Gradient of ConvTranspose2D output w.r.t. the bias (sum over spatial positions). -/
 def convTranspose2dBiasDerivSpec {_inC outC kH kW stride padding inH inW : Nat}
     (grad_output :
-      MultiChannelImage outC
-        (convTransposeOutDim inH kH stride padding)
-        (convTransposeOutDim inW kW stride padding) α) :
+      Tensor α (.dim outC (.dim (convTransposeOutDim inH kH stride padding) (.dim (convTransposeOutDim inW kW stride padding) .scalar)))) :
     Tensor α (.dim outC .scalar) := by
   let grad_output' :
       Tensor α
@@ -884,10 +868,8 @@ def convTranspose2dInputDerivSpec {inC outC kH kW stride padding inH inW : Nat}
     {_h1 : inC > 0} {_h2 : kH ≠ 0} {_h3 : kW ≠ 0}
     (weights : ConvTransposeKernel outC inC kH kW α)
     (grad_output :
-      MultiChannelImage outC
-        (convTransposeOutDim inH kH stride padding)
-        (convTransposeOutDim inW kW stride padding) α) :
-    MultiChannelImage inC inH inW α := by
+      Tensor α (.dim outC (.dim (convTransposeOutDim inH kH stride padding) (.dim (convTransposeOutDim inW kW stride padding) .scalar)))) :
+    Tensor α (.dim inC (.dim inH (.dim inW .scalar))) := by
   let grad_output' :
       Tensor α
         (Shape.ofList
@@ -908,14 +890,12 @@ def convTranspose2dInputDerivSpec {inC outC kH kW stride padding inH inW : Nat}
 def convTranspose2dBackwardSpec {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC > 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : ConvTranspose2DSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : MultiChannelImage inC inH inW α)
+    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
     (grad_output :
-      MultiChannelImage outC
-        (convTransposeOutDim inH kH stride padding)
-        (convTransposeOutDim inW kW stride padding) α) :
+      Tensor α (.dim outC (.dim (convTransposeOutDim inH kH stride padding) (.dim (convTransposeOutDim inW kW stride padding) .scalar)))) :
     (ConvTransposeKernel outC inC kH kW α ×
      Tensor α (.dim outC .scalar) ×
-     MultiChannelImage inC inH inW α) := by
+     Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) := by
   have _ := h1
   have _ := h2
   have _ := h3

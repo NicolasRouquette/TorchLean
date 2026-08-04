@@ -34,7 +34,7 @@ which object a theorem is about.
 
 | Folder | What it is for |
 | --- | --- |
-| `CROWN/` | Interval, affine, CROWN/LiRPA-style bound propagation, graph certificates, alpha/beta certificate structures, and Lyapunov/oracle boundary workflows. |
+| `CROWN/` | Interval, affine, CROWN/LiRPA-style bound propagation, graph certificates, alpha/beta certificate structures, and Lyapunov certificate workflows. |
 | `Generative/` | Mathematical semantics for diffusion, VAE/VQ-VAE/GAN-style objectives, and the small identities used by the generative examples. |
 | `LearningTheory/` | Robustness, stability, differential privacy, and ridge-regression bridges between real-valued theory and executable IEEE32-style semantics. |
 | `Optimization/` | Optimizer equations, proof layer optimizer interfaces, Muon certificates, projected-gradient material, and exact real convergence theorems. |

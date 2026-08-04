@@ -112,7 +112,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
         (seed := flags.seed)
   let trained ← trainer.train
     (Data.floatSamples batches)
-    (ModelZoo.TrainFlags.trainOptions flags.toModelTrainFlags
+    (CLI.Training.OptimizerOptions.toTrainerOptions flags.toOptimizerOptions
       (title := "CNN training")
       (notes := RealData.cifarClassifierNotes batch flags))
   pure trained.report

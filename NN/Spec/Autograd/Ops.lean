@@ -122,7 +122,7 @@ def eluOp {s : Shape} (eluAlpha : α) : OpSpec α s s :=
 /-- Elementwise tanh-approximate GELU OpSpec on any shape.
 
 PyTorch analogy: `torch.nn.functional.gelu(x, approximate="tanh")`. -/
-def geluOp [OfScientific α] {s : Shape} : OpSpec α s s :=
+def geluOp {s : Shape} : OpSpec α s s :=
 { forward      := fun x => Activation.geluSpec (α := α) (s := s) x
 , backward     := fun x dLdy => mulSpec (Activation.geluDerivSpec (α := α) (s := s) x) dLdy }
 

@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Data
+public import NN.API.Data.Dataset
 
 /-!
 # Dataset and Sample Transforms (Torchvision-Style)
@@ -28,8 +28,7 @@ are caught by the typechecker rather than at runtime.
 @[expose] public section
 
 
-namespace NN
-namespace API
+namespace TorchLean
 namespace Data
 namespace Transforms
 
@@ -52,7 +51,7 @@ def compose {a b c : Type} (g : b → c) (f : a → b) : a → c :=
   fun x => g (f x)
 
 /-- Apply a pure transform to every element of a dataset. -/
-def onDataset {a b : Type} (f : a → b) (ds : API.Data.Dataset a) : API.Data.Dataset b :=
+def onDataset {a b : Type} (f : a → b) (ds : TorchLean.Data.Dataset a) : TorchLean.Data.Dataset b :=
   _root_.Runtime.Autograd.Train.Dataset.map f ds
 
 /-- Apply a scalar function to every entry of a tensor while preserving its shape. -/
@@ -65,9 +64,9 @@ def normalizeTensor {α : Type} [Sub α] [Div α] {s : Spec.Shape} (mean std : �
   mapTensor (fun v => (v - mean) / std) x
 
 /-- Float-literal normalization helper for runtime scalar backends. -/
-def normalizeTensorF {α : Type} [API.Runtime.Scalar α] [Sub α] [Div α] {s : Spec.Shape}
+def normalizeTensorF {α : Type} [_root_.TorchLean.Runtime.FromFloat α] [Sub α] [Div α] {s : Spec.Shape}
     (mean std : Float) (x : Spec.Tensor α s) : Spec.Tensor α s :=
-  normalizeTensor (α := α) (s := s) (API.Runtime.ofFloat (α := α) mean) (API.Runtime.ofFloat (α :=
+  normalizeTensor (α := α) (s := s) (_root_.TorchLean.Runtime.ofFloat (α := α) mean) (_root_.TorchLean.Runtime.ofFloat (α :=
     α) std) x
 
 /-- Transform labels in `(sample, label)` datasets. -/
@@ -79,12 +78,12 @@ def mapSamples {a b : Type} (f : a → b) (xs : List (a × Nat)) : List (b × Na
   xs.map (fun (x, y) => (f x, y))
 
 /-- Apply a sample transform to a labeled dataset. -/
-def onSamples {a b : Type} (f : a → b) (ds : API.Data.Dataset (a × Nat)) : API.Data.Dataset (b ×
+def onSamples {a b : Type} (f : a → b) (ds : TorchLean.Data.Dataset (a × Nat)) : TorchLean.Data.Dataset (b ×
   Nat) :=
   onDataset (fun (x, y) => (f x, y)) ds
 
 /-- Apply a label transform to a labeled dataset. -/
-def onLabels {a : Type} (f : Nat → Nat) (ds : API.Data.Dataset (a × Nat)) : API.Data.Dataset (a ×
+def onLabels {a : Type} (f : Nat → Nat) (ds : TorchLean.Data.Dataset (a × Nat)) : TorchLean.Data.Dataset (a ×
   Nat) :=
   onDataset (fun (x, y) => (x, f y)) ds
 
@@ -103,11 +102,10 @@ def onSupervisedTarget {α : Type} {σ τ : Spec.Shape}
 /-- Apply an input transform over a supervised TorchLean dataset. -/
 def onSupervisedDatasetInput {α : Type} {σ τ : Spec.Shape}
     (f : Spec.Tensor α σ → Spec.Tensor α σ)
-    (ds : API.Data.Dataset (TorchLean.Sample.Supervised α σ τ)) :
-    API.Data.Dataset (TorchLean.Sample.Supervised α σ τ) :=
+    (ds : TorchLean.Data.Dataset (TorchLean.Sample.Supervised α σ τ)) :
+    TorchLean.Data.Dataset (TorchLean.Sample.Supervised α σ τ) :=
   onDataset (onSupervisedInput (α := α) (σ := σ) (τ := τ) f) ds
 
 end Transforms
 end Data
-end API
-end NN
+end TorchLean

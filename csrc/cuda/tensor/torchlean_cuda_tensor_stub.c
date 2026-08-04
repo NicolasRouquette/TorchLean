@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Host-memory version of the buffer runtime symbols.
 // This keeps default builds CUDA-free while preserving the same edge-case behavior.
@@ -217,6 +218,11 @@ LEAN_EXPORT uint64_t torchlean_cuda_allocator_cache_bytes(uint32_t u) {
   return 0u;
 }
 
+LEAN_EXPORT uint64_t torchlean_cuda_allocator_cache_cap_bytes(uint32_t u) {
+  (void)u;
+  return 0u;
+}
+
 LEAN_EXPORT uint32_t torchlean_cuda_buffer_size(b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
   if (b->size > 0xFFFFFFFFULL) {
@@ -354,6 +360,83 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_to_float_array(b_lean_obj_arg BOb
 
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_to_float_array_io(b_lean_obj_arg BObj) {
   return lean_io_result_mk_ok(torchlean_cuda_buffer_to_float_array(BObj));
+}
+
+LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_to_float32_bytes_io(b_lean_obj_arg BObj) {
+  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
+  size_t bytes = torchlean_float_bytes_for(b->size);
+  lean_object* out = lean_alloc_sarray(1, bytes, bytes);
+  uint8_t* dst = (uint8_t*)lean_sarray_cptr(out);
+  for (size_t i = 0; i < b->size; ++i) {
+    uint32_t bits;
+    memcpy(&bits, &b->data[i], sizeof(bits));
+    dst[4 * i] = (uint8_t)(bits & 0xffu);
+    dst[4 * i + 1] = (uint8_t)((bits >> 8) & 0xffu);
+    dst[4 * i + 2] = (uint8_t)((bits >> 16) & 0xffu);
+    dst[4 * i + 3] = (uint8_t)((bits >> 24) & 0xffu);
+  }
+  return lean_io_result_mk_ok(out);
+}
+
+LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_of_float32_bytes_io(b_lean_obj_arg BytesObj) {
+  lean_object* bytesObj = (lean_object*)BytesObj;
+  size_t bytes = lean_sarray_size(bytesObj);
+  if (bytes % sizeof(float) != 0) {
+    lean_internal_panic("torchlean: float32 checkpoint payload is not a multiple of four bytes");
+  }
+  size_t n = bytes / sizeof(float);
+  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(n);
+  const uint8_t* src = (const uint8_t*)lean_sarray_cptr(bytesObj);
+  for (size_t i = 0; i < n; ++i) {
+    uint32_t bits = (uint32_t)src[4 * i] |
+                    ((uint32_t)src[4 * i + 1] << 8) |
+                    ((uint32_t)src[4 * i + 2] << 16) |
+                    ((uint32_t)src[4 * i + 3] << 24);
+    memcpy(&out->data[i], &bits, sizeof(bits));
+  }
+  return lean_io_result_mk_ok(torchlean_cuda_buffer_box(out));
+}
+
+LEAN_EXPORT lean_obj_res torchlean_float_array_to_float32_bytes(b_lean_obj_arg AObj) {
+  lean_object* valuesObj = (lean_object*)AObj;
+  size_t n = lean_sarray_size(valuesObj);
+  size_t bytes = torchlean_float_bytes_for(n);
+  lean_object* out = lean_alloc_sarray(1, bytes, bytes);
+  const double* src = lean_float_array_cptr(valuesObj);
+  uint8_t* dst = (uint8_t*)lean_sarray_cptr(out);
+  for (size_t i = 0; i < n; ++i) {
+    float value = (float)src[i];
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    dst[4 * i] = (uint8_t)(bits & 0xffu);
+    dst[4 * i + 1] = (uint8_t)((bits >> 8) & 0xffu);
+    dst[4 * i + 2] = (uint8_t)((bits >> 16) & 0xffu);
+    dst[4 * i + 3] = (uint8_t)((bits >> 24) & 0xffu);
+  }
+  return out;
+}
+
+LEAN_EXPORT lean_obj_res torchlean_float32_bytes_to_float_array(b_lean_obj_arg BytesObj) {
+  lean_object* bytesObj = (lean_object*)BytesObj;
+  size_t bytes = lean_sarray_size(bytesObj);
+  if (bytes % sizeof(float) != 0) {
+    lean_internal_panic("torchlean: float32 checkpoint payload is not a multiple of four bytes");
+  }
+  size_t n = bytes / sizeof(float);
+  lean_object* out = lean_mk_empty_float_array(lean_box(n));
+  lean_sarray_set_size(out, n);
+  const uint8_t* src = (const uint8_t*)lean_sarray_cptr(bytesObj);
+  double* dst = lean_float_array_cptr(out);
+  for (size_t i = 0; i < n; ++i) {
+    uint32_t bits = (uint32_t)src[4 * i] |
+                    ((uint32_t)src[4 * i + 1] << 8) |
+                    ((uint32_t)src[4 * i + 2] << 16) |
+                    ((uint32_t)src[4 * i + 3] << 24);
+    float value;
+    memcpy(&value, &bits, sizeof(bits));
+    dst[i] = (double)value;
+  }
+  return out;
 }
 
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_abs(b_lean_obj_arg BObj) {
@@ -569,6 +652,45 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_relu_bwd(b_lean_obj_arg XObj, b_l
   return torchlean_cuda_buffer_box(out);
 }
 
+static float torchlean_gelu_f32_value(float x) {
+  const float coeff = 0.044715f;
+  const float sqrtTwoOverPi = 0.79788456080286535588f;
+  const float cubic = ((coeff * x) * x) * x;
+  const float tanhTerm = tanhf(sqrtTwoOverPi * (x + cubic));
+  return (x * (1.0f + tanhTerm)) / 2.0f;
+}
+
+static float torchlean_gelu_f32_deriv(float x) {
+  const float coeff = 0.044715f;
+  const float sqrtTwoOverPi = 0.79788456080286535588f;
+  const float cubic = ((coeff * x) * x) * x;
+  const float tanhTerm = tanhf(sqrtTwoOverPi * (x + cubic));
+  const float sechTerm = 1.0f - tanhTerm * tanhTerm;
+  const float innerDeriv = sqrtTwoOverPi * (1.0f + ((3.0f * coeff) * x) * x);
+  return (1.0f + tanhTerm + (x * sechTerm) * innerDeriv) / 2.0f;
+}
+
+LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_gelu(b_lean_obj_arg XObj) {
+  torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
+  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
+  for (size_t i = 0; i < x->size; ++i) {
+    out->data[i] = torchlean_gelu_f32_value(x->data[i]);
+  }
+  return torchlean_cuda_buffer_box(out);
+}
+
+LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_gelu_bwd(b_lean_obj_arg XObj,
+                                                        b_lean_obj_arg GObj) {
+  torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
+  torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
+  torchlean_cuda_require_same_size2(x, g, "torchlean_cuda_buffer_gelu_bwd_stub");
+  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
+  for (size_t i = 0; i < x->size; ++i) {
+    out->data[i] = torchlean_gelu_f32_deriv(x->data[i]) * g->data[i];
+  }
+  return torchlean_cuda_buffer_box(out);
+}
+
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_add(b_lean_obj_arg AObj, b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* a = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
@@ -629,6 +751,64 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_axpy(b_lean_obj_arg AObj, b_lean_
     out->data[i] = a->data[i] + fc * b->data[i];
   }
   return torchlean_cuda_buffer_box(out);
+}
+
+LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_adam_step(
+    b_lean_obj_arg ParametersObj,
+    b_lean_obj_arg GradientObj,
+    b_lean_obj_arg FirstMomentObj,
+    b_lean_obj_arg SecondMomentObj,
+    double beta1,
+    double oneMinusBeta1,
+    double beta2,
+    double oneMinusBeta2,
+    double firstMomentCorrection,
+    double secondMomentCorrection,
+    double epsilon,
+    double decay,
+    double updateScale) {
+  torchlean_cuda_buffer* parameters = torchlean_cuda_buffer_unbox(ParametersObj);
+  torchlean_cuda_buffer* gradient = torchlean_cuda_buffer_unbox(GradientObj);
+  torchlean_cuda_buffer* first_moment = torchlean_cuda_buffer_unbox(FirstMomentObj);
+  torchlean_cuda_buffer* second_moment = torchlean_cuda_buffer_unbox(SecondMomentObj);
+  torchlean_cuda_require_same_size3(
+      parameters, gradient, first_moment, "torchlean_cuda_buffer_adam_step_stub");
+  torchlean_cuda_require_same_size2(
+      parameters, second_moment, "torchlean_cuda_buffer_adam_step_stub");
+
+  torchlean_cuda_buffer* updated_parameters = torchlean_cuda_buffer_alloc(parameters->size);
+  torchlean_cuda_buffer* updated_first_moment = torchlean_cuda_buffer_alloc(parameters->size);
+  torchlean_cuda_buffer* updated_second_moment = torchlean_cuda_buffer_alloc(parameters->size);
+  const float beta1f = (float)beta1;
+  const float one_minus_beta1f = (float)oneMinusBeta1;
+  const float beta2f = (float)beta2;
+  const float one_minus_beta2f = (float)oneMinusBeta2;
+  const float first_correctionf = (float)firstMomentCorrection;
+  const float second_correctionf = (float)secondMomentCorrection;
+  const float epsilonf = (float)epsilon;
+  const float decayf = (float)decay;
+  const float update_scalef = (float)updateScale;
+
+  for (size_t i = 0; i < parameters->size; ++i) {
+    const float m_scaled = first_moment->data[i] * beta1f;
+    const float m = fmaf(one_minus_beta1f, gradient->data[i], m_scaled);
+    const float g2 = gradient->data[i] * gradient->data[i];
+    const float v_scaled = second_moment->data[i] * beta2f;
+    const float v = fmaf(one_minus_beta2f, g2, v_scaled);
+    const float m_hat = m * first_correctionf;
+    const float v_hat = v * second_correctionf;
+    const float denominator = sqrtf(v_hat) + epsilonf;
+    const float normalized_update = m_hat / denominator;
+    const float decayed_parameter =
+        fmaf(decayf, parameters->data[i], parameters->data[i]);
+
+    updated_first_moment->data[i] = m;
+    updated_second_moment->data[i] = v;
+    updated_parameters->data[i] =
+        fmaf(update_scalef, normalized_update, decayed_parameter);
+  }
+  return torchlean_cuda_box_three_buffers(
+      updated_parameters, updated_first_moment, updated_second_moment);
 }
 
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_sum(b_lean_obj_arg BObj) {

@@ -186,6 +186,17 @@ def tanh {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
       Buffer.releaseThen y <| Buffer.releaseThen ones <| Buffer.releaseThen y2 <|
         Buffer.releaseThen dy <| Buffer.mul dLdy dy)
 
+/--
+Tanh-approximate GELU as one CUDA tape node.
+
+The native kernels fuse only the pointwise numerical work. TorchLean still records the node and
+owns its VJP rule through `Activation.geluDerivSpec`.
+-/
+def gelu {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) :=
+  unary (t := t) "gelu" xId s s
+    (forward := Buffer.gelu)
+    (backward := fun x dLdy => Buffer.geluBwd x dLdy)
+
 /-- Pointwise softplus node with sigmoid derivative. -/
 def softplus {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
   let n ← numelU32 s

@@ -45,8 +45,11 @@ abbrev SpecM := Except String
 instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.Ops (m :=
   SpecM) α where
   Ref := fun s => Tensor α s
+  NatTensorRef := fun s => Tensor Nat s
 
   const := fun {_s} t => pure t
+  natTensorConst := fun t => t
+  mapNatTensor := fun f t => f t
 
   add := fun {_s} a b => pure (Tensor.addSpec (α := α) a b)
   sub := fun {_s} a b => pure (Tensor.subSpec (α := α) a b)
@@ -91,10 +94,6 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
     "TorchLeanSpecEval: gather_vec_nat not supported in spec backend"
   gatherRowsNat := fun {_rows _cols _k} _x _idx => throw
     "TorchLeanSpecEval: gather_rows_nat not supported in spec backend"
-  -- This spec evaluator stays purely symbolic. Reading token ids from a runtime float tensor belongs
-  -- to the eager runtime adapter, where invalid values can be rejected with concrete indices.
-  tokenIdsFromFloatVec := fun {_k} _x => throw
-    "TorchLeanSpecEval: token_ids_from_float_vec not supported in spec backend"
   scatterAddVec := fun {_n} _x _val _i => throw
     "TorchLeanSpecEval: scatter_add_vec not supported in spec backend"
   scatterAddRow := fun {_rows _cols} _x _row _i => throw
@@ -173,6 +172,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
   relu := fun {_s} x => pure (Activation.reluSpec (α := α) x)
   sigmoid := fun {_s} x => pure (Activation.sigmoidSpec (α := α) x)
   tanh := fun {_s} x => pure (Activation.tanhSpec (α := α) x)
+  gelu := fun {_s} x => pure (Activation.geluSpec (α := α) x)
   softmax := fun {_s} x => pure (Activation.softmaxSpec (α := α) x)
   logSoftmax := fun {_s} x => pure (Activation.logSoftmaxSpec (α := α) x)
   softplus := fun {_s} x => pure (Activation.softplusSpec (α := α) x)
@@ -206,6 +206,16 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
     pure (Spec.MultiHeadAttention.forward (α := α) (numHeads := numHeads) (dModel := dModel)
       (headDim := headDim)
       (n := n) h1 mha x (mask := mask))
+
+  batchedMultiHeadAttention :=
+    fun {_batch n numHeads dModel headDim} _hBatch h1 wq wk wv wo x mask =>
+      let mha : Spec.MultiHeadAttention α numHeads dModel headDim :=
+        { Wq := wq, Wk := wk, Wv := wv, Wo := wo }
+      match x with
+      | .dim samples =>
+          pure <| Tensor.dim (fun i =>
+            Spec.MultiHeadAttention.forward (α := α) (numHeads := numHeads) (dModel := dModel)
+              (headDim := headDim) (n := n) h1 mha (samples i) (mask := mask))
 
   conv := fun {d inC outC} {kernel stride padding} {inSpatial} {_hInC} {_hKernel} w b x =>
     let layer : Spec.ConvSpec d inC outC kernel stride padding α :=

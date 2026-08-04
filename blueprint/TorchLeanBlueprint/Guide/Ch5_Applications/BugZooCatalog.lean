@@ -403,7 +403,7 @@ it crosses into a native compiler or float kernel, the compiler and Float32 exam
 additional obligations: preserve the source computation and state where runtime arithmetic is
 assumed to match the reference semantics.
 
-Now test both sides of the boundary. A past or current token should be able to contribute; a future
+Test both sides of the boundary. A past or current token should be able to contribute; a future
 token must not. A fully blocked row should follow the declared zero-row policy instead of producing
 an accidental `NaN`. Compile `All.lean` after adding the focused example so the maintained catalog
 actually imports it.

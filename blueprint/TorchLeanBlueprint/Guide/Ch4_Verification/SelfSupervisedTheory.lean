@@ -72,7 +72,7 @@ The output begins:
 NN.MLTheory.SelfSupervised.maskedLoss_reverse ...
 ```
 
-The two selected losses are `1` and `3`. Now change the list to `[0, 2, 2]`; the result becomes
+The two selected losses are `1` and `3`. Change the list to `[0, 2, 2]`; the result becomes
 `7`, because an explicit list may contain duplicate indices. `maskedLoss_reverse` proves
 order-insensitivity, not duplicate elimination. A producer that intends a set of masked patches
 must prove its exported index list has no duplicates or deliberately accept repeated weighting.

@@ -39,7 +39,7 @@ theorem evalAt_input_eq
         (input := DVal.mk (α := α) s x) (vals := #[]) (i := 0)
       =
       Except.ok (DVal.mk (α := α) s x) := by
-  simp [Graph.evalAt, inputGraph, Graph.getNode, Graph.getNode?, Graph.expectShape,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, inputGraph, Graph.getNode, Graph.getNode?, Graph.expectShape,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Local IR semantics for `detach`: it is the identity in forward evaluation. -/
@@ -51,7 +51,7 @@ theorem evalAt_detach_eq
         (vals := #[DVal.mk (α := α) s x]) (i := 1)
       =
       Except.ok (DVal.mk (α := α) s x) := by
-  simp [Graph.evalAt, unaryGraph, unaryNode, Graph.getNode, Graph.getNode?, Graph.expectShape,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraph, unaryNode, Graph.getNode, Graph.getNode?, Graph.expectShape,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- A graph containing a zero-parent `rand_uniform` node. -/
@@ -69,7 +69,7 @@ theorem evalAt_randUniform_eq
         (DVal.mk (α := α) s
           (_root_.Runtime.Autograd.TorchLean.Random.uniform
             (α := α) (_root_.Runtime.Autograd.TorchLean.Random.keyOf seed 0) (s := s))) := by
-  simp [Graph.evalAt, randUniformGraph, Graph.getNode, Graph.getNode?, Bind.bind, Except.bind,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, randUniformGraph, Graph.getNode, Graph.getNode?, Bind.bind, Except.bind,
     Pure.pure, Except.pure]
 
 /-- Local IR semantics for deterministic seeded Bernoulli masks. -/
@@ -85,7 +85,7 @@ theorem evalAt_bernoulliMask_eq
         (DVal.mk (α := α) s
           (_root_.Runtime.Autograd.TorchLean.Random.mask
             (α := α) (_root_.Runtime.Autograd.TorchLean.Random.keyOf seed 1) keepProb (s := s))) := by
-  simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Local IR semantics for scalar mean-squared error. -/
@@ -103,7 +103,7 @@ theorem evalAt_mseLoss_eq
           (Tensor.scalar
             (((Tensor.subSpec (α := α) y target).mulSpec (Tensor.subSpec (α := α) y target)).sumSpec /
               (↑(NN.IR.Graph.meanDenom s) : α)))) := by
-  simp [Graph.evalAt, binaryGraphOut, binaryNodeOut, Graph.getNode, Graph.getNode?,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, binaryGraphOut, binaryNodeOut, Graph.getNode, Graph.getNode?,
     Graph.mseLossDVal, DVal.mk, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 end IRStep

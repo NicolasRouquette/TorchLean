@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Float32 `Cuda.Buffer` runtime: allocation, copies, elementwise kernels, reductions, RNG, and
 // explicit release hooks.
@@ -81,7 +82,7 @@ static void torchlean_cuda_synchronize_event_best_effort(cudaEvent_t event, cons
 static pthread_mutex_t g_torchlean_cuda_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 static torchlean_cuda_cached_block* g_torchlean_cuda_cache = nullptr;
 static size_t g_torchlean_cuda_cache_count = 0;
-static size_t g_torchlean_cuda_cache_cap = 0;
+static size_t g_torchlean_cuda_cache_slot_capacity = 0;
 // Total device bytes currently held in the reuse cache (sum of the cached blocks' byte sizes),
 // guarded by `g_torchlean_cuda_cache_mutex`. The cache holds buffers Lean has already dropped, so
 // these bytes are NOT counted in `live_bytes`; left unbounded the cache can grow without limit.
@@ -146,14 +147,16 @@ static size_t torchlean_cuda_cache_byte_cap(void) {
 // completed. This lowers allocator pressure during long training loops without forcing a global
 // device synchronization on every free.
 static void torchlean_cuda_cache_push(torchlean_cuda_cached_block block) {
-  if (g_torchlean_cuda_cache_count == g_torchlean_cuda_cache_cap) {
-    size_t new_cap = g_torchlean_cuda_cache_cap == 0 ? 16 : g_torchlean_cuda_cache_cap * 2;
-    void* next = realloc(g_torchlean_cuda_cache, new_cap * sizeof(torchlean_cuda_cached_block));
+  if (g_torchlean_cuda_cache_count == g_torchlean_cuda_cache_slot_capacity) {
+    size_t new_capacity =
+        g_torchlean_cuda_cache_slot_capacity == 0 ? 16 : g_torchlean_cuda_cache_slot_capacity * 2;
+    void* next =
+        realloc(g_torchlean_cuda_cache, new_capacity * sizeof(torchlean_cuda_cached_block));
     if (!next) {
       lean_internal_panic_out_of_memory();
     }
     g_torchlean_cuda_cache = (torchlean_cuda_cached_block*)next;
-    g_torchlean_cuda_cache_cap = new_cap;
+    g_torchlean_cuda_cache_slot_capacity = new_capacity;
   }
   g_torchlean_cuda_cache[g_torchlean_cuda_cache_count++] = block;
 }
@@ -242,7 +245,7 @@ static void torchlean_cuda_flush_cached_blocks(void) {
   size_t count = g_torchlean_cuda_cache_count;
   g_torchlean_cuda_cache = nullptr;
   g_torchlean_cuda_cache_count = 0;
-  g_torchlean_cuda_cache_cap = 0;
+  g_torchlean_cuda_cache_slot_capacity = 0;
   g_torchlean_cuda_cache_bytes = 0;
   torchlean_cuda_unlock(&g_torchlean_cuda_cache_mutex, "pthread_mutex_unlock buffer flush failed");
 
@@ -404,8 +407,14 @@ extern "C" torchlean_cuda_buffer* torchlean_cuda_buffer_alloc(size_t n) {
         checked_bytes_size(n, sizeof(float), "torchlean_cuda_buffer_alloc: byte size overflow");
     cudaError_t err = cudaMalloc((void**)&b->data, bytes);
     if (err != cudaSuccess) {
-      torchlean_cuda_flush_cached_blocks();
-      err = cudaMalloc((void**)&b->data, bytes);
+      if (err == cudaErrorMemoryAllocation) {
+        // `cudaMalloc` records the allocation failure in CUDA's per-thread last-error slot as
+        // well as returning it directly. Clear that copy before retrying; otherwise the next
+        // successful kernel launch can be blamed for this already-recovered OOM.
+        (void)cudaGetLastError();
+        torchlean_cuda_flush_cached_blocks();
+        err = cudaMalloc((void**)&b->data, bytes);
+      }
       if (err != cudaSuccess) {
         free(b);
         torchlean_cuda_panic_malloc_failed(n, err);
@@ -523,6 +532,46 @@ __global__ void torchlean_axpy_f32(const float* a, const float* b, float* out, s
   }
 }
 
+__global__ void torchlean_adam_step_f32(
+    const float* parameters,
+    const float* gradient,
+    const float* first_moment,
+    const float* second_moment,
+    float* updated_parameters,
+    float* updated_first_moment,
+    float* updated_second_moment,
+    size_t n,
+    float beta1,
+    float one_minus_beta1,
+    float beta2,
+    float one_minus_beta2,
+    float first_moment_correction,
+    float second_moment_correction,
+    float epsilon,
+    float decay,
+    float update_scale) {
+  TORCHLEAN_GRID_STRIDE_LOOP(i, n) {
+    // Keep the same rounded stages as the former composition of scale, mul, axpy, sqrt, add,
+    // and div kernels. Explicit round-to-nearest intrinsics prevent the compiler from contracting
+    // operations across those semantic stage boundaries.
+    const float m_scaled = __fmul_rn(first_moment[i], beta1);
+    const float m = __fmaf_rn(one_minus_beta1, gradient[i], m_scaled);
+    const float g2 = __fmul_rn(gradient[i], gradient[i]);
+    const float v_scaled = __fmul_rn(second_moment[i], beta2);
+    const float v = __fmaf_rn(one_minus_beta2, g2, v_scaled);
+    const float m_hat = __fmul_rn(m, first_moment_correction);
+    const float v_hat = __fmul_rn(v, second_moment_correction);
+    const float denominator = __fadd_rn(__fsqrt_rn(v_hat), epsilon);
+    const float normalized_update = __fdiv_rn(m_hat, denominator);
+    const float decayed_parameter = __fmaf_rn(decay, parameters[i], parameters[i]);
+
+    updated_first_moment[i] = m;
+    updated_second_moment[i] = v;
+    updated_parameters[i] =
+        __fmaf_rn(update_scale, normalized_update, decayed_parameter);
+  }
+}
+
 __global__ void torchlean_abs_bwd_f32(const float* x, const float* dLdy, float* dLdx, size_t n) {
   TORCHLEAN_GRID_STRIDE_LOOP(i, n) {
     float v = x[i];
@@ -561,6 +610,54 @@ __global__ void torchlean_relu_bwd_f32(const float* x, const float* dLdy, float*
   TORCHLEAN_GRID_STRIDE_LOOP(i, n) {
     float v = x[i];
     dLdx[i] = (v > 0.0f) ? dLdy[i] : 0.0f;
+  }
+}
+
+// Tanh-approximate GELU from Activation.Math.geluSpec. Explicit round-to-nearest operations keep
+// the polynomial stages visible instead of allowing contraction into a different floating program.
+__device__ __forceinline__ float torchlean_gelu_f32_value(float x) {
+  constexpr float kCoeff = 0.044715f;
+  constexpr float kSqrtTwoOverPi = 0.79788456080286535588f;
+  const float cubic0 = __fmul_rn(kCoeff, x);
+  const float cubic1 = __fmul_rn(cubic0, x);
+  const float cubic = __fmul_rn(cubic1, x);
+  const float inner = __fadd_rn(x, cubic);
+  const float tanhTerm = tanhf(__fmul_rn(kSqrtTwoOverPi, inner));
+  const float scaledInput = __fmul_rn(x, __fadd_rn(1.0f, tanhTerm));
+  return __fdiv_rn(scaledInput, 2.0f);
+}
+
+__device__ __forceinline__ float torchlean_gelu_f32_deriv(float x) {
+  constexpr float kCoeff = 0.044715f;
+  constexpr float kSqrtTwoOverPi = 0.79788456080286535588f;
+  const float cubic0 = __fmul_rn(kCoeff, x);
+  const float cubic1 = __fmul_rn(cubic0, x);
+  const float cubic = __fmul_rn(cubic1, x);
+  const float inner = __fadd_rn(x, cubic);
+  const float tanhTerm = tanhf(__fmul_rn(kSqrtTwoOverPi, inner));
+  const float sechTerm = __fsub_rn(1.0f, __fmul_rn(tanhTerm, tanhTerm));
+  const float scaledCoeff = __fmul_rn(3.0f, kCoeff);
+  const float quadratic0 = __fmul_rn(scaledCoeff, x);
+  const float quadratic = __fmul_rn(quadratic0, x);
+  const float innerDeriv =
+      __fmul_rn(kSqrtTwoOverPi, __fadd_rn(1.0f, quadratic));
+  const float derivativeTerm =
+      __fmul_rn(__fmul_rn(x, sechTerm), innerDeriv);
+  const float numerator =
+      __fadd_rn(__fadd_rn(1.0f, tanhTerm), derivativeTerm);
+  return __fdiv_rn(numerator, 2.0f);
+}
+
+__global__ void torchlean_gelu_f32(const float* x, float* y, size_t n) {
+  TORCHLEAN_GRID_STRIDE_LOOP(i, n) {
+    y[i] = torchlean_gelu_f32_value(x[i]);
+  }
+}
+
+__global__ void torchlean_gelu_bwd_f32(
+    const float* x, const float* dLdy, float* dLdx, size_t n) {
+  TORCHLEAN_GRID_STRIDE_LOOP(i, n) {
+    dLdx[i] = __fmul_rn(torchlean_gelu_f32_deriv(x[i]), dLdy[i]);
   }
 }
 
@@ -867,6 +964,11 @@ extern "C" LEAN_EXPORT uint64_t torchlean_cuda_allocator_cache_bytes(uint32_t u)
   return bytes;
 }
 
+extern "C" LEAN_EXPORT uint64_t torchlean_cuda_allocator_cache_cap_bytes(uint32_t u) {
+  (void)u;
+  return (uint64_t)torchlean_cuda_cache_byte_cap();
+}
+
 extern "C" LEAN_EXPORT uint32_t torchlean_cuda_buffer_size(b_lean_obj_arg BObj) {
   torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
   if (b->size > 0xFFFFFFFFULL) {
@@ -1046,6 +1148,106 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_to_float_array(b_lean_
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_to_float_array_io(
     b_lean_obj_arg BObj) {
   return lean_io_result_mk_ok(torchlean_cuda_buffer_to_float_array(BObj));
+}
+
+extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_to_float32_bytes_io(
+    b_lean_obj_arg BObj) {
+  torchlean_cuda_buffer* b = torchlean_cuda_buffer_unbox(BObj);
+  size_t bytes =
+      checked_bytes_size(b->size, sizeof(float), "cuda checkpoint payload size overflow");
+  lean_object* out = lean_alloc_sarray(1, bytes, bytes);
+  if (bytes != 0) {
+    float* values = (float*)malloc(bytes);
+    if (!values) {
+      lean_internal_panic_out_of_memory();
+    }
+    checkCuda(cudaMemcpy(values, b->data, bytes, cudaMemcpyDeviceToHost),
+              "cuda checkpoint D2H copy failed");
+    uint8_t* dst = (uint8_t*)lean_sarray_cptr(out);
+    for (size_t i = 0; i < b->size; ++i) {
+      uint32_t bits;
+      memcpy(&bits, &values[i], sizeof(bits));
+      dst[4 * i] = (uint8_t)(bits & 0xffu);
+      dst[4 * i + 1] = (uint8_t)((bits >> 8) & 0xffu);
+      dst[4 * i + 2] = (uint8_t)((bits >> 16) & 0xffu);
+      dst[4 * i + 3] = (uint8_t)((bits >> 24) & 0xffu);
+    }
+    free(values);
+  }
+  return lean_io_result_mk_ok(out);
+}
+
+extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_of_float32_bytes_io(
+    b_lean_obj_arg BytesObj) {
+  lean_object* bytesObj = (lean_object*)BytesObj;
+  size_t bytes = lean_sarray_size(bytesObj);
+  if (bytes % sizeof(float) != 0) {
+    lean_internal_panic("torchlean: float32 checkpoint payload is not a multiple of four bytes");
+  }
+  size_t n = bytes / sizeof(float);
+  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(n);
+  if (bytes != 0) {
+    float* values = (float*)malloc(bytes);
+    if (!values) {
+      lean_internal_panic_out_of_memory();
+    }
+    const uint8_t* src = (const uint8_t*)lean_sarray_cptr(bytesObj);
+    for (size_t i = 0; i < n; ++i) {
+      uint32_t bits = (uint32_t)src[4 * i] |
+                      ((uint32_t)src[4 * i + 1] << 8) |
+                      ((uint32_t)src[4 * i + 2] << 16) |
+                      ((uint32_t)src[4 * i + 3] << 24);
+      memcpy(&values[i], &bits, sizeof(bits));
+    }
+    checkCuda(cudaMemcpy(out->data, values, bytes, cudaMemcpyHostToDevice),
+              "cuda checkpoint H2D copy failed");
+    free(values);
+  }
+  return lean_io_result_mk_ok(torchlean_cuda_buffer_box(out));
+}
+
+extern "C" LEAN_EXPORT lean_obj_res torchlean_float_array_to_float32_bytes(
+    b_lean_obj_arg AObj) {
+  lean_object* valuesObj = (lean_object*)AObj;
+  size_t n = lean_sarray_size(valuesObj);
+  size_t bytes = checked_bytes_size(n, sizeof(float), "float32 checkpoint payload size overflow");
+  lean_object* out = lean_alloc_sarray(1, bytes, bytes);
+  const double* src = lean_float_array_cptr(valuesObj);
+  uint8_t* dst = (uint8_t*)lean_sarray_cptr(out);
+  for (size_t i = 0; i < n; ++i) {
+    float value = (float)src[i];
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    dst[4 * i] = (uint8_t)(bits & 0xffu);
+    dst[4 * i + 1] = (uint8_t)((bits >> 8) & 0xffu);
+    dst[4 * i + 2] = (uint8_t)((bits >> 16) & 0xffu);
+    dst[4 * i + 3] = (uint8_t)((bits >> 24) & 0xffu);
+  }
+  return out;
+}
+
+extern "C" LEAN_EXPORT lean_obj_res torchlean_float32_bytes_to_float_array(
+    b_lean_obj_arg BytesObj) {
+  lean_object* bytesObj = (lean_object*)BytesObj;
+  size_t bytes = lean_sarray_size(bytesObj);
+  if (bytes % sizeof(float) != 0) {
+    lean_internal_panic("torchlean: float32 checkpoint payload is not a multiple of four bytes");
+  }
+  size_t n = bytes / sizeof(float);
+  lean_object* out = lean_mk_empty_float_array(lean_box(n));
+  lean_sarray_set_size(out, n);
+  const uint8_t* src = (const uint8_t*)lean_sarray_cptr(bytesObj);
+  double* dst = lean_float_array_cptr(out);
+  for (size_t i = 0; i < n; ++i) {
+    uint32_t bits = (uint32_t)src[4 * i] |
+                    ((uint32_t)src[4 * i + 1] << 8) |
+                    ((uint32_t)src[4 * i + 2] << 16) |
+                    ((uint32_t)src[4 * i + 3] << 24);
+    float value;
+    memcpy(&value, &bits, sizeof(bits));
+    dst[i] = (double)value;
+  }
+  return out;
 }
 
 #define TORCHLEAN_DEFINE_UNARY_BUFFER_EXPORT(EXPORT_NAME, KERNEL, LABEL)                         \
@@ -1253,6 +1455,24 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_relu_bwd(b_lean_obj_ar
   return torchlean_cuda_buffer_box(out);
 }
 
+TORCHLEAN_DEFINE_UNARY_BUFFER_EXPORT(torchlean_cuda_buffer_gelu, torchlean_gelu_f32, "gelu")
+
+extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_gelu_bwd(b_lean_obj_arg XObj,
+                                                                  b_lean_obj_arg GObj) {
+  torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
+  torchlean_cuda_buffer* g = torchlean_cuda_buffer_unbox(GObj);
+  torchlean_cuda_require_same_size2(x, g, "torchlean_cuda_buffer_gelu_bwd");
+  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(x->size);
+  if (x->size == 0) {
+    return torchlean_cuda_buffer_box(out);
+  }
+  dim3 blocks = torchlean_blocks_for(x->size);
+  dim3 threads = dim3(kBlockSize);
+  torchlean_gelu_bwd_f32<<<blocks, threads>>>(x->data, g->data, out->data, x->size);
+  checkCuda(cudaGetLastError(), "cuda gelu_bwd kernel launch failed");
+  return torchlean_cuda_buffer_box(out);
+}
+
 TORCHLEAN_DEFINE_BINARY_BUFFER_EXPORT(torchlean_cuda_buffer_add, torchlean_add_f32, "add")
 
 TORCHLEAN_DEFINE_BINARY_BUFFER_EXPORT(torchlean_cuda_buffer_sub, torchlean_sub_f32, "sub")
@@ -1271,6 +1491,59 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_copy_and_release(
 
 TORCHLEAN_DEFINE_BINARY_SCALAR_BUFFER_EXPORT(torchlean_cuda_buffer_axpy, torchlean_axpy_f32,
                                              "axpy")
+
+extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_adam_step(
+    b_lean_obj_arg ParametersObj,
+    b_lean_obj_arg GradientObj,
+    b_lean_obj_arg FirstMomentObj,
+    b_lean_obj_arg SecondMomentObj,
+    double beta1,
+    double oneMinusBeta1,
+    double beta2,
+    double oneMinusBeta2,
+    double firstMomentCorrection,
+    double secondMomentCorrection,
+    double epsilon,
+    double decay,
+    double updateScale) {
+  torchlean_cuda_buffer* parameters = torchlean_cuda_buffer_unbox(ParametersObj);
+  torchlean_cuda_buffer* gradient = torchlean_cuda_buffer_unbox(GradientObj);
+  torchlean_cuda_buffer* first_moment = torchlean_cuda_buffer_unbox(FirstMomentObj);
+  torchlean_cuda_buffer* second_moment = torchlean_cuda_buffer_unbox(SecondMomentObj);
+  torchlean_cuda_require_same_size3(
+      parameters, gradient, first_moment, "torchlean_cuda_buffer_adam_step");
+  torchlean_cuda_require_same_size2(
+      parameters, second_moment, "torchlean_cuda_buffer_adam_step");
+
+  torchlean_cuda_buffer* updated_parameters = torchlean_cuda_buffer_alloc(parameters->size);
+  torchlean_cuda_buffer* updated_first_moment = torchlean_cuda_buffer_alloc(parameters->size);
+  torchlean_cuda_buffer* updated_second_moment = torchlean_cuda_buffer_alloc(parameters->size);
+  if (parameters->size != 0) {
+    dim3 blocks = torchlean_blocks_for(parameters->size);
+    dim3 threads = dim3(kBlockSize);
+    torchlean_adam_step_f32<<<blocks, threads>>>(
+        parameters->data,
+        gradient->data,
+        first_moment->data,
+        second_moment->data,
+        updated_parameters->data,
+        updated_first_moment->data,
+        updated_second_moment->data,
+        parameters->size,
+        (float)beta1,
+        (float)oneMinusBeta1,
+        (float)beta2,
+        (float)oneMinusBeta2,
+        (float)firstMomentCorrection,
+        (float)secondMomentCorrection,
+        (float)epsilon,
+        (float)decay,
+        (float)updateScale);
+    checkCuda(cudaGetLastError(), "cuda adam_step kernel launch failed");
+  }
+  return torchlean_cuda_box_three_buffers(
+      updated_parameters, updated_first_moment, updated_second_moment);
+}
 
 #undef TORCHLEAN_DEFINE_BINARY_SCALAR_BUFFER_EXPORT
 #undef TORCHLEAN_DEFINE_UNARY_SCALAR_BUFFER_EXPORT

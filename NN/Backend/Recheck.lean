@@ -15,8 +15,8 @@ Plan audits say which backend capsules were selected. Recheck obligations unpack
 inside those capsules: shape, layout, value, and VJP evidence.
 
 This layer is intentionally data-level. It does not claim that a foreign kernel is proved. It
-records whether each obligation is backed by a theorem, checker, fuzz oracle, trusted boundary, or
-is missing evidence.
+records whether each obligation is guarded, tested, fuzzed, delegated to a trusted boundary,
+inapplicable, or missing evidence.
 -/
 
 @[expose] public section
@@ -34,12 +34,11 @@ inductive ContractObligation where
 
 /-- Normalized evidence class used by reports and policy filters. -/
 inductive EvidenceDisposition where
-  | proved
-  | checked
   | guarded
   | tested
   | fuzzed
   | trusted
+  | notApplicable
   | missing
   deriving DecidableEq, Repr
 
@@ -48,12 +47,11 @@ namespace ContractEvidence
 /-- Convert detailed evidence into the coarse class used by recheck reports. -/
 def disposition (e : ContractEvidence) : EvidenceDisposition :=
   match e with
-  | .theorem .. => .proved
-  | .checker .. => .checked
   | .runtimeGuard _ => .guarded
   | .testSuite _ => .tested
   | .fuzzOracle _ => .fuzzed
   | .trustedBoundary _ => .trusted
+  | .notApplicable => .notApplicable
   | .notProvided => .missing
 
 /-- Whether this evidence gives any non-missing justification. -/

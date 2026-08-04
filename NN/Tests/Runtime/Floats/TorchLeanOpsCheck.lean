@@ -7,10 +7,14 @@ Authors: TorchLean Team
 module
 
 public import Lean.Data.Json
-public import NN
+public import NN.API
 public import NN.Core.ExternalProcess
-public import NN.Spec.Core.TensorOps
 public import NN.Runtime.Autograd.TorchLean.Norm
+public import NN.Runtime.RL.Core
+public import NN.Spec.Generative.Diffusion.PFODE
+public import NN.Spec.Layers.Loss
+public import NN.Spec.Models.Gmm
+public import NN.Spec.Models.Hmm
 public import NN.Tests.Runtime.Floats.Utils
 public import Std
 
@@ -29,7 +33,6 @@ backend, a closed form, or PyTorch when it is available.
 open Lean
 open Spec
 open Tensor
-open NN.API
 open Tests.Floats.Utils
 
 namespace Tests
@@ -57,112 +60,182 @@ def workDir : System.FilePath :=
 def batchNormParityScriptPath : System.FilePath :=
   workDir / "batchnorm_parity.py"
 
-/-- Assert that an IO action fails. Used for runtime boundary checks where rejection is success. -/
-def expectRuntimeRejection {α : Type} (msg : String) (act : IO α) : IO Unit := do
-  let mut rejected := false
-  try
-    let _ ← act
-  catch _ =>
-    rejected := true
-  unless rejected do
-    throw <| IO.userError msg
-
-/-- Flatten a typed Nat vector into an array for simple test comparison. -/
-def natTensorToArray {n : Nat} (t : Tensor Nat (.dim n .scalar)) : Array Nat := Id.run do
-  let mut out := #[]
-  match t with
-  | Tensor.dim f =>
-      for i in List.finRange n do
-        match f i with
-        | Tensor.scalar x => out := out.push x
-  out
-
-/--
-Run the eager token-id conversion on a fixed three-element float vector.
-
-The helper is intentionally small: the test below wants to isolate the adapter boundary, not the
-full GPT loss.
--/
-def readTokenIdsFromFloatVector (xs : Tensor Float (.dim 3 .scalar)) :
-    IO (Tensor Nat (.dim 3 .scalar)) := do
+/-- Evaluate a two-row weighted integer-label cross entropy through the eager runtime. -/
+def evalWeightedRowCrossEntropy
+    (logits : Tensor Float (.dim 2 (.dim 2 .scalar)))
+    (weights : Tensor Float (.dim 2 .scalar)) : IO Float := do
+  let targets : Tensor Nat (.dim 2 .scalar) := tensorOfList! [2] [0, 1]
   let sess ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float)
-  let xRef ← Runtime.Autograd.Torch.Internal.EagerSession.input
-    (α := Float) sess (sh := .dim 3 .scalar) xs
-  Runtime.Autograd.Torch.Internal.EagerSession.tokenIdsFromFloatVec
-    (α := Float) sess (k := 3) xRef
+  let action : Runtime.Autograd.Torch.Internal.EagerM Float (Tensor Float .scalar) := do
+    let logitsRef ← Runtime.Autograd.Torch.Ops.const
+      (m := Runtime.Autograd.Torch.Internal.EagerM Float) (α := Float)
+      (s := .dim 2 (.dim 2 .scalar)) logits
+    let weightsRef ← Runtime.Autograd.Torch.Ops.const
+      (m := Runtime.Autograd.Torch.Internal.EagerM Float) (α := Float)
+      (s := .dim 2 .scalar) weights
+    let lossRef ← _root_.TorchLean.Loss.crossEntropyRowsNatWeighted
+      (m := Runtime.Autograd.Torch.Internal.EagerM Float) (α := Float)
+      (rows := 2) (classes := 2) logitsRef targets weightsRef
+    let sess ← read
+    liftM <| Runtime.Autograd.Torch.Internal.EagerSession.getValue
+      (α := Float) (sh := .scalar) sess lossRef
+  pure <| Tensor.toScalar (← action sess)
 
 /--
-Regression check for float-encoded token ids.
+Check weighted cross entropy as a runtime operation.
 
-Good integer-valued floats must round-trip to Nat ids, while fractional and negative values must be
-rejected. This protects the causal-LM path from silently turning bad labels into different labels.
+The first assertion changes only a zero-weight row and therefore must leave the loss unchanged. The
+second checks linearity in the explicit row weights. Together they catch accidental mean reduction,
+mask misalignment, and a weights tensor that is ignored by the backend.
 -/
-def checkTokenIdFloatVectorConversion : IO Unit := do
-  let good ← readTokenIdsFromFloatVector (tensor! [0.0, 2.0, 5.0])
-  let got := natTensorToArray good
-  if got != #[0, 2, 5] then
-    throw <| IO.userError s!"token id conversion: got {got}, expected #[0, 2, 5]"
-  expectRuntimeRejection "token id conversion accepted a fractional id" <|
-    readTokenIdsFromFloatVector (tensor! [0.0, 1.5, 2.0])
-  expectRuntimeRejection "token id conversion accepted a negative id" <|
-    readTokenIdsFromFloatVector (tensor! [0.0, -1.0, 2.0])
+def checkWeightedRowCrossEntropy : IO Unit := do
+  let logitsA : Tensor Float (.dim 2 (.dim 2 .scalar)) :=
+    tensorOfList! [2, 2] [0, 0, 20, -20]
+  let logitsB : Tensor Float (.dim 2 (.dim 2 .scalar)) :=
+    tensorOfList! [2, 2] [0, 0, -20, 20]
+  let firstOnly : Tensor Float (.dim 2 .scalar) := tensorOfList! [2] [1, 0]
+  let secondOnly : Tensor Float (.dim 2 .scalar) := tensorOfList! [2] [0, 1]
+  let mixture : Tensor Float (.dim 2 .scalar) := tensorOfList! [2] [0.25, 0.75]
+  let firstA ← evalWeightedRowCrossEntropy logitsA firstOnly
+  let firstB ← evalWeightedRowCrossEntropy logitsB firstOnly
+  assertApprox "zero-weight row is excluded" firstA firstB 1e-5
+  let second ← evalWeightedRowCrossEntropy logitsA secondOnly
+  let mixed ← evalWeightedRowCrossEntropy logitsA mixture
+  assertApprox "weighted row loss is linear in row weights"
+    mixed (0.25 * firstA + 0.75 * second) 1e-4
+
+/-- Check that tied token lookup removes exactly one independent affine vocabulary head. -/
+def checkTiedTokenEmbeddingParameterCount : IO Unit := do
+  let cfg : TorchLean.nn.models.CausalTransformerConfig :=
+    { batch := 1
+      seqLen := 2
+      vocab := 7
+      numHeads := 1
+      headDim := 4
+      ffnHidden := 8
+      layers := 1 }
+  let untiedBody := TorchLean.nn.run 11 <|
+    TorchLean.nn.models.causalTransformerFromEmbeddings cfg
+  let tiedBody := TorchLean.nn.run 11 <|
+    TorchLean.nn.models.causalTransformerHiddenFromEmbeddings cfg
+  let untiedCount := TorchLean.nn.paramCount <|
+    TorchLean.nn.models.causalTransformerTokenParamShapes cfg untiedBody
+  let tiedCount := TorchLean.nn.paramCount <|
+    TorchLean.nn.models.causalTransformerTiedTokenParamShapes cfg tiedBody
+  let independentHeadCount := cfg.vocab * cfg.dModel + cfg.vocab
+  unless untiedCount = tiedCount + independentHeadCount do
+    throw <| IO.userError <|
+      s!"tied token embedding: untied={untiedCount}, tied={tiedCount}, " ++
+        s!"expected difference={independentHeadCount}"
+
+/-- Run a tied-token model through one loss and backward pass. -/
+def checkTiedTokenEmbeddingBackward : IO Unit := do
+  let cfg : TorchLean.nn.models.CausalTransformerConfig :=
+    { batch := 1
+      seqLen := 2
+      vocab := 7
+      numHeads := 1
+      headDim := 4
+      ffnHidden := 8
+      layers := 1 }
+  let body := TorchLean.nn.run 19 <|
+    TorchLean.nn.models.causalTransformerHiddenFromEmbeddings cfg
+  let definition := TorchLean.nn.models.causalTransformerTiedTokenScalarModuleDef cfg body
+  let module ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateFloat
+    definition { backend := .eager }
+  let inputs : Tensor Nat (.dim 2 .scalar) := tensorOfList! [2] [0, 1]
+  let targets : Tensor Nat (.dim 2 .scalar) := tensorOfList! [2] [1, 2]
+  let (loss, gradients) ←
+    _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.lossAndBackward module
+      .nil (.cons inputs (.cons targets .nil))
+  assertFinite "tied token embedding loss" (Tensor.toScalar loss)
+  let sharedGradient := Proofs.Autograd.Algebra.TList.get gradients ⟨0, by simp⟩
+  let values := Spec.toList sharedGradient
+  for value in values do
+    assertFinite "tied token embedding gradient" value
+  unless values.any (fun value => Float.abs value > 1.0e-8) do
+    throw <| IO.userError
+      "tied token embedding produced a zero gradient for its shared lookup/projection matrix"
+
+/--
+Check that self-attention can initialize its residual output projection independently of Q/K/V.
+
+Deep Transformers commonly use a smaller initializer for the projection written back to the
+residual stream. Distinct constant schemes make this a direct wiring check: Q/K/V must contain
+ones, while the output projection must contain zeros.
+-/
+def checkAttentionOutputProjectionInitializer : IO Unit := do
+  let layer :=
+    _root_.Runtime.Autograd.TorchLean.NN.multiHeadAttention
+      1 1 2 1 2 (h1 := by decide)
+      (weightInit? := some .ones)
+      (outputWeightInit? := some .zeros)
+  let (wq, wk, wv, wo) :=
+    match layer.initParams with
+    | .cons wq (.cons wk (.cons wv (.cons wo .nil))) => (wq, wk, wv, wo)
+  for i in List.finRange 2 do
+    for j in List.finRange 2 do
+      assertApprox s!"attention Q initializer[{i.val},{j.val}]" (matVal wq i j) 1 1e-7
+      assertApprox s!"attention K initializer[{i.val},{j.val}]" (matVal wk i j) 1 1e-7
+      assertApprox s!"attention V initializer[{i.val},{j.val}]" (matVal wv i j) 1 1e-7
+      assertApprox s!"attention output initializer[{i.val},{j.val}]" (matVal wo i j) 0 1e-7
 
 /-! ## Eager/compiled operator parity -/
 
 /-- Evaluate a fixed 2x3 by 3x2 matrix product through the selected public backend. -/
-def evalMatmulFixture (backend : TorchLean.Backend) :
+def evalMatmulFixture (backend : _root_.Runtime.Autograd.Torch.Backend) :
     IO (Tensor Float (.dim 2 (.dim 2 .scalar))) := do
-  let sess ← TorchLean.Session.new (α := Float) (opts := { backend := backend })
+  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float) (opts := { backend := backend })
   let a : Tensor Float (.dim 2 (.dim 3 .scalar)) :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (i.val + 2 * j.val + 1))))
   let b : Tensor Float (.dim 3 (.dim 2 .scalar)) :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (3 * i.val + j.val + 1))))
-  let aR ← TorchLean.Session.const sess (sh := .dim 2 (.dim 3 .scalar)) a
-  let bR ← TorchLean.Session.const sess (sh := .dim 3 (.dim 2 .scalar)) b
-  let cR ← TorchLean.Session.matmul sess (m := 2) (n := 3) (p := 2) aR bR
-  TorchLean.Session.getValue sess (sh := .dim 2 (.dim 2 .scalar)) cR
+  let aR ← _root_.Runtime.Autograd.TorchLean.Session.const sess (sh := .dim 2 (.dim 3 .scalar)) a
+  let bR ← _root_.Runtime.Autograd.TorchLean.Session.const sess (sh := .dim 3 (.dim 2 .scalar)) b
+  let cR ← _root_.Runtime.Autograd.TorchLean.Session.matmul sess (m := 2) (n := 3) (p := 2) aR bR
+  _root_.Runtime.Autograd.TorchLean.Session.getValue sess (sh := .dim 2 (.dim 2 .scalar)) cR
 
 /-- Evaluate a fixed length-2 plus length-3 vector concatenation through the selected backend. -/
-def evalConcatFixture (backend : TorchLean.Backend) : IO (Tensor Float (.dim 5 .scalar)) := do
-  let sess ← TorchLean.Session.new (α := Float) (opts := { backend := backend })
+def evalConcatFixture (backend : _root_.Runtime.Autograd.Torch.Backend) : IO (Tensor Float (.dim 5 .scalar)) := do
+  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float) (opts := { backend := backend })
   let a : Tensor Float (.dim 2 .scalar) := Tensor.dim (fun i => Tensor.scalar (Float.ofNat (i.val +
     1)))
   let b : Tensor Float (.dim 3 .scalar) := Tensor.dim (fun i => Tensor.scalar (10.0 + Float.ofNat
     i.val))
-  let aR ← TorchLean.Session.const sess (sh := .dim 2 .scalar) a
-  let bR ← TorchLean.Session.const sess (sh := .dim 3 .scalar) b
-  let cR ← TorchLean.Session.concatVectors sess (n := 2) (m := 3) aR bR
-  TorchLean.Session.getValue sess (sh := .dim 5 .scalar) cR
+  let aR ← _root_.Runtime.Autograd.TorchLean.Session.const sess (sh := .dim 2 .scalar) a
+  let bR ← _root_.Runtime.Autograd.TorchLean.Session.const sess (sh := .dim 3 .scalar) b
+  let cR ← _root_.Runtime.Autograd.TorchLean.Session.concatVectors sess (n := 2) (m := 3) aR bR
+  _root_.Runtime.Autograd.TorchLean.Session.getValue sess (sh := .dim 5 .scalar) cR
 
 /-- Evaluate a fixed 2D max-pooling example through the selected public backend. -/
-def evalMaxPool2dFixture (backend : TorchLean.Backend) :
+def evalMaxPool2dFixture (backend : _root_.Runtime.Autograd.Torch.Backend) :
     IO (Tensor Float (.dim 1 (.dim 2 (.dim 2 .scalar)))) := do
-  let sess ← TorchLean.Session.new (α := Float) (opts := { backend := backend })
+  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float) (opts := { backend := backend })
   let x : Tensor Float (.dim 1 (.dim 4 (.dim 4 .scalar))) :=
     Tensor.dim (fun _c =>
       Tensor.dim (fun i =>
         Tensor.dim (fun j =>
           Tensor.scalar (Float.ofNat (i.val * 10 + j.val)))))
-  let xR ← TorchLean.Session.const sess (sh := .dim 1 (.dim 4 (.dim 4 .scalar))) x
-  let yR ← TorchLean.Session.maxPool2d sess (kH := 2) (kW := 2) (inH := 4) (inW := 4) (inC := 1)
+  let xR ← _root_.Runtime.Autograd.TorchLean.Session.const sess (sh := .dim 1 (.dim 4 (.dim 4 .scalar))) x
+  let yR ← _root_.Runtime.Autograd.TorchLean.Session.maxPool2d sess (kH := 2) (kW := 2) (inH := 4) (inW := 4) (inC := 1)
     (stride := 2)
     (h1 := by decide) (h2 := by decide) xR
-  TorchLean.Session.getValue sess (sh := .dim 1 (.dim 2 (.dim 2 .scalar))) yR
+  _root_.Runtime.Autograd.TorchLean.Session.getValue sess (sh := .dim 1 (.dim 2 (.dim 2 .scalar))) yR
 
 /-- Evaluate a fixed 2D average-pooling example through the selected public backend. -/
-def evalAvgPool2dFixture (backend : TorchLean.Backend) :
+def evalAvgPool2dFixture (backend : _root_.Runtime.Autograd.Torch.Backend) :
     IO (Tensor Float (.dim 1 (.dim 2 (.dim 2 .scalar)))) := do
-  let sess ← TorchLean.Session.new (α := Float) (opts := { backend := backend })
+  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float) (opts := { backend := backend })
   let x : Tensor Float (.dim 1 (.dim 4 (.dim 4 .scalar))) :=
     Tensor.dim (fun _c =>
       Tensor.dim (fun i =>
         Tensor.dim (fun j =>
           Tensor.scalar (Float.ofNat (i.val * 10 + j.val)))))
-  let xR ← TorchLean.Session.const sess (sh := .dim 1 (.dim 4 (.dim 4 .scalar))) x
-  let yR ← TorchLean.Session.avgPool2d sess (kH := 2) (kW := 2) (inH := 4) (inW := 4) (inC := 1)
+  let xR ← _root_.Runtime.Autograd.TorchLean.Session.const sess (sh := .dim 1 (.dim 4 (.dim 4 .scalar))) x
+  let yR ← _root_.Runtime.Autograd.TorchLean.Session.avgPool2d sess (kH := 2) (kW := 2) (inH := 4) (inW := 4) (inC := 1)
     (stride := 2)
     (by decide) (by decide) xR
-  TorchLean.Session.getValue sess (sh := .dim 1 (.dim 2 (.dim 2 .scalar))) yR
+  _root_.Runtime.Autograd.TorchLean.Session.getValue sess (sh := .dim 1 (.dim 2 (.dim 2 .scalar))) yR
 
 /-! ## BatchNorm fixture and PyTorch parity -/
 
@@ -508,7 +581,10 @@ def checkCorrectedMathematicalSpecs : IO Unit := do
 /-- Entrypoint called by the curated float runtime suite. -/
 def run : IO Unit := do
   IO.println "torchlean_ops_check: begin"
-  checkTokenIdFloatVectorConversion
+  checkWeightedRowCrossEntropy
+  checkTiedTokenEmbeddingParameterCount
+  checkTiedTokenEmbeddingBackward
+  checkAttentionOutputProjectionInitializer
 
   let mmE ← evalMatmulFixture .eager
   let mmC ← evalMatmulFixture .compiled

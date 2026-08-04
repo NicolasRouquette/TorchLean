@@ -60,7 +60,7 @@ def propagateCROWNNode
       | none => bounds
     | _ => bounds
   | .randUniform _ | .bernoulliMask _ | .abs | .sqrt | .permute _ | .maxElem | .minElem | .sin |
-    .cos
+    .cos | .hardMaskedSoftmax _
   | .maxPool2d .. | .avgPool2d .. | .maxPool2dPad .. | .avgPool2dPad ..
   | .broadcastTo .. | .reduceSum .. | .reduceMean .. =>
     -- Conservative fallback: use IBP box as a constant affine bound (A = 0).
@@ -152,62 +152,19 @@ def propagateCROWNNode
       | _, _ => bounds
     | _ => bounds
   | .relu =>
-    match node.parents with
-    | p1 :: _ =>
-      match getB p1, ibp[p1]! with
-      | some xin, some preB =>
-        if hout : xin.outDim = preB.dim then
-          let out := propagateReluBounds (α:=α) preB xin hout
-          bounds.set! id (some out)
-        else bounds
-      | _, _ => bounds
-    | _ => bounds
-  | .exp =>
-    match node.parents with
-    | p1 :: _ =>
-      match getB p1, ibp[p1]! with
-      | some xin, some preB =>
-        if hout : xin.outDim = preB.dim then
-          bounds.set! id (some (propagateExpBounds (α:=α) preB xin hout))
-        else bounds
-      | _, _ => bounds
-    | _ => bounds
-  | .log =>
-    match node.parents with
-    | p1 :: _ =>
-      match getB p1, ibp[p1]! with
-      | some xin, some preB =>
-        if hout : xin.outDim = preB.dim then
-          bounds.set! id (some (propagateLogBounds (α:=α) preB xin hout))
-        else bounds
-      | _, _ => bounds
-    | _ => bounds
-  | .inv =>
-    -- Reciprocal has an asymptote at zero. IBP leaves this node unresolved when the input
-    -- interval crosses zero, so a constant fallback is available only on a valid domain.
+    -- Computing the crossing-zero ReLU slope involves division. Until an affine-rounding
+    -- capability supplies directed coefficients, retain the checked IBP enclosure.
+    match ibp[id]! with
+    | some B => bounds.set! id (some (boundsConst (α := α) ctx.inputDim B.dim B.lo B.hi))
+    | none => bounds
+  | .exp | .log | .inv | .sigmoid | .tanh =>
+    -- Executable nonlinear bounds come from the directed IBP pass. Turning that box into a
+    -- constant affine form is less precise than an analytic relaxation, but it does not recompute
+    -- transcendental values with unqualified host arithmetic. Ideal-real relaxation formulas
+    -- remain available as standalone helpers in `CROWN.Activations`.
     match ibp[id]! with
     | some Bout => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim Bout.dim Bout.lo Bout.hi))
     | none => bounds
-  | .sigmoid =>
-    match node.parents with
-    | p1 :: _ =>
-      match getB p1, ibp[p1]! with
-      | some xin, some preB =>
-        if hout : xin.outDim = preB.dim then
-          bounds.set! id (some (propagateSigmoidBounds (α:=α) preB xin hout))
-        else bounds
-      | _, _ => bounds
-    | _ => bounds
-  | .tanh =>
-    match node.parents with
-    | p1 :: _ =>
-      match getB p1, ibp[p1]! with
-      | some xin, some preB =>
-        if hout : xin.outDim = preB.dim then
-          bounds.set! id (some (propagateTanhBounds (α:=α) preB xin hout))
-        else bounds
-      | _, _ => bounds
-    | _ => bounds
   | .mul_elem =>
     match node.parents with
     | p1 :: p2 :: _ =>
@@ -374,131 +331,15 @@ def propagateCROWNNode
           | none => bounds
       | none => bounds
     | _ => bounds
-  | .layernorm axis =>
-    match node.parents with
-    | p1 :: _ =>
-      match getB p1, ibp[p1]! with
-      | some xin, some preB =>
-        if axis = Spec.Shape.rank node.outShape - 1 then
-          if hout : xin.outDim = preB.dim then
-            bounds.set! id (some (propagateLayernormBoundsLastAxis (α:=α) node.outShape preB xin
-              hout))
-          else
-            bounds
-        else
-          match ibp[id]! with
-          | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
-          | none => bounds
-      | _, _ => bounds
-    | _ => bounds
-  | .softmax axis =>
-    match node.parents with
-    | p1 :: _ =>
-      match getB p1, ibp[p1]! with
-      | some xin, some preB =>
-        if axis = Spec.Shape.rank node.outShape - 1 then
-          if hout : xin.outDim = preB.dim then
-            bounds.set! id (some (propagateSoftmaxBoundsLastAxis (α:=α) node.outShape preB xin
-              hout))
-          else
-            bounds
-        else
-          match ibp[id]! with
-          | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
-          | none => bounds
-      | _, _ => bounds
-    | _ => bounds
+  | .layernorm _ | .softmax _ =>
+    -- These coupled operators use the same directed IBP-to-constant policy as scalar nonlinearities.
+    match ibp[id]! with
+    | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
+    | none => bounds
   | .mseLoss =>
-    match node.parents with
-    | p1 :: p2 :: _ =>
-      match getB p1, getB p2, ibp[p1]!, ibp[p2]! with
-      | some yAff, some tAff, some yB, some tB =>
-        if hout : yAff.outDim = yB.dim then
-          if tAff.outDim = tB.dim then
-            if hdim : yB.dim = tB.dim then
-              if hout2 : yAff.outDim = tAff.outDim then
-                if hin : yAff.inDim = tAff.inDim then
-                  let yLo : AffineVec α tAff.inDim tAff.outDim :=
-                    castAffineIn (α:=α) (n:=yAff.inDim) (n':=tAff.inDim) (m:=tAff.outDim) hin
-                      (castAffineOut (α:=α) (n:=yAff.inDim) (m:=yAff.outDim) (m':=tAff.outDim) hout2
-                        yAff.loAff)
-                  let yHi : AffineVec α tAff.inDim tAff.outDim :=
-                    castAffineIn (α:=α) (n:=yAff.inDim) (n':=tAff.inDim) (m:=tAff.outDim) hin
-                      (castAffineOut (α:=α) (n:=yAff.inDim) (m:=yAff.outDim) (m':=tAff.outDim) hout2
-                        yAff.hiAff)
-                  let tHiVec := castDimScalar (α:=α) (n:=tB.dim) (n':=yB.dim) (h:=hdim.symm) tB.hi
-                  let tLoVec := castDimScalar (α:=α) (n:=tB.dim) (n':=yB.dim) (h:=hdim.symm) tB.lo
-                  let diffLoVec : Tensor α (.dim yB.dim .scalar) := Tensor.subSpec yB.lo tHiVec
-                  let diffHiVec : Tensor α (.dim yB.dim .scalar) := Tensor.subSpec yB.hi tLoVec
-                  let n := yB.dim
-                  let hOutToN : tAff.outDim = n := Eq.trans (Eq.symm hout2) hout
-                  let yLoN : AffineVec α tAff.inDim n :=
-                    castAffineOut (α:=α) (n:=tAff.inDim) (m:=tAff.outDim) (m':=n) hOutToN yLo
-                  let yHiN : AffineVec α tAff.inDim n :=
-                    castAffineOut (α:=α) (n:=tAff.inDim) (m:=tAff.outDim) (m':=n) hOutToN yHi
-                  let tLoN : AffineVec α tAff.inDim n :=
-                    castAffineOut (α:=α) (n:=tAff.inDim) (m:=tAff.outDim) (m':=n) hOutToN tAff.loAff
-                  let tHiN : AffineVec α tAff.inDim n :=
-                    castAffineOut (α:=α) (n:=tAff.inDim) (m:=tAff.outDim) (m':=n) hOutToN tAff.hiAff
-                  let diffLoAff' : AffineVec α tAff.inDim n :=
-                    affSub (α:=α) (n:=tAff.inDim) (m:=n) yLoN tHiN
-                  let diffHiAff' : AffineVec α tAff.inDim n :=
-                    affSub (α:=α) (n:=tAff.inDim) (m:=n) yHiN tLoN
-                  -- Square relaxation on each component of `diff`.
-                  let flo := getDimScalarFn (α := α) diffLoVec
-                  let fhi := getDimScalarFn (α := α) diffHiVec
-                  let slopes_hi : Tensor α (.dim n .scalar) :=
-                    Tensor.dim (fun i =>
-                      match flo i, fhi i with
-                      | .scalar l, .scalar u => Tensor.scalar (u + l))
-                  let bias_hi : Tensor α (.dim n .scalar) :=
-                    Tensor.dim (fun i =>
-                      match flo i, fhi i with
-                      | .scalar l, .scalar u => Tensor.scalar (-(u * l)))
-                  let slopes_lo : Tensor α (.dim n .scalar) :=
-                    Tensor.dim (fun i =>
-                      match flo i, fhi i with
-                      | .scalar l, .scalar u =>
-                        let d := if u < Numbers.zero then u else if l > Numbers.zero then l else
-                          Numbers.zero
-                        Tensor.scalar (Numbers.two * d))
-                  let bias_lo : Tensor α (.dim n .scalar) :=
-                    Tensor.dim (fun i =>
-                      match flo i, fhi i with
-                      | .scalar l, .scalar u =>
-                        let d := if u < Numbers.zero then u else if l > Numbers.zero then l else
-                          Numbers.zero
-                        Tensor.scalar (-(d * d)))
-                  let sqLoAff :=
-                    affApplyDiagSignedLower (α:=α) (inDim:=tAff.inDim) (outDim:=n) slopes_lo
-                      bias_lo diffLoAff' diffHiAff'
-                  let sqHiAff :=
-                    affApplyDiagSignedUpper (α:=α) (inDim:=tAff.inDim) (outDim:=n) slopes_hi
-                      bias_hi diffLoAff' diffHiAff'
-                  if n > 0 then
-                    let nA : α := (n : Nat)
-                    let scale : α := Numbers.one / nA
-                    let scaleRow : Tensor α (.dim 1 (.dim n .scalar)) :=
-                      Spec.fill (α := α) scale (.dim 1 (.dim n .scalar))
-                    let outLo : AffineVec α tAff.inDim 1 :=
-                      { A := Spec.matMulSpec scaleRow sqLoAff.A
-                        c := Spec.matVecMulSpec scaleRow sqLoAff.c }
-                    let outHi : AffineVec α tAff.inDim 1 :=
-                      { A := Spec.matMulSpec scaleRow sqHiAff.A
-                        c := Spec.matVecMulSpec scaleRow sqHiAff.c }
-                    bounds.set! id (some { inDim := tAff.inDim, outDim := 1, loAff := outLo, hiAff
-                      := outHi })
-                  else
-                    let z : Tensor α (.dim 1 .scalar) := Spec.fill (α := α) Numbers.zero (.dim 1
-                      .scalar)
-                    bounds.set! id (some (boundsConst (α := α) ctx.inputDim 1 z z))
-                else bounds
-              else bounds
-            else bounds
-          else bounds
-        else bounds
-      | _, _, _, _ => bounds
-    | _ => bounds
+    match ibp[id]! with
+    | some B => bounds.set! id (some (boundsConst (α := α) ctx.inputDim B.dim B.lo B.hi))
+    | none => bounds
   | .conv2d .. =>
     match node.parents with
     | p1 :: _ =>

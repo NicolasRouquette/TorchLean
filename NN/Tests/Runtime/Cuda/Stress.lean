@@ -425,29 +425,18 @@ def buildCacheScratch (n : UInt32) (k : Nat) (salt : Nat) : Array Buffer × Nat 
 Block-cache byte-cap probe, the subject of `runCacheCapTest`. Runs in a forked child so the cap
 (`TORCHLEAN_CUDA_CACHE_CAP_BYTES`, read once natively) is fixed before the first cache operation.
 
-The child allocates `k` same-size blocks (the cache starts empty, so each is a fresh device alloc),
-then returns them all to the cache via `Buffer.release`. The total returned (8 MiB here) far exceeds
-the 1 MiB cap. It then reads `cacheBytes` from the allocator telemetry and asserts:
-
-* **always** (both backends) — `cacheBytes ≤ cap`: the cap is enforced (the CPU stub holds no cache,
-  so `cacheBytes = 0 ≤ cap` trivially);
-* **on CUDA, capped** — the cap is the *binding* constraint: the workload exceeds it, yet the cache
-  filled to within one block of it (`block ≤ cacheBytes` and `cacheBytes + block > cap`) rather than
-  growing to the full 8 MiB;
-* **on CUDA, control** (`cap = 0`, unset, or a malformed/overflowing value the strict native
-  parser rejects) — every returned block stays cached (`cacheBytes = totalReturned`): the
-  unbounded growth the cap exists to bound.
+The child first checks that the native allocator reports the expected parsed cap. It then allocates
+`k` same-size blocks and returns them through `Buffer.release`. The total returned (8 MiB here) far
+exceeds the 1 MiB test cap. For a finite cap, the cache must remain below the cap and fill to within
+one block of it. For the unbounded control, every returned block must remain cached.
 
 Selected in a forked child by `TORCHLEAN_CUDA_CACHE_PROBE=cache-cap` (see `NN.Tests.run`). -/
 def runCacheCapProbe : IO Unit := do
   IO.println "== cuda block-cache byte-cap probe =="
-  let capStr ← IO.getEnv "TORCHLEAN_CUDA_CACHE_CAP_BYTES"
-  -- Mirror the native parser's strict semantics: only a digit string that fits the native word is
-  -- a cap; malformed or overflowing values are rejected and leave the cache unbounded (cap 0).
-  let capBytes : UInt64 :=
-    match capStr.bind (·.toNat?) with
-    | some nn => if nn < UInt64.size then UInt64.ofNat nn else 0
-    | none => 0
+  let expectedCapBytes ←
+    match (← IO.getEnv "TORCHLEAN_CUDA_CACHE_EXPECTED_CAP_BYTES").bind (·.toNat?) with
+    | some n => pure (UInt64.ofNat n)
+    | none => throw <| IO.userError "cache-cap probe: missing expected native cap"
   let n : UInt32 := 65536                              -- 256 KiB per block (float32)
   let blockBytes : UInt64 := UInt64.ofNat (n.toNat * 4)
   let k : Nat := 32                                    -- 8 MiB of returns, far past a 1 MiB cap
@@ -455,6 +444,15 @@ def runCacheCapProbe : IO Unit := do
   let pre ← Buffer.allocatorStats
   -- `deviceTotalBytes` comes from `cudaMemGetInfo`: nonzero on the CUDA build, 0 on the CPU stub.
   let onCuda : Bool := pre.deviceTotalBytes != 0
+  if !onCuda then
+    if pre.cacheBytes != 0 || pre.cacheCapBytes != 0 then
+      throw <| IO.userError "cache-cap probe: CPU stub reported CUDA cache state"
+    IO.println "  skipped: the CPU stub has no device reuse cache"
+    return
+  if pre.cacheCapBytes != expectedCapBytes then
+    throw <| IO.userError
+      s!"cache-cap probe: native cap is {pre.cacheCapBytes}, expected {expectedCapBytes}"
+  let capBytes := pre.cacheCapBytes
   -- Fresh child: the cache starts empty, so every block is a real device alloc, not a cache reuse.
   let (held, touched) := buildCacheScratch n k 1
   if touched != k * n.toNat then
@@ -466,26 +464,26 @@ def runCacheCapProbe : IO Unit := do
   if freed != k then
     throw <| IO.userError s!"cache-cap probe: expected {k} releases, got {freed}"
   let post ← Buffer.allocatorStats
-  IO.println s!"  cap={capBytes} returned={totalBytes} cacheBytes={post.cacheBytes} cuda={onCuda}"
+  if post.cacheCapBytes != capBytes then
+    throw <| IO.userError "cache-cap probe: native cap changed during the process"
+  IO.println s!"  cap={capBytes} returned={totalBytes} cacheBytes={post.cacheBytes}"
   if capBytes == 0 then
     -- Control: no cap, so every returned block stays cached — the growth the cap bounds.
-    if onCuda && post.cacheBytes != totalBytes then
+    if post.cacheBytes != totalBytes then
       throw <| IO.userError
         s!"cache-cap probe (control): uncapped cache held {post.cacheBytes}, expected {totalBytes}"
   else
-    -- The cap is enforced on every backend (the stub keeps no cache, so cacheBytes = 0 ≤ cap).
     if post.cacheBytes > capBytes then
       throw <| IO.userError s!"cache-cap probe: cache exceeded cap ({post.cacheBytes} > {capBytes})"
-    if onCuda then
-      -- On CUDA the cap is the binding constraint: the workload exceeds it, yet the cache filled to
-      -- within one block of the cap instead of to the full 8 MiB.
-      if totalBytes ≤ capBytes then
-        throw <| IO.userError "cache-cap probe: workload did not exceed the cap (test misconfigured)"
-      if post.cacheBytes < blockBytes then
-        throw <| IO.userError s!"cache-cap probe: cache did not fill ({post.cacheBytes} < {blockBytes})"
-      if post.cacheBytes + blockBytes ≤ capBytes then
-        throw <| IO.userError
-          s!"cache-cap probe: cache under-filled below the cap ({post.cacheBytes} + {blockBytes} ≤ {capBytes})"
+    -- The cap is the binding constraint: the workload exceeds it, yet the cache fills to within one
+    -- block of the limit instead of retaining the full 8 MiB.
+    if totalBytes ≤ capBytes then
+      throw <| IO.userError "cache-cap probe: workload did not exceed the cap (test misconfigured)"
+    if post.cacheBytes < blockBytes then
+      throw <| IO.userError s!"cache-cap probe: cache did not fill ({post.cacheBytes} < {blockBytes})"
+    if post.cacheBytes + blockBytes ≤ capBytes then
+      throw <| IO.userError
+        s!"cache-cap probe: cache under-filled below the cap ({post.cacheBytes} + {blockBytes} ≤ {capBytes})"
   IO.println "  block-cache byte cap enforced ✓"
 
 /--
@@ -503,34 +501,41 @@ fixed before the process's first cache operation; the test therefore forks the s
 * **overflow** — a value past the native word size is likewise rejected rather than truncated or
   saturated, so the cache again behaves like the control.
 
-Both children pass the cap explicitly, so neither inherits a stray `TORCHLEAN_CUDA_CACHE_CAP_BYTES`
-from the parent environment — in particular the control child is pinned to `0`, not left to inherit
-a cap that would mask the uncapped-growth it is meant to observe.
+All four children pass the cap explicitly, so none inherits a stray
+`TORCHLEAN_CUDA_CACHE_CAP_BYTES` from the parent environment. In particular, the control child is
+pinned to `0` rather than inheriting a cap that would mask the uncapped growth it is meant to
+observe.
 
-Both children assert internally and exit non-zero on failure. Linux-only (uses `/proc/self/exe`). -/
+Each child asserts internally and exits non-zero on failure. The test is CUDA- and Linux-only; the
+CPU stub has no reuse cache, and the subprocess launch uses `/proc/self/exe`. -/
 def runCacheCapTest : IO Unit := do
   IO.println "== cuda block-cache byte-cap (fork test) =="
+  let stats ← Buffer.allocatorStats
+  if stats.deviceTotalBytes == 0 then
+    IO.println "  skipped: the CPU stub has no device reuse cache"
+    return
   let self : System.FilePath := "/proc/self/exe"
   if !(← self.pathExists) then
     IO.println "  skipped: no /proc/self/exe (fork test is Linux-only)"
     return
   -- Always set the cap explicitly in the child's environment so it never inherits the parent's
   -- `TORCHLEAN_CUDA_CACHE_CAP_BYTES`; the control run pins it to "0" (unbounded) rather than unset.
-  let fork (cap : String) : IO IO.Process.Output := do
+  let fork (cap : String) (expectedCap : UInt64) : IO IO.Process.Output := do
     let env := #[
       ("TORCHLEAN_CUDA_CACHE_PROBE", some "cache-cap"),
-      ("TORCHLEAN_CUDA_CACHE_CAP_BYTES", some cap)
+      ("TORCHLEAN_CUDA_CACHE_CAP_BYTES", some cap),
+      ("TORCHLEAN_CUDA_CACHE_EXPECTED_CAP_BYTES", some (toString expectedCap))
     ]
     IO.Process.output { cmd := self.toString, args := #[], env := env }
   -- capped: a 1 MiB cap bounds 8 MiB of returns.
-  let capped ← fork "1048576"
+  let capped ← fork "1048576" 1048576
   if capped.exitCode != 0 then
     throw <| IO.userError
       s!"block-cache cap: capped child failed (exit {capped.exitCode}); stderr:\n{capped.stderr}"
   IO.println "  capped: 8 MiB of returns bounded to a 1 MiB cache ✓"
   -- control: cap explicitly 0 (unbounded), so the same returns all stay cached, the behaviour the
   -- cap exists to bound; the explicit 0 keeps a parent-set cap from masking it.
-  let control ← fork "0"
+  let control ← fork "0" 0
   if control.exitCode != 0 then
     throw <| IO.userError
       s!"block-cache cap: control child failed (exit {control.exitCode}); stderr:\n{control.stderr}"
@@ -538,13 +543,13 @@ def runCacheCapTest : IO Unit := do
   -- malformed: rejected outright by the strict parser, so the cache stays unbounded. A
   -- prefix-parsing reader would take the leading "1" as a one-byte cap and cache nothing; the
   -- child asserts the control (fully cached) outcome instead.
-  let malformed ← fork "1MiB"
+  let malformed ← fork "1MiB" 0
   if malformed.exitCode != 0 then
     throw <| IO.userError
       s!"block-cache cap: malformed-value child failed (exit {malformed.exitCode}); stderr:\n{malformed.stderr}"
   IO.println "  malformed: non-numeric cap rejected, cache stays unbounded ✓"
   -- overflow: past the native word, rejected rather than truncated or saturated.
-  let overflow ← fork "99999999999999999999999999"
+  let overflow ← fork "99999999999999999999999999" 0
   if overflow.exitCode != 0 then
     throw <| IO.userError
       s!"block-cache cap: overflow-value child failed (exit {overflow.exitCode}); stderr:\n{overflow.stderr}"

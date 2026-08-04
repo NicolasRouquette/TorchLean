@@ -189,9 +189,9 @@ show that the proposition-level alpha and alpha-beta step functions satisfy
 step rejects phase choices inconsistent with the current IBP interval.
 
 ```
-#check NN.MLTheory.CROWN.CrownSoundness.crown_checker_encloses_semantics
-#check NN.MLTheory.CROWN.AlphaCrownTransferSoundness.alphaCrown_transfer_sound
-#check NN.MLTheory.CROWN.AlphaCrownTransferSoundness.alphaBetaCrown_transfer_sound
+#check NN.MLTheory.CROWN.Graph.CrownCertSoundness.crown_checker_encloses_semantics
+#check NN.MLTheory.CROWN.Graph.AlphaCrownTransferSoundness.alphaCrown_transfer_sound
+#check NN.MLTheory.CROWN.Graph.AlphaCrownTransferSoundness.alphaBetaCrown_transfer_sound
 ```
 
 These theorems should not be confused with the JSON node-certificate checkers:
@@ -205,9 +205,61 @@ data. A serialized interval may be wider than the recomputed interval but may no
 Affine replay data must match exactly at the binary32 level. The alpha-beta checker also validates
 branch-vector lengths, entries, and phase consistency.
 
-There is currently no theorem that turns acceptance of either executable checker into
-`CrownCertLocalOK`. Checker acceptance is reproducible binary32 replay evidence, not by itself an
-instance of `crown_checker_encloses_semantics`.
+The shared JSON boundary validates input regions before replay begins. Endpoint boxes require
+finite arrays of the declared dimension with `lo[i] <= hi[i]`; center-radius boxes additionally
+require a finite nonnegative radius. Incomplete or mixed schemas are rejected. Artifact formats
+that prescribe endpoints, including the alpha-beta-CROWN leaf format, request that exact schema
+rather than accepting the alternate center-radius notation.
+
+The final decisions are `CROWNNodeCert.certificateAccepts` and
+`CROWNNodeCertAlphaBeta.AlphaBetaCROWNNodeCertificate.accepts`. Their soundness theorems prove that
+acceptance supplies `CrownCertLocalOK` for the exact `IEEE32Exec` replay function used by the
+checker.
+
+```
+#check NN.Verification.CROWNNodeCert.certificateAccepts_eq_true
+#check NN.Verification.CROWNNodeCertAlphaBeta.AlphaBetaCROWNNodeCertificate.accepts_eq_true
+```
+
+This closes the structural replay boundary; it does not identify binary32 execution with the
+real-valued semantics of `crown_checker_encloses_semantics`. A final real enclosure still requires
+the transfer theorem's hypotheses together with a finite-precision refinement argument for the
+operations in the accepted graph.
+
+# Directed Arithmetic In The Executable Pass
+
+The graph engine does not assume that every scalar type can safely evaluate every interval rule.
+`BoundOps` supplies executable lower and upper addition, subtraction, and multiplication.
+`LawfulBoundOps` is the corresponding proof interface: it interprets each endpoint as a real
+number and proves that the lower operation is below exact arithmetic and the upper operation is
+above it. Sound arithmetic lemmas require this second interface. `NonlinearBoundOps` supplies
+executable interval transfers for operations such as division, square root, exponential, logarithm,
+and layer normalization. A successful computation is not itself a theorem. The separate
+`LawfulNonlinearBoundOps` class proves that every returned interval encloses the corresponding real
+operation; sound entrypoints must require this class. A transfer returns `none` when the scalar
+backend has no finite implementation for that operation.
+
+`ℝ` and `FP32` have lawful nonlinear instances. The `FP32` proofs use its exact-real floor and
+ceiling rounding theorems. `IEEE32Exec` instead states finite-path soundness in its IEEE semantics modules, where
+overflow, infinities, and NaNs can be handled explicitly. Its directed binary32 division and square
+root are proved, but executable exponential is not yet proved to enclose real exponentiation. An
+IBP node using exponential therefore remains unresolved under that instance. Host `Float` widens
+basic binary64 arithmetic by one adjacent representable value, but it has no global
+`LawfulBoundOps` instance and makes no enclosure claim for the host transcendental library.
+Sigmoid, tanh, sine, and cosine can still use their global codomain bounds when a sharper transfer
+is unavailable.
+
+When the IBP pass has a valid nonlinear box but no directed affine relaxation, forward CROWN keeps
+the box as a constant affine bound. Objective-dependent backward CROWN carries affine coefficients
+through algebraic rewrites. Over the reals those rewrites are exact; over rounded execution they
+need a separate runtime-approximation theorem. A printed floating-point backward-CROWN result is
+therefore computational evidence until that bridge is supplied.
+
+The first-derivative interval pass is seeded. `runDirectionalDerivative` propagates a point or
+interval of input directions, so coordinate vectors give partial-derivative bounds without a
+second operator traversal. `runFirstDerivative1D` is the scalar-input specialization and rejects a
+non-scalar input box. Both entrypoints use the same local transfer function; their supported
+operators cannot drift apart. The current second-derivative pass remains one-dimensional.
 
 # From Bounds To A Robustness Claim
 
@@ -276,7 +328,7 @@ objects:
 - `digits` and `digits-train-certify` run the prepared sklearn-digits robustness paths; one checks
   supplied weights and the other trains before compiling and reporting bounds.
 - the three `twostage-*` commands implement the Lyapunov workflows described in the two-stage
-  chapter, with distinct external-oracle, hybrid, and all-in-Lean boundaries.
+  chapter, with distinct external-producer, hybrid, and all-in-Lean boundaries.
 
 `lake exe verify -- list` is the authoritative command inventory. A successful run establishes the
 acceptance predicate or reported computation documented for that command; it does not merge these

@@ -228,8 +228,8 @@ at indices `(c,p,q)` and comparing the runtime read (in `R`) against the spec re
 -/
 lemma approx_padded_input_read
     {inC inH inW padding : Nat}
-    {xS : Spec.MultiChannelImage inC inH inW ℝ}
-    {xR : Spec.MultiChannelImage inC inH inW R}
+    {xS : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))}
+    {xR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar)))}
     {epsX : ℝ}
     (hx : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsX)
     (c : Fin inC) (p q : Nat) :
@@ -311,7 +311,7 @@ def conv2dPointBound
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3)
-    (inputR : Spec.MultiChannelImage inC inH inW R)
+    (inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar))))
     (epsK epsB epsX : ℝ)
     (out_ch : Fin outC) (i : Fin (conv2dOutH inH kH stride padding)) (j : Fin (conv2dOutW inW kW
       stride padding)) :
@@ -355,10 +355,10 @@ def conv2dBoundTensor
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3)
-    (inputR : Spec.MultiChannelImage inC inH inW R)
+    (inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar))))
     (epsK epsB epsX : ℝ) :
-    Spec.MultiChannelImage outC (conv2dOutH inH kH stride padding) (conv2dOutW inW kW stride
-      padding) ℝ :=
+    Spec.Tensor ℝ (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
+      padding) .scalar))) :=
   Tensor.dim (fun out_ch =>
     Tensor.dim (fun i =>
       Tensor.dim (fun j =>

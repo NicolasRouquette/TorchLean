@@ -465,11 +465,10 @@ private lemma abs_residual_le (hlam : 0 < lam) (S : Dataset (n + 1) (BoundedExam
 /-!
 ## Main theorem: deterministic replace-one uniform stability
 
-The next theorem is the headline result of this file. We increase the heartbeat limit because the
-proof contains a fair amount of `simp`/`ring`/`field_simp`-style arithmetic bookkeeping.
+The next theorem is the headline result of this file. Its proof combines the parameter-sensitivity
+and prediction-loss bounds established above.
 -/
 
-set_option maxHeartbeats 1000000 in
 /--
 **Uniform stability of 1D ridge regression (bounded inputs, squared loss).**
 

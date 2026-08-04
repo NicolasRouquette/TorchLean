@@ -58,7 +58,6 @@ variable {rnd : ℝ → ℤ} [NeuralValidRndToNearest rnd]
 
 local notation "R" => TorchLean.Floats.NF β fexp rnd
 
-set_option maxHeartbeats 8000000
 
 private lemma foldl_finRange3_eq_flat_foldl
     {γ : Type} [Zero γ] [Add γ] {inC kH kW : Nat} (term : Fin inC × Fin kH × Fin kW → γ) :
@@ -215,7 +214,7 @@ private lemma mkInputIdx?_2d
 private lemma conv_input_val_eq_padded
     {α : Type} [Context α]
     {inC inH inW stride padding : Nat}
-    (img : Spec.MultiChannelImage inC inH inW α)
+    (img : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
     (c : Fin inC) (out_i out_j di dj : Nat) :
     (match Spec.Private.mkInputIdx? [out_i, out_j] [di, dj] [stride, stride] [padding, padding] with
       | none => (0 : α)
@@ -256,7 +255,7 @@ private lemma conv_input_val_eq_padded
       {inC outC kH kW stride padding inH inW : Nat}
       {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
       (layer : Spec.Conv2DSpec inC outC kH kW stride padding α h1 h2 h3)
-      (input : Spec.MultiChannelImage inC inH inW α)
+      (input : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
       (out_ch : Fin outC)
       (i : Fin (conv2dOutH inH kH stride padding))
       (j : Fin (conv2dOutW inW kW stride padding)) :
@@ -299,8 +298,8 @@ theorem approx_conv2d_point
     {kernelS : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {kernelR : Tensor R (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {biasS : Tensor ℝ (.dim outC .scalar)} {biasR : Tensor R (.dim outC .scalar)}
-    {inputS : Spec.MultiChannelImage inC inH inW ℝ}
-    {inputR : Spec.MultiChannelImage inC inH inW R}
+    {inputS : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))}
+    {inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar)))}
     {epsK epsB epsX : ℝ}
     (hK : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) kernelS kernelR
       epsK)
@@ -683,8 +682,8 @@ theorem approxT_conv2d_spec
     {kernelS : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {kernelR : Tensor R (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
     {biasS : Tensor ℝ (.dim outC .scalar)} {biasR : Tensor R (.dim outC .scalar)}
-    {inputS : Spec.MultiChannelImage inC inH inW ℝ}
-    {inputR : Spec.MultiChannelImage inC inH inW R}
+    {inputS : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))}
+    {inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar)))}
     {epsK epsB epsX : ℝ}
     (hK : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) kernelS kernelR
       epsK)

@@ -95,7 +95,7 @@ $$`
   +(\widehat W-W)(\widehat x-x).
 `
 
-Now add the local multiplication error $`\rho_{\rm mul}` and the rounding introduced by each
+Add the local multiplication error $`\rho_{\rm mul}` and the rounding introduced by each
 accumulation.
 For a fixed-left dot product, a conservative recurrence is
 
@@ -150,7 +150,7 @@ $$`
      {\sum_k\exp(z_k-\max_j z_j)}.
 `
 
-Now every exponent input is nonpositive, the denominator is at least one, and the output lies in
+Every exponent input is nonpositive, the denominator is at least one, and the output lies in
 $`[0,1]`. Those range facts control the local Lipschitz and rounding terms.
 
 Layer normalization has a similar chain:

@@ -6,9 +6,10 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Common
+public import NN.API.Loss
 public import NN.API.Macros
-public import NN.API.Public.TensorPack
+public import NN.API.Tensor
+public import NN.API.TensorPack
 public import NN.MLTheory.CROWN.Core
 public import NN.MLTheory.CROWN.Graph
 public import NN.Runtime.PyTorch.Import.Core
@@ -50,7 +51,6 @@ namespace NN.Verification.Robustness.Digits
 
 open _root_.Spec
 open _root_.Spec.Tensor
-open NN.API
 
 open NN.MLTheory.CROWN.Graph
 open NN.MLTheory.CROWN
@@ -191,11 +191,11 @@ def trainerArgs (opts : TrainCertifyOpts) : Array String :=
 
 /-- TorchLean program for the linear classifier $y=Wx+b$. -/
 def classifier {α : Type} [Context α] [DecidableEq Shape] :
-    TorchLean.Program α (paramShapes ++ [xShape]) yShape :=
+    TorchLean.Runtime.Program α (paramShapes ++ [xShape]) yShape :=
   fun {m} _ _ =>
     fun w b x =>
-      (TorchLean.linear (m := m) (α := α) (inDim := inDim) (outDim := outDim) w b x
-        : m (TorchLean.RefTy (m := m) (α := α) yShape))
+      (TorchLean.Ops.linear (m := m) (α := α) (inDim := inDim) (outDim := outDim) w b x
+        : m (TorchLean.Runtime.RefTy (m := m) (α := α) yShape))
 
 /-- Load linear classifier weights exported from PyTorch into a typed `LinearSpec`. -/
 def loadWeights (path : String) : IO (Spec.LinearSpec Float inDim outDim) := do
@@ -256,17 +256,17 @@ Run the certified-accuracy evaluation once, under a chosen scalar backend `α`.
 This compiles the linear classifier to the verifier IR, then checks each example's $L^\infty$ box using
 IBP and a simple affine pass.
 -/
-def runOnce {α : Type} [Semantics.Scalar α] [BoundOps α] [DecidableEq Shape] [ToString α]
-    [Runtime.Scalar α] (opts : DigitsOpts) : IO DigitsReport := do
-  let cast : Float → α := Runtime.ofFloat
+def runOnce {α : Type} [_root_.Context α] [BoundOps α] [DecidableEq Shape] [ToString α]
+    [TorchLean.Runtime.FromFloat α] (opts : DigitsOpts) : IO DigitsReport := do
+  let cast : Float → α := TorchLean.Runtime.ofFloat
   let linF ← loadWeights opts.weights
   let examples0 ← loadDataset opts.dataset
   let examples := examples0.take opts.max
 
-  let params : NN.API.TorchLean.TensorPack α paramShapes :=
+  let params : _root_.TorchLean.TensorPack α paramShapes :=
     tensorpack!
-      (NN.API.Common.castTensor cast linF.weights),
-      (NN.API.Common.castTensor cast linF.bias)
+      (TorchLean.Tensor.castFloat cast linF.weights),
+      (TorchLean.Tensor.castFloat cast linF.bias)
 
   let compiled ←
     match NN.Verification.TorchLean.compileForward
@@ -287,10 +287,10 @@ def runOnce {α : Type} [Semantics.Scalar α] [BoundOps α] [DecidableEq Shape] 
     report := { report with total := report.total + 1 }
 
     let yF : Tensor Float yShape := Spec.linearSpec (α := Float) linF xF
-    if (API.TorchLean.Metrics.argmax? (α := Float) (n := outDim) yF).map Fin.val = some yNat then
+    if (TorchLean.Metrics.argmax? (α := Float) (n := outDim) yF).map Fin.val = some yNat then
       report := { report with nominalOk := report.nominalOk + 1 }
 
-    let x0 : Tensor α xShape := NN.API.Common.castTensor cast xF
+    let x0 : Tensor α xShape := TorchLean.Tensor.castFloat cast xF
     let loX := Tensor.clampSpec (Tensor.subSpec x0 rad) (0 : α) 1
     let hiX := Tensor.clampSpec (Tensor.addSpec x0 rad) (0 : α) 1
     let xB : FlatBox α :=
@@ -344,10 +344,10 @@ This is wired into `lake exe verify -- digits`.
 def main (args : List String) : IO Unit := do
   IO.println "== TorchLean digits certified robustness =="
   let (dtype, rest) ←
-    match NN.API.DType.parseAndStrip args with
+    match TorchLean.Runtime.DType.parseAndStrip args with
     | .ok v => pure v
     | .error msg => throw <| IO.userError msg
-  NN.API.DType.log dtype
+  TorchLean.Runtime.DType.log dtype
   let opts ←
     match parseArgs rest with
     | .ok o => pure o
@@ -367,10 +367,10 @@ report from the checked artifacts.
 def mainTrainThenCertify (args : List String) : IO Unit := do
   IO.println "== TorchLean digits train → compile → certify =="
   let (dtype, rest) ←
-    match NN.API.DType.parseAndStrip args with
+    match TorchLean.Runtime.DType.parseAndStrip args with
     | .ok v => pure v
     | .error msg => throw <| IO.userError msg
-  NN.API.DType.log dtype
+  TorchLean.Runtime.DType.log dtype
   let opts ←
     match parseTrainCertifyArgs rest with
     | .ok o => pure o

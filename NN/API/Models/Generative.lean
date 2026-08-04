@@ -6,11 +6,11 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
-public import NN.API.Tensor.Views
+public import NN.API.Seeded
+public import NN.API.Tensor
 
 /-!
-# Generative Model Helpers (API)
+# Generative Models
 
 Config-style constructors for runnable generative examples.
 
@@ -20,8 +20,8 @@ convolutional encoders/decoders without changing the command-line/data-loading s
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
+
 
 open Spec Tensor
 
@@ -82,7 +82,7 @@ without every example needing to carry its own flattening proof adapters.
 def flattenBatchPrefix {α : Type} [Inhabited α] (cfg : VectorGenerativeConfig) {source : Spec.Shape}
     (hData : cfg.dataDim ≤ Spec.Shape.size source)
     (x : Spec.Tensor α (.dim cfg.batch source)) : Spec.Tensor α (vectorDataShape cfg) :=
-  _root_.NN.API.tensor.flattenBatchPrefix cfg.batch cfg.dataDim hData x
+  TorchLean.Tensor.flattenBatchPrefix cfg.batch cfg.dataDim hData x
 
 /-- Supervised reconstruction sample: target equals input. -/
 def reconstructionSample {α : Type} (cfg : VectorGenerativeConfig)
@@ -215,5 +215,4 @@ def vectorGanDiscriminator (cfg : VectorGenerativeConfig) :
 end models
 end nn
 
-end API
-end NN
+end TorchLean

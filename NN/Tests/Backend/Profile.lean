@@ -35,6 +35,9 @@ def expectCapsules (tag : String) (got expected : List String) : IO Unit := do
 def expectOp (tag : String) (kind : NN.IR.OpKind) (expected : Option BackendOp) : IO Unit := do
   expect tag (NN.Backend.IR.op? kind == expected)
 
+def scalarHardMask : NN.IR.HardMask :=
+  { shape := Spec.Shape.scalar, allowed := #[true] }
+
 def expectContains (tag needle haystack : String) : IO Unit := do
   expect tag (haystack.contains needle)
 
@@ -72,35 +75,44 @@ def fuzzedReluCapsule : KernelCapsule :=
   { Reference.relu with
     name := "reference.relu_fuzzed"
     valueContract :=
-      { claim := .valueRefinement .relu "test-only ReLU value contract"
+      { claim := .valueRefinement .relu
         summary := "Test-only fuzz-backed value contract."
         evidence := .fuzzOracle "profile-test-fuzz-oracle" }
     notes := "Test-only capsule used to check strict policy rejection of fuzz-backed evidence." }
 
-def provedDescriptor (claim : ContractClaim) : ContractDescriptor :=
-  { claim
-    summary := "Test proposition."
-    evidence := .theorem "True.intro" True True.intro }
-
-def provedReluCapsule : KernelCapsule :=
+def replacementReluCapsule : KernelCapsule :=
   { Reference.relu with
-    name := "proved.relu"
-    trustLevel := .verified
-    shapeContract := provedDescriptor (.shapeSafety .relu)
-    layoutContract := provedDescriptor (.layoutCompatibility .relu .canonicalTensor)
-    valueContract := provedDescriptor (.valueRefinement .relu "test proposition")
-    vjpContract := provedDescriptor (.vjpRefinement .relu "test proposition" .torchLeanTape) }
+    name := "replacement.relu" }
 
-def malformedProvedReluCapsule : KernelCapsule :=
-  { provedReluCapsule with
-    name := "proved.relu_malformed"
-    shapeContract := provedDescriptor (.valueRefinement .relu "wrong obligation kind") }
+def malformedReluCapsule : KernelCapsule :=
+  { Reference.relu with
+    name := "reference.relu_malformed"
+    shapeContract := ContractDescriptor.tested
+      (.valueRefinement .relu)
+      "Deliberately mismatched descriptor for contract-alignment testing."
+      "NN.Tests.Backend.Profile" }
 
 def forwardOnlyReluCapsule : KernelCapsule :=
   { Reference.relu with
     name := "reference.relu_forward_only"
     vjpMode := .none
-    vjpContract := provedDescriptor (.vjpRefinement .relu "no VJP" .none) }
+    vjpContract := ContractDescriptor.vjpUnavailable
+      .relu "This test capsule intentionally has no VJP." }
+
+/-- Metadata for the proof-carrying planner regression below. -/
+def verifiedReluCapsule : KernelCapsule :=
+  { forwardOnlyReluCapsule with
+    name := "verified.relu"
+    trustLevel := .verified }
+
+/-- A small typed implementation used to check that verified planning retains semantic evidence. -/
+def verifiedReluKernel : ProofCarryingKernel Int Int .relu (fun x => max x 0) :=
+  { capsule := verifiedReluCapsule
+    implementation := fun x => max x 0
+    operation_matches := by rfl
+    trust_verified := by rfl
+    contracts_aligned := by decide
+    refines := fun _ => rfl }
 
 /-- Test capsule whose declared provider does not match the CPU random executor. -/
 def mismatchedRandomCapsule : KernelCapsule :=
@@ -250,13 +262,14 @@ def run : IO Unit := do
   expectPlanningFails "duplicate capsule module names are rejected"
     duplicateModuleProfile [.relu]
   let replacementModule : Registry.CapsuleModule :=
-    { name := "reference", capsules := [provedReluCapsule] }
+    { name := "reference", capsules := [replacementReluCapsule] }
   let replacementProfile :=
     BackendProfile.checkedCpu.withCapsuleModules [replacementModule]
   expect "same-name capsule modules are replaced instead of duplicated"
     ((replacementProfile.capsuleModules.filter (fun module => module.name == "reference")).length == 1)
   let replaced ← planOrThrow "replacement capsule module" replacementProfile [.relu]
-  expectCapsules "replacement capsule module is selected" replaced.capsuleNames ["proved.relu"]
+  expectCapsules "replacement capsule module is selected" replaced.capsuleNames
+    ["replacement.relu"]
   let inferenceOpts : Runtime.Autograd.Torch.Options := { trackGradients := false }
   let inferenceProfile ← profileOrThrow "no-grad default profile" inferenceOpts
   expect "no-grad runtime planning requests no VJP"
@@ -275,6 +288,8 @@ def run : IO Unit := do
     (.randUniform 0) (some .randUniform)
   expectOp "IR permute maps to exact permute capsule"
     (.permute [1, 0]) (some .permute)
+  expectOp "IR hard-masked softmax keeps its exact capsule identity"
+    (.hardMaskedSoftmax scalarHardMask) (some .hardMaskedSoftmax)
   expectOp "IR input has no backend capsule" .input none
 
   expect "cpu availability rejects external device capsule"
@@ -311,10 +326,28 @@ def run : IO Unit := do
         s!"forward-only differentiable capsule unexpectedly planned as {forwardOnly.capsuleNames}"
   | .error _ => pure ()
   match planOps { device := .cpu, assurance := .verified }
-      [malformedProvedReluCapsule] [.relu] with
+      [malformedReluCapsule] [.relu] with
   | .ok malformed =>
       throw <| IO.userError
         s!"malformed capsule unexpectedly planned as {malformed.capsuleNames}"
+  | .error _ => pure ()
+  match planOps { device := .cpu, assurance := .verified, vjpMode := .none }
+      [verifiedReluCapsule] [.relu] with
+  | .ok erased =>
+      throw <| IO.userError
+        s!"erased verified metadata unexpectedly planned as {erased.capsuleNames}"
+  | .error _ => pure ()
+  let verifiedConfig : ExecutionConfig :=
+    { device := .cpu, assurance := .verified, vjpMode := .none }
+  match planVerifiedKernel verifiedConfig [verifiedReluKernel] with
+  | .ok planned =>
+      expect "proof-carrying planner did not execute the indexed specification"
+        (planned.run (-3) == 0 && planned.run 4 == 4)
+  | .error msg =>
+      throw <| IO.userError s!"proof-carrying planner rejected a verified kernel: {msg}"
+  match planVerifiedKernel { verifiedConfig with assurance := .checked } [verifiedReluKernel] with
+  | .ok _ =>
+      throw <| IO.userError "proof-carrying planner accepted a non-verified assurance policy"
   | .error _ => pure ()
   match planOps { device := .cpu } [fuzzedReluCapsule] [.relu] with
   | .ok fuzzedRelu =>
@@ -324,15 +357,6 @@ def run : IO Unit := do
         (fuzzedRelu.acceptedBy AssurancePolicy.checked)
   | .error msg =>
       throw <| IO.userError s!"fuzzed relu policy test: planning failed: {msg}"
-
-  match planOps
-      { device := .cpu, assurance := .verified }
-      [provedReluCapsule] [.relu] with
-  | .ok provedRelu =>
-    expect "strict gate accepts proof-bearing evidence"
-        (provedRelu.acceptedBy AssurancePolicy.verified)
-  | .error msg =>
-      throw <| IO.userError s!"proved relu policy test: planning failed: {msg}"
 
   let acceptedCpuGraph ← acceptedGraphOrThrow "checked cpu graph acceptance"
     BackendProfile.checkedCpu tinyReluGraph
@@ -361,7 +385,8 @@ def run : IO Unit := do
   let exactOps :=
     [ BackendOp.matmul, .linear, .mseLoss, .add, .sub, .mul, .scale, .abs, .sqrt
     , .clamp, .max, .min, .relu, .gelu, .sigmoid, .tanh
-    , .softmax, .softplus, .exp, .log, .inv, .safeLog, .logSoftmax, .reduceSum
+    , .softmax, .hardMaskedSoftmax, .softplus, .exp, .log, .inv, .safeLog, .logSoftmax
+    , .reduceSum
     , .reduceMean, .randUniform, .bernoulliMask, .reshape, .permute, .broadcast
     , .concat, .slice, .gather, .scatterAdd, .layerNorm, .batchNorm, .conv
     , .convTranspose, .maxPool, .smoothMaxPool, .avgPool ]
@@ -370,7 +395,7 @@ def run : IO Unit := do
   let exactNativeCudaCapsules := exactOps.map fun op => s!"native_cuda.{op.name}"
   let cpuOnlyOps := [BackendOp.sin, .cos]
   let profileOps :=
-    [ BackendOp.matmul, .relu, .softmax, .layerNorm, .batchNorm
+    [ BackendOp.matmul, .relu, .softmax, .hardMaskedSoftmax, .layerNorm, .batchNorm
     , .conv, .convTranspose, .maxPool, .smoothMaxPool, .avgPool, .mseLoss
     , .scaledDotProductAttention ]
 
@@ -379,6 +404,7 @@ def run : IO Unit := do
     [ "reference.matmul"
     , "reference.relu"
     , "reference.softmax"
+    , "reference.hard_masked_softmax"
     , "reference.layer_norm"
     , "reference.batch_norm"
     , "reference.conv"
@@ -397,12 +423,12 @@ def run : IO Unit := do
   expectCapsules "checked cpu cpu-only capsules" cpuOnly.capsuleNames
     ["reference.sin", "reference.cos"]
 
-  let provedModule : Registry.CapsuleModule :=
-    { name := "profile-test-proved", capsules := [provedReluCapsule] }
-  let extendedCpu := BackendProfile.checkedCpu.withCapsuleModules [provedModule]
+  let replacementModule : Registry.CapsuleModule :=
+    { name := "profile-test-replacement", capsules := [replacementReluCapsule] }
+  let extendedCpu := BackendProfile.checkedCpu.withCapsuleModules [replacementModule]
   let extendedPlan ← planOrThrow "extended capsule modules" extendedCpu [.relu, .matmul]
   expectCapsules "extended modules preserve model-independent preference" extendedPlan.capsuleNames
-    ["proved.relu", "reference.matmul"]
+    ["replacement.relu", "reference.matmul"]
 
   let reportOps := exactOps ++ [.scaledDotProductAttention]
   match BackendProfile.checkedCpu.planReport reportOps with
@@ -423,6 +449,7 @@ def run : IO Unit := do
     [ "native_cuda.matmul"
     , "native_cuda.relu"
     , "native_cuda.softmax"
+    , "native_cuda.hard_masked_softmax"
     , "native_cuda.layer_norm"
     , "native_cuda.batch_norm"
     , "native_cuda.conv"
@@ -431,7 +458,7 @@ def run : IO Unit := do
     , "native_cuda.smooth_max_pool"
     , "native_cuda.avg_pool"
     , "native_cuda.mse_loss"
-    , "native_cuda.flash_attention"
+    , "torchlean.composed_attention"
     ]
   expect "checked cuda has no trusted external" (!cuda.hasTrustedExternal)
 
@@ -447,7 +474,7 @@ def run : IO Unit := do
       expectContains "checked cuda report names exact smooth max pool"
         "smooth_max_pool: native_cuda.smooth_max_pool" report
       expectContains "checked cuda report names exact attention"
-        "scaled_dot_product_attention: native_cuda.flash_attention" report
+        "scaled_dot_product_attention: torchlean.composed_attention" report
   | .error msg =>
       throw <| IO.userError s!"checked cuda report failed: {msg}"
 

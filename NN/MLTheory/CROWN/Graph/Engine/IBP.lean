@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+public import NN.IR.HardMask
 public import NN.MLTheory.CROWN.Graph.Engine.Base
 
 /-!
@@ -27,6 +28,7 @@ open NN.IR
 
 variable {α : Type} [Context α]
 variable [BoundOps α]
+variable [NonlinearBoundOps α]
 
 open BoundOps
 
@@ -74,7 +76,10 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     | _ => boxes
   | .sqrt =>
     match node.parents with
-    | p1 :: _ => boxes.set! id (some (boxSqrt (α := α) (get! p1)))
+    | p1 :: _ =>
+      match boxSqrt? (α := α) (get! p1) with
+      | some B => boxes.set! id (some B)
+      | none => boxes
     | _ => boxes
   | .inv =>
     match node.parents with
@@ -494,36 +499,19 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
   | .sum =>
     match node.parents with
     | p1 :: _ =>
-      let Xin := get! p1
-      let loVal := Spec.Tensor.sumSpec Xin.lo
-      let hiVal := Spec.Tensor.sumSpec Xin.hi
-      let loT := Spec.fill (α := α) loVal (.dim 1 .scalar)
-      let hiT := Spec.fill (α := α) hiVal (.dim 1 .scalar)
-      boxes.set! id (some { dim := 1, lo := loT, hi := hiT })
+      boxes.set! id (some (boxSum (α := α) (get! p1)))
     | _ => boxes
   | .mseLoss =>
     match node.parents with
     | p1 :: p2 :: _ =>
       let Y := get! p1
       let T := get! p2
-      if hdim : Y.dim = T.dim then
-        let Thi := castDimScalar (α:=α) (n:=T.dim) (n':=Y.dim) (h:=hdim.symm) T.hi
-        let Tlo := castDimScalar (α:=α) (n:=T.dim) (n':=Y.dim) (h:=hdim.symm) T.lo
-        let diff : FlatBox α :=
-          { dim := Y.dim
-            lo := Tensor.subSpec Y.lo Thi
-            hi := Tensor.subSpec Y.hi Tlo }
+      if Y.dim = T.dim then
+        let diff := box_sub (α := α) Y T
         let sq := boxSquare (α:=α) diff
-        let n := sq.dim
-        if hn : n > 0 then
-          let nA : α := (n : Nat)
-          let loVal := (Spec.Tensor.sumSpec sq.lo) / nA
-          let hiVal := (Spec.Tensor.sumSpec sq.hi) / nA
-          let loT := Spec.fill (α:=α) loVal (.dim 1 .scalar)
-          let hiT := Spec.fill (α:=α) hiVal (.dim 1 .scalar)
-          boxes.set! id (some { dim := 1, lo := loT, hi := hiT })
-        else
-          boxes
+        match boxMean? (α := α) sq with
+        | some mean => boxes.set! id (some mean)
+        | none => boxes
       else boxes
     | _ => boxes
   | .conv2d .. =>
@@ -556,10 +544,9 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     match node.parents with
     | p1 :: _ =>
       let Xin := get! p1
-      -- exp is monotone increasing: apply to lo and hi
-      let lo := Tensor.expSpec Xin.lo
-      let hi := Tensor.expSpec Xin.hi
-      boxes.set! id (some { dim := Xin.dim, lo := lo, hi := hi })
+      match boxUnaryEnclosure? (α := α) NonlinearBoundOps.expBounds Xin with
+      | some B => boxes.set! id (some B)
+      | none => boxes
     | _ => boxes
   | .log =>
     match node.parents with
@@ -572,9 +559,9 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
       if (List.finRange Xin.dim).all (fun i =>
           match flo i with
           | .scalar v => decide (Numbers.zero < v)) then
-        let lo := Tensor.logSpec Xin.lo
-        let hi := Tensor.logSpec Xin.hi
-        boxes.set! id (some { dim := Xin.dim, lo := lo, hi := hi })
+        match boxUnaryEnclosure? (α := α) NonlinearBoundOps.logBounds Xin with
+        | some B => boxes.set! id (some B)
+        | none => boxes
       else
         boxes
     | _ => boxes
@@ -607,15 +594,9 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
       let s := node.outShape
       if axis = Spec.Shape.rank s - 1 then
         if hdim : Xin.dim = s.size then
-          let sFlat : Shape := .dim Xin.dim .scalar
-          have hsize : sFlat.size = s.size := by
-            simp [sFlat, Spec.Shape.size, hdim]
-          let xLo : Tensor α s := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=s) Xin.lo hsize
-          let xHi : Tensor α s := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=s) Xin.hi hsize
-          let (yLoT, yHiT) := ibpLayernormLastTensor (α:=α) (s := s) xLo xHi
-          let flatLo := Tensor.flattenSpec (α:=α) yLoT
-          let flatHi := Tensor.flattenSpec (α:=α) yHiT
-          boxes.set! id (some { dim := s.size, lo := flatLo, hi := flatHi })
+          match ibpLayerNormRange? (α := α) s Xin.dim with
+          | some B => boxes.set! id (some B)
+          | none => boxes
         else boxes
       else boxes
     | _ => boxes
@@ -627,15 +608,34 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
       let s := node.outShape
       if axis = Spec.Shape.rank s - 1 then
         if hdim : Xin.dim = s.size then
-          let sFlat : Shape := .dim Xin.dim .scalar
-          have hsize : sFlat.size = s.size := by
-            simp [sFlat, Spec.Shape.size, hdim]
-          let xLo : Tensor α s := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=s) Xin.lo hsize
-          let xHi : Tensor α s := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=s) Xin.hi hsize
-          let (yLoT, yHiT) := ibpSoftmaxLastTensor (α:=α) (s := s) xLo xHi
-          let flatLo := Tensor.flattenSpec (α:=α) yLoT
-          let flatHi := Tensor.flattenSpec (α:=α) yHiT
-          boxes.set! id (some { dim := s.size, lo := flatLo, hi := flatHi })
+          boxes.set! id (some (ibpSoftmaxRange (α := α) s Xin.dim))
+        else boxes
+      else boxes
+    | _ => boxes
+  | .hardMaskedSoftmax mask =>
+    match node.parents with
+    | p1 :: _ =>
+      let Xin := get! p1
+      let s := node.outShape
+      if hdim : Xin.dim = s.size then
+        if hshape : mask.shape = s then
+          match NN.IR.HardMask.toTensor? mask with
+          | .error _ => boxes
+          | .ok decoded =>
+            let allowed : Tensor Bool s := hshape ▸ decoded
+            let sFlat : Shape := .dim Xin.dim .scalar
+            have hsize : sFlat.size = s.size := by
+              simp [sFlat, Spec.Shape.size, hdim]
+            let xLo : Tensor α s :=
+              Tensor.reshapeSpec (α := α) (s₁ := sFlat) (s₂ := s) Xin.lo hsize
+            let xHi : Tensor α s :=
+              Tensor.reshapeSpec (α := α) (s₁ := sFlat) (s₂ := s) Xin.hi hsize
+            let (yLo, yHi) :=
+              ibpHardMaskedSoftmaxLastTensor (α := α) xLo xHi allowed
+            boxes.set! id <| some
+              { dim := s.size
+                lo := Tensor.flattenSpec (α := α) yLo
+                hi := Tensor.flattenSpec (α := α) yHi }
         else boxes
       else boxes
     | _ => boxes
@@ -644,29 +644,33 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
       match node.parents with
       | p1 :: _ => get! p1
       | _ => get! 0
-    let yB := NN.MLTheory.CROWN.Runtime.Ops.IBP.tanh (α:=α) (n:=Xin.dim) (ofFlatBox Xin)
-    boxes.set! id (some (toFlatBox Xin.dim yB))
+    match boxUnaryEnclosure? (α := α) NonlinearBoundOps.tanhBounds Xin with
+    | some B => boxes.set! id (some B)
+    | none => boxes
   | .sigmoid =>
     let Xin :=
       match node.parents with
       | p1 :: _ => get! p1
       | _ => get! 0
-    let yB := NN.MLTheory.CROWN.Runtime.Ops.IBP.sigmoid (α:=α) (n:=Xin.dim) (ofFlatBox Xin)
-    boxes.set! id (some (toFlatBox Xin.dim yB))
+    match boxUnaryEnclosure? (α := α) NonlinearBoundOps.sigmoidBounds Xin with
+    | some B => boxes.set! id (some B)
+    | none => boxes
   | .sin =>
     let Xin :=
       match node.parents with
       | p1 :: _ => get! p1
       | _ => get! 0
-    let yB := NN.MLTheory.CROWN.Runtime.Ops.IBP.sin (α:=α) (n:=Xin.dim) (ofFlatBox Xin)
-    boxes.set! id (some (toFlatBox Xin.dim yB))
+    match boxUnaryEnclosure? (α := α) NonlinearBoundOps.sinBounds Xin with
+    | some B => boxes.set! id (some B)
+    | none => boxes
   | .cos =>
     let Xin :=
       match node.parents with
       | p1 :: _ => get! p1
       | _ => get! 0
-    let yB := NN.MLTheory.CROWN.Runtime.Ops.IBP.cos (α:=α) (n:=Xin.dim) (ofFlatBox Xin)
-    boxes.set! id (some (toFlatBox Xin.dim yB))
+    match boxUnaryEnclosure? (α := α) NonlinearBoundOps.cosBounds Xin with
+    | some B => boxes.set! id (some B)
+    | none => boxes
 
 /-- Run an IBP pass over the whole graph. Caller seeds inputs via ParamStore.inputBoxes. -/
 def runIBP (g : Graph) (ps : ParamStore α) : Array (Option (FlatBox α)) :=

@@ -6,6 +6,7 @@ import NN.Proofs.Autograd.Tape.Algebra.Soundness
 import NN.Proofs.Autograd.Tape.Algebra.Nodes
 import NN.Proofs.Autograd.Tape.Core.FDeriv
 import NN.Proofs.Autograd.Runtime.Link.BackwardGraph
+import NN.Proofs.Autograd.Runtime.Link.FDeriv
 import NN.Verification.TorchLean.Proved.Public
 import NN.MLTheory.CROWN.Proofs.GraphCertSoundness.Main
 import NN.MLTheory.CROWN.Proofs.GraphRunibpEndToEnd
@@ -13,7 +14,7 @@ import NN.MLTheory.CROWN.Proofs.GraphCrownCertSoundness
 import NN.MLTheory.CROWN.Proofs.GraphAlphaCrownTransferSoundness.Alpha
 import NN.MLTheory.CROWN.Proofs.GraphAlphaCrownTransferSoundness.AlphaBeta
 import NN.Verification.Cert.CROWNNodeCertAlphaBeta
-import NN.MLTheory.CROWN.Lyapunov.Oracle
+import NN.MLTheory.CROWN.Lyapunov.Certificate
 import NN.MLTheory.CROWN.Lyapunov.Verification
 import NN.MLTheory.Optimization.StronglyConvexGD
 import NN.MLTheory.LearningTheory.DifferentialPrivacy.Core
@@ -115,6 +116,20 @@ The analytic hypotheses identify the graph JVP with a Fréchet derivative, and t
 characterized by its inner products.
 :::
 
+:::theorem "autograd_compiled_tape_fderiv" (parent := "autograd_correctness") (lean := "Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_adjoint_fderiv_at")
+For a real algebraic graph at a differentiable execution point, compiling the graph and running the
+exact dense tape returns the full algebraic reverse context. Its input prefix is the adjoint
+Fréchet derivative of graph evaluation applied to the output seed.
+:::
+
+:::proof "autograd_compiled_tape_fderiv"
+The real, environment-free algebraic graph and the analytic graph convert in both directions while
+preserving evaluation, JVPs, and reverse accumulation. The compiled-tape correctness theorem gives
+the full cotangent context; prefix extraction identifies its input block with analytic backprop,
+and {uses "autograd_real_graph_adjoint"}[the analytic graph theorem] identifies that value with the
+adjoint Fréchet derivative.
+:::
+
 :::group "verified_compiler"
 The proved forward compiler from typed TorchLean programs to verifier IR.
 :::
@@ -213,33 +228,40 @@ Split constraints are handled directly. The remaining operations reuse
 :::
 
 :::definition "alpha_beta_node_checker" (parent := "bound_propagation") (lean := "NN.Verification.CROWNNodeCertAlphaBeta.checkAlphaBetaCROWNNodeCertificate")
-The executable checker parses and replays an `IEEE32Exec` node certificate. It corresponds to the
-real-semantic work in {bpref "crown_generic_checker_sound"}[] and
-{bpref "alpha_beta_crown_transfer"}[], but no theorem currently turns checker acceptance into that
-enclosure result.
+The executable checker parses and replays an `IEEE32Exec` node certificate. Its final acceptance
+decision has a proved bridge to the proposition-level local replay condition. Connecting that
+binary32 condition to the real enclosure in {bpref "crown_generic_checker_sound"}[] still requires
+the refinement assumptions for the operations in the graph.
+:::
+
+:::theorem "alpha_beta_node_acceptance" (parent := "bound_propagation") (lean := "NN.Verification.CROWNNodeCertAlphaBeta.AlphaBetaCROWNNodeCertificate.accepts_eq_true")
+Acceptance of the in-memory α/β-CROWN decision implies `CrownCertLocalOK` for the exact
+`IEEE32Exec` replay step used by the checker.
+:::
+
+:::proof "alpha_beta_node_acceptance"
+The checker compares every dependent affine record bit-for-bit. Soundness of the tensor, matrix,
+affine-vector, and optional-record comparisons turns the successful Boolean replay into equality at
+every graph node.
 :::
 
 :::group "proof_applications"
 Selected end-to-end mathematical results and explicit assumptions.
 :::
 
-:::theorem "lyapunov_crown_oracle" (parent := "proof_applications") (lean := "NN.MLTheory.CROWN.Lyapunov.crown_oracle")
-An opaque CROWN witness is assumed to provide bounds for the Lyapunov function and its derivative.
-This declaration is an axiom and appears as an open trust boundary in the graph.
-:::
-
-:::proof "lyapunov_crown_oracle"
-There is no Lean proof body. A future verified checker must replace or discharge this assumption.
+:::definition "lyapunov_certificate_valid" (parent := "proof_applications") (lean := "NN.MLTheory.CROWN.Lyapunov.LyapunovCert.ValidFor")
+A Lyapunov certificate is valid for a pair of functions when its two intervals enclose the function
+and orbital-derivative values throughout the stated region.
 :::
 
 :::theorem "lyapunov_conditions" (parent := "proof_applications") (lean := "NN.MLTheory.CROWN.Lyapunov.Real.lyapunov_conditions")
 Certificate thresholds imply positive Lyapunov values and negative derivatives on the certified
-region, conditional on {uses "lyapunov_crown_oracle"}[the assumed oracle witness].
+region, conditional on {uses "lyapunov_certificate_valid"}[the certificate validity predicate].
 :::
 
 :::proof "lyapunov_conditions"
-The bounds supplied by {uses "lyapunov_crown_oracle"}[the oracle assumption] are compared with the
-certificate thresholds and strengthened to strict sign conditions.
+The enclosures in {uses "lyapunov_certificate_valid"}[the validity hypothesis] are compared with
+the certificate thresholds and strengthened to strict sign conditions.
 :::
 
 :::theorem "gradient_descent_linear_convergence" (parent := "proof_applications") (lean := "Optim.GD.dist_sq_iterate_le_of_q_nonneg")

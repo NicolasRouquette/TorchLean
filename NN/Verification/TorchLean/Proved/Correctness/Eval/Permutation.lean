@@ -39,7 +39,7 @@ theorem evalAt_permute_eq
         (vals := #[DVal.mk (α := α) s x]) (i := 1)
       =
       Except.ok (DVal.mk (α := α) out (hShape ▸ vOut.tensor)) := by
-  simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
   have hPerm' : Graph.permuteDVal (α := α) (v := ⟨s, x⟩) perm = .ok vOut := by
     simpa [DVal.mk] using hPerm

@@ -207,24 +207,6 @@ instance : Inhabited (FlatBox α) where
         exact some { dim := n1, lo := lo, hi := hi }
     else none
 
-/-- Derivative range for `exp` over a value box; `exp' = exp` is monotone. -/
-def derivBoxExp (zB : FlatBox α) : FlatBox α :=
-  { dim := zB.dim, lo := Tensor.expSpec zB.lo, hi := Tensor.expSpec zB.hi }
-
-/-- Derivative range for the positive-domain log rule used by derivative propagation. -/
-def derivBoxLog (zB : FlatBox α) : FlatBox α :=
-  match zB.lo, zB.hi with
-  | .dim flo, .dim fhi =>
-    let lo := Tensor.dim (fun i =>
-      match flo i, fhi i with
-      | .scalar _, .scalar u => Tensor.scalar (Numbers.one / u))
-    let hi := Tensor.dim (fun i =>
-      match flo i, fhi i with
-      | .scalar l, .scalar _ =>
-        let l' := if l > Numbers.epsilon then l else Numbers.epsilon
-        Tensor.scalar (Numbers.one / l'))
-    { dim := zB.dim, lo := lo, hi := hi }
-
 /-- Chain-rule multiplication for derivative intervals. Returns `none` on dimension mismatch. -/
 def chainMul (dZ dF : FlatBox α) : Option (FlatBox α) :=
   box_mul_elem (α:=α) dZ dF
@@ -274,6 +256,38 @@ public def box_sub (B1 B2 : FlatBox α) : FlatBox α :=
       else
         { dim := n1, lo := lo1, hi := hi1 }
 
+/-- Directed lower and upper sums of all coordinates in a flat box. -/
+private def boxSumEndpoints (B : FlatBox α) : α × α :=
+  let loValues := match B.lo with | .dim values => values
+  let hiValues := match B.hi with | .dim values => values
+  let lo := (List.finRange B.dim).foldl (fun acc i =>
+    match loValues i with
+    | .scalar x => BoundOps.addDown acc x) Numbers.zero
+  let hi := (List.finRange B.dim).foldl (fun acc i =>
+    match hiValues i with
+    | .scalar x => BoundOps.addUp acc x) Numbers.zero
+  (lo, hi)
+
+/-- Sum all coordinates of a flat box with directed accumulation. -/
+def boxSum (B : FlatBox α) : FlatBox α :=
+  let (lo, hi) := boxSumEndpoints (α := α) B
+  { dim := 1
+    lo := Spec.fill (α := α) lo (.dim 1 .scalar)
+    hi := Spec.fill (α := α) hi (.dim 1 .scalar) }
+
+/-- Average all coordinates of a nonempty flat box with directed division. -/
+def boxMean? [NonlinearBoundOps α] (B : FlatBox α) : Option (FlatBox α) := do
+  if B.dim = 0 then
+    none
+  else
+    let (lo, hi) := boxSumEndpoints (α := α) B
+    let n : α := B.dim
+    let (meanLo, meanHi) ← NonlinearBoundOps.divBounds lo hi n n
+    pure
+      { dim := 1
+        lo := Spec.fill (α := α) meanLo (.dim 1 .scalar)
+        hi := Spec.fill (α := α) meanHi (.dim 1 .scalar) }
+
 /-- Apply ReLU to both endpoints of a `FlatBox` (monotone activation, so endpoints suffice). -/
 @[expose]
 public def box_relu (B : FlatBox α) : FlatBox α :=
@@ -307,18 +321,152 @@ def boxAbs (B : FlatBox α) : FlatBox α :=
               Tensor.scalar maxAbs)
       { dim := B.dim, lo := lo', hi := hi' }
 
-/-- Componentwise sqrt bounds. Uses the spec semantics `sqrt(max(x,0))`, which is monotone. -/
-def boxSqrt (B : FlatBox α) : FlatBox α :=
-  { dim := B.dim
-    lo := Tensor.sqrtSpec (α := α) B.lo
-    hi := Tensor.sqrtSpec (α := α) B.hi }
+namespace boxUnaryEnclosure
+
+/-- Traverse a finite family without converting its index to an untyped list. -/
+private def traverseFin {β : Type} {n : Nat} (f : Fin n → Option β) : Option (Fin n → β) :=
+  if h : ∀ i, (f i).isSome then
+    some fun i => (f i).get (h i)
+  else
+    none
+
+private theorem traverseFin_eq_some_iff {β : Type} {n : Nat}
+    {f : Fin n → Option β} {g : Fin n → β} :
+    traverseFin f = some g ↔ ∀ i, f i = some (g i) := by
+  unfold traverseFin
+  split_ifs with h
+  · constructor
+    · intro hfg i
+      have : (fun i => (f i).get (h i)) = g := Option.some.inj hfg
+      rw [← this]
+      exact (Option.some_get (h i)).symm
+    · intro hfg
+      congr
+      funext i
+      obtain ⟨_, hi⟩ := Option.eq_some_iff_get_eq.mp (hfg i)
+      exact hi
+  · constructor
+    · simp
+    · intro hfg
+      exfalso
+      apply h
+      intro i
+      simp [hfg i]
+
+end boxUnaryEnclosure
+
+/-- Apply a scalar interval enclosure coordinatewise to a flat box. -/
+def boxUnaryEnclosure? [NonlinearBoundOps α]
+    (enclose : α → α → Option (α × α)) (B : FlatBox α) : Option (FlatBox α) := do
+  let lo := match B.lo with | .dim values => values
+  let hi := match B.hi with | .dim values => values
+  let bounds ← boxUnaryEnclosure.traverseFin fun i =>
+    match lo i, hi i with
+    | .scalar l, .scalar u => enclose l u
+  let lower : Tensor α (.dim B.dim .scalar) :=
+    Tensor.dim fun i => Tensor.scalar (bounds i).1
+  let upper : Tensor α (.dim B.dim .scalar) :=
+    Tensor.dim fun i => Tensor.scalar (bounds i).2
+  pure { dim := B.dim, lo := lower, hi := upper }
+
+/--
+The real value represented by each coordinate of `x` lies between the interpreted endpoints of
+`B`. This is the semantic relation used to connect executable endpoint arithmetic to the real graph
+semantics.
+-/
+def EnclosesReal [LawfulBoundOps α]
+    (B : FlatBox α) (x : Tensor ℝ (.dim B.dim .scalar)) : Prop :=
+  ∀ i,
+    LawfulBoundOps.toReal (FlatBox.getScalar B.lo i) ≤ FlatBox.getScalar x i ∧
+      FlatBox.getScalar x i ≤ LawfulBoundOps.toReal (FlatBox.getScalar B.hi i)
+
+/-- Dimension-aware enclosure of a real vector by a backend box. -/
+def EnclosesRealValue [LawfulBoundOps α] {n : Nat}
+    (B : FlatBox α) (x : Tensor ℝ (.dim n .scalar)) : Prop :=
+  ∃ h : B.dim = n, EnclosesReal B (h.symm ▸ x)
+
+/-- A lawful scalar transfer remains sound when applied coordinatewise to a flat graph box. -/
+theorem boxUnaryEnclosure?_enclosesReal [LawfulBoundOps α] [NonlinearBoundOps α]
+    (f : ℝ → ℝ) (enclose : α → α → Option (α × α))
+    (henclose : UnaryEnclosure (α := α) f enclose) (B : FlatBox α)
+    (x : Tensor ℝ (.dim B.dim .scalar)) (hx : EnclosesReal B x)
+    {out : FlatBox α} (hout : boxUnaryEnclosure? (α := α) enclose B = some out) :
+    EnclosesRealValue out (Tensor.mapSpec f x) := by
+  cases hlo : B.lo with
+  | dim lo =>
+    cases hhi : B.hi with
+    | dim hi =>
+      cases hxv : x with
+      | dim xv =>
+        simp only [boxUnaryEnclosure?, hlo, hhi] at hout
+        obtain ⟨bounds, hbounds, hout⟩ := Option.bind_eq_some_iff.mp hout
+        have hpoint := boxUnaryEnclosure.traverseFin_eq_some_iff.mp hbounds
+        have houtEq :
+            out =
+              { dim := B.dim
+                lo := Tensor.dim fun i => Tensor.scalar (bounds i).1
+                hi := Tensor.dim fun i => Tensor.scalar (bounds i).2 } := by
+          exact (Option.some.inj hout).symm
+        subst out
+        refine ⟨rfl, ?_⟩
+        intro i
+        cases hloi : lo i with
+        | scalar l =>
+          cases hhii : hi i with
+          | scalar u =>
+            cases hxvi : xv i with
+            | scalar v =>
+              have hx_i := hx i
+              have htransfer : enclose l u = some (bounds i) := by
+                simpa [hloi, hhii] using hpoint i
+              have hscalar := henclose htransfer
+                (by simpa [EnclosesReal, FlatBox.getScalar, hlo, hhi, hxv, hloi, hhii, hxvi]
+                  using hx_i.1)
+                (by simpa [EnclosesReal, FlatBox.getScalar, hlo, hhi, hxv, hloi, hhii, hxvi]
+                  using hx_i.2)
+              simpa [EnclosesReal, FlatBox.getScalar, Tensor.mapSpec, hxv, hxvi] using hscalar
+
+/-- Componentwise square-root enclosure supplied by the scalar backend. -/
+def boxSqrt? [NonlinearBoundOps α] (B : FlatBox α) : Option (FlatBox α) :=
+  boxUnaryEnclosure? (α := α) NonlinearBoundOps.sqrtBounds B
 
 /-- Componentwise reciprocal bounds, failing when an input coordinate interval crosses zero. -/
 @[expose]
-def boxInv? (B : FlatBox α) : Option (FlatBox α) := do
-  let yB ← NN.MLTheory.CROWN.Operators.Arithmetic.ibpReciprocal? (α := α) (n := B.dim)
-    (ofFlatBox B)
-  pure (toFlatBox B.dim yB)
+def boxInv? [NonlinearBoundOps α] (B : FlatBox α) : Option (FlatBox α) :=
+  boxUnaryEnclosure? (α := α)
+    (fun lo hi => NonlinearBoundOps.divBounds Numbers.one Numbers.one lo hi) B
+
+/-- Derivative range for `exp`; `exp' = exp`. -/
+def derivBoxExp? [NonlinearBoundOps α] (zB : FlatBox α) : Option (FlatBox α) :=
+  boxUnaryEnclosure? (α := α) NonlinearBoundOps.expBounds zB
+
+/-- Derivative range for `log`; `log' x = 1/x` on a strictly positive interval. -/
+def derivBoxLog? [NonlinearBoundOps α] (zB : FlatBox α) : Option (FlatBox α) :=
+  boxUnaryEnclosure? (α := α)
+    (fun lo hi =>
+      if lo > Numbers.zero then
+        NonlinearBoundOps.divBounds Numbers.one Numbers.one lo hi
+      else
+        none) zB
+
+/-- Second-derivative range for `log`; `log'' x = -1/x²` on a positive interval. -/
+def secondDerivBoxLog? [NonlinearBoundOps α] (zB : FlatBox α) : Option (FlatBox α) :=
+  boxUnaryEnclosure? (α := α)
+    (fun lo hi =>
+      if lo > Numbers.zero then do
+        let squareLo := BoundOps.mulDown lo lo
+        let squareHi := BoundOps.mulUp hi hi
+        let reciprocal ←
+          NonlinearBoundOps.divBounds Numbers.one Numbers.one squareLo squareHi
+        pure (-reciprocal.2, -reciprocal.1)
+      else
+        none) zB
+
+/-- Negate an interval box by swapping and negating its endpoints. -/
+def boxNeg (B : FlatBox α) : FlatBox α :=
+  { dim := B.dim
+    lo := Tensor.mapSpec (fun x => -x) B.hi
+    hi := Tensor.mapSpec (fun x => -x) B.lo }
 
 /-- Dynamic tensor value used while reshaping and permuting flattened boxes. -/
 abbrev FlatDVal (α : Type) [Context α] : Type :=
@@ -534,58 +682,59 @@ def ibpReduceMeanAxis (axis : Nat) (Xin : FlatBox α) (s : Shape) : Option (Flat
   else
     none
 
+/--
+Format-independent softmax enclosure on a flattened tensor.
+
+A singleton row is exactly one. Every coordinate of a longer row lies in `[0,1]`. This deliberately
+forgoes the tighter exponential formula above so executable checking does not assume a directed
+transcendental implementation that its scalar backend has not supplied.
+-/
+def ibpSoftmaxRange (s : Shape) (dim : Nat) : FlatBox α :=
+  let rowLength := lastDimLen s
+  if rowLength = 1 then
+    let ones := Spec.fill (α := α) Numbers.one (.dim dim .scalar)
+    { dim := dim, lo := ones, hi := ones }
+  else
+    { dim := dim
+      lo := Spec.fill (α := α) Numbers.zero (.dim dim .scalar)
+      hi := Spec.fill (α := α) Numbers.one (.dim dim .scalar) }
+
 /-!
-## Softmax IBP (last axis)
+## Hard-masked softmax IBP (last axis)
 
-For a 1D vector `x` with interval bounds `l <= x <= u`, a standard componentwise enclosure for
-softmax is:
-
-* `softmax_i(x) = exp(x_i) / sum_j exp(x_j)`
-* Lower bound (worst-case denominator): `exp(l_i) / (exp(l_i) + sum_{j != i} exp(u_j))`
-* Upper bound (best-case denominator): `exp(u_i) / (exp(u_i) + sum_{j != i} exp(l_j))`
-
-This uses monotonicity of `exp` and the fact that all terms in the denominator are nonnegative.
-The implementation below applies the 1D rule on the last tensor axis and recurses over leading batch
-dimensions.
-
-References:
-- CROWN / DeepPoly context: Zhang et al., 2018 (CROWN): https://arxiv.org/abs/1811.00866
-- auto_LiRPA: Xu et al., 2020: https://arxiv.org/abs/2002.12920
+Blocked coordinates have weight zero. An allowed coordinate lies in `[0,1]`, and it has weight one
+when it is the only allowed coordinate in its row. These bounds do not evaluate `exp` or division,
+so they remain valid for executable endpoint types whose `BoundOps` instance covers only directed
+arithmetic. A tighter transfer rule requires separately certified directed bounds for
+transcendental operations.
 -/
 
-/-- Interval bound propagation for `softmax`, applied on the last axis and lifted over leading dims.
-  -/
-def ibpSoftmaxLastTensor : {s : Shape} → Tensor α s → Tensor α s → (Tensor α s × Tensor α s)
-  | .scalar, _lo, _hi => (Tensor.scalar Numbers.one, Tensor.scalar Numbers.one)
-  | .dim _n .scalar, lo, hi =>
-      -- Tighter IBP for softmax on a 1D vector:
-      --  lower: exp(l_i) / (exp(l_i) + Σ_{j≠i} exp(u_j))
-      --  upper: exp(u_i) / (exp(u_i) + Σ_{j≠i} exp(l_j))
-      let exp_lo := Tensor.expSpec lo
-      let exp_hi := Tensor.expSpec hi
-      let total_lo := Spec.Tensor.sumSpec exp_lo
-      let total_hi := Spec.Tensor.sumSpec exp_hi
-      match exp_lo, exp_hi with
-      | .dim elo, .dim ehi =>
-        let outLo :=
-          Tensor.dim (fun i =>
-            match elo i, ehi i with
-            | .scalar e_li, .scalar e_ui =>
-              let denom := e_li + (total_hi - e_ui)
-              Tensor.scalar (e_li / denom))
-        let outHi :=
-          Tensor.dim (fun i =>
-            match elo i, ehi i with
-            | .scalar e_li, .scalar e_ui =>
-              let denom := e_ui + (total_lo - e_li)
-              Tensor.scalar (e_ui / denom))
-        (outLo, outHi)
-  | .dim n inner, Tensor.dim loF, Tensor.dim hiF =>
-      let outLo := Tensor.dim (fun i : Fin n => (ibpSoftmaxLastTensor (s := inner) (loF i) (hiF
-        i)).1)
-      let outHi := Tensor.dim (fun i : Fin n => (ibpSoftmaxLastTensor (s := inner) (loF i) (hiF
-        i)).2)
-      (outLo, outHi)
+/-- Conservative interval bounds for hard-masked softmax along the last tensor axis. -/
+def ibpHardMaskedSoftmaxLastTensor : {s : Shape} →
+    Tensor α s → Tensor α s → Tensor Bool s → (Tensor α s × Tensor α s)
+  | .scalar, _lo, _hi, Tensor.scalar allowed =>
+      let value := if allowed then Numbers.one else Numbers.zero
+      (Tensor.scalar value, Tensor.scalar value)
+  | .dim n .scalar, Tensor.dim _lo, Tensor.dim _hi, Tensor.dim allowed =>
+      let lower := Tensor.dim fun i =>
+        match allowed i with
+        | Tensor.scalar false => Tensor.scalar Numbers.zero
+        | Tensor.scalar true =>
+            let hasOtherAllowed := (List.finRange n).any fun j =>
+              i != j && match allowed j with
+                | Tensor.scalar a => a
+            Tensor.scalar (if hasOtherAllowed then Numbers.zero else Numbers.one)
+      let upper := Tensor.dim fun i =>
+        match allowed i with
+        | Tensor.scalar true => Tensor.scalar Numbers.one
+        | Tensor.scalar false => Tensor.scalar Numbers.zero
+      (lower, upper)
+  | .dim n inner, Tensor.dim lo, Tensor.dim hi, Tensor.dim allowed =>
+      let lower := Tensor.dim fun i : Fin n =>
+        (ibpHardMaskedSoftmaxLastTensor (s := inner) (lo i) (hi i) (allowed i)).1
+      let upper := Tensor.dim fun i : Fin n =>
+        (ibpHardMaskedSoftmaxLastTensor (s := inner) (lo i) (hi i) (allowed i)).2
+      (lower, upper)
 
 /-!
 ## LayerNorm IBP (last axis)
@@ -609,14 +758,15 @@ References:
 -/
 
 /--
-Upper bound on the variance term used by the LayerNorm interval rules.
+Ideal-arithmetic upper bound on the variance term used by analytic LayerNorm rules.
 
 Given endpoint bounds for a vector and bounds on its mean, each coordinate is at most
 `max |x_i - μ|` away from the bounded mean interval. Squaring and summing those coordinate radii
-gives the conservative variance upper bound reused by IBP, affine propagation, and derivative
-interval passes.
+gives a conservative variance upper bound. The implementation uses ordinary scalar arithmetic and
+is called only from exact-arithmetic branches; executable endpoint propagation uses
+`ibpLayerNormRange?` instead.
 -/
-def layerNormVarianceUpper {n : Nat}
+def idealLayerNormVarianceUpper {n : Nat}
     (lo hi : Tensor α (.dim n .scalar)) (muLo muHi : α) : α :=
   if _h : n > 0 then
     match lo, hi with
@@ -632,12 +782,12 @@ def layerNormVarianceUpper {n : Nat}
   else
     Numbers.zero
 
-/-- Mean bounds for a nonempty vector whose coordinates are bounded by endpoint tensors.
+/-- Ideal-arithmetic mean bounds for a nonempty vector with bounded coordinates.
 
 For `n = 0`, the mathematical mean is undefined; this total helper returns `(0,0)` so callers do
 not accidentally divide by zero while they reject or totalize the empty case.
 -/
-def layerNormMeanBounds {n : Nat}
+def idealLayerNormMeanBounds {n : Nat}
     (lo hi : Tensor α (.dim n .scalar)) : α × α :=
   if _h : n > 0 then
     let nA : α := (n : Nat)
@@ -646,13 +796,13 @@ def layerNormMeanBounds {n : Nat}
     (Numbers.zero, Numbers.zero)
 
 /--
-Bounds for `x - μ` when `x` is bounded coordinatewise and `μ` is bounded by an interval.
+Ideal-arithmetic bounds for `x - μ` when `x` and `μ` are bounded by intervals.
 
 LayerNorm transfer rules repeatedly need this centered interval for the input, first derivative,
 and second derivative streams. Keeping it here avoids duplicating the same endpoint arithmetic in
 IBP and derivative propagation.
 -/
-def layerNormCenteredBounds {n : Nat}
+def idealLayerNormCenteredBounds {n : Nat}
     (lo hi : Tensor α (.dim n .scalar)) (muLo muHi : α) :
     Tensor α (.dim n .scalar) × Tensor α (.dim n .scalar) :=
   let flo := match lo with | .dim f => f
@@ -673,16 +823,15 @@ def layerNormCenteredBounds {n : Nat}
         Tensor.scalar (if dl > du then dl else du))
   (loOut, hiOut)
 
-/-- Bounds for the reciprocal LayerNorm denominator from an upper variance bound. -/
-def layerNormInvStdBounds (varHi : α) : α × α :=
+/-- Ideal-arithmetic reciprocal-denominator bounds from an upper variance bound. -/
+def idealLayerNormInvStdBounds (varHi : α) : α × α :=
   let sLo := MathFunctions.sqrt Numbers.epsilon
   let sHi := MathFunctions.sqrt (varHi + Numbers.epsilon)
   (Numbers.one / (if sHi > Numbers.epsilon then sHi else Numbers.epsilon),
    Numbers.one / (if sLo > Numbers.epsilon then sLo else Numbers.epsilon))
 
-/-- Interval bound propagation for `layernorm`, applied on the last axis and lifted over leading
-  dims. -/
-def ibpLayernormLastTensor : {s : Shape} → Tensor α s → Tensor α s → (Tensor α s × Tensor α s)
+/-- Analytic real-arithmetic LayerNorm bounds on the last axis, lifted over leading dimensions. -/
+def idealLayerNormLastTensor : {s : Shape} → Tensor α s → Tensor α s → (Tensor α s × Tensor α s)
   | .scalar, lo, hi => (lo, hi)
   | .dim n .scalar, lo, hi =>
       if n > 0 then
@@ -693,7 +842,7 @@ def ibpLayernormLastTensor : {s : Shape} → Tensor α s → Tensor α s → (Te
         let mu_hi := sum_hi / nA
         let flo := match lo with | .dim f => f
         let fhi := match hi with | .dim f => f
-        let var_hi := layerNormVarianceUpper (α := α) lo hi mu_lo mu_hi
+        let var_hi := idealLayerNormVarianceUpper (α := α) lo hi mu_lo mu_hi
         let den_lo := MathFunctions.sqrt Numbers.epsilon
         let den_hi := MathFunctions.sqrt (var_hi + Numbers.epsilon)
         let outLo :=
@@ -731,11 +880,39 @@ def ibpLayernormLastTensor : {s : Shape} → Tensor α s → Tensor α s → (Te
         -- Degenerate n=0: pass through
         (lo, hi)
   | .dim n inner, Tensor.dim loF, Tensor.dim hiF =>
-      let outLo := Tensor.dim (fun i : Fin n => (ibpLayernormLastTensor (s := inner) (loF i) (hiF
+      let outLo := Tensor.dim (fun i : Fin n => (idealLayerNormLastTensor (s := inner) (loF i) (hiF
         i)).1)
-      let outHi := Tensor.dim (fun i : Fin n => (ibpLayernormLastTensor (s := inner) (loF i) (hiF
+      let outHi := Tensor.dim (fun i : Fin n => (idealLayerNormLastTensor (s := inner) (loF i) (hiF
         i)).2)
       (outLo, outHi)
+
+/--
+Uniform finite enclosure for last-axis layer normalization.
+
+For a row of length `n`, exact LayerNorm without affine scale or bias satisfies
+`|yᵢ| ≤ sqrt n`; a singleton row is identically zero. Backends provide the outward-rounded bound
+through `NonlinearBoundOps.layerNormAbsBound`. Returning `none` is preferable to evaluating the
+normalization with unqualified host division and square root.
+-/
+def ibpLayerNormRange? [NonlinearBoundOps α]
+    (s : Shape) (dim : Nat) : Option (FlatBox α) :=
+  let rowLength := lastDimLen s
+  if rowLength = 0 then
+    some
+      { dim := dim
+        lo := Spec.fill (α := α) Numbers.zero (.dim dim .scalar)
+        hi := Spec.fill (α := α) Numbers.zero (.dim dim .scalar) }
+  else if rowLength = 1 then
+    some
+      { dim := dim
+        lo := Spec.fill (α := α) Numbers.zero (.dim dim .scalar)
+        hi := Spec.fill (α := α) Numbers.zero (.dim dim .scalar) }
+  else do
+    let radius ← NonlinearBoundOps.layerNormAbsBound (α := α) rowLength
+    pure
+      { dim := dim
+        lo := Spec.fill (α := α) (-radius) (.dim dim .scalar)
+        hi := Spec.fill (α := α) radius (.dim dim .scalar) }
 
 /-- For tensors known to have shape `.dim n .scalar`, extract the underlying function. -/
 @[expose] public def getDimScalarFn {n : Nat} (t : Tensor α (.dim n .scalar)) : (Fin n → Tensor α

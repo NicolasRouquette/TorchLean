@@ -35,7 +35,6 @@ open scoped BigOperators
 
 noncomputable section
 
-set_option maxHeartbeats 12000000
 
 /--
 Adjointness of the Conv2D forward map with respect to kernel perturbations.
@@ -48,9 +47,9 @@ lemma dot_conv2d_kernel
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
-    (input : Spec.MultiChannelImage inC inH inW ℝ)
+    (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (dKernel : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))))
-    (δ : Spec.MultiChannelImage outC (outH inH kH stride padding) (outW inW kW stride padding) ℝ) :
+    (δ : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar)))) :
     let layerK : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := dKernel, bias := fill (0 : ℝ) (.dim outC .scalar) }
     dot (Spec.conv2dSpec (α := ℝ) (layer := layerK) input) δ

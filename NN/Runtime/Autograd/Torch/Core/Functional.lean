@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Torch.Core.Compiled
+public import NN.Runtime.Autograd.LeadingAxis
 
 /-!
 # Backend-Generic Functional API
@@ -162,6 +163,12 @@ def curry {Ref : Shape → Type} {β : Type} : {ss : List Shape} → (RefList Re
   | [], f => f .nil
   | _s :: ss, f => fun x => curry (ss := ss) (fun xs => f (.cons x xs))
 
+/-- Apply a tensor-valued `CurriedRef` to its shape-indexed tensor list. -/
+def uncurryTList {α β : Type} : {ss : List Shape} →
+    CurriedRef (Tensor α) ss β → TList α ss → β
+  | [], f, .nil => f
+  | _s :: ss, f, .cons x xs => uncurryTList (ss := ss) (f x) xs
+
 /--
 Apply a curried reference function to a `GraphM.VarList`.
 
@@ -172,6 +179,27 @@ def applyVarList {Γ : List Shape} {β : Type} :
       Runtime.Autograd.Compiled.GraphM.VarList Γ → β
   | f, .nil => f
   | f, .cons v vs => applyVarList (Γ := _) (β := β) (f v) vs
+
+/--
+Apply a curried function to the coordinate projections of a typed tensor list.
+
+Compiled module inputs use this to represent each non-differentiable natural-number tensor as a
+function of the complete runtime input pack. The projection is typed by the shape list, so neither
+numeric offsets nor runtime casts enter the graph definition.
+-/
+def applyTListProjections {α : Type} {β : Type} {full : List Shape} :
+    {rest : List Shape} →
+    (TList α full → TList α rest) →
+    CurriedRef (fun s => TList α full → Tensor α s) rest β → β
+  | [], _drop, f => f
+  | _s :: ss, drop, f =>
+      let head : TList α full → Tensor α _ := fun xs =>
+        match drop xs with
+        | .cons x _ => x
+      let tail : TList α full → TList α ss := fun xs =>
+        match drop xs with
+        | .cons _ rest => rest
+      applyTListProjections (rest := ss) tail (f head)
 
 end CurriedRef
 
@@ -187,6 +215,13 @@ corresponding `Runtime.Autograd.Tape.*` / `Compiled.GraphM.*` operator.
 -/
 class Ops (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape] where
   Ref : Shape → Type
+  /-- Reference to non-differentiable natural-number data, such as labels or gather indices. -/
+  NatTensorRef : Shape → Type
+  /-- Lift a fixed natural-number tensor into the backend's discrete-data representation. -/
+  natTensorConst : {s : Shape} → Tensor Nat s → NatTensorRef s
+  /-- Apply a pure transformation to non-differentiable natural-number data. -/
+  mapNatTensor : {s₁ s₂ : Shape} → (Tensor Nat s₁ → Tensor Nat s₂) → NatTensorRef s₁ →
+    NatTensorRef s₂
   const : {s : Shape} → Tensor α s → m (Ref s)
   add : {s : Shape} → Ref s → Ref s → m (Ref s)
   sub : {s : Shape} → Ref s → Ref s → m (Ref s)
@@ -216,19 +251,11 @@ class Ops (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape] where
   gatherRow {rows cols : Nat} : Ref (.dim rows (.dim cols .scalar)) → Fin rows → m (Ref (.dim cols
     .scalar))
   gatherScalarNat {n : Nat} : Ref (.dim n .scalar) → Nat → m (Ref Shape.scalar)
-  gatherVecNat {n k : Nat} : Ref (.dim n .scalar) → Tensor Nat (.dim k .scalar) → m (Ref (.dim k
-    .scalar))
+  gatherVecNat {n k : Nat} : Ref (.dim n .scalar) → NatTensorRef (.dim k .scalar) →
+    m (Ref (.dim k .scalar))
   gatherRowsNat {rows cols k : Nat} :
-    Ref (.dim rows (.dim cols .scalar)) → Tensor Nat (.dim k .scalar) → m (Ref (.dim k (.dim cols
-      .scalar)))
-  /--
-  Read a float vector of integer-valued token ids and return a `Tensor Nat` index vector.
-
-  This is non-differentiable: gradients do not flow back into the float input.  Language-model
-  benchmarks pass token ids as float inputs so each step can supply a fresh window without
-  re-instantiating the module.
-  -/
-  tokenIdsFromFloatVec {k : Nat} : Ref (.dim k .scalar) → m (Tensor Nat (.dim k .scalar))
+    Ref (.dim rows (.dim cols .scalar)) → NatTensorRef (.dim k .scalar) →
+      m (Ref (.dim k (.dim cols .scalar)))
   scatterAddVec {n : Nat} : Ref (.dim n .scalar) → Ref Shape.scalar → Fin n → m (Ref (.dim n
     .scalar))
   scatterAddRow {rows cols : Nat} :
@@ -271,25 +298,26 @@ class Ops (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape] where
     m (Ref (Shape.ofList (C :: (Spec.poolOutSpatialPad inSpatial kernel stride padding).toList)))
   maxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0} :
     Ref (.dim inC (.dim inH (.dim inW .scalar))) →
-    m (Ref (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar))))
+    m (Ref (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))))
   maxPool2dPad {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0} :
     Ref (.dim inC (.dim inH (.dim inW .scalar))) →
-    m (Ref (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
-      (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))))
+    m (Ref (.dim inC (.dim (Spec.poolOutDim inH kH stride padding)
+      (.dim (Spec.poolOutDim inW kW stride padding) .scalar))))
   smoothMaxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0} :
     Ref (.dim inC (.dim inH (.dim inW .scalar))) →
     α →
-    m (Ref (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar))))
+    m (Ref (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))))
   avgPool2d {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0) :
     Ref (.dim inC (.dim inH (.dim inW .scalar))) →
-    m (Ref (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar))))
+    m (Ref (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))))
   avgPool2dPad {kH kW inH inW inC stride padding : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0) :
     Ref (.dim inC (.dim inH (.dim inW .scalar))) →
-    m (Ref (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
-      (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))))
+    m (Ref (.dim inC (.dim (Spec.poolOutDim inH kH stride padding)
+      (.dim (Spec.poolOutDim inW kW stride padding) .scalar))))
   relu : {s : Shape} → Ref s → m (Ref s)
   sigmoid : {s : Shape} → Ref s → m (Ref s)
   tanh : {s : Shape} → Ref s → m (Ref s)
+  gelu : {s : Shape} → Ref s → m (Ref s)
   softmax : {s : Shape} → Ref s → m (Ref s)
   logSoftmax : {s : Shape} → Ref s → m (Ref s)
   softplus : {s : Shape} → Ref s → m (Ref s)
@@ -325,6 +353,22 @@ class Ops (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape] where
     Ref (.dim n (.dim dModel .scalar)) →
     Option (Tensor Bool (.dim n (.dim n .scalar))) →
     m (Ref (.dim n (.dim dModel .scalar)))
+  /--
+  Multi-head self-attention with an explicit leading batch axis.
+
+  Its mathematical meaning is the leading-axis map of `multiHeadAttention`; implementations may
+  execute the samples together, but may not change the mask convention or the per-sample
+  forward/VJP semantics.
+  -/
+  batchedMultiHeadAttention {batch n numHeads dModel headDim : Nat}
+    (hBatch : batch ≠ 0) (h1 : n ≠ 0) :
+    Ref (.dim dModel (.dim (numHeads * headDim) .scalar)) →
+    Ref (.dim dModel (.dim (numHeads * headDim) .scalar)) →
+    Ref (.dim dModel (.dim (numHeads * headDim) .scalar)) →
+    Ref (.dim (numHeads * headDim) (.dim dModel .scalar)) →
+    Ref (.dim batch (.dim n (.dim dModel .scalar))) →
+    Option (Tensor Bool (.dim n (.dim n .scalar))) →
+    m (Ref (.dim batch (.dim n (.dim dModel .scalar))))
   conv {d inC outC : Nat}
     {kernel stride padding : Vector Nat d}
     {inSpatial : Vector Nat d}
@@ -382,6 +426,18 @@ In eager mode this will typically be `TensorRef`; in compiled mode it will typic
   `GraphM.Var`.
 -/
 abbrev Ref (s : Shape) : Type := Ops.Ref (m := m) (α := α) s
+
+/-- Backend representation of a non-differentiable natural-number tensor. -/
+abbrev NatTensorRef (s : Shape) : Type := Ops.NatTensorRef (m := m) (α := α) s
+
+/-- Lift a fixed natural-number tensor into the current backend. -/
+def natTensorConst {s : Shape} (x : Tensor Nat s) : NatTensorRef (m := m) (α := α) s :=
+  Ops.natTensorConst (m := m) (α := α) x
+
+/-- Transform a non-differentiable natural-number tensor without adding an autograd node. -/
+def mapNatTensor {s₁ s₂ : Shape} (f : Tensor Nat s₁ → Tensor Nat s₂)
+    (x : NatTensorRef (m := m) (α := α) s₁) : NatTensorRef (m := m) (α := α) s₂ :=
+  Ops.mapNatTensor (m := m) (α := α) f x
 
 /-- Re-export of `Ops.const`. PyTorch: `torch.tensor(...)` / literal constants. -/
 def const {s : Shape} (t : Tensor α s) : m (Ref (m := m) (α := α) s) := Ops.const (m := m) (α := α)
@@ -471,19 +527,16 @@ def gatherScalarNat {n : Nat}
   Ops.gatherScalarNat (m := m) (α := α) (n := n) x i
 /-- Re-export of `Ops.gather_vec_nat` (index tensor). -/
 def gatherVecNat {n k : Nat}
-  (x : Ref (m := m) (α := α) (.dim n .scalar)) (idx : Tensor Nat (.dim k .scalar)) :
+  (x : Ref (m := m) (α := α) (.dim n .scalar))
+  (idx : NatTensorRef (m := m) (α := α) (.dim k .scalar)) :
   m (Ref (m := m) (α := α) (.dim k .scalar)) :=
   Ops.gatherVecNat (m := m) (α := α) (n := n) (k := k) x idx
 /-- Re-export of `Ops.gather_rows_nat` (index tensor). -/
 def gatherRowsNat {rows cols k : Nat}
-  (x : Ref (m := m) (α := α) (.dim rows (.dim cols .scalar))) (idx : Tensor Nat (.dim k .scalar)) :
+  (x : Ref (m := m) (α := α) (.dim rows (.dim cols .scalar)))
+  (idx : NatTensorRef (m := m) (α := α) (.dim k .scalar)) :
   m (Ref (m := m) (α := α) (.dim k (.dim cols .scalar))) :=
   Ops.gatherRowsNat (m := m) (α := α) (rows := rows) (cols := cols) (k := k) x idx
-/-- Convert a float vector of integer token ids to `Tensor Nat` (non-differentiable). -/
-def tokenIdsFromFloatVec {k : Nat}
-  (x : Ref (m := m) (α := α) (.dim k .scalar)) :
-  m (Tensor Nat (.dim k .scalar)) :=
-  Ops.tokenIdsFromFloatVec (m := m) (α := α) (k := k) x
 /-- Re-export of `Ops.scatter_add_vec`. -/
 def scatterAddVec {n : Nat}
   (x : Ref (m := m) (α := α) (.dim n .scalar)) (v : Ref (m := m) (α := α) Shape.scalar) (i : Fin n)
@@ -526,6 +579,23 @@ def sliceLeadingAxisRange {nDim : Nat} {s : Shape} (start len : Nat) (h : len + 
   (x : Ref (m := m) (α := α) (.dim nDim s)) :
   m (Ref (m := m) (α := α) (.dim len s)) :=
   Ops.sliceLeadingAxisRange (m := m) (α := α) (nDim := nDim) (s := s) start len h x
+
+/--
+Backend-polymorphic leading-axis map.
+
+This is the reference implementation used by public model lifting and by batched primitives whose
+backend does not provide a fused implementation.
+-/
+def mapLeadingAxis {σ τ : Shape} (f : Ref (m := m) (α := α) σ →
+    m (Ref (m := m) (α := α) τ)) {n : Nat}
+    (x : Ref (m := m) (α := α) (.dim n σ)) :
+    m (Ref (m := m) (α := α) (.dim n τ)) :=
+  _root_.Runtime.Autograd.mapLeadingAxisWith
+    (const (m := m) (α := α) (s := .dim 0 τ) (Spec.fill (0 : α) (.dim 0 τ)))
+    (fun x start len h => sliceLeadingAxisRange (m := m) (α := α) start len h x)
+    (fun x h => reshape (m := m) (α := α) x h)
+    (fun x y => concatLeadingAxis (m := m) (α := α) x y)
+    f x
 /--
 Re-export of `Ops.max_pool` (generic N-D max pooling, channels-first; no batch axis).
 
@@ -581,22 +651,22 @@ def smoothMaxPool {d C : Nat}
 /-- Re-export of `Ops.max_pool2d`. PyTorch: `torch.nn.functional.max_pool2d`. -/
 def maxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : Ref (m := m) (α := α) (.dim inC (.dim inH (.dim inW .scalar)))) :
-  m (Ref (m := m) (α := α) (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+  m (Ref (m := m) (α := α) (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
     .scalar)))) :=
   Ops.maxPool2d (m := m) (α := α) (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC)
     (stride := stride) (h1 := h1) (h2 := h2) x
 /-- Re-export of `Ops.max_pool2d_pad`. PyTorch: `max_pool2d(..., padding=...)`. -/
 def maxPool2dPad {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : Ref (m := m) (α := α) (.dim inC (.dim inH (.dim inW .scalar)))) :
-  m (Ref (m := m) (α := α) (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
-    (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :=
+  m (Ref (m := m) (α := α) (.dim inC (.dim (Spec.poolOutDim inH kH stride padding)
+    (.dim (Spec.poolOutDim inW kW stride padding) .scalar)))) :=
   Ops.maxPool2dPad (m := m) (α := α) (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC)
     (stride := stride) (padding := padding) (h1 := h1) (h2 := h2) x
 
 /-- Re-export of `Ops.smooth_max_pool2d` (softmax pooling). -/
 def smoothMaxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : Ref (m := m) (α := α) (.dim inC (.dim inH (.dim inW .scalar)))) (beta : α) :
-  m (Ref (m := m) (α := α) (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+  m (Ref (m := m) (α := α) (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
     .scalar)))) :=
   Ops.smoothMaxPool2d (m := m) (α := α) (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC :=
     inC)
@@ -604,15 +674,15 @@ def smoothMaxPool2d {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW �
 /-- Re-export of `Ops.avg_pool2d`. PyTorch: `torch.nn.functional.avg_pool2d`. -/
 def avgPool2d {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (x : Ref (m := m) (α := α) (.dim inC (.dim inH (.dim inW .scalar)))) :
-  m (Ref (m := m) (α := α) (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0)
+  m (Ref (m := m) (α := α) (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0)
     .scalar)))) :=
   Ops.avgPool2d (m := m) (α := α) (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC)
     (stride := stride) h1 h2 x
 /-- Re-export of `Ops.avg_pool2d_pad`. PyTorch: `avg_pool2d(..., padding=...)`. -/
 def avgPool2dPad {kH kW inH inW inC stride padding : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (x : Ref (m := m) (α := α) (.dim inC (.dim inH (.dim inW .scalar)))) :
-  m (Ref (m := m) (α := α) (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
-    (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :=
+  m (Ref (m := m) (α := α) (.dim inC (.dim (Spec.poolOutDim inH kH stride padding)
+    (.dim (Spec.poolOutDim inW kW stride padding) .scalar)))) :=
   Ops.avgPool2dPad (m := m) (α := α) (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC)
     (stride := stride) (padding := padding) h1 h2 x
 
@@ -674,26 +744,16 @@ def silu {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α
   mul (m := m) (α := α) (s := s) x sx
 
 /--
-GELU (approximation used by many ML frameworks):
+Tanh-approximate GELU:
 
 `0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x^3)))`.
 
-This is defined using existing primitives (`tanh`, `mul`, `add`, `scale`), so it works in eager,
-compiled, and verifier-IR backends without introducing a new opcode.
+GELU is a backend primitive so eager runtimes can execute it without materializing the formula as
+a dozen temporary tensors. Every implementation remains responsible for the forward and VJP
+semantics in `Activation.geluSpec` and `Activation.geluDerivSpec`.
 -/
-def gelu {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) s) := do
-  let c0 : α := ((44715 : Nat) : α) / ((1000000 : Nat) : α)
-  let c1 : α := MathFunctions.sqrt (Numbers.two / MathFunctions.pi)
-  let x2 ← mul (m := m) (α := α) (s := s) x x
-  let x3 ← mul (m := m) (α := α) (s := s) x2 x
-  let inner ← add (m := m) (α := α) (s := s) x (← scale (m := m) (α := α) (s := s) x3 c0)
-  let t ← tanh (m := m) (α := α) (s := s) (← scale (m := m) (α := α) (s := s) inner c1)
-  let oneScalar ← const (m := m) (α := α) (scalarTensor (Numbers.one : α))
-  let oneB ← broadcastTo (m := m) (α := α) (s₁ := Shape.scalar) (s₂ := s)
-    (Shape.CanBroadcastTo.scalar_to_any s) oneScalar
-  let onePlus ← add (m := m) (α := α) (s := s) t oneB
-  let mid ← mul (m := m) (α := α) (s := s) x onePlus
-  scale (m := m) (α := α) (s := s) mid (Numbers.pointfive : α)
+def gelu {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) s) :=
+  Ops.gelu (m := m) (α := α) (s := s) x
 
 /-- Re-export of `Ops.sum`. PyTorch: `x.sum()`. -/
 def sum {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) Shape.scalar) :=
@@ -747,6 +807,26 @@ def multiHeadAttention {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
   m (Ref (m := m) (α := α) (.dim n (.dim dModel .scalar))) :=
   Ops.multiHeadAttention (m := m) (α := α) (n := n) (numHeads := numHeads) (dModel := dModel)
     (headDim := headDim) h1 wq wk wv wo x mask
+
+/--
+Batch-aware attention primitive.
+
+Backends must implement the same leading-axis map as `multiHeadAttention`. The separate operation
+lets an eager runtime fold `(batch, head)` into one batched contraction without weakening the
+compiled or specification semantics.
+-/
+def batchedMultiHeadAttention {batch n numHeads dModel headDim : Nat}
+  (hBatch : batch ≠ 0) (h1 : n ≠ 0)
+  (wq : Ref (m := m) (α := α) (.dim dModel (.dim (numHeads * headDim) .scalar)))
+  (wk : Ref (m := m) (α := α) (.dim dModel (.dim (numHeads * headDim) .scalar)))
+  (wv : Ref (m := m) (α := α) (.dim dModel (.dim (numHeads * headDim) .scalar)))
+  (wo : Ref (m := m) (α := α) (.dim (numHeads * headDim) (.dim dModel .scalar)))
+  (x : Ref (m := m) (α := α) (.dim batch (.dim n (.dim dModel .scalar))))
+  (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
+  m (Ref (m := m) (α := α) (.dim batch (.dim n (.dim dModel .scalar)))) :=
+  Ops.batchedMultiHeadAttention (m := m) (α := α)
+    (batch := batch) (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
+    hBatch h1 wq wk wv wo x mask
 
 /--
 Re-export of `Ops.conv` (generic N-D convolution, channels-first).

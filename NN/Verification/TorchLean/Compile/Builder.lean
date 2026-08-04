@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.IR.Check
+public import NN.IR.HardMask
 public import NN.MLTheory.CROWN.Graph
 public import NN.Runtime.Autograd.TorchLean.Backend
 
@@ -158,6 +159,158 @@ def getConst {α : Type} [Context α] {s : Shape} (r : Ref α s) : BuildM α (Te
   | .node _ => fail (α := α)
     "TorchLean IR compile: expected a compile-time constant tensor (got a graph node)"
 
+/-- Lower one sample of multi-head attention into the verifier IR. -/
+def emitMultiHeadAttention {α : Type} [Context α]
+    {n numHeads dModel headDim : Nat}
+    (wq : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
+    (wk : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
+    (wv : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
+    (wo : Ref α (.dim (numHeads * headDim) (.dim dModel .scalar)))
+    (x : Ref α (.dim n (.dim dModel .scalar)))
+    (mask : Option (Tensor Bool (.dim n (.dim n .scalar)))) :
+    BuildM α (Ref α (.dim n (.dim dModel .scalar))) := do
+  let sX : Shape := .dim n (.dim dModel .scalar)
+  let sBig : Shape := .dim n (.dim (numHeads * headDim) .scalar)
+  let Q : Ref α sBig ← emitMatmul (α := α) (a := x) (b := wq) (sOut := sBig) (outShape := sBig)
+  let K : Ref α sBig ← emitMatmul (α := α) (a := x) (b := wk) (sOut := sBig) (outShape := sBig)
+  let V : Ref α sBig ← emitMatmul (α := α) (a := x) (b := wv) (sOut := sBig) (outShape := sBig)
+
+  -- The projection coordinate is `(head, coordinate-within-head)`. Preserve that row-major
+  -- interpretation by reshaping each token first, then moving the head axis outward. Directly
+  -- reshaping `(n, numHeads * headDim)` to `(numHeads, n, headDim)` changes which projected
+  -- features belong to each head.
+  let sProjected : Shape := .dim n (.dim numHeads (.dim headDim .scalar))
+  let sHeads : Shape := .dim numHeads (.dim n (.dim headDim .scalar))
+  let QProjected : Ref α sProjected ←
+    emitUnary (α := α) (kind := .reshape sBig sProjected) (x := Q) (t := sProjected)
+      (outShape := sProjected)
+  let KProjected : Ref α sProjected ←
+    emitUnary (α := α) (kind := .reshape sBig sProjected) (x := K) (t := sProjected)
+      (outShape := sProjected)
+  let VProjected : Ref α sProjected ←
+    emitUnary (α := α) (kind := .reshape sBig sProjected) (x := V) (t := sProjected)
+      (outShape := sProjected)
+  let Qh : Ref α sHeads ←
+    emitUnary (α := α) (kind := .swap_first_two) (x := QProjected) (t := sHeads)
+      (outShape := sHeads)
+  let Kh : Ref α sHeads ←
+    emitUnary (α := α) (kind := .swap_first_two) (x := KProjected) (t := sHeads)
+      (outShape := sHeads)
+  let Vh : Ref α sHeads ←
+    emitUnary (α := α) (kind := .swap_first_two) (x := VProjected) (t := sHeads)
+      (outShape := sHeads)
+
+  let sKt : Shape := .dim numHeads (.dim headDim (.dim n .scalar))
+  let Kt : Ref α sKt ←
+    emitUnary (α := α) (kind := .transpose3dLastTwo) (x := Kh) (t := sKt)
+      (outShape := sKt)
+  let sScores : Shape := .dim numHeads (.dim n (.dim n .scalar))
+  let scores : Ref α sScores ←
+    emitMatmul (α := α) (a := Qh) (b := Kt) (sOut := sScores) (outShape := sScores)
+
+  let invScale : α := Numbers.one / Spec.attentionScaleDenom (α := α) headDim
+  let scaleT : Tensor α sScores := Spec.fill (α := α) invScale sScores
+  let scaledScores ←
+    emitBinary (α := α) (kind := .mul_elem) (a := scores) (b := .const scaleT)
+
+  -- A blocked mask entry has exactly zero numerator. No finite sentinel is introduced here.
+  let attn : Ref α sScores ←
+    match mask with
+    | none =>
+        emitUnary (α := α) (kind := .softmax (axis := 2)) (x := scaledScores) (t := sScores)
+          (outShape := sScores)
+    | some m => do
+        let mask3D : Tensor Bool sScores := Tensor.dim (fun _ => m)
+        emitUnary (α := α)
+          (kind := .hardMaskedSoftmax (NN.IR.HardMask.ofTensor mask3D))
+          (x := scaledScores) (t := sScores) (outShape := sScores)
+
+  let outHeads : Ref α sHeads ←
+    emitMatmul (α := α) (a := attn) (b := Vh) (sOut := sHeads) (outShape := sHeads)
+  let sSwap : Shape := .dim n (.dim numHeads (.dim headDim .scalar))
+  let swapped : Ref α sSwap ←
+    emitUnary (α := α) (kind := .swap_first_two) (x := outHeads) (t := sSwap)
+      (outShape := sSwap)
+  let concat : Ref α sBig ←
+    emitUnary (α := α) (kind := .reshape sSwap sBig) (x := swapped) (t := sBig)
+      (outShape := sBig)
+  emitMatmul (α := α) (a := concat) (b := wo) (sOut := sX) (outShape := sX)
+
+/-- Exact leading-axis slice expressed through the verifier's affine matrix fragment. -/
+def emitLeadingSlice {α : Type} [Context α]
+    {n len : Nat} {s : Shape} (start : Nat) (_h : len + start ≤ n)
+    (x : Ref α (.dim n s)) : BuildM α (Ref α (.dim len s)) := do
+  let block : Nat := Spec.Shape.size s
+  let xMat : Ref α (.dim n (.dim block .scalar)) ←
+    emitUnary (α := α)
+      (kind := .reshape (.dim n s) (.dim n (.dim block .scalar)))
+      (x := x) (t := .dim n (.dim block .scalar))
+      (outShape := .dim n (.dim block .scalar))
+  let selector : Tensor α (.dim len (.dim n .scalar)) :=
+    Tensor.dim (fun row =>
+      Tensor.dim (fun col =>
+        Tensor.scalar (if col.val = start + row.val then (1 : α) else (0 : α))))
+  let yMat : Ref α (.dim len (.dim block .scalar)) ←
+    emitMatmul (α := α) (a := .const selector) (b := xMat)
+      (sOut := .dim len (.dim block .scalar))
+      (outShape := .dim len (.dim block .scalar))
+  emitUnary (α := α)
+    (kind := .reshape (.dim len (.dim block .scalar)) (.dim len s))
+    (x := yMat) (t := .dim len s) (outShape := .dim len s)
+
+/-- Emit a verifier-IR concatenation along the leading axis. -/
+def emitLeadingConcat {α : Type} [Context α]
+    {n m : Nat} {s : Shape} (a : Ref α (.dim n s)) (b : Ref α (.dim m s)) :
+    BuildM α (Ref α (.dim (n + m) s)) := do
+  let pa ← ensureNode (α := α) a
+  let pb ← ensureNode (α := α) b
+  let id ← freshId (α := α)
+  let node : Node :=
+    { id := id, parents := [pa, pb], kind := .concat 0, outShape := .dim (n + m) s }
+  pushNode (α := α) node
+  pure (.node id)
+
+/--
+Lower batched attention as the leading-axis map of the single-sample verifier graph.
+
+This is intentionally a semantic lowering rather than a claim that the verifier understands a new
+opaque fused kernel.
+-/
+def emitBatchedMultiHeadAttention {α : Type} [Context α]
+    {batch n numHeads dModel headDim : Nat}
+    (wq : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
+    (wk : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
+    (wv : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
+    (wo : Ref α (.dim (numHeads * headDim) (.dim dModel .scalar)))
+    (x : Ref α (.dim batch (.dim n (.dim dModel .scalar))))
+    (mask : Option (Tensor Bool (.dim n (.dim n .scalar)))) :
+    BuildM α (Ref α (.dim batch (.dim n (.dim dModel .scalar)))) :=
+  match batch with
+  | 0 =>
+      pure <| .const <| Tensor.dim (fun i : Fin 0 => Fin.elim0 i)
+  | batch + 1 => do
+      let head1 ← emitLeadingSlice (α := α) (n := batch + 1) (len := 1) 0 (by simp) x
+      let head : Ref α (.dim n (.dim dModel .scalar)) ←
+        emitUnary (α := α)
+          (kind := .reshape
+            (.dim 1 (.dim n (.dim dModel .scalar)))
+            (.dim n (.dim dModel .scalar)))
+          (x := head1) (t := .dim n (.dim dModel .scalar))
+          (outShape := .dim n (.dim dModel .scalar))
+      let yHead ← emitMultiHeadAttention (α := α) wq wk wv wo head mask
+      let yHead1 : Ref α (.dim 1 (.dim n (.dim dModel .scalar))) ←
+        emitUnary (α := α)
+          (kind := .reshape
+            (.dim n (.dim dModel .scalar))
+            (.dim 1 (.dim n (.dim dModel .scalar))))
+          (x := yHead) (t := .dim 1 (.dim n (.dim dModel .scalar)))
+          (outShape := .dim 1 (.dim n (.dim dModel .scalar)))
+      let tail ← emitLeadingSlice (α := α) (n := batch + 1) (len := batch) 1 (by simp) x
+      let yTail ← emitBatchedMultiHeadAttention (α := α) wq wk wv wo tail mask
+      let y ← emitLeadingConcat (α := α)
+        (n := 1) (m := batch) (s := .dim n (.dim dModel .scalar)) yHead1 yTail
+      return (by simpa [Nat.one_add] using y)
+
 private theorem vector2_toList {α : Type} (v : Vector α 2) :
     v.toList = [v.get ⟨0, by decide⟩, v.get ⟨1, by decide⟩] := by
   -- Reduce to the underlying array.
@@ -182,8 +335,11 @@ private theorem vector2_toList {α : Type} (v : Vector α 2) :
 instance {α : Type} [Context α] [DecidableEq Shape] :
     Runtime.Autograd.Torch.Ops (m := BuildM α) (α := α) where
   Ref := Ref α
+  NatTensorRef := fun s => Tensor Nat s
 
   const := fun {_s} t => pure (.const t)
+  natTensorConst := fun t => t
+  mapNatTensor := fun f t => f t
 
   add := fun {_s} a b => emitBinary (α := α) (kind := .add) (a := a) (b := b)
   sub := fun {_s} a b => emitBinary (α := α) (kind := .sub) (a := a) (b := b)
@@ -302,11 +458,6 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
     fail (α := α) "TorchLean→IR: gather is outside the verifier IR fragment"
   gatherRowsNat := fun {_rows _cols _k} _x _idx =>
     fail (α := α) "TorchLean→IR: gather is outside the verifier IR fragment"
-  -- Token-id parsing inspects concrete runtime values; the current verifier fragment only lowers
-  -- tensor operations with static Lean-side indices and shapes.
-  tokenIdsFromFloatVec := fun {_k} _x =>
-    fail (α := α) "TorchLean→IR: token_ids_from_float_vec is outside the verifier IR fragment"
-
   scatterAddVec := fun {_n} _x _val _i =>
     fail (α := α) "TorchLean→IR: scatter is outside the verifier IR fragment"
   scatterAddRow := fun {_rows _cols} _x _row _i =>
@@ -328,46 +479,11 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
     let node : Node := { id := id, parents := [pa, pb], kind := .concat 0, outShape := out }
     pushNode (α := α) node
     pure (.node id)
-  concatLeadingAxis := fun {nDim mDim} {s} a b => do
-    let pa ← ensureNode (α := α) a
-    let pb ← ensureNode (α := α) b
-    let id ← freshId (α := α)
-    let out : Shape := .dim (nDim + mDim) s
-    let node : Node := { id := id, parents := [pa, pb], kind := .concat 0, outShape := out }
-    pushNode (α := α) node
-    pure (.node id)
+  concatLeadingAxis := fun {_nDim _mDim} {_s} a b =>
+    emitLeadingConcat (α := α) a b
 
-  sliceLeadingAxisRange := fun {nDim} {s} start len _h x => do
-    -- Lower leading-axis slicing to the existing linear verifier fragment:
-    --
-    --   x : (nDim, s)
-    --   reshape x                         : (nDim, block)
-    --   oneHot[start:start+len] @ reshape : (len, block)
-    --   reshape                            : (len, s)
-    --
-    -- This is exact for a contiguous slice along dimension 0. It avoids adding a separate IR
-    -- primitive while still giving IBP/CROWN the same affine operation they already understand.
-    let block : Nat := Spec.Shape.size s
-    let xMat : Ref α (.dim nDim (.dim block .scalar)) ←
-      emitUnary (α := α)
-        (kind := .reshape (.dim nDim s) (.dim nDim (.dim block .scalar)))
-        (x := x) (t := .dim nDim (.dim block .scalar))
-        (outShape := .dim nDim (.dim block .scalar))
-    let selector : Tensor α (.dim len (.dim nDim .scalar)) :=
-      Tensor.dim (fun row =>
-        Tensor.dim (fun col =>
-          Tensor.scalar (if col.val = start + row.val then (1 : α) else (0 : α))))
-    let yMat : Ref α (.dim len (.dim block .scalar)) ←
-      emitMatmul (α := α) (a := .const selector) (b := xMat)
-        (sOut := .dim len (.dim block .scalar))
-        (outShape := .dim len (.dim block .scalar))
-    have hsize :
-        Spec.Shape.size (.dim len (.dim block .scalar)) = Spec.Shape.size (.dim len s) := by
-      change len * (Spec.Shape.size s * 1) = len * Spec.Shape.size s
-      rw [Nat.mul_one]
-    emitUnary (α := α)
-      (kind := .reshape (.dim len (.dim block .scalar)) (.dim len s))
-      (x := yMat) (t := .dim len s) (outShape := .dim len s)
+  sliceLeadingAxisRange := fun {_nDim} {_s} start _len h x =>
+    emitLeadingSlice (α := α) start h x
 
   -- ---------------------------------------------------------------------------
   -- ND pooling/conv wrappers (verifier IR supports CHW 2D ops)
@@ -402,7 +518,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
         if hs : sH = sW then
           if hp : pH = pW then
             requireContract (α := α) <|
-              NN.IR.OpContracts.inferPool2dCHWOutShapePad "max_pool2d_pad" kH kW sH pH
+              NN.IR.OpContracts.inferPool2dOutShape "max_pool2d_pad" kH kW sH pH
                 (.dim C (.dim inH (.dim inW .scalar)))
             let xId ← ensureNode (α := α) xCHW
             let id ← freshId (α := α)
@@ -452,7 +568,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
         if hs : sH = sW then
           if hp : pH = pW then
             requireContract (α := α) <|
-              NN.IR.OpContracts.inferPool2dCHWOutShapePad "avg_pool2d_pad" kH kW sH pH
+              NN.IR.OpContracts.inferPool2dOutShape "avg_pool2d_pad" kH kW sH pH
                 (.dim C (.dim inH (.dim inW .scalar)))
             let xId ← ensureNode (α := α) xCHW
             let id ← freshId (α := α)
@@ -471,14 +587,14 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
         else
           fail (α := α) "TorchLean→IR: avg_pool: verifier IR requires uniform stride"
     else
-      fail (α := α) "TorchLean→IR: avg_pool: only d=2 is supported by the verifier IR right now"
+      fail (α := α) "TorchLean→IR: avg_pool: the verifier IR supports only d=2"
 
   smoothMaxPool := fun {_d _C} {_inSpatial _kernel _stride _padding} {_hKernel} _x _temp =>
     fail (α := α) "TorchLean→IR: smooth_max_pool is outside the verifier IR fragment"
 
   maxPool2d := fun {kH kW inH inW inC stride} {_h1 : kH ≠ 0} {_h2 : kW ≠ 0} x => do
     requireContract (α := α) <|
-      NN.IR.OpContracts.inferPool2dCHWOutShape "max_pool2d" kH kW stride
+      NN.IR.OpContracts.inferPool2dOutShape "max_pool2d" kH kW stride 0
         (.dim inC (.dim inH (.dim inW .scalar)))
     let xId ← ensureNode (α := α) (s := .dim inC (.dim inH (.dim inW .scalar))) x
     let id ← freshId (α := α)
@@ -489,7 +605,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
     pure (.node id)
   maxPool2dPad := fun {kH kW inH inW inC stride padding} {_h1 : kH ≠ 0} {_h2 : kW ≠ 0} x => do
     requireContract (α := α) <|
-      NN.IR.OpContracts.inferPool2dCHWOutShapePad "max_pool2d_pad" kH kW stride padding
+      NN.IR.OpContracts.inferPool2dOutShape "max_pool2d_pad" kH kW stride padding
         (.dim inC (.dim inH (.dim inW .scalar)))
     let xId ← ensureNode (α := α) (s := .dim inC (.dim inH (.dim inW .scalar))) x
     let id ← freshId (α := α)
@@ -505,7 +621,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
     fail (α := α) "TorchLean→IR: smooth_max_pool2d is outside the verifier IR fragment"
   avgPool2d := fun {kH kW inH inW inC stride} (_h1 : kH ≠ 0) (_h2 : kW ≠ 0) x => do
     requireContract (α := α) <|
-      NN.IR.OpContracts.inferPool2dCHWOutShape "avg_pool2d" kH kW stride
+      NN.IR.OpContracts.inferPool2dOutShape "avg_pool2d" kH kW stride 0
         (.dim inC (.dim inH (.dim inW .scalar)))
     let xId ← ensureNode (α := α) (s := .dim inC (.dim inH (.dim inW .scalar))) x
     let id ← freshId (α := α)
@@ -516,7 +632,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
     pure (.node id)
   avgPool2dPad := fun {kH kW inH inW inC stride padding} (_h1 : kH ≠ 0) (_h2 : kW ≠ 0) x => do
     requireContract (α := α) <|
-      NN.IR.OpContracts.inferPool2dCHWOutShapePad "avg_pool2d_pad" kH kW stride padding
+      NN.IR.OpContracts.inferPool2dOutShape "avg_pool2d_pad" kH kW stride padding
         (.dim inC (.dim inH (.dim inW .scalar)))
     let xId ← ensureNode (α := α) (s := .dim inC (.dim inH (.dim inW .scalar))) x
     let id ← freshId (α := α)
@@ -532,6 +648,24 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
   relu := fun {s} x => emitUnary (α := α) (kind := .relu) (x := x) (t := s) (outShape := s)
   sigmoid := fun {s} x => emitUnary (α := α) (kind := .sigmoid) (x := x) (t := s) (outShape := s)
   tanh := fun {s} x => emitUnary (α := α) (kind := .tanh) (x := x) (t := s) (outShape := s)
+  gelu := fun {s} x => do
+    -- Keep GELU explicit in verifier IR until the IR itself gains a dedicated opcode. Runtime
+    -- backends use one tape node; this expansion remains transparent to graph proofs.
+    let c0 : α := Activation.Math.geluTanhCoeff
+    let c1 : α := MathFunctions.sqrt (Numbers.two / MathFunctions.pi)
+    let x2 ← emitBinary (α := α) (kind := .mul_elem) (a := x) (b := x)
+    let x3 ← emitBinary (α := α) (kind := .mul_elem) (a := x2) (b := x)
+    let c0Tensor : Tensor α s := Spec.fill c0 s
+    let scaledX3 ← emitBinary (α := α) (kind := .mul_elem) (a := x3) (b := .const c0Tensor)
+    let inner ← emitBinary (α := α) (kind := .add) (a := x) (b := scaledX3)
+    let c1Tensor : Tensor α s := Spec.fill c1 s
+    let tanhInput ← emitBinary (α := α) (kind := .mul_elem) (a := inner) (b := .const c1Tensor)
+    let tanhOut ← emitUnary (α := α) (kind := .tanh) (x := tanhInput) (t := s) (outShape := s)
+    let ones : Tensor α s := Spec.fill Numbers.one s
+    let onePlus ← emitBinary (α := α) (kind := .add) (a := tanhOut) (b := .const ones)
+    let mid ← emitBinary (α := α) (kind := .mul_elem) (a := x) (b := onePlus)
+    let halves : Tensor α s := Spec.fill Numbers.pointfive s
+    emitBinary (α := α) (kind := .mul_elem) (a := mid) (b := .const halves)
   softmax := fun {s} x => do
     let axis :=
       match Spec.Shape.rank s with
@@ -608,85 +742,12 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
         "use TorchLean.Norm.batch_norm2d_chw_eval / batch_norm2d_nchw_eval (or " ++
         "NN.batchnorm_channel_first_eval).")
 
-  multiHeadAttention := fun {n numHeads dModel headDim} _h1 wq wk wv wo x mask => do
-    let sX : Shape := .dim n (.dim dModel .scalar)
-    let sBig : Shape := .dim n (.dim (numHeads * headDim) .scalar)
-    let Q : Ref α sBig ← emitMatmul (α := α) (a := x) (b := wq) (sOut := sBig) (outShape := sBig)
-    let K : Ref α sBig ← emitMatmul (α := α) (a := x) (b := wk) (sOut := sBig) (outShape := sBig)
-    let V : Ref α sBig ← emitMatmul (α := α) (a := x) (b := wv) (sOut := sBig) (outShape := sBig)
+  multiHeadAttention := fun {_n _numHeads _dModel _headDim} _h1 wq wk wv wo x mask =>
+    emitMultiHeadAttention (α := α) wq wk wv wo x mask
 
-    -- split_heads_spec: reshape (n, numHeads*headDim) → (numHeads, n, headDim)
-    let sHeads : Shape := .dim numHeads (.dim n (.dim headDim .scalar))
-    let Qh : Ref α sHeads ← emitUnary (α := α) (kind := .reshape sBig sHeads) (x := Q) (t := sHeads)
-      (outShape := sHeads)
-    let Kh : Ref α sHeads ← emitUnary (α := α) (kind := .reshape sBig sHeads) (x := K) (t := sHeads)
-      (outShape := sHeads)
-    let Vh : Ref α sHeads ← emitUnary (α := α) (kind := .reshape sBig sHeads) (x := V) (t := sHeads)
-      (outShape := sHeads)
-
-    -- scores = Q · Kᵀ per head: (numHeads,n,headDim) × (numHeads,headDim,n) → (numHeads,n,n)
-    let sKt : Shape := .dim numHeads (.dim headDim (.dim n .scalar))
-    let Kt : Ref α sKt ← emitUnary (α := α) (kind := .transpose3dLastTwo) (x := Kh) (t := sKt)
-      (outShape := sKt)
-    let sScores : Shape := .dim numHeads (.dim n (.dim n .scalar))
-    let scores : Ref α sScores ← emitMatmul (α := α) (a := Qh) (b := Kt) (sOut := sScores) (outShape
-      := sScores)
-
-    -- scale by 1 / sqrt(headDim)
-    let invScale : α := Numbers.one / MathFunctions.sqrt (headDim : α)
-    let scaleT : Tensor α sScores := Spec.fill (α := α) invScale sScores
-    let scaledScores ← emitBinary (α := α) (kind := .mul_elem) (a := scores) (b := .const scaleT)
-
-    -- Attention weights. Boolean masks use hard-mask semantics: blocked entries contribute
-    -- literal zero numerator, not a finite additive sentinel.
-    let attn : Ref α sScores ←
-      match mask with
-      | none =>
-          -- last-axis softmax (axis = 2 for rank-3 tensor)
-          emitUnary (α := α) (kind := .softmax (axis := 2)) (x := scaledScores) (t := sScores)
-            (outShape := sScores)
-      | some m => do
-          let rec to01 : {s : Shape} → Tensor Bool s → Tensor α s
-            | .scalar, .scalar b => Tensor.scalar (if b then Numbers.one else Numbers.zero)
-            | .dim _ s, .dim f => Tensor.dim (fun i => to01 (s := s) (f i))
-          let mask2D : Tensor α (.dim n (.dim n .scalar)) :=
-            to01 (s := .dim n (.dim n .scalar)) m
-          let mask3D : Tensor α sScores := Tensor.dim (fun _ => mask2D)
-          let maskR : Ref α sScores := .const mask3D
-          let numeratorsRaw ←
-            emitUnary (α := α) (kind := .exp) (x := scaledScores) (t := sScores)
-              (outShape := sScores)
-          let numerators ← emitBinary (α := α) (kind := .mul_elem) (a := numeratorsRaw) (b := maskR)
-          let sDenom2D : Shape := .dim numHeads (.dim n .scalar)
-          let denom2D : Ref α sDenom2D ←
-            emitUnary (α := α) (kind := .reduceSum 2) (x := numerators) (t := sDenom2D)
-              (outShape := sDenom2D)
-          let sDenom3D : Shape := .dim numHeads (.dim n (.dim 1 .scalar))
-          let denom3D : Ref α sDenom3D ←
-            emitUnary (α := α) (kind := .reshape sDenom2D sDenom3D) (x := denom2D)
-              (t := sDenom3D) (outShape := sDenom3D)
-          let denomB : Ref α sScores ←
-            emitUnary (α := α) (kind := .broadcastTo sDenom3D sScores) (x := denom3D)
-              (t := sScores) (outShape := sScores)
-          let invDenom ← emitUnary (α := α) (kind := .inv) (x := denomB) (t := sScores)
-            (outShape := sScores)
-          emitBinary (α := α) (kind := .mul_elem) (a := numerators) (b := invDenom)
-
-    -- apply attention weights to values: (numHeads,n,n) × (numHeads,n,headDim) →
-    -- (numHeads,n,headDim)
-    let outHeads : Ref α sHeads ← emitMatmul (α := α) (a := attn) (b := Vh) (sOut := sHeads)
-      (outShape := sHeads)
-
-    -- combine_heads_spec: swap first two dims then reshape back to (n, numHeads*headDim)
-    let sSwap : Shape := .dim n (.dim numHeads (.dim headDim .scalar))
-    let swapped : Ref α sSwap ← emitUnary (α := α) (kind := .swap_first_two) (x := outHeads) (t :=
-      sSwap) (outShape := sSwap)
-    let concat : Ref α sBig ← emitUnary (α := α) (kind := .reshape sSwap sBig) (x := swapped) (t :=
-      sBig) (outShape := sBig)
-
-    -- output projection: (n, numHeads*headDim) × (numHeads*headDim, dModel) → (n, dModel)
-    let out : Ref α sX ← emitMatmul (α := α) (a := concat) (b := wo) (sOut := sX) (outShape := sX)
-    pure out
+  batchedMultiHeadAttention :=
+    fun {_batch _n _numHeads _dModel _headDim} _hBatch _h1 wq wk wv wo x mask =>
+      emitBatchedMultiHeadAttention (α := α) wq wk wv wo x mask
 
   conv := fun {d inC outC} {kernel stride padding} {inSpatial} {hInC} {hKernel} w b x => do
     -- The verifier IR only supports CHW conv2d with symmetric stride/padding.
@@ -731,7 +792,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
               fail (α := α) "TorchLean→IR: conv: stride must be nonzero"
             else
               requireContract (α := α) <|
-                NN.IR.OpContracts.inferConv2dCHWOutShape inC outC kH kW sH pH
+                NN.IR.OpContracts.inferConv2dOutShape inC outC kH kW sH pH
                   (.dim inC (.dim inH (.dim inW .scalar)))
               let kT ← getConst (α := α) (s := .dim outC (.dim inC (.dim kH (.dim kW .scalar)))) w4
               let bT ← getConst (α := α) (s := .dim outC .scalar) b
@@ -779,7 +840,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
       fail (α := α) "TorchLean→IR: conv2d: stride must be nonzero"
     else
       requireContract (α := α) <|
-        NN.IR.OpContracts.inferConv2dCHWOutShape inC outC kH kW stride padding
+        NN.IR.OpContracts.inferConv2dOutShape inC outC kH kW stride padding
           (.dim inC (.dim inH (.dim inW .scalar)))
       let kT ← getConst (α := α) (s := .dim outC (.dim inC (.dim kH (.dim kW .scalar)))) kernel
       let bT ← getConst (α := α) (s := .dim outC .scalar) bias

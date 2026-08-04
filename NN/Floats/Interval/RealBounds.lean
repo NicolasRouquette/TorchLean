@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+public import Mathlib.Algebra.Order.Field.Basic
 public import Mathlib.Data.Real.Basic
 
 /-!
@@ -143,5 +144,38 @@ theorem mul_bounds_Icc (a b c d x y : ℝ)
     exact le_trans (le_trans h_upper_xy h_upper_corners) (by simp [hgrp])
 
   exact ⟨h_lower, h_upper⟩
+
+/--
+Reciprocal enclosure for an interval that lies strictly on one side of zero.
+
+If `y ∈ [c, d]` and either `d < 0` or `0 < c`, then inversion reverses the endpoints:
+`y⁻¹ ∈ [d⁻¹, c⁻¹]`.
+-/
+theorem inv_mem_Icc (c d y : ℝ) (hy : y ∈ Set.Icc c d) (h0 : d < 0 ∨ 0 < c) :
+    y⁻¹ ∈ Set.Icc d⁻¹ c⁻¹ := by
+  rcases hy with ⟨hcy, hyd⟩
+  rcases h0 with hd | hc
+  · have hyneg : y < 0 := lt_of_le_of_lt hyd hd
+    constructor
+    · simpa [one_div] using one_div_le_one_div_of_neg_of_le hd hyd
+    · simpa [one_div] using one_div_le_one_div_of_neg_of_le hyneg hcy
+  · have hypos : 0 < y := lt_of_lt_of_le hc hcy
+    constructor
+    · simpa [one_div] using one_div_le_one_div_of_le hypos hyd
+    · simpa [one_div] using one_div_le_one_div_of_le hc hcy
+
+/--
+Four-corner enclosure for division by a sign-stable interval.
+
+The denominator hypothesis excludes zero. The result follows by enclosing `y⁻¹` with
+`inv_mem_Icc` and applying `mul_bounds_Icc` to `x * y⁻¹`.
+-/
+theorem div_bounds_Icc (a b c d x y : ℝ)
+    (hx : x ∈ Set.Icc a b) (hy : y ∈ Set.Icc c d) (h0 : d < 0 ∨ 0 < c) :
+    minOfFourReal (a / c) (a / d) (b / c) (b / d) ≤ x / y ∧
+      x / y ≤ maxOfFourReal (a / c) (a / d) (b / c) (b / d) := by
+  have hinv := inv_mem_Icc c d y hy h0
+  have hmul := mul_bounds_Icc a b d⁻¹ c⁻¹ x y⁻¹ hx hinv
+  simpa [div_eq_mul_inv, minOfFourReal, maxOfFourReal, min_comm, max_comm] using hmul
 
 end TorchLean.Floats.Interval

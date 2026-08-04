@@ -20,7 +20,7 @@ Important note about TorchLean’s layer architecture:
 - A real-valued FFT (real -> complex) therefore cannot be expressed as a `LayerDef` today.
 
 So this implementation is intended to be instantiated over a complex scalar backend, e.g.:
-`--dtype=complex` (see `NN.API.DType`).
+`--dtype=complex` (see `TorchLean.Runtime.DType`).
 
 Implementation note:
 `FFT1D` uses explicit DFT matrices (`matmul` with a constant matrix). This is

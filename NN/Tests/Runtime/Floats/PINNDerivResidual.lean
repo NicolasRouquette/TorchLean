@@ -11,10 +11,11 @@ public import NN.Verification.PINN.Core
 /-!
 # PINNDerivResidual
 
-Derivative residual regression test for the PINN certificate pipeline.
+Derivative-residual regression test for the PINN certificate pipeline.
 
-This checks that derivative-based residual bounds stored in the Python-produced certificate
-match Lean's `runDeriv2D` bounds pointwise (within a small tolerance).
+This checks that Lean's `runSecondDerivative1D` enclosure contains each derivative-residual
+interval stored in the Python-produced certificate. Equality is neither required nor expected:
+the executable CROWN pass may use a coarser sound relaxation than the certificate producer.
 
 This module has no top-level `main`, so it can be imported by test runners
 (e.g. `NN.Tests.Suite`) without a `main` name collision.
@@ -33,8 +34,7 @@ namespace Tests
 namespace Floats
 namespace PinnDerivResidual
 
-/-- Test that derivative-based residuals from a Python certificate match Lean's `runDeriv2D` per
-  point. -/
+/-- Check that Lean encloses every derivative-residual interval supplied by the certificate. -/
 def run : IO Unit := do
   -- Kept as a file path (not an import) so this test can validate the Python-side pipeline.
   let path := "NN/Examples/Verification/PINN/pinn_cert.json"
@@ -55,16 +55,16 @@ def run : IO Unit := do
       let x := Tensor.vecGet cfg.pts i
       let ps := seedInputFloat basePs x cfg.eps
       let boxes := runIBP (α:=Float) g ps
-      let d1 := runDeriv1D (α:=Float) g ps boxes
-      let d2 := runDeriv2D (α:=Float) g ps boxes d1
+      let d1 := runFirstDerivative1D (α:=Float) g ps boxes
+      let d2 := runSecondDerivative1D (α:=Float) g ps boxes d1
       let some d2B := d2[5]! | throw <| IO.userError "No d2 box at output"
       let d2lo := Spec.Tensor.sumSpec d2B.lo
       let d2hi := Spec.Tensor.sumSpec d2B.hi
       let (pyLo, pyHi) := residDerivA[i.1]!
-      if ¬approxEq d2lo pyLo tol ∨ ¬approxEq d2hi pyHi tol then
+      if d2lo > pyLo + tol ∨ d2hi + tol < pyHi then
         throw <| IO.userError
-          s!"Derivative residual mismatch at x={x}: Lean [{d2lo},{d2hi}] vs Py [{pyLo},{pyHi}]"
-    IO.println "Derivative residuals match between Python and Lean (within tolerance)."
+          s!"Derivative residual is not enclosed at x={x}: Lean [{d2lo},{d2hi}], certificate [{pyLo},{pyHi}]"
+    IO.println "Lean encloses every derivative-residual interval in the certificate."
 
 end PinnDerivResidual
 end Floats

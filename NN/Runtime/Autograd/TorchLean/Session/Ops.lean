@@ -274,7 +274,7 @@ def maxPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar)))) := do
+    (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
   match s.impl with
   | .eager sess =>
       EagerSession.maxPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
@@ -295,7 +295,7 @@ def smoothMaxPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) (beta :
     α) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar)))) := do
+    (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
   match s.impl with
   | .eager sess =>
       EagerSession.smoothMaxPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
@@ -314,7 +314,7 @@ def avgPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar)))) := do
+    (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
   match s.impl with
   | .eager sess =>
       EagerSession.avgPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)

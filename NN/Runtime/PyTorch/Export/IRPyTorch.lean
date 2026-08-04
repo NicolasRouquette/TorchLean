@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Graph
+public import NN.IR.HardMask
 public import NN.Runtime.PyTorch.Export.Core
 
 /-!
@@ -558,6 +559,25 @@ private def emitForwardBody (g : NN.IR.Graph) (ps : ParamStore Float) (bindings 
     | .softmax axis =>
         let p ← expectUnary id n.parents
         lines := lines ++ [indentFour s!"v{id} = torch.softmax(v{p}, dim={axis})"]
+    | .hardMaskedSoftmax mask =>
+        let p ← expectUnary id n.parents
+        match NN.IR.HardMask.validateAs mask n.outShape with
+        | .ok _ => pure ()
+        | .error message => throw s!"IR→PyTorch: node {id}: {message}"
+        let values := ", ".intercalate <| mask.allowed.toList.map fun allowed =>
+          if allowed then "True" else "False"
+        let shape := shapeToPyTupleString n.outShape
+        let maskLine :=
+          s!"mask{id} = torch.tensor([{values}], dtype=torch.bool, " ++
+            s!"device=v{p}.device).reshape({shape})"
+        lines := lines ++
+          [ indentFour maskLine
+          , indentFour s!"masked{id} = v{p}.masked_fill(~mask{id}, float('-inf'))"
+          , indentFour s!"probs{id} = torch.softmax(masked{id}, dim=-1)"
+          , indentFour <|
+              s!"v{id} = torch.where(mask{id}.any(dim=-1, keepdim=True), probs{id}, " ++
+                s!"torch.zeros_like(probs{id}))"
+          ]
     | .layernorm axis =>
         let p ← expectUnary id n.parents
         let dims := shapeDims n.outShape

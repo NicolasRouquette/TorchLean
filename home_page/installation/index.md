@@ -254,18 +254,18 @@ capsule**.
 
 ## What A Kernel Capsule Looks Like
 
-A capsule is a Lean record for one implementation of one operation. The native fused-attention
+A capsule is a Lean record for one implementation of one operation. The checked CUDA attention
 capsule is defined in `NN.Backend.Attention`; the essential fields look like this:
 
 ```lean
-def nativeFlashAttention : KernelCapsule :=
-  { name := "native_cuda.flash_attention"
+def torchLeanComposed : KernelCapsule :=
+  { name := "torchlean.composed_attention"
     op := .scaledDotProductAttention
-    provider := .nativeCuda
+    provider := .torchLean
     device := .cuda
     trustLevel := .checked
     supportsForward := true
-    vjpMode := .backendVJP
+    vjpMode := .torchLeanTape
     shapeContract := ...
     layoutContract := ...
     valueContract := ...
@@ -273,7 +273,7 @@ def nativeFlashAttention : KernelCapsule :=
     numericalPolicy :=
       { rounding := .nearestEven
         subnormals := .implementationDefined
-        contraction := .fused
+        contraction := .implementationDefined
         reduction := .implementationDefined } }
 ```
 
@@ -290,10 +290,16 @@ The claim says what must hold; the evidence says why the current profile is will
 implementation. A runtime guard or regression suite remains visible as a guard or test. It is not
 promoted to a theorem by placing it in the record.
 
-The planner also checks that the shape, layout, value, and VJP fields contain the corresponding claim
-for the capsule's operation. A proof attached to the wrong field is rejected. For theorem and checker
-evidence, the capsule author is still responsible for stating the exact Lean proposition represented
-by the structured claim. A summary or source name is documentation, not a theorem by itself.
+When an implementation has a Lean refinement theorem, TorchLean keeps more than this metadata.
+`ProofCarryingKernel` is indexed by the exact specification and stores the implementation together
+with a proof that both functions agree on every input. `planVerifiedKernel` returns that typed
+object without erasing the theorem. The ordinary metadata planner deliberately rejects capsules
+that are only labelled `verified`; a string or trust tag cannot stand in for a proof.
+
+The planner also checks that the shape, layout, value, and VJP fields contain the corresponding
+claim for the capsule's operation. Evidence attached to the wrong field is rejected. A forward-only
+capsule records that its VJP is unavailable instead of presenting `.none` as a refinement claim. A
+summary or source name is documentation, not a theorem by itself.
 
 The record answers questions that are otherwise easy to lose in runtime plumbing:
 
@@ -304,7 +310,7 @@ The record answers questions that are otherwise easy to lose in runtime plumbing
 | shape and layout contracts | Which dimensions, memory order, mask convention, and payload assumptions are required? |
 | value contract | What supports the forward-value claim? |
 | VJP mode and contract | Who computes the local gradient, and what supports that claim? |
-| trust level | Is the evidence proof-backed, checked, fuzzed, or an external assumption? |
+| trust level | Is the implementation checked, fuzzed, or an explicit external assumption? |
 | numerical policy | Which rounding, subnormal, contraction, and reduction conventions does execution use? |
 
 The operation tag records a semantic family such as convolution, pooling, reduction, or matrix
@@ -354,15 +360,14 @@ handler is not linked for that operation, execution fails with both the selected
 available handlers in the error.
 
 The equalities above concern dispatch identity. They do not prove the body of `execute`. A CUDA or
-LibTorch kernel still has exactly the evidence recorded in its capsule: perhaps a theorem or sound
-checker, perhaps runtime guards and tests, or perhaps an explicit external assumption.
+LibTorch kernel still has exactly the evidence recorded in its capsule: runtime guards and tests,
+fuzzing, or an explicit external assumption.
 
 ## Where The Theorems Enter
 
-A capsule does not prove foreign code merely by containing the name of a theorem. The proof itself
-must be a Lean declaration whose proof term is checked by Lean's kernel. The capsule records which
-evidence is meant to support each obligation, and the audit and gate layers make missing or external
-evidence visible.
+A capsule does not prove foreign code. It records the operation contract, implementation identity,
+and evidence class used to admit that implementation. Theorems about TorchLean specifications live
+in the proof modules, where Lean checks their statements and proof terms.
 
 FlashAttention gives a concrete example. TorchLean already proves a semantic equality between its
 fused attention specification and standard scaled dot-product attention:
@@ -377,17 +382,18 @@ attention **specification** with the fused specification. They do not prove that
 binary implements either definition. The current native CUDA capsule therefore records runtime
 guards, regression tests, source provenance, and trust level `checked`, not `verified`.
 
-To move a native capsule to a stronger status, the work has to happen in this order:
+To introduce a genuinely verified native capsule, the work has to happen in this order:
 
 1. define the mathematical operation and its domain assumptions in Lean;
 2. state the runtime refinement claim, including shape, layout, Float32, and error assumptions;
-3. prove that claim, or build a replay checker with a soundness theorem;
-4. attach that theorem or checker to the capsule;
+3. define semantics for the implementation or its certificate format;
+4. prove a typed refinement theorem connecting those semantics to the operation contract;
 5. keep any remaining FFI, compiler, driver, or hardware assumption explicit.
 
-Proof and checker evidence carry their Lean proof terms. Source files, native symbols, runtime
-guards, regression suites, and fuzz runs are recorded separately. They remain useful audit
-information, but strict acceptance does not treat them as theorems.
+The current capsule record deliberately has no constructor for an arbitrary proposition. That
+prevents an unrelated theorem from being presented as a kernel refinement. Source files, native
+symbols, runtime guards, regression suites, and fuzz runs remain useful audit information, but the
+strict policy does not treat them as theorems.
 
 ## Planning And Assurance Policies
 
@@ -478,5 +484,6 @@ producers, and floating-point assumptions, read
 - [NVIDIA CUDA on WSL User Guide](https://docs.nvidia.com/cuda/wsl-user-guide/index.html).
 - [Installing LibTorch](https://docs.pytorch.org/cppdocs/installing.html).
 - George C. Necula, ["Proof-Carrying Code"](https://doi.org/10.1145/263699.263712), POPL 1997.
-  Kernel capsules borrow the discipline of carrying explicit evidence with executable code, but a
-  current TorchLean capsule is a contract and provenance record, not a proof-carrying binary.
+  Ordinary kernel capsules are contract and provenance records, not proof-carrying binaries.
+  TorchLean's separate typed `ProofCarryingKernel` interface retains a Lean refinement theorem with
+  an implementation when such a proof is available.

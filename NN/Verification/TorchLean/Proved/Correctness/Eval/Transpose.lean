@@ -66,7 +66,7 @@ theorem evalAt_transposeOperation_eq
       =
       Except.ok (DVal.mk (α := α) outputShape (operation.denote input)) := by
   cases operation <;>
-    simp [TransposeOperation.toOpKind, TransposeOperation.denote, Graph.evalAt,
+    simp [TransposeOperation.toOpKind, TransposeOperation.denote, Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput,
       unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?, Graph.expectShape,
       Bind.bind, Except.bind, Pure.pure, Except.pure]
 

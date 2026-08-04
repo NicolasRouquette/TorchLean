@@ -22,8 +22,7 @@ the Unicode dependency visible in one small API module.
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
 namespace text
 namespace Unicode
 
@@ -281,5 +280,4 @@ def isRegexWhitespace (c : Char) : Bool :=
 
 end Unicode
 end text
-end API
-end NN
+end TorchLean

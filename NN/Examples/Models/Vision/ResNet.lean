@@ -82,7 +82,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
         (seed := flags.seed)
   let trained ← trainer.train
     (Data.floatSamples batches)
-    (ModelZoo.TrainFlags.trainOptions flags.toModelTrainFlags
+    (CLI.Training.OptimizerOptions.toTrainerOptions flags.toOptimizerOptions
       (title := "ResNet CIFAR training")
       (notes := RealData.cifarClassifierNotes batch flags
         #[s!"spatial={height}x{width}", s!"hiddenChannels={hiddenChannels}"]))

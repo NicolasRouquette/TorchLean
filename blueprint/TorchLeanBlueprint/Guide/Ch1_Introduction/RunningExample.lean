@@ -264,7 +264,7 @@ semantics used by the pass.
 
 # Where We Go From Here
 
-We now have one object worth following: a trained two-layer network with a known seed, parameter
+We have one object worth following: a trained two-layer network with a known seed, parameter
 layout, dataset, and held-out prediction. The frontend chapters explain how its tensors and tape are
 built. The graph chapters lower the same forward map. The floating-point chapter compares ideal and
 rounded evaluations. Finally, the verification chapters replace the single held-out point with an

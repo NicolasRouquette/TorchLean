@@ -50,13 +50,14 @@ def trainCycleOptim
       for step in [0:steps] do
         let xs := samples.getD (step % samples.length) hd
         let (st', lossT) ←
-          match ← opt.trainerStepWithLoss? tr st xs with
+          match ← opt.trainerStepWithLoss? tr st xs .nil with
           | some result =>
               pure result
           | none => do
               let (lossT, grads) ←
                 _root_.Runtime.Autograd.Torch.ScalarTrainer.lossAndBackwardT
                   (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) tr xs
+                  .nil
               let _ ← tr.getParams
               let st' ← opt.step st tr.params grads
               pure (st', lossT)

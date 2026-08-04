@@ -43,7 +43,6 @@ open Proofs.Autograd.Algebra
 open NN.IR
 open IRExec
 
-set_option maxHeartbeats 1200000 in
 /-- Correctness lemma for `.randUniform seed` lowering. -/
 theorem buildFrom_denoteAllFrom_rand_uniform
     {α : Type} [Context α] [DecidableEq Shape]
@@ -93,7 +92,7 @@ theorem buildFrom_denoteAllFrom_rand_uniform
           NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
               (input := input) (vals := vals0) (i := i) =
             .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-        simp [NN.IR.Graph.evalAt, hN, hk, hp, nodeData, mkFwdNode,
+        simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, nodeData, mkFwdNode,
           NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
           key, t,
           throw_eq_error,
@@ -113,7 +112,6 @@ theorem buildFrom_denoteAllFrom_rand_uniform
   | cons _ _ =>
       exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
 
-set_option maxHeartbeats 1200000 in
 /-- Correctness lemma for `.bernoulliMask seed` lowering. -/
 theorem buildFrom_denoteAllFrom_bernoulli_mask
     {α : Type} [Context α] [DecidableEq Shape]
@@ -211,7 +209,7 @@ theorem buildFrom_denoteAllFrom_bernoulli_mask
                       -- Rewrite the parent scalar tensor explicitly to avoid simp-orientation
                       -- fragility.
                       simpa using (hPV0.trans (by simpa [hkp]))
-                    simp [NN.IR.Graph.evalAt, hN, hk, hp, hkp,
+                    simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hkp,
                       nodeData, mkFwdNode, NN.IR.DVal.shape, NN.IR.DVal.tensor,
                         NN.IR.DVal.mk,
                       throw_eq_error,

@@ -484,7 +484,7 @@ structure Projector (α : Type) (full low : Shape) where
   /-- Lift a low-rank update back to the full parameter shape. -/
   lift : Tensor α low → Tensor α full
 
-/-- Identity projector, useful for tests and for the theorem that projected SGD reduces to SGD. -/
+/-- Identity projector, used when projected SGD is requested without a projection backend. -/
 def identityProjector {α : Type} {s : Shape} : Projector α s s :=
   { project := id, lift := id }
 
@@ -507,21 +507,6 @@ def projectedSGDUpdate {α : Type} [Context α] [DecidableRel ((· > ·) : α �
     (params : Tensor α full) (grads : Tensor α full) : Tensor α full :=
   subSpec params (scaleSpec (state.projector.lift (state.projector.project grads)) state.lr)
 
-/--
-With the identity projector, projected SGD is exactly ordinary SGD.
-
-This is the main invariant for the GaLore extension point: adding a projection backend cannot
-silently change the base optimizer when the backend is the identity.
--/
-theorem projectedSGDUpdate_identity_eq_sgd {α : Type} [Context α]
-    [DecidableRel ((· > ·) : α → α → Prop)] {s : Shape}
-    (lr : α) (params grads : Tensor α s) :
-    projectedSGDUpdate
-        { lr := lr, projector := identityProjector (α := α) (s := s) }
-        params grads =
-      SGD.update { lr := lr } params grads := by
-  rfl
-
 end GaLore
 
 /-! ## Muon-style orthogonalized momentum -/
@@ -539,7 +524,7 @@ structure Orthogonalizer (α : Type) (s : Shape) where
   /-- Convert a momentum buffer into the direction used for the parameter update. -/
   apply : Tensor α s → Tensor α s
 
-/-- The identity orthogonalizer; with this backend Muon reduces to momentum SGD. -/
+/-- The identity orthogonalizer, used when Muon is requested without a matrix backend. -/
 def identityOrthogonalizer {α : Type} {s : Shape} : Orthogonalizer α s :=
   { apply := id }
 
@@ -574,25 +559,6 @@ def update {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Pro
   let direction := state.orthogonalizer.apply newBuf
   let newParams := subSpec params (scaleSpec direction state.lr)
   ({ state with buf := newBuf }, newParams)
-
-/--
-With the identity orthogonalizer, Muon's parameter update is exactly momentum SGD's parameter
-update.
-
-The state records are different because Muon carries an orthogonalizer backend, but the parameter
-direction is the same when that backend is `id`.
--/
-theorem update_identity_param_eq_momentumSGD {α : Type} [Context α]
-    [DecidableRel ((· > ·) : α → α → Prop)] {s : Shape}
-    (lr momentum : α) (buf params grads : Tensor α s) :
-    (update
-        { lr := lr
-          momentum := momentum
-          buf := buf
-          orthogonalizer := identityOrthogonalizer (α := α) (s := s) }
-        params grads).2 =
-      (MomentumSGD.update { lr := lr, momentum := momentum, buf := buf } params grads).2 := by
-  rfl
 
 end Muon
 

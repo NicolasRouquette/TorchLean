@@ -54,7 +54,7 @@ namespace NN.Examples.Functional.Transcendentals
 open Spec
 open Spec.Tensor
 open NN.Tensor
-open NN.API
+open TorchLean
 
 /-! ## Proof objects and runtime checks -/
 

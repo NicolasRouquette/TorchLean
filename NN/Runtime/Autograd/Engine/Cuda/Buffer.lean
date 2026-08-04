@@ -2,19 +2,19 @@
 Copyright (c) 2026 TorchLean
 Released under MIT license as described in the file LICENSE.
 Authors: TorchLean Team
-
-CUDA buffer primitives (float32).
-
-Implementation:
-- CUDA: `csrc/cuda/tensor/torchlean_cuda_tensor.cu`
-- CPU stub (default `lake build`): `csrc/cuda/tensor/torchlean_cuda_tensor_stub.c`
-
-These are low-level, runtime-only kernels for the native GPU tape/buffer path.
 -/
 
 module
 
 public import NN.Runtime.Autograd.Engine.Cuda.Trusted
+
+/-!
+# CUDA Float32 Buffers
+
+Low-level buffer operations for the native CUDA autograd runtime. CUDA builds use
+`csrc/cuda/tensor/torchlean_cuda_tensor.cu`; ordinary CPU builds link the parity implementation in
+`csrc/cuda/tensor/torchlean_cuda_tensor_stub.c` so that the same runtime interfaces remain testable.
+-/
 
 @[expose] public section
 
@@ -135,6 +135,9 @@ opaque allocatorDeviceTotalBytesRaw (u : UInt32) : UInt64
 @[extern "torchlean_cuda_allocator_cache_bytes"]
 opaque allocatorCacheBytesRaw (u : UInt32) : UInt64
 
+@[extern "torchlean_cuda_allocator_cache_cap_bytes"]
+opaque allocatorCacheCapBytesRaw (u : UInt32) : UInt64
+
 /--
 Snapshot of the CUDA buffer allocator.
 
@@ -145,9 +148,10 @@ counters track the Lean external objects that own those payloads; in a steady wo
 Together these fields distinguish payload leaks, wrapper-lifetime leaks, and broader CUDA memory
 pressure or fragmentation.
 
-`cacheBytes` is the device memory held in the buffer reuse cache — dropped buffers awaiting reuse,
-which are *not* counted in `liveBytes`. `TORCHLEAN_CUDA_CACHE_CAP_BYTES` bounds it; it is always `0`
-in the CPU stub, which keeps no cache.
+`cacheBytes` is the device memory held in the buffer reuse cache: dropped buffers awaiting reuse,
+which are not counted in `liveBytes`. `cacheCapBytes` is the limit selected by
+`TORCHLEAN_CUDA_CACHE_CAP_BYTES`; `0` means unbounded. Both fields are `0` in the CPU stub, which
+keeps no cache.
 -/
 structure AllocatorStats where
   liveBytes : UInt64
@@ -161,6 +165,7 @@ structure AllocatorStats where
   deviceFreeBytes : UInt64
   deviceTotalBytes : UInt64
   cacheBytes : UInt64
+  cacheCapBytes : UInt64
 deriving Repr
 
 /--
@@ -182,7 +187,8 @@ def allocatorStatsWithToken (token : UInt32) : IO AllocatorStats := do
       wrapperFinalizeCount := wrapperFinalizeCountRaw token
       deviceFreeBytes := allocatorDeviceFreeBytesRaw token
       deviceTotalBytes := allocatorDeviceTotalBytesRaw token
-      cacheBytes := allocatorCacheBytesRaw token }
+      cacheBytes := allocatorCacheBytesRaw token
+      cacheCapBytes := allocatorCacheCapBytesRaw token }
 
 /-- Read the current CUDA allocator counters. Prefer `allocatorStatsWithToken` in repeated loops. -/
 def allocatorStats : IO AllocatorStats :=
@@ -205,7 +211,8 @@ def AllocatorStats.format (s : AllocatorStats) : String :=
   " wrappers_finalized=" ++ toString s.wrapperFinalizeCount ++
   " cuda_free=" ++ mibString s.deviceFreeBytes ++
   " cuda_total=" ++ mibString s.deviceTotalBytes ++
-  " cache=" ++ mibString s.cacheBytes
+  " cache=" ++ mibString s.cacheBytes ++
+  " cache_cap=" ++ (if s.cacheCapBytes == 0 then "unbounded" else mibString s.cacheCapBytes)
 
 /--
 Create a device buffer by copying from a host `FloatArray` (casts each element to float32).
@@ -237,6 +244,28 @@ opaque toFloatArray (b : @& Buffer) : FloatArray
 
 @[extern "torchlean_cuda_buffer_to_float_array_io"]
 opaque toFloatArrayIO (b : @& Buffer) : IO FloatArray
+
+/--
+Copy a buffer to its raw float32 byte representation.
+
+This is primarily used by streaming checkpoints. Unlike `toFloatArrayIO`, it does not widen every
+element to Lean `Float`, so a large CUDA parameter can be written without constructing a second
+double-precision host array.
+-/
+@[extern "torchlean_cuda_buffer_to_float32_bytes_io"]
+opaque toFloat32BytesIO (b : @& Buffer) : IO ByteArray
+
+/-- Upload a raw float32 byte payload to a fresh buffer. -/
+@[extern "torchlean_cuda_buffer_of_float32_bytes_io"]
+opaque ofFloat32BytesIO (bytes : @& ByteArray) : IO Buffer
+
+/-- Encode a host `FloatArray` as raw float32 bytes. -/
+@[extern "torchlean_float_array_to_float32_bytes"]
+opaque floatArrayToFloat32Bytes (values : @& FloatArray) : ByteArray
+
+/-- Decode raw float32 bytes into a host `FloatArray`. -/
+@[extern "torchlean_float32_bytes_to_float_array"]
+opaque float32BytesToFloatArray (bytes : @& ByteArray) : FloatArray
 
 /-- Number of float32 elements in the buffer. -/
 @[extern "torchlean_cuda_buffer_size"]
@@ -449,6 +478,14 @@ opaque relu (b : @& Buffer) : Buffer
 @[extern "torchlean_cuda_buffer_relu_bwd"]
 opaque reluBwd (x dLdy : @& Buffer) : Buffer
 
+/-- Tanh-approximate GELU evaluated by one pointwise CUDA kernel. -/
+@[extern "torchlean_cuda_buffer_gelu"]
+opaque gelu (x : @& Buffer) : Buffer
+
+/-- Backward for tanh-approximate GELU using `Activation.geluDerivSpec`. -/
+@[extern "torchlean_cuda_buffer_gelu_bwd"]
+opaque geluBwd (x dLdy : @& Buffer) : Buffer
+
 /-- Elementwise addition (sizes must match). -/
 @[extern "torchlean_cuda_buffer_add"]
 opaque add (a b : @& Buffer) : Buffer
@@ -489,6 +526,26 @@ This is the classic BLAS-style `axpy` primitive and is useful for optimizers and
 -/
 @[extern "torchlean_cuda_buffer_axpy"]
 opaque axpy (a b : @& Buffer) (c : Float) : Buffer
+
+/--
+Perform one Adam-family update in a single CUDA pass.
+
+The result is `(parameters, firstMoment, secondMoment)`. Passing `decay = 0` gives Adam; passing
+`decay = -(learningRate * weightDecay)` gives AdamW's decoupled parameter decay. The caller
+computes the two bias-correction scales from the step counter, exactly as in `Optim.Adam.update`
+and `Optim.AdamW.update`.
+
+This primitive changes only the execution plan. TorchLean's optimizer definitions remain the
+semantic reference, while this native boundary avoids materializing every intermediate tensor in
+the pointwise update.
+-/
+@[extern "torchlean_cuda_buffer_adam_step"]
+opaque adamStep
+    (parameters gradient firstMoment secondMoment : @& Buffer)
+    (beta1 oneMinusBeta1 beta2 oneMinusBeta2 : Float)
+    (firstMomentCorrection secondMomentCorrection epsilon : Float)
+    (decay updateScale : Float) :
+    Buffer × Buffer × Buffer
 
 /-- Reductions (return a length-1 buffer). -/
 @[extern "torchlean_cuda_buffer_reduce_sum"]

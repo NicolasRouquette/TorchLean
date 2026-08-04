@@ -231,7 +231,7 @@ boundaries are recorded separately.
 
 # From Architectures To Runs
 
-We have now seen how the model families are assembled. The next chapter turns them into three case
+We have seen how the model families are assembled. The next chapter turns them into three case
 studies spanning four runs: a character Transformer, ResNet and ViT on the same vision data, and a
 Fourier neural operator. It prepares their data, launches training, and inspects the artifacts they
 leave behind.

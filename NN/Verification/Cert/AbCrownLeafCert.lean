@@ -63,13 +63,10 @@ def checkAbCrownLeafArtifact (path : String) : IO Unit := do
   let inputDim ← expectFieldNat topObj "input_dim" "top-level"
 
   let rootObj ← expectFieldObj topObj "root" "top-level"
-  let rootLo ← expectFieldFiniteFloatArray rootObj "lo" "root"
-  let rootHi ← expectFieldFiniteFloatArray rootObj "hi" "root"
-  if rootLo.size ≠ inputDim || rootHi.size ≠ inputDim then
+  let root ← fromExcept <| expectEndpointBoxRegionE "root" rootObj
+  if root.dim ≠ inputDim then
     throw <| IO.userError
-      s!"root dimension mismatch: input_dim={inputDim}, lo={rootLo.size}, hi={rootHi.size}"
-  unless allPairwise rootLo rootHi NN.Verification.Util.Array.floatLe do
-    throw <| IO.userError "invalid root box: every lower bound must be <= its upper bound"
+      s!"root dimension mismatch: input_dim={inputDim}, endpoints={root.dim}"
 
   let leaves ← expectFieldArray topObj "leaves" "top-level"
   if leaves.isEmpty then
@@ -79,18 +76,18 @@ def checkAbCrownLeafArtifact (path : String) : IO Unit := do
   let mut badCount := 0
   for leaf in leaves do
     let leafObj ← expectObj leaf "leaf"
-    let lo ← expectFieldFiniteFloatArray leafObj "lo" "leaf"
-    let hi ← expectFieldFiniteFloatArray leafObj "hi" "leaf"
+    let region ← fromExcept <| expectEndpointBoxRegionE "leaf" leafObj
     let lb ← expectFieldFiniteFloatArray leafObj "lb" "leaf"
     let thr ← expectFieldFiniteFloatArray leafObj "threshold" "leaf"
-    if lo.size ≠ inputDim || hi.size ≠ inputDim then
+    if region.dim ≠ inputDim then
       throw <| IO.userError
-        s!"leaf dimension mismatch: input_dim={inputDim}, lo={lo.size}, hi={hi.size}"
+        s!"leaf dimension mismatch: input_dim={inputDim}, endpoints={region.dim}"
     if lb.size ≠ thr.size then
       throw <| IO.userError
         s!"leaf lower-bound/threshold length mismatch: lb={lb.size}, threshold={thr.size}"
 
-    let within := NN.Verification.Util.Array.boxWithin rootLo rootHi lo hi
+    let within :=
+      NN.Verification.Util.Array.boxWithin root.lo root.hi region.lo region.hi
     let witnessIdx? ← optionalFieldNat? leafObj "witness_idx" "leaf"
     let witnessMargin? ← optionalFieldFiniteFloat? leafObj "witness_margin" "leaf"
     let verified :=

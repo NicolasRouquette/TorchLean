@@ -80,7 +80,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
         (seed := flags.seed)
   trainer.train
     (data flags)
-    (ModelZoo.TrainFlags.trainOptions flags.toModelTrainFlags
+    (CLI.Training.OptimizerOptions.toTrainerOptions flags.toOptimizerOptions
       (title := "VAE-style CIFAR reconstruction")
       (notes := RealData.cifarClassifierNotes cfg.batch flags #[s!"latentDim={cfg.latentDim}"]))
 

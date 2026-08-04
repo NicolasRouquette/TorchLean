@@ -263,13 +263,51 @@ namespace LayerDef
 /--
 Backend reference type used when running a `LayerDef`.
 
-This is the `Ref` type provided by the current `Torch.Ops` backend instance (eager tape, compiled
-  IR,
-etc.).
+This is the `Ref` type provided by the current `Torch.Ops` backend instance, such as an eager tape or
+compiled IR.
 -/
 abbrev RefT (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape]
     [Torch.Ops (m := m) (α := α)] (s : Shape) : Type :=
   Torch.Ops.Ref (m := m) (α := α) s
+
+/--
+Construct a layer from an uncurried reference-level forward function.
+
+This is the general constructor for non-sequential modules: branches, parameter sharing, and
+other graph structures can inspect the parameter list directly without repeating the
+`CurriedRef` packing boilerplate. Reusing the same reference in `run` reuses one autograd leaf;
+there is no parameter copy or alias table hidden by this constructor.
+-/
+def ofRef {σ τ : Shape} {ps : List Shape}
+    (kind : String)
+    (initParams : Torch.TList Float ps)
+    (run : Mode → ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
+      ∀ {m : Type → Type}, [Monad m] → [Torch.Ops (m := m) (α := α)] →
+        Torch.RefList (RefT (m := m) (α := α)) ps →
+        RefT (m := m) (α := α) σ → m (RefT (m := m) (α := α) τ))
+    (runtimeInit : Option (TorchLean.Module.RuntimeInit.Plan ps) := none)
+    (paramRequiresGrad : List Bool := List.replicate ps.length true)
+    (updateBuffers : Option (
+      Mode → ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
+        Torch.TList α ps → Tensor α σ → IO (Torch.TList α ps)) := none) :
+    LayerDef σ τ :=
+  { kind
+    paramShapes := ps
+    initParams
+    runtimeInit
+    paramRequiresGrad
+    updateBuffers
+    forward := fun mode {α} _ _ =>
+      fun {m} _ _ =>
+        Torch.CurriedRef.curry
+          (Ref := RefT (m := m) (α := α))
+          (ss := ps ++ [σ])
+          (β := m (RefT (m := m) (α := α) τ))
+          (fun args =>
+            let (params, x) :=
+              Torch.RefList.splitLast (Ref := RefT (m := m) (α := α))
+                (ss := ps) (τ := σ) args
+            run mode params x) }
 
 /--
 Run a `LayerDef` forward given parameter refs and an input ref.

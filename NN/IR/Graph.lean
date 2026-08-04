@@ -67,6 +67,17 @@ namespace NN.IR
 
 open Spec
 
+/-- A row-major Boolean mask carried by an IR operation.
+
+The payload records its logical tensor shape separately from the flat array so graph validation can
+reject malformed serialized or programmatically constructed masks before evaluation. `true` means
+that the corresponding entry is allowed.
+-/
+structure HardMask where
+  shape : Shape
+  allowed : Array Bool
+  deriving Repr
+
 /-- Operation kinds in an op-tagged computation graph. -/
 inductive OpKind where
   | input
@@ -131,6 +142,8 @@ inductive OpKind where
       -- Common elementwise activations / nonlinearities.
   | softmax (axis : Nat)
       -- Softmax along an axis.
+  | hardMaskedSoftmax (mask : HardMask)
+      -- Stable last-axis softmax with exactly zero mass at blocked entries.
   | layernorm (axis : Nat)
       -- LayerNorm over the suffix of dimensions starting at `axis`.
       -- PyTorch analogue: `F.layer_norm(x, normalized_shape=x.shape[axis:])`.
@@ -195,6 +208,7 @@ def minParents : OpKind → Nat
   | .sin => 1
   | .cos => 1
   | .softmax .. => 1
+  | .hardMaskedSoftmax .. => 1
   | .layernorm .. => 1
   | .reshape .. => 1
   | .flatten .. => 1
@@ -249,6 +263,7 @@ def tag : OpKind → String
   | .sin => "sin"
   | .cos => "cos"
   | .softmax .. => "softmax"
+  | .hardMaskedSoftmax .. => "hard_masked_softmax"
   | .layernorm .. => "layernorm"
   | .reshape .. => "reshape"
   | .flatten .. => "flatten"
@@ -303,6 +318,8 @@ def describe : OpKind → String
   | .sin => "sin"
   | .cos => "cos"
   | .softmax axis => s!"softmax(axis={axis})"
+  | .hardMaskedSoftmax mask =>
+      s!"hard_masked_softmax(maskShape={repr mask.shape})"
   | .layernorm axis => s!"layernorm(axis={axis})"
   | .reshape inShape outShape => s!"reshape(from={repr inShape}, to={repr outShape})"
   | .flatten s => s!"flatten(shape={repr s})"

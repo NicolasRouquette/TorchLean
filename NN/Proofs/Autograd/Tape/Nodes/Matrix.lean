@@ -220,7 +220,6 @@ def matmulCLMRight {m n p : Nat} (a : Vec (matSize m n)) : Vec (matSize n p) →
   refine ⟨fLin, ?_⟩
   exact LinearMap.continuous_of_finiteDimensional (f := fLin)
 
-set_option maxHeartbeats 5000000 in
 /-- Continuous bilinear map for matrix multiplication on flattened vectors. -/
 def matmulBilin {m n p : Nat} :
     Vec (matSize m n) →L[ℝ] Vec (matSize n p) →L[ℝ] Vec (matSize m p) := by
@@ -400,7 +399,6 @@ def matmulBilin {m n p : Nat} :
   -- curry the bounded bilinear map into a `→L →L` map
   exact hf.toContinuousLinearMap
 
-set_option maxHeartbeats 5000000 in
 @[simp] lemma matmulBilin_apply {m n p : Nat} (a : Vec (matSize m n)) (b : Vec (matSize n p)) :
     matmulBilin (m := m) (n := n) (p := p) a b = matmulVec (m := m) (n := n) (p := p) a b := by
   classical
@@ -780,7 +778,6 @@ def matmul {Γ : List Shape} {m n p : Nat}
                   hR.symm
       )
 
-set_option maxHeartbeats 5000000 in
 /--
 `NodeFDerivCorrect` for the matrix-matrix multiplication node.
 

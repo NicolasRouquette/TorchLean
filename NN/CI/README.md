@@ -11,7 +11,6 @@ See:
 * `NN/Runtime/Autograd/Compiled/IRExec/Correctness.lean` (runtime compiler correctness,
   including the semantic equivalence theorem)
 * `NN/CI/All.lean` (CI umbrella for broad compile checks)
-* `NN/CI/ComparatorAll.lean` (Comparator entrypoint; sandboxed checking for untrusted submissions)
 
 If you run one of these locally and it appears to pause, Lean is often elaborating one large module
 without intermediate progress output.

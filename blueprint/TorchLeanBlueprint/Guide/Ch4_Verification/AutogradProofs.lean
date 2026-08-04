@@ -104,11 +104,11 @@ dynamic graph and accumulates cotangents into inputs. TorchLean's algebraic grap
 conceptual work, but the graph object carries enough structure for Lean to prove that the
 accumulation is sound for every input context in the supported fragment.
 
-# From Dot Products To Frechet Derivatives
+# From Dot Products To Fréchet Derivatives
 
 The algebraic theorem is not the last word. A dot product VJP law still has to be connected to the
 function being differentiated. The
-[Frechet derivative bridge](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Core/FDeriv.lean) provides that link.
+[Fréchet derivative bridge](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Core/FDeriv.lean) provides that link.
 
 That file vectorizes shaped tensor contexts into Euclidean spaces and connects three views:
 
@@ -118,16 +118,59 @@ That file vectorizes shaped tensor contexts into Euclidean spaces and connects t
 
 The main theorem is `Graph.backpropVec_eq_adjoint_fderiv`. In plain English:
 
-> If every node in the graph has the stated Frechet derivative, then graph backprop equals the
-> adjoint of the Frechet derivative of graph evaluation.
+> If every node in the graph has the stated Fréchet derivative, then graph backprop equals the
+> adjoint of the Fréchet derivative of graph evaluation.
 
 There is also a pointwise version, `Graph.backpropVec_eq_adjoint_fderiv_at`, for hypotheses that
 only hold at a particular input. That distinction matters for neural networks. ReLU, normalization,
 division, logarithms, and square roots all have domain or nondifferentiability issues. TorchLean
-states those conditions explicitly instead of using a blanket "autograd works" slogan. The theorem can demand exactly the
-local smoothness or nonzero hypotheses needed by the graph being differentiated.
+states those conditions explicitly instead of using a blanket "autograd works" slogan. The theorem
+can demand exactly the local smoothness or nonzero hypotheses needed by the graph being
+differentiated.
 
-Keep the example
+# Connecting The Compiled Tape To The Derivative
+
+The derivative theorem above is stated for the real analytic graph. The compiler correctness
+theorem was originally stated for a more general algebraic graph: its scalar type is abstract, and
+each node may read a non-differentiable environment. Those are useful abstractions, but leaving the
+two results side by side would not prove that the compiled tape computes the Fréchet derivative.
+
+[NN.Proofs.Autograd.Runtime.Link.FDeriv](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Runtime/Link/FDeriv.lean)
+closes that gap. At scalar type `Real` and environment `Unit`, the algebraic and analytic node types
+convert in both directions. Both node and graph conversions round-trip, and evaluation, JVP, and
+reverse accumulation commute with the conversion.
+
+The algebraic reverse pass returns cotangents for the inputs and every intermediate value. The
+analytic theorem needs only the input cotangent. `TList.takeLeft` selects that input prefix, and
+`takeLeft_backpropAllCtx` proves that it is exactly the inputs-only reverse pass used by the
+derivative theorem.
+
+The two public endpoints can be inspected directly:
+
+```
+import NN.Proofs.Autograd.Runtime.Link.FDeriv
+
+#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_adjoint_fderiv
+#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_adjoint_fderiv_at
+```
+
+Suppose `g` is an algebraic graph over `Real`, `x` is its typed input context, `d` is its fixed
+environment, and `seed` is an output cotangent. The first theorem returns a conjunction:
+
+1. compiling `g` and running `Tape.backwardDenseFrom` succeeds with the graph's full reverse
+   context;
+2. the input prefix of that context, after flattening, is
+   $`(\operatorname{fderiv}\,\operatorname{eval}(x))^\dagger seed`.
+
+The `_at` theorem asks for differentiability only at `x`. It is the useful form for graphs
+containing piecewise-smooth operators, provided the execution point avoids their non-differentiable
+or invalid cases.
+
+These are theorems about the exact tape instantiated over `Real`. A native `Float` or CUDA run needs
+an additional numerical-refinement argument; the rounded-runtime chapter develops that separate
+layer rather than folding it into the exact derivative claim.
+
+For the running example, take
 $`forward(x) = softmax(Wx + b)`. The scalar loss supplies an output cotangent
 $`seed = dL/dforward`, and the reverse pass returns the input and parameter cotangents
 $`dL/dx`, $`dL/dW`, and $`dL/db`.
@@ -388,6 +431,6 @@ graph traversal, cotangent accumulation, and scalar loss seeding. The proof cont
 TorchLean turns those engineering moves into named Lean statements instead of leaving them as a
 large opaque execution layer.
 
-The next question is numerical rather than differential. We now know how the ideal reverse pass is
+The next question is numerical rather than differential. We know how the ideal reverse pass is
 assembled from local rules; the runtime-approximation chapter asks how far an executable reverse
 pass can drift when those rules run with rounded arithmetic.

@@ -280,8 +280,8 @@ def maxPool2d {α : Type} [Context α] [DecidableEq Shape]
         requires_grad := true
         parents := [xId]
         backward := fun dLdyAny => do
-          let outH := Shape.slidingWindowOutDim inH kH stride 0
-          let outW := Shape.slidingWindowOutDim inW kW stride 0
+          let outH := Spec.poolOutDim inH kH stride 0
+          let outW := Spec.poolOutDim inW kW stride 0
           let dLdy ←
             requireGrad (α := α) (τ := .dim inC (.dim outH (.dim outW .scalar))) dLdyAny
           let dx :=
@@ -313,8 +313,8 @@ def maxPool2dPad {α : Type} [Context α] [DecidableEq Shape]
         requires_grad := true
         parents := [xId]
         backward := fun dLdyAny => do
-          let outH := Shape.slidingWindowOutDim inH kH stride padding
-          let outW := Shape.slidingWindowOutDim inW kW stride padding
+          let outH := Spec.poolOutDim inH kH stride padding
+          let outW := Spec.poolOutDim inW kW stride padding
           let dLdy ←
             requireGrad (α := α) (τ := .dim inC (.dim outH (.dim outW .scalar))) dLdyAny
           let dx :=
@@ -347,8 +347,8 @@ def smoothMaxPool2d {α : Type} [Context α] [DecidableEq Shape]
         requires_grad := true
         parents := [xId]
         backward := fun dLdyAny => do
-          let outH := Shape.slidingWindowOutDim inH kH stride 0
-          let outW := Shape.slidingWindowOutDim inW kW stride 0
+          let outH := Spec.poolOutDim inH kH stride 0
+          let outW := Spec.poolOutDim inW kW stride 0
           let dLdy ←
             requireGrad (α := α) (τ := .dim inC (.dim outH (.dim outW .scalar))) dLdyAny
           let dx :=
@@ -378,8 +378,8 @@ def avgPool2d {α : Type} [Context α] [DecidableEq Shape]
         requires_grad := true
         parents := [xId]
         backward := fun dLdyAny => do
-          let outH := Shape.slidingWindowOutDim inH kH stride 0
-          let outW := Shape.slidingWindowOutDim inW kW stride 0
+          let outH := Spec.poolOutDim inH kH stride 0
+          let outW := Spec.poolOutDim inW kW stride 0
           let dLdy ←
             requireGrad (α := α) (τ := .dim inC (.dim outH (.dim outW .scalar))) dLdyAny
           let dx :=
@@ -411,8 +411,8 @@ def avgPool2dPad {α : Type} [Context α] [DecidableEq Shape]
         requires_grad := true
         parents := [xId]
         backward := fun dLdyAny => do
-          let outH := Shape.slidingWindowOutDim inH kH stride padding
-          let outW := Shape.slidingWindowOutDim inW kW stride padding
+          let outH := Spec.poolOutDim inH kH stride padding
+          let outW := Spec.poolOutDim inW kW stride padding
           let dLdy ←
             requireGrad (α := α) (τ := .dim inC (.dim outH (.dim outW .scalar))) dLdyAny
           let dx :=

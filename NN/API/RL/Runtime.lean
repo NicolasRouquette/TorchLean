@@ -6,7 +6,9 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.RL.Core
+public import NN.API.RL.Definitions
+public import NN.API.Neural.Execution
+public import NN.API.Trainer.Manual.Core
 public import NN.Runtime.RL.Boundary
 public import NN.Runtime.RL.Gymnasium
 public import NN.Runtime.RL.Numerics
@@ -14,17 +16,15 @@ public import NN.Runtime.RL.PPO
 public import NN.Runtime.RL.Session
 
 /-!
-# Public RL Runtime API
+# RL Runtime
 
-Runtime RL tools under `NN.API.rl.*`: rollout boundary checks, Gymnasium sessions,
-Float32/interval numerics, and PPO actor-critic wiring.
+Rollout boundary checks, Gymnasium sessions, Float32 and interval numerics, and PPO actor-critic
+wiring exposed under `TorchLean.rl`.
 -/
 
 @[expose] public section
 
-namespace NN
-namespace API
-
+namespace TorchLean
 namespace rl
 
 namespace boundary
@@ -46,12 +46,12 @@ training path.
 -/
 
 /-- Cast a `Float` observation tensor into a runtime scalar backend `α`. -/
-def castObs {α : Type} [Runtime.Scalar α] {obsShape : _root_.Spec.Shape}
+def castObs {α : Type} [Runtime.FromFloat α] {obsShape : _root_.Spec.Shape}
     (t : _root_.Spec.Tensor Float obsShape) : _root_.Spec.Tensor α obsShape :=
   _root_.Spec.mapTensor (Runtime.ofFloat (α := α)) t
 
 /-- Cast a validated `Float` transition into a runtime scalar backend `α`. -/
-def castTransition {α : Type} [Runtime.Scalar α]
+def castTransition {α : Type} [Runtime.FromFloat α]
     {obsShape : _root_.Spec.Shape} {nActions : Nat}
     (tr : _root_.Runtime.RL.Boundary.Transition obsShape nActions) :
     _root_.Spec.RL.ObservedTransition (_root_.Spec.Tensor α obsShape) (Fin nActions) α :=
@@ -63,14 +63,14 @@ def castTransition {α : Type} [Runtime.Scalar α]
     truncated := tr.truncated }
 
 /-- Cast a whole rollout into a runtime scalar backend `α`. -/
-def castRollout {α : Type} [Runtime.Scalar α]
+def castRollout {α : Type} [Runtime.FromFloat α]
     {obsShape : _root_.Spec.Shape} {nActions : Nat}
     (xs : Array (_root_.Runtime.RL.Boundary.Transition obsShape nActions)) :
     Array (_root_.Spec.RL.ObservedTransition (_root_.Spec.Tensor α obsShape) (Fin nActions) α) :=
   xs.map (castTransition (α := α) (obsShape := obsShape) (nActions := nActions))
 
 /-- Load a rollout JSON file, validate it with the boundary contract, then cast to scalar `α`. -/
-def loadRolloutCast {α : Type} [Runtime.Scalar α]
+def loadRolloutCast {α : Type} [Runtime.FromFloat α]
     {obsShape : _root_.Spec.Shape} {nActions : Nat}
     (path : String)
     (c : _root_.Runtime.RL.Boundary.Contract obsShape nActions) :
@@ -129,96 +129,96 @@ export _root_.Runtime.RL.PPO.Rollout (toActorCriticSample)
 def instantiateActorCritic
     {stateShape : _root_.Spec.Shape} {batch nActions : Nat} {α : Type}
     [Fact (0 < batch)] [Fact (0 < nActions)]
-    [API.Semantics.Scalar α] [DecidableEq _root_.Spec.Shape] [API.Runtime.Scalar α]
+    [_root_.Context α] [DecidableEq _root_.Spec.Shape] [_root_.TorchLean.Runtime.FromFloat α]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (opts : _root_.Runtime.Autograd.Torch.Options)
-    (actor : API.TorchLean.LayerCore.Seq stateShape (.dim batch (.dim nActions .scalar)))
-    (critic : API.TorchLean.LayerCore.Seq stateShape (.dim batch (.dim 1 .scalar)))
-    (cast : Float → α := API.Runtime.ofFloat) :
-    IO (API.TorchLean.Module.ScalarModule α
-      (API.TorchLean.LayerCore.Seq.paramShapes actor ++ API.TorchLean.LayerCore.Seq.paramShapes critic)
+    (actor : _root_.Runtime.Autograd.TorchLean.NN.Seq stateShape (.dim batch (.dim nActions .scalar)))
+    (critic : _root_.Runtime.Autograd.TorchLean.NN.Seq stateShape (.dim batch (.dim 1 .scalar)))
+    (cast : Float → α := _root_.TorchLean.Runtime.ofFloat) :
+    IO (_root_.Runtime.Autograd.TorchLean.Module.ScalarModule α
+      (_root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes actor ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes critic)
       [stateShape, (.dim batch (.dim nActions .scalar)), (.dim batch .scalar), (.dim batch .scalar),
         (.dim batch (.dim 1 .scalar))]) :=
-  API.TorchLean.Module.instantiateConfigured (α := α)
+  _root_.TorchLean.Module.instantiateConfigured (α := α)
     (_root_.Runtime.RL.PolicyGradient.Autograd.ppoActorCriticScalarModuleDef
       (batch := batch) (nActions := nActions) actor critic)
     cast opts
 
 /-- Create a PPO actor-critic update function from the public optimizer config. -/
 def optimizerInputs {α : Type}
-    [API.Semantics.Scalar α] [API.Runtime.Scalar α]
+    [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α]
     {paramShapes inputShapes : List _root_.Spec.Shape}
-    (m : API.TorchLean.Module.ScalarModule α paramShapes inputShapes)
-    (cfg : API.TorchLean.Trainer.Optimizer) :
+    (m : _root_.Runtime.Autograd.TorchLean.Module.ScalarModule α paramShapes inputShapes)
+    (cfg : _root_.TorchLean.Trainer.Manual.OptimizerConfig) :
     IO (_root_.Runtime.Autograd.Torch.TList α inputShapes → IO Unit) := do
   match cfg with
   | .sgd lr momentum =>
       if momentum == 0.0 then
-        let opt := API.TorchLean.Optim.sgd
-          (α := α) (API.Runtime.ofFloat lr) (paramShapes := paramShapes)
-        let optH ← API.TorchLean.Optim.handle (α := α) m opt
+        let opt := _root_.Runtime.Autograd.TorchLean.Optim.sgd
+          (α := α) (_root_.TorchLean.Runtime.ofFloat lr) (paramShapes := paramShapes)
+        let optH ← _root_.Runtime.Autograd.TorchLean.Module.optimizerHandle (α := α) m opt
         pure optH.step
       else
-        let opt := API.TorchLean.Optim.momentumSGD
+        let opt := _root_.Runtime.Autograd.TorchLean.Optim.momentumSGD
           (α := α)
-          (API.Runtime.ofFloat lr)
-          (API.Runtime.ofFloat momentum)
+          (_root_.TorchLean.Runtime.ofFloat lr)
+          (_root_.TorchLean.Runtime.ofFloat momentum)
           (paramShapes := paramShapes)
-        let optH ← API.TorchLean.Optim.handle (α := α) m opt
+        let optH ← _root_.Runtime.Autograd.TorchLean.Module.optimizerHandle (α := α) m opt
         pure optH.step
   | .adagrad lr epsilon =>
-      let opt := API.TorchLean.Optim.adagrad
+      let opt := _root_.Runtime.Autograd.TorchLean.Optim.adagrad
         (α := α)
-        (API.Runtime.ofFloat lr)
-        (API.Runtime.ofFloat epsilon)
+        (_root_.TorchLean.Runtime.ofFloat lr)
+        (_root_.TorchLean.Runtime.ofFloat epsilon)
         (paramShapes := paramShapes)
-      let optH ← API.TorchLean.Optim.handle (α := α) m opt
+      let optH ← _root_.Runtime.Autograd.TorchLean.Module.optimizerHandle (α := α) m opt
       pure optH.step
   | .rmsprop lr decay epsilon =>
-      let opt := API.TorchLean.Optim.rmsprop
+      let opt := _root_.Runtime.Autograd.TorchLean.Optim.rmsprop
         (α := α)
-        (API.Runtime.ofFloat lr)
-        (API.Runtime.ofFloat decay)
-        (API.Runtime.ofFloat epsilon)
+        (_root_.TorchLean.Runtime.ofFloat lr)
+        (_root_.TorchLean.Runtime.ofFloat decay)
+        (_root_.TorchLean.Runtime.ofFloat epsilon)
         (paramShapes := paramShapes)
-      let optH ← API.TorchLean.Optim.handle (α := α) m opt
+      let optH ← _root_.Runtime.Autograd.TorchLean.Module.optimizerHandle (α := α) m opt
       pure optH.step
   | .adam lr beta1 beta2 epsilon =>
-      let opt := API.TorchLean.Optim.adam
+      let opt := _root_.Runtime.Autograd.TorchLean.Optim.adam
         (α := α)
-        (API.Runtime.ofFloat lr)
-        (API.Runtime.ofFloat beta1)
-        (API.Runtime.ofFloat beta2)
-        (API.Runtime.ofFloat epsilon)
+        (_root_.TorchLean.Runtime.ofFloat lr)
+        (_root_.TorchLean.Runtime.ofFloat beta1)
+        (_root_.TorchLean.Runtime.ofFloat beta2)
+        (_root_.TorchLean.Runtime.ofFloat epsilon)
         (paramShapes := paramShapes)
-      let optH ← API.TorchLean.Optim.handle (α := α) m opt
+      let optH ← _root_.Runtime.Autograd.TorchLean.Module.optimizerHandle (α := α) m opt
       pure optH.step
   | .adamw lr weightDecay beta1 beta2 epsilon =>
-      let opt := API.TorchLean.Optim.adamw
+      let opt := _root_.Runtime.Autograd.TorchLean.Optim.adamw
         (α := α)
-        (API.Runtime.ofFloat lr)
-        (API.Runtime.ofFloat weightDecay)
-        (API.Runtime.ofFloat beta1)
-        (API.Runtime.ofFloat beta2)
-        (API.Runtime.ofFloat epsilon)
+        (_root_.TorchLean.Runtime.ofFloat lr)
+        (_root_.TorchLean.Runtime.ofFloat weightDecay)
+        (_root_.TorchLean.Runtime.ofFloat beta1)
+        (_root_.TorchLean.Runtime.ofFloat beta2)
+        (_root_.TorchLean.Runtime.ofFloat epsilon)
         (paramShapes := paramShapes)
-      let optH ← API.TorchLean.Optim.handle (α := α) m opt
+      let optH ← _root_.Runtime.Autograd.TorchLean.Module.optimizerHandle (α := α) m opt
       pure optH.step
   | .adadelta lr rho epsilon =>
-      let opt := API.TorchLean.Optim.adadelta
+      let opt := _root_.Runtime.Autograd.TorchLean.Optim.adadelta
         (α := α)
-        (API.Runtime.ofFloat lr)
-        (API.Runtime.ofFloat rho)
-        (API.Runtime.ofFloat epsilon)
+        (_root_.TorchLean.Runtime.ofFloat lr)
+        (_root_.TorchLean.Runtime.ofFloat rho)
+        (_root_.TorchLean.Runtime.ofFloat epsilon)
         (paramShapes := paramShapes)
-      let optH ← API.TorchLean.Optim.handle (α := α) m opt
+      let optH ← _root_.Runtime.Autograd.TorchLean.Module.optimizerHandle (α := α) m opt
       pure optH.step
 
 /-- Read the concatenated actor-critic parameter pack from a PPO runtime module. -/
-def params {α : Type} [API.Semantics.Scalar α] {paramShapes inputShapes : List _root_.Spec.Shape}
-    (m : API.TorchLean.Module.ScalarModule α paramShapes inputShapes) :
+def params {α : Type} [_root_.Context α] {paramShapes inputShapes : List _root_.Spec.Shape}
+    (m : _root_.Runtime.Autograd.TorchLean.Module.ScalarModule α paramShapes inputShapes) :
     IO (_root_.Runtime.Autograd.Torch.TList α paramShapes) :=
-  API.TorchLean.Module.params m
+  _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.params m
 
 /-- Split a concatenated actor-critic parameter pack into `(actorParams, criticParams)`. -/
 def splitActorCriticParams
@@ -238,68 +238,52 @@ def splitActorCriticParams
     ps
 
 /--
-Build a compiled actor-policy forward function from an actor-critic parameter pack.
+Build a single-observation actor policy from the parameter pack of a rollout-shaped actor-critic
+module.
 
-PPO trains actor and critic together with one rollout-shaped module, but rollout collection and
-evaluation usually need the actor at the single-observation shape. The equality argument keeps the
-shared-parameter assumption explicit.
+The compiled actor records its parameter layout, while `sameActorParams` states that the rollout
+actor uses that layout as well.
 -/
 def actorPolicyFromParams
     {obsShape logitsShape rolloutStateShape rolloutLogitsShape rolloutValueShape : _root_.Spec.Shape}
-    {α : Type} [API.Semantics.Scalar α]
-    (actorObs : API.TorchLean.LayerCore.Seq obsShape logitsShape)
-    (actorCompiled :
-      _root_.Runtime.Autograd.Torch.CompiledGraph α
-        (API.TorchLean.LayerCore.Seq.paramShapes actorObs ++ [obsShape]) logitsShape)
-    (actorRollout : API.TorchLean.LayerCore.Seq rolloutStateShape rolloutLogitsShape)
-    (criticRollout : API.TorchLean.LayerCore.Seq rolloutStateShape rolloutValueShape)
+    {actorParamShapes : List _root_.Spec.Shape}
+    {α : Type} [_root_.Context α]
+    (actorCompiled : nn.Compiled actorParamShapes obsShape logitsShape α)
+    (actorRollout : nn.Sequential rolloutStateShape rolloutLogitsShape)
+    (criticRollout : nn.Sequential rolloutStateShape rolloutValueShape)
     (psAll : _root_.Runtime.Autograd.Torch.TList α
-      (API.TorchLean.LayerCore.Seq.paramShapes actorRollout ++
-        API.TorchLean.LayerCore.Seq.paramShapes criticRollout))
-    (sameActorParams :
-      API.TorchLean.LayerCore.Seq.paramShapes actorRollout =
-        API.TorchLean.LayerCore.Seq.paramShapes actorObs := by rfl) :
-    _root_.Spec.Tensor α obsShape → _root_.Spec.Tensor α logitsShape :=
+      (nn.paramShapes actorRollout ++ nn.paramShapes criticRollout))
+    (sameActorParams : nn.paramShapes actorRollout = actorParamShapes := by rfl) :
+    Tensor.T α obsShape → Tensor.T α logitsShape :=
   let (psActor, _psCritic) := splitActorCriticParams actorRollout criticRollout psAll
-  let psActorObs : _root_.Runtime.Autograd.Torch.TList α
-      (API.TorchLean.LayerCore.Seq.paramShapes actorObs) :=
+  let psActorObs : TensorPack α actorParamShapes :=
     Eq.mp (by rw [← sameActorParams]) psActor
-  fun obs => API.TorchLean.LayerCore.Seq.forwardArtifact actorObs actorCompiled psActorObs obs
+  fun obs => actorCompiled.forward psActorObs obs
 
 /--
-Build a compiled critic-value forward function from an actor-critic parameter pack.
+Build a single-observation critic function from the parameter pack of a rollout-shaped actor-critic
+module.
 
-The returned function evaluates the single-observation critic and reads the scalar from its
-length-one output vector.
+The result is scalar because the compiled critic has a checked one-element output shape.
 -/
 def criticValueFromParams
     {obsShape rolloutStateShape rolloutLogitsShape rolloutValueShape : _root_.Spec.Shape}
-    {α : Type} [API.Semantics.Scalar α]
-    (criticObs : API.TorchLean.LayerCore.Seq obsShape (.dim 1 .scalar))
-    (criticCompiled :
-      _root_.Runtime.Autograd.Torch.CompiledGraph α
-        (API.TorchLean.LayerCore.Seq.paramShapes criticObs ++ [obsShape]) (.dim 1 .scalar))
-    (actorRollout : API.TorchLean.LayerCore.Seq rolloutStateShape rolloutLogitsShape)
-    (criticRollout : API.TorchLean.LayerCore.Seq rolloutStateShape rolloutValueShape)
+    {criticParamShapes : List _root_.Spec.Shape}
+    {α : Type} [_root_.Context α]
+    (criticCompiled : nn.Compiled criticParamShapes obsShape (.dim 1 .scalar) α)
+    (actorRollout : nn.Sequential rolloutStateShape rolloutLogitsShape)
+    (criticRollout : nn.Sequential rolloutStateShape rolloutValueShape)
     (psAll : _root_.Runtime.Autograd.Torch.TList α
-      (API.TorchLean.LayerCore.Seq.paramShapes actorRollout ++
-        API.TorchLean.LayerCore.Seq.paramShapes criticRollout))
-    (sameCriticParams :
-      API.TorchLean.LayerCore.Seq.paramShapes criticRollout =
-        API.TorchLean.LayerCore.Seq.paramShapes criticObs := by rfl) :
-    _root_.Spec.Tensor α obsShape → α :=
+      (nn.paramShapes actorRollout ++ nn.paramShapes criticRollout))
+    (sameCriticParams : nn.paramShapes criticRollout = criticParamShapes := by rfl) :
+    Tensor.T α obsShape → α :=
   let (_psActor, psCritic) := splitActorCriticParams actorRollout criticRollout psAll
-  let psCriticObs : _root_.Runtime.Autograd.Torch.TList α
-      (API.TorchLean.LayerCore.Seq.paramShapes criticObs) :=
+  let psCriticObs : TensorPack α criticParamShapes :=
     Eq.mp (by rw [← sameCriticParams]) psCritic
   fun obs =>
-    _root_.Spec.Tensor.vecGet
-      (API.TorchLean.LayerCore.Seq.forwardArtifact criticObs criticCompiled psCriticObs obs)
-      ⟨0, by decide⟩
+    _root_.Spec.Tensor.vecGet (criticCompiled.forward psCriticObs obs) ⟨0, by decide⟩
 
 end ppo
 
 end rl
-
-end API
-end NN
+end TorchLean

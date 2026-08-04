@@ -276,7 +276,7 @@ Any leading shape can serve as the prefix; it need not mean “batch” or “ti
 definition therefore works for single examples, minibatches, sequences, and higher-rank
 collections.
 
-Now try changing the second linear layer in the quickstart MLP from `nn.linear 8 1` to
+Try changing the second linear layer in the quickstart MLP from `nn.linear 8 1` to
 `nn.linear 7 1` without changing the preceding layer. The sequential model no longer composes:
 one layer produces a last dimension of eight while the next requires seven. The error appears when
 the model is defined, before initialization, data loading, or training.

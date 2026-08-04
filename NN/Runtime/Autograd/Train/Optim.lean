@@ -161,7 +161,7 @@ inductive LRScheduler (α : Type) where
   /--
   Custom schedule with an explicit step counter.
 
-`custom f k` means "use learning rate `f k` now, and increment to `k+1` on `advance`".
+`custom f k` means "use learning rate `f k` for this step, and increment to `k+1` on `advance`".
   -/
   | custom : (Nat -> α) -> Nat -> LRScheduler α
 

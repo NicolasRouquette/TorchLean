@@ -121,7 +121,7 @@ The widget reads a runtime artifact. It does not alter execution or prove the ta
 
 # Compiled Execution
 
-Now run:
+Run the compiled version:
 
 ```
 lake exe torchlean quickstart_mlp \

@@ -54,33 +54,22 @@ theorem matrix_shape_roundtrip :
     Shape.ofDims (Shape.toList (shape![2, 3])) = shape![2, 3] := by
   simp
 
-/--
-The host-side public ReLU agrees with the usual mathematical identity on nonnegative real inputs.
-
-This is deliberately a compact theorem, but it has the same form as larger library facts: state the
-semantic contract once, prove it in Lean, and use it downstream without trusting comments or tests.
--/
+/-- ReLU fixes every nonnegative real number. -/
 theorem relu_eq_self_of_nonnegative (x : ℝ) (hx : 0 ≤ x) :
-    TorchLean.Semantics.relu x = x := by
-  unfold TorchLean.Semantics.relu
+    Activation.Math.reluSpec x = x := by
+  unfold Activation.Math.reluSpec
   exact max_eq_left hx
 
 /-- ReLU clamps nonpositive real inputs to zero. -/
 theorem relu_eq_zero_of_nonpositive (x : ℝ) (hx : x ≤ 0) :
-    TorchLean.Semantics.relu x = 0 := by
-  unfold TorchLean.Semantics.relu
+    Activation.Math.reluSpec x = 0 := by
+  unfold Activation.Math.reluSpec
   exact max_eq_right hx
 
-/--
-Concrete examples can also be proven by simplification.
-
-This is often enough for small API examples where the point is to show the proof shape without
-introducing a larger mathematical development.
--/
-example : TorchLean.Semantics.relu (3 : ℝ) = 3 := by
+example : Activation.Math.reluSpec (3 : ℝ) = 3 := by
   exact relu_eq_self_of_nonnegative 3 (by norm_num)
 
-example : TorchLean.Semantics.relu (-2 : ℝ) = 0 := by
+example : Activation.Math.reluSpec (-2 : ℝ) = 0 := by
   exact relu_eq_zero_of_nonpositive (-2) (by norm_num)
 
 end NN.Examples.Quickstart.Proofs

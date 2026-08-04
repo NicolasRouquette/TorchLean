@@ -10,16 +10,17 @@ public import NN.API.CLI
 public import NN.MLTheory.CROWN.Lyapunov.Verification
 
 /-!
-# Pipeline (i): Python-only training/verification, oracle-backed Lean theorem packaging
+# Pipeline (i): Python-produced Lyapunov bounds
 
 This file corresponds to **Figure 7 (i)** in the TorchLean paper (`arXiv:2602.22631`):
 
 - Stage 1 + Stage 2 run in PyTorch (float32) and produce candidate networks + numeric bounds.
 - Lean **does not** re-run α/β-CROWN here.
-- Lean’s role is to assign a precise meaning to the exported numbers and derive the usual
-  “Lyapunov inequalities hold on region R” statement under a single oracle trust boundary.
+- Lean assigns a precise meaning to the exported numbers and proves the arithmetic consequences of
+  those bounds. The connection between the numbers and the network remains an explicit hypothesis
+  until a Lean checker establishes it.
 
-Concretely, `crown_oracle` supplies the bounds
+The required semantic hypothesis is
 
 $$
 \forall x\in R,\quad
@@ -44,68 +45,42 @@ namespace NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineI.PythonOnly
 ## How to use in practice
 
 1. Run the Python-side verifier to produce a Lean file containing:
-   - a concrete `RealCert n` (the numeric bounds + region), and
-   - theorems discharging the side conditions needed by `Lyapunov.Verification`.
+   - a concrete `RealCert n` (the numeric bounds and region), and
+   - proofs of the strict numeric margins reported in that record.
 
    Concretely:
    `python NN/MLTheory/CROWN/Tactics/crown_verifier.py verify --model ... --region ... --dynamics
      ... --format lean-full`
 
-2. Import that generated file in a proof module and instantiate the theorems from
-   `NN.MLTheory.CROWN.Lyapunov.Verification`.
+2. Import that generated file in a proof module.
+3. Replay the network bounds with a checked TorchLean verifier to construct
+   `LyapunovCert.ValidFor`.
+4. Apply the theorems from `NN.MLTheory.CROWN.Lyapunov.Verification`.
 
 This file contains **no hardcoded numeric certificate**. In pipeline (i), the numbers come from the
 external verifier and are reified into Lean via generated code.
 -/
 
 /-!
-## What Lean proves (schema)
+## What remains to be checked
 
-Once the external tool produces a concrete certificate, the Lean side is essentially:
-
-- a `LyapunovCert ℝ n` packaging a box region + scalar bounds, and
-- a derivation of the usual Lyapunov inequalities on that region, using only:
-  `V_lo > 0` and `Vdot_hi < 0`.
-
-This file keeps that statement *parametric* (no numerals), and the generated file supplies the
-concrete instance.
+The generated module proves arithmetic facts about its own endpoints, such as `0 < V_lo`. It does
+not prove that those endpoints enclose a network. The semantic replay step must establish both
+fields of `LyapunovCert.ValidFor`; only then do positivity and decay follow from the numeric
+margins.
 -/
-
-section
-
-variable {n : Nat}
-variable (lyap : NeuralLyapunov ℝ n)
-variable (cert : LyapunovCert ℝ n)
-
-/--
-If a certificate provides a strictly-positive lower bound for `V` and a strictly-negative upper
-bound for `V̇` on a region, then `V > 0` and `V̇ < 0` hold everywhere on that region.
-
-In pipeline (i), `hV` and `hVdot` are discharged by the **generated** Lean file emitted by
-`crown_verifier.py`.
--/
-theorem lyapunov_conditions_schema :
-    CrownOracleWitness lyap cert →
-    cert.V_lo > 0 →
-    cert.Vdot_hi < 0 →
-    (∀ x, Box.contains cert.region x → lyap.V x > 0) ∧
-    (∀ x, Box.contains cert.region x → lyap.Vdot x < 0) :=
-by
-  intro w hV hVdot
-  exact NN.MLTheory.CROWN.Lyapunov.Real.lyapunov_conditions lyap cert w hV hVdot
-
-end
 
 /--
 Convenience runner for pipeline (i): call the external verifier (`crown_verifier.py`) and emit a
-Lean file (using `--format lean-full`) into `NN/MLTheory/CROWN/Lyapunov/Generated/`.
+  Lean data file (using `--format lean-full`) into `NN/MLTheory/CROWN/Lyapunov/Generated/`.
 
 Why this is an *IO runner* instead of a theorem:
 - Lean imports are resolved at compile time, so we cannot “generate a file and then import it”
   within the same compilation unit.
 - The intended workflow is:
   1) run this generator (or run `crown_verifier.py` directly),
-  2) then `import` the produced module in a proof file.
+  2) import the produced module in a proof file, and
+  3) run a semantic checker that constructs `LyapunovCert.ValidFor` for the imported bounds.
 
 Usage (via the CLI tool registered in `NN/Verification/CLI.lean`):
 `lake exe verify -- twostage-pythononly-certgen --model <path>.pth --region
@@ -168,7 +143,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile outPath out
   IO.println s!"wrote Lean certificate module: {outPath}"
   IO.println <|
-    s!"next: import `NN.MLTheory.CROWN.Lyapunov.Generated.{safeName}` in a " ++
-    s!"proof file and apply `lyapunov_conditions_schema`"
+    s!"next: import `NN.MLTheory.CROWN.Lyapunov.Generated.{safeName}` and replay " ++
+    s!"its bounds with a checker that constructs `LyapunovCert.ValidFor`"
 
 end NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineI.PythonOnly

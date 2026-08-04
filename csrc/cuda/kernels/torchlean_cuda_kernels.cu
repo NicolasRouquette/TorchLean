@@ -22,8 +22,14 @@
 
 static constexpr int kBlockSize = 256;
 static constexpr int kMaxRank = 8;
+static constexpr int kColumnTileCols = 32;
+static constexpr int kColumnTileRows = kBlockSize / kColumnTileCols;
+static constexpr uint32_t kColumnRowsPerTile = 64;
+static constexpr size_t kMaxCudaGridY = 65535;
 static_assert(kBlockSize > 0 && (kBlockSize & (kBlockSize - 1)) == 0,
               "kBlockSize must remain a power of two for shared-memory reductions");
+static_assert(kColumnTileCols * kColumnTileRows == kBlockSize,
+              "column-reduction tile must use one full CUDA block");
 
 extern "C" void torchlean_cuda_kernels_flush_scratch_cache(void) {
   torchlean_cuda_scratch_flush();
@@ -234,31 +240,104 @@ __global__ void spectral_conv1d_irfft_adjoint_f32(const cufftComplex* dX, float*
   dx[idx] = acc;
 }
 
-__global__ void reduce_sum_by_column_f32(const float* in, float* out, uint32_t rows, uint32_t cols) {
+__global__ void reduce_sum_by_column_partial_f32(const float* in, float* partialOut,
+                                                 uint32_t rows, uint32_t cols,
+                                                 uint32_t rowsPerTile) {
+  if (blockDim.x != kColumnTileCols || blockDim.y != kColumnTileRows) return;
+  const uint32_t col =
+      (uint32_t)blockIdx.x * (uint32_t)kColumnTileCols + (uint32_t)threadIdx.x;
+  const uint32_t rowLane = (uint32_t)threadIdx.y;
+  const size_t rowBegin = (size_t)blockIdx.y * (size_t)rowsPerTile;
+  const size_t rowLimit = rowBegin + (size_t)rowsPerTile;
+  const size_t rowEnd = rowLimit < (size_t)rows ? rowLimit : (size_t)rows;
+  __shared__ float tileSums[kColumnTileRows][kColumnTileCols];
+  float sum = 0.0f;
+  if (col < cols) {
+    for (size_t r = rowBegin + (size_t)rowLane; r < rowEnd;
+         r += (size_t)kColumnTileRows) {
+      sum += in[(size_t)r * (size_t)cols + (size_t)col];
+    }
+  }
+  tileSums[rowLane][threadIdx.x] = sum;
+  __syncthreads();
+
+  if (rowLane == 0 && col < cols) {
+    float total = tileSums[0][threadIdx.x];
+    for (int lane = 1; lane < kColumnTileRows; ++lane) {
+      total += tileSums[lane][threadIdx.x];
+    }
+    partialOut[(size_t)col * (size_t)gridDim.y + (size_t)blockIdx.y] = total;
+  }
+}
+
+__global__ void reduce_sum_by_column_final_f32(const float* partial, float* out,
+                                               uint32_t partialRows, uint32_t cols) {
   if (blockDim.x != kBlockSize) return;
   const uint32_t col = (uint32_t)blockIdx.x;
   if (col >= cols) return;
 
-  __shared__ float sdata[kBlockSize];
-  const int tid = threadIdx.x;
-
-  float sum = 0.0f;
-  for (uint32_t r = (uint32_t)tid; r < rows; r += (uint32_t)blockDim.x) {
-    sum += in[(size_t)r * (size_t)cols + (size_t)col];
+  __shared__ float sums[kBlockSize];
+  const uint32_t tid = (uint32_t)threadIdx.x;
+  float total = 0.0f;
+  for (uint32_t r = tid; r < partialRows; r += (uint32_t)kBlockSize) {
+    total += partial[(size_t)col * (size_t)partialRows + (size_t)r];
   }
-  sdata[tid] = sum;
+  sums[tid] = total;
   __syncthreads();
 
-  for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-    if (tid < s) {
-      sdata[tid] += sdata[tid + s];
+  for (int stride = kBlockSize / 2; stride > 0; stride >>= 1) {
+    if (tid < (uint32_t)stride) {
+      sums[tid] += sums[tid + (uint32_t)stride];
     }
     __syncthreads();
   }
-
   if (tid == 0) {
-    out[col] = sdata[0];
+    out[col] = sums[0];
   }
+}
+
+static inline void launch_reduce_sum_by_column(const float* in, float* out,
+                                               uint32_t rows, uint32_t cols,
+                                               const char* gridError,
+                                               const char* launchError) {
+  if (cols == 0) return;
+  if (rows == 0) {
+    checkCuda(cudaMemset(out, 0, (size_t)cols * sizeof(float)), launchError);
+    return;
+  }
+  const size_t columnTiles =
+      ((size_t)cols + (size_t)kColumnTileCols - 1) / (size_t)kColumnTileCols;
+  // The partial kernel uses `columnTiles` blocks, while the final kernel uses one block per
+  // output column. Checking the larger launch bounds both grids.
+  check_axis_grid_size((size_t)cols, gridError);
+
+  size_t rowTiles =
+      ((size_t)rows + (size_t)kColumnRowsPerTile - 1) / (size_t)kColumnRowsPerTile;
+  if (rowTiles > kMaxCudaGridY) {
+    rowTiles = kMaxCudaGridY;
+  }
+  const size_t rowsPerTileSize =
+      ((size_t)rows + rowTiles - 1) / rowTiles;
+  if (rowsPerTileSize > (size_t)UINT32_MAX) {
+    lean_internal_panic("column reduction row tile exceeds UInt32");
+  }
+  const uint32_t rowsPerTile = (uint32_t)rowsPerTileSize;
+  const size_t partialCount =
+      checked_mul_size(rowTiles, (size_t)cols, "column reduction partial size overflow");
+  float* partial =
+      torchlean_cuda_scratch_alloc<float>(partialCount, "cudaMalloc column partials failed");
+
+  reduce_sum_by_column_partial_f32<<<
+      dim3((unsigned int)columnTiles, (unsigned int)rowTiles),
+      dim3(kColumnTileCols, kColumnTileRows)>>>(
+          in, partial, rows, cols, rowsPerTile);
+  checkCuda(cudaGetLastError(), launchError);
+
+  reduce_sum_by_column_final_f32<<<dim3((unsigned int)cols), dim3(kBlockSize)>>>(
+      partial, out, (uint32_t)rowTiles, cols);
+  checkCuda(cudaGetLastError(), launchError);
+  torchlean_cuda_scratch_free(
+      &partial, partialCount, "cudaFree column partials failed");
 }
 
 __global__ void reduce_sum_by_row_f32(const float* in, float* out, uint32_t rows, uint32_t cols) {
@@ -285,6 +364,134 @@ __global__ void reduce_sum_by_row_f32(const float* in, float* out, uint32_t rows
 
   if (tid == 0) {
     out[row] = sdata[0];
+  }
+}
+
+__global__ void layer_norm_fwd_f32(
+    const float* x,
+    const float* gamma,
+    const float* beta,
+    float* out,
+    float* normalized,
+    float* invStdOut,
+    uint32_t rows,
+    uint32_t cols,
+    float invCols,
+    float epsilon) {
+  if (blockDim.x != kBlockSize) return;
+  const uint32_t row = (uint32_t)blockIdx.x;
+  if (row >= rows) return;
+
+  __shared__ float sums[kBlockSize];
+  __shared__ float mean;
+  __shared__ float std;
+  __shared__ float invStd;
+  const uint32_t tid = (uint32_t)threadIdx.x;
+  const size_t rowOffset = (size_t)row * (size_t)cols;
+
+  float total = 0.0f;
+  for (uint32_t col = tid; col < cols; col += (uint32_t)kBlockSize) {
+    total = __fadd_rn(total, x[rowOffset + (size_t)col]);
+  }
+  sums[tid] = total;
+  __syncthreads();
+  for (int stride = kBlockSize / 2; stride > 0; stride >>= 1) {
+    if (tid < (uint32_t)stride) {
+      sums[tid] = __fadd_rn(sums[tid], sums[tid + (uint32_t)stride]);
+    }
+    __syncthreads();
+  }
+  if (tid == 0) {
+    mean = __fmul_rn(sums[0], invCols);
+  }
+  __syncthreads();
+
+  float squareTotal = 0.0f;
+  for (uint32_t col = tid; col < cols; col += (uint32_t)kBlockSize) {
+    const float centered = __fsub_rn(x[rowOffset + (size_t)col], mean);
+    squareTotal = __fadd_rn(squareTotal, __fmul_rn(centered, centered));
+  }
+  sums[tid] = squareTotal;
+  __syncthreads();
+  for (int stride = kBlockSize / 2; stride > 0; stride >>= 1) {
+    if (tid < (uint32_t)stride) {
+      sums[tid] = __fadd_rn(sums[tid], sums[tid + (uint32_t)stride]);
+    }
+    __syncthreads();
+  }
+  if (tid == 0) {
+    const float variance = __fmul_rn(sums[0], invCols);
+    std = __fsqrt_rn(__fadd_rn(variance, epsilon));
+    invStd = __fdiv_rn(1.0f, std);
+    invStdOut[row] = invStd;
+  }
+  __syncthreads();
+
+  for (uint32_t col = tid; col < cols; col += (uint32_t)kBlockSize) {
+    const size_t index = rowOffset + (size_t)col;
+    const float centered = __fsub_rn(x[index], mean);
+    const float xHat = __fdiv_rn(centered, std);
+    normalized[index] = xHat;
+    out[index] = __fadd_rn(__fmul_rn(xHat, gamma[col]), beta[col]);
+  }
+}
+
+__global__ void layer_norm_bwd_rows_f32(
+    const float* dOut,
+    const float* normalized,
+    const float* invStd,
+    const float* gamma,
+    float* dX,
+    float* dGammaPointwise,
+    uint32_t rows,
+    uint32_t cols,
+    float colsScale,
+    float invCols) {
+  if (blockDim.x != kBlockSize) return;
+  const uint32_t row = (uint32_t)blockIdx.x;
+  if (row >= rows) return;
+
+  __shared__ float dXhatSums[kBlockSize];
+  __shared__ float dXhatXhatSums[kBlockSize];
+  const uint32_t tid = (uint32_t)threadIdx.x;
+  const size_t rowOffset = (size_t)row * (size_t)cols;
+
+  float dXhatTotal = 0.0f;
+  float dXhatXhatTotal = 0.0f;
+  for (uint32_t col = tid; col < cols; col += (uint32_t)kBlockSize) {
+    const size_t index = rowOffset + (size_t)col;
+    const float dXhat = __fmul_rn(dOut[index], gamma[col]);
+    dXhatTotal = __fadd_rn(dXhatTotal, dXhat);
+    dXhatXhatTotal =
+        __fadd_rn(dXhatXhatTotal, __fmul_rn(dXhat, normalized[index]));
+    dGammaPointwise[index] = __fmul_rn(dOut[index], normalized[index]);
+  }
+  dXhatSums[tid] = dXhatTotal;
+  dXhatXhatSums[tid] = dXhatXhatTotal;
+  __syncthreads();
+  for (int stride = kBlockSize / 2; stride > 0; stride >>= 1) {
+    if (tid < (uint32_t)stride) {
+      dXhatSums[tid] =
+          __fadd_rn(dXhatSums[tid], dXhatSums[tid + (uint32_t)stride]);
+      dXhatXhatSums[tid] =
+          __fadd_rn(dXhatXhatSums[tid], dXhatXhatSums[tid + (uint32_t)stride]);
+    }
+    __syncthreads();
+  }
+
+  const float sumDXhat = dXhatSums[0];
+  const float sumDXhatXhat = dXhatXhatSums[0];
+  const float rowInvStd = invStd[row];
+  for (uint32_t col = tid; col < cols; col += (uint32_t)kBlockSize) {
+    const size_t index = rowOffset + (size_t)col;
+    const float dXhat = __fmul_rn(dOut[index], gamma[col]);
+    const float scaledDXhat = __fmul_rn(dXhat, colsScale);
+    const float centeredDXhat = __fsub_rn(scaledDXhat, sumDXhat);
+    const float xHatSum =
+        __fmul_rn(normalized[index], sumDXhatXhat);
+    const float term = __fsub_rn(centeredDXhat, xHatSum);
+    const float termInv = __fmul_rn(term, rowInvStd);
+    dX[index] = __fmul_rn(termInv, invCols);
   }
 }
 
@@ -877,11 +1084,10 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_sum_by_column(b
     return torchlean_cuda_buffer_box(out);
   }
 
-  check_axis_grid_size(C, "torchlean_cuda_buffer_reduce_sum_by_column: cols exceed CUDA x-grid range");
-  dim3 blocks = dim3((unsigned int)C);
-  dim3 threads = dim3(kBlockSize);
-  reduce_sum_by_column_f32<<<blocks, threads>>>(b->data, out->data, rows, cols);
-  checkCuda(cudaGetLastError(), "cuda reduceSumByColumn kernel launch failed");
+  launch_reduce_sum_by_column(
+      b->data, out->data, rows, cols,
+      "torchlean_cuda_buffer_reduce_sum_by_column: column tiles exceed CUDA x-grid range",
+      "cuda reduceSumByColumn kernel launch failed");
   return torchlean_cuda_buffer_box(out);
 }
 
@@ -1099,27 +1305,134 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_broadcast_vec_to_cols(
   return torchlean_cuda_buffer_box(out);
 }
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_bmm(b_lean_obj_arg AObj,
-                                                             b_lean_obj_arg BObj,
-                                                             uint32_t batch, uint32_t m,
-                                                             uint32_t n, uint32_t p) {
+extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_layer_norm_fwd(
+    b_lean_obj_arg XObj,
+    b_lean_obj_arg GammaObj,
+    b_lean_obj_arg BetaObj,
+    uint32_t rows,
+    uint32_t cols,
+    double invCols,
+    double epsilon) {
+  torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
+  torchlean_cuda_buffer* gamma = torchlean_cuda_buffer_unbox(GammaObj);
+  torchlean_cuda_buffer* beta = torchlean_cuda_buffer_unbox(BetaObj);
+  if (rows == 0 || cols == 0) {
+    lean_internal_panic("torchlean_cuda_buffer_layer_norm_fwd: dimensions must be positive");
+  }
+  const size_t total = checked_mul_size(
+      (size_t)rows, (size_t)cols, "torchlean_cuda_buffer_layer_norm_fwd: size overflow");
+  if (x->size != total || gamma->size != (size_t)cols || beta->size != (size_t)cols) {
+    lean_internal_panic("torchlean_cuda_buffer_layer_norm_fwd: buffer size mismatch");
+  }
+  check_axis_grid_size(
+      (size_t)rows, "torchlean_cuda_buffer_layer_norm_fwd: rows exceed CUDA x-grid range");
+
+  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(total);
+  torchlean_cuda_buffer* normalized = torchlean_cuda_buffer_alloc(total);
+  torchlean_cuda_buffer* invStd = torchlean_cuda_buffer_alloc((size_t)rows);
+  layer_norm_fwd_f32<<<dim3((unsigned int)rows), dim3(kBlockSize)>>>(
+      x->data,
+      gamma->data,
+      beta->data,
+      out->data,
+      normalized->data,
+      invStd->data,
+      rows,
+      cols,
+      (float)invCols,
+      (float)epsilon);
+  checkCuda(cudaGetLastError(), "cuda layerNorm forward kernel launch failed");
+  return torchlean_cuda_box_three_buffers(out, normalized, invStd);
+}
+
+extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_layer_norm_bwd(
+    b_lean_obj_arg DOutObj,
+    b_lean_obj_arg NormalizedObj,
+    b_lean_obj_arg InvStdObj,
+    b_lean_obj_arg GammaObj,
+    uint32_t rows,
+    uint32_t cols,
+    double colsScale,
+    double invCols) {
+  torchlean_cuda_buffer* dOut = torchlean_cuda_buffer_unbox(DOutObj);
+  torchlean_cuda_buffer* normalized = torchlean_cuda_buffer_unbox(NormalizedObj);
+  torchlean_cuda_buffer* invStd = torchlean_cuda_buffer_unbox(InvStdObj);
+  torchlean_cuda_buffer* gamma = torchlean_cuda_buffer_unbox(GammaObj);
+  if (rows == 0 || cols == 0) {
+    lean_internal_panic("torchlean_cuda_buffer_layer_norm_bwd: dimensions must be positive");
+  }
+  const size_t total = checked_mul_size(
+      (size_t)rows, (size_t)cols, "torchlean_cuda_buffer_layer_norm_bwd: size overflow");
+  if (dOut->size != total || normalized->size != total ||
+      invStd->size != (size_t)rows || gamma->size != (size_t)cols) {
+    lean_internal_panic("torchlean_cuda_buffer_layer_norm_bwd: buffer size mismatch");
+  }
+  check_axis_grid_size(
+      (size_t)rows, "torchlean_cuda_buffer_layer_norm_bwd: rows exceed CUDA x-grid range");
+
+  torchlean_cuda_buffer* dX = torchlean_cuda_buffer_alloc(total);
+  torchlean_cuda_buffer* dGamma = torchlean_cuda_buffer_alloc((size_t)cols);
+  torchlean_cuda_buffer* dBeta = torchlean_cuda_buffer_alloc((size_t)cols);
+  float* dGammaPointwise = torchlean_cuda_scratch_alloc<float>(
+      total, "cudaMalloc layerNorm dGamma workspace failed");
+  layer_norm_bwd_rows_f32<<<dim3((unsigned int)rows), dim3(kBlockSize)>>>(
+      dOut->data,
+      normalized->data,
+      invStd->data,
+      gamma->data,
+      dX->data,
+      dGammaPointwise,
+      rows,
+      cols,
+      (float)colsScale,
+      (float)invCols);
+  checkCuda(cudaGetLastError(), "cuda layerNorm backward row kernel launch failed");
+  launch_reduce_sum_by_column(
+      dGammaPointwise,
+      dGamma->data,
+      rows,
+      cols,
+      "torchlean_cuda_buffer_layer_norm_bwd: dGamma grid overflow",
+      "cuda layerNorm dGamma reduction launch failed");
+  launch_reduce_sum_by_column(
+      dOut->data,
+      dBeta->data,
+      rows,
+      cols,
+      "torchlean_cuda_buffer_layer_norm_bwd: dBeta grid overflow",
+      "cuda layerNorm dBeta reduction launch failed");
+  torchlean_cuda_scratch_free(
+      &dGammaPointwise, total, "cudaFree layerNorm dGamma workspace failed");
+  return torchlean_cuda_box_three_buffers(dX, dGamma, dBeta);
+}
+
+extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_bmm_with_transpose(
+    b_lean_obj_arg AObj, b_lean_obj_arg BObj, uint32_t batch, uint32_t m, uint32_t n,
+    uint32_t p, uint32_t transposeA, uint32_t transposeB) {
   torchlean_cuda_buffer* A = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* B = torchlean_cuda_buffer_unbox(BObj);
+
+  if (transposeA > 1 || transposeB > 1) {
+    lean_internal_panic("torchlean_cuda_buffer_bmm_with_transpose: transpose flag must be 0 or 1");
+  }
 
   const size_t Batch = (size_t)batch;
   const size_t M = (size_t)m;
   const size_t N = (size_t)n;
   const size_t P = (size_t)p;
 
-  const size_t aSz = checked_mul3_size(Batch, M, N, "torchlean_cuda_buffer_bmm: A size overflow");
-  const size_t bSz = checked_mul3_size(Batch, N, P, "torchlean_cuda_buffer_bmm: B size overflow");
-  const size_t cSz = checked_mul3_size(Batch, M, P, "torchlean_cuda_buffer_bmm: C size overflow");
+  const size_t aSz = checked_mul3_size(
+      Batch, M, N, "torchlean_cuda_buffer_bmm_with_transpose: A size overflow");
+  const size_t bSz = checked_mul3_size(
+      Batch, N, P, "torchlean_cuda_buffer_bmm_with_transpose: B size overflow");
+  const size_t cSz = checked_mul3_size(
+      Batch, M, P, "torchlean_cuda_buffer_bmm_with_transpose: C size overflow");
 
   if (A->size != aSz) {
-    lean_internal_panic("torchlean_cuda_buffer_bmm: A.size mismatch");
+    lean_internal_panic("torchlean_cuda_buffer_bmm_with_transpose: A.size mismatch");
   }
   if (B->size != bSz) {
-    lean_internal_panic("torchlean_cuda_buffer_bmm: B.size mismatch");
+    lean_internal_panic("torchlean_cuda_buffer_bmm_with_transpose: B.size mismatch");
   }
 
   torchlean_cuda_buffer* C = torchlean_cuda_buffer_alloc(cSz);
@@ -1134,7 +1447,8 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_bmm(b_lean_obj_arg AOb
 
   if (m > (uint32_t)INT_MAX || n > (uint32_t)INT_MAX || p > (uint32_t)INT_MAX ||
       batch > (uint32_t)INT_MAX) {
-    lean_internal_panic("torchlean_cuda_buffer_bmm: dims too large for cuBLAS int API");
+    lean_internal_panic(
+        "torchlean_cuda_buffer_bmm_with_transpose: dims too large for cuBLAS int API");
   }
 
   cublasHandle_t handle = getCublasHandle();
@@ -1142,23 +1456,28 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_bmm(b_lean_obj_arg AOb
   const float alpha = 1.0f;
   const float beta = 0.0f;
 
-  // Treat row-major buffers as transposed column-major data for cuBLAS.
-  // Compute C^T (p x m) = B^T (p x n) * A^T (n x m), without explicit transposes.
+  // Row-major buffers appear transposed to column-major cuBLAS. Reversing the operand order
+  // computes C^T. The requested logical transpose maps directly to a cuBLAS transpose flag, so
+  // no temporary matrix is needed.
+  const cublasOperation_t opB = transposeB == 0 ? CUBLAS_OP_N : CUBLAS_OP_T;
+  const cublasOperation_t opA = transposeA == 0 ? CUBLAS_OP_N : CUBLAS_OP_T;
+  const int leadingB = transposeB == 0 ? (int)P : (int)N;
+  const int leadingA = transposeA == 0 ? (int)N : (int)M;
   const long long int strideA = (long long int)(N * P);  // B batch stride (treated as A in cuBLAS)
   const long long int strideB = (long long int)(M * N);  // A batch stride (treated as B in cuBLAS)
   const long long int strideC = (long long int)(M * P);
 
   checkCublas(
       cublasSgemmStridedBatched(handle,
-                               CUBLAS_OP_N, CUBLAS_OP_N,
+                               opB, opA,
                                (int)P, (int)M, (int)N,
                                &alpha,
-                               B->data, (int)P, strideA,
-                               A->data, (int)N, strideB,
+                               B->data, leadingB, strideA,
+                               A->data, leadingA, strideB,
                                &beta,
                                C->data, (int)P, strideC,
                                (int)batch),
-      "cublasSgemmStridedBatched failed");
+      "cublasSgemmStridedBatched with logical transpose failed");
 
   return torchlean_cuda_buffer_box(C);
 }
@@ -2300,6 +2619,51 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_reduce_from_broadcast(
               "cudaMemset reduceFromBroadcast failed");
     free_host_broadcast_arrays(&h);
     return torchlean_cuda_buffer_box(dIn);
+  }
+
+  // A scalar broadcast is common in dropout and scalar-valued model controls:
+  //
+  //   () -> (...).
+  //
+  // Its adjoint is one reduction over the entire output. Avoid sending every output element
+  // through the generic atomic kernel when the caller has selected the faster reduction policy.
+  if (!torchlean_cuda_get_deterministic_reductions() && rankIn == 0 &&
+      outSize <= (size_t)UINT32_MAX) {
+    free_host_broadcast_arrays(&h);
+    launch_reduce_sum_by_column(
+        dOut->data, dIn->data, (uint32_t)outSize, 1,
+        "torchlean_cuda_buffer_reduce_from_broadcast: scalar reduction grid overflow",
+        "cuda reduceFromBroadcast scalar kernel launch failed");
+    return torchlean_cuda_buffer_box(dIn);
+  }
+
+  // A vector broadcast over leading axes is the common bias-add pattern:
+  //
+  //   (cols) -> (..., cols).
+  //
+  // Its adjoint is a column reduction after folding the leading axes into `rows`. The generic
+  // atomic kernel below is correct for arbitrary broadcast maps, but it creates one atomic update
+  // per output element and is especially costly for language-model output projections. Keep the
+  // fixed row-major implementation when deterministic reductions are requested.
+  bool vectorSuffixReduction =
+      !torchlean_cuda_get_deterministic_reductions() &&
+      rankIn == 1 && rankOut >= 1 &&
+      h.inDims[0] == h.outDims[rankOut - 1] &&
+      h.axisMap[rankOut - 1] == 1;
+  for (size_t ax = 0; vectorSuffixReduction && ax + 1 < rankOut; ++ax) {
+    vectorSuffixReduction = h.axisMap[ax] == 0;
+  }
+  if (vectorSuffixReduction) {
+    const size_t cols = inSize;
+    const size_t rows = outSize / cols;
+    if (rows <= (size_t)UINT32_MAX && cols <= (size_t)UINT32_MAX) {
+      free_host_broadcast_arrays(&h);
+      launch_reduce_sum_by_column(
+          dOut->data, dIn->data, (uint32_t)rows, (uint32_t)cols,
+          "torchlean_cuda_buffer_reduce_from_broadcast: vector column tiles exceed CUDA x-grid range",
+          "cuda reduceFromBroadcast vector-suffix kernel launch failed");
+      return torchlean_cuda_buffer_box(dIn);
+    }
   }
 
   uint32_t* dInDims = nullptr;

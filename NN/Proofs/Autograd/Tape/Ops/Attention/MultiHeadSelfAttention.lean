@@ -87,6 +87,31 @@ abbrev ssMHA (n dModel numHeads headDim : Nat) : List Shape :=
   , XShape n dModel
   ]
 
+/-- Saved tensors produced while projecting the input into query, key, and value heads. -/
+abbrev ssMHAProjections (n numHeads headDim : Nat) : List Shape :=
+  [ BigShape n numHeads headDim
+  , HeadsShape n numHeads headDim
+  , BigShape n numHeads headDim
+  , HeadsShape n numHeads headDim
+  , KtShape n numHeads headDim
+  , BigShape n numHeads headDim
+  , HeadsShape n numHeads headDim
+  ]
+
+/-- Saved tensors through scaled query-key scores, before softmax is applied. -/
+abbrev ssMHAScores (n numHeads headDim : Nat) : List Shape :=
+  ssMHAProjections n numHeads headDim ++
+    [ ScoresShape n numHeads
+    , ScoresShape n numHeads
+    ]
+
+/-- Saved tensors through the head-wise attention output, before heads are merged. -/
+abbrev ssMHAAttention (n numHeads headDim : Nat) : List Shape :=
+  ssMHAScores n numHeads headDim ++
+    [ ScoresShape n numHeads
+    , HeadsShape n numHeads headDim
+    ]
+
 /-- Projection weight shape `dModel×(numHeads*headDim)` (used for Q/K/V). -/
 abbrev WqShape (dModel numHeads headDim : Nat) : Shape := .dim dModel (.dim (numHeads * headDim)
   .scalar)
@@ -140,22 +165,34 @@ lemma size_swap_to_concat (n numHeads headDim : Nat) :
       headDim) := by
   simp [Spec.Shape.size]
 
-section
+/-- Append a constant scaling node for the most recently saved tensor. -/
+def appendScaleLast {Γ ss : List Shape} {s : Shape}
+    (dg : DGraph Γ (ss ++ [s])) (c : ℝ) : DGraph Γ ((ss ++ [s]) ++ [s]) :=
+  let hctx : Γ ++ ss ++ [s] = Γ ++ (ss ++ [s]) := by simp [List.append_assoc]
+  let idx : Idx (Γ ++ (ss ++ [s])) s :=
+    hctx ▸ Idx.last (Γ := Γ) (ss := ss) (τ := s)
+  DGraph.snoc dg
+    (TapeNodes.scale (Γ := Γ ++ (ss ++ [s])) (s := s) idx c)
+    (TapeNodes.scaleFderiv (Γ := Γ ++ (ss ++ [s])) (s := s) idx c)
 
-set_option maxHeartbeats 20000000
+/-- Append a row-wise softmax node for the most recently saved batched matrix. -/
+def appendBatchedSoftmaxLast {Γ ss : List Shape} {h m n : Nat}
+    (dg : DGraph Γ (ss ++ [.dim h (.dim m (.dim n .scalar))])) :
+    DGraph Γ
+      ((ss ++ [.dim h (.dim m (.dim n .scalar))]) ++ [.dim h (.dim m (.dim n .scalar))]) :=
+  let s : Shape := .dim h (.dim m (.dim n .scalar))
+  let hctx : Γ ++ ss ++ [s] = Γ ++ (ss ++ [s]) := by simp [List.append_assoc]
+  let idx : Idx (Γ ++ (ss ++ [s])) s :=
+    hctx ▸ Idx.last (Γ := Γ) (ss := ss) (τ := s)
+  DGraph.snoc dg
+    (TapeNodes.Batched.softmaxLast (Γ := Γ ++ (ss ++ [s]))
+      (h := h) (m := m) (n := n) idx)
+    (TapeNodes.Batched.softmaxLastFderiv (Γ := Γ ++ (ss ++ [s]))
+      (h := h) (m := m) (n := n) idx)
 
-/--
-Multi-head self-attention as a proof-carrying graph.
-
-This implements:
-`x Wq Wk Wv Wo ↦ Wo (concat_heads (softmax(c * (Q Kᵀ)) V))`,
-with `Q/K/V` projected from `x`.
-
-The graph is laid out to match typical runtime implementations:
-`view(...).transpose(...)` is modeled by `reshape` + `swap_first_two3d`.
--/
-def mhaDGraph {n dModel numHeads headDim : Nat} (c : ℝ) :
-    DGraph (ΓMHA n dModel numHeads headDim) (ssMHA n dModel numHeads headDim) := by
+/-- Project the sequence input into query, transposed-key, and value head tensors. -/
+def mhaProjectionDGraph {n dModel numHeads headDim : Nat} :
+    DGraph (ΓMHA n dModel numHeads headDim) (ssMHAProjections n numHeads headDim) := by
   classical
 
   let dg0 : DGraph (ΓMHA n dModel numHeads headDim) [] := DGraph.nil
@@ -373,16 +410,17 @@ def mhaDGraph {n dModel numHeads headDim : Nat} (c : ℝ) :
         (s₁ := BigShape n numHeads headDim) (s₂ := HeadsShape n numHeads headDim)
         idxVbig (size_big_to_heads (n := n) (numHeads := numHeads) (headDim := headDim)))
 
+  exact dg7
+
+/-- Form and scale the query-key score matrices for every head. -/
+def mhaScoresDGraph {n dModel numHeads headDim : Nat} (c : ℝ) :
+    DGraph (ΓMHA n dModel numHeads headDim) (ssMHAScores n numHeads headDim) := by
+  classical
+  let dg7 := mhaProjectionDGraph (n := n) (dModel := dModel)
+    (numHeads := numHeads) (headDim := headDim)
+
   -- 8) scores := Qheads * Kᵀ (batched matmul)
-  let ss7 :=
-      [ BigShape n numHeads headDim
-      , HeadsShape n numHeads headDim
-      , BigShape n numHeads headDim
-      , HeadsShape n numHeads headDim
-      , .dim numHeads (.dim headDim (.dim n .scalar))
-      , BigShape n numHeads headDim
-      , HeadsShape n numHeads headDim
-      ]
+  let ss7 := ssMHAProjections n numHeads headDim
   let idxQheads0 :
       Idx (ΓMHA n dModel numHeads headDim ++ [BigShape n numHeads headDim, HeadsShape n numHeads
         headDim])
@@ -435,48 +473,23 @@ def mhaDGraph {n dModel numHeads headDim : Nat} (c : ℝ) :
         (A := idxQheads7) (B := idxKt7))
 
   -- 9) scaled := scale scores c
-  let idxScores :
-      Idx (ΓMHA n dModel numHeads headDim ++ ss7 ++ [.dim numHeads (.dim n (.dim n .scalar))])
-        (.dim numHeads (.dim n (.dim n .scalar))) :=
-    Idx.last (Γ := ΓMHA n dModel numHeads headDim) (ss := ss7) (τ := .dim numHeads (.dim n (.dim n
-      .scalar)))
-  let nodeScaled :
-      Node (ΓMHA n dModel numHeads headDim ++ ss7 ++ [.dim numHeads (.dim n (.dim n .scalar))])
-        (.dim numHeads (.dim n (.dim n .scalar))) :=
-    TapeNodes.scale
-      (Γ := ΓMHA n dModel numHeads headDim ++ ss7 ++ [.dim numHeads (.dim n (.dim n .scalar))])
-      (s := .dim numHeads (.dim n (.dim n .scalar))) (idx := idxScores) c
-  let dg9 :=
-    DGraph.snoc (dg := dg8) (node := nodeScaled)
-      (hn := TapeNodes.scaleFderiv
-        (Γ := ΓMHA n dModel numHeads headDim ++ ss7 ++ [.dim numHeads (.dim n (.dim n .scalar))])
-        (s := .dim numHeads (.dim n (.dim n .scalar))) (idx := idxScores) (c := c))
+  let dg9 := appendScaleLast (dg := dg8) c
+
+  simpa [ssMHAScores, ss7, List.append_assoc] using dg9
+
+/-- Normalize the score rows and combine the resulting probabilities with the value heads. -/
+def mhaAttentionDGraph {n dModel numHeads headDim : Nat} (c : ℝ) :
+    DGraph (ΓMHA n dModel numHeads headDim) (ssMHAAttention n numHeads headDim) := by
+  classical
+  let dg9 := mhaScoresDGraph (n := n) (dModel := dModel)
+    (numHeads := numHeads) (headDim := headDim) c
+  let ss7 := ssMHAProjections n numHeads headDim
 
   -- 10) probs := batched softmax_last scaled
-  let idxScaled :
-      Idx
-        (ΓMHA n dModel numHeads headDim ++ ss7 ++
-          [.dim numHeads (.dim n (.dim n .scalar)), .dim numHeads (.dim n (.dim n .scalar))])
-        (.dim numHeads (.dim n (.dim n .scalar))) :=
-    Idx.last
-      (Γ := ΓMHA n dModel numHeads headDim)
-      (ss := ss7 ++ [.dim numHeads (.dim n (.dim n .scalar))])
-      (τ := .dim numHeads (.dim n (.dim n .scalar)))
-  let nodeProbs :
-      Node
-        (ΓMHA n dModel numHeads headDim ++ ss7 ++
-          [.dim numHeads (.dim n (.dim n .scalar)), .dim numHeads (.dim n (.dim n .scalar))])
-        (.dim numHeads (.dim n (.dim n .scalar))) :=
-    TapeNodes.Batched.softmaxLast
-      (Γ := ΓMHA n dModel numHeads headDim ++ ss7 ++
-        [.dim numHeads (.dim n (.dim n .scalar)), .dim numHeads (.dim n (.dim n .scalar))])
-      (h := numHeads) (m := n) (n := n) (idx := idxScaled)
-  let dg10 :=
-    DGraph.snoc (dg := dg9) (node := nodeProbs)
-      (hn := TapeNodes.Batched.softmaxLastFderiv
-        (Γ := ΓMHA n dModel numHeads headDim ++ ss7 ++
-          [.dim numHeads (.dim n (.dim n .scalar)), .dim numHeads (.dim n (.dim n .scalar))])
-        (h := numHeads) (m := n) (n := n) (idx := idxScaled))
+  let dg9' : DGraph (ΓMHA n dModel numHeads headDim)
+      ((ss7 ++ [ScoresShape n numHeads]) ++ [ScoresShape n numHeads]) := by
+    simpa [ssMHAScores, ss7, List.append_assoc] using dg9
+  let dg10 := appendBatchedSoftmaxLast (dg := dg9')
 
   -- 11) headOut := probs * Vheads (batched matmul)
   let ss10 := ss7 ++
@@ -524,6 +537,26 @@ def mhaDGraph {n dModel numHeads headDim : Nat} (c : ℝ) :
         (Γ := ΓMHA n dModel numHeads headDim ++ ss10)
         (h := numHeads) (m := n) (n := n) (p := headDim)
         (A := idxProbs) (B := idxVheads10))
+
+  exact dg11
+
+/--
+Multi-head self-attention as a proof-carrying graph.
+
+This implements
+`x Wq Wk Wv Wo ↦ Wo (concat_heads (softmax(c * (Q Kᵀ)) V))`, with `Q`, `K`, and `V`
+projected from `x`. Reshaping and axis swaps model the usual runtime head split and merge.
+-/
+def mhaDGraph {n dModel numHeads headDim : Nat} (c : ℝ) :
+    DGraph (ΓMHA n dModel numHeads headDim) (ssMHA n dModel numHeads headDim) := by
+  classical
+  let dg11 := mhaAttentionDGraph (n := n) (dModel := dModel)
+    (numHeads := numHeads) (headDim := headDim) c
+  let ss10 := ssMHAProjections n numHeads headDim ++
+    [ ScoresShape n numHeads
+    , ScoresShape n numHeads
+    , ScoresShape n numHeads
+    ]
 
   -- 12) swapped := swap_first_two3d headOut  (numHeads,n,headDim) → (n,numHeads,headDim)
   let idxHeadOut :
@@ -623,8 +656,6 @@ def mhaDGraph {n dModel numHeads headDim : Nat} (c : ℝ) :
             ])))
 
   exact dg14
-
-end
 
 /--
 Corollary of the general DAG theorem: backprop equals `(fderiv eval)†` for the MHA graph.

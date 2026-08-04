@@ -6,14 +6,15 @@ Authors: TorchLean Team
 
 module
 
-public import NN.MLTheory.CROWN.Graph.Engine.Derivatives
+public import NN.MLTheory.CROWN.Graph.Engine.IBP
 
 /-!
 # Affine Propagation
 
-This module contains the plain affine pass for the flat graph engine. It builds one affine form per
-node with respect to a chosen input node. Forward CROWN and objective-dependent backward CROWN build
-on these affine forms in their own modules.
+This module contains the one-sided affine pass for the flat graph engine. It builds an upper affine
+form for each node with respect to a chosen input node. Linear and structural operations preserve
+affine dependence. A nonlinear operation uses the upper endpoint of its checked IBP box as a
+constant affine bound unless a directed affine rule is available.
 -/
 
 public section
@@ -59,29 +60,7 @@ def affAdd {n m : Nat} (a1 a2 : AffineVec α n m) : AffineVec α n m :=
 def affSub {n m : Nat} (a1 a2 : AffineVec α n m) : AffineVec α n m :=
   { A := Tensor.subSpec a1.A a2.A, c := Tensor.subSpec a1.c a2.c }
 
-private def affScale {n m : Nat} (s : α) (a : AffineVec α n m) : AffineVec α n m :=
-  let A' :=
-    match a.A with
-    | .dim rows =>
-      Tensor.dim (fun i =>
-        match rows i with
-        | .dim cols => Tensor.dim (fun j => match cols j with | .scalar v => Tensor.scalar (s * v)))
-  let c' :=
-    match a.c with
-    | .dim cv => Tensor.dim (fun i => match cv i with | .scalar v => Tensor.scalar (s * v))
-  { A := A', c := c' }
-
 -- Affine helpers for linear/matmul are handled by the explicit transfer rules below.
-
-private def reluRelaxFromBox (B : FlatBox α) : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α)
-  (.dim B.dim .scalar) :=
-  NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α:=α) (n:=B.dim) B.lo B.hi
-
-private def affThroughRelu {inDim hidDim : Nat}
-  (relax : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) (.dim hidDim .scalar))
-  (aff : AffineVec α inDim hidDim) : AffineVec α inDim hidDim :=
-  NN.MLTheory.CROWN.Runtime.Ops.ReLU.propagateAffine (α:=α) (inDim:=inDim) (hidDim:=hidDim) relax
-    aff
 
 private def affOfLinear (p : LinParams α) : AffineVec α p.n p.m :=
   AffineVec.ofLinear (α:=α) (inDim:=p.n) (outDim:=p.m) p.w p.b
@@ -89,6 +68,14 @@ private def affOfLinear (p : LinParams α) : AffineVec α p.n p.m :=
 private def affOfMatmul (p : MatParams α) : AffineVec α p.n p.m :=
   let zb := Spec.fill (α:=α) 0 (.dim p.m .scalar)
   AffineVec.ofLinear (α:=α) (inDim:=p.n) (outDim:=p.m) p.w zb
+
+/-- Regard the upper endpoint of a checked box as a constant upper affine bound. -/
+private def upperConstAffine (inputDim : Nat) (B : FlatBox α) : FlatAffine α :=
+  { inDim := inputDim
+    outDim := B.dim
+    aff :=
+      { A := Spec.fill (α := α) Numbers.zero (.dim B.dim (.dim inputDim .scalar))
+        c := B.hi } }
 
 /--
 Flatten a typed convolution into the affine map it denotes.
@@ -217,20 +204,9 @@ def propagateAffineNode
       | _, _ => affs
     | _ => affs
   | .relu =>
-    match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ibp[p1]! with
-      | some paff, some preB =>
-        if hdim : preB.dim = paff.outDim then
-          let relax0 := reluRelaxFromBox (α:=α) preB
-          let relax := castRelax (α:=α) hdim relax0
-          let outAff := affThroughRelu (α:=α) (inDim:=paff.inDim) (hidDim:=paff.outDim) relax
-            paff.aff
-          affs.set! id (some { inDim := paff.inDim, outDim := paff.outDim, aff := outAff })
-        else
-          affs
-      | _, _ => affs
-    | _ => affs
+    match ibp[id]! with
+    | some B => affs.set! id (some (upperConstAffine (α := α) ctx.inputDim B))
+    | none => affs
   | .linear =>
     match node.parents with
     | p1 :: _ =>
@@ -395,213 +371,16 @@ def propagateAffineNode
         | none => affs
       | _, _ => affs
     | _ => affs
-  | .exp =>
-    -- Use a simple linear upper envelope over [l,u]: secant line of exp
-    match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ibp[p1]! with
-      | some paff, some preB =>
-        if hdim : preB.dim = paff.outDim then
-          let preB' : Box α (.dim paff.outDim .scalar) := castBoxDim (α:=α) (n:=preB.dim)
-            (n':=paff.outDim) hdim (ofFlatBox preB)
-          let flo := getDimScalarFn (α:=α) preB'.lo
-          let fhi := getDimScalarFn (α:=α) preB'.hi
-          -- Build diagonal scaling and bias to approximate y ≈ a*x + b per-component
-          let A' :=
-            match paff.aff.A with
-            | .dim rows =>
-              Tensor.dim (fun i =>
-                let li := match flo i with | .scalar v => v
-                let ui := match fhi i with | .scalar v => v
-                let den := ui - li
-                let ai :=
-                  if den > Numbers.epsilon then (MathFunctions.exp ui - MathFunctions.exp li) / den
-                  else MathFunctions.exp li
-                match rows i with
-                | .dim cols =>
-                    Tensor.dim (fun j =>
-                      match cols j with
-                      | .scalar aij => Tensor.scalar (ai * aij)))
-          let c' :=
-            match paff.aff.c with
-            | .dim cv =>
-              Tensor.dim (fun i =>
-                let li := match flo i with | .scalar v => v
-                let ui := match fhi i with | .scalar v => v
-                let den := ui - li
-                let ai :=
-                  if den > Numbers.epsilon then (MathFunctions.exp ui - MathFunctions.exp li) / den
-                  else MathFunctions.exp li
-                let bi := MathFunctions.exp li - ai * li
-                match cv i with | .scalar ci => Tensor.scalar (ai * ci + bi))
-          let outAff : AffineVec α paff.inDim paff.outDim := { A := A', c := c' }
-          affs.set! id (some { inDim := paff.inDim, outDim := paff.outDim, aff := outAff })
-        else affs
-      | _, _ => affs
-    | _ => affs
-  | .log =>
-    -- `log` is concave (on its positive domain), so a tangent line is a sound *upper* affine bound.
-    -- This affine pass tracks a single affine form per node (not separate lower/upper forms),
-    -- so we only build an upper-style linearization here.
-    match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ibp[p1]! with
-      | some paff, some preB =>
-        if hdim : preB.dim = paff.outDim then
-          let preB' : Box α (.dim paff.outDim .scalar) := castBoxDim (α:=α) (n:=preB.dim)
-            (n':=paff.outDim) hdim (ofFlatBox preB)
-          let flo := getDimScalarFn (α:=α) preB'.lo
-          -- Choose t = clamp(li, eps) per component for tangent
-            let A' :=
-              match paff.aff.A with
-              | .dim rows =>
-                Tensor.dim (fun i =>
-                  let li :=
-                    match flo i with
-                    | .scalar v => if v > Numbers.epsilon then v else Numbers.epsilon
-                  let ai := Numbers.one / li  -- derivative of log at li
-                  match rows i with
-                  | .dim cols =>
-                      Tensor.dim (fun j =>
-                        match cols j with
-                        | .scalar aij => Tensor.scalar (ai * aij)))
-          let c' :=
-            match paff.aff.c with
-            | .dim cv =>
-              Tensor.dim (fun i =>
-                let li := match flo i with | .scalar v => (if v > Numbers.epsilon then v else
-                  Numbers.epsilon)
-                let ai := (Numbers.one / li)
-                let bi := MathFunctions.log li - ai * li
-                match cv i with | .scalar ci => Tensor.scalar (ai * ci + bi))
-          let outAff : AffineVec α paff.inDim paff.outDim := { A := A', c := c' }
-          affs.set! id (some { inDim := paff.inDim, outDim := paff.outDim, aff := outAff })
-        else affs
-      | _, _ => affs
-    | _ => affs
-  | .softmax _ =>
-    -- Upper affine envelope per component k:
-    -- softmax_k(x) = exp(x_k) / Σ_j exp(x_j) ≤ (a_k x + b_k) / total_lo,
-    -- where a_k,b_k are the secant upper of exp on [l_k,u_k], and
-    -- total_lo = Σ_j exp(l_j) > 0 is a scalar lower bound on the denominator.
-    match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ibp[p1]! with
-      | some paff, some preB =>
-        if hdim : preB.dim = paff.outDim then
-          let preB' : Box α (.dim paff.outDim .scalar) := castBoxDim (α:=α) (n:=preB.dim)
-            (n':=paff.outDim) hdim (ofFlatBox preB)
-          let flo := getDimScalarFn (α:=α) preB'.lo
-          let fhi := getDimScalarFn (α:=α) preB'.hi
-          -- Scalar lower bound on denominator: sum_j exp(l_j)
-          let exp_lo := Tensor.expSpec preB'.lo
-          let total_lo := Spec.Tensor.sumSpec exp_lo
-          let invDen := Numbers.one / (if total_lo > Numbers.epsilon then total_lo else
-            Numbers.epsilon)
-          -- Build per-row scaled A and c for numerator upper (exp secant), then divide by denom
-          -- lower
-          let A' :=
-            match paff.aff.A with
-            | .dim rows =>
-              Tensor.dim (fun i =>
-                let li := match flo i with | .scalar v => v
-                let ui := match fhi i with | .scalar v => v
-                let den := ui - li
-                let ai :=
-                  if den > Numbers.epsilon then (MathFunctions.exp ui - MathFunctions.exp li) / den
-                  else MathFunctions.exp li
-                match rows i with
-                | .dim cols =>
-                    Tensor.dim (fun j =>
-                      match cols j with
-                      | .scalar aij => Tensor.scalar (invDen * (ai * aij))))
-          let c' :=
-            match paff.aff.c with
-            | .dim cv =>
-              Tensor.dim (fun i =>
-                let li := match flo i with | .scalar v => v
-                let ui := match fhi i with | .scalar v => v
-                let den := ui - li
-                let ai :=
-                  if den > Numbers.epsilon then (MathFunctions.exp ui - MathFunctions.exp li) / den
-                  else MathFunctions.exp li
-                let bi := MathFunctions.exp li - ai * li
-                match cv i with | .scalar ci => Tensor.scalar (invDen * (ai * ci + bi)))
-          let outAff : AffineVec α paff.inDim paff.outDim := { A := A', c := c' }
-          affs.set! id (some { inDim := paff.inDim, outDim := paff.outDim, aff := outAff })
-        else affs
-      | _, _ => affs
-    | _ => affs
+  | .exp | .log | .softmax _ | .hardMaskedSoftmax _ =>
+    match ibp[id]! with
+    | some B => affs.set! id (some (upperConstAffine (α := α) ctx.inputDim B))
+    | none => affs
   | .layernorm _ =>
-    -- Upper affine envelope for layernorm using decomposition:
-    -- y_i = (x_i - mean(x)) * t, with t = 1 / sqrt(var(x) + eps) ∈ [t_lo, t_hi].
-    -- For all t in [t_lo, t_hi], u := (x_i - mean(x)) satisfies
-    -- u * t ≤ t_lo * u + (t_hi - t_lo) * ReLU(u).
-    -- We compute an exact affine for u and an upper affine for ReLU(u), then combine.
-    match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ibp[p1]! with
-      | some paff, some preB =>
-        if hdim : preB.dim = paff.outDim then
-          let n := paff.outDim
-          -- Compute bounds for mean and centered components as in IBP
-          let preB' : Box α (.dim n .scalar) := castBoxDim (α:=α) (n:=preB.dim) (n':=n) hdim
-            (ofFlatBox preB)
-          let sum_lo := Spec.Tensor.sumSpec preB'.lo
-          let sum_hi := Spec.Tensor.sumSpec preB'.hi
-          -- For `n = 0` the output vector is empty; use denominator 1 so the
-          -- vacuous affine form does not evaluate `1 / 0`.
-          let nDen : Nat := if n = 0 then 1 else n
-          let nA : α := (nDen : Nat)
-          let mu_lo := sum_lo / nA
-          let mu_hi := sum_hi / nA
-          let flo := getDimScalarFn (α:=α) preB'.lo
-          let fhi := getDimScalarFn (α:=α) preB'.hi
-          let var_hi := layerNormVarianceUpper (α := α) preB'.lo preB'.hi mu_lo mu_hi
-          let s_lo := MathFunctions.sqrt Numbers.epsilon
-          let s_hi := MathFunctions.sqrt (var_hi + Numbers.epsilon)
-          let t_lo := Numbers.one / (if s_hi > Numbers.epsilon then s_hi else Numbers.epsilon)
-          let t_hi := Numbers.one / (if s_lo > Numbers.epsilon then s_lo else Numbers.epsilon)
-          -- Build linear centering transform S = I - (1/n) 11^T, as an AffineVec
-          let S : Tensor α (.dim n (.dim n .scalar)) :=
-            Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (if decide (i.val = j.val) then
-              (Numbers.one - (Numbers.one / nA)) else (-(Numbers.one / nA)))))
-          let b0 := Spec.fill (α:=α) 0 (.dim n .scalar)
-          let Saff : AffineVec α n n := { A := S, c := b0 }
-          let u_aff : AffineVec α paff.inDim n :=
-            AffineVec.compose (α:=α) (n:=paff.inDim) (h:=n) (m:=n) Saff paff.aff
-          -- Compute bounds for u per component for ReLU relaxation
-          let ulo :=
-            Tensor.dim (fun i =>
-              match flo i, fhi i with
-              | .scalar l, .scalar u =>
-                let dl := l - mu_hi
-                let du := u - mu_lo
-                let mn := if dl < du then dl else du
-                Tensor.scalar mn)
-          let uhi :=
-            Tensor.dim (fun i =>
-              match flo i, fhi i with
-              | .scalar l, .scalar u =>
-                let dl := l - mu_hi
-                let du := u - mu_lo
-                let mx := if dl > du then dl else du
-                Tensor.scalar mx)
-          let u_box : FlatBox α := { dim := n, lo := ulo, hi := uhi }
-          let u_relax := reluRelaxFromBox (α:=α) u_box
-          let relu_u_aff := affThroughRelu (α:=α) (inDim:=paff.inDim) (hidDim:=n) (relax:=u_relax)
-            (aff:=u_aff)
-          -- Combine: t_lo * u + (t_hi - t_lo) * ReLU(u)
-          let outAff := affAdd (α:=α) (n:=paff.inDim) (m:=n) (affScale (α:=α) (n:=paff.inDim)
-            (m:=n) t_lo u_aff)
-                                   (affScale (α:=α) (n:=paff.inDim) (m:=n) (t_hi - t_lo)
-                                     relu_u_aff)
-          affs.set! id (some { inDim := paff.inDim, outDim := n, aff := outAff })
-        else affs
-      | _, _ => affs
-    | _ => affs
+    match ibp[id]! with
+    | some B => affs.set! id (some (upperConstAffine (α := α) ctx.inputDim B))
+    | none => affs
   | .concat axis =>
-    -- Implement concat for axis=0 in flattened (vector) space: just stack output rows.
+    -- Concatenation on axis zero stacks the flattened output rows.
     -- For other axes/shapes, this requires stride-aware flatten/reshape bookkeeping.
     if axis != 0 then affs
     else
@@ -640,103 +419,17 @@ def propagateAffineNode
             else affs
           else affs
   | .abs | .sqrt | .inv | .maxElem | .minElem | .broadcastTo .. | .reduceSum .. | .reduceMean ..
-    =>
-    affs
-  | .tanh =>
-    -- Conservative upper affine: y_i ≤ y_hi[i] as a constant (safe, improves with tighter IBP)
-    match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ibp[id]! with
-      | some paff, some yB =>
-        if hdim : yB.dim = paff.outDim then
-          let yB' : Box α (.dim paff.outDim .scalar) := castBoxDim (α:=α) (n:=yB.dim)
-            (n':=paff.outDim) hdim (ofFlatBox yB)
-          -- Zero A; bias equals y_hi per component
-          let A' :=
-            match paff.aff.A with
-            | .dim rows =>
-              Tensor.dim (fun i =>
-                match rows i with
-                | .dim _cols => Tensor.dim (fun _ => Tensor.scalar 0))
-          let c' :=
-            match yB'.hi with
-            | .dim hv => Tensor.dim (fun i => match hv i with | .scalar v => Tensor.scalar v)
-          let outAff : AffineVec α paff.inDim paff.outDim := { A := A', c := c' }
-          affs.set! id (some { inDim := paff.inDim, outDim := paff.outDim, aff := outAff })
-        else affs
-      | _, _ => affs
-    | _ => affs
-  | .sin =>
-    -- Conservative upper affine: y_i ≤ y_hi[i] as a constant
-    match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ibp[id]! with
-      | some paff, some yB =>
-        if hdim : yB.dim = paff.outDim then
-          let yB' : Box α (.dim paff.outDim .scalar) :=
-            castBoxDim (α:=α) (n:=yB.dim) (n':=paff.outDim) hdim (ofFlatBox yB)
-          let A' :=
-            match paff.aff.A with
-            | .dim rows =>
-              Tensor.dim (fun i =>
-                match rows i with
-                | .dim _cols => Tensor.dim (fun _ => Tensor.scalar 0))
-          let c' :=
-            match yB'.hi with
-            | .dim hv => Tensor.dim (fun i => match hv i with | .scalar v => Tensor.scalar v)
-          let outAff : AffineVec α paff.inDim paff.outDim := { A := A', c := c' }
-          affs.set! id (some { inDim := paff.inDim, outDim := paff.outDim, aff := outAff })
-        else affs
-      | _, _ => affs
-    | _ => affs
-  | .cos =>
-    -- Conservative upper affine: y_i ≤ y_hi[i] as a constant
-    match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ibp[id]! with
-      | some paff, some yB =>
-        if hdim : yB.dim = paff.outDim then
-          let yB' : Box α (.dim paff.outDim .scalar) :=
-            castBoxDim (α:=α) (n:=yB.dim) (n':=paff.outDim) hdim (ofFlatBox yB)
-          let A' :=
-            match paff.aff.A with
-            | .dim rows =>
-              Tensor.dim (fun i =>
-                match rows i with
-                | .dim _cols => Tensor.dim (fun _ => Tensor.scalar 0))
-          let c' :=
-            match yB'.hi with
-            | .dim hv => Tensor.dim (fun i => match hv i with | .scalar v => Tensor.scalar v)
-          let outAff : AffineVec α paff.inDim paff.outDim := { A := A', c := c' }
-          affs.set! id (some { inDim := paff.inDim, outDim := paff.outDim, aff := outAff })
-        else affs
-      | _, _ => affs
-    | _ => affs
-  | .sigmoid =>
-    -- Conservative upper affine: y_i ≤ y_hi[i] as a constant
-    match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ibp[id]! with
-      | some paff, some yB =>
-        if hdim : yB.dim = paff.outDim then
-          let yB' : Box α (.dim paff.outDim .scalar) := castBoxDim (α:=α) (n:=yB.dim)
-            (n':=paff.outDim) hdim (ofFlatBox yB)
-          let A' :=
-            match paff.aff.A with
-            | .dim rows =>
-              Tensor.dim (fun i =>
-                match rows i with
-                | .dim _cols => Tensor.dim (fun _ => Tensor.scalar 0))
-          let c' :=
-            match yB'.hi with
-            | .dim hv => Tensor.dim (fun i => match hv i with | .scalar v => Tensor.scalar v)
-          let outAff : AffineVec α paff.inDim paff.outDim := { A := A', c := c' }
-          affs.set! id (some { inDim := paff.inDim, outDim := paff.outDim, aff := outAff })
-        else affs
-      | _, _ => affs
-    | _ => affs
+  | .tanh | .sin | .cos | .sigmoid =>
+    match ibp[id]! with
+    | some B => affs.set! id (some (upperConstAffine (α := α) ctx.inputDim B))
+    | none => affs
 
-/-- Run an affine pass; requires prior IBP to supply pre-activation bounds for ReLU. -/
+/--
+Run the one-sided affine pass.
+
+Linear nodes keep their affine dependence on the selected input. Nonlinear nodes use their checked
+IBP upper endpoint as a constant affine bound unless this pass has a separately justified rule.
+-/
 def runAffine (g : Graph) (ps : ParamStore α) (ctx : AffineCtx) (ibp : Array (Option (FlatBox α))) :
   Array (Option (FlatAffine α)) :=
   let init := Array.replicate g.nodes.size none

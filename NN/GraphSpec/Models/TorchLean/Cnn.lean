@@ -55,17 +55,17 @@ def twoConvCnn
   let firstConvOutWidth : Nat :=
     Spec.Shape.slidingWindowOutDim inW kW stride1 padding1
   let firstPoolOutHeight : Nat :=
-    Spec.Shape.slidingWindowOutDim firstConvOutHeight poolKH poolStride1 0
+    Spec.poolOutDim firstConvOutHeight poolKH poolStride1 0
   let firstPoolOutWidth : Nat :=
-    Spec.Shape.slidingWindowOutDim firstConvOutWidth poolKW poolStride1 0
+    Spec.poolOutDim firstConvOutWidth poolKW poolStride1 0
   let secondConvOutHeight : Nat :=
     Spec.Shape.slidingWindowOutDim firstPoolOutHeight kH stride2 padding2
   let secondConvOutWidth : Nat :=
     Spec.Shape.slidingWindowOutDim firstPoolOutWidth kW stride2 padding2
   let secondPoolOutHeight : Nat :=
-    Spec.Shape.slidingWindowOutDim secondConvOutHeight poolKH poolStride2 0
+    Spec.poolOutDim secondConvOutHeight poolKH poolStride2 0
   let secondPoolOutWidth : Nat :=
-    Spec.Shape.slidingWindowOutDim secondConvOutWidth poolKW poolStride2 0
+    Spec.poolOutDim secondConvOutWidth poolKW poolStride2 0
   let featSize : Nat :=
     Spec.Shape.size (.dim c2 (.dim secondPoolOutHeight (.dim secondPoolOutWidth .scalar)))
   _root_.Runtime.Autograd.TorchLean.NN.singleLayer

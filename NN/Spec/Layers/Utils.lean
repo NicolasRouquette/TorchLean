@@ -9,10 +9,11 @@ module
 public import NN.Spec.Core.TensorOps
 
 /-!
-# Image/tensor utilities (spec layer)
+# Spatial tensor utilities
 
-Convenience aliases and helpers for 2‑D images (`H×W`) and multi‑channel images (`C×H×W`),
-plus padding and window‑extraction utilities used by conv/pooling layers.
+Padding, indexing, and window-extraction operations used by convolution and pooling specifications.
+The signatures use `Tensor` directly; channels-first layout is visible in each shape rather than
+hidden behind a second family of tensor aliases.
 -/
 
 @[expose] public section
@@ -21,59 +22,27 @@ plus padding and window‑extraction utilities used by conv/pooling layers.
 namespace Spec
 open Tensor
 
--- Tensor aliases for image-shaped layer specifications.
-/-- A 2-D image tensor of shape `[H, W]`. -/
-abbrev Image (H W : ℕ) (α : Type) := Tensor α (.dim H (.dim W .scalar))
-/-- A `C`-channel image tensor of shape `[C, H, W]` (channels-first, like PyTorch `NCHW` without
-  `N`). -/
-abbrev MultiChannelImage (C H W : ℕ) (α : Type) := Tensor α (.dim C (.dim H (.dim W .scalar)))
-
-/-- A 1-D signal tensor of shape `[L]`. -/
-abbrev Signal (L : ℕ) (α : Type) := Tensor α (.dim L .scalar)
-
-/-- A `C`-channel 1-D signal tensor of shape `[C, L]` (channels-first). -/
-abbrev MultiChannelSignal (C L : ℕ) (α : Type) := Tensor α (.dim C (.dim L .scalar))
-
-/-- A 3-D volume tensor of shape `[D, H, W]`. -/
-abbrev Volume (D H W : ℕ) (α : Type) := Tensor α (.dim D (.dim H (.dim W .scalar)))
-
-/-- A `C`-channel 3-D volume tensor of shape `[C, D, H, W]` (channels-first). -/
-abbrev MultiChannelVolume (C D H W : ℕ) (α : Type) :=
-  Tensor α (.dim C (.dim D (.dim H (.dim W .scalar))))
+namespace Private
 
 /--
-Cast a `MultiChannelImage` along definitional equalities of its channel/height/width indices.
+Choose the input-space pivot whose scaled value `beta * pivot` is maximal.
 
-This is a dependent-type convenience: it does not change the underlying tensor data, only the
-type-level shape indices.
+Selecting a maximum for positive `beta` and a minimum for negative `beta` avoids forming
+`beta * x` before the log-sum-exp shift. Both fixed-rank and dimension-polymorphic smooth pooling
+use this operation.
 -/
-def rwMultiChannelImage {α : Type} {C1 C2 H1 H2 W1 W2 : ℕ} (img : MultiChannelImage C1 H1 W1 α)
-  (h1 : C1 = C2) (h2 : H1 = H2) (h3 : W1 = W2) : MultiChannelImage C2 H2 W2 α :=
-  have h : Shape.dim C1 (Shape.dim H1 (Shape.dim W1 .scalar)) = Shape.dim C2 (Shape.dim H2
-    (Shape.dim W2 .scalar)) := by
-    simp [h1, h2, h3]
-  tensorCast (Shape.dim C2 (Shape.dim H2 (Shape.dim W2 .scalar))) h img
+def smoothMaxPivotStep {α : Type} [Context α] (beta current candidate : α) : α :=
+  if beta > 0 then Max.max current candidate else Min.min current candidate
 
-/--
-Explicit-argument version of `rw_multi_channel_image`.
-
-This is occasionally convenient when elaboration has trouble inferring `C2/H2/W2` from context.
--/
-def rwMultiChannelImageExplicit {α : Type} {C1 H1 W1 : ℕ} (C2 H2 W2 : ℕ) (img :
-  MultiChannelImage C1 H1 W1 α) (h1 : C1 = C2) (h2 : H1 = H2) (h3 : W1 = W2) : MultiChannelImage C2
-  H2 W2 α :=
-  have h : Shape.dim C1 (Shape.dim H1 (Shape.dim W1 .scalar)) = Shape.dim C2 (Shape.dim H2
-    (Shape.dim W2 .scalar)) := by
-    simp [h1, h2, h3]
-  tensorCast (Shape.dim C2 (Shape.dim H2 (Shape.dim W2 .scalar))) h img
+end Private
 
 -- Get value at position with bounds checking.
 /--
-Read pixel `(x, y)` from an `Image`, returning `0` when out of bounds.
+Read position `(x, y)` from a rank-two tensor, returning `0` when out of bounds.
 
 This helper is used by window-extraction and padding utilities for conv/pooling specs.
 -/
-def getValueAtPosition {α : Type} [Context α] {H W : ℕ} (img : Image H W α) (x y : ℕ) : Tensor α
+def getValueAtPosition {α : Type} [Context α] {H W : ℕ} (img : Tensor α (.dim H (.dim W .scalar))) (x y : ℕ) : Tensor α
   .scalar :=
   if h : x < H then
     if h2 : y < W then
@@ -92,7 +61,7 @@ In particular, reading a scalar via the specialized `(x, y)` accessor is the sam
 with indices `[x, y]`, where both return `0` out of bounds.
 -/
 lemma get_at_or_zero_getValueAtPosition
-    {α : Type} [Context α] {H W : ℕ} (img : Image H W α) (x y : ℕ) :
+    {α : Type} [Context α] {H W : ℕ} (img : Tensor α (.dim H (.dim W .scalar))) (x y : ℕ) :
     getAtOrZero (getValueAtPosition (H := H) (W := W) img x y) [] = getAtOrZero img [x, y] :=
       by
   classical
@@ -121,7 +90,7 @@ Out-of-bounds pixels are treated as `0`, matching the behavior of `getValueAtPos
 spec-level "im2col"-style logic (cf. PyTorch `nn.Unfold`, conceptually).
 -/
 def extractWindow {α : Type} [Context α] {H W : ℕ} (kW kH : ℕ)
-  (img : Image H W α)
+  (img : Tensor α (.dim H (.dim W .scalar)))
   (start_i start_j : ℕ) : Tensor α (.dim kH (.dim kW .scalar)) :=
   Tensor.dim (fun di =>
     Tensor.dim (fun dj =>
@@ -136,9 +105,8 @@ Zero-pad a channels-first image by `padding` pixels on each spatial axis.
 This is the spec analogue of `torch.nn.functional.pad` (with constant `0` padding). The output
 shape is `[inC, inH + 2*padding, inW + 2*padding]`.
 -/
-def padMultiChannel {α : Type} [Context α] {inC inH inW : ℕ} (img : MultiChannelImage inC inH inW
-  α) (padding : ℕ) :
-  MultiChannelImage inC (inH + 2 * padding) (inW + 2 * padding) α :=
+def padMultiChannel {α : Type} [Context α] {inC inH inW : ℕ} (img : Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) (padding : ℕ) :
+  Tensor α (.dim inC (.dim (inH + 2 * padding) (.dim (inW + 2 * padding) .scalar))) :=
   Tensor.dim (fun c =>
     Tensor.dim (fun i =>
       Tensor.dim (fun j =>
@@ -158,7 +126,7 @@ reads the original tensor at `[c, p - padding, q - padding]` (with out-of-bounds
 -/
 lemma get_at_or_zero_pad_multi_channel
     {α : Type} [Context α] {inC inH inW padding : ℕ}
-    (img : MultiChannelImage inC inH inW α) (c : Fin inC) (p q : ℕ) :
+    (img : Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) (c : Fin inC) (p q : ℕ) :
     getAtOrZero (padMultiChannel (inC := inC) (inH := inH) (inW := inW) img padding) [c.val, p,
       q]
       =
@@ -232,7 +200,7 @@ If `(i, j)` is in-bounds for the original image, then reading the padded image a
 -/
 lemma get_at_or_zero_pad_multi_channel_shift
     {α : Type} [Context α] {inC inH inW padding : ℕ}
-    (img : MultiChannelImage inC inH inW α) (c : Fin inC) (i : Fin inH) (j : Fin inW) :
+    (img : Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) (c : Fin inC) (i : Fin inH) (j : Fin inW) :
     getAtOrZero (padMultiChannel (inC := inC) (inH := inH) (inW := inW) img padding)
         [c.val, i.val + padding, j.val + padding]
       =
@@ -265,7 +233,7 @@ Extract a `kH × kW` window from each channel of a channels-first image.
 The input is typically a padded image, and the result has shape `[inC, kH, kW]`.
 -/
 def extractMultiWindow {α : Type} [Context α] {inC kH kW inH inW padding : ℕ}
-  (img : MultiChannelImage inC (inH + 2 * padding) (inW + 2 * padding) α)
+  (img : Tensor α (.dim inC (.dim (inH + 2 * padding) (.dim (inW + 2 * padding) .scalar))))
   (start_i start_j : ℕ) :
   Tensor α (.dim inC (.dim kH (.dim kW .scalar))) :=
   Tensor.dim (fun c =>
@@ -281,8 +249,8 @@ channels are copied; newly introduced channels are identically zero.
 -/
 def padChannelsZero {α : Type} [Zero α] {inChannels outChannels height width : ℕ}
   (_h : inChannels ≤ outChannels)
-  (img : MultiChannelImage inChannels height width α) :
-  MultiChannelImage outChannels height width α :=
+  (img : Tensor α (.dim inChannels (.dim height (.dim width .scalar)))) :
+  Tensor α (.dim outChannels (.dim height (.dim width .scalar))) :=
   Tensor.dim (fun c =>
     if h_lt : c.val < inChannels then
       -- Copy existing channel
@@ -293,17 +261,12 @@ def padChannelsZero {α : Type} [Zero α] {inChannels outChannels height width :
   )
 
 -- Identity mapping when channel dimensions match
-/-- Identity on `MultiChannelImage` (useful as a "no-op" branch in higher-level specs). -/
-def channelIdentity {α : Type} {channels height width : ℕ}
-  (img : MultiChannelImage channels height width α) :
-  MultiChannelImage channels height width α := img
-
 /--
 Write a value at pixel `(x, y)` if it is in-bounds; otherwise return the original image.
 
 This uses `update_tensor_spec` under the hood and is intended for small spec-level utilities.
 -/
-def setValueAtPosition {α : Type} {H W : ℕ} (img : Image H W α) (x y : ℕ) (value : α) : Image H W α
+def setValueAtPosition {α : Type} {H W : ℕ} (img : Tensor α (.dim H (.dim W .scalar))) (x y : ℕ) (value : α) : Tensor α (.dim H (.dim W .scalar))
   :=
   if _ : x < H then
     if _ : y < W then
@@ -316,8 +279,8 @@ Add `value` to pixel `(x, y)` if it is in-bounds; otherwise return the original 
 
 This is a small helper for accumulation-style specs (e.g. naive convolution).
 -/
-def addValueAtPosition {α : Type} [Add α] {H W : ℕ} (img : Image H W α) (x y : ℕ) (value : α) :
-  Image H W α :=
+def addValueAtPosition {α : Type} [Add α] {H W : ℕ} (img : Tensor α (.dim H (.dim W .scalar))) (x y : ℕ) (value : α) :
+  Tensor α (.dim H (.dim W .scalar)) :=
   if _ : x < H then
     if _ : y < W then
       let current := getSpec img [x, y]
@@ -326,18 +289,5 @@ def addValueAtPosition {α : Type} [Add α] {H W : ℕ} (img : Image H W α) (x 
       | none => img
     else img
   else img
-
--- Create output image with zeros
-/-- Construct an `H × W` image filled with zeros. -/
-def createZeroImage {α : Type} [Zero α] (H W : ℕ) : Image H W α :=
-  Tensor.dim (fun _ =>
-    Tensor.dim (fun _ =>
-      Tensor.scalar 0))
-
--- Create multi-channel output image with zeros
-/-- Construct a `C × H × W` channels-first image filled with zeros. -/
-def createZeroMultiChannelImage (α : Type) [Zero α] (C H W : ℕ) : MultiChannelImage C H W α :=
-  Tensor.dim (fun _ =>
-    createZeroImage H W)
 
 end Spec

@@ -238,19 +238,6 @@ variable [DecidableRel ((· > ·) : α → α → Prop)]
 namespace Muon
 
 /--
-For any orthogonalizer backend, Muon's stored momentum buffer evolves exactly like momentum SGD.
-The backend changes the parameter direction, not the buffer recurrence.
--/
-theorem update_buffer_eq_momentumSGD {s : Shape}
-    (state : State α s) (params grads : Tensor α s) :
-    (update state params grads).1.buf =
-      (MomentumSGD.update
-        ({ lr := state.lr, momentum := state.momentum, buf := state.buf } :
-          MomentumSGD.State α s)
-        params grads).1.buf := by
-  rfl
-
-/--
 If a Muon backend returns the fresh momentum buffer unchanged on this step, then the parameter
 update agrees with momentum SGD for this step.
 -/
@@ -281,22 +268,6 @@ theorem init_update_params_eq_momentumSGD_of_apply_eq {s : Shape}
   exact update_params_eq_momentumSGD_of_apply_eq
     (state := init lr momentum orthogonalizer params)
     (params := params) (grads := grads) happly
-
-/--
-With the identity orthogonalizer, Muon has the same parameter update as momentum SGD.
-
-This is the fallback law used by the public/runtime API: adding a real orthogonalization backend is
-a separate obligation, but the identity backend cannot silently change the optimizer.
--/
-theorem update_identity_params_eq_momentumSGD_spec {s : Shape}
-    (lr momentum : α) (buf params grads : Tensor α s) :
-    (update
-        ({ lr := lr, momentum := momentum, buf := buf,
-           orthogonalizer := identityOrthogonalizer (α := α) (s := s) } : State α s)
-        params grads).2 =
-      (MomentumSGD.update ({ lr := lr, momentum := momentum, buf := buf } :
-        MomentumSGD.State α s) params grads).2 := by
-  rfl
 
 end Muon
 

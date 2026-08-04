@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Torch.LinkedSession.Public
+public import NN.Runtime.Autograd.Torch.LinkedSession.Autograd
 
 /-!
 Linked-session runtime API.

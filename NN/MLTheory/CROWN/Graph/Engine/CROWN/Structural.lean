@@ -180,7 +180,7 @@ def propagateLayernormBoundsLastAxis
             Tensor.dim (fun j => Tensor.scalar (getAtOrZero preB.lo [base + j.val]))
           let hiSlice : Tensor α (.dim m .scalar) :=
             Tensor.dim (fun j => Tensor.scalar (getAtOrZero preB.hi [base + j.val]))
-          let varHi := layerNormVarianceUpper (α := α) loSlice hiSlice muLo muHi
+          let varHi := idealLayerNormVarianceUpper (α := α) loSlice hiSlice muLo muHi
           Tensor.scalar (MathFunctions.sqrt (varHi + Numbers.epsilon)))
       let flo := getDimScalarFn (α := α) preB.lo
       let fhi := getDimScalarFn (α := α) preB.hi
@@ -268,7 +268,7 @@ def propagateLayernormBoundsLastAxis
     else
       -- Shape mismatch: conservative constant bounds from IBP on this op.
       let (flatLo, flatHi) :=
-        ibpLayernormLastTensor (α := α) (s := .dim dim .scalar) preB.lo preB.hi
+        idealLayerNormLastTensor (α := α) (s := .dim dim .scalar) preB.lo preB.hi
       boundsConst (α := α) (inputDim := xB.inDim) (outDim := dim) flatLo flatHi
 
 namespace Internal

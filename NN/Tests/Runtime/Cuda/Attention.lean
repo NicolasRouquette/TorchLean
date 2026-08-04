@@ -196,6 +196,92 @@ def run : IO Unit := do
   let dWvCudaComposed ← Utils.cudaGrad (s := shape![dModel, projDim]) gradsComposed wvIds
   let dWoCudaComposed ← Utils.cudaGrad (s := shape![projDim, dModel]) gradsComposed woIds
 
+  -- Distinct samples are essential here: duplicated samples cannot expose a permutation that
+  -- accidentally exchanges the batch and head axes.
+  let xSecond : Tensor Float (shape![n, dModel]) :=
+    tensorOfList! [n, dModel] [
+      1.0, 2.0, 3.0, 1.0,
+      -2.0, 1.0, 1.0, 3.0
+    ]
+  let batchIdentity : Tensor Float (shape![dModel, dModel]) :=
+    tensorOfList! [dModel, dModel] [
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0,
+      0.0, 0.0, 0.0, 1.0
+    ]
+  let xFirst : Tensor Float (shape![n, dModel]) :=
+    tensorOfList! [n, dModel] [
+      4.0, 0.0, 1.0, 0.0,
+      0.0, 4.0, 0.0, 1.0
+    ]
+  let xBatch : Tensor Float (shape![2, n, dModel]) :=
+    Tensor.dim (fun i => if i.val = 0 then xFirst else xSecond)
+  let batchShape : Shape := shape![2, n, dModel]
+  let tb0 : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
+  let (tb1, bwq) :=
+    Runtime.Autograd.Cuda.Tape.leaf (t := tb0) (Utils.tensorToAnyBuffer batchIdentity)
+  let (tb2, bwk) :=
+    Runtime.Autograd.Cuda.Tape.leaf (t := tb1) (Utils.tensorToAnyBuffer batchIdentity)
+  let (tb3, bwv) :=
+    Runtime.Autograd.Cuda.Tape.leaf (t := tb2) (Utils.tensorToAnyBuffer batchIdentity)
+  let (tb4, bwo) :=
+    Runtime.Autograd.Cuda.Tape.leaf (t := tb3) (Utils.tensorToAnyBuffer batchIdentity)
+  let (tb5, bx) := Runtime.Autograd.Cuda.Tape.leaf (t := tb4) (Utils.tensorToAnyBuffer xBatch)
+  let batchResult ← Runtime.Autograd.Cuda.Tape.batchedMultiHeadAttention (t := tb5)
+    (batch := 2) (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
+    (by decide) hN bwq bwk bwv bwo bx (mask := some mask)
+    (attentionCapsule := NN.Backend.Attention.torchLeanComposed)
+  let (tb6, byId) ← Utils.okOrThrow batchResult
+  let yBatch ← Utils.cudaValue (s := batchShape) tb6 byId
+  let batchSeed : Runtime.Autograd.Cuda.AnyBuffer :=
+    { s := batchShape,
+      buf := Runtime.Autograd.Cuda.Buffer.full
+        (UInt32.ofNat (Spec.Shape.size batchShape)) 1.0 }
+  let batchGrads ← Utils.okOrThrow
+    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := tb6) byId batchSeed)
+  let dxBatch ← Utils.cudaGrad (s := batchShape) batchGrads bx
+  let dWqBatch ← Utils.cudaGrad (s := shape![dModel, projDim]) batchGrads bwq
+  let dWkBatch ← Utils.cudaGrad (s := shape![dModel, projDim]) batchGrads bwk
+  let dWvBatch ← Utils.cudaGrad (s := shape![dModel, projDim]) batchGrads bwv
+  let dWoBatch ← Utils.cudaGrad (s := shape![projDim, dModel]) batchGrads bwo
+
+  -- The direct native kernel is an independent implementation of the same batched operation.
+  -- Comparing distinct samples catches layout mistakes in the composed BMM path and its VJP.
+  let tn0 : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
+  let (tn1, nwq) :=
+    Runtime.Autograd.Cuda.Tape.leaf (t := tn0) (Utils.tensorToAnyBuffer batchIdentity)
+  let (tn2, nwk) :=
+    Runtime.Autograd.Cuda.Tape.leaf (t := tn1) (Utils.tensorToAnyBuffer batchIdentity)
+  let (tn3, nwv) :=
+    Runtime.Autograd.Cuda.Tape.leaf (t := tn2) (Utils.tensorToAnyBuffer batchIdentity)
+  let (tn4, nwo) :=
+    Runtime.Autograd.Cuda.Tape.leaf (t := tn3) (Utils.tensorToAnyBuffer batchIdentity)
+  let (tn5, nx) := Runtime.Autograd.Cuda.Tape.leaf (t := tn4) (Utils.tensorToAnyBuffer xBatch)
+  let nativeBatchResult ← Runtime.Autograd.Cuda.Tape.batchedMultiHeadAttention (t := tn5)
+    (batch := 2) (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
+    (by decide) hN nwq nwk nwv nwo nx (mask := some mask)
+    (attentionCapsule := NN.Backend.Attention.nativeDirectAttention)
+  let (tn6, nyId) ← Utils.okOrThrow nativeBatchResult
+  let yBatchNative ← Utils.cudaValue (s := batchShape) tn6 nyId
+  let nativeBatchSeed : Runtime.Autograd.Cuda.AnyBuffer :=
+    { s := batchShape,
+      buf := Runtime.Autograd.Cuda.Buffer.full
+        (UInt32.ofNat (Spec.Shape.size batchShape)) 1.0 }
+  let nativeBatchGrads ← Utils.okOrThrow
+    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := tn6) nyId nativeBatchSeed)
+  let dxBatchNative ← Utils.cudaGrad (s := batchShape) nativeBatchGrads nx
+  let dWqBatchNative ← Utils.cudaGrad (s := shape![dModel, projDim]) nativeBatchGrads nwq
+  let dWkBatchNative ← Utils.cudaGrad (s := shape![dModel, projDim]) nativeBatchGrads nwk
+  let dWvBatchNative ← Utils.cudaGrad (s := shape![dModel, projDim]) nativeBatchGrads nwv
+  let dWoBatchNative ← Utils.cudaGrad (s := shape![projDim, dModel]) nativeBatchGrads nwo
+  Utils.assertTensorApprox "batched mha forward" yBatch yBatchNative (tol := 1e-4)
+  Utils.assertTensorApprox "batched mha dx" dxBatch dxBatchNative (tol := 1e-4)
+  Utils.assertTensorApprox "batched mha dWq" dWqBatch dWqBatchNative (tol := 1e-4)
+  Utils.assertTensorApprox "batched mha dWk" dWkBatch dWkBatchNative (tol := 1e-4)
+  Utils.assertTensorApprox "batched mha dWv" dWvBatch dWvBatchNative (tol := 1e-4)
+  Utils.assertTensorApprox "batched mha dWo" dWoBatch dWoBatchNative (tol := 1e-4)
+
   -- Attention is numerically "busy" (exp/softmax + multiple matmuls). Use a slightly looser tol.
   Utils.assertTensorApprox (s := outShape) "flash vs composed mha forward" yCuda yCudaComposed
     (tol := 2e-2)

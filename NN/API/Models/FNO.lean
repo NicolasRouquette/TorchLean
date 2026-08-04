@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
+public import NN.API.Seeded
 public import NN.Runtime.Autograd.TorchLean.Fno
 
 /-!
@@ -22,7 +22,7 @@ Equations*, ICLR 2021.
 
 @[expose] public section
 
-namespace NN.API.nn.models
+namespace TorchLean.nn.models
 
 /-- Configuration for a scalar-field FNO over `d` spatial axes. -/
 structure FNOConfig (d : Nat) where
@@ -62,4 +62,4 @@ def fno {d : Nat} (cfg : FNOConfig d) :
   pure <| _root_.Runtime.Autograd.TorchLean.NN.FNO.model
     cfg.spatial cfg.modes cfg.width cfg.blocks (seed := cfg.seed)
 
-end NN.API.nn.models
+end TorchLean.nn.models

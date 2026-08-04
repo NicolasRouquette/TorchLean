@@ -89,7 +89,7 @@ g₁ >>> g₂ : Graph (ps₁ ++ ps₂) σ υ.
 
 The intermediate shape must be the same $`\tau`, and the parameter lists are concatenated in
 construction order. Replacing the first linear layer by `Graph.linear input 5` changes its output
-shape to `[5]`; the existing ReLU can still consume it, but the second linear layer must now accept
+shape to `[5]`; the existing ReLU can still consume it, but the second linear layer must accept
 five inputs. Lean reports the mismatch at the architecture definition.
 
 This is the first hands-on experiment:

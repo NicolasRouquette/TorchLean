@@ -26,7 +26,6 @@ namespace Correctness
 
 open NN.Verification.TorchLean
 
-set_option maxHeartbeats 2000000
 
 /--
 `denoteAllFrom` for the compiled IR agrees with the forward-fragment evaluator that returns all
@@ -291,6 +290,13 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               simp [compileNode, res, n]
             have hnOut : n.outShape = mid₀ := by
               simp [compileNode, res, n]
+            have hn :
+                n =
+                  ({ id := id
+                     parents := [xIdx.id]
+                     kind := .log
+                     outShape := mid₀ } : NN.IR.Node) := by
+              simp [n, res, compileNode]
             let tx : Tensor α mid₀ := hx ▸ (vals[xIdx.id]!).snd
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[xIdx.id]!) = Except.ok tx
@@ -316,12 +322,10 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 else
                   throw
                     "IR eval: log: input contains values <= 0 (or NaN); use `safe_log` if you want epsilon protection" := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hnOut]
-              rw [hExpectX]
-              rfl
+              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn, hExpectX,
+                DVal.shape, DVal.tensor, DVal.mk, throw, throwThe,
+                MonadExceptOf.throw, Bind.bind, Except.bind, Pure.pure, Except.pure]
             simpa [evalNode, hGetValX, DVal.mk, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
         | inv xIdx =>
             simpa [evalNode, IRStep.UnaryElementwiseOp.denote] using
@@ -350,6 +354,13 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               simp [compileNode, res, n]
             have hnOut : n.outShape = .dim m (.dim p .scalar) := by
               simp [compileNode, res, n]
+            have hn :
+                n =
+                  ({ id := id
+                     parents := [a.id, b.id]
+                     kind := .matmul
+                     outShape := .dim m (.dim p .scalar) } : NN.IR.Node) := by
+              simp [n, res, compileNode]
             let ta : Tensor α (.dim m (.dim nDim .scalar)) := haF ▸ (vals[a.id]!).snd
             let tb : Tensor α (.dim nDim (.dim p .scalar)) := hbF ▸ (vals[b.id]!).snd
             have hExpectA :
@@ -390,15 +401,10 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 Except.ok
                   (DVal.mk (α := α) (.dim m (.dim p .scalar))
                     (Tensor.matMulSpec (α := α) (m := m) (n := nDim) (p := p) ta tb)) := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, haF, hbF, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hExpectA, hExpectB]
-              split_ifs with hOut
-              · cases hOut
-                rfl
-              · exfalso
-                exact hOut (by simp [hnOut])
+              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn, hExpectA, hExpectB,
+                haF, hbF, DVal.shape, DVal.tensor, DVal.mk, Bind.bind,
+                Except.bind, Pure.pure, Except.pure]
             simpa [evalNode, hGetValA, hGetValB, DVal.mk, ta, tb, Except.bind, Except.pure, bind, pure] using hEvalAt
         | bmm batch m nDim p a b =>
             have ha : (vals[a.id]!).1 = .dim batch (.dim m (.dim nDim .scalar)) := by
@@ -419,6 +425,13 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               simp [compileNode, res, n]
             have hnOut : n.outShape = .dim batch (.dim m (.dim p .scalar)) := by
               simp [compileNode, res, n]
+            have hn :
+                n =
+                  ({ id := id
+                     parents := [a.id, b.id]
+                     kind := .matmul
+                     outShape := .dim batch (.dim m (.dim p .scalar)) } : NN.IR.Node) := by
+              simp [n, res, compileNode]
             let ta : Tensor α (.dim batch (.dim m (.dim nDim .scalar))) := haF ▸ (vals[a.id]!).snd
             let tb : Tensor α (.dim batch (.dim nDim (.dim p .scalar))) := hbF ▸ (vals[b.id]!).snd
             have hExpectA :
@@ -460,15 +473,10 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                   (DVal.mk (α := α) (.dim batch (.dim m (.dim p .scalar)))
                     (Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := nDim) (p := p) ta tb))
                       := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, haF, hbF, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hExpectA, hExpectB]
-              split_ifs with hOut
-              · cases hOut
-                rfl
-              · exfalso
-                exact hOut (by simp [hnOut])
+              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn, hExpectA, hExpectB,
+                haF, hbF, DVal.shape, DVal.tensor, DVal.mk, Bind.bind,
+                Except.bind, Pure.pure, Except.pure]
             simpa [evalNode, hGetValA, hGetValB, DVal.mk, ta, tb, Except.bind, Except.pure, bind, pure] using hEvalAt
         | reshape inS mid₀ h xIdx =>
             have hx : (vals[xIdx.id]!).1 = inS := by
@@ -483,6 +491,13 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               simp [compileNode, res, n]
             have hnOut : n.outShape = mid₀ := by
               simp [compileNode, res, n]
+            have hn :
+                n =
+                  ({ id := id
+                     parents := [xIdx.id]
+                     kind := .reshape inS mid₀
+                     outShape := mid₀ } : NN.IR.Node) := by
+              simp [n, res, compileNode]
             let tx : Tensor α inS := hxF ▸ (vals[xIdx.id]!).snd
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α) (expected := inS) (vals[xIdx.id]!) = Except.ok tx
@@ -506,16 +521,10 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 Except.ok
                   (DVal.mk (α := α) mid₀
                     (Tensor.reshapeSpec (α := α) (s₁ := inS) (s₂ := mid₀) tx h)) := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hExpectX]
-              simp [h]
-              split_ifs with hOut
-              · cases hOut
-                rfl
-              · exfalso
-                exact hOut (by simp [hnOut])
+              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn, hExpectX, h,
+                DVal.shape, DVal.tensor, DVal.mk, Bind.bind, Except.bind,
+                Pure.pure, Except.pure]
             simpa [evalNode, hGetValX, DVal.mk, h, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
         | swap_first_two m nDim rest xIdx =>
             have hx : (vals[xIdx.id]!).1 = .dim m (.dim nDim rest) := by
@@ -530,6 +539,13 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               simp [compileNode, res, n]
             have hnOut : n.outShape = .dim nDim (.dim m rest) := by
               simp [compileNode, res, n]
+            have hn :
+                n =
+                  ({ id := id
+                     parents := [xIdx.id]
+                     kind := .swap_first_two
+                     outShape := .dim nDim (.dim m rest) } : NN.IR.Node) := by
+              simp [n, res, compileNode]
             let tx : Tensor α (.dim m (.dim nDim rest)) := hxF ▸ (vals[xIdx.id]!).snd
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α) (expected := .dim m (.dim nDim rest))
@@ -555,11 +571,10 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 Except.ok
                   (DVal.mk (α := α) (.dim nDim (.dim m rest))
                     (Tensor.swapFirstTwoSpec (α := α) (m := m) (n := nDim) (s := rest) tx)) := by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, hnOut, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hExpectX]
-              simp [hnOut]
+              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn, hExpectX,
+                DVal.shape, DVal.tensor, DVal.mk, Bind.bind, Except.bind,
+                Pure.pure, Except.pure]
             simpa [evalNode, hGetValX, DVal.mk, tx, hnOut, Except.bind, Except.pure, bind, pure] using hEvalAt
         | transpose3dLastTwo a b c xIdx =>
             have hx : (vals[xIdx.id]!).1 = .dim a (.dim b (.dim c .scalar)) := by
@@ -574,6 +589,13 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               simp [compileNode, res, n]
             have hnOut : n.outShape = .dim a (.dim c (.dim b .scalar)) := by
               simp [compileNode, res, n]
+            have hn :
+                n =
+                  ({ id := id
+                     parents := [xIdx.id]
+                     kind := .transpose3dLastTwo
+                     outShape := .dim a (.dim c (.dim b .scalar)) } : NN.IR.Node) := by
+              simp [n, res, compileNode]
             let tx : Tensor α (.dim a (.dim b (.dim c .scalar))) := hxF ▸ (vals[xIdx.id]!).snd
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α)
@@ -600,11 +622,10 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                   (DVal.mk (α := α) (.dim a (.dim c (.dim b .scalar)))
                     (Tensor.transpose3DLastTwoSpec (α := α) (a := a) (b := b) (c := c) tx)) :=
                       by
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, hnOut, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hExpectX]
-              simp [hnOut]
+              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn, hExpectX,
+                DVal.shape, DVal.tensor, DVal.mk, Bind.bind, Except.bind,
+                Pure.pure, Except.pure]
             simpa [evalNode, hGetValX, DVal.mk, tx, hnOut, Except.bind, Except.pure, bind, pure] using hEvalAt
         | softmaxLast hRank xIdx =>
             have hAxis : (Spec.Shape.rank mid₀ - 1) + 1 = Spec.Shape.rank mid₀ := by
@@ -631,6 +652,13 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               simp [compileNode, res, n]
             have hnOut : n.outShape = mid₀ := by
               simp [compileNode, res, n]
+            have hn :
+                n =
+                  ({ id := id
+                     parents := [xIdx.id]
+                     kind := .softmax (Spec.Shape.rank mid₀ - 1)
+                     outShape := mid₀ } : NN.IR.Node) := by
+              simp [n, res, compileNode]
             let tx : Tensor α mid₀ := hxF ▸ (vals[xIdx.id]!).snd
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[xIdx.id]!) = Except.ok tx
@@ -655,12 +683,10 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 simpa [hnOut] using hAxisValid
               have hAxis' : (Spec.Shape.rank mid₀ - 1) + 1 = Spec.Shape.rank n.outShape := by
                 simpa [hnOut] using hAxis
-              unfold NN.IR.Graph.evalAt
-              simp [hGetNode, hnKind, hnParents, DVal.shape, DVal.tensor, DVal.mk,
-                throw, throwThe, MonadExceptOf.throw]
-              rw [hnOut]
-              rw [hAxisValid, hExpectX]
-              simp [hAxis]
+              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn, hAxisValid,
+                hExpectX, hAxis, DVal.shape, DVal.tensor, DVal.mk, Bind.bind,
+                Except.bind, Pure.pure, Except.pure]
             simpa [evalNode, hGetValX, DVal.mk, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
         | layernorm2d seqLen embedDim hSeq hEmb xIdx =>
             have hParams :
@@ -759,7 +785,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                         (beta := Spec.fill (α := α) 0 (.dim embedDim .scalar))
                         (h_seq_pos := hSeq) (h_embed_pos := hEmb))
                       rfl)) := by
-                simp [NN.IR.Graph.evalAt, hGetNodeLN, hExpect, hParams,
+                simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hGetNodeLN, hExpect, hParams,
                   DVal.shape, DVal.tensor, DVal.mk,
                   throw, throwThe, MonadExceptOf.throw]
                 simpa [hExpect, hParams, hNumel, DVal.mk, Except.bind, Except.pure, bind, pure] using
@@ -947,7 +973,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             -- then compute
             -- the same scalar MSE.
             simp (config := { zeta := true })
-              [NN.IR.Graph.evalAt, NN.IR.Graph.mseLossDVal, hGetNode, hnKind, hnParents, hnOut,
+              [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, NN.IR.Graph.mseLossDVal, hGetNode, hnKind, hnParents, hnOut,
               evalNode, getDVal?, yV, tV, hSomeY, hSomeT, hy, ht, DVal.shape, DVal.tensor,
               DVal.mk, Bind.bind, Except.bind, Except.pure, bind, pure, Except.pure, Pure.pure]
       -- Unfold both evaluators one step, then dispatch by cases on the shared `evalNode`.

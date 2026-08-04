@@ -423,10 +423,10 @@ def trainStep (p : Params) (lr : Float := 0.1) : Runtime.Autograd.Result (Prod P
   let outputWeightGrad ← Train.requireGradTensor (tag := tag) (s:=.dim outDim (.dim hidDim .scalar)) grads outputWeightId
   let outputBiasGrad ← Train.requireGradTensor (tag := tag) (s:=.dim outDim .scalar) grads outputBiasId
 
-  let updatedHiddenWeight := Train.sgdUpdateTensor p.hiddenWeight hiddenWeightGrad lr
-  let updatedHiddenBias := Train.sgdUpdateTensor p.hiddenBias hiddenBiasGrad lr
-  let updatedOutputWeight := Train.sgdUpdateTensor p.outputWeight outputWeightGrad lr
-  let updatedOutputBias := Train.sgdUpdateTensor p.outputBias outputBiasGrad lr
+  let updatedHiddenWeight := Optim.SGD.update { lr := lr } p.hiddenWeight hiddenWeightGrad
+  let updatedHiddenBias := Optim.SGD.update { lr := lr } p.hiddenBias hiddenBiasGrad
+  let updatedOutputWeight := Optim.SGD.update { lr := lr } p.outputWeight outputWeightGrad
+  let updatedOutputBias := Optim.SGD.update { lr := lr } p.outputBias outputBiasGrad
 
   pure ({ hiddenWeight := updatedHiddenWeight, hiddenBias := updatedHiddenBias, outputWeight := updatedOutputWeight, outputBias := updatedOutputBias }, lossVal)
 

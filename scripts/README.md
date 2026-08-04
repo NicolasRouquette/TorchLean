@@ -17,8 +17,6 @@ Everything is organized by purpose:
 - `datasets/`: dataset download, conversion, and training-log plotting helpers.
 - `verification/`: certificate producers and artifact-regeneration workflows.
 - `rl/`: optional reinforcement-learning bridge examples.
-- `sandbox/`: comparator/untrusted-Lean helper tooling.
-
 ### Build and Check Support
 
 These scripts are used by the build, documentation, and local verification paths:
@@ -34,8 +32,6 @@ These scripts are used by the build, documentation, and local verification paths
 - `docs/polish_docgen.py`
 - `docs/polish_verso_guide.py`
 - `setup/resolve_libtorch.sh`
-- `sandbox/run_comparator.py`
-- `comparator/nn_ci_all.json`
 
 `docs/polish_docgen.py` and `docs/polish_verso_guide.py` are website post-processors rather than
 verification logic. DocGen and Verso generate the HTML; these scripts add the TorchLean landing page,
@@ -136,8 +132,6 @@ python3 scripts/checks/dependency_audit.py --markdown /tmp/torchlean_dependency_
   windows, and tiny text corpora.
 - `datasets/download_wikitext.py`: optional WikiText preparation helper for text-model
   experiments. Requires `pyarrow`.
-- `datasets/prepare_gpt2_corpus.py`: tokenizes local/Hugging Face text corpora into GPT-2 id
-  streams for sequence-model experiments. Requires `transformers`.
 - `datasets/plot_trainlog.py`: renders TorchLean `TrainLog` JSON curves for quick local inspection.
 - `datasets/torchlean_data_convert.py`: converts `.npy`, `.npz`, `.mat`, `.pt/.pth`, CSV,
   and image-folder datasets into TorchLean's `.npy` tensor format. Optional formats require the
@@ -176,12 +170,6 @@ represents neural-network computations.
 - `setup/resolve_libtorch.sh`: validates an optional LibTorch checkout used by
   `lake -R -K cuda=true build -K libtorch=true`. The normal CPU build and the default CUDA build do
   not require LibTorch.
-
-## Sandboxed Lean Checking
-
-- `sandbox/run_comparator.py`: optional wrapper for `leanprover/comparator`.
-- `comparator/nn_ci_all.json`: Comparator config for the `NN.CI.ComparatorAll`
-  marker theorem.
 
 ## Reinforcement Learning
 

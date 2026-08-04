@@ -80,6 +80,29 @@ def tanh {α : Type} [Context α] [DecidableEq Shape]
   pure (t.addNode node)
 
 /--
+Elementwise tanh-approximate GELU.
+
+The tape records GELU as one semantic operation. Its backward closure uses the derivative proved in
+`NN.Proofs.Gradients.Activation`; runtime backends may fuse the corresponding pointwise work
+without changing this tape-level rule.
+-/
+def gelu {α : Type} [Context α] [DecidableEq Shape]
+  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
+  let x ← requireValue (α := α) (t := t) (s := s) xId
+  let y := Activation.geluSpec (α := α) x
+  let node : Node α :=
+    { name := some "gelu"
+      value := AnyTensor.mk y
+      requires_grad := true
+      parents := [xId]
+      backward := fun dLdyAny => do
+        let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
+        let dgelu := Activation.geluDerivSpec (α := α) x
+        pure [(xId, AnyTensor.mk (mulSpec dgelu dLdy))]
+    }
+  pure (t.addNode node)
+
+/--
  Softmax along the last axis (recursing over outer dimensions).
 
  This matches `Activation.softmax_spec` (which applies softmax to the final dimension and recurses

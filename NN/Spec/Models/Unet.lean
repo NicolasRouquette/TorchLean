@@ -125,11 +125,11 @@ theorem unet2DefaultConfig_wf : unet2DefaultConfig.WF := by
 
 /-- Output height after `MaxPool2d(kernel=2, stride=2)` (no padding). -/
 abbrev UNetDownH (cfg : UNet2Config) (inH : Nat) : Nat :=
-  Shape.slidingWindowOutDim inH cfg.poolKernel cfg.poolStride 0
+  poolOutDim inH cfg.poolKernel cfg.poolStride 0
 
 /-- Output width after `MaxPool2d(kernel=2, stride=2)` (no padding). -/
 abbrev UNetDownW (cfg : UNet2Config) (inW : Nat) : Nat :=
-  Shape.slidingWindowOutDim inW cfg.poolKernel cfg.poolStride 0
+  poolOutDim inW cfg.poolKernel cfg.poolStride 0
 
 /-- Output height after `MaxPool2d(2,2)` then `ConvTranspose2d(2,2)` (with `padding=0`). -/
 abbrev UNetUpH (cfg : UNet2Config) (inH : Nat) : Nat :=
@@ -269,7 +269,7 @@ structure UNet2Grads (cfg : UNet2Config) (inC outC inH inW : Nat) (α : Type) wh
 /--
 Forward pass for `UNet2Spec`.
 
-Inputs/outputs use `MultiChannelImage` tensors of shape `(C,H,W)` (no batch axis).
+Inputs and outputs are tensors of shape `(C, H, W)` with no batch axis.
 
 The many `h_*` equalities are shape-rewrite hints: layer specs compute output sizes using explicit
 arithmetic (matching PyTorch's formulas), and these equalities let callers assert "this 3×3 conv
@@ -280,7 +280,7 @@ def UNet2Spec.forward
   {cfg : UNet2Config} {inC outC inH inW : Nat}
   {h_inC : inC ≠ 0} {hCfg : cfg.WF}
   (m : UNet2Spec (α := α) cfg inC outC inH inW h_inC hCfg)
-  (x : MultiChannelImage inC inH inW α)
+  (x : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
   (h_convH :
     (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) = inH)
   (h_convW :
@@ -293,7 +293,7 @@ def UNet2Spec.forward
   (h_upW : UNetUpW cfg inW = inW)
   (h_outH : (Shape.slidingWindowOutDim inH cfg.headKernel cfg.headStride cfg.headPadding) = inH)
   (h_outW : (Shape.slidingWindowOutDim inW cfg.headKernel cfg.headStride cfg.headPadding) = inW) :
-  MultiChannelImage outC inH inW α :=
+  Tensor α (.dim outC (.dim inH (.dim inW .scalar))) :=
 
   -- The `h_*` equalities are there for one reason: many of the layer specs compute output shapes
   -- with explicit arithmetic (matching PyTorch's formulas), and we sometimes want to treat a
@@ -303,13 +303,13 @@ def UNet2Spec.forward
   -- Down block 1 (spatial preserved because conv is 3x3, stride=1, padding=1).
   let s1_raw :=
     reluSpec (conv2dSpec (α := α) m.down1_1 x)
-  let s1 : MultiChannelImage cfg.baseC inH inW α :=
-    rwMultiChannelImage (α := α) s1_raw (by rfl) h_convH h_convW
+  let s1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape s1_raw (by simp only [h_convH, h_convW])
 
   let skip1_raw :=
     reluSpec (conv2dSpec (α := α) m.down1_2 s1)
-  let skip1 : MultiChannelImage cfg.baseC inH inW α :=
-    rwMultiChannelImage (α := α) skip1_raw (by rfl) h_convH h_convW
+  let skip1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape skip1_raw (by simp only [h_convH, h_convW])
 
   -- Downsample (PyTorch analogy: `nn.MaxPool2d(kernel_size=2, stride=2)`).
   let pool : MaxPool2DSpec cfg.poolKernel cfg.poolKernel cfg.poolStride hCfg.poolK_ne0 hCfg.poolK_ne0
@@ -319,48 +319,50 @@ def UNet2Spec.forward
   let downH := UNetDownH cfg inH
   let downW := UNetDownW cfg inW
 
-  let pooled : MultiChannelImage cfg.baseC downH downW α :=
+  let pooled : Tensor α (.dim cfg.baseC (.dim downH (.dim downW .scalar))) :=
     maxPool2dMultiSpec (α := α) (layer := pool) skip1
 
   -- Down block 2
   let b1_raw :=
     reluSpec (conv2dSpec (α := α) m.down2_1 pooled)
-  let b1 : MultiChannelImage (2 * cfg.baseC) downH downW α :=
-    rwMultiChannelImage (α := α) b1_raw (by rfl) h_convH_down h_convW_down
+  let b1 : Tensor α (.dim (2 * cfg.baseC) (.dim downH (.dim downW .scalar))) :=
+    Tensor.castShape b1_raw (by
+      simp only [downH, downW, h_convH_down, h_convW_down])
 
   let bottleneck_raw :=
     reluSpec (conv2dSpec (α := α) m.down2_2 b1)
-  let bottleneck : MultiChannelImage (2 * cfg.baseC) downH downW α :=
-    rwMultiChannelImage (α := α) bottleneck_raw (by rfl) h_convH_down h_convW_down
+  let bottleneck : Tensor α (.dim (2 * cfg.baseC) (.dim downH (.dim downW .scalar))) :=
+    Tensor.castShape bottleneck_raw (by
+      simp only [downH, downW, h_convH_down, h_convW_down])
 
   -- Upsample (PyTorch analogy: `nn.ConvTranspose2d(kernel_size=2, stride=2, padding=0)`).
-  let upRaw : MultiChannelImage cfg.baseC (UNetUpH cfg inH) (UNetUpW cfg inW) α :=
+  let upRaw : Tensor α (.dim cfg.baseC (.dim (UNetUpH cfg inH) (.dim (UNetUpW cfg inW) .scalar))) :=
     convTranspose2dSpec (inC := 2 * cfg.baseC) (outC := cfg.baseC)
       (kH := cfg.upKernel) (kW := cfg.upKernel) (stride := cfg.upStride) (padding := cfg.upPadding)
       (inH := downH) (inW := downW) m.upT bottleneck
 
-  let up : MultiChannelImage cfg.baseC inH inW α :=
-    rwMultiChannelImage (α := α) upRaw (by rfl) h_upH h_upW
+  let up : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape upRaw (by simp only [h_upH, h_upW])
 
   -- Skip connection: concatenate channels (no batch axis in this file, so channels are axis 0).
-  let merged : MultiChannelImage (cfg.baseC + cfg.baseC) inH inW α :=
+  let merged : Tensor α (.dim (cfg.baseC + cfg.baseC) (.dim inH (.dim inW .scalar))) :=
     concatLeadingAxisSpec (t1 := skip1) (t2 := up)
 
   -- Up block
   let u1_raw :=
     reluSpec (conv2dSpec (α := α) m.up1_1 merged)
-  let u1 : MultiChannelImage cfg.baseC inH inW α :=
-    rwMultiChannelImage (α := α) u1_raw (by rfl) h_convH h_convW
+  let u1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape u1_raw (by simp only [h_convH, h_convW])
 
   let u2_raw :=
     reluSpec (conv2dSpec (α := α) m.up1_2 u1)
-  let u2 : MultiChannelImage cfg.baseC inH inW α :=
-    rwMultiChannelImage (α := α) u2_raw (by rfl) h_convH h_convW
+  let u2 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape u2_raw (by simp only [h_convH, h_convW])
 
   -- Output
   let out_raw :=
     conv2dSpec (α := α) m.out1x1 u2
-  rwMultiChannelImage (α := α) out_raw (by rfl) h_outH h_outW
+  Tensor.castShape out_raw (by simp only [h_outH, h_outW])
 
 /--
 Backward pass for `UNet2Spec.forward`.
@@ -380,8 +382,8 @@ def UNet2Spec.backward
   {cfg : UNet2Config} {inC outC inH inW : Nat}
   {h_inC : inC ≠ 0} {hCfg : cfg.WF}
   (m : UNet2Spec (α := α) cfg inC outC inH inW h_inC hCfg)
-  (x : MultiChannelImage inC inH inW α)
-  (grad_output : MultiChannelImage outC inH inW α)
+  (x : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
+  (grad_output : Tensor α (.dim outC (.dim inH (.dim inW .scalar))))
   (h_convH :
     (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) = inH)
   (h_convW :
@@ -394,20 +396,20 @@ def UNet2Spec.backward
   (h_upW : UNetUpW cfg inW = inW)
   (h_outH : (Shape.slidingWindowOutDim inH cfg.headKernel cfg.headStride cfg.headPadding) = inH)
   (h_outW : (Shape.slidingWindowOutDim inW cfg.headKernel cfg.headStride cfg.headPadding) = inW) :
-  (UNet2Grads cfg inC outC inH inW α × MultiChannelImage inC inH inW α) :=
+  (UNet2Grads cfg inC outC inH inW α × Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :=
 
   -- Forward reconstruction (mirrors `UNet2Spec.forward`).
   -- We reconstruct intermediates because the backward rules (pooling / ReLU / conv) need the
   -- forward inputs (and in the case of max-pool, the values to determine which entries "won").
   let conv_down1_1 := conv2dSpec (α := α) m.down1_1 x
   let s1_raw := reluSpec conv_down1_1
-  let s1 : MultiChannelImage cfg.baseC inH inW α :=
-    rwMultiChannelImage (α := α) s1_raw (by rfl) h_convH h_convW
+  let s1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape s1_raw (by simp only [h_convH, h_convW])
 
   let conv_down1_2 := conv2dSpec (α := α) m.down1_2 s1
   let skip1_raw := reluSpec conv_down1_2
-  let skip1 : MultiChannelImage cfg.baseC inH inW α :=
-    rwMultiChannelImage (α := α) skip1_raw (by rfl) h_convH h_convW
+  let skip1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape skip1_raw (by simp only [h_convH, h_convW])
 
   let pool : MaxPool2DSpec cfg.poolKernel cfg.poolKernel cfg.poolStride hCfg.poolK_ne0 hCfg.poolK_ne0
       hCfg.poolStride_ne0 :=
@@ -416,39 +418,41 @@ def UNet2Spec.backward
   let downH := UNetDownH cfg inH
   let downW := UNetDownW cfg inW
 
-  let pooled : MultiChannelImage cfg.baseC downH downW α :=
+  let pooled : Tensor α (.dim cfg.baseC (.dim downH (.dim downW .scalar))) :=
     maxPool2dMultiSpec (α := α) (layer := pool) skip1
 
   let conv_down2_1 := conv2dSpec (α := α) m.down2_1 pooled
   let b1_raw := reluSpec conv_down2_1
-  let b1 : MultiChannelImage (2 * cfg.baseC) downH downW α :=
-    rwMultiChannelImage (α := α) b1_raw (by rfl) h_convH_down h_convW_down
+  let b1 : Tensor α (.dim (2 * cfg.baseC) (.dim downH (.dim downW .scalar))) :=
+    Tensor.castShape b1_raw (by
+      simp only [downH, downW, h_convH_down, h_convW_down])
 
   let conv_down2_2 := conv2dSpec (α := α) m.down2_2 b1
   let bottleneck_raw := reluSpec conv_down2_2
-  let bottleneck : MultiChannelImage (2 * cfg.baseC) downH downW α :=
-    rwMultiChannelImage (α := α) bottleneck_raw (by rfl) h_convH_down h_convW_down
+  let bottleneck : Tensor α (.dim (2 * cfg.baseC) (.dim downH (.dim downW .scalar))) :=
+    Tensor.castShape bottleneck_raw (by
+      simp only [downH, downW, h_convH_down, h_convW_down])
 
-  let upRaw : MultiChannelImage cfg.baseC (UNetUpH cfg inH) (UNetUpW cfg inW) α :=
+  let upRaw : Tensor α (.dim cfg.baseC (.dim (UNetUpH cfg inH) (.dim (UNetUpW cfg inW) .scalar))) :=
     convTranspose2dSpec (inC := 2 * cfg.baseC) (outC := cfg.baseC)
       (kH := cfg.upKernel) (kW := cfg.upKernel) (stride := cfg.upStride) (padding := cfg.upPadding)
       (inH := downH) (inW := downW) m.upT bottleneck
 
-  let up : MultiChannelImage cfg.baseC inH inW α :=
-    rwMultiChannelImage (α := α) upRaw (by rfl) h_upH h_upW
+  let up : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape upRaw (by simp only [h_upH, h_upW])
 
-  let merged : MultiChannelImage (cfg.baseC + cfg.baseC) inH inW α :=
+  let merged : Tensor α (.dim (cfg.baseC + cfg.baseC) (.dim inH (.dim inW .scalar))) :=
     concatLeadingAxisSpec (t1 := skip1) (t2 := up)
 
   let conv_up1_1 := conv2dSpec (α := α) m.up1_1 merged
   let u1_raw := reluSpec conv_up1_1
-  let u1 : MultiChannelImage cfg.baseC inH inW α :=
-    rwMultiChannelImage (α := α) u1_raw (by rfl) h_convH h_convW
+  let u1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape u1_raw (by simp only [h_convH, h_convW])
 
   let conv_up1_2 := conv2dSpec (α := α) m.up1_2 u1
   let u2_raw := reluSpec conv_up1_2
-  let u2 : MultiChannelImage cfg.baseC inH inW α :=
-    rwMultiChannelImage (α := α) u2_raw (by rfl) h_convH h_convW
+  let u2 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape u2_raw (by simp only [h_convH, h_convW])
 
   let out_raw := conv2dSpec (α := α) m.out1x1 u2
 
@@ -456,10 +460,8 @@ def UNet2Spec.backward
   -- For each ReLU, we backprop through it using the standard gate:
   -- `dZ = dY ⊙ ReLU'(Z)` where `Z` is the pre-activation tensor.
   let grad_out_raw :
-      MultiChannelImage outC
-        (Shape.slidingWindowOutDim inH cfg.headKernel cfg.headStride cfg.headPadding)
-        (Shape.slidingWindowOutDim inW cfg.headKernel cfg.headStride cfg.headPadding) α :=
-    rwMultiChannelImage (α := α) grad_output (by rfl) h_outH.symm h_outW.symm
+      Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH cfg.headKernel cfg.headStride cfg.headPadding) (.dim (Shape.slidingWindowOutDim inW cfg.headKernel cfg.headStride cfg.headPadding) .scalar))) :=
+    Tensor.castShape grad_output (by simp only [h_outH, h_outW])
 
   let (d_out1x1_kernel, d_out1x1_bias, d_u2) :=
     conv2dBackwardSpec (α := α)
@@ -470,10 +472,8 @@ def UNet2Spec.backward
       m.out1x1 u2 grad_out_raw
 
   let d_u2_raw :
-      MultiChannelImage cfg.baseC
-        (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding)
-        (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) α :=
-    rwMultiChannelImage (α := α) d_u2 (by rfl) h_convH.symm h_convW.symm
+      Tensor α (.dim cfg.baseC (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape d_u2 (by simp only [h_convH, h_convW])
 
   let d_conv_up1_2 := mulSpec d_u2_raw (reluDerivSpec conv_up1_2)
 
@@ -486,10 +486,8 @@ def UNet2Spec.backward
       m.up1_2 u1 d_conv_up1_2
 
   let d_u1_raw :
-      MultiChannelImage cfg.baseC
-        (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding)
-        (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) α :=
-    rwMultiChannelImage (α := α) d_u1 (by rfl) h_convH.symm h_convW.symm
+      Tensor α (.dim cfg.baseC (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape d_u1 (by simp only [h_convH, h_convW])
 
   let d_conv_up1_1 := mulSpec d_u1_raw (reluDerivSpec conv_up1_1)
 
@@ -513,8 +511,8 @@ def UNet2Spec.backward
       (s := .dim inH (.dim inW .scalar))
       d_merged
 
-  let d_upRaw : MultiChannelImage cfg.baseC (UNetUpH cfg inH) (UNetUpW cfg inW) α :=
-    rwMultiChannelImage (α := α) d_up (by rfl) h_upH.symm h_upW.symm
+  let d_upRaw : Tensor α (.dim cfg.baseC (.dim (UNetUpH cfg inH) (.dim (UNetUpW cfg inW) .scalar))) :=
+    Tensor.castShape d_up (by simp only [h_upH, h_upW])
 
   let (d_upT_kernel, d_upT_bias, d_bottleneck) :=
     convTranspose2dBackwardSpec
@@ -524,10 +522,9 @@ def UNet2Spec.backward
       (h1 := Nat.mul_pos (by decide : 0 < 2) hCfg.baseC_pos) (h2 := hCfg.upK_ne0) (h3 := hCfg.upK_ne0)
       m.upT bottleneck d_upRaw
 
-  let d_bottleneck_raw : MultiChannelImage (2 * cfg.baseC)
-      (Shape.slidingWindowOutDim (UNetDownH cfg inH) cfg.convKernel cfg.convStride cfg.convPadding)
-      (Shape.slidingWindowOutDim (UNetDownW cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) α :=
-    rwMultiChannelImage (α := α) d_bottleneck (by rfl) h_convH_down.symm h_convW_down.symm
+  let d_bottleneck_raw : Tensor α (.dim (2 * cfg.baseC) (.dim (Shape.slidingWindowOutDim (UNetDownH cfg inH) cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim (UNetDownW cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape d_bottleneck (by
+      simp only [downH, downW, h_convH_down, h_convW_down])
 
   let d_conv_down2_2 := mulSpec d_bottleneck_raw (reluDerivSpec conv_down2_2)
 
@@ -540,10 +537,9 @@ def UNet2Spec.backward
       (h3 := hCfg.convK_ne0)
       m.down2_2 b1 d_conv_down2_2
 
-  let d_b1_raw : MultiChannelImage (2 * cfg.baseC)
-      (Shape.slidingWindowOutDim (UNetDownH cfg inH) cfg.convKernel cfg.convStride cfg.convPadding)
-      (Shape.slidingWindowOutDim (UNetDownW cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) α :=
-    rwMultiChannelImage (α := α) d_b1 (by rfl) h_convH_down.symm h_convW_down.symm
+  let d_b1_raw : Tensor α (.dim (2 * cfg.baseC) (.dim (Shape.slidingWindowOutDim (UNetDownH cfg inH) cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim (UNetDownW cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape d_b1 (by
+      simp only [downH, downW, h_convH_down, h_convW_down])
 
   let d_conv_down2_1 := mulSpec d_b1_raw (reluDerivSpec conv_down2_1)
 
@@ -562,10 +558,8 @@ def UNet2Spec.backward
       d_pooled)
 
   let d_skip1_total := addSpec d_skip1_from_pool d_skip1_from_merge
-  let d_skip1_raw : MultiChannelImage cfg.baseC
-      (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding)
-      (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) α :=
-    rwMultiChannelImage (α := α) d_skip1_total (by rfl) h_convH.symm h_convW.symm
+  let d_skip1_raw : Tensor α (.dim cfg.baseC (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape d_skip1_total (by simp only [h_convH, h_convW])
 
   let d_conv_down1_2 := mulSpec d_skip1_raw (reluDerivSpec conv_down1_2)
 
@@ -577,10 +571,8 @@ def UNet2Spec.backward
       (h1 := Nat.ne_of_gt hCfg.baseC_pos) (h2 := hCfg.convK_ne0) (h3 := hCfg.convK_ne0)
       m.down1_2 s1 d_conv_down1_2
 
-  let d_s1_raw : MultiChannelImage cfg.baseC
-      (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding)
-      (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) α :=
-    rwMultiChannelImage (α := α) d_s1 (by rfl) h_convH.symm h_convW.symm
+  let d_s1_raw : Tensor α (.dim cfg.baseC (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape d_s1 (by simp only [h_convH, h_convW])
 
   let d_conv_down1_1 := mulSpec d_s1_raw (reluDerivSpec conv_down1_1)
 

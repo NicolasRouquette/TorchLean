@@ -54,9 +54,6 @@ open IRExec
 
 set_option linter.unnecessarySimpa false in
 set_option linter.unusedSimpArgs false in
--- `NN.IR.Graph.evalAt` is a large match; these op-case proofs sometimes require a larger
--- heartbeat budget for `simp` to normalize only the relevant branch.
-set_option maxHeartbeats 1200000 in
 /-- Semantic-preservation lemma for `.linear` lowering (payload-backed affine map). -/
 theorem buildFrom_denoteAllFrom_linear
     {α : Type} [Context α] [DecidableEq Shape]
@@ -141,7 +138,7 @@ theorem buildFrom_denoteAllFrom_linear
                             (input := input) (vals := vals0) (i := i) =
                           .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
                       -- Split into two stages so `simp` doesn't explore unrelated `evalAt` branches.
-                      simp [NN.IR.Graph.evalAt, hN, hk, hp]
+                      simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp]
                       -- `buildFrom` checks `expectedOut = n.outShape`, but `evalLinear` checks the symmetric
                       -- condition `n.outShape = expectedOut`; record it explicitly so `simp` can reduce the `if`.
                       have hOut' : n.outShape = expectedOut := hOut.symm
@@ -166,7 +163,6 @@ theorem buildFrom_denoteAllFrom_linear
 
 set_option linter.unnecessarySimpa false in
 set_option linter.unusedSimpArgs false in
-set_option maxHeartbeats 1200000 in
 /-- Semantic-preservation lemma for `.conv2d …` lowering (payload-backed convolution). -/
 theorem buildFrom_denoteAllFrom_conv2d
     {α : Type} [Context α] [DecidableEq Shape]
@@ -217,10 +213,10 @@ theorem buildFrom_denoteAllFrom_conv2d
               let expectedIn : Shape := .dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))
               have hInferExists :
                   ∃ inferred,
-                    NN.IR.OpContracts.inferConv2dCHWOutShape cfg.inC cfg.outC cfg.kH cfg.kW
+                    NN.IR.OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW
                         cfg.stride cfg.padding expectedIn = .ok inferred := by
                 cases hInfer :
-                    NN.IR.OpContracts.inferConv2dCHWOutShape cfg.inC cfg.outC cfg.kH cfg.kW
+                    NN.IR.OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW
                       cfg.stride cfg.padding expectedIn with
                 | error msg =>
                     have : False := by
@@ -279,7 +275,7 @@ theorem buildFrom_denoteAllFrom_conv2d
                             (input := input) (vals := vals0) (i := i) =
                           .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
                       -- Stage simplification so we only normalize the `.conv2d` evaluator branch.
-                      simp [NN.IR.Graph.evalAt, hN, hk, hp, throw_eq_error]
+                      simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, throw_eq_error]
                       -- Reduce the payload lookup and parent-shape check inside `evalConv2D`.
                       have hCastX :=
                         dval_snd_cast_of_eq_mk (α := α) (v := vals0[xId]!)
@@ -403,7 +399,7 @@ theorem buildFrom_denoteAllFrom_reshape
                           (input := input) (vals := vals0) (i := i) =
                         .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
                     -- Stage simp so we only normalize the `.reshape` branch (and its one `expectShape`).
-                    simp [NN.IR.Graph.evalAt, hN, hk, hp]
+                    simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp]
                     have hCastP :=
                       dval_snd_cast_of_eq_mk (α := α) (v := vals0[pId]!)
                         (s := inS) (t := getIdx (α := α) (xs := ctx) ip) hGet
@@ -503,7 +499,7 @@ theorem buildFrom_denoteAllFrom_flatten
                         (input := input) (vals := vals0) (i := i) =
                       .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
                   -- Stage simp so we only normalize the `.flatten` branch (and its one `expectShape`).
-                  simp [NN.IR.Graph.evalAt, hN, hk, hp]
+                  simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp]
                   have hCastP :=
                     dval_snd_cast_of_eq_mk (α := α) (v := vals0[pId]!)
                       (s := s) (t := getIdx (α := α) (xs := ctx) ip) hGet
@@ -600,7 +596,7 @@ theorem buildFrom_denoteAllFrom_swap_first_two
                     NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                         (input := input) (vals := vals0) (i := i) =
                       .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                  simp [NN.IR.Graph.evalAt, hN, hk, hp]
+                  simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp]
                   have hCastP :=
                     dval_snd_cast_of_eq_mk (α := α) (v := vals0[pId]!)
                       (s := expectedIn) (t := getIdx (α := α) (xs := ctx) ip) hGet
@@ -625,7 +621,6 @@ theorem buildFrom_denoteAllFrom_swap_first_two
 
 set_option linter.unnecessarySimpa false in
 set_option linter.unusedSimpArgs false in
-set_option maxHeartbeats 1200000 in
 /-- Semantic-preservation lemma for `.transpose3dLastTwo` lowering. -/
 theorem buildFrom_denoteAllFrom_transpose3dLastTwo
     {α : Type} [Context α] [DecidableEq Shape]
@@ -699,7 +694,7 @@ theorem buildFrom_denoteAllFrom_transpose3dLastTwo
                     NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                         (input := input) (vals := vals0) (i := i) =
                       .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.forward ctx ())) := by
-                  simp [NN.IR.Graph.evalAt, hN, hk, hp]
+                  simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp]
                   have hCastP :=
                     dval_snd_cast_of_eq_mk (α := α) (v := vals0[pId]!)
                       (s := expectedIn) (t := getIdx (α := α) (xs := ctx) ip) hGet

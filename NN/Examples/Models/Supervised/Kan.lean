@@ -85,7 +85,7 @@ def train (opts : Options) (flags : ModelZoo.CsvTrainFlags) :
         (seed := flags.seed)
   trainer.train
     (data flags.csvPath flags.seed)
-    (ModelZoo.TrainFlags.trainOptions flags.toModelTrainFlags
+    (CLI.Training.OptimizerOptions.toTrainerOptions flags.toOptimizerOptions
       (title := "KAN Auto MPG regression")
       (notes := #[ModelZoo.deviceNote opts, s!"data={flags.csvPath}", s!"lr={flags.lr}",
         s!"steps={flags.steps}", s!"batch={batch}", s!"edge={cfg.edge.name}"]))

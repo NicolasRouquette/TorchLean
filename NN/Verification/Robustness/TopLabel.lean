@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Common
+public import NN.Tensor.API
 
 /-!
 # Certified label checks

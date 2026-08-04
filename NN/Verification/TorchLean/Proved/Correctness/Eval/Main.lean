@@ -158,7 +158,7 @@ open NN.Verification.TorchLean
           Except.ok inputVal := by
         -- `getNode 0` returns the input node, and the `.input` branch deterministically returns
         -- `inputVal`.
-        simp [NN.IR.Graph.evalAt, hGet0, inputNode, inputVal, NN.IR.Graph.expectShape,
+        simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hGet0, inputNode, inputVal, NN.IR.Graph.expectShape,
           DVal.shape, DVal.mk, DVal.tensor,
           Bind.bind, Pure.pure, Except.pure, Except.bind]
       rw [NN.IR.Graph.denoteAllFrom.eq_1, dif_pos h0]

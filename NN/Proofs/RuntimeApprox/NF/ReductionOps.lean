@@ -50,7 +50,6 @@ variable {rnd : ℝ → ℤ} [NeuralValidRndToNearest rnd]
 
 local notation "R" => TorchLean.Floats.NF β fexp rnd
 
-set_option maxHeartbeats 4000000
 
 -- ---------------------------------------------------------------------------
 -- Definitional unfoldings for 2D reductions (axis 0/1)

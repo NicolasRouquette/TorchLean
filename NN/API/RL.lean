@@ -6,14 +6,13 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.RL.Core
-public import NN.API.RL.Runtime
 public import NN.API.RL.Cli
+public import NN.API.RL.Definitions
+public import NN.API.RL.Runtime
 
 /-!
-# Reinforcement Learning API
+# Reinforcement Learning
 
-Import entrypoint for RL definitions, runtime APIs, and shared command flags.
-
-Definitions live under `NN/API/RL/*`.
+Environments, Markov decision processes, value and policy methods, replay buffers, PPO, Gymnasium
+sessions, boundary checks, and numerical analysis.
 -/

@@ -233,6 +233,21 @@ def tanh {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     pure (some { id := id })
   dispatchCudaOpt (α := α) s .tanh cpu cuda
 
+/-- Record tanh-approximate GELU as one tape operation. -/
+def gelu {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
+  {sh : Shape} (x : TensorRef α sh) : IO (TensorRef α sh) := do
+  let cpu := do
+    let t0 ← s.tape.get
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.gelu (t := t0) (s := sh) x.id)
+    s.tape.set t1
+    pure { id := id }
+  let cuda := do
+    let t0 ← s.cudaTape.get
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.gelu (t := t0) (s := sh) x.id)
+    s.cudaTape.set t1
+    pure (some { id := id })
+  dispatchCudaOpt (α := α) s .gelu cpu cuda
+
 /--
 Record softmax (shape-preserving).
 

@@ -65,6 +65,7 @@ def op? : NN.IR.OpKind → Option BackendOp
   | .reduceMean .. => some .reduceMean
   | .sum => some .reduceSum
   | .softmax .. => some .softmax
+  | .hardMaskedSoftmax .. => some .hardMaskedSoftmax
   | .layernorm .. => some .layerNorm
   | .reshape .. => some .reshape
   | .flatten .. => some .reshape

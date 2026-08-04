@@ -237,30 +237,6 @@ Project conventions:
 - Keep executable examples and proof code separate when they have different trust assumptions.
 - Avoid introducing axioms. If one is unavoidable, quarantine and document it.
 
-## Checking Untrusted Proofs
-
-TorchLean includes a wrapper for `leanprover/comparator`, which can compare a trusted
-`Challenge.lean` against an untrusted `Solution.lean` inside a `landrun` sandbox.
-
-Prerequisite:
-
-- Install `landrun` and make sure it is on `PATH`: https://github.com/Zouuup/landrun
-
-Typical workflow:
-
-1. Create a separate small Lake project with `Challenge.lean`, `Solution.lean`, and a comparator
-   JSON config.
-2. Make that project depend on TorchLean, for example:
-   `require TorchLean from "/path/to/TorchLean"`.
-3. Run:
-
-```bash
-python3 /path/to/TorchLean/scripts/sandbox/run_comparator.py ./config.json --project .
-```
-
-See `https://github.com/leanprover/comparator` for the JSON schema and default axiom allowlist
-pattern.
-
 ## PR Checklist
 
 - `lake build` succeeds from a clean checkout.

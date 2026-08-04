@@ -6,21 +6,34 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public.Facade
 public import NN.API.Adapters
-public import NN.API.Models.Generative
+public import NN.API.CLI
+public import NN.API.Checkpoint
+public import NN.API.Scalar
+public import NN.API.Data
+public import NN.API.Json
+public import NN.API.Loss
+public import NN.API.Module
+public import NN.API.Neural
+public import NN.API.Optim
+public import NN.API.RL
+public import NN.API.Runtime
 public import NN.API.SelfSupervised
+public import NN.API.Tensor
+public import NN.API.TensorPack
+public import NN.API.Text
+public import NN.API.Trainer
+public import NN.API.Verification
+public import NN.Spec.Models
 
 /-!
-# TorchLean API
+# TorchLean
 
-The focused import for applications that want TorchLean's concise `TorchLean.*` interface without
-loading the proof, verification, floating-point, and widget subsystems.
+Neural-network construction, training, runtime execution, datasets, automatic differentiation,
+verification, and mathematical model specifications.
 
-The main namespaces are `TorchLean.nn` for neural networks, `TorchLean.classical` for classical
-and statistical models, `TorchLean.Trainer` for training, `TorchLean.optim` for optimizers, and
-`TorchLean.Data` for datasets. Use `import NN` when the same file also needs specifications,
-proofs, verification, or backend internals.
+Import `NN.API` for model code. Import `NN` when a file also uses the specification, proof,
+floating-point, or backend libraries.
 -/
 
 @[expose] public section

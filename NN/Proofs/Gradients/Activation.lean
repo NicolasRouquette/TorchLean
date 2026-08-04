@@ -462,7 +462,7 @@ theorem gelu_deriv_correct (x : ℝ) :
   let three : ℝ := (1 : ℝ) + (1 : ℝ) + (1 : ℝ)
   let pi : ℝ := MathFunctions.pi
   let sqrt_two_over_pi : ℝ := MathFunctions.sqrt (two / pi)
-  let coeff : ℝ := 0.044715
+  let coeff : ℝ := Activation.Math.geluTanhCoeff
   let u : ℝ → ℝ := fun y => sqrt_two_over_pi * (y + coeff * y * y * y)
   let tanh_term : ℝ := MathFunctions.tanh (u x)
   let sech_term : ℝ := (1 : ℝ) - tanh_term * tanh_term

@@ -40,8 +40,8 @@ transfer rules are proved sound.
 
 IEEE-754 does not standardize libm transcendental functions. For ops like `exp`, `log`, `tanh`,
 and `sigmoid`, soundness is therefore expressed as an explicit assumption in the checker predicate.
-This matches the repo's existing design: rigorous transcendental enclosures are handled via an
-oracle boundary (e.g. Arb-backed interval enclosures), not by assuming a particular `libm`.
+A concrete checker may discharge that assumption with a proved approximation or a validated
+external interval enclosure, but it may not infer it from a particular `libm` implementation.
 
 ## References (code)
 

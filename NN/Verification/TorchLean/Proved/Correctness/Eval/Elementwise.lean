@@ -61,6 +61,20 @@ def BinaryElementwiseOp.denote
   | .max => Tensor.maxSpec a b
   | .min => Tensor.minSpec a b
 
+private theorem evalNode_binaryElementwise_eq
+    {α : Type} [Context α] [DecidableEq Shape]
+    {s : Shape} (op : BinaryElementwiseOp) (a b : Tensor α s)
+    (payload : Payload α) (input : DVal α) (vals : Array (DVal α))
+    (i nodeId aId bId : Nat)
+    (ha : Graph.expectShape (α := α) (expected := s) vals[aId]! = .ok a)
+    (hb : Graph.expectShape (α := α) (expected := s) vals[bId]! = .ok b) :
+    Graph.evalNode payload input vals i
+        { id := nodeId, parents := [aId, bId], kind := op.toOpKind, outShape := s } =
+      .ok (DVal.mk (α := α) s (op.denote a b)) := by
+  cases op <;>
+    simp [BinaryElementwiseOp.toOpKind, BinaryElementwiseOp.denote, Graph.evalNode, ha, hb,
+      Bind.bind, Except.bind, Pure.pure, Except.pure]
+
 /-- Evaluate any supported same-shape binary elementwise node. -/
 theorem evalAt_binaryElementwise_eq
     {α : Type} [Context α] [DecidableEq Shape]
@@ -70,10 +84,13 @@ theorem evalAt_binaryElementwise_eq
         (vals := #[DVal.mk (α := α) s a, DVal.mk (α := α) s b]) (i := 2)
       =
       Except.ok (DVal.mk (α := α) s (op.denote a b)) := by
-  cases op <;>
-    simp [BinaryElementwiseOp.toOpKind, BinaryElementwiseOp.denote, Graph.evalAt, binaryGraph,
-      binaryNode, Graph.getNode, Graph.getNode?, Graph.expectShape, Bind.bind, Except.bind,
-      Pure.pure, Except.pure]
+  have ha : Graph.expectShape (α := α) (expected := s) (DVal.mk (α := α) s a) = .ok a := by
+    simp [Graph.expectShape, Pure.pure, Except.pure]
+  have hb : Graph.expectShape (α := α) (expected := s) (DVal.mk (α := α) s b) = .ok b := by
+    simp [Graph.expectShape, Pure.pure, Except.pure]
+  simpa [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, binaryGraph, binaryNode, Graph.getNode, Graph.getNode?] using
+    (evalNode_binaryElementwise_eq op a b ({} : Payload α) (DVal.mk (α := α) s a)
+      #[DVal.mk (α := α) s a, DVal.mk (α := α) s b] 2 2 0 1 ha hb)
 
 /-- Same-shape unary elementwise operations without additional runtime side conditions. -/
 inductive UnaryElementwiseOp where
@@ -123,6 +140,19 @@ def UnaryElementwiseOp.denote
   | .sin => Tensor.mapSpec (fun v => MathFunctions.sin v) x
   | .cos => Tensor.mapSpec (fun v => MathFunctions.cos v) x
 
+private theorem evalNode_unaryElementwise_eq
+    {α : Type} [Context α] [DecidableEq Shape]
+    {s : Shape} (op : UnaryElementwiseOp) (x : Tensor α s)
+    (payload : Payload α) (input : DVal α) (vals : Array (DVal α))
+    (i nodeId parentId : Nat)
+    (hx : Graph.expectShape (α := α) (expected := s) vals[parentId]! = .ok x) :
+    Graph.evalNode payload input vals i
+        { id := nodeId, parents := [parentId], kind := op.toOpKind, outShape := s } =
+      .ok (DVal.mk (α := α) s (op.denote x)) := by
+  cases op <;>
+    simp [UnaryElementwiseOp.toOpKind, UnaryElementwiseOp.denote, Graph.evalNode, hx,
+      Bind.bind, Except.bind, Pure.pure, Except.pure]
+
 /-- Evaluate any supported same-shape unary elementwise node. -/
 theorem evalAt_unaryElementwise_eq
     {α : Type} [Context α] [DecidableEq Shape]
@@ -132,12 +162,12 @@ theorem evalAt_unaryElementwise_eq
         (vals := #[DVal.mk (α := α) s x]) (i := 1)
       =
       Except.ok (DVal.mk (α := α) s (op.denote x)) := by
-  cases op <;>
-    simp [UnaryElementwiseOp.toOpKind, UnaryElementwiseOp.denote, Graph.evalAt, unaryGraph,
-      unaryNode, Graph.getNode, Graph.getNode?, Graph.expectShape, Bind.bind, Except.bind,
-      Pure.pure, Except.pure]
+  have hx : Graph.expectShape (α := α) (expected := s) (DVal.mk (α := α) s x) = .ok x := by
+    simp [Graph.expectShape, Pure.pure, Except.pure]
+  simpa [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraph, unaryNode, Graph.getNode, Graph.getNode?] using
+    (evalNode_unaryElementwise_eq op x ({} : Payload α) (DVal.mk (α := α) s x)
+      #[DVal.mk (α := α) s x] 1 1 0 hx)
 
-set_option maxHeartbeats 1000000 in
 /-- Evaluate a binary elementwise node in an arbitrary graph from the compiler's shape invariant. -/
 theorem evalAt_binaryElementwise_of_getNode
     {α : Type} [Context α] [DecidableEq Shape]
@@ -169,13 +199,26 @@ theorem evalAt_binaryElementwise_of_getNode
     simpa [ta] using getVal_eq_ok_of_hShapes (vals := vals) (expected := s) (idx := a) ha
   have hGetB : getVal (α := α) (inShape := inShape) (ss := ss) vals b = .ok tb := by
     simpa [tb] using getVal_eq_ok_of_hShapes (vals := vals) (expected := s) (idx := b) hb
-  cases op <;> unfold Graph.evalAt <;>
-    simp [hGetNode, hKind, hParents, BinaryElementwiseOp.toOpKind, DVal.shape, DVal.tensor,
-      DVal.mk, throw, throwThe, MonadExceptOf.throw] <;>
-    rw [hOut, hExpectA, hExpectB] <;>
-    simp [hGetA, hGetB, BinaryElementwiseOp.denote, ta, tb, Bind.bind, Except.bind]
+  rcases n with ⟨nodeId, parents, kind, outShape⟩
+  change parents = [a.id, b.id] at hParents
+  change outShape = s at hOut
+  change kind = op.toOpKind at hKind
+  subst parents
+  subst outShape
+  subst kind
+  calc
+    Graph.evalAt (α := α) g payload input vals i =
+        Graph.evalNode payload input vals i
+          { id := nodeId, parents := [a.id, b.id], kind := op.toOpKind, outShape := s } := by
+      simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hGetNode]
+    _ = .ok (DVal.mk (α := α) s (op.denote ta tb)) :=
+      evalNode_binaryElementwise_eq op ta tb payload input vals i nodeId a.id b.id hExpectA hExpectB
+    _ = (do
+        let ta ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals a
+        let tb ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals b
+        pure (DVal.mk (α := α) s (op.denote ta tb))) := by
+      simp [hGetA, hGetB, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
-set_option maxHeartbeats 1000000 in
 /-- Evaluate a unary elementwise node in an arbitrary graph from the compiler's shape invariant. -/
 theorem evalAt_unaryElementwise_of_getNode
     {α : Type} [Context α] [DecidableEq Shape]
@@ -198,11 +241,24 @@ theorem evalAt_unaryElementwise_of_getNode
     simpa [tx] using expectShape_eq_ok (expected := s) (v := vals[x.id]!) hx
   have hGet : getVal (α := α) (inShape := inShape) (ss := ss) vals x = .ok tx := by
     simpa [tx] using getVal_eq_ok_of_hShapes (vals := vals) (expected := s) (idx := x) hx
-  cases op <;> unfold Graph.evalAt <;>
-    simp [hGetNode, hKind, hParents, UnaryElementwiseOp.toOpKind, DVal.shape, DVal.tensor, DVal.mk,
-      throw, throwThe, MonadExceptOf.throw] <;>
-    rw [hOut, hExpect] <;>
-    simp [hGet, UnaryElementwiseOp.denote, tx]
+  rcases n with ⟨nodeId, parents, kind, outShape⟩
+  change parents = [x.id] at hParents
+  change outShape = s at hOut
+  change kind = op.toOpKind at hKind
+  subst parents
+  subst outShape
+  subst kind
+  calc
+    Graph.evalAt (α := α) g payload input vals i =
+        Graph.evalNode payload input vals i
+          { id := nodeId, parents := [x.id], kind := op.toOpKind, outShape := s } := by
+      simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hGetNode]
+    _ = .ok (DVal.mk (α := α) s (op.denote tx)) :=
+      evalNode_unaryElementwise_eq op tx payload input vals i nodeId x.id hExpect
+    _ = (do
+        let tx ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals x
+        pure (DVal.mk (α := α) s (op.denote tx))) := by
+      simp [hGet, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Local IR semantics for elementwise addition. -/
 theorem evalAt_add_eq
@@ -368,8 +424,8 @@ theorem evalAt_log_eq
         (vals := #[DVal.mk (α := α) s x]) (i := 1)
       =
       Except.ok (DVal.mk (α := α) s (Tensor.logSpec (α := α) x)) := by
-  simp [Graph.evalAt, unaryGraph, unaryNode, Graph.getNode, Graph.getNode?, Graph.expectShape, hpos,
-    Bind.bind, Except.bind, Pure.pure, Except.pure]
+  simp [Graph.evalAt, Graph.evalNode, unaryGraph, unaryNode, Graph.getNode, Graph.getNode?,
+    Graph.expectShape, hpos, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 end IRStep
 

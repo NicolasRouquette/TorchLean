@@ -6,14 +6,15 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Layers.Pooling.PaddedTwoD
+public import NN.Spec.Core.TensorReductionShape
+public import NN.Spec.Layers.Utils
 
 @[expose] public section
 
 
 namespace Spec
 open Tensor
-open Spec (Image MultiChannelImage getValueAtPosition extractWindow)
+open Spec (getValueAtPosition extractWindow)
 
 variable {α : Type} [Context α]
 
@@ -45,52 +46,51 @@ PyTorch comparisons (conceptual, without batch axis):
 ### Layer configs + output shapes
 -/
 
-/-- Kernel/stride/padding configuration for N-D max pooling. -/
+/--
+Witness that an N-D max-pooling configuration has nonzero kernel and stride on every axis.
+
+The vectors are indices of the type rather than duplicate structure fields, so a value cannot
+advertise one configuration while its type describes another.
+-/
 structure MaxPoolSpec (d : Nat)
     (kernel stride padding : Vector Nat d)
     (hKernel : ∀ i : Fin d, kernel.get i ≠ 0)
     (hStride : ∀ i : Fin d, stride.get i ≠ 0) where
-  /-- Kernel sizes per spatial axis (outermost to innermost). -/
-  kernelSizes : Vector Nat d := kernel
-  /-- Strides per spatial axis (outermost to innermost). -/
-  strideSizes : Vector Nat d := stride
-  /-- Symmetric zero padding per spatial axis (outermost to innermost). -/
-  paddingSizes : Vector Nat d := padding
 
-/-- Kernel/stride/padding configuration for N-D average pooling. -/
+/-- Witness that an N-D average-pooling configuration has nonzero kernel and stride on every axis. -/
 structure AvgPoolSpec (d : Nat)
     (kernel stride padding : Vector Nat d)
     (hKernel : ∀ i : Fin d, kernel.get i ≠ 0)
     (hStride : ∀ i : Fin d, stride.get i ≠ 0) where
-  /-- Kernel sizes per spatial axis (outermost to innermost). -/
-  kernelSizes : Vector Nat d := kernel
-  /-- Strides per spatial axis (outermost to innermost). -/
-  strideSizes : Vector Nat d := stride
-  /-- Symmetric zero padding per spatial axis (outermost to innermost). -/
-  paddingSizes : Vector Nat d := padding
-
-/--
-Output spatial sizes without padding.
-
-An invalid axis (zero kernel, zero stride, or a kernel larger than the input) has size zero.
--/
-def poolOutSpatial {d : Nat} (inSpatial kernel stride : Vector Nat d) : Vector Nat d :=
-  Vector.ofFn (fun i =>
-    Shape.slidingWindowOutDim (inSpatial.get i) (kernel.get i) (stride.get i) 0)
 
 /--
 Output spatial sizes with symmetric padding.
 
-On valid axes this is `(input + 2 * padding - kernel) / stride + 1`. Invalid axes have size zero;
-in particular, truncated natural-number subtraction never creates a phantom output window.
+Pooling follows the usual floor-mode sliding-window formula, but an empty input axis, empty kernel,
+or padding larger than half the kernel gives an empty output axis. The last condition is part of the
+pooling contract used by PyTorch and by TorchLean's native implementations; it is not a restriction
+on convolution.
 -/
+def poolOutDim (input kernel stride padding : Nat) : Nat :=
+  if input = 0 || kernel = 0 || padding > kernel / 2 then
+    0
+  else
+    Shape.slidingWindowOutDim input kernel stride padding
+
+/--
+Output spatial sizes without padding.
+
+An invalid axis (empty input, zero kernel, zero stride, or a kernel larger than the input) has size
+zero.
+-/
+def poolOutSpatial {d : Nat} (inSpatial kernel stride : Vector Nat d) : Vector Nat d :=
+  Vector.ofFn (fun i =>
+    poolOutDim (inSpatial.get i) (kernel.get i) (stride.get i) 0)
+
+/-- Apply `poolOutDim` independently to each spatial axis. -/
 def poolOutSpatialPad {d : Nat} (inSpatial kernel stride padding : Vector Nat d) : Vector Nat d :=
   Vector.ofFn (fun i =>
-    if inSpatial.get i = 0 || kernel.get i = 0 || padding.get i > kernel.get i / 2 then
-      0
-    else
-      Shape.slidingWindowOutDim
-        (inSpatial.get i) (kernel.get i) (stride.get i) (padding.get i))
+    poolOutDim (inSpatial.get i) (kernel.get i) (stride.get i) (padding.get i))
 
 /-- Pooling over the complete spatial extent produces one value on every spatial axis. -/
 theorem poolOutSpatialPad_global {d : Nat} (spatial : Vector Nat d)
@@ -101,7 +101,7 @@ theorem poolOutSpatialPad_global {d : Nat} (spatial : Vector Nat d)
   intro i hi
   have hNonzero : spatial[i] ≠ 0 := by
     simpa [Vector.get] using hSpatial ⟨i, hi⟩
-  simp [poolOutSpatialPad, Shape.slidingWindowOutDim, Vector.get, hNonzero]
+  simp [poolOutSpatialPad, poolOutDim, Shape.slidingWindowOutDim, Vector.get, hNonzero]
 
 /-- Output shape for single-channel N-D pooling (no padding). -/
 def poolOutShape {d : Nat} (inSpatial kernel stride : Vector Nat d) : Shape :=

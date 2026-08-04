@@ -6,18 +6,19 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Runtime.Autograd.Torch.Core.CheckpointIO
 public import NN.Runtime.Autograd.TorchLean.NN
+public import NN.Spec.Core.TensorBridge
 public import Lean
 
 /-!
-# Parameter IO (Float, exact bitwise)
+# Parameter IO
 
 TorchLean examples often want a small "train once, save weights, reload later" workflow.
 
-This module provides a small, explicit format for saving and loading *Float* parameter packs
-(`Torch.TList Float ss`) without relying on floating-point JSON parsing.
+This module provides two explicit formats for saving and loading `Float` parameter packs.
 
-## Format
+## Host Float Format
 
 We encode each `Float` value by its IEEE-754 bit pattern (`Float.toBits : Float → UInt64`) and
 store those bits as JSON natural numbers.
@@ -38,6 +39,14 @@ The file layout is:
   ]
 }
 ```
+
+## Runtime Float32 Format
+
+Device-backed modules use a versioned binary stream. Each parameter records its rank, dimensions,
+and element count before its little-endian float32 payload. Loading checks all metadata against the
+expected shape-indexed parameter list and rejects unsupported versions, truncated payloads, and
+trailing data. The stream is written one tensor at a time, so saving a large CUDA model does not
+construct a second host-side copy of the whole checkpoint.
 -/
 
 @[expose] public section
@@ -51,6 +60,12 @@ open Spec
 
 /-- Format tag stored in Float parameter-pack JSON files. -/
 def formatTag : String := "torchlean_paramlist_bits_v1"
+
+/-- Versioned header for streamed runtime float32 parameter checkpoints. -/
+def float32StreamFormat : Torch.Internal.CheckpointIO.Format where
+  name := "TorchLean float32 parameter checkpoint"
+  magic := "TLPF32B".toUTF8
+  version := 2
 
 /-- Encode a natural number as a JSON number. -/
 def jsonNat (n : Nat) : Lean.Json :=
@@ -69,28 +84,28 @@ def jsonBitsToFloat (j : Lean.Json) : Except String Float := do
   let bits : UInt64 := UInt64.ofNat n
   pure (Float.ofBits bits)
 
-/-- Rebuild a tensor from a flat list, rejecting length mismatches instead of padding/truncating. -/
-def tensorOfFlatListExact {α : Type} [Zero α] (tag : String) :
-    (s : Shape) → (xs : List α) → Except String (Tensor α s)
-  | .scalar, [x] => pure (Tensor.scalar x)
-  | .scalar, xs =>
-      throw s!"{tag}: expected 1 scalar, got {xs.length}"
-  | .dim n rest, xs => do
-      let chunk := Spec.Shape.size rest
-      let expected := n * chunk
-      if xs.length != expected then
-        throw s!"{tag}: expected {expected} scalars for shape {Shape.toList (.dim n rest)}, got {xs.length}"
-      -- Build the dependent function `Fin n → Tensor α rest` by slicing the input list.
-      let f : Fin n → Tensor α rest := fun i =>
-        -- `splitAt` makes the slice total; correctness comes from the length check above.
-        let off := i.val * chunk
-        let slice := (xs.drop off).take chunk
-        match tensorOfFlatListExact (tag := tag) rest slice with
-        | Except.ok t => t
-        | Except.error _ =>
-            -- Unreachable because `xs.length` matches `n * chunk`.
-            Spec.zeros α rest
-      pure <| Tensor.dim f
+/-- The runtime-list product of a shape agrees with its type-level element count. -/
+private theorem shapeProd_toList (s : Shape) :
+    TensorArray.shapeProd (Shape.toList s) = Shape.size s := by
+  induction s with
+  | scalar => simp [Shape.toList, Shape.size]
+  | dim n rest ih => simp [Shape.toList, Shape.size, ih]
+
+/-- Rebuild a tensor from a flat list, rejecting length mismatches instead of changing the data. -/
+def tensorOfFlatListExact {α : Type} (tag : String) (s : Shape) (xs : List α) :
+    Except String (Tensor α s) := do
+  if hLength : xs.length = Shape.size s then
+    let dims := Shape.toList s
+    have hProduct : xs.length = TensorArray.shapeProd dims := by
+      simpa [dims, shapeProd_toList] using hLength
+    have hShape : TensorBridge.listToShape dims = s := by
+      change Shape.ofList (Shape.toList s) = s
+      exact Shape.ofList_toList s
+    pure <| hShape ▸ TensorBridge.unflatten dims xs hProduct
+  else
+    throw <|
+      s!"{tag}: expected {Shape.size s} scalars for shape {Shape.toList s}, " ++
+        s!"got {xs.length}"
 
 /-- Encode one Float tensor as shape metadata plus exact IEEE bit-pattern values. -/
 def tensorToJsonBits (s : Shape) (t : Tensor Float s) : Lean.Json :=
@@ -124,19 +139,26 @@ def tListToJsonBits {ss : List Shape} : Torch.TList Float ss → Lean.Json
           Lean.Json.arr (#[tensorToJsonBits s t] ++ xs)
       | _ => Lean.Json.arr #[]
 
-/-- Decode the `params` JSON array into the expected shape-indexed parameter list. -/
-def tListFromJsonBits (tag : String) :
-    {ss : List Shape} → (j : Lean.Json) → Except String (Torch.TList Float ss)
-  | [], _ => pure .nil
-  | s :: ss, j => do
-      let xs ← Lean.Json.getArr? j
-      if xs.size = 0 then
-        throw s!"{tag}: missing parameter 1/{(s :: ss).length}"
-      let headJ := xs.getD 0 Lean.Json.null
-      let tailJ := Lean.Json.arr (xs.extract 1 xs.size)
-      let head ← tensorFromJsonBits (tag := tag) s headJ
-      let tail ← tListFromJsonBits (tag := tag) (ss := ss) tailJ
+/-- Decode an expected shape list from a parameter array, starting at `offset`. -/
+def tListFromJsonBitsArray (tag : String) (xs : Array Lean.Json) :
+    {ss : List Shape} → (offset : Nat) → Except String (Torch.TList Float ss)
+  | [], offset => do
+      unless offset = xs.size do
+        throw s!"{tag}: unexpected {xs.size - offset} trailing parameter record(s)"
+      pure .nil
+  | s :: ss, offset => do
+      let headJson ← match xs[offset]? with
+        | some value => pure value
+        | none => throw s!"{tag}: missing parameter {offset + 1}/{offset + 1 + ss.length}"
+      let head ← tensorFromJsonBits (tag := tag) s headJson
+      let tail ← tListFromJsonBitsArray (tag := tag) xs (ss := ss) (offset + 1)
       pure (.cons head tail)
+
+/-- Decode the `params` JSON array into the expected shape-indexed parameter list. -/
+def tListFromJsonBits (tag : String) {ss : List Shape} (json : Lean.Json) :
+    Except String (Torch.TList Float ss) := do
+  let xs ← Lean.Json.getArr? json
+  tListFromJsonBitsArray (tag := tag) xs (ss := ss) 0
 
 /-- Write Float parameters using exact IEEE bit patterns rather than decimal floats. -/
 def writeParamBits (path : System.FilePath) {ss : List Shape}
@@ -144,7 +166,8 @@ def writeParamBits (path : System.FilePath) {ss : List Shape}
   let top : Lean.Json :=
     Lean.Json.mkObj [("format", Lean.Json.str formatTag), ("params", tListToJsonBits ps)]
   let s := if pretty then top.pretty else top.compress
-  IO.FS.writeFile path s
+  Torch.Internal.CheckpointIO.writeAtomically path fun handle =>
+    handle.write s.toUTF8
 
 /-- Read Float parameters previously written by `writeParamBits`. -/
 def readParamBits (path : System.FilePath) {ss : List Shape} :
@@ -168,6 +191,146 @@ def readParamBits (path : System.FilePath) {ss : List Shape} :
               else
                 let paramsJ := (o.get? "params").getD (Lean.Json.arr #[])
                 pure (tListFromJsonBits (tag := "ParamIO") (ss := ss) paramsJ)
+
+/-! ## Streaming float32 module checkpoints -/
+
+/-- Write one expected tensor shape to a streaming checkpoint. -/
+def writeShape (handle : IO.FS.Handle) (shape : Shape) : IO Unit := do
+  let dims := Shape.toList shape
+  Torch.Internal.CheckpointIO.writeNat64 "ParamIO" handle dims.length
+  for dim in dims do
+    Torch.Internal.CheckpointIO.writeNat64 "ParamIO" handle dim
+  Torch.Internal.CheckpointIO.writeNat64 "ParamIO" handle (Shape.size shape)
+
+/-- Read and validate one tensor shape from a streaming checkpoint. -/
+def readShape (handle : IO.FS.Handle) (expected : Shape) : IO Unit := do
+  let rank ← Torch.Internal.CheckpointIO.readNat64 "ParamIO" handle
+  let mut reversedDims := []
+  for _ in [0:rank] do
+    reversedDims := (← Torch.Internal.CheckpointIO.readNat64 "ParamIO" handle) :: reversedDims
+  let dims := reversedDims.reverse
+  let count ← Torch.Internal.CheckpointIO.readNat64 "ParamIO" handle
+  if Shape.ofList dims != expected then
+    throw <| IO.userError
+      s!"ParamIO: checkpoint shape mismatch (file={dims}, expected={Shape.toList expected})"
+  if count != Shape.size expected then
+    throw <| IO.userError <|
+      s!"ParamIO: checkpoint element count mismatch for {Shape.pretty expected} "
+        ++ s!"(file={count}, expected={Shape.size expected})"
+
+/-- Obtain one parameter as raw float32 bytes without materializing the whole parameter pack. -/
+def paramFloat32Bytes {shape : Shape}
+    (param : Torch.Param Float shape) : IO ByteArray := do
+  match ← param.cudaValue.get with
+  | some value =>
+      if value.s != shape then
+        throw <| IO.userError <|
+          s!"ParamIO: CUDA parameter shape mismatch "
+            ++ s!"(buffer={Shape.pretty value.s}, expected={Shape.pretty shape})"
+      Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO value.buf
+  | none =>
+      let tensor ← param.value.get
+      let values := Runtime.Autograd.Cuda.Convert.flattenFloat (s := shape) tensor
+      pure <| Runtime.Autograd.Cuda.Buffer.floatArrayToFloat32Bytes values
+
+/-- Stream a shape-indexed runtime parameter list to an open checkpoint handle. -/
+def writeParamListFloat32 (handle : IO.FS.Handle) :
+    {shapes : List Shape} → Torch.ParamList Float shapes → IO Unit
+  | [], .nil => pure ()
+  | shape :: _, .cons param params => do
+      writeShape handle shape
+      let bytes ← paramFloat32Bytes param
+      let expectedBytes := Shape.size shape * 4
+      if bytes.size != expectedBytes then
+        throw <| IO.userError <|
+          s!"ParamIO: float32 payload size mismatch for {Shape.pretty shape} "
+            ++ s!"(got={bytes.size}, expected={expectedBytes})"
+      handle.write bytes
+      writeParamListFloat32 handle params
+
+/--
+Write a runtime parameter list as a streamed float32 checkpoint.
+
+Only one parameter payload is resident on the host at a time. This is the appropriate format for
+large CUDA models; it records the exact values used by the float32 runtime instead of expanding
+them into one in-memory JSON tree.
+-/
+def writeModuleParamFloat32
+    (path : System.FilePath) {shapes : List Shape}
+    (params : Torch.ParamList Float shapes) : IO Unit := do
+  Torch.Internal.CheckpointIO.writeAtomically path fun handle => do
+    Torch.Internal.CheckpointIO.writeFormat float32StreamFormat handle
+    Torch.Internal.CheckpointIO.writeNat64 "ParamIO" handle shapes.length
+    writeParamListFloat32 handle params
+
+/-- Check whether a file begins with the streaming float32 checkpoint header. -/
+def isModuleParamFloat32 (path : System.FilePath) : IO Bool := do
+  Torch.Internal.CheckpointIO.hasFormatMagic float32StreamFormat path
+
+/-- Read one float32 payload directly into an existing runtime parameter. -/
+def readParamFloat32Into
+    (useCuda : Bool) (handle : IO.FS.Handle) {shape : Shape}
+    (param : Torch.Param Float shape) : IO Unit := do
+  readShape handle shape
+  let bytes ← Torch.Internal.CheckpointIO.readExact
+    "ParamIO" handle (Shape.size shape * 4)
+  if useCuda then
+    let buffer ← Runtime.Autograd.Cuda.Buffer.ofFloat32BytesIO bytes
+    Torch.Internal.setParamCudaValue param { s := shape, buf := buffer }
+  else
+    let values := Runtime.Autograd.Cuda.Buffer.float32BytesToFloatArray bytes
+    let tensor := Runtime.Autograd.Cuda.Convert.unflattenFloatUnsafe (s := shape) values
+    Torch.Internal.setParamHostValue param tensor
+
+/-- Stream a checkpoint into a shape-indexed runtime parameter list. -/
+def readParamListFloat32Into
+    (useCuda : Bool) (handle : IO.FS.Handle) :
+    {shapes : List Shape} → Torch.ParamList Float shapes → IO Unit
+  | [], .nil => pure ()
+  | _ :: _, .cons param params => do
+      readParamFloat32Into useCuda handle param
+      readParamListFloat32Into useCuda handle params
+
+/-- Validate every tensor record and payload without changing the destination parameters. -/
+def validateParamListFloat32 (handle : IO.FS.Handle) : (shapes : List Shape) → IO Unit
+  | [] => pure ()
+  | shape :: shapes => do
+      readShape handle shape
+      let _ ← Torch.Internal.CheckpointIO.readExact
+        "ParamIO" handle (Shape.size shape * 4)
+      validateParamListFloat32 handle shapes
+
+/-- Read and validate the common header of a streamed float32 checkpoint. -/
+def readAndCheckFloat32Header
+    (handle : IO.FS.Handle) (expectedParameterCount : Nat) : IO Unit := do
+  Torch.Internal.CheckpointIO.readFormat float32StreamFormat handle
+  let parameterCount ← Torch.Internal.CheckpointIO.readNat64 "ParamIO" handle
+  if parameterCount != expectedParameterCount then
+    throw <| IO.userError <|
+      s!"ParamIO: checkpoint parameter count mismatch "
+        ++ s!"(file={parameterCount}, expected={expectedParameterCount})"
+
+/-- Reject extra bytes after the last expected tensor payload. -/
+def checkFloat32EndOfFile (handle : IO.FS.Handle) : IO Unit := do
+  let trailing ← handle.read 1
+  if trailing.size != 0 then
+    throw <| IO.userError "ParamIO: trailing bytes after final parameter"
+
+/-- Load a streamed float32 checkpoint into an existing runtime parameter list. -/
+def readModuleParamFloat32Into
+    (path : System.FilePath) (useCuda : Bool) {shapes : List Shape}
+    (params : Torch.ParamList Float shapes) : IO Unit := do
+  -- Check the complete stream first. Under ordinary file ownership this prevents a malformed or
+  -- truncated checkpoint from leaving the live module with only a prefix of its parameters
+  -- replaced, while retaining one-tensor-at-a-time memory use for large CUDA models.
+  IO.FS.withFile path IO.FS.Mode.read fun handle => do
+    readAndCheckFloat32Header handle shapes.length
+    validateParamListFloat32 handle shapes
+    checkFloat32EndOfFile handle
+  IO.FS.withFile path IO.FS.Mode.read fun handle => do
+    readAndCheckFloat32Header handle shapes.length
+    readParamListFloat32Into useCuda handle params
+    checkFloat32EndOfFile handle
 
 end ParamIO
 end TorchLean

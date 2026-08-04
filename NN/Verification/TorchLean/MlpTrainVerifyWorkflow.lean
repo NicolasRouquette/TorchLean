@@ -56,7 +56,8 @@ def XFloat : Spec.Tensor Float (.dim 3 xShape) :=
 
 /-- Batched targets for training. -/
 def YFloat : Spec.Tensor Float (.dim 3 yShape) :=
-  Samples.regressionTargetsFloat XFloat (Samples.affinePlane 2.0 (-3.0) 0.0)
+  Data.Synthetic.regressionTargetsFloat XFloat
+    (Data.Synthetic.affinePlane 2.0 (-3.0) 0.0)
 
 /-- TorchLean model used for training and verification. -/
 def mkModel : nn.M (nn.Sequential xShape yShape) :=
@@ -77,8 +78,8 @@ The trained result owns the trained parameters. Calling `trained.verifyRobustLIn
 model that was actually trained, without reopening a polymorphic low-level callback in this example
 file.
 -/
-def runOnce {α : Type} [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [ToString α]
-    [Runtime.Scalar α] (opts : Options) : IO Unit := do
+def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
+    [Runtime.FromFloat α] (opts : Options) : IO Unit := do
   let dataset := Data.tensorDataset XFloat YFloat
   let trainer := Trainer.new model <|
     Trainer.Config.fromRunConfig
@@ -95,8 +96,8 @@ def runOnce {α : Type} [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [To
   cert.printSummary
 
 /-- Runtime-selected typed runner used by the CLI entrypoint. -/
-def runMain {α : Type} [Runtime.SemanticScalar α] [DecidableEq Spec.Shape] [ToString α]
-    [Runtime.Scalar α] (opts : Options) (rest : List String) : IO Unit := do
+def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
+    [Runtime.FromFloat α] (opts : Options) (rest : List String) : IO Unit := do
   CLI.requireNoArgs "torchlean-mlp-workflow" rest
   if opts.usesCuda then
     throw <| IO.userError

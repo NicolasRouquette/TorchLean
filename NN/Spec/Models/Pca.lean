@@ -18,12 +18,10 @@ The exact model operations are the transform and inverse transform. A separate r
 below constructs a one-component approximation with power iteration; its name records that
 numerical limitation explicitly.
 
-PyTorch / ecosystem analogies:
+The model follows the usual centered linear projection used by PCA. The fitting helper is
+deliberately narrower: it approximates one leading component by power iteration.
 
-- scikit-learn: `sklearn.decomposition.PCA` (fit + transform)
-- PyTorch: `torch.pca_lowrank` or `torch.linalg.svd` (common building blocks)
-
-References (background, not required to read the code):
+References:
 
 - Pearson (1901), "On Lines and Planes of Closest Fit to Systems of Points in Space".
   https://doi.org/10.1080/14786440109462720
@@ -46,18 +44,18 @@ We store:
 
 - `components : outDim × inDim` (rows are principal directions),
 - `mean : inDim` (for centering),
-- `explained_variance : outDim` (eigenvalues for the selected components).
+- `explainedVariance : outDim` (eigenvalues for the selected components).
 
 This matches the typical PCA API: you can `transform` to `outDim` coordinates and `inverse` back
 to `inDim`.
 -/
 structure PCASpec (α : Type) (inDim outDim : Nat) where
-  /-- components. -/
-  components : Tensor α (.dim outDim (.dim inDim .scalar))  -- Principal components (outDim × inDim)
-  /-- mean. -/
-  mean : Tensor α (.dim inDim .scalar)                     -- Data mean for centering
-  /-- explained variance. -/
-  explained_variance : Tensor α (.dim outDim .scalar)      -- Selected covariance eigenvalues
+  /-- Principal directions, one row for each output coordinate. -/
+  components : Tensor α (.dim outDim (.dim inDim .scalar))
+  /-- Coordinate-wise sample mean subtracted before projection. -/
+  mean : Tensor α (.dim inDim .scalar)
+  /-- Covariance eigenvalue associated with each selected component. -/
+  explainedVariance : Tensor α (.dim outDim .scalar)
 
 /-- Forward pass: center and project: `y = components · (x - mean)`. -/
 def pcaForwardSpec {inDim outDim : Nat}
@@ -82,12 +80,12 @@ def pcaInverseSpec {inDim outDim : Nat}
 def pcaComponentsDerivSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
   (input : Tensor α (.dim inDim .scalar))
-  (grad_output : Tensor α (.dim outDim .scalar)) :
+  (gradOutput : Tensor α (.dim outDim .scalar)) :
   Tensor α (.dim outDim (.dim inDim .scalar)) :=
   let centered := subSpec input m.mean
   Tensor.dim (fun i =>
     Tensor.dim (fun j =>
-      match grad_output, centered with
+      match gradOutput, centered with
       | Tensor.dim g_vals, Tensor.dim x_vals =>
         match g_vals i, x_vals j with
         | Tensor.scalar g, Tensor.scalar x => Tensor.scalar (g * x)
@@ -96,29 +94,29 @@ def pcaComponentsDerivSpec {inDim outDim : Nat}
 /-- VJP contribution for `mean`: `dL/dmean = -componentsᵀ · dL/dy`. -/
 def pcaMeanDerivSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
-  (grad_output : Tensor α (.dim outDim .scalar)) :
+  (gradOutput : Tensor α (.dim outDim .scalar)) :
   Tensor α (.dim inDim .scalar) :=
-  negSpec (vecMatMulSpec grad_output m.components)
+  negSpec (vecMatMulSpec gradOutput m.components)
 
 /-- VJP contribution for `input`: `dL/dx = componentsᵀ · dL/dy`. -/
 def pcaInputDerivSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
-  (grad_output : Tensor α (.dim outDim .scalar)) :
+  (gradOutput : Tensor α (.dim outDim .scalar)) :
   Tensor α (.dim inDim .scalar) :=
-  vecMatMulSpec grad_output m.components
+  vecMatMulSpec gradOutput m.components
 
 /-- Full backward pass returning `(dComponents, dMean, dInput)`. -/
 def pcaBackwardSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
   (input : Tensor α (.dim inDim .scalar))
-  (grad_output : Tensor α (.dim outDim .scalar)) :
+  (gradOutput : Tensor α (.dim outDim .scalar)) :
   (Tensor α (.dim outDim (.dim inDim .scalar)) ×
    Tensor α (.dim inDim .scalar) ×
    Tensor α (.dim inDim .scalar)) :=
-  let d_components := pcaComponentsDerivSpec m input grad_output
-  let d_mean := pcaMeanDerivSpec m grad_output
-  let d_input := pcaInputDerivSpec m grad_output
-  (d_components, d_mean, d_input)
+  let dComponents := pcaComponentsDerivSpec m input gradOutput
+  let dMean := pcaMeanDerivSpec m gradOutput
+  let dInput := pcaInputDerivSpec m gradOutput
+  (dComponents, dMean, dInput)
 
 /-- Approximate the leading PCA component using the scaled covariance matrix and power iteration.
 
@@ -146,15 +144,14 @@ def pcaFitLeadingComponentApproxSpec {nSamples inDim : Nat}
   let mean := reduceMeanAuto 0 inst data
 
   -- Center the data
-  let centered_data := Tensor.dim (fun i => subSpec (get data i) mean)
+  let centeredData := Tensor.dim (fun i => subSpec (get data i) mean)
 
   -- Compute covariance matrix: C = (1/(n-1)) * X^T * X
   -- Using n-1 for unbiased estimator (Bessel's correction)
-  let covariance := matMulSpec (matrixTransposeSpec centered_data) centered_data
-  let n_minus_1 := nSamples - 1
-  let covariance_scaled := scaleSpec covariance (1 / (n_minus_1 : α))
+  let covariance := matMulSpec (matrixTransposeSpec centeredData) centeredData
+  let covarianceScaled := scaleSpec covariance (1 / (nSamples - 1 : α))
 
-  let (eigenvalue, eigenvector) := leadingEigenpairPowerIterationApproxSpec covariance_scaled
+  let (eigenvalue, eigenvector) := leadingEigenpairPowerIterationApproxSpec covarianceScaled
   let first := toScalar (get eigenvector ⟨0, hDim⟩)
   let sign : α := if first < 0 then -1 else 1
   let oriented := scaleSpec eigenvector sign
@@ -162,7 +159,7 @@ def pcaFitLeadingComponentApproxSpec {nSamples inDim : Nat}
   {
     components := Tensor.dim (fun _ => oriented),
     mean := mean,
-    explained_variance := Tensor.dim (fun _ => Tensor.scalar eigenvalue)
+    explainedVariance := Tensor.dim (fun _ => Tensor.scalar eigenvalue)
   }
 
 /-- Apply a fitted PCA transform to a batch of samples. -/
@@ -185,27 +182,22 @@ def pcaReconstructionErrorSpec {inDim outDim : Nat}
   let reduced := pcaForwardSpec m input
   let reconstructed := pcaInverseSpec m reduced
   let error := subSpec input reconstructed
-  let squared_error := squareSpec error
+  let squaredError := squareSpec error
   have inst : Shape.valid_axis_inst 0 (Shape.dim inDim Shape.scalar) := by
     apply Shape.validAxisInstZeroAlt h
-  toScalar (reduceSumAuto 0 squared_error)
+  toScalar (reduceSumAuto 0 squaredError)
 
-/-- Cumulative explained variance (prefix sums of `explained_variance`). -/
+/-- Cumulative explained variance, obtained by prefix-summing `explainedVariance`. -/
 def pcaCumulativeExplainedVarianceSpec {α : Type} [Add α] [Zero α]
     {inDim outDim : Nat} (m : PCASpec α inDim outDim) :
     Tensor α (.dim outDim .scalar) :=
-  match m.explained_variance with
+  match m.explainedVariance with
   | Tensor.dim f =>
     Tensor.dim (fun i =>
-      -- For each position i, sum explained variances from 0 to i
-      let rec sum_to_index (j : Nat) (acc : α) : α :=
-        if j > i.val then acc
-        else
-          if h : j < outDim then
-            match f ⟨j, h⟩ with
-            | Tensor.scalar x => sum_to_index (j + 1) (acc + x)
-          else acc
-      Tensor.scalar (sum_to_index 0 0)
+      let entries := (List.finRange outDim).take (i.val + 1)
+      Tensor.scalar <| entries.foldl (fun acc j =>
+        match f j with
+        | Tensor.scalar x => acc + x) 0
     )
 
 

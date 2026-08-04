@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
+public import NN.API.Seeded
 
 /-!
 # Vision Transformer
@@ -18,8 +18,8 @@ signals, images, volumes, and higher-dimensional grids.
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
+
 namespace nn
 namespace models
 
@@ -121,5 +121,4 @@ def vit {d : Nat} (cfg : VitConfig d)
 
 end models
 end nn
-end API
-end NN
+end TorchLean

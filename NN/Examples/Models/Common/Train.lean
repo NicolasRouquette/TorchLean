@@ -125,7 +125,7 @@ structure Config (δ : Type) where
   /-- Parse data flags, then leave device/training flags for the shared parser. -/
   parseData : List String → Except String (δ × List String)
   /-- Run the actual training body after data, device, and training flags have been parsed. -/
-  train : Options → δ → ModelZoo.LoggedTrainFlags → IO Unit
+  train : Options → δ → CLI.Training.RunOptions → IO Unit
 
 /-- Usage text for model examples using the shared runner. -/
 def usage {δ : Type} (cfg : Config δ) : String :=
@@ -161,7 +161,7 @@ def run {δ : Type} (cfg : Config δ) (args : List String) : IO UInt32 := do
     (k := fun opts rest => do
       let (dataArgs, rest) ← ModelZoo.orThrow cfg.exeName <| cfg.parseData rest
       let (train, rest) ← ModelZoo.orThrow cfg.exeName <|
-        ModelZoo.parseLoggedTrainFlags cfg.exeName rest cfg.defaultLogJson cfg.defaultSteps
+        CLI.Training.RunOptions.parse cfg.exeName rest cfg.defaultLogJson cfg.defaultSteps
       CLI.requireNoArgs cfg.exeName rest
       cfg.train opts dataArgs train)
 

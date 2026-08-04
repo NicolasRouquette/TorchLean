@@ -92,9 +92,10 @@ def label : ContractClaim → String
   | .shapeSafety op => s!"shape safety for {op.name}"
   | .layoutCompatibility op layout =>
       s!"{layout.label} layout compatibility for {op.name}"
-  | .valueRefinement op specName => s!"{op.name} forward refines {specName}"
-  | .vjpRefinement op specName mode =>
-      s!"{op.name} {mode.label} VJP refines {specName}"
+  | .valueRefinement op => s!"{op.name} forward refines its TorchLean semantics"
+  | .vjpRefinement op mode =>
+      s!"{op.name} {mode.label} VJP refines its TorchLean semantics"
+  | .vjpUnavailable op => s!"{op.name} has no VJP in this capsule"
 
 end ContractClaim
 
@@ -102,12 +103,11 @@ namespace ContractEvidence
 
 /-- Concise description of the evidence attached to a contract claim. -/
 def label : ContractEvidence → String
-  | .theorem name .. => s!"proved by {name}"
-  | .checker name .. => s!"accepted by proved checker {name}"
   | .runtimeGuard name => s!"guarded at runtime by {name}"
   | .testSuite name => s!"covered by test suite {name}"
   | .fuzzOracle name => s!"compared by fuzz oracle {name}"
   | .trustedBoundary reason => s!"trusted boundary: {reason}"
+  | .notApplicable => "not applicable"
   | .notProvided => "no evidence recorded"
 
 end ContractEvidence

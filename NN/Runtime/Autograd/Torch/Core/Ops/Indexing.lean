@@ -137,26 +137,6 @@ def gatherRowsNat {α : Type} (s : EagerSession α) [Add α] [Zero α] [Decidabl
     pure (some { id := id })
   dispatchCudaOpt (α := α) s .gather cpu cuda
 
-/--
-Read a float input vector and return the corresponding `Tensor Nat` index vector.
-
-Non-differentiable: used by token-id language-model losses that accept float-encoded ids as inputs.
-The conversion reads the concrete runtime value, validates every entry with `natOfTokenFloat`, and
-then returns the checked index tensor used by embedding and cross entropy.
--/
-def tokenIdsFromFloatVec {α : Type} (s : EagerSession α) [CudaBridge.TensorConv α] [DecidableEq Shape]
-    {k : Nat} (x : TensorRef α (.dim k .scalar)) : IO (Tensor Nat (.dim k .scalar)) := do
-  let v ← getValue (α := α) s (sh := .dim k .scalar) x
-  match v with
-  | .dim f =>
-      let ns ← (List.finRange k).mapM (fun i => do
-        match f i with
-        | .scalar fl => do
-            let ff ← CudaBridge.TensorConv.toFloat (α := α) fl
-            natOfTokenFloat i.val ff)
-      pure <|
-        Tensor.dim (fun i => Tensor.scalar (ns.getD i.val 0))
-
 /-- Gather `k` scalars using indices stored in the nat-environment (`NatVecRef`). -/
 def gatherVecRef {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
   {n k : Nat} (x : TensorRef α (.dim n .scalar)) (idx : NatVecRef k) :

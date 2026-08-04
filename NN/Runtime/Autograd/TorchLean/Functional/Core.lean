@@ -147,8 +147,16 @@ def addB {α : Type} [Context α] [DecidableEq Shape]
     {s₁ s₂ t : Shape} [Shape.BroadcastTo s₁ t] [Shape.BroadcastTo s₂ t]
     (x : RefTy (m := m) (α := α) s₁) (y : RefTy (m := m) (α := α) s₂) :
     m (RefTy (m := m) (α := α) t) := do
-  let xb ← broadcastTo (m := m) (α := α) (s₁ := s₁) (s₂ := t) Shape.BroadcastTo.proof x
-  let yb ← broadcastTo (m := m) (α := α) (s₁ := s₂) (s₂ := t) Shape.BroadcastTo.proof y
+  let xb ←
+    if h : s₁ = t then
+      pure (h ▸ x)
+    else
+      broadcastTo (m := m) (α := α) (s₁ := s₁) (s₂ := t) Shape.BroadcastTo.proof x
+  let yb ←
+    if h : s₂ = t then
+      pure (h ▸ y)
+    else
+      broadcastTo (m := m) (α := α) (s₁ := s₂) (s₂ := t) Shape.BroadcastTo.proof y
   add (m := m) (α := α) (s := t) xb yb
 
 /--
@@ -161,8 +169,16 @@ def mulB {α : Type} [Context α] [DecidableEq Shape]
     {s₁ s₂ t : Shape} [Shape.BroadcastTo s₁ t] [Shape.BroadcastTo s₂ t]
     (x : RefTy (m := m) (α := α) s₁) (y : RefTy (m := m) (α := α) s₂) :
     m (RefTy (m := m) (α := α) t) := do
-  let xb ← broadcastTo (m := m) (α := α) (s₁ := s₁) (s₂ := t) Shape.BroadcastTo.proof x
-  let yb ← broadcastTo (m := m) (α := α) (s₁ := s₂) (s₂ := t) Shape.BroadcastTo.proof y
+  let xb ←
+    if h : s₁ = t then
+      pure (h ▸ x)
+    else
+      broadcastTo (m := m) (α := α) (s₁ := s₁) (s₂ := t) Shape.BroadcastTo.proof x
+  let yb ←
+    if h : s₂ = t then
+      pure (h ▸ y)
+    else
+      broadcastTo (m := m) (α := α) (s₁ := s₂) (s₂ := t) Shape.BroadcastTo.proof y
   mul (m := m) (α := α) (s := t) xb yb
 
 /-! ## Indexing helpers -/
@@ -193,7 +209,7 @@ def embeddingRowsNat {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {vocab dim k : Nat}
     (w : RefTy (m := m) (α := α) (.dim vocab (.dim dim .scalar)))
-    (idx : Tensor Nat (.dim k .scalar)) :
+    (idx : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) (.dim k .scalar)) :
     m (RefTy (m := m) (α := α) (.dim k (.dim dim .scalar))) :=
   gatherRowsNat (m := m) (α := α) (rows := vocab) (cols := dim) (k := k) w idx
 
@@ -207,7 +223,8 @@ def embeddingBatchSeqNat {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {vocab dim batch seqLen : Nat}
     (w : RefTy (m := m) (α := α) (.dim vocab (.dim dim .scalar)))
-    (idx : Tensor Nat (.dim (batch * seqLen) .scalar)) :
+    (idx : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
+      (.dim (batch * seqLen) .scalar)) :
     m (RefTy (m := m) (α := α) (.dim batch (.dim seqLen (.dim dim .scalar)))) := do
   let gathered ← embeddingRowsNat (m := m) (α := α)
     (vocab := vocab) (dim := dim) (k := batch * seqLen) w idx
@@ -216,18 +233,6 @@ def embeddingBatchSeqNat {α : Type} [Context α] [DecidableEq Shape]
     (s₂ := .dim batch (.dim seqLen (.dim dim .scalar)))
     gathered (by
       simp [Spec.Shape.size, Nat.mul_assoc])
-
-/--
-Read float-encoded token ids as a `Tensor Nat` index vector.
-
-This is a runtime adapter rather than a tensor operation: it validates concrete input values and
-does not contribute a differentiable node to the model.
--/
-def tokenIdsFromFloatVec {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)] {k : Nat}
-    (x : RefTy (m := m) (α := α) (.dim k .scalar)) :
-    m (Tensor Nat (.dim k .scalar)) :=
-  _root_.Runtime.Autograd.Torch.tokenIdsFromFloatVec (m := m) (α := α) (k := k) x
 
 /-! ## Reductions -/
 

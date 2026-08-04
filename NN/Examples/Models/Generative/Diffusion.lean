@@ -231,7 +231,7 @@ diffusion math lives in `ModelZoo.DiffusionScheduleFlags`, visual outputs live i
 `ModelZoo.ImageArtifactFlags`, and the epsilon-network width is the model-specific knob.
 -/
 structure DiffusionOptions extends
-    ModelZoo.TrainFlags,
+    CLI.Training.OptimizerOptions,
     ModelZoo.DiffusionScheduleFlags,
     ModelZoo.ImageArtifactFlags where
   /-- Hidden channel width of the epsilon predictor. -/
@@ -321,11 +321,11 @@ schedule parameters, model width, and optional PPM artifact paths.
 -/
 def parse (args : List String) :
     Except String (DiffusionOptions × List String) := do
-  let (train, rest) ← ModelZoo.parseTrainFlags exeName args defaultLogJson 50 1e-3
+  let (train, rest) ← CLI.Training.OptimizerOptions.parse exeName args defaultLogJson 50 1e-3
   let (hiddenC, rest) ← CLI.takeNatFlagDefault rest "hidden-c" 16
   let (schedule, rest) ← ModelZoo.DiffusionScheduleFlags.parse rest
   let (artifacts, rest) ← ModelZoo.ImageArtifactFlags.parse rest
-  pure ({ toModelTrainFlags := train,
+  pure ({ toOptimizerOptions := train,
           toDiffusionScheduleFlags := schedule,
           toImageArtifactFlags := artifacts,
           hiddenC := hiddenC },

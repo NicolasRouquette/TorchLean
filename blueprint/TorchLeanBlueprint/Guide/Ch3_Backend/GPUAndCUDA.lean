@@ -35,7 +35,7 @@ Run this command from the repository root. `-R` rebuilds targets affected by the
 and `-K cuda=true` selects the CUDA source and link configuration. The build compiles TorchLean's
 CUDA code and links the CUDA runtime, cuBLAS, and cuFFT where those libraries are used.
 
-Now run two optimizer steps and print the selected kernel contracts:
+Run two optimizer steps and print the selected kernel contracts:
 
 ```
 lake -R -K cuda=true exe torchlean quickstart_mlp \
@@ -143,8 +143,9 @@ is visible in reports.
 
 Who owns backward, and which derivative specification should it implement? `backend-vjp` means the
 runtime calls a backend derivative kernel while retaining TorchLean's tape structure.
-`torchLeanTape` means a local TorchLean rule owns the VJP even if another provider supplied the
-forward value.
+`torchLeanTape` means TorchLean owns the graph and reverse traversal even if a capsule uses a named
+backend kernel for its local VJP. A capsule marked `backend-vjp` makes that local numerical boundary
+explicit in the audit.
 
 Capsules record contracts. Runtime code supplies a typed `KernelHandler` for the result type of the
 operation. Binding produces an `ExecutableKernel` only when the handler and capsule have equal
@@ -244,15 +245,49 @@ arithmetic came from custom code or a vendor library.
 The eager CUDA tape currently covers elementwise arithmetic and activations, reductions and
 broadcasting, shape transforms, gather/scatter, dense and batched matrix multiplication,
 normalization and softmax, two-dimensional and N-dimensional convolution/transposed convolution,
-max/average/smooth-max pooling, fused attention, and fused spectral convolution. Backward rules are
-recorded as tape nodes rather than delegated to an invisible global autograd engine. Lower-level
-kernels additionally expose packed real FFT and selective-scan entrypoints used by focused
-runtime paths and tests.
+max/average/smooth-max pooling, composed attention, a direct attention reference kernel, and fused
+spectral convolution. Backward rules are recorded as tape nodes rather than delegated to an
+invisible global autograd engine. Lower-level kernels additionally expose packed real FFT and
+selective-scan entrypoints used by focused runtime paths and tests.
+
+Layer normalization and tanh-approximate GELU are examples of the distinction between semantics
+and scheduling. Each is one operation on the TorchLean tape, with a local forward rule and VJP.
+The CUDA implementation evaluates that rule with one forward kernel and one backward kernel rather
+than constructing the formula from a chain of temporary tensors. The fusion changes launch and
+allocation behavior; it does not replace the TorchLean operation or hand backward ownership to an
+external autograd engine.
+
+Matrix derivatives use the same principle without introducing a fused model operation. Products
+such as $`A^\mathsf{T}B` and $`AB^\mathsf{T}` are passed to cuBLAS with logical transpose flags.
+The old path first copied an operand into a transposed buffer and then multiplied it. The new path
+reads the original row-major storage directly. This applies to ordinary and batched matrix
+multiplication, linear layers, projection weights, and any model built from them; attention is only
+one caller. TorchLean still records the original matrix operation and its local VJP. Only the
+schedule used to evaluate that VJP has changed.
 
 This list does not mean every TorchLean operation has a CUDA implementation. Provider-aware
 wrappers reject unsupported capsules and shapes; they do not copy a tensor to CPU and continue
 silently. The native source map in `NN.Runtime.Autograd.Engine.Cuda.NativeSources` identifies the
 Lean declarations and corresponding files under `csrc/cuda`.
+
+# Batched Attention
+
+A transformer block receives a tensor of shape `(batch, tokens, modelDim)`. The mathematical
+operation applies the same attention layer to every batch entry, with shared projection matrices.
+TorchLean keeps that description in the specification and compiled graph. Each sample is expressed
+through the existing attention node, so its forward map, JVP, and VJP are the same definitions used
+for unbatched attention.
+
+The eager CUDA runtime schedules the work differently. It flattens `(batch, tokens)` for the four
+shared projections and folds `(batch, head)` into the batch axis of the matrix multiplications.
+Hard-masked softmax and the local backward rule still belong to TorchLean. The backward pass sums
+the four projection-matrix gradients across the full batch.
+
+This removes the old host loop over samples without introducing a second mathematical operation.
+The verifier lowers batched attention to the per-sample graph, while CUDA executes one
+batch-aware tape node. Regression tests compare the batched forward value, input gradient, and
+shared weight gradients with repeated single-sample attention. The comparison is runtime evidence;
+the cuBLAS calls and float32 behavior remain covered by the capsule's stated boundary.
 
 # Forward Values And Backward Ownership
 
@@ -283,6 +318,10 @@ selected VJP. This keeps parameter ownership and optimizer flow local.
 
 It does not magically prove the external forward. The forward capsule still needs checked,
 tested, fuzzed, or trusted evidence connecting its value to the spec.
+
+The checked CUDA profile does not use this hybrid LibTorch row by default. Its attention path is
+the composed TorchLean operation described above; LibTorch forward is available only through the
+explicit `libTorchForwardCuda` profile.
 
 # The LibTorch Attention Example
 
@@ -381,6 +420,48 @@ startup. Coverage includes scalar/axis/broadcast reductions, gather/scatter accu
 pooling backward kernels. It does not make seeded RNG unnecessary, force cuBLAS to a universal
 bitwise contract, or prove equality across GPU models. `getDeterministicReductions` reports the
 active setting so a training log can record it.
+
+# Bound The Device Reuse Cache
+
+Dropped CUDA buffers are not always returned immediately to the driver. TorchLean keeps exact-size
+blocks in a process-wide reuse cache so a later allocation can avoid another `cudaMalloc`. This is
+useful in a steady training loop, but a workload that visits many distinct tensor sizes can retain
+more device memory than it will reuse.
+
+Set a byte limit before starting the process:
+
+```
+TORCHLEAN_CUDA_CACHE_CAP_BYTES=$((512 * 1024 * 1024)) \
+  lake -K cuda=true exe torchlean gpt2 --device cuda --steps 100
+```
+
+The limit is read once by the native allocator. A returned block that would exceed it waits for its
+recorded CUDA event and is then freed instead of cached. `0`, or an unset variable, keeps the cache
+unbounded. The value must be a decimal byte count; malformed and overflowing values produce a
+warning and are ignored.
+
+This limit applies only to released blocks in the reuse cache. It does not cap live model
+parameters, activations, gradients, or workspaces.
+
+Allocator telemetry distinguishes live tensors from reusable memory:
+
+```
+open Runtime.Autograd.Cuda
+
+def printCudaMemory : IO Unit := do
+  let stats ← Buffer.allocatorStats
+  IO.println stats.format
+```
+
+`liveBytes` counts payloads owned by live TorchLean buffers. `cacheBytes` counts released device
+blocks waiting for reuse and is therefore not included in `liveBytes`. `cacheCapBytes` reports the
+limit installed by the native parser, with `0` meaning unbounded. The formatted report includes all
+three values together with wrapper counts and `cudaMemGetInfo` totals.
+
+The CUDA stress test starts fresh subprocesses because the limit cannot change after the allocator
+has initialized. It checks a finite cap, an explicit unbounded control, malformed input, and integer
+overflow against the real allocator. The CPU parity stub reports zero cached bytes and zero cap
+because it frees host buffers directly.
 
 # What The Tests Establish
 

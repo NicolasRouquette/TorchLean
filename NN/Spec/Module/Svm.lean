@@ -10,7 +10,7 @@ public import NN.Spec.Models.Svm
 public import NN.Spec.Module.Linear
 
 /-!
-# SVM as an `NNModuleSpec`
+# Linear SVM as an `NNModuleSpec`
 
 The SVM spec model includes a gradient-descent baseline and prediction helpers.
 This file adds the `NNModuleSpec` wrapper so it can be composed/exported in the module system.
@@ -33,8 +33,8 @@ open ModSpec
 
 variable {α : Type} [Context α]
 
-/-- Linear SVM wrapped as an `NNModuleSpec` (single-output linear layer). -/
-def svmModule {p : ℕ} (model : LinearSVM p α) :
+/-- A linear SVM represented as a single-output linear module. -/
+def linearSVMModule {p : ℕ} (model : LinearSVM p α) :
   NNModuleSpec α (.dim p .scalar) (.dim 1 .scalar) :=
   let weightMatrix : Tensor α (.dim 1 (.dim p .scalar)) :=
     Tensor.dim (fun _ => model.w)
@@ -44,9 +44,9 @@ def svmModule {p : ℕ} (model : LinearSVM p α) :
     { weights := weightMatrix, bias := biasVec }
   Spec.LinearModuleSpec (α := α) lspec
 
-/-- `SpecChain` wrapper for linear SVM. -/
-def svmChain {p : ℕ} (model : LinearSVM p α) :
+/-- A one-node specification chain containing a linear SVM. -/
+def linearSVMChain {p : ℕ} (model : LinearSVM p α) :
   SpecChain α (.dim p .scalar) (.dim 1 .scalar) :=
-  SpecChain.single (svmModule (α := α) model)
+  SpecChain.single (linearSVMModule (α := α) model)
 
 end Spec

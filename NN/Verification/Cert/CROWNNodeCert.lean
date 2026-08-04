@@ -47,7 +47,6 @@ Trust boundary notes:
 
 @[expose] public section
 
-
 namespace NN.Verification.CROWNNodeCert
 
 open NN.MLTheory.CROWN
@@ -88,14 +87,45 @@ def checkCROWNNode (g : Graph) (ps : ParamStore IEEE32Exec)
       computed?
   pure (ok, computed?)
 
+/-- The α-CROWN replay function associated with a parsed certificate. -/
+def replayStep (g : Graph) (ps : ParamStore IEEE32Exec)
+    (authoritativeIbp : Array (Option (FlatBox IEEE32Exec)))
+    (cert : CROWNNodeCoreCertificate) :
+    Array (Option (FlatAffineBounds IEEE32Exec)) → Nat →
+      Option (FlatAffineBounds IEEE32Exec) :=
+  fun replay id =>
+    alphaCrownStepNode? (α := IEEE32Exec) g.nodes ps authoritativeIbp cert.alpha replay cert.ctx id
+
+/--
+The final in-memory acceptance decision for an α-CROWN artifact.
+
+`diagnosticsOk` records parsing-independent IBP, shape, domain, and incremental-replay checks. The
+second conjunct is the proved complete-certificate replay used by the soundness theorem below.
+-/
+def certificateAccepts
+    (cert : CROWNNodeCoreCertificate) (g : Graph) (ps : ParamStore IEEE32Exec)
+    (authoritativeIbp : Array (Option (FlatBox IEEE32Exec)))
+    (diagnosticsOk : Bool) : Bool :=
+  crownCertificateAccepts g (replayStep g ps authoritativeIbp cert) cert.crown diagnosticsOk
+
+/-- Acceptance of the concrete α-CROWN decision supplies graph-level local consistency. -/
+theorem certificateAccepts_eq_true
+    (cert : CROWNNodeCoreCertificate) (g : Graph) (ps : ParamStore IEEE32Exec)
+    (authoritativeIbp : Array (Option (FlatBox IEEE32Exec)))
+    (diagnosticsOk : Bool)
+    (haccept : certificateAccepts cert g ps authoritativeIbp diagnosticsOk = true) :
+    NN.MLTheory.CROWN.Graph.CrownCertSoundness.CrownCertLocalOK
+      (g := g) (step := replayStep g ps authoritativeIbp cert) cert.crown := by
+  exact crownCertificateAccepts_eq_true g (replayStep g ps authoritativeIbp cert) cert.crown
+    diagnosticsOk haccept
+
 /--
 Check a per-node α-CROWN certificate against Lean's propagation rules.
 
 Returns `true` iff every supplied IBP box contains Lean's authoritative recomputation and every
 node's affine replay data agrees exactly with Lean's CROWN step.
 -/
-def checkCROWNNodeCertificate (g : Graph) (ps : ParamStore IEEE32Exec) (path : String) : IO Bool :=
-  do
+def checkCROWNNodeCertificate (g : Graph) (ps : ParamStore IEEE32Exec) (path : String) : IO Bool := do
   let cert ← readCROWNNodeCertificate g path
   let authoritativeIbp := runIBP (α := IEEE32Exec) g ps
   let mut authoritativeCrown : Array (Option (FlatAffineBounds IEEE32Exec)) :=
@@ -107,8 +137,9 @@ def checkCROWNNodeCertificate (g : Graph) (ps : ParamStore IEEE32Exec) (path : S
       checkCROWNNode g ps authoritativeIbp cert.alpha authoritativeCrown cert.crown cert.ctx id
     authoritativeCrown := authoritativeCrown.set! id computed?
     ok := ok && okIbp && okCrown
-  if ok then
+  let accepted := certificateAccepts cert g ps authoritativeIbp ok
+  if accepted then
     IO.println "[CROWNNodeCert] artifact matched an authoritative Lean IBP and alpha-CROWN replay."
-  pure ok
+  pure accepted
 
 end NN.Verification.CROWNNodeCert

@@ -6,10 +6,10 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
+public import NN.API.Seeded
 
 /-!
-# MLP Model Helpers (API)
+# Multilayer Perceptrons
 
 Compact, reusable MLP-shaped model constructors for TorchLean examples.
 
@@ -22,8 +22,8 @@ Scope note: these are building blocks, not pretrained checkpoints.
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
+
 
 open Spec Tensor
 
@@ -62,5 +62,4 @@ def mlpRelu (cfg : MlpConfig) :
 end models
 end nn
 
-end API
-end NN
+end TorchLean

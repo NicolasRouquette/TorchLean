@@ -6,11 +6,11 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
+public import NN.API.Seeded
 public import NN.Spec.Core.TensorReductionShape.ConcatSlice
 
 /-!
-# Diffusion Model Helpers (API)
+# Diffusion Models
 
 Config-style diffusion model constructors plus reusable, dataset-independent DDPM/DDIM helpers.
 
@@ -21,8 +21,8 @@ future proof layer specifications.
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
+
 
 open Spec Tensor
 
@@ -302,5 +302,4 @@ def writeFirstRgbPpm {batch c h w : Nat}
 
 end diffusion
 
-end API
-end NN
+end TorchLean

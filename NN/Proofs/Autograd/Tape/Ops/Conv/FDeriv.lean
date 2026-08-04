@@ -42,7 +42,6 @@ noncomputable section
 
 namespace Conv2D
 
-  set_option maxHeartbeats 5000000
 
 -- We use the standard flattening order induced by `finProdFinEquiv`, with casts for reassociation.
 

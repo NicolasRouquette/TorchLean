@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Runtime.Training.Loops
+public import NN.API.Trainer.Manual.Loops
 
 /-!
 # Gradient Accumulation
@@ -20,23 +20,24 @@ the test to a particular backend implementation.
 
 namespace NN.Tests.API.GradientAccumulation
 
-open NN.API.TorchLean
+open TorchLean.Trainer.Manual
 
 def vector1 (x : Float) : Spec.Tensor Float (.dim 1 .scalar) :=
   .dim (fun _ => .scalar x)
 
 def model :=
-  API.TorchLean.Layers.linear 1 1 17 29
+  _root_.Runtime.Autograd.TorchLean.NN.singleLayer <|
+    _root_.Runtime.Autograd.TorchLean.NN.linear 1 1 17 29
 
-def task : Supervised.SeqTask (.dim 1 .scalar) (.dim 1 .scalar) :=
-  Supervised.SeqTask.mse model
+def task : SeqTask (.dim 1 .scalar) (.dim 1 .scalar) :=
+  SeqTask.mse model
 
 def sample (x y : Float) :
-    API.TorchLean.TensorPack Float [.dim 1 .scalar, .dim 1 .scalar] :=
+    _root_.Runtime.Autograd.Torch.TList Float [.dim 1 .scalar, .dim 1 .scalar] :=
   .cons (vector1 x) (.cons (vector1 y) .nil)
 
 def readLinearParams
-    (ps : API.TorchLean.TensorPack Float (Supervised.paramShapes task)) :
+    (ps : _root_.Runtime.Autograd.Torch.TList Float (paramShapes task)) :
     Float × Float :=
   match ps with
   | .cons weight (.cons bias .nil) =>
@@ -52,25 +53,25 @@ def constantImage (value : Float) :
   .dim fun _ => .dim fun _ => .dim fun _ => .scalar value
 
 def batchNormModel :
-    API.TorchLean.LayerCore.Seq
+    _root_.Runtime.Autograd.TorchLean.NN.Seq
       (.dim 1 (.dim 1 (.dim 2 .scalar)))
       (.dim 1 (.dim 1 (.dim 2 .scalar))) :=
-  API.TorchLean.LayerCore.singleLayer <|
-    API.TorchLean.LayerCore.batchnormChannelFirstMode 1 1 2
+  _root_.Runtime.Autograd.TorchLean.NN.singleLayer <|
+    _root_.Runtime.Autograd.TorchLean.NN.batchnormChannelFirstMode 1 1 2
       (h_c := by decide) (h_h := by decide) (h_w := by decide) (momentum := 0.5)
 
 def batchNormTask :
-    Supervised.SeqTask (.dim 1 (.dim 1 (.dim 2 .scalar)))
+    SeqTask (.dim 1 (.dim 1 (.dim 2 .scalar)))
       (.dim 1 (.dim 1 (.dim 2 .scalar))) :=
-  Supervised.SeqTask.mse batchNormModel
+  SeqTask.mse batchNormModel
 
 def batchNormSample (value : Float) :
-    API.TorchLean.TensorPack Float
+    _root_.Runtime.Autograd.Torch.TList Float
       [.dim 1 (.dim 1 (.dim 2 .scalar)), .dim 1 (.dim 1 (.dim 2 .scalar))] :=
   .cons (constantImage value) (.cons (constantImage 0.0) .nil)
 
 def readBatchNormBuffers
-    (ps : API.TorchLean.TensorPack Float (Supervised.paramShapes batchNormTask)) :
+    (ps : _root_.Runtime.Autograd.Torch.TList Float (paramShapes batchNormTask)) :
     Float × Float :=
   match ps with
   | .cons _gamma (.cons _beta (.cons mean (.cons variance (.cons _momentum .nil)))) =>
@@ -78,7 +79,7 @@ def readBatchNormBuffers
       , Spec.Tensor.toScalar (Spec.Tensor.get variance 0) )
 
 def noOpOptimizer (shapes : List Spec.Shape) :
-    API.TorchLean.Optim.Optimizer Float shapes where
+    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer Float shapes where
   State := Unit
   init := fun _ => pure ()
   step := fun _ _ _ => pure ()
@@ -114,16 +115,16 @@ The no-loss hook completes the update itself. The loss hook returns `none` after
 attempt, allowing the normal same-tape fallback to produce the scalar when a test enables logging.
 -/
 def probeOptimizer (counters : ProbeCounters) :
-    API.TorchLean.Optim.Optimizer Float (Supervised.paramShapes task) where
+    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer Float (paramShapes task) where
   State := ProbeState
   init := fun _ => pure { scheduleValue := 0, counters }
   step := fun state _ _ => do
     recordProbeStep state counters.genericSteps
     pure state
-  trainerStep? := fun _ state _ => do
+  trainerStep? := fun _ state _ _ => do
     recordProbeStep state counters.nativeSteps
     pure (some state)
-  trainerStepWithLoss? := fun _ _state _ => do
+  trainerStepWithLoss? := fun _ _state _ _ => do
     counters.lossSteps.modify (· + 1)
     pure none
 
@@ -132,8 +133,8 @@ def expectNat (label : String) (actual expected : Nat) : IO Unit :=
     throw <| IO.userError s!"{label}: got {actual}, expected {expected}"
 
 def checkClosedFormMeanGradient : IO Unit := do
-  let runner ← Supervised.instantiateConfiguredFloat task { backend := .compiled }
-  let (weight, bias) := readLinearParams (← Supervised.params runner)
+  let runner ← instantiateConfiguredFloat task { backend := .compiled }
+  let (weight, bias) := readLinearParams (← params runner)
   let x₁ := 1.0
   let y₁ := 0.0
   let x₂ := 3.0
@@ -143,24 +144,52 @@ def checkClosedFormMeanGradient : IO Unit := do
   let gradWeight := (2.0 * residual₁ * x₁ + 2.0 * residual₂ * x₂) / 2.0
   let gradBias := (2.0 * residual₁ + 2.0 * residual₂) / 2.0
   let lr := 0.1
-  let _ ← Supervised.trainSamples runner
+  let _ ← trainSamples runner
     { steps := 1
       batchSize := 2
       optimizer := .sgd lr
       logEvery := 0 }
     [sample x₁ y₁, sample x₂ y₂]
-  let (weight', bias') := readLinearParams (← Supervised.params runner)
+  let (weight', bias') := readLinearParams (← params runner)
   unless close weight' (weight - lr * gradWeight) && close bias' (bias - lr * gradBias) do
     throw <| IO.userError <|
       s!"minibatch update mismatch: got ({weight'}, {bias'}), expected "
         ++ s!"({weight - lr * gradWeight}, {bias - lr * gradBias})"
 
+/-- The public Transformer schedule reaches its peak, midpoint, and floor at the stated updates. -/
+def checkWarmupCosineSchedule : IO Unit := do
+  let schedule := TorchLean.Trainer.Scheduler.warmupCosine 1.0 0.1 2 6
+  let observed :=
+    [ TorchLean.Trainer.Scheduler.lrAt schedule 0
+    , TorchLean.Trainer.Scheduler.lrAt schedule 1
+    , TorchLean.Trainer.Scheduler.lrAt schedule 2
+    , TorchLean.Trainer.Scheduler.lrAt schedule 4
+    , TorchLean.Trainer.Scheduler.lrAt schedule 6
+    ]
+  let expected := [0.5, 1.0, 1.0, 0.55, 0.1]
+  unless List.all (List.zipWith close observed expected) id do
+    throw <| IO.userError
+      s!"warmup/cosine schedule mismatch: got {observed}, expected {expected}"
+  let clamped := TorchLean.Trainer.Scheduler.warmupCosine 1.0 0.1 10 4
+  let clampedObserved :=
+    [ TorchLean.Trainer.Scheduler.lrAt clamped 0
+    , TorchLean.Trainer.Scheduler.lrAt clamped 3
+    , TorchLean.Trainer.Scheduler.lrAt clamped 4
+    ]
+  let clampedExpected := [0.25, 1.0, 0.1]
+  unless List.all (List.zipWith close clampedObserved clampedExpected) id do
+    throw <| IO.userError <|
+      s!"clamped warm-up mismatch: got {clampedObserved}, expected {clampedExpected}"
+  let empty := TorchLean.Trainer.Scheduler.warmupCosine 1.0 0.1 0 0
+  unless close (TorchLean.Trainer.Scheduler.lrAt empty 0) 0.1 do
+    throw <| IO.userError "zero-step warmup/cosine schedule did not remain at its floor"
+
 /-- A batch size of one keeps the native no-loss route when progress logging is disabled. -/
 def checkNoLossFastPath : IO Unit := do
-  let runner ← Supervised.instantiateConfiguredFloat task { backend := .compiled }
+  let runner ← instantiateConfiguredFloat task { backend := .compiled }
   let counters ← newProbeCounters
   let opt := probeOptimizer counters
-  let state ← API.TorchLean.Module.initOptim runner.module opt
+  let state ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.initOptim runner.module opt
   let batches ← IO.mkRef [[sample 1.0 0.0]]
   let nextBatch := do
     let remaining ← batches.get
@@ -170,7 +199,7 @@ def checkNoLossFastPath : IO Unit := do
         pure batch
     | [] =>
         throw <| IO.userError "no-loss probe exhausted"
-  Supervised.Internal.runSampleSteps runner
+  Internal.runSampleSteps runner
     { steps := 1, batchSize := 1, logEvery := 0 }
     nextBatch (fun _ => pure ()) opt state (fun _ current => current)
   expectNat "native no-loss steps" (← counters.nativeSteps.get) 1
@@ -182,17 +211,17 @@ A loader with multi-sample batches keeps every update on the generic optimizer s
 final singleton batch.
 -/
 def checkPartialBatchStateRoute : IO Unit := do
-  let runner ← Supervised.instantiateConfiguredFloat task { backend := .compiled }
+  let runner ← instantiateConfiguredFloat task { backend := .compiled }
   let counters ← newProbeCounters
   let opt := probeOptimizer counters
-  let state ← API.TorchLean.Module.initOptim runner.module opt
+  let state ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.initOptim runner.module opt
   let loader : _root_.Runtime.Autograd.Train.DataLoader
-      (API.TorchLean.TensorPack Float [.dim 1 .scalar, .dim 1 .scalar]) := {
+      (_root_.Runtime.Autograd.Torch.TList Float [.dim 1 .scalar, .dim 1 .scalar]) := {
     dataset := _root_.Runtime.Autograd.Train.Dataset.ofList
       [sample 1.0 0.0, sample 2.0 0.0, sample 3.0 0.0]
     batchSize := 2
   }
-  let _ ← Supervised.Internal.runLoaderEpochs runner
+  let _ ← Internal.runLoaderEpochs runner
     { epochs := 1, logEvery := 0 }
     loader opt state (fun _ current => current)
   expectNat "partial-loader native steps" (← counters.nativeSteps.get) 0
@@ -200,17 +229,17 @@ def checkPartialBatchStateRoute : IO Unit := do
 
 /-- Loader schedules advance once per epoch while logging keeps a global update counter. -/
 def checkEpochSchedulerCadence : IO Unit := do
-  let runner ← Supervised.instantiateConfiguredFloat task { backend := .compiled }
+  let runner ← instantiateConfiguredFloat task { backend := .compiled }
   let counters ← newProbeCounters
   let opt := probeOptimizer counters
-  let state ← API.TorchLean.Module.initOptim runner.module opt
+  let state ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.initOptim runner.module opt
   let loader : _root_.Runtime.Autograd.Train.DataLoader
-      (API.TorchLean.TensorPack Float [.dim 1 .scalar, .dim 1 .scalar]) := {
+      (_root_.Runtime.Autograd.Torch.TList Float [.dim 1 .scalar, .dim 1 .scalar]) := {
     dataset := _root_.Runtime.Autograd.Train.Dataset.ofList
       [sample 1.0 0.0, sample 2.0 0.0, sample 3.0 0.0, sample 4.0 0.0]
     batchSize := 2
   }
-  let _ ← Supervised.Internal.runLoaderEpochs runner
+  let _ ← Internal.runLoaderEpochs runner
     { epochs := 2, logEvery := 0 }
     loader opt state (fun epoch current => { current with scheduleValue := epoch })
   let observed ← counters.scheduledValues.get
@@ -224,18 +253,19 @@ second buffer update.
 -/
 def checkBatchNormBuffers : IO Unit := do
   let batch := [batchNormSample 2.0, batchNormSample 4.0]
-  let runner ← Supervised.instantiateConfiguredFloat batchNormTask { backend := .compiled }
-  Supervised.trainMode runner
-  let opt := noOpOptimizer (Supervised.paramShapes batchNormTask)
-  let state ← API.TorchLean.Module.initOptim runner.module opt
-  let _ ← Supervised.Internal.stepBatch runner opt state false batch
-  let noLossBuffers := readBatchNormBuffers (← Supervised.params runner)
+  let runner ← instantiateConfiguredFloat batchNormTask { backend := .compiled }
+  trainMode runner
+  let opt := noOpOptimizer (paramShapes batchNormTask)
+  let state ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.initOptim runner.module opt
+  let _ ← Internal.stepBatch runner opt state false batch
+  let noLossBuffers := readBatchNormBuffers (← params runner)
 
-  let loggedRunner ← Supervised.instantiateConfiguredFloat batchNormTask { backend := .compiled }
-  Supervised.trainMode loggedRunner
-  let loggedState ← API.TorchLean.Module.initOptim loggedRunner.module opt
-  let _ ← Supervised.Internal.stepBatchAndLoss loggedRunner opt loggedState false batch
-  let loggedBuffers := readBatchNormBuffers (← Supervised.params loggedRunner)
+  let loggedRunner ← instantiateConfiguredFloat batchNormTask { backend := .compiled }
+  trainMode loggedRunner
+  let loggedState ←
+    _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.initOptim loggedRunner.module opt
+  let _ ← Internal.stepBatchAndLoss loggedRunner opt loggedState false batch
+  let loggedBuffers := readBatchNormBuffers (← params loggedRunner)
 
   unless close noLossBuffers.1 2.5 && close noLossBuffers.2 0.25 do
     throw <| IO.userError <|
@@ -247,6 +277,7 @@ def checkBatchNormBuffers : IO Unit := do
 
 def run : IO Unit := do
   checkClosedFormMeanGradient
+  checkWarmupCosineSchedule
   checkNoLossFastPath
   checkPartialBatchStateRoute
   checkEpochSchedulerCadence

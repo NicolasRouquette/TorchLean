@@ -159,29 +159,6 @@ def kaimingW (outDim inDim : Nat) (seed : Nat := 0) :
 
 end Init
 
-/-! ## Small Sample Generators (Float Constants) -/
-
-namespace Samples
-
-/-- Turn a point `(x1,x2)` into a `Tensor Float (.dim 2 .scalar)`. -/
-def pointVector (x1 x2 : Float) : Tensor Float (.dim 2 .scalar) :=
-  Tensor.dim (fun i =>
-    Tensor.scalar <|
-      match i.val with
-      | 0 => x1
-      | 1 => x2
-      | _ => 0.0)
-
-/-- Turn a scalar `y` into a `Tensor Float (.dim 1 .scalar)`. -/
-def singletonVector (y : Float) : Tensor Float (.dim 1 .scalar) :=
-  Tensor.dim (fun _ => Tensor.scalar y)
-
-/-- Affine map `y = w1*x1 + w2*x2 + b` for building small regression datasets. -/
-def affinePlane (w1 w2 b : Float) (x1 x2 : Float) : Float :=
-  w1 * x1 + w2 * x2 + b
-
-end Samples
-
 /-! ## Conveniences for scalar training loops -/
 
 /--
@@ -245,10 +222,14 @@ Uncurried forward pass for `ScalarTrainer`.
 `ScalarTrainer.forward` is stored as a curried function over the input shapes; this helper lets you
 pass a `TList` (like a tuple of tensors).
 -/
-def forwardT {α : Type} {paramShapes inputShapes : List Shape}
-    (tr : ScalarTrainer α paramShapes inputShapes) (xs : TList α inputShapes) :
+def forwardT {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
+    (tr : ScalarTrainer α paramShapes inputShapes natInputShapes)
+    (xs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
     IO (Tensor α Shape.scalar) :=
-  Curried.uncurry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar)) tr.forward xs
+  let withNat := Curried.uncurry (α := α) (ss := inputShapes)
+    (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) tr.forward xs
+  Curried.uncurry (α := Nat) (ss := natInputShapes)
+    (β := IO (Tensor α Shape.scalar)) withNat natInputs
 
 /--
 Uncurried loss-and-gradient pass for `ScalarTrainer`.
@@ -256,21 +237,29 @@ Uncurried loss-and-gradient pass for `ScalarTrainer`.
 The loss and gradients come from the same tape. Use this instead of calling `forwardT` followed by
 `backwardT` when both results are needed.
 -/
-def lossAndBackwardT {α : Type} {paramShapes inputShapes : List Shape}
-    (tr : ScalarTrainer α paramShapes inputShapes) (xs : TList α inputShapes) :
+def lossAndBackwardT {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
+    (tr : ScalarTrainer α paramShapes inputShapes natInputShapes)
+    (xs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
     IO (Tensor α Shape.scalar × TList α paramShapes) :=
-  Curried.uncurry (α := α) (ss := inputShapes)
-    (β := IO (Tensor α Shape.scalar × TList α paramShapes)) tr.lossAndBackward xs
+  let withNat := Curried.uncurry (α := α) (ss := inputShapes)
+    (β := Curried.Fn Nat natInputShapes
+      (IO (Tensor α Shape.scalar × TList α paramShapes))) tr.lossAndBackward xs
+  Curried.uncurry (α := Nat) (ss := natInputShapes)
+    (β := IO (Tensor α Shape.scalar × TList α paramShapes)) withNat natInputs
 
 /--
 Uncurried backward pass for `ScalarTrainer`.
 
 Returns per-parameter gradients (aligned with `paramShapes`).
 -/
-def backwardT {α : Type} {paramShapes inputShapes : List Shape}
-    (tr : ScalarTrainer α paramShapes inputShapes) (xs : TList α inputShapes) :
+def backwardT {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
+    (tr : ScalarTrainer α paramShapes inputShapes natInputShapes)
+    (xs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
     IO (TList α paramShapes) :=
-  Curried.uncurry (α := α) (ss := inputShapes) (β := IO (TList α paramShapes)) tr.backward xs
+  let withNat := Curried.uncurry (α := α) (ss := inputShapes)
+    (β := Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) tr.backward xs
+  Curried.uncurry (α := Nat) (ss := natInputShapes)
+    (β := IO (TList α paramShapes)) withNat natInputs
 
 /--
 Uncurried SGD step for `ScalarTrainer`.
@@ -278,16 +267,23 @@ Uncurried SGD step for `ScalarTrainer`.
 PyTorch comparison: analogous to `loss.backward(); optimizer.step()` for a fixed SGD optimizer,
 except here the trainer bundles the update rule.
 -/
-def stepT {α : Type} {paramShapes inputShapes : List Shape}
-    (tr : ScalarTrainer α paramShapes inputShapes) (lr : α) (xs : TList α inputShapes) : IO Unit :=
-  Curried.uncurry (α := α) (ss := inputShapes) (β := IO Unit) (tr.step lr) xs
+def stepT {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
+    (tr : ScalarTrainer α paramShapes inputShapes natInputShapes)
+    (lr : α) (xs : TList α inputShapes) (natInputs : TList Nat natInputShapes) : IO Unit :=
+  let withNat := Curried.uncurry (α := α) (ss := inputShapes)
+    (β := Curried.Fn Nat natInputShapes (IO Unit)) (tr.step lr) xs
+  Curried.uncurry (α := Nat) (ss := natInputShapes) (β := IO Unit) withNat natInputs
 
 /-- Uncurried SGD step that returns the loss used to compute the update. -/
-def stepWithLossT {α : Type} {paramShapes inputShapes : List Shape}
-    (tr : ScalarTrainer α paramShapes inputShapes) (lr : α) (xs : TList α inputShapes) :
+def stepWithLossT {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
+    (tr : ScalarTrainer α paramShapes inputShapes natInputShapes)
+    (lr : α) (xs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
     IO (Tensor α Shape.scalar) :=
-  Curried.uncurry (α := α) (ss := inputShapes) (β := IO (Tensor α Shape.scalar))
+  let withNat := Curried.uncurry (α := α) (ss := inputShapes)
+    (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar)))
     (tr.stepWithLoss lr) xs
+  Curried.uncurry (α := Nat) (ss := natInputShapes)
+    (β := IO (Tensor α Shape.scalar)) withNat natInputs
 
 end ScalarTrainer
 
@@ -318,11 +314,11 @@ def trainCycleSGD
       for step in [0:steps] do
         let xs := samples.getD (step % samples.length) hd
         let lossT ← ScalarTrainer.forwardT (α := α) (paramShapes := paramShapes) (inputShapes :=
-          inputShapes) tr xs
+          inputShapes) tr xs .nil
         if logEvery != 0 && step % logEvery = 0 then
           IO.println s!"step {step}: loss={scalarOf lossT}"
         ScalarTrainer.stepT (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) tr lr
-          xs
+          xs .nil
 
 /--
 Evaluate mean loss over a dataset.
@@ -342,7 +338,7 @@ def meanLoss
       let mut acc : α := 0
       for xs in samples do
         let lossT ← ScalarTrainer.forwardT (α := α) (paramShapes := paramShapes) (inputShapes :=
-          inputShapes) tr xs
+          inputShapes) tr xs .nil
         acc := acc + scalarOf lossT
       pure (acc / (samples.length : α))
 

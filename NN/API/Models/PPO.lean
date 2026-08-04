@@ -6,10 +6,10 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
+public import NN.API.Seeded
 
 /-!
-# PPO Model Helpers (API)
+# PPO Actor-Critic Models
 
 Reusable actor/critic MLP constructors for PPO examples.
 
@@ -19,8 +19,8 @@ advantage computation, and optimizer loops stay in the examples/runtime modules.
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
+
 
 open Spec Tensor
 
@@ -67,5 +67,4 @@ def ppoCritic (cfg : PPOActorCriticConfig) (pfx : Spec.Shape) :
 end models
 end nn
 
-end API
-end NN
+end TorchLean

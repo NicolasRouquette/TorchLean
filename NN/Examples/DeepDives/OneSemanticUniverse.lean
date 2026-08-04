@@ -118,9 +118,9 @@ def g : NN.IR.Graph :=
   let n2 : NN.IR.Node := { id := 2, parents := [1], kind := .relu, outShape := hShape }
   let n3 : NN.IR.Node := { id := 3, parents := [2], kind := .linear, outShape := yShape }
   let n4 : NN.IR.Node :=
-    { id := 4, parents := [3], kind := .sum, outShape := _root_.TorchLean.Shape.scalar }
+    { id := 4, parents := [3], kind := .sum, outShape := Spec.Shape.scalar }
   let n5 : NN.IR.Node :=
-    { id := 5, parents := [4], kind := .tanh, outShape := _root_.TorchLean.Shape.scalar }
+    { id := 5, parents := [4], kind := .tanh, outShape := Spec.Shape.scalar }
   { nodes := #[n0, n1, n2, n3, n4, n5] }
 
 def mkPayload {α : Type} [Context α] (p : Params α) : NN.IR.Payload α :=
@@ -142,12 +142,12 @@ def mkParamStore {α : Type} [Context α] (p : Params α) (xB : FlatBox α) : Pa
 def evalOut
     {α : Type} [Context α] [DecidableEq Spec.Shape]
     (p : Params α) (x : Spec.Tensor α xShape) :
-    Except String (Spec.Tensor α _root_.TorchLean.Shape.scalar) :=
+    Except String (Spec.Tensor α Spec.Shape.scalar) :=
       do
   let payload := mkPayload (α := α) p
   let input : DVal α := DVal.mk (α := α) xShape x
   let v ← NN.IR.Graph.denote (α := α) (g := g) (payload := payload) (input := input) (outputId := 5)
-  NN.IR.Graph.expectShape (α := α) (expected := _root_.TorchLean.Shape.scalar) v
+  NN.IR.Graph.expectShape (α := α) (expected := Spec.Shape.scalar) v
 
 /-!
 ### Proof-only instantiations (typechecks)
@@ -164,11 +164,11 @@ section ProofOnly
 noncomputable example : True := by
   have _ :
       ∀ (p : Params ℝ) (x : Spec.Tensor ℝ xShape),
-        Except String (Spec.Tensor ℝ _root_.TorchLean.Shape.scalar) :=
+        Except String (Spec.Tensor ℝ Spec.Shape.scalar) :=
     fun p x => evalOut (α := ℝ) p x
   have _ :
       ∀ (p : Params TorchLean.Floats.FP32) (x : Spec.Tensor TorchLean.Floats.FP32 xShape),
-        Except String (Spec.Tensor TorchLean.Floats.FP32 _root_.TorchLean.Shape.scalar) :=
+        Except String (Spec.Tensor TorchLean.Floats.FP32 Spec.Shape.scalar) :=
     fun p x => evalOut (α := TorchLean.Floats.FP32) p x
   have _ :
       ∀ (ps : ParamStore ℝ), Array (Option (FlatBox ℝ)) :=
@@ -184,7 +184,7 @@ end ProofOnly
 def referenceInputFloat : Spec.Tensor Float xShape :=
   tensorOfList! (ty := Float) [inDim] [0.3, -0.2, 0.1, 0.4]
 
-def xBoxOf (α : Type) [Runtime.SemanticScalar α] [Runtime.Scalar α] (eps : Float) : Box α xShape :=
+def xBoxOf (α : Type) [_root_.Context α] [Runtime.FromFloat α] (eps : Float) : Box α xShape :=
   let x0 : Spec.Tensor α xShape :=
     _root_.TorchLean.Tensor.castFloat Runtime.ofFloat referenceInputFloat
   let r : α := Runtime.ofFloat eps
@@ -196,7 +196,7 @@ def toFlatXBox {α : Type} [Context α] (B : Box α xShape) : FlatBox α :=
   { dim := inDim, lo := B.lo, hi := B.hi }
 
 def scalarBoxOfFlat (B : FlatBox IEEE32Exec) :
-    Except String (Box IEEE32Exec _root_.TorchLean.Shape.scalar) :=
+    Except String (Box IEEE32Exec Spec.Shape.scalar) :=
   do
   if h : B.dim = 1 then
     let loT : Spec.Tensor IEEE32Exec (.dim 1 .scalar) :=
@@ -261,7 +261,7 @@ def showIEEECheck (samples : Nat) : IO Unit := do
     | .error msg => throw <| IO.userError msg
     | .ok y =>
         let outOk :=
-          Box.containsDecBool (α := IEEE32Exec) (s := _root_.TorchLean.Shape.scalar) outBox y
+          Box.containsDecBool (α := IEEE32Exec) (s := Spec.Shape.scalar) outBox y
         if outOk then
           okCount := okCount + 1
         else

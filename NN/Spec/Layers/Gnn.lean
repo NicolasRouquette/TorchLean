@@ -51,7 +51,7 @@ PyTorch mental picture:
 - This is the algebraic core of what libraries like PyTorch Geometric call `GCNConv` once you pick
   a concrete choice of `A` (raw adjacency, `D^{-1/2} (A + I) D^{-1/2}`, etc.) and batch conventions.
 
-Why only these two right now:
+Why this file defines only these two:
 
 - GCN + plain aggregation are enough to cover a lot of examples and give us something we can
   reason about cleanly.

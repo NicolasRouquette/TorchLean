@@ -9,7 +9,7 @@ module
 public import NN.Spec
 public import NN.API.CLI
 public import NN.API.Macros
-public import NN.API.Public.TensorPack
+public import NN.API.TensorPack
 public import NN.MLTheory.CROWN.Core
 public import NN.MLTheory.CROWN.Graph
 public import NN.MLTheory.CROWN.Lyapunov.TwoStage.Core
@@ -152,7 +152,7 @@ Load stage-1 parameters exported by PyTorch as *float32 bit patterns*.
 We do this (instead of parsing JSON floats) so stage-2 runs under *bit-exact* float32 semantics
 (`IEEE32Exec`) without decimal conversion error.
 -/
-def loadFirstStageParams (width : Nat) (path : String) : IO (NN.API.TorchLean.TensorPack α (paramShapes
+def loadFirstStageParams (width : Nat) (path : String) : IO (_root_.TorchLean.TensorPack α (paramShapes
   width)) := do
   let jsonStr ← IO.FS.readFile path
   let j ← match Json.parse jsonStr with
@@ -260,6 +260,7 @@ def run (width : Nat) (args : List String) : IO Unit := do
   let initParams ← loadFirstStageParams width weightsPath
   let mod ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.create
     (α := α) (paramShapes := paramShapes width) (inputShapes := [xShape])
+    (natInputShapes := [])
     (opts := { backend := .compiled })
     (initRequiresGrad := List.replicate (paramShapes width).length true)
     (loss := lossProg width (β := α))
@@ -277,18 +278,18 @@ def run (width : Nat) (args : List String) : IO Unit := do
       let (seed', x0) := sampleStateVector seed rad
       seed := seed'
       let lossBeforePgd := _root_.Runtime.Autograd.Torch.scalarOf (←
-        _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr (.cons x0 .nil))
+        _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr (.cons x0 .nil) .nil)
       let params ← tr.getParams
       let mut x := x0
       for _k in [0:pgdSteps] do
         x := CompiledLossAnalysis.projectedGradientStep
           width cLoss params x pgdStepSize rad
-      let xs : NN.API.TorchLean.TensorPack α [xShape] := tensorpack! x
+      let xs : _root_.TorchLean.TensorPack α [xShape] := tensorpack! x
       let lossFound := _root_.Runtime.Autograd.Torch.scalarOf (←
-        _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr xs)
+        _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr xs .nil)
       if (0 : α) < lossFound then
         foundViolations := foundViolations + 1
-      _root_.Runtime.Autograd.Torch.ScalarTrainer.stepT tr lr xs
+      _root_.Runtime.Autograd.Torch.ScalarTrainer.stepT tr lr xs .nil
       IO.println s!"[stage2] round {round}: lossBefore={lossBeforePgd} lossAfterPGD={lossFound}"
 
   let params ← tr.getParams

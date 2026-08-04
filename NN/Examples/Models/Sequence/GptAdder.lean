@@ -161,7 +161,7 @@ def model : nn.M (nn.Sequential σ τ) :=
   nn.models.causalTransformerOneHot cfg
 
 /-- Cross-entropy summed over non-ignored adder targets, normalized like minGPT `ignore_index`. -/
-def adderLoss {α : Type} [Runtime.TensorScalar α] [DecidableEq Shape]
+def adderLoss {α : Type} [_root_.Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Runtime.Ops (m := m) (α := α)]
     (logits targetOneHot : Runtime.RefTy (m := m) (α := α) τ) :
     m (Runtime.RefTy (m := m) (α := α) Shape.scalar) := do
@@ -178,7 +178,7 @@ contribute exactly zero to one-hot cross entropy.  We divide the summed loss by 
 active target positions, matching minGPT's `ignore_index`-style normalization rather than averaging
 over ignored prefix rows.
 -/
-def adderLossProgram {α : Type} [Runtime.TensorScalar α] [DecidableEq Shape] :
+def adderLossProgram {α : Type} [_root_.Context α] [DecidableEq Shape] :
     Runtime.Program α [τ, τ] Shape.scalar :=
   fun {m} _ _ =>
     fun logits targetOneHot =>
@@ -450,7 +450,7 @@ def parse (args : List String) : Except String (AdderOptions × List String) := 
 
 /-- Standard TrainLog notes for the adder training loop. -/
 def logNotes (cfg : AdderOptions) (opts : Options) : Array String :=
-  #[s!"optimizer={cfg.optim.name}", s!"lr={cfg.lr}", ModelZoo.deviceNote opts]
+  #[s!"optimizer={optim.Kind.name cfg.optim}", s!"lr={cfg.lr}", ModelZoo.deviceNote opts]
 
 end AdderOptions
 
@@ -553,12 +553,12 @@ def trainAdderFloat (opts : Options) (trainOpts : AdderOptions) :
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := trainOpts.optim.toOptimizer trainOpts.lr })
+        (Trainer.runConfig opts { optimizer := optim.Kind.toOptimizer trainOpts.optim trainOpts.lr })
         (.custom adderLossProgram)
   IO.println s!"  mode=adder ndigit={ndigit} vocab={vocab} seqLen={seqLen} steps={trainOpts.steps}"
   trainer.printInfo
   IO.println s!"  heads={numHeads} headDim={headDim} dModel={dModel} ffnHidden={ffnHidden} activeTargets/step={activeTargetCount}"
-  IO.println s!"  optimizer={trainOpts.optim.name} lr={trainOpts.lr}"
+  IO.println s!"  optimizer={optim.Kind.name trainOpts.optim} lr={trainOpts.lr}"
   IO.println s!"  minGPT encoding example 8+7 -> {renderExample 8 7} (sum digits reversed)"
   IO.println <| CurriculumMode.intro mode trainOpts
 
@@ -573,7 +573,7 @@ def trainAdderFloat (opts : Options) (trainOpts : AdderOptions) :
   let trained ← trainer.train
     (Data.floatSamples [trainSample])
     { steps := trainOpts.steps
-      log := trainOpts.toInteractiveTrainOptions.toModelTrainFlags.log
+      log := trainOpts.toInteractiveTrainOptions.toOptimizerOptions.log
       logEvery := Nat.max 1 (trainOpts.steps / 10)
       cudaMemWatch := trainOpts.cudaMemWatch
       title := "GPT adder training"

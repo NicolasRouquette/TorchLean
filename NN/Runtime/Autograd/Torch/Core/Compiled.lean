@@ -48,18 +48,19 @@ tape across changing inputs would be unsound without redesigning the runtime nod
 This stores a *proved* node (`NodeData`) together with the preceding graph prefix so it can be
 evaluated and differentiated without rebuilding the whole graph each time.
 -/
-structure CompiledScalar (α : Type) (Γ : List Shape) where
+structure CompiledScalarWith (α : Type) (Δ : Type) (Γ : List Shape) where
   /-- Shapes of internal SSA nodes preceding the scalar output node. -/
   ssPrev : List Shape
   /-- Proved graph prefix that computes all preceding SSA nodes. -/
-  gPrev : Proofs.Autograd.Algebra.GraphData α Unit Γ ssPrev
+  gPrev : Proofs.Autograd.Algebra.GraphData α Δ Γ ssPrev
   /-- Final scalar output node over the leaf context plus graph prefix. -/
-  node : Proofs.Autograd.Algebra.NodeData α Unit (Γ ++ ssPrev) Shape.scalar
+  node : Proofs.Autograd.Algebra.NodeData α Δ (Γ ++ ssPrev) Shape.scalar
+
+/-- Scalar compiled graph with no auxiliary, non-differentiable runtime inputs. -/
+abbrev CompiledScalar (α : Type) (Γ : List Shape) : Type :=
+  CompiledScalarWith α Unit Γ
 
 namespace CompiledScalar
-
-/-- Convenience alias for the proved heterogeneous tensor list over a shape context. -/
-abbrev TList (α : Type) (ss : List Shape) := Proofs.Autograd.Algebra.TList α ss
 
 /-- Evaluate the scalar output for leaf values `x`. -/
 def forward {α : Type} {Γ : List Shape}
@@ -135,9 +136,6 @@ structure CompiledGraph (α : Type) (Γ : List Shape) (τ : Shape) where
 
 namespace CompiledGraph
 
-/-- Convenience alias for the proved heterogeneous tensor list over a shape context. -/
-abbrev TList (α : Type) (ss : List Shape) := Proofs.Autograd.Algebra.TList α ss
-
 /-- Evaluate the output tensor for leaf values `x`. -/
 def forward {α : Type} {Γ : List Shape} {τ : Shape}
   (c : CompiledGraph α Γ τ) (x : TList α Γ) : Tensor α τ :=
@@ -172,23 +170,24 @@ def vjpWithSeed {α : Type} [Add α] [Zero α]
 end CompiledGraph
 
 /--
-Compile a scalar-output graph builder into a `CompiledScalar`.
+Compile a scalar-output graph whose nodes may read an auxiliary runtime environment `Δ`.
 
-The builder is expressed in the `Compiled.GraphM` monad. We expect it to produce at least one node
-and return a variable of scalar shape.
+The environment is not part of the differentiable leaf context `Γ`. It is intended for discrete
+inputs such as token ids, labels, gather indices, and masks that affect evaluation but do not
+receive gradients.
 -/
-def compileScalar {α : Type} [DecidableEq Shape] {Γ : List Shape}
-  (build : Runtime.Autograd.Compiled.GraphM.M α Γ (Runtime.Autograd.Compiled.GraphM.Var
-    Shape.scalar)) :
-  Runtime.Autograd.Result (CompiledScalar α Γ) := do
-  let (outVar, st) ← Runtime.Autograd.Compiled.GraphM.run (α := α) (Γ := Γ) build
+def compileScalarWith {α Δ : Type} [DecidableEq Shape] {Γ : List Shape}
+    (build : Runtime.Autograd.Compiled.GraphM.MWith α Δ Γ
+      (Runtime.Autograd.Compiled.GraphM.Var Shape.scalar)) :
+    Runtime.Autograd.Result (CompiledScalarWith α Δ Γ) := do
+  let (outVar, st) ← StateT.run build Runtime.Autograd.Compiled.GraphM.emptyWith
   finish outVar st.1 st.2
 where
-  finish {α : Type} {Γ : List Shape}
+  finish {α Δ : Type} {Γ : List Shape}
       (outVar : Runtime.Autograd.Compiled.GraphM.Var Shape.scalar) :
       (ss : List Shape) →
-        Runtime.Autograd.Compiled.GraphM.PGraphData α Unit Γ ss →
-          Runtime.Autograd.Result (CompiledScalar α Γ)
+        Runtime.Autograd.Compiled.GraphM.PGraphData α Δ Γ ss →
+          Runtime.Autograd.Result (CompiledScalarWith α Δ Γ)
     | _, .nil =>
         .error "torch.compile: graph produced no nodes (need a scalar output node)"
     | _, .snoc (ss := ssPrev) (τ := τ) gPrev node =>
@@ -203,6 +202,18 @@ where
                   s!"expected id={expectedOutId})")
         | _ =>
             .error "torch.compile: output node is not scalar (expected Shape.scalar)"
+
+/--
+Compile a scalar-output graph builder into a `CompiledScalar`.
+
+The builder is expressed in the `Compiled.GraphM` monad. We expect it to produce at least one node
+and return a variable of scalar shape.
+-/
+def compileScalar {α : Type} [DecidableEq Shape] {Γ : List Shape}
+    (build : Runtime.Autograd.Compiled.GraphM.M α Γ
+      (Runtime.Autograd.Compiled.GraphM.Var Shape.scalar)) :
+    Runtime.Autograd.Result (CompiledScalar α Γ) :=
+  compileScalarWith (α := α) (Δ := Unit) (Γ := Γ) build
 
 /--
 Compile a tensor-output graph builder into a `CompiledGraph`.

@@ -229,7 +229,7 @@ theorem buildFrom_denoteAllFrom_max_pool2d
                                                     vals0[pId]! =
                                                   .ok (getIdx (α := α) (xs := ctx) ip) := by
                                               simpa [sIn] using hExpSIn
-                                            simp [NN.IR.Graph.evalAt, hN, hk, hp, hExp,
+                                            simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hExp,
                                               nodeData, layer,
                                               hFst, sIn, expected, hkH0, hkW0, hs, hOut,
                                               hFitH, hFitW]
@@ -417,7 +417,7 @@ theorem buildFrom_denoteAllFrom_max_pool2d_pad
                                                     vals0[pId]! =
                                                   .ok (getIdx (α := α) (xs := ctx) ip) := by
                                               simpa [sIn] using hExpSIn
-                                            simp [NN.IR.Graph.evalAt, hN, hk, hp, hExp,
+                                            simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hExp,
                                               nodeData, layer,
                                               hFst, sIn, expected, hkH0, hkW0, hs, hOut,
                                               hFitH, hFitW]
@@ -603,7 +603,7 @@ theorem buildFrom_denoteAllFrom_avg_pool2d
                                                     vals0[pId]! =
                                                   .ok (getIdx (α := α) (xs := ctx) ip) := by
                                               simpa [sIn] using hExpSIn
-                                            simp [NN.IR.Graph.evalAt, hN, hk, hp, hExp,
+                                            simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hExp,
                                               nodeData, layer,
                                               hFst, sIn, expected, hkH0, hkW0, hs, hOut,
                                               hFitH, hFitW]
@@ -792,7 +792,7 @@ theorem buildFrom_denoteAllFrom_avg_pool2d_pad
                                                     vals0[pId]! =
                                                   .ok (getIdx (α := α) (xs := ctx) ip) := by
                                               simpa [sIn] using hExpSIn
-                                            simp [NN.IR.Graph.evalAt, hN, hk, hp, hExp,
+                                            simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hExp,
                                               nodeData, layer,
                                               hFst, sIn, expected, hkH0, hkW0, hs, hOut,
                                               hFitH, hFitW]

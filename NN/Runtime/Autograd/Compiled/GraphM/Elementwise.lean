@@ -381,6 +381,31 @@ def tanh {α : Type} [Context α] [DecidableEq Shape]
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
+Elementwise tanh-approximate GELU.
+
+This is one graph node with the specification-level derivative, rather than an expansion into
+temporary pointwise nodes. The smaller graph is important for large Transformer activations while
+retaining the same JVP and VJP meaning.
+-/
+def gelu {α : Type} [Context α] [DecidableEq Shape]
+  {Δ : Type} {Γ : List Shape} {s : Shape} (x : Var s) : MWith α Δ Γ (Var s) := do
+  let ⟨ss, g⟩ ← get
+  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let node : NodeData α Δ (Γ ++ ss) s :=
+    { forward := fun ctx _d =>
+        Activation.geluSpec (α := α) (getIdx (α := α) (xs := ctx) ix)
+      jvp := fun ctx dctx _d =>
+        let xval := getIdx (α := α) (xs := ctx) ix
+        let dx := getIdx (α := α) (xs := dctx) ix
+        let dgelu := Activation.geluDerivSpec (α := α) xval
+        mulSpec dgelu dx
+      vjp := fun ctx _d δ =>
+        let xval := getIdx (α := α) (xs := ctx) ix
+        let dgelu := Activation.geluDerivSpec (α := α) xval
+        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dgelu δ) }
+  push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
+
+/--
 Softmax along the last axis (recursing over outer dimensions).
 
 PyTorch comparison: `torch.softmax(x, dim=-1)`.

@@ -178,14 +178,14 @@ argmax selected by the primal input.
 def maxPool2d {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {Γ : List Shape} {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : Var (.dim inC (.dim inH (.dim inW .scalar)))) :
-  MWith α Δ Γ (Var (.dim inC (.dim (Shape.slidingWindowOutDim inH kH stride 0)
-    (.dim (Shape.slidingWindowOutDim inW kW stride 0) .scalar)))) := do
+  MWith α Δ Γ (Var (.dim inC (.dim (Spec.poolOutDim inH kH stride 0)
+    (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then
     let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
-    let outH := Shape.slidingWindowOutDim inH kH stride 0
-    let outW := Shape.slidingWindowOutDim inW kW stride 0
+    let outH := Spec.poolOutDim inH kH stride 0
+    let outW := Spec.poolOutDim inW kW stride 0
     let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
     let inShape : Shape := .dim inC (.dim inH (.dim inW .scalar))
     let node : NodeData α Δ (Γ ++ ss) outShape :=
@@ -219,14 +219,14 @@ def maxPool2dPad {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {Γ : List Shape} {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : Var (.dim inC (.dim inH (.dim inW .scalar)))) :
   MWith α Δ Γ
-    (Var (.dim inC (.dim (Shape.slidingWindowOutDim inH kH stride padding)
-      (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) := do
+    (Var (.dim inC (.dim (Spec.poolOutDim inH kH stride padding)
+      (.dim (Spec.poolOutDim inW kW stride padding) .scalar)))) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then
     let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
-    let outH := Shape.slidingWindowOutDim inH kH stride padding
-    let outW := Shape.slidingWindowOutDim inW kW stride padding
+    let outH := Spec.poolOutDim inH kH stride padding
+    let outW := Spec.poolOutDim inW kW stride padding
     let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
     let inShape : Shape := .dim inC (.dim inH (.dim inW .scalar))
     let node : NodeData α Δ (Γ ++ ss) outShape :=
@@ -258,8 +258,8 @@ log-sum-exp pooling window. Executable graphs require a finite, nonzero `beta`.
 def smoothMaxPool2d {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {Γ : List Shape} {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
   (x : Var (.dim inC (.dim inH (.dim inW .scalar)))) (beta : α) :
-  MWith α Δ Γ (Var (.dim inC (.dim (Shape.slidingWindowOutDim inH kH stride 0)
-    (.dim (Shape.slidingWindowOutDim inW kW stride 0) .scalar)))) := do
+  MWith α Δ Γ (Var (.dim inC (.dim (Spec.poolOutDim inH kH stride 0)
+    (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
   -- `Context` has no generic `isFinite`; supported executable scalars self-subtract to zero exactly
   -- when finite, so this probe rejects NaN and infinities without adding a stronger scalar class.
   if beta == 0 || !(beta - beta == 0) then
@@ -268,8 +268,8 @@ def smoothMaxPool2d {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then
     let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
-    let outH := Shape.slidingWindowOutDim inH kH stride 0
-    let outW := Shape.slidingWindowOutDim inW kW stride 0
+    let outH := Spec.poolOutDim inH kH stride 0
+    let outW := Spec.poolOutDim inW kW stride 0
     let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
     let inShape : Shape := .dim inC (.dim inH (.dim inW .scalar))
     let node : NodeData α Δ (Γ ++ ss) outShape :=
@@ -301,14 +301,14 @@ input tangent.
 def avgPool2d {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {Γ : List Shape} {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (x : Var (.dim inC (.dim inH (.dim inW .scalar)))) :
-  MWith α Δ Γ (Var (.dim inC (.dim (Shape.slidingWindowOutDim inH kH stride 0)
-    (.dim (Shape.slidingWindowOutDim inW kW stride 0) .scalar)))) := do
+  MWith α Δ Γ (Var (.dim inC (.dim (Spec.poolOutDim inH kH stride 0)
+    (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then
     let layer : Spec.AvgPool2DSpec kH kW stride h1 h2 hStride := {}
-    let outH := Shape.slidingWindowOutDim inH kH stride 0
-    let outW := Shape.slidingWindowOutDim inW kW stride 0
+    let outH := Spec.poolOutDim inH kH stride 0
+    let outW := Spec.poolOutDim inW kW stride 0
     let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
     let inShape : Shape := .dim inC (.dim inH (.dim inW .scalar))
     let node : NodeData α Δ (Γ ++ ss) outShape :=
@@ -340,14 +340,14 @@ def avgPool2dPad {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {Γ : List Shape} {kH kW inH inW inC stride padding : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
   (x : Var (.dim inC (.dim inH (.dim inW .scalar)))) :
   MWith α Δ Γ
-    (Var (.dim inC (.dim (Shape.slidingWindowOutDim inH kH stride padding)
-      (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) := do
+    (Var (.dim inC (.dim (Spec.poolOutDim inH kH stride padding)
+      (.dim (Spec.poolOutDim inW kW stride padding) .scalar)))) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then
     let layer : Spec.AvgPool2DSpec kH kW stride h1 h2 hStride := {}
-    let outH := Shape.slidingWindowOutDim inH kH stride padding
-    let outW := Shape.slidingWindowOutDim inW kW stride padding
+    let outH := Spec.poolOutDim inH kH stride padding
+    let outW := Spec.poolOutDim inW kW stride padding
     let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
     let inShape : Shape := .dim inC (.dim inH (.dim inW .scalar))
     let node : NodeData α Δ (Γ ++ ss) outShape :=

@@ -163,7 +163,7 @@ def run : IO Unit := do
     ({ executionProfile := NN.Backend.BackendProfile.libTorchForwardCuda } :
       Runtime.Autograd.Torch.Options)
   let selectedAttention ← profileSession.selectedCapsule
-    NN.Backend.Attention.scaledDotProductOp
+    .scaledDotProductAttention
   unless selectedAttention.sameIdentity NN.Backend.Attention.libTorchSDPAForward do
     throw <| IO.userError <|
       s!"libtorch-forward profile selected unexpected capsule `{selectedAttention.name}`"

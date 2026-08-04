@@ -30,8 +30,9 @@ namespace Tape
 /--
 LayerNorm over the last dimension for `(seqLen, embedDim)` buffers.
 
-This implementation uses the standard stable formulas and is expressed in terms of existing
-CUDA kernels (axis reductions + broadcasts + pointwise ops).
+The tape records one normalization operation and keeps TorchLean's usual VJP. A fused buffer
+primitive evaluates the forward formula and that VJP without materializing each reduction,
+broadcast, and pointwise intermediate as a separate device buffer.
 -/
 def layerNorm {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : embedDim > 0)
   (t : Tape) (xId gammaId betaId : Nat) : Result (Tape × Nat) := do
@@ -42,65 +43,22 @@ def layerNorm {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : em
   let x ← requireValue (t := t) xId (.dim seqLen (.dim embedDim .scalar))
   let gamma ← requireValue (t := t) gammaId (.dim embedDim .scalar)
   let beta ← requireValue (t := t) betaId (.dim embedDim .scalar)
-  -- Forward intermediates.
-  let sum1 := Buffer.reduceSumByRow x rows32 cols32
   let invCols : Float := 1.0 / Float.ofNat embedDim
-  let mean := Buffer.scale sum1 invCols                           -- (rows)
-  let meanB := Buffer.broadcastVecToCols mean rows32 cols32        -- (rows,cols)
-  let centered := Buffer.sub x meanB
-  let centered2 := Buffer.mul centered centered
-  let varSum := Buffer.reduceSumByRow centered2 rows32 cols32
-  let var := Buffer.scale varSum invCols                           -- (rows)
   let eps : Float := Numbers.epsilon
-  let epsVec := Buffer.full rows32 eps
-  let varEps := Buffer.add var epsVec
-  let std := Buffer.sqrt varEps                                    -- (rows)
-  let stdB := Buffer.broadcastVecToCols std rows32 cols32
-  let xHat := Buffer.div centered stdB
-  let gammaB := Buffer.broadcastVecToRows gamma rows32 cols32
-  let betaB := Buffer.broadcastVecToRows beta rows32 cols32
-  let xHatGamma := Buffer.mul xHat gammaB
-  let y := Buffer.add xHatGamma betaB
+  let (y, xHat, invStd) :=
+    Buffer.layerNormFwd x gamma beta rows32 cols32 invCols eps
   let outShape : Shape := .dim seqLen (.dim embedDim .scalar)
   let node : Node :=
     { name := some "layer_norm"
       value := { s := outShape, buf := y }
       requires_grad := true
       parents := [xId, gammaId, betaId]
-      cleanup :=
-        [ sum1, mean, meanB, centered, centered2, varSum, var, epsVec, varEps
-        , std, stdB, xHat, gammaB, betaB, xHatGamma ]
+      cleanup := [xHat, invStd]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny outShape
-        -- dBeta / dGamma (sum over seqLen axis).
-        let dBeta := Buffer.reduceSumByColumn dLdy.buf rows32 cols32
-        let dGammaPointwise := Buffer.mul dLdy.buf xHat
-        let dGamma := Buffer.releaseThen dGammaPointwise <|
-          Buffer.reduceSumByColumn dGammaPointwise rows32 cols32
-        -- dX
-        let dXhat := Buffer.mul dLdy.buf gammaB
-        let sumDXhat := Buffer.reduceSumByRow dXhat rows32 cols32         -- (rows)
-        let dXhatXhat := Buffer.mul dXhat xHat
-        let sumDXhatXhat := Buffer.releaseThen dXhatXhat <|
-          Buffer.reduceSumByRow dXhatXhat rows32 cols32
-        let sum1B := Buffer.broadcastVecToCols sumDXhat rows32 cols32
-        let sum2B := Buffer.broadcastVecToCols sumDXhatXhat rows32 cols32
-        let scaledDXhat := Buffer.scale dXhat (Float.ofNat embedDim)
-        let centeredDXhat := Buffer.sub scaledDXhat sum1B
-        let xHatSum2 := Buffer.mul xHat sum2B
-        let term :=
-          Buffer.sub centeredDXhat xHatSum2
-        let invStd := Buffer.inv std
-        let invStdB := Buffer.broadcastVecToCols invStd rows32 cols32
-        let termInv := Buffer.mul term invStdB
-        let dxRaw := Buffer.scale termInv invCols
-        let dx :=
-          Buffer.releaseThen dXhat <| Buffer.releaseThen sumDXhat <|
-            Buffer.releaseThen sumDXhatXhat <| Buffer.releaseThen sum1B <|
-              Buffer.releaseThen sum2B <| Buffer.releaseThen scaledDXhat <|
-                Buffer.releaseThen centeredDXhat <| Buffer.releaseThen xHatSum2 <|
-                  Buffer.releaseThen term <| Buffer.releaseThen invStd <|
-                    Buffer.releaseThen invStdB <| Buffer.releaseThen termInv dxRaw
+        let (dx, dGamma, dBeta) :=
+          Buffer.layerNormBwd dLdy.buf xHat invStd gamma rows32 cols32
+            (Float.ofNat embedDim) invCols
         pure [
           (xId, { s := outShape, buf := dx }),
           (gammaId, { s := .dim embedDim .scalar, buf := dGamma }),
@@ -271,4 +229,3 @@ end Tape
 end Cuda
 end Autograd
 end Runtime
-

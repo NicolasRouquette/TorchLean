@@ -234,11 +234,125 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_broadcast_vec_to_cols(b_lean_obj_
   return torchlean_cuda_buffer_box(out);
 }
 
-LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_bmm(b_lean_obj_arg AObj, b_lean_obj_arg BObj,
-                                                  uint32_t batch, uint32_t m, uint32_t n,
-                                                  uint32_t p) {
+LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_layer_norm_fwd(
+    b_lean_obj_arg XObj,
+    b_lean_obj_arg GammaObj,
+    b_lean_obj_arg BetaObj,
+    uint32_t rows,
+    uint32_t cols,
+    double invColsArg,
+    double epsilonArg) {
+  torchlean_cuda_buffer* x = torchlean_cuda_buffer_unbox(XObj);
+  torchlean_cuda_buffer* gamma = torchlean_cuda_buffer_unbox(GammaObj);
+  torchlean_cuda_buffer* beta = torchlean_cuda_buffer_unbox(BetaObj);
+  const size_t R = (size_t)rows;
+  const size_t C = (size_t)cols;
+  if (R == 0 || C == 0) {
+    lean_internal_panic("torchlean_cuda_buffer_layer_norm_fwd_stub: dimensions must be positive");
+  }
+  const size_t total =
+      checked_mul_size(R, C, "torchlean_cuda_buffer_layer_norm_fwd_stub: size overflow");
+  if (x->size != total || gamma->size != C || beta->size != C) {
+    lean_internal_panic("torchlean_cuda_buffer_layer_norm_fwd_stub: buffer size mismatch");
+  }
+
+  const float invCols = (float)invColsArg;
+  const float epsilon = (float)epsilonArg;
+  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(total);
+  torchlean_cuda_buffer* normalized = torchlean_cuda_buffer_alloc(total);
+  torchlean_cuda_buffer* invStd = torchlean_cuda_buffer_alloc(R);
+  for (size_t row = 0; row < R; ++row) {
+    const size_t rowOffset = row * C;
+    float totalValue = 0.0f;
+    for (size_t col = 0; col < C; ++col) {
+      totalValue += x->data[rowOffset + col];
+    }
+    const float mean = totalValue * invCols;
+    float squareTotal = 0.0f;
+    for (size_t col = 0; col < C; ++col) {
+      const float centered = x->data[rowOffset + col] - mean;
+      squareTotal += centered * centered;
+    }
+    const float std = sqrtf(squareTotal * invCols + epsilon);
+    invStd->data[row] = 1.0f / std;
+    for (size_t col = 0; col < C; ++col) {
+      const size_t index = rowOffset + col;
+      const float xHat = (x->data[index] - mean) / std;
+      normalized->data[index] = xHat;
+      out->data[index] = xHat * gamma->data[col] + beta->data[col];
+    }
+  }
+  return torchlean_cuda_box_three_buffers(out, normalized, invStd);
+}
+
+LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_layer_norm_bwd(
+    b_lean_obj_arg DOutObj,
+    b_lean_obj_arg NormalizedObj,
+    b_lean_obj_arg InvStdObj,
+    b_lean_obj_arg GammaObj,
+    uint32_t rows,
+    uint32_t cols,
+    double colsScaleArg,
+    double invColsArg) {
+  torchlean_cuda_buffer* dOut = torchlean_cuda_buffer_unbox(DOutObj);
+  torchlean_cuda_buffer* normalized = torchlean_cuda_buffer_unbox(NormalizedObj);
+  torchlean_cuda_buffer* invStd = torchlean_cuda_buffer_unbox(InvStdObj);
+  torchlean_cuda_buffer* gamma = torchlean_cuda_buffer_unbox(GammaObj);
+  const size_t R = (size_t)rows;
+  const size_t C = (size_t)cols;
+  if (R == 0 || C == 0) {
+    lean_internal_panic("torchlean_cuda_buffer_layer_norm_bwd_stub: dimensions must be positive");
+  }
+  const size_t total =
+      checked_mul_size(R, C, "torchlean_cuda_buffer_layer_norm_bwd_stub: size overflow");
+  if (dOut->size != total || normalized->size != total ||
+      invStd->size != R || gamma->size != C) {
+    lean_internal_panic("torchlean_cuda_buffer_layer_norm_bwd_stub: buffer size mismatch");
+  }
+
+  const float colsScale = (float)colsScaleArg;
+  const float invCols = (float)invColsArg;
+  torchlean_cuda_buffer* dX = torchlean_cuda_buffer_alloc(total);
+  torchlean_cuda_buffer* dGamma = torchlean_cuda_buffer_alloc(C);
+  torchlean_cuda_buffer* dBeta = torchlean_cuda_buffer_alloc(C);
+  for (size_t col = 0; col < C; ++col) {
+    dGamma->data[col] = 0.0f;
+    dBeta->data[col] = 0.0f;
+  }
+  for (size_t row = 0; row < R; ++row) {
+    const size_t rowOffset = row * C;
+    float sumDXhat = 0.0f;
+    float sumDXhatXhat = 0.0f;
+    for (size_t col = 0; col < C; ++col) {
+      const size_t index = rowOffset + col;
+      const float dXhat = dOut->data[index] * gamma->data[col];
+      sumDXhat += dXhat;
+      sumDXhatXhat += dXhat * normalized->data[index];
+      dGamma->data[col] += dOut->data[index] * normalized->data[index];
+      dBeta->data[col] += dOut->data[index];
+    }
+    for (size_t col = 0; col < C; ++col) {
+      const size_t index = rowOffset + col;
+      const float dXhat = dOut->data[index] * gamma->data[col];
+      const float centeredDXhat = dXhat * colsScale - sumDXhat;
+      const float term =
+          centeredDXhat - normalized->data[index] * sumDXhatXhat;
+      dX->data[index] = term * invStd->data[row] * invCols;
+    }
+  }
+  return torchlean_cuda_box_three_buffers(dX, dGamma, dBeta);
+}
+
+LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_bmm_with_transpose(
+    b_lean_obj_arg AObj, b_lean_obj_arg BObj, uint32_t batch, uint32_t m, uint32_t n,
+    uint32_t p, uint32_t transposeA, uint32_t transposeB) {
   torchlean_cuda_buffer* A = torchlean_cuda_buffer_unbox(AObj);
   torchlean_cuda_buffer* B = torchlean_cuda_buffer_unbox(BObj);
+
+  if (transposeA > 1 || transposeB > 1) {
+    lean_internal_panic(
+        "torchlean_cuda_buffer_bmm_with_transpose_stub: transpose flag must be 0 or 1");
+  }
 
   const size_t Batch = (size_t)batch;
   const size_t M = (size_t)m;
@@ -246,20 +360,26 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_bmm(b_lean_obj_arg AObj, b_lean_o
   const size_t P = (size_t)p;
 
   const size_t aSz =
-      checked_mul3_size(Batch, M, N, "torchlean_cuda_buffer_bmm_stub: A size overflow");
+      checked_mul3_size(Batch, M, N,
+                        "torchlean_cuda_buffer_bmm_with_transpose_stub: A size overflow");
   const size_t bSz =
-      checked_mul3_size(Batch, N, P, "torchlean_cuda_buffer_bmm_stub: B size overflow");
+      checked_mul3_size(Batch, N, P,
+                        "torchlean_cuda_buffer_bmm_with_transpose_stub: B size overflow");
   const size_t cSz =
-      checked_mul3_size(Batch, M, P, "torchlean_cuda_buffer_bmm_stub: C size overflow");
-  const size_t mnSz = checked_mul_size(M, N, "torchlean_cuda_buffer_bmm_stub: M*N overflow");
-  const size_t npSz = checked_mul_size(N, P, "torchlean_cuda_buffer_bmm_stub: N*P overflow");
-  const size_t mpSz = checked_mul_size(M, P, "torchlean_cuda_buffer_bmm_stub: M*P overflow");
+      checked_mul3_size(Batch, M, P,
+                        "torchlean_cuda_buffer_bmm_with_transpose_stub: C size overflow");
+  const size_t mnSz = checked_mul_size(
+      M, N, "torchlean_cuda_buffer_bmm_with_transpose_stub: M*N overflow");
+  const size_t npSz = checked_mul_size(
+      N, P, "torchlean_cuda_buffer_bmm_with_transpose_stub: N*P overflow");
+  const size_t mpSz = checked_mul_size(
+      M, P, "torchlean_cuda_buffer_bmm_with_transpose_stub: M*P overflow");
 
   if (A->size != aSz) {
-    lean_internal_panic("torchlean_cuda_buffer_bmm_stub: A.size mismatch");
+    lean_internal_panic("torchlean_cuda_buffer_bmm_with_transpose_stub: A.size mismatch");
   }
   if (B->size != bSz) {
-    lean_internal_panic("torchlean_cuda_buffer_bmm_stub: B.size mismatch");
+    lean_internal_panic("torchlean_cuda_buffer_bmm_with_transpose_stub: B.size mismatch");
   }
 
   torchlean_cuda_buffer* C = torchlean_cuda_buffer_alloc(cSz);
@@ -272,7 +392,9 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_bmm(b_lean_obj_arg AObj, b_lean_o
       for (size_t k = 0; k < P; ++k) {
         float acc = 0.0f;
         for (size_t j = 0; j < N; ++j) {
-          acc += aT[i * N + j] * bT[j * P + k];
+          const size_t aIndex = transposeA == 0 ? i * N + j : j * M + i;
+          const size_t bIndex = transposeB == 0 ? j * P + k : k * N + j;
+          acc += aT[aIndex] * bT[bIndex];
         }
         cT[i * P + k] = acc;
       }

@@ -5,7 +5,7 @@ import NN.Runtime.Autograd.Engine
 import NN.Runtime.Autograd.Compiled
 import NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence
 import NN.Runtime.Autograd.Torch
-import NN.Runtime.Autograd.Torch.LinkedSession.Public
+import NN.Runtime.Autograd.Torch.LinkedSession
 import NN.Runtime.Autograd.TorchLean
 import NN.Runtime.Autograd.TorchLean.CompileExec
 import NN.Proofs.Autograd.Runtime.Link.BackwardGraphData
@@ -54,7 +54,7 @@ Induction over the typed graph keeps the forward context and tape indices aligne
 loop accumulates each node's contribution.
 :::
 
-:::theorem "runtime_compiled_backprop_link" (parent := "autograd_execution") (lean := "Runtime.Autograd.Torch.backwardDenseFrom_compileAuxData_eq_backpropAllCtx")
+:::theorem "runtime_compiled_backprop_link" (parent := "autograd_execution") (lean := "Runtime.Autograd.Torch.Internal.SessionIR.backwardDenseFrom_compileAuxData_eq_backpropAllCtx")
 For a linked-session snapshot, dense reverse accumulation on
 {uses "runtime_autograd_tape"}[the compiled tape] agrees with proof-level graph backpropagation.
 :::

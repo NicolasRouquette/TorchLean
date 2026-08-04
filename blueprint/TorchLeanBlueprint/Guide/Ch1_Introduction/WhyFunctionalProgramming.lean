@@ -58,7 +58,7 @@ def HasExpectedOutput : Prop :=
 ```
 
 `HasExpectedOutput` is a statement, not a proof. Proving claims about executable floating-point
-operations takes a little more machinery, which we will build later. For now, notice the useful
+operations takes a little more machinery, which we will build later. Notice the useful
 split between the model family `Affine.forward` and the concrete model
 `{ weight := 2.0, bias := 0.5 }`.
 
@@ -109,7 +109,7 @@ become:
 [[6, 2], [6], [1, 6], [1]]
 ```
 
-Now change only the second layer to `nn.linear 6 1`. The model no longer elaborates: the preceding
+Change only the second layer to `nn.linear 6 1`. The model no longer elaborates: the preceding
 ReLU produces a length-four vector, while the final layer requires length six. The functional
 composition and the dependent shape type catch the disagreement at the model boundary.
 

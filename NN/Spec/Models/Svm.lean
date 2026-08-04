@@ -52,9 +52,9 @@ We intentionally keep "training hyperparameters" (regularization strength, learn
 out of the parameter record; those are *choices about an optimizer*, not part of the model itself.
 -/
 structure LinearSVM (p : Nat) (α : Type) where
-  /-- w. -/
+  /-- Normal vector of the separating hyperplane. -/
   w : Tensor α (.dim p .scalar)
-  /-- b. -/
+  /-- Bias, or intercept, of the separating hyperplane. -/
   b : α
 
 /-- Decision function `f(x) = w·x + b`. -/

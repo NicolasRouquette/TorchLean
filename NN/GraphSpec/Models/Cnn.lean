@@ -29,7 +29,7 @@ therefore bake their output shapes into the type, using the standard formulas:
 - Conv2D:
   `outH = Spec.Shape.slidingWindowOutDim inH kH stride padding` (and similarly for `outW`)
 - MaxPool2D:
-  `outH = Spec.Shape.slidingWindowOutDim inH kH stride 0` (and similarly for `outW`)
+  `outH = Spec.poolOutDim inH kH stride 0` (and similarly for `outW`)
 
 This file defines small helper abbreviations (`outH/outW/poolH/poolW`) so that the overall
 classifier head shape (the input dimension to the final `Linear`) is computed once and reused.
@@ -63,11 +63,11 @@ abbrev outW (inW kW stride padding : Nat) : Nat :=
 
 /-- MaxPool output height formula. -/
 abbrev poolH (inH kH stride : Nat) : Nat :=
-  Spec.Shape.slidingWindowOutDim inH kH stride 0
+  Spec.poolOutDim inH kH stride 0
 
 /-- MaxPool output width formula. -/
 abbrev poolW (inW kW stride : Nat) : Nat :=
-  Spec.Shape.slidingWindowOutDim inW kW stride 0
+  Spec.poolOutDim inW kW stride 0
 
 /--
 Final feature-map height after:

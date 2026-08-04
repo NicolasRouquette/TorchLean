@@ -159,8 +159,16 @@ def run : IO Unit := do
   let _ ← expectSome "affine BatchNorm transfer" aff[1]!
   let crown := runCROWN (α := Float) graph verifierParams ctx ibp
   let _ ← expectSome "CROWN BatchNorm transfer" crown[1]!
-  let _ ← expectSome "backward CROWN BatchNorm transfer"
+  let backward ← expectSome "backward CROWN BatchNorm transfer"
     (runCROWNBackwardObjective (α := Float) graph verifierParams ctx ibp 1 unitObjective)
+  let loCoeffs := Tensor.flattenSpec backward.loAff.A
+  let hiCoeffs := Tensor.flattenSpec backward.hiAff.A
+  for i in List.finRange
+      (Spec.Shape.size (.dim backward.outDim (.dim backward.inDim .scalar))) do
+    assertApprox s!"ir_batchnorm backward lower coefficient[{i.val}]"
+      (flatVal loCoeffs i) 0.0 0.0
+    assertApprox s!"ir_batchnorm backward upper coefficient[{i.val}]"
+      (flatVal hiCoeffs i) 0.0 0.0
 
   let pyCode ←
     match Export.IRPyTorch.emit graph verifierParams 0 1 with

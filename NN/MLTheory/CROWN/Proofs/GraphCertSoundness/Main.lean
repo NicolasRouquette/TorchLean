@@ -894,7 +894,7 @@ theorem cert_encloses_semantics
                         have htanh : Monotone (Activation.Math.tanhSpec (α := ℝ)) := by
                             intro a b hab
                             simpa [Activation.Math.tanhSpec, MathFunctions.tanh] using
-                              tanh_mono_real hab
+                              NN.MLTheory.CROWN.IntervalLemmas.monotone_real_tanh hab
                         simpa [NN.MLTheory.CROWN.Runtime.Ops.IBP.tanh, Activation.tanhSpec,
                           Activation.Math.tanhSpec,
                           MathFunctions.tanh]
@@ -965,8 +965,11 @@ theorem cert_encloses_semantics
                             (ofFlatBox (α := ℝ) B1))
                             (Activation.sigmoidSpec (α := ℝ) (castDimScalar (α := ℝ) hDim.symm
                             v1.v)) := by
-                        have hs : Monotone (Activation.Math.sigmoidSpec (α := ℝ)) :=
-                          sigmoid_mono_real
+                        have hs : Monotone (Activation.Math.sigmoidSpec (α := ℝ)) := by
+                          intro a b hab
+                          simpa [Activation.Math.sigmoidSpec,
+                            NN.MLTheory.CROWN.IntervalLemmas.realSigmoid, MathFunctions.exp] using
+                            NN.MLTheory.CROWN.IntervalLemmas.monotone_realSigmoid hab
                         simpa [NN.MLTheory.CROWN.Runtime.Ops.IBP.sigmoid, Activation.sigmoidSpec,
                           Tensor.mapSpec]
                           using map_minmax_sound_real (n := B1.dim) (f :=

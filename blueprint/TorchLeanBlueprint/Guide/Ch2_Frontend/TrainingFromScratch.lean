@@ -244,7 +244,7 @@ def batchedData :
     (seed := 2026)
 ```
 
-Each item in `batchedData` now holds two samples in one tensor. With the default
+Each item in `batchedData` holds two samples in one tensor. With the default
 `TrainOptions.batchSize := 1`, an update consumes one item and therefore runs one vectorized
 forward/backward operation over two samples. The four-row example produces two full items; asking
 `Data.batchDataset` for groups of five would produce none because typed batching drops incomplete
@@ -363,13 +363,13 @@ def loadForThisModel (path : System.FilePath) :=
 
 The result is an `IO` action returning tensors whose dependent shape list is exactly
 `nn.paramShapes (nn.run 2026 model)`. `Checkpoint.toRuntimeParams` turns such a checked pack into
-runtime parameter handles, while `Checkpoint.loadModuleParamBits` and
-`Checkpoint.saveModuleParamBits` work with an already instantiated host-Float module.
+runtime parameter handles, while `Checkpoint.loadModuleParams` and
+`Checkpoint.saveModuleParams` work with an already instantiated runtime module.
 
-One boundary remains worth knowing: after all expected tensors have been decoded, the current
-loader ignores extra trailing tensors in the JSON array. Missing tensors and malformed expected
-tensors are rejected, but the file length alone is not yet a strict architecture identifier. If
-that distinction matters, validate the artifact's tensor manifest before loading it.
+The loader requires an exact tensor manifest. Missing tensors, extra tensors, shape mismatches, and
+malformed scalar payloads are rejected before any parameter is installed. This matters when two
+models share an initial parameter prefix: a checkpoint for the larger model cannot be accepted as a
+checkpoint for the smaller one merely because the first few shapes agree.
 
 Classification and cross-entropy training also wire the `loadParams?` and `saveParams?` fields of
 `Trainer.TrainOptions` into this exact-bits format. For example, the following options ask that path
@@ -383,16 +383,25 @@ def saveClassifierParams : Trainer.TrainOptions :=
 ```
 
 The current high-level regression and custom-loss training paths do not consume those two fields;
-use the direct `Checkpoint`/`NN.API.TorchLean.ParamIO` helpers with a manual module for those tasks.
+use the direct `Checkpoint`/`TorchLean.Checkpoint` helpers with a manual module for those tasks.
 This limitation is worth spelling out because accepting a shared options record is not evidence
 that every task dispatch implements every optional field.
 
 Even on the classification path, this is a *parameter* checkpoint, not a complete training
-snapshot. An exact continuation of Adam also needs its moment tensors and step number. Replaying the
-next batch needs loader or stream position; stochastic layers need generator state; and interpreting
-the result needs the model, preprocessing, scalar semantics, backend profile, and device. A
-parameter-only checkpoint is excellent for inference or a fresh optimizer run, but it should not
-be described as resuming the same optimizer trajectory.
+snapshot. The eager CUDA runtime can save Adam or AdamW moments and step counters separately with
+`Checkpoint.saveOptimizerState`, then restore them with
+`Checkpoint.loadOptimizerState`. That binary file records the optimizer kind, the
+moment-defining hyperparameters, every parameter shape, and the `requiresGrad` mask. Loading rejects
+a different optimizer configuration or parameter schema instead of silently attaching moments to
+the wrong model. Integer metadata and float32 payloads use explicit little-endian encodings, and a
+save is written to a fresh sibling file before it replaces the destination.
+
+That optimizer file is still not a complete training snapshot. Replaying the next batch also needs
+the loader or stream position; stochastic layers need generator state; and interpreting the result
+needs the model, preprocessing, scalar semantics, backend profile, and device. A parameter-only
+checkpoint remains appropriate for inference or a fresh optimizer run. Pairing it with native
+optimizer state resumes more of an Adam trajectory, but only the state explicitly present in those
+two files.
 
 # Manual Training
 
@@ -419,15 +428,15 @@ high-level trainer normally manages.
 
 ## Learning-rate schedules
 
-The manual configuration has constant, step-decay, and exponential schedules. Here a rate of
-`0.1` is halved after every three step indices:
+The manual configuration has constant, step-decay, exponential, and warmup-cosine schedules. Here
+a rate of `0.1` is halved after every three step indices:
 
 ```
 def decay :=
-  NN.API.TorchLean.Schedulers.step 0.1 3 0.5
+  _root_.TorchLean.Trainer.Scheduler.step 0.1 3 0.5
 
 #eval (List.range 10).map
-  (NN.API.TorchLean.Schedulers.lrAt decay)
+  (_root_.TorchLean.Trainer.Scheduler.lrAt decay)
 ```
 
 Lean prints:
@@ -449,6 +458,24 @@ The counter is zero-indexed, which is why the first decay occurs at index three.
 with `stepSize := 0` deliberately stays at its base rate instead of dividing by zero. The compact
 high-level `Trainer.TrainOptions` does not currently carry a scheduler; use this manual
 configuration when schedule state must be part of the loop.
+
+Transformer runs commonly warm up from a small rate and then decay toward a nonzero floor. This
+configuration reaches `0.0006` after 2,000 updates and follows a cosine curve toward `0.00006`:
+
+```
+def pretrainingSchedule :=
+  _root_.TorchLean.Trainer.Scheduler.warmupCosine 0.0006 0.00006 2000 162761
+
+def scheduledPretraining :=
+  Trainer.warmupCosineLR
+    (Trainer.steps 162761 (optim.adamw { lr := 0.0006 }))
+    0.0006 0.00006 2000 162761
+```
+
+The first update uses `peak / warmupSteps`; the last warm-up update reaches `peak`. At and after
+`totalSteps`, `lrAt` returns the floor exactly. The scheduler changes optimizer state only. It does
+not depend on a particular model, loss, dataset, or device. If the requested warm-up is longer than
+the run, TorchLean clamps it to `totalSteps`.
 
 # Four Useful Experiments
 

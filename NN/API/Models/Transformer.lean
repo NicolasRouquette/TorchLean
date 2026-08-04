@@ -6,18 +6,18 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Public
+public import NN.API.Seeded
 
 /-!
-# Transformer Model Helpers (API)
+# Transformer Models
 
 Small config-style Transformer constructors for runnable examples.
 -/
 
 @[expose] public section
 
-namespace NN
-namespace API
+namespace TorchLean
+
 
 open Spec Tensor
 
@@ -56,5 +56,4 @@ def transformerEncoder (cfg : TransformerEncoderConfig)
 end models
 end nn
 
-end API
-end NN
+end TorchLean

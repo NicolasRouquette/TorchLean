@@ -78,19 +78,22 @@ def hiddenSize : Nat := 2
 /--
 Shared recurrent-model configuration.
 
-The model constructor, input shape, and output shape all read from `seqLen`, `inputSize`, and
-`hiddenSize`. If a shape error appears, start here.
+The model constructor, input shape, and output shape all read from this value. The single output
+feature is the next power-consumption prediction at each time step.
 -/
-def cfg : nn.models.SeqRnnHeadConfig :=
-  { seqLen := seqLen, inputSize := inputSize, hiddenSize := hiddenSize }
+def cfg : nn.models.RecurrentConfig :=
+  { seqLen := seqLen
+    inputSize := inputSize
+    hiddenSize := hiddenSize
+    outputSize := 1 }
 
 /-- Input shape: one scalar observation at each of `seqLen` timesteps. -/
 abbrev σ : Shape :=
-  nn.models.seqRnnHeadInShape cfg
+  nn.models.recurrentInShape cfg
 
 /-- Target/prediction shape: one next-step scalar at each of `seqLen` timesteps. -/
 abbrev τ : Shape :=
-  nn.models.seqRnnHeadOutShape cfg
+  nn.models.recurrentOutShape cfg
 
 /-- Raw input shape stored by the prepared household-power `.npy` files. -/
 abbrev rawσ : Shape :=
@@ -106,7 +109,7 @@ The actual forecaster.
 `nn.models.lstmWithLinearHead cfg` expands to:
 
 `nn.LSTM seqLen inputSize hiddenSize`
-followed by a time-distributed `nn.linear hiddenSize inputSize`.
+followed by a time-distributed `nn.linear hiddenSize 1`.
 
 So every timestep emits a scalar forecast. We are not using only the final hidden state here; the loss
 checks the whole output sequence.
@@ -205,7 +208,7 @@ def trainForecast (opts : Options) (train : RealData.HouseholdPowerModelTrainFla
         (seed := train.seed)
   trainer.train
     (Data.floatSampleArray samples)
-    (ModelZoo.TrainFlags.trainOptions train.toModelTrainFlags
+    (CLI.Training.OptimizerOptions.toTrainerOptions train.toOptimizerOptions
       (title := "LSTM seasonal regression")
       (notes := ModelZoo.ForecastWindowDataFlags.trainLogNotes train.toForecastWindowDataFlags ++
         #[s!"lr={train.lr}", s!"cuda_mem_watch={train.cudaMemWatch}",

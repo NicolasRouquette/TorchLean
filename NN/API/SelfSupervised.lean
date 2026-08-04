@@ -6,13 +6,11 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.SelfSupervised.Core
 public import NN.API.SelfSupervised.BlockMask
+public import NN.API.SelfSupervised.MaskedPrediction
 
 /-!
-# Self-Supervised API
+# Self-Supervised Learning
 
-Import entrypoint for self-supervised learning APIs.
-
-Definitions live under `NN/API/SelfSupervised/*`.
+Rank-generic block masks and masked-prediction samples for self-supervised objectives.
 -/

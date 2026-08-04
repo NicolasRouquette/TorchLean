@@ -96,22 +96,18 @@ def demoPayloadF : DemoPayload Float :=
 
 /-- Parameter pack for the single Linear layer in `model`. -/
 def modelParams {α : Type} (payload : DemoPayload α) :
-    autograd.model.Params model α := by
-  simpa [model] using
-    autograd.model.linearParams (inDim := 2) (outDim := 3) (seedW := 0) (seedB := 1)
-      payload.W payload.b
+    autograd.model.Params model α :=
+  .cons payload.W (.cons payload.b .nil)
 
 /-- Direction vector in parameter space used for JVP/HVP examples. -/
 def paramDirection {α : Type} (payload : DemoPayload α) :
-    autograd.model.Params model α := by
-  simpa [model] using
-    autograd.model.linearParams (inDim := 2) (outDim := 3) (seedW := 0) (seedB := 1)
-      payload.vW payload.vb
+    autograd.model.Params model α :=
+  .cons payload.vW (.cons payload.vb .nil)
 
 /-- Unpack this tutorial's single Linear-layer parameter pack. -/
 def unpackLinearParams {α : Type} (params : autograd.model.Params model α) :
     Tensor.T α WShape × Tensor.T α BShape := by
-  simpa [autograd.model.Params, model, BShape] using nn.ParamTensors.unpackPair params
+  simpa [autograd.model.Params, model, BShape] using tensorpack.unpackPair params
 
 /-- Run the Float autograd walkthrough. -/
 def runDemo : IO Unit := do

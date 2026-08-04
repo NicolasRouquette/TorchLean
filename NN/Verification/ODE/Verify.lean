@@ -773,7 +773,7 @@ private def parseSettings (j : Json) : Except String ODEVerifierSettings := do
   | .obj o =>
     let maxDepth ←
       match o.get? "maxDepth" with
-      | some value => NN.API.Json.expectNatE "settings.maxDepth" value
+      | some value => TorchLean.Json.expectNatE "settings.maxDepth" value
       | none => pure 18
     let minWidth ←
       match o.get? "minWidth" with
@@ -813,10 +813,10 @@ private def parseSettings (j : Json) : Except String ODEVerifierSettings := do
 
 /-- Parse a single segment object from the certificate JSON. -/
 private def parseSegment (j : Json) : Except String ODECertificateSegment := do
-  let _ ← NN.API.Json.expectObjE "segment" j
+  let _ ← TorchLean.Json.expectObjE "segment" j
   let t0 ← NN.Verification.Json.expectFieldFiniteFloatE "segment" "t0" j
   let t1 ← NN.Verification.Json.expectFieldFiniteFloatE "segment" "t1" j
-  let initJ ← NN.API.Json.expectFieldE "segment" "init" j
+  let initJ ← TorchLean.Json.expectFieldE "segment" "init" j
   let init ←
     match initJ with
     | .obj _ => parsePairObj initJ
@@ -838,10 +838,10 @@ Parsing fails closed on an empty segment list, non-finite or unordered interval 
 non-finite numerical settings, and unrecognized model-backend or scalar tags.
 -/
 def parseODECertificate (j : Json) : Except String ODECertificate := do
-  let o ← NN.API.Json.expectObjE "ode certificate" j
+  let o ← TorchLean.Json.expectObjE "ode certificate" j
   let rhs ← NN.Verification.Json.expectFieldStringE "ode certificate" "rhs" j
-  let segArr ← NN.API.Json.expectArrayE "ode certificate.segments" <|
-    ← NN.API.Json.expectFieldE "ode certificate" "segments" j
+  let segArr ← TorchLean.Json.expectArrayE "ode certificate.segments" <|
+    ← TorchLean.Json.expectFieldE "ode certificate" "segments" j
   let segs ← segArr.toList.mapM parseSegment
   if segs.isEmpty then
     throw "ode certificate.segments must contain at least one segment"

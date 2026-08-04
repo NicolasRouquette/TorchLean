@@ -75,7 +75,7 @@ theorem evalAt_layernorm_eq
         (DVal.mk (α := α) s
           (Tensor.reshapeSpec (α := α)
             (s₁ := .dim seqLen (.dim embedDim .scalar)) (s₂ := s) y2D hNumel.symm)) := by
-  simp [Graph.evalAt, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
     Graph.expectShape, hParams, hNumel, hPure, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 end IRStep

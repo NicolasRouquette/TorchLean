@@ -220,7 +220,7 @@ Elaborating the file prints:
 [10, 99, 12]
 ```
 
-Now try to replace coordinate `3`. Lean rejects the index before any learner runs, because an
+Try to replace coordinate `3`. Lean rejects the index before any learner runs, because an
 element of `Fin 3` must carry a proof that its value is smaller than three. The type ensures that
 replace-one perturbation preserves dataset size; the stability theorem then reasons about how the
 learner responds to that perturbation.

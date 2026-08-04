@@ -36,7 +36,6 @@ variable {rnd : ℝ → ℤ} [NeuralValidRndToNearest rnd]
 
 local notation "R" => TorchLean.Floats.NF β fexp rnd
 
-set_option maxHeartbeats 12000000
 
 /--
 Package Conv2D forward + backward (VJP) as a `RevNode` for `RevGraph.backprop_approx`.

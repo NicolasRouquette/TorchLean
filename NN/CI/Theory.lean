@@ -44,7 +44,7 @@ public import NN.MLTheory.CROWN.Proofs.SoundnessProofs
 public import NN.MLTheory.CROWN.Propagation.Backward
 public import NN.MLTheory.CROWN.Propagation.LinearSignsplit
 public import NN.MLTheory.CROWN.Runtime.Ops
-public import NN.MLTheory.CROWN.Tactics.CrownOracle
+public import NN.MLTheory.CROWN.Tactics.CertificateWorkflow
 public import NN.MLTheory.LearningTheory.DifferentialPrivacy.Core
 public import NN.MLTheory.LearningTheory.Robustness.Runtime
 public import NN.MLTheory.LearningTheory.Robustness.Spec

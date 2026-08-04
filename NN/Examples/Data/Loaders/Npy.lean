@@ -41,7 +41,7 @@ Optional flags (tutorial-specific):
 
 Public API used here:
 
-- `Data.fromNpy` (metadata)
+- `Data.readNpy` (metadata)
 - `Data.supervisedDataset`
 - `Data.batchDataset`
 - `Trainer.new`
@@ -119,8 +119,8 @@ def main (args : List String) : IO Unit := do
   IO.println s!"seed     = {seed}"
   IO.println (s!"train    = Adam(lr=0.05), steps={steps}, batch_size={batch}, " ++
     s!"shuffle=true, drop_last=true")
-  let xMeta ← CLI.orThrow label <| (← Data.fromNpy xPath)
-  let yMeta ← CLI.orThrow label <| (← Data.fromNpy yPath)
+  let xMeta ← CLI.orThrow label <| (← Data.readNpy xPath)
+  let yMeta ← CLI.orThrow label <| (← Data.readNpy yPath)
   IO.println s!"X.npy dtype={xMeta.dtype} shape={xMeta.shape}"
   IO.println s!"y.npy dtype={yMeta.dtype} shape={yMeta.shape}"
 

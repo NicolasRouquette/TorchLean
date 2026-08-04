@@ -84,9 +84,11 @@ structure Optimizer (α : Type) [Context α] (paramShapes : List Shape) where
   callers should treat the step as complete and use `st'` as the next optimizer state.  Returning
   `none` asks the caller to fall back to the generic `backward` + `step` path.
   -/
-  trainerStep? : {inputShapes : List Shape} →
-    Torch.ScalarTrainer α paramShapes inputShapes → State → Torch.TList α inputShapes →
-      IO (Option State) := fun {_inputShapes} _tr _st _xs => pure none
+  trainerStep? : {inputShapes natInputShapes : List Shape} →
+    Torch.ScalarTrainer α paramShapes inputShapes natInputShapes → State →
+      Torch.TList α inputShapes → Torch.TList Nat natInputShapes →
+      IO (Option State) :=
+    fun {_inputShapes _natInputShapes} _tr _st _xs _natInputs => pure none
   /--
   Optional trainer-native step that returns the loss used for the update.
 
@@ -94,10 +96,11 @@ structure Optimizer (α : Type) [Context α] (paramShapes : List Shape) where
   on the same tape that produced the gradients; `none` requests the generic
   `lossAndBackward` + `step` path.
   -/
-  trainerStepWithLoss? : {inputShapes : List Shape} →
-    Torch.ScalarTrainer α paramShapes inputShapes → State → Torch.TList α inputShapes →
+  trainerStepWithLoss? : {inputShapes natInputShapes : List Shape} →
+    Torch.ScalarTrainer α paramShapes inputShapes natInputShapes → State →
+      Torch.TList α inputShapes → Torch.TList Nat natInputShapes →
       IO (Option (State × Tensor α Shape.scalar)) :=
-    fun {_inputShapes} _tr _st _xs => pure none
+    fun {_inputShapes _natInputShapes} _tr _st _xs _natInputs => pure none
 
 namespace Private
 
@@ -167,15 +170,19 @@ def sgd {α : Type} [Context α] (lr : α) {paramShapes : List Shape} : Optimize
         (updateOne := fun {s} stOne params g =>
           (stOne, _root_.Optim.SGD.update (α := α) (s := s) stOne params g))
         ps st grads
-    trainerStep? := fun {_inputShapes} tr st xs => do
+    trainerStep? := fun {_inputShapes _natInputShapes} tr st xs natInputs => do
       let currentLR := Private.firstStateValue lr (fun state => state.lr) st
-      Torch.Curried.uncurry (α := α) (ss := _inputShapes) (β := IO Unit)
-        (tr.step currentLR) xs
+      let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
+        (β := Torch.Curried.Fn Nat _ (IO Unit)) (tr.step currentLR) xs
+      Torch.Curried.uncurry (α := Nat) (β := IO Unit) stepWithNat natInputs
       pure (some st)
-    trainerStepWithLoss? := fun {_inputShapes} tr st xs => do
+    trainerStepWithLoss? := fun {_inputShapes _natInputShapes} tr st xs natInputs => do
       let currentLR := Private.firstStateValue lr (fun state => state.lr) st
-      let loss ← Torch.Curried.uncurry (α := α) (ss := _inputShapes)
-        (β := IO (Tensor α Shape.scalar)) (tr.stepWithLoss currentLR) xs
+      let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
+        (β := Torch.Curried.Fn Nat _ (IO (Tensor α Shape.scalar)))
+        (tr.stepWithLoss currentLR) xs
+      let loss ← Torch.Curried.uncurry (α := Nat)
+        (β := IO (Tensor α Shape.scalar)) stepWithNat natInputs
       pure (some (st, loss))
   }
 
@@ -251,21 +258,26 @@ def adam {α : Type} [Context α]
         (updateOne := fun {s} stOne params g => _root_.Optim.Adam.update (α := α) (s := s) stOne
           params g)
         ps st grads
-    trainerStep? := fun {_inputShapes} tr st xs =>
+    trainerStep? := fun {_inputShapes _natInputShapes} tr st xs natInputs =>
       match tr.adamStep? with
       | none => pure none
       | some step => do
           let currentLR := Private.firstStateValue lr (fun state => state.lr) st
-          Torch.Curried.uncurry (α := α) (ss := _inputShapes) (β := IO Unit)
+          let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
+            (β := Torch.Curried.Fn Nat _ (IO Unit))
             (step currentLR beta1 beta2 epsilon) xs
+          Torch.Curried.uncurry (α := Nat) (β := IO Unit) stepWithNat natInputs
           pure (some st)
-    trainerStepWithLoss? := fun {_inputShapes} tr st xs =>
+    trainerStepWithLoss? := fun {_inputShapes _natInputShapes} tr st xs natInputs =>
       match tr.adamStepWithLoss? with
       | none => pure none
       | some step => do
           let currentLR := Private.firstStateValue lr (fun state => state.lr) st
-          let loss ← Torch.Curried.uncurry (α := α) (ss := _inputShapes)
-            (β := IO (Tensor α Shape.scalar)) (step currentLR beta1 beta2 epsilon) xs
+          let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
+            (β := Torch.Curried.Fn Nat _ (IO (Tensor α Shape.scalar)))
+            (step currentLR beta1 beta2 epsilon) xs
+          let loss ← Torch.Curried.uncurry (α := Nat)
+            (β := IO (Tensor α Shape.scalar)) stepWithNat natInputs
           pure (some (st, loss))
   }
 
@@ -287,22 +299,26 @@ def adamw {α : Type} [Context α]
         (updateOne := fun {s} stOne params g => _root_.Optim.AdamW.update (α := α) (s := s) stOne
           params g)
         ps st grads
-    trainerStep? := fun {_inputShapes} tr st xs =>
+    trainerStep? := fun {_inputShapes _natInputShapes} tr st xs natInputs =>
       match tr.adamWStep? with
       | none => pure none
       | some step => do
           let currentLR := Private.firstStateValue lr (fun state => state.lr) st
-          Torch.Curried.uncurry (α := α) (ss := _inputShapes) (β := IO Unit)
+          let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
+            (β := Torch.Curried.Fn Nat _ (IO Unit))
             (step currentLR weightDecay beta1 beta2 epsilon) xs
+          Torch.Curried.uncurry (α := Nat) (β := IO Unit) stepWithNat natInputs
           pure (some st)
-    trainerStepWithLoss? := fun {_inputShapes} tr st xs =>
+    trainerStepWithLoss? := fun {_inputShapes _natInputShapes} tr st xs natInputs =>
       match tr.adamWStepWithLoss? with
       | none => pure none
       | some step => do
           let currentLR := Private.firstStateValue lr (fun state => state.lr) st
-          let loss ← Torch.Curried.uncurry (α := α) (ss := _inputShapes)
-            (β := IO (Tensor α Shape.scalar))
+          let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
+            (β := Torch.Curried.Fn Nat _ (IO (Tensor α Shape.scalar)))
             (step currentLR weightDecay beta1 beta2 epsilon) xs
+          let loss ← Torch.Curried.uncurry (α := Nat)
+            (β := IO (Tensor α Shape.scalar)) stepWithNat natInputs
           pure (some (st, loss))
   }
 

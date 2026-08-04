@@ -173,7 +173,7 @@ def ppoLossBatch
       newLogits actionOneHot oldLogProb advantage (clipEps := clipEps) (ε := ε)
   let objMean ← _root_.Runtime.Autograd.TorchLean.F.mean (m := m) (α := α) (s := .dim batch .scalar) obj
   let policyLoss ← scale (m := m) (α := α) (s := Shape.scalar) objMean (-1)
-  let valueLoss ← _root_.Runtime.Autograd.TorchLean.Loss.mse (m := m) (α := α) (s := .dim batch (.dim 1 .scalar)) valuePred valueTarget
+  let valueLoss ← _root_.TorchLean.Loss.mse (m := m) (α := α) (s := .dim batch (.dim 1 .scalar)) valuePred valueTarget
   let valueLossScaled ← scale (m := m) (α := α) (s := Shape.scalar) valueLoss valueCoef
   let entropy ←
     entropyMean (m := m) (α := α) (batch := batch) (nActions := nActions) newLogits (ε := ε)

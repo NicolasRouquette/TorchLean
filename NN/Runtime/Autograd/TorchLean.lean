@@ -68,10 +68,6 @@ namespace Init
 export _root_.Runtime.Autograd.Torch.Init (Scheme tensor xavierW kaimingW)
 end Init
 
-namespace Samples
-export _root_.Runtime.Autograd.Torch.Samples (singletonVector pointVector affinePlane)
-end Samples
-
 namespace ScalarTrainer
 
 export _root_.Runtime.Autograd.Torch.ScalarTrainer (forwardT backwardT stepT)

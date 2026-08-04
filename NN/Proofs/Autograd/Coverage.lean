@@ -134,7 +134,7 @@ work rather than already-proved claims:
   composition bridge; the full sequence theorem is the induction over the unroll plus
   `gather`/`scatter` adjoints;
 * FNO spectral-convolution training paths, especially fused FFT/spectral-conv backward rules;
-* stochastic training-mode operators beyond dropout. Dropout now has the proof-level fixed-mask
+* stochastic training-mode operators beyond dropout. Dropout has the proof-level fixed-mask
   scaling node; future stochastic layers should follow the same split: sampled object is
   stop-gradient data, differentiable map is proved conditionally on that sampled object;
 * executable CUDA/cuBLAS/cuDNN/cuFFT kernels themselves. Those are tested and contract-checked

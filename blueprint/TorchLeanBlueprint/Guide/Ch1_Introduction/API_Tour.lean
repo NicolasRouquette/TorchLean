@@ -268,7 +268,7 @@ heldout x=(0.25,-0.75), target=0.2, prediction(after)=[0.210239]
 ```
 
 Later, the training chapter will open this run up and follow one step through the model, loss,
-tape, optimizer, and parameter update. For now the useful distinction is simpler: `Trainer.new`
+tape, optimizer, and parameter update. The useful distinction here is simpler: `Trainer.new`
 creates the initial handle, and `train` returns a new handle containing the trained runtime state.
 The next two chapters explain why TorchLean keeps those dependencies explicit and teach just enough
 Lean to read their types without guesswork.
@@ -317,7 +317,7 @@ lake exe verify -- torchlean-ibp
 ```
 
 This lowers a model to the graph IR, places an input box at its input node, and propagates intervals
-to the output. The API has now moved below `Trainer`: the useful objects are `NN.IR.Graph`, the
+to the output. At this level the useful objects are `NN.IR.Graph`, the
 parameter payload, the input region, and the IBP state. The graph and verification chapters develop
 those objects carefully.
 
@@ -338,9 +338,9 @@ import NN.IR
 import NN.Verification
 ```
 
-`import NN` is the broad umbrella for files that intentionally span models, proofs, floating-point
-semantics, backend contracts, and verification. Ordinary training code should stay with `NN.API`;
-the narrower import makes dependencies and generated documentation easier to understand.
+`import NN` loads the complete library for files that combine models, proofs, floating-point
+semantics, backend contracts, and verification. Ordinary training code can use `NN.API`, which
+keeps its dependencies and generated documentation smaller.
 
 # Looking Up Exact Names
 

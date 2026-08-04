@@ -344,15 +344,16 @@ def gatherRow {α : Type} {Δ : Type} [Zero α] [DecidableEq Shape]
   PyTorch comparison: `torch.gather` for 1D inputs, with explicit bounds handling.
   -/
 def gatherVecNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
-  {Γ : List Shape} {n k : Nat} (x : Var (.dim n .scalar)) (idx : Tensor Nat (.dim k .scalar)) :
+  {Γ : List Shape} {n k : Nat} (x : Var (.dim n .scalar))
+  (idx : Δ → Tensor Nat (.dim k .scalar)) :
   MWith α Δ Γ (Var (.dim k .scalar)) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   let outS : Shape := .dim k .scalar
   let node : NodeData α Δ (Γ ++ ss) outS :=
-    { forward := fun ctx _d =>
+    { forward := fun ctx d =>
         let xv := getIdx (α := α) (xs := ctx) ix
-        match idx with
+        match idx d with
         | Tensor.dim f =>
             Tensor.dim (fun j =>
               match f j with
@@ -361,9 +362,9 @@ def gatherVecNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
                     getAtSpec xv ⟨ij, h⟩
                   else
                     Tensor.scalar 0)
-      jvp := fun _ctx dctx _d =>
+      jvp := fun _ctx dctx d =>
         let dx := getIdx (α := α) (xs := dctx) ix
-        match idx with
+        match idx d with
         | Tensor.dim f =>
             Tensor.dim (fun j =>
               match f j with
@@ -372,13 +373,13 @@ def gatherVecNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
                     getAtSpec dx ⟨ij, h⟩
                   else
                     Tensor.scalar 0)
-      vjp := fun _ctx _d δ =>
+      vjp := fun _ctx d δ =>
         let dx : Tensor α (.dim n .scalar) :=
           Tensor.dim (fun iFin =>
             let sum : α :=
               (List.finRange k).foldl (fun acc j =>
                 let ij :=
-                  match idx with
+                  match idx d with
                   | Tensor.dim f =>
                       match f j with
                       | Tensor.scalar v => v
@@ -404,7 +405,7 @@ def gatherVecNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
   -/
 def gatherRowsNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
   {Γ : List Shape} {rows cols k : Nat} (x : Var (.dim rows (.dim cols .scalar)))
-  (idx : Tensor Nat (.dim k .scalar)) :
+  (idx : Δ → Tensor Nat (.dim k .scalar)) :
   MWith α Δ Γ (Var (.dim k (.dim cols .scalar))) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
@@ -412,9 +413,9 @@ def gatherRowsNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
   let inS : Shape := .dim rows (.dim cols .scalar)
   let rowS : Shape := .dim cols .scalar
   let node : NodeData α Δ (Γ ++ ss) outS :=
-    { forward := fun ctx _d =>
+    { forward := fun ctx d =>
         let xv := getIdx (α := α) (xs := ctx) ix
-        match idx with
+        match idx d with
         | Tensor.dim f =>
             Tensor.dim (fun j =>
               match f j with
@@ -423,9 +424,9 @@ def gatherRowsNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
                     getAtSpec xv ⟨ij, h⟩
                   else
                     fill (0 : α) rowS)
-      jvp := fun _ctx dctx _d =>
+      jvp := fun _ctx dctx d =>
         let dx0 := getIdx (α := α) (xs := dctx) ix
-        match idx with
+        match idx d with
         | Tensor.dim f =>
             Tensor.dim (fun j =>
               match f j with
@@ -434,12 +435,12 @@ def gatherRowsNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
                     getAtSpec dx0 ⟨ij, h⟩
                   else
                     fill (0 : α) rowS)
-      vjp := fun _ctx _d δ =>
+      vjp := fun _ctx d δ =>
         let dx : Tensor α inS :=
           Tensor.dim (fun rFin =>
             (List.finRange k).foldl (fun acc j =>
               let ij :=
-                match idx with
+                match idx d with
                 | Tensor.dim f =>
                     match f j with
                     | Tensor.scalar v => v

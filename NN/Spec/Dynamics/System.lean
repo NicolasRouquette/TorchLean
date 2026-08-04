@@ -6,8 +6,8 @@ Authors: TorchLean Team
 
 module
 
-public import NN.MLTheory.LearningTheory.Stability.Dynamics.Spec
 public import NN.Spec.Core.Scalar
+public import NN.Spec.Core.TensorOps
 
 /-!
 # System
@@ -53,8 +53,6 @@ re-proving bookkeeping facts locally.
 namespace NN.Spec.Dynamics
 
 open _root_.Spec
-open NN.MLTheory.Robustness.Spec
-open NN.MLTheory.Stability.Spec
 
 /-- Discrete-time dynamical system on spec tensors. -/
 structure DynamicalSystem (s : Shape) where
@@ -199,32 +197,47 @@ theorem fixedPoint_trajectory {s : Shape} {sys : DynamicalSystem s} {x : SpecTen
     trajectory sys x n = x := by
   exact fixedPoint_iterate h n
 
+/-- Distance between two states induced by a norm on spec tensors. -/
+def distance {s : Shape}
+    (norm : ∀ {s : Shape}, SpecTensor s → SpecScalar)
+    (x y : SpecTensor s) : SpecScalar :=
+  norm (Spec.Tensor.subSpec x y)
+
 /-- Contraction property for spec dynamics. -/
 def isContractive {s : Shape}
     (sys : DynamicalSystem s)
     (norm : ∀ {s : Shape}, SpecTensor s → SpecScalar)
     (factor : SpecScalar) : Prop :=
-  NN.MLTheory.Robustness.Spec.isContractive (α := SpecScalar) sys.step norm factor
+  factor < 1 ∧ ∀ x y, distance norm (sys.step x) (sys.step y) ≤ factor * distance norm x y
 
-/-- Lyapunov stability for spec dynamics. -/
+/--
+Lyapunov stability of an equilibrium: every sufficiently small initial perturbation remains small
+along the entire discrete trajectory.
+-/
 def isLyapunovStable {s : Shape}
     (sys : DynamicalSystem s)
     (norm : ∀ {s : Shape}, SpecTensor s → SpecScalar)
     (equilibrium : SpecTensor s) : Prop :=
-  NN.MLTheory.Stability.Spec.isLyapunovStable (α := SpecScalar) sys.step norm equilibrium
+  ∀ ε > 0, ∃ δ > 0, ∀ x₀,
+    distance norm equilibrium x₀ < δ →
+    ∀ n, distance norm equilibrium (iterate sys n x₀) < ε
 
-/-- Asymptotic stability for spec dynamics. -/
+/-- Lyapunov stability together with local convergence to the equilibrium. -/
 def isAsymptoticallyStable {s : Shape}
     (sys : DynamicalSystem s)
     (norm : ∀ {s : Shape}, SpecTensor s → SpecScalar)
     (equilibrium : SpecTensor s) : Prop :=
-  NN.MLTheory.Stability.Spec.isAsymptoticallyStable (α := SpecScalar) sys.step norm equilibrium
+  isLyapunovStable sys norm equilibrium ∧
+  ∃ δ > 0, ∀ x₀,
+    distance norm equilibrium x₀ < δ →
+    ∀ ε > 0, ∃ N, ∀ n ≥ N, distance norm equilibrium (iterate sys n x₀) < ε
 
-/-- Global stability for spec dynamics. -/
+/-- Every initial condition converges to the equilibrium. -/
 def isGloballyStable {s : Shape}
     (sys : DynamicalSystem s)
     (norm : ∀ {s : Shape}, SpecTensor s → SpecScalar)
     (equilibrium : SpecTensor s) : Prop :=
-  NN.MLTheory.Stability.Spec.isGloballyStable (α := SpecScalar) sys.step norm equilibrium
+  ∀ x₀, ∀ ε > 0, ∃ N, ∀ n ≥ N,
+    distance norm equilibrium (iterate sys n x₀) < ε
 
 end NN.Spec.Dynamics

@@ -6,11 +6,15 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Text.Core
+
+public import NN.API.Text.Bpe
+public import NN.API.Text.Generation
+public import NN.API.Text.Options
+public import NN.API.Text.Tokenizer
 
 /-!
-# `NN.API.Text`
+# Text Models
 
-Import entrypoint for tokenizers and text tensor APIs. Definitions live in
-`NN.API.Text.Core`; GPT-2 BPE and Unicode tables live in focused sibling modules.
+Tokenizers, corpora, language-model samples, GPT-2 byte-pair encoding, generation, and command
+options for text training and inference.
 -/

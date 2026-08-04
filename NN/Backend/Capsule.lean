@@ -14,16 +14,18 @@ public import NN.Backend.Types
 A backend capsule is TorchLean's unit of delegation to fast code.
 
 The capsule records the contract TorchLean expects from a foreign implementation: which operation
-it implements, which spec it refines, what layout and shape
-conventions are assumed, how the value/VJP claims are justified, and what trust level the planner
-must account for. The contract does not prove the implementation. At runtime, a capsule is paired
-with a typed handler whose operation, provider, and device must agree with the selected contract.
+it implements, what layout and shape conventions are assumed, how refinement of the operation's
+canonical value and VJP semantics is justified, and what trust level the planner must account for.
+The contract does not prove the implementation. At runtime, a capsule is paired with a typed
+handler whose operation, provider, and device must agree with the selected contract.
 -/
 
 @[expose] public section
 
 namespace NN
 namespace Backend
+
+universe u v
 
 /-- A source file inside the TorchLean checkout that supports a backend contract. -/
 structure SourceRef where
@@ -65,35 +67,36 @@ inductive ContractClaim where
   | shapeSafety (op : BackendOp)
   /-- Runtime buffers use the declared layout for an operation. -/
   | layoutCompatibility (op : BackendOp) (layout : TensorLayout)
-  /-- Forward execution refines the named mathematical specification. -/
-  | valueRefinement (op : BackendOp) (specName : String)
-  /-- Local backward execution refines the named VJP specification. -/
-  | vjpRefinement (op : BackendOp) (specName : String) (mode : VJPMode)
+  /-- Forward execution refines the canonical semantics of the operation. -/
+  | valueRefinement (op : BackendOp)
+  /-- Local backward execution refines the canonical VJP semantics of the operation. -/
+  | vjpRefinement (op : BackendOp) (mode : VJPMode)
+  /-- The capsule intentionally supplies no reverse-mode implementation. -/
+  | vjpUnavailable (op : BackendOp)
   deriving DecidableEq, Repr
 
 /-- How a capsule justifies one part of its contract.
 
-`runtimeGuard` and `testSuite` record useful engineering assurance but do not discharge a theorem.
-Only `theorem` and `checker` contain proof terms.
+These constructors record engineering evidence and explicit trust boundaries. They do not turn a
+foreign implementation into a proved refinement. A future proof-bearing kernel interface must tie
+its theorem to a typed implementation semantics rather than attach an unrelated proposition here.
 -/
 inductive ContractEvidence where
-  | theorem (theoremName : String) (statement : Prop) (proof : statement)
-  | checker (checkerName : String) (statement : Prop) (accepted : Bool)
-      (sound : accepted = true -> statement) (acceptanceProof : accepted = true)
   | runtimeGuard (name : String)
   | testSuite (name : String)
   | fuzzOracle (name : String)
   | trustedBoundary (reason : String)
+  | notApplicable
   | notProvided
+  deriving DecidableEq
 
 instance : Repr ContractEvidence where
   reprPrec evidence _ := Std.Format.text <| match evidence with
-    | .theorem name .. => s!"theorem({name})"
-    | .checker name .. => s!"checker({name})"
     | .runtimeGuard name => s!"runtimeGuard({name})"
     | .testSuite name => s!"testSuite({name})"
     | .fuzzOracle name => s!"fuzzOracle({name})"
     | .trustedBoundary reason => s!"trustedBoundary({reason})"
+    | .notApplicable => "notApplicable"
     | .notProvided => "notProvided"
 
 /-- A structured contract claim together with its evidence and human-readable explanation. -/
@@ -102,6 +105,7 @@ structure ContractDescriptor where
   summary : String
   evidence : ContractEvidence
   provenance : List ContractProvenance := []
+  deriving DecidableEq
 
 instance : Repr ContractDescriptor where
   reprPrec d _ := Std.Format.text s!"ContractDescriptor({repr d.claim}, {repr d.evidence})"
@@ -122,6 +126,14 @@ def tested (claim : ContractClaim) (summary suite : String)
 def trusted (claim : ContractClaim) (summary reason : String)
     (provenance : List ContractProvenance := []) : ContractDescriptor :=
   { claim, summary, evidence := .trustedBoundary reason, provenance }
+
+/-- Record that a forward-only capsule intentionally has no reverse-mode implementation. -/
+def vjpUnavailable (op : BackendOp) (summary : String)
+    (provenance : List ContractProvenance := []) : ContractDescriptor :=
+  { claim := .vjpUnavailable op
+    summary
+    evidence := .notApplicable
+    provenance }
 
 end ContractDescriptor
 
@@ -246,8 +258,10 @@ def matchesObligation (op : BackendOp) (vjpMode : VJPMode) :
     ContractObligationKind → ContractClaim → Bool
   | .shape, .shapeSafety claimOp => claimOp == op
   | .layout, .layoutCompatibility claimOp _ => claimOp == op
-  | .value, .valueRefinement claimOp _ => claimOp == op
-  | .vjp, .vjpRefinement claimOp _ claimMode => claimOp == op && claimMode == vjpMode
+  | .value, .valueRefinement claimOp => claimOp == op
+  | .vjp, .vjpRefinement claimOp claimMode =>
+      claimOp == op && claimMode == vjpMode && claimMode != .none
+  | .vjp, .vjpUnavailable claimOp => claimOp == op && vjpMode == .none
   | _, _ => false
 
 end ContractClaim
@@ -324,8 +338,8 @@ namespace KernelCapsule
 
 /-- Whether each descriptor states the obligation advertised by its field.
 
-Evidence is useful only when it proves or checks the right claim. This guard prevents, for example,
-a value-refinement theorem from being placed in the shape field and then accepted as shape evidence.
+Evidence is useful only when it supports the right claim. This guard prevents, for example, a
+value-refinement test from being placed in the shape field and then accepted as shape evidence.
 -/
 def contractsAligned (c : KernelCapsule) : Bool :=
   c.shapeContract.claim.matchesObligation c.op c.vjpMode .shape &&
@@ -378,7 +392,7 @@ def bind {β : Type} (c : KernelCapsule) (handler : KernelHandler β) :
 
 /-- Whether the assurance policy admits this capsule. -/
 def allowedBy (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
-  cfg.assurance.acceptsTrust c.trustLevel
+  c.trustLevel != .verified && cfg.assurance.acceptsTrust c.trustLevel
 
 /-- Whether the backend preference admits this capsule's provider. -/
 def matchesPreference (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
@@ -395,8 +409,9 @@ def matchesDevice (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
 Whether the capsule's gradient boundary is compatible with the requested execution config.
 
 `none` is inference mode, so any forward-capable capsule is suitable even when it also advertises a
-VJP. A backend VJP is compatible with normal TorchLean tape mode: TorchLean still owns the node and
-calls the selected backend only for that local derivative computation.
+VJP. In `torchLeanTape` mode TorchLean owns the global tape and backward traversal. A capsule may
+still implement its local VJP either as TorchLean operations or as a named backend kernel;
+`backendVJP` requests the latter specifically.
 -/
 def matchesVJP (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
   if cfg.vjpMode == .none || !c.op.requiresVJP then
@@ -414,6 +429,33 @@ def admissible (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
 
 end KernelCapsule
 
+/--
+A kernel implementation accompanied by a proof of its typed semantics.
+
+`specification` is an explicit parameter of the type, so the refinement theorem cannot be detached
+from the function it justifies. The operation tag is a planner identity; the equality below states
+the exact Lean semantics that have actually been proved. The input and output types may describe a
+forward result alone or a bundle containing both a forward value and a VJP.
+
+Extracting `capsule` deliberately loses the proof. Metadata-only planning therefore rejects
+capsules marked `verified`; consumers that require verified execution must retain the complete
+`ProofCarryingKernel` value through the typed verified planner.
+-/
+structure ProofCarryingKernel (ι : Type u) (ο : Type v) (op : BackendOp)
+    (specification : ι → ο) where
+  /-- Metadata used by ordinary backend reports and device selection. -/
+  capsule : KernelCapsule
+  /-- Typed implementation whose semantics are proved below. -/
+  implementation : ι → ο
+  /-- The metadata names the operation indexed by this proof object. -/
+  operation_matches : capsule.op = op
+  /-- The capsule advertises the trust level supplied by this proof object. -/
+  trust_verified : capsule.trustLevel = .verified
+  /-- Each metadata descriptor states the obligation belonging to its field. -/
+  contracts_aligned : capsule.contractsAligned = true
+  /-- Pointwise refinement of the implementation to the canonical specification. -/
+  refines : ∀ input, implementation input = specification input
+
 namespace ExecutableKernel
 
 /-- Invoke the handler bound to a selected capsule. -/
@@ -421,6 +463,32 @@ def run {β : Type} (kernel : ExecutableKernel β) : IO β :=
   kernel.handler.execute kernel.capsule
 
 end ExecutableKernel
+
+namespace ProofCarryingKernel
+
+/-- Evaluate a proof-carrying kernel without crossing an additional runtime boundary. -/
+def run {ι : Type u} {ο : Type v} {op : BackendOp} {specification : ι → ο}
+    (kernel : ProofCarryingKernel ι ο op specification) (input : ι) : ο :=
+  kernel.implementation input
+
+/-- Evaluation of a proof-carrying kernel agrees with its indexed specification. -/
+theorem run_eq_specification {ι : Type u} {ο : Type v} {op : BackendOp}
+    {specification : ι → ο}
+    (kernel : ProofCarryingKernel ι ο op specification) (input : ι) :
+    kernel.run input = specification input :=
+  kernel.refines input
+
+/-- Whether this proof-bearing kernel matches a proof-oriented execution request. -/
+def selectable {ι : Type u} {ο : Type v} {op : BackendOp} {specification : ι → ο}
+    (cfg : ExecutionConfig) (kernel : ProofCarryingKernel ι ο op specification) : Bool :=
+  cfg.assurance == AssurancePolicy.verified &&
+    kernel.capsule.supportsForward &&
+    kernel.capsule.contractsAligned &&
+    kernel.capsule.matchesPreference cfg &&
+    kernel.capsule.matchesDevice cfg &&
+    kernel.capsule.matchesVJP cfg
+
+end ProofCarryingKernel
 
 /--
 Pick an admissible capsule for a typed operation.

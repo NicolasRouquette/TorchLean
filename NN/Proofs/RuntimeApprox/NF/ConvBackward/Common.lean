@@ -72,7 +72,6 @@ variable {rnd : ℝ → ℤ} [NeuralValidRndToNearest rnd]
 
 local notation "R" => TorchLean.Floats.NF β fexp rnd
 
-set_option maxHeartbeats 12000000
 
 -- ---------------------------------------------------------------------------
 -- Fold helper: turn nested zero-start folds into threaded accumulator folds.
@@ -255,8 +254,8 @@ lemma specFold5_eq_threadFold5
 
 /-- Padded-input helper used by the Conv2D spec: cast when `padding = 0`, otherwise `padMultiChannel`. -/
 def paddedInput {α : Type} [Context α] {inC inH inW padding : Nat}
-    (img : Spec.MultiChannelImage inC inH inW α) :
-    Spec.MultiChannelImage inC (inH + 2 * padding) (inW + 2 * padding) α :=
+    (img : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
+    Spec.Tensor α (.dim inC (.dim (inH + 2 * padding) (.dim (inW + 2 * padding) .scalar))) :=
   if h4 : padding = 0 then
     tensorCast
       (Shape.dim inC
@@ -268,7 +267,7 @@ def paddedInput {α : Type} [Context α] {inC inH inW padding : Nat}
 
 lemma get_at_or_zero_paddedInput
     {α : Type} [Context α] {inC inH inW padding : Nat}
-    (img : Spec.MultiChannelImage inC inH inW α) (c : Fin inC) (p q : Nat) :
+    (img : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) (c : Fin inC) (p q : Nat) :
     getAtOrZero (paddedInput (inC := inC) (inH := inH) (inW := inW) (padding := padding) img)
         [c.val, p, q]
       =
@@ -286,7 +285,7 @@ lemma get_at_or_zero_paddedInput
 
 lemma mkInputIdx_match_eq_paddedInput
     {α : Type} [Context α] {inC inH inW stride padding : Nat}
-    (img : Spec.MultiChannelImage inC inH inW α) (c : Fin inC)
+    (img : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) (c : Fin inC)
     (oi di oj dj : Nat) :
     (match Spec.Private.mkInputIdx? [oi, oj] [di, dj] [stride, stride] [padding, padding] with
       | none => (0 : α)
@@ -305,8 +304,8 @@ lemma mkInputIdx_match_eq_paddedInput
 
 lemma conv2dKernelFoldRead_eq_paddedFold
     {α : Type} [Context α] {inC outC inH inW outH outW stride padding : Nat}
-    (input : Spec.MultiChannelImage inC inH inW α)
-    (grad : Spec.MultiChannelImage outC outH outW α)
+    (input : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
+    (grad : Spec.Tensor α (.dim outC (.dim outH (.dim outW .scalar))))
     (out_ch : Fin outC) (in_ch : Fin inC) (di dj : Nat) :
     (List.finRange outH).foldl (fun acc i =>
         (List.finRange outW).foldl (fun acc j =>

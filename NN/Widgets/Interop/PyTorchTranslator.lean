@@ -339,7 +339,7 @@ Generate a TorchLean skeleton from the recognized layer sequence.
 The emitted code is meant to be a starting point, not a final theorem. It imports the public
 TorchLean umbrella, opens the user-facing API namespaces, emits direct sequential terms for the safe
 subset, and then appends boundary notes as Lean comments. The next intended step is to add a concrete
-shape contract and wrap the model in a `train.Manual.Task` / `SeqTask`.
+shape contract and wrap the model in a `Trainer.Manual.SeqTask`.
 -/
 def torchLeanSkeleton (r : Report) (name : String := "translatedModel") : String :=
   let translatedLines :=
@@ -369,7 +369,7 @@ def torchLeanSkeleton (r : Report) (name : String := "translatedModel") : String
     "",
     "-- Next steps:",
     "-- 1. Add the concrete input/output shape contract.",
-    "-- 2. Choose a loss and wrap this in a `train.Manual.Task` / `SeqTask`.",
+    "-- 2. Choose a loss and wrap this in a `Trainer.Manual.SeqTask`.",
     "-- 3. If this came from a real PyTorch module, use `torch.export` capture for a checked graph path."
   ]
 

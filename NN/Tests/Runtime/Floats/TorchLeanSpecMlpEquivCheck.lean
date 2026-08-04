@@ -30,7 +30,6 @@ This is not a performance test; it is a regression guard for:
 
 open Spec
 open Tensor
-open NN.API
 open Tests.Floats.Utils
 
 namespace Tests
@@ -69,7 +68,7 @@ def run : IO Unit := do
   let ySpec : Tensor Float yShape := Examples.mlpForward (α := Float) l1 l2 x
 
   -- TorchLean forward reference (compiled-out evaluation of the TorchLean forwardProgram).
-  let compiled ← TorchLean.Autodiff.compileGraph (α := Float)
+  let compiled ← Runtime.Autograd.TorchLean.Autodiff.compileGraph (α := Float)
     (paramShapes := Runtime.Autograd.TorchLean.NN.Seq.paramShapes model)
     (inputShapes := [xShape]) (τ := yShape)
     (fun {β} _ _ => Runtime.Autograd.TorchLean.NN.Seq.forwardProgram (model := model) (α := β))

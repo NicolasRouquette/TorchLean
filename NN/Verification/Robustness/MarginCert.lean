@@ -31,7 +31,6 @@ namespace MarginCert
 
 open Lean
 open Data
-open NN.API
 open NN.Verification.Json
 
 /-- Certificate format tag expected at the top level of margin certificate JSON files. -/

@@ -92,7 +92,7 @@ def verifyCert (path : String) : IO Unit := do
         let loVal := Spec.Tensor.sumSpec outB.lo
         let hiVal := Spec.Tensor.sumSpec outB.hi
         uTrip := uTrip ++ [(loVal, hiVal)]
-        let dboxes := NN.MLTheory.CROWN.Graph.runDeriv1D (α:=Float) g ps boxes
+        let dboxes := NN.MLTheory.CROWN.Graph.runFirstDerivative1D (α:=Float) g ps boxes
         let dB ←
           match NN.MLTheory.CROWN.Graph.outputBox? dboxes outId with
           | .ok dB => pure dB
@@ -100,7 +100,7 @@ def verifyCert (path : String) : IO Unit := do
         let dlo := Spec.Tensor.sumSpec dB.lo
         let dhi := Spec.Tensor.sumSpec dB.hi
         duTrip := duTrip ++ [(dlo, dhi)]
-        let d2boxes := NN.MLTheory.CROWN.Graph.runDeriv2D (α:=Float) g ps boxes dboxes
+        let d2boxes := NN.MLTheory.CROWN.Graph.runSecondDerivative1D (α:=Float) g ps boxes dboxes
         let d2B ←
           match NN.MLTheory.CROWN.Graph.outputBox? d2boxes outId with
           | .ok d2B => pure d2B

@@ -114,14 +114,14 @@ def instanceNorm
 /-- `batchNorm` specialized to a single channel-first image `(C,H,W)`. -/
 def batchNorm2d
   {channels height width : Nat}
-  (x : MultiChannelImage channels height width α)
+  (x : Tensor α (.dim channels (.dim height (.dim width .scalar))))
   (gamma : Tensor α (.dim channels .scalar))
   (beta : Tensor α (.dim channels .scalar))
   (h_c : channels > 0 := by norm_num)
   (h_h : height > 0 := by norm_num)
   (h_w : width > 0 := by norm_num)
   (epsilon : α := Numbers.epsilon) :
-  MultiChannelImage channels height width α :=
+  Tensor α (.dim channels (.dim height (.dim width .scalar))) :=
   letI : Shape.WellFormed (.dim channels (.dim height (.dim width .scalar))) :=
     ⟨⟨h_c, ⟨h_h, ⟨h_w, trivial⟩⟩⟩⟩
   batchNorm (x := x) (gamma := gamma) (beta := beta) (epsilon := epsilon)
@@ -139,13 +139,13 @@ Affine tangents contribute `xhat * dgamma + dbeta` channel-wise.
 -/
 def batchNorm2dJvp
   {channels height width : Nat}
-  (x tangent : MultiChannelImage channels height width α)
+  (x tangent : Tensor α (.dim channels (.dim height (.dim width .scalar))))
   (gamma dgamma _beta dbeta : Tensor α (.dim channels .scalar))
   (_h_c : channels > 0 := by norm_num)
   (_h_h : height > 0 := by norm_num)
   (_h_w : width > 0 := by norm_num)
   (epsilon : α := Numbers.epsilon) :
-  MultiChannelImage channels height width α :=
+  Tensor α (.dim channels (.dim height (.dim width .scalar))) :=
 
   let spatial_size := height * width
   let nScalar : Tensor α Shape.scalar := Tensor.scalar (spatial_size : α)
@@ -236,14 +236,14 @@ running statistics).
 -/
 def batchNorm2dBackward
   {channels height width : Nat}
-  (x : MultiChannelImage channels height width α)
+  (x : Tensor α (.dim channels (.dim height (.dim width .scalar))))
   (gamma : Tensor α (.dim channels .scalar))
-  (grad_output : MultiChannelImage channels height width α)
+  (grad_output : Tensor α (.dim channels (.dim height (.dim width .scalar))))
   (_h_c : channels > 0 := by norm_num)
   (_h_h : height > 0 := by norm_num)
   (_h_w : width > 0 := by norm_num)
   (epsilon : α := Numbers.epsilon) :
-  (MultiChannelImage channels height width α ×  -- ∂L/∂x
+  (Tensor α (.dim channels (.dim height (.dim width .scalar))) ×  -- ∂L/∂x
    Tensor α (.dim channels .scalar) ×           -- ∂L/∂gamma
    Tensor α (.dim channels .scalar)) :=         -- ∂L/∂beta
 

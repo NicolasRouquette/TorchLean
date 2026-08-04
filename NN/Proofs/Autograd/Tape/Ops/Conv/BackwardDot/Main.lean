@@ -28,7 +28,6 @@ open scoped BigOperators
 
 noncomputable section
 
-set_option maxHeartbeats 12000000
 
 /--
 Main dot-level bridge theorem for Conv2D.
@@ -43,17 +42,16 @@ theorem conv2d_backward_spec_dot
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
-    (input : Spec.MultiChannelImage inC inH inW ℝ)
-    (δ : Spec.MultiChannelImage outC (outH inH kH stride padding) (outW inW kW stride padding) ℝ)
+    (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
+    (δ : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar))))
     (dKernel : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))))
     (dBias : Tensor ℝ (.dim outC .scalar))
-    (dInput : Spec.MultiChannelImage inC inH inW ℝ) :
+    (dInput : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))) :
     let layerK : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := dKernel, bias := fill (0 : ℝ) (.dim outC .scalar) }
     let layer0 : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := layer.kernel, bias := fill (0 : ℝ) (.dim outC .scalar) }
-    let jvp : Spec.MultiChannelImage outC (outH inH kH stride padding) (outW inW kW stride padding)
-      ℝ :=
+    let jvp : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar))) :=
       addSpec
         (Spec.conv2dSpec (α := ℝ) (layer := layerK) input)
         (addSpec

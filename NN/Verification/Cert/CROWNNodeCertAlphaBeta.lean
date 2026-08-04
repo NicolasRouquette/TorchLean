@@ -47,7 +47,6 @@ bounds exactly match Lean recomputation.
 
 @[expose] public section
 
-
 namespace NN.Verification.CROWNNodeCertAlphaBeta
 
 open NN.MLTheory.CROWN
@@ -140,8 +139,7 @@ def readAlphaBetaCROWNNodeCertificate (g : Graph) (path : String) : IO AlphaBeta
   else
     throw <| IO.userError s!"beta length {betaArr.size} ≠ g.nodes.size {g.nodes.size}"
 
-/-- Check the local alpha/beta-CROWN enclosure condition for one node against a certificate entry.
-  -/
+/-- Check the local α/β-CROWN enclosure condition for one node against a certificate entry. -/
 def checkAlphaBetaCROWNNode (g : Graph) (ps : ParamStore IEEE32Exec)
     (authoritativeIbp : Array (Option (FlatBox IEEE32Exec)))
     (certAlpha : Array (Option (FlatVec IEEE32Exec)))
@@ -158,6 +156,37 @@ def checkAlphaBetaCROWNNode (g : Graph) (ps : ParamStore IEEE32Exec)
       id computed?
   pure (ok, computed?)
 
+/-- The α/β-CROWN replay function associated with a parsed certificate. -/
+def replayStep (g : Graph) (ps : ParamStore IEEE32Exec)
+    (authoritativeIbp : Array (Option (FlatBox IEEE32Exec)))
+    (cert : AlphaBetaCROWNNodeCertificate) :
+    Array (Option (FlatAffineBounds IEEE32Exec)) → Nat →
+      Option (FlatAffineBounds IEEE32Exec) :=
+  fun replay id =>
+    alphaBetaCrownStepNode? (α := IEEE32Exec) g.nodes ps authoritativeIbp cert.alpha cert.beta
+      replay cert.ctx id
+
+/--
+The final in-memory acceptance decision for an α/β-CROWN artifact. It combines all diagnostic
+checks with a complete pure replay whose proposition-level meaning is proved below.
+-/
+def AlphaBetaCROWNNodeCertificate.accepts
+    (cert : AlphaBetaCROWNNodeCertificate) (g : Graph) (ps : ParamStore IEEE32Exec)
+    (authoritativeIbp : Array (Option (FlatBox IEEE32Exec)))
+    (diagnosticsOk : Bool) : Bool :=
+  crownCertificateAccepts g (replayStep g ps authoritativeIbp cert) cert.crown diagnosticsOk
+
+/-- Acceptance of the concrete α/β-CROWN decision supplies graph-level local consistency. -/
+theorem AlphaBetaCROWNNodeCertificate.accepts_eq_true
+    (cert : AlphaBetaCROWNNodeCertificate) (g : Graph) (ps : ParamStore IEEE32Exec)
+    (authoritativeIbp : Array (Option (FlatBox IEEE32Exec)))
+    (diagnosticsOk : Bool)
+    (haccept : cert.accepts g ps authoritativeIbp diagnosticsOk = true) :
+    NN.MLTheory.CROWN.Graph.CrownCertSoundness.CrownCertLocalOK
+      (g := g) (step := replayStep g ps authoritativeIbp cert) cert.crown := by
+  exact crownCertificateAccepts_eq_true g (replayStep g ps authoritativeIbp cert) cert.crown
+    diagnosticsOk haccept
+
 /--
 Check a per-node α/β-CROWN certificate against Lean's propagation rules.
 
@@ -165,8 +194,7 @@ Returns `true` iff every supplied IBP box contains Lean's authoritative recomput
 node's affine replay data agrees exactly with Lean's α/β-CROWN step.
 -/
 def checkAlphaBetaCROWNNodeCertificate (g : Graph) (ps : ParamStore IEEE32Exec) (path : String) :
-    IO Bool :=
-  do
+    IO Bool := do
   let cert ← readAlphaBetaCROWNNodeCertificate g path
   let authoritativeIbp := runIBP (α := IEEE32Exec) g ps
   let mut authoritativeCrown : Array (Option (FlatAffineBounds IEEE32Exec)) :=
@@ -179,9 +207,10 @@ def checkAlphaBetaCROWNNodeCertificate (g : Graph) (ps : ParamStore IEEE32Exec) 
         cert.crown cert.ctx id
     authoritativeCrown := authoritativeCrown.set! id computed?
     ok := ok && okIbp && okCrown
-  if ok then
+  let accepted := cert.accepts g ps authoritativeIbp ok
+  if accepted then
     IO.println
       "[CROWNNodeCertAlphaBeta] artifact matched an authoritative Lean IBP and alpha/beta-CROWN replay."
-  pure ok
+  pure accepted
 
 end NN.Verification.CROWNNodeCertAlphaBeta

@@ -159,14 +159,14 @@ Max pooling in DAG form for channel-first `CHW` tensors.
 Input: `[x : CHW inC inH inW]`.
 Output shape uses the standard pooling formula:
 
-`outH = Spec.Shape.slidingWindowOutDim inH kH stride 0`
+`outH = Spec.poolOutDim inH kH stride 0`
 
 and similarly for `outW`. This is derived from the sequential `Primitive.maxPool2d`.
 -/
 def maxPool2d
     (kH kW inH inW inC stride : Nat)
     {h_kH : kH ≠ 0} {h_kW : kW ≠ 0} {hStride : stride ≠ 0} :
-    PrimOp [.dim inC (.dim inH (.dim inW .scalar))] (.dim inC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride 0) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride 0) .scalar))) :=
+    PrimOp [.dim inC (.dim inH (.dim inW .scalar))] (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))) :=
   (LowerToDAG.Primitive.toDAGPrimOp
       (Primitive.maxPool2d (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride :=
         stride)

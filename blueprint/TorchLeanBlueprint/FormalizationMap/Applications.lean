@@ -27,12 +27,12 @@ reinforcement learning, attention, state-space models, and self-supervised objec
 Seeded construction of executable models.
 :::
 
-:::definition "seeded_builder_state" (parent := "model_api") (lean := "NN.API.nn.M")
+:::definition "seeded_builder_state" (parent := "model_api") (lean := "TorchLean.nn.M")
 `nn.M` is the state monad used by seeded builders. It threads an explicit `SeedStream` through a
 pure construction and yields the same result whenever `nn.run` starts from the same seed.
 :::
 
-:::definition "seeded_relu_mlp" (parent := "model_api") (lean := "NN.API.nn.models.mlpRelu")
+:::definition "seeded_relu_mlp" (parent := "model_api") (lean := "TorchLean.nn.models.mlpRelu")
 This {uses "seeded_builder_state"}[seeded builder] constructs one batched, single-hidden-layer
 MLP: a linear layer, ReLU, and a second linear layer.
 :::

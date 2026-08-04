@@ -383,6 +383,18 @@ def releaseCudaGradMap (xs : CudaGradMap) : IO Unit := do
   for (_id, x) in xs.toList do
     releaseCudaAnyBuffer x
 
+/--
+Run an action that borrows a sparse CUDA gradient map, then release every buffer in the map.
+
+The action must not retain a gradient buffer after it returns. Cleanup also runs when the action
+throws, which keeps optimizer failures from leaking device memory.
+-/
+def withCudaGradMap {β : Type} (xs : CudaGradMap) (action : CudaGradMap → IO β) : IO β := do
+  try
+    action xs
+  finally
+    releaseCudaGradMap xs
+
 /-- Check that a shape-erased CUDA buffer has the number of elements promised by its shape. -/
 def checkCudaAnyBufferSize (where_ : String)
     (x : Runtime.Autograd.Cuda.AnyBuffer) : IO Unit := do

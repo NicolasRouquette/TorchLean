@@ -6,7 +6,8 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Examples.ModelZoo.Core
+public import NN.Examples.ModelZoo.Command
+public import NN.Examples.ModelZoo.Training
 
 /-!
 # Model-Zoo Example Support
