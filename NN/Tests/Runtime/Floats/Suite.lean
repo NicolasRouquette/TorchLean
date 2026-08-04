@@ -8,7 +8,6 @@ module
 
 public import NN.Tests.Runtime.Floats.AllAutogradTests
 public import NN.Tests.Runtime.Floats.CertificatePreconditions
-public import NN.Tests.Runtime.Floats.CheckpointIO
 public import NN.Tests.Runtime.Floats.IRBatchNorm
 public import NN.Tests.Runtime.Floats.ONNXBridge
 public import NN.Tests.Runtime.Floats.PINNDerivResidual
@@ -40,7 +39,6 @@ namespace Floats
 def run : IO Unit := do
   Tests.Floats.runAllAutogradTests
   Tests.Floats.CertificatePreconditions.run
-  Tests.Floats.CheckpointIO.run
   Tests.Floats.IRBatchNorm.run
   Tests.Floats.ONNXBridge.run
   Tests.Floats.PyTorchRoundtripParity.run

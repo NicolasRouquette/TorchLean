@@ -1,11 +1,11 @@
 {
   "code_stats": {
-    "blank_or_comment_lines": 112349,
-    "code_lines": 210536,
+    "blank_or_comment_lines": 112311,
+    "code_lines": 210338,
     "declaration_counts": {
       "abbrev": 589,
       "class": 31,
-      "def": 8654,
+      "def": 8644,
       "inductive": 134,
       "instance": 263,
       "lemma": 647,
@@ -13,7 +13,7 @@
       "structure": 633,
       "theorem": 2030
     },
-    "declarations": 13102,
+    "declarations": 13092,
     "layer_sizes": [
       {
         "files": 170,
@@ -61,9 +61,9 @@
         "lines": 17271
       },
       {
-        "files": 42,
+        "files": 41,
         "layer": "NN.Tests",
-        "lines": 9808
+        "lines": 9572
       },
       {
         "files": 18,
@@ -121,12 +121,12 @@
         "lines": 30
       }
     ],
-    "lean_files": 1240,
+    "lean_files": 1239,
     "theorem_like_declarations": 2677,
     "top_level_files": [
       {
         "directory": "NN",
-        "files": 1178
+        "files": 1177
       },
       {
         "directory": "blueprint",
@@ -145,7 +145,7 @@
         "files": 1
       }
     ],
-    "total_lines": 322885
+    "total_lines": 322649
   },
   "edges": [
     {
@@ -24369,20 +24369,6 @@
       "src": "NN.Tests.Runtime.Floats.CertificatePreconditions"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.Core.OptimizerCheckpoint",
-      "line": 9,
-      "path": "NN/Tests/Runtime/Floats/CheckpointIO.lean",
-      "public": true,
-      "src": "NN.Tests.Runtime.Floats.CheckpointIO"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.TorchLean.ParamIO",
-      "line": 10,
-      "path": "NN/Tests/Runtime/Floats/CheckpointIO.lean",
-      "public": true,
-      "src": "NN.Tests.Runtime.Floats.CheckpointIO"
-    },
-    {
       "dst": "NN.IR.Check",
       "line": 9,
       "path": "NN/Tests/Runtime/Floats/IRBatchNorm.lean",
@@ -24565,78 +24551,71 @@
       "src": "NN.Tests.Runtime.Floats.Suite"
     },
     {
-      "dst": "NN.Tests.Runtime.Floats.CheckpointIO",
+      "dst": "NN.Tests.Runtime.Floats.IRBatchNorm",
       "line": 11,
       "path": "NN/Tests/Runtime/Floats/Suite.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.Suite"
     },
     {
-      "dst": "NN.Tests.Runtime.Floats.IRBatchNorm",
+      "dst": "NN.Tests.Runtime.Floats.ONNXBridge",
       "line": 12,
       "path": "NN/Tests/Runtime/Floats/Suite.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.Suite"
     },
     {
-      "dst": "NN.Tests.Runtime.Floats.ONNXBridge",
+      "dst": "NN.Tests.Runtime.Floats.PINNDerivResidual",
       "line": 13,
       "path": "NN/Tests/Runtime/Floats/Suite.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.Suite"
     },
     {
-      "dst": "NN.Tests.Runtime.Floats.PINNDerivResidual",
+      "dst": "NN.Tests.Runtime.Floats.PyTorchRoundtripParity",
       "line": 14,
       "path": "NN/Tests/Runtime/Floats/Suite.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.Suite"
     },
     {
-      "dst": "NN.Tests.Runtime.Floats.PyTorchRoundtripParity",
+      "dst": "NN.Tests.Runtime.Floats.RLCheck",
       "line": 15,
       "path": "NN/Tests/Runtime/Floats/Suite.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.Suite"
     },
     {
-      "dst": "NN.Tests.Runtime.Floats.RLCheck",
+      "dst": "NN.Tests.Runtime.Floats.StandaloneImport",
       "line": 16,
       "path": "NN/Tests/Runtime/Floats/Suite.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.Suite"
     },
     {
-      "dst": "NN.Tests.Runtime.Floats.StandaloneImport",
+      "dst": "NN.Tests.Runtime.Floats.TorchLeanIRExecEquivCheck",
       "line": 17,
       "path": "NN/Tests/Runtime/Floats/Suite.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.Suite"
     },
     {
-      "dst": "NN.Tests.Runtime.Floats.TorchLeanIRExecEquivCheck",
+      "dst": "NN.Tests.Runtime.Floats.TorchLeanIndexShapeCheck",
       "line": 18,
       "path": "NN/Tests/Runtime/Floats/Suite.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.Suite"
     },
     {
-      "dst": "NN.Tests.Runtime.Floats.TorchLeanIndexShapeCheck",
+      "dst": "NN.Tests.Runtime.Floats.TorchLeanOpsCheck",
       "line": 19,
       "path": "NN/Tests/Runtime/Floats/Suite.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.Suite"
     },
     {
-      "dst": "NN.Tests.Runtime.Floats.TorchLeanOpsCheck",
-      "line": 20,
-      "path": "NN/Tests/Runtime/Floats/Suite.lean",
-      "public": true,
-      "src": "NN.Tests.Runtime.Floats.Suite"
-    },
-    {
       "dst": "NN.Tests.Runtime.Floats.TorchLeanSpecMlpEquivCheck",
-      "line": 21,
+      "line": 20,
       "path": "NN/Tests/Runtime/Floats/Suite.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.Suite"
@@ -28576,7 +28555,7 @@
       "src_layer": "NN.Proofs"
     },
     {
-      "count": 63,
+      "count": 62,
       "dst_layer": "NN.Tests",
       "src_layer": "NN.Tests"
     },
@@ -28586,14 +28565,14 @@
       "src_layer": "NN.Examples"
     },
     {
-      "count": 56,
-      "dst_layer": "NN.Runtime",
-      "src_layer": "NN.Tests"
-    },
-    {
       "count": 54,
       "dst_layer": "NN.Floats",
       "src_layer": "NN.CI"
+    },
+    {
+      "count": 54,
+      "dst_layer": "NN.Runtime",
+      "src_layer": "NN.Tests"
     },
     {
       "count": 43,
@@ -33447,11 +33426,6 @@
       "Floats",
       "CertificatePreconditions"
     ],
-    "NN.Tests.Runtime.Floats.CheckpointIO": [
-      "Tests",
-      "Floats",
-      "CheckpointIO"
-    ],
     "NN.Tests.Runtime.Floats.IRBatchNorm": [
       "Tests",
       "Floats",
@@ -33984,8 +33958,8 @@
     "critical_path_import_edges": 95,
     "errors": 0,
     "findings": 0,
-    "import_edges": 4052,
-    "internal_import_edges": 3485,
+    "import_edges": 4049,
+    "internal_import_edges": 3482,
     "layers": [
       "Backend",
       "Core",
@@ -34009,9 +33983,9 @@
       "lakefile",
       "scripts"
     ],
-    "modules": 1240,
+    "modules": 1239,
     "private_import_edges": 344,
-    "public_import_edges": 3708,
+    "public_import_edges": 3705,
     "warnings": 0
   },
   "top_fan_in": [
