@@ -47,6 +47,10 @@ jobs:
       - name: Run curated test suite
         run: ~/.elan/bin/lake test
 
+      # Runs against a recording stand-in for nvcc, so this needs no CUDA toolkit and no GPU.
+      - name: Check the CUDA compilation target
+        run: LAKE=~/.elan/bin/lake scripts/checks/cuda_arch_target.sh
+
   slow_proofs:
     name: CI (slow proofs)
     runs-on: ubuntu-latest
