@@ -30,7 +30,7 @@ through explicit runtime/rounding bridge statements, not by silently reusing rea
 namespace NN.MLTheory.Proofs.Hopfield
 
 open scoped BigOperators
-open Spec
+open _root_.NN.Spec
 
 open Spec.Hopfield
 

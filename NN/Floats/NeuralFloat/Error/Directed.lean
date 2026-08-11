@@ -85,7 +85,7 @@ theorem relative_error_round_FLX_of_valid (prec : ℤ) (hprec : 0 < prec)
     ErrorBounds.relativeError x
         (@neuralRound β (FLXExp prec) (flxValidExp prec hprec) rnd x) hx ≤
       neuralBpow β (1 - prec) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   unfold ErrorBounds.relativeError
   calc
     abs (neuralRound (β := β) (fexp := FLXExp prec) rnd x - x) / abs x ≤
@@ -99,7 +99,7 @@ theorem neural_round_relative_error_FLX_of_valid (prec : ℤ) (hprec : 0 < prec)
     ∃ δ : ℝ,
       abs δ ≤ neuralBpow β (1 - prec) ∧
       @neuralRound β (FLXExp prec) (flxValidExp prec hprec) rnd x = x * (1 + δ) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   let rounded := neuralRound (β := β) (fexp := FLXExp prec) rnd x
   refine ⟨(rounded - x) / x, ?_, ?_⟩
   · rw [abs_div]

@@ -240,9 +240,24 @@ theorem toReal_roundRatToIEEE32_eq_fp32Round (sign : Bool) (num den : Nat) (hden
                   match Nat.decLe (pow2 23) frac with
                   | isTrue _ => ofBits (mkBits sign 1 0)
                   | isFalse _ => ofBits (mkBits sign 0 frac) := by
-            simp (config := { zeta := true }) [roundRatToIEEE32, hnumbeq, k, hkHi, hkUnder, hkSub,
-              frac]
-            rfl
+            unfold roundRatToIEEE32
+            rw [hnumbeq]
+            simp only [Bool.false_eq_true, if_false]
+            change
+              (if k > 127 then
+                  (if sign then negInf else posInf)
+                else if k < -150 then
+                  (if sign then negZero else posZero)
+                else if k < -126 then
+                  let frac' := roundQuotEven (Nat.shiftLeft num 149) den
+                  if frac' == 0 then
+                    (if sign then negZero else posZero)
+                  else
+                    match Nat.decLe (pow2 23) frac' with
+                    | isTrue _ => ofBits (mkBits sign 1 0)
+                    | isFalse _ => ofBits (mkBits sign 0 frac')
+                else _) = _
+            rw [if_neg hkHi, if_neg hkUnder, if_pos hkSub]
           have hmag :
               TorchLean.Floats.neuralMagnitude binaryRadix x = k + 1 := by
             simpa [x, r, k] using

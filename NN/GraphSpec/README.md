@@ -1,67 +1,28 @@
 # GraphSpec
 
-GraphSpec is the layer between friendly model-building syntax and the low-level IR. It is useful
-when an architecture's parameter layout, sharing structure, and pure semantics should be explicit
-before the model is lowered or executed.
-
-A GraphSpec model has two interpretations:
-
-1. a pure specification semantics in Lean, and
-2. a compiled TorchLean program that can run.
-
-Use the subsystem entrypoint:
+GraphSpec is TorchLean's typed language for neural-network architectures. Parameter shapes, input
+shapes, output shapes, and shared intermediate values are represented in Lean before the model is
+executed.
 
 ```lean
 import NN.GraphSpec
 ```
 
-`NN/IR` is the shared op-tagged graph IR used by runtime compilation and verification. GraphSpec is
-an authoring layer that can feed the broader TorchLean pipeline; it is not a replacement for
-`NN.IR.Graph`.
+TorchLean has three graph-facing interfaces:
 
-The intended reader is someone who wants more structure than `nn.Sequential` but still wants a
-model-level object, not raw IR nodes. This includes residual models, shared subgraphs, architecture
-families with named parameter lists, and examples where the same definition should be read as a
-specification and as executable TorchLean code.
-
-## Where GraphSpec Fits
-
-| Layer | Best for |
+| Interface | Use |
 | --- | --- |
-| `nn.Sequential` | ordinary tutorials and training examples |
-| `GraphSpec` | typed architecture authoring with explicit parameter layout and sharing |
-| `NN.IR.Graph` | op-tagged graph artifacts for verification, widgets, and export |
+| `TorchLean.nn` | direct model construction and training |
+| `NN.GraphSpec` | typed architecture definitions with pure and executable interpretations |
+| `NN.IR.Graph` | op-tagged graph artifacts for verification, export, and runtime tooling |
 
-The layers should not compete. A good workflow often uses all three:
-
-1. write a model with the public API or GraphSpec,
-2. lower it into a runtime or IR artifact,
-3. use the IR artifact for execution traces, bound propagation, certificate replay, or a compiler
-   theorem.
-
-GraphSpec is most valuable when the architecture itself is part of the claim. If all you need is a
-small training example, `nn.Sequential` is simpler. If all you have is an imported artifact, `NN.IR`
-is the right boundary. GraphSpec sits between them: it gives a name to the model family, its
-parameter order, its pure interpretation, and the executable lowering that should agree with that
-interpretation.
-
-## Main Files
-
-| File | Role |
-| --- | --- |
-| `Core.lean` | sequential `Graph` syntax with `>>>` composition |
-| `DAG/Core.lean` | A-normal/SSA-style DAG terms with sharing |
-| `DAG.lean` | DAG primitive constructors |
-| `Primitives.lean` | common primitive packs |
-| `Primitives/Vision.lean` | convolution, pooling, flattening, and image helpers |
-| `Primitives/Embedding.lean` | embedding primitive and theorems |
-| `ToTorchLean.lean` | lowering from the supported sequential subset to `TorchLean.NN.Seq` |
-| `Models/*` | GraphSpec-authored examples |
+GraphSpec is useful for residual connections, recurrent cells, shared subgraphs, explicit parameter
+ABIs, and model families whose architecture is itself part of a theorem.
 
 ## Sequential Graphs
 
-`Graph ps σ τ` represents a chain from input shape `σ` to output shape `τ`, with parameter shapes
-`ps : List Shape` tracked at the type level.
+`Graph ps σ τ` represents a chain from input shape `σ` to output shape `τ`. The list `ps`
+records parameter tensor shapes in ABI order.
 
 ```lean
 import NN.GraphSpec
@@ -77,53 +38,67 @@ def g (inDim hidDim outDim : Nat) :=
 #check GraphSpec.LowerToDAG.Graph.toDAGModelZeroInit (g 4 8 2)
 ```
 
-Sequential graphs are the simplest representation for MLPs and feed-forward pipelines.
+Sequential graphs work well for MLPs and feed-forward pipelines. `>>>` composes layers while the
+type checker verifies adjacent shapes and concatenates parameter lists.
 
-## DAG Models
+## Typed DAGs
 
-`DAG.Term Γ τ` is the internal GraphSpec representation for explicit sharing and skip connections.
-Its environment `Γ` contains parameters followed by data inputs, so the parameter interface stays
-visible in the type.
+The DAG language represents sharing and multi-input operations without storing untyped node
+positions.
 
-DAG models provide:
+- `DAG.Var Γ s` selects a value of shape `s` from environment `Γ`.
+- `DAG.Term Γ s` computes one tensor of shape `s`.
+- `DAG.Args Γ shapes` stores one term for each shape in `shapes`.
+- `DAG.Block Γ outputs` computes several outputs while preserving shared `let1` bindings.
+- `DAG.Model ps ins out` packages parameters, inputs, and one output.
+- `DAG.MultiModel ps ins outs` packages a shared computation with several typed outputs.
 
-| Object | Meaning |
+The shape index on `Var` prevents a variable from being read at the wrong tensor shape. Numeric
+positions are converted through `Var.ofFin` only when a programmatic lowering discovers an index at
+runtime.
+
+`Term.rename`, `Term.substitute`, and `Term.instantiate` provide the usual operations for open
+terms. Their types preserve every tensor shape. `Block.andThen` feeds all outputs of one block into
+another block without duplicating shared intermediates.
+
+## Semantics And Compilation
+
+`Term.eval` and `Block.eval` give pure tensor semantics for any scalar `Context`.
+`Term.compile` and `Block.compile` produce programs for a backend implementing TorchLean's
+runtime operations.
+
+The library proves that:
+
+- evaluation commutes with variable renaming and typed substitution;
+- instantiating a term evaluates as supplying its argument environment;
+- `Block.andThen` evaluates as typed block composition;
+- inlining a `Model` preserves its pure forward function;
+- inlining a `MultiModel` preserves every output and shared intermediate.
+
+These theorems let a large model be assembled from proved blocks. They do not require unfolding the
+entire architecture for every later result.
+
+## Files
+
+| File | Contents |
 | --- | --- |
-| `Term.eval` | pure specification semantics |
-| `Term.compile` | executable TorchLean compilation |
-| `DAG.Model` | packaged parameters, inputs, and body term |
-
-Use DAG terms when a model needs residual connections, multiple inputs, or explicit reuse of an
-intermediate value.
-
-This is the place to represent architecture structure, not runtime state. Optimizer buffers, CUDA
-device buffers, imported checkpoint bytes, and certificate JSON belong to the runtime,
-interop, or verification layers. GraphSpec should describe the typed computation that those later
-artifacts refer to.
-
-## Architecture-Level Boundaries
-
-When a model family is written in GraphSpec, there are several boundaries to keep explicit:
-
-- the parameter ABI: list order, tensor shapes, and which tensors are shared;
-- the pure semantics: what the architecture means over the spec scalar context;
-- the executable lowering: which TorchLean runtime program is produced;
-- the artifact boundary: which IR, JSON, or checker object later refers to this architecture.
-
-This is why GraphSpec is a good home for residual networks, typed blocks, and shared-subgraph
-families. It lets a proof talk about the architecture before a training run or imported checkpoint
-adds runtime data.
+| `Core.lean` | sequential graph syntax and composition |
+| `DAG/Core.lean` | typed variables, terms, blocks, substitutions, semantics, and compilation |
+| `DAG/Term.lean` | reusable term combinators |
+| `DAG/Primitives/Core.lean` | primitive operation interface and basic operations |
+| `DAG/Primitives/LinearAlgebra.lean` | matrix and batched linear algebra |
+| `DAG/Primitives/Nonlinear.lean` | activations and elementwise nonlinearities |
+| `DAG/Primitives/Normalization.lean` | normalization operations |
+| `DAG/Primitives/Shape.lean` | reshape, broadcast, concat, slicing, and axis operations |
+| `ToTorchLean.lean` | lowering of the supported sequential subset |
+| `Models/` | MLP, CNN, residual, and TorchLean lowering examples |
 
 ## Adding A Primitive
 
-A primitive must provide both a pure meaning and an executable TorchLean meaning.
-
-For unary sequential layers, define a `Primitive ps σ τ`:
+A primitive supplies a pure tensor function and an executable TorchLean program:
 
 ```lean
-namespace NN
-namespace GraphSpec
-namespace Primitive
+namespace NN.GraphSpec.Primitive
 
 open Spec
 open Tensor
@@ -137,54 +112,25 @@ def myOp (s : Shape) : Primitive [] s s :=
     toLayerDefM? := none
     countsAsLayer := false }
 
-end Primitive
-end GraphSpec
-end NN
+end NN.GraphSpec.Primitive
 ```
 
-If the same unary primitive is needed inside DAG syntax, embed it through:
+Unary sequential primitives can be embedded in DAG syntax with
+`LowerToDAG.Primitive.toDAGPrimOp`. A genuinely multi-input operation should define a
+`DAG.PrimOp inputs output` directly.
 
-```lean
-LowerToDAG.Primitive.toDAGPrimOp
-```
+Add semantic lemmas next to the primitive. Model-specific proofs can then simplify through the
+primitive interface rather than unfold its implementation.
 
-For true multi-input operations, define a `DAG.PrimOp ins τ` directly in `DAG.lean`.
+## Runtime Data
 
-## Proof Pattern
-
-GraphSpec proofs compare the interpreter with an existing specification:
-
-1. choose a compact model, such as an MLP or residual block;
-2. state equality between `Interp.spec` or `DAG.Term.eval` and the reference forward function;
-3. unfold the GraphSpec syntax and simplify with a focused simp set;
-4. use the model-specific tensor lemmas for the remaining arithmetic.
-
-See `NN/GraphSpec/Models/MlpSpecEquivalence.lean` for the smallest version of this pattern.
-
-For a larger model, the same proof pattern should scale by proving facts about named primitives and
-blocks first. The goal is not to unfold an entire architecture by hand every time; it is to make
-model-family facts reusable, so later verification or export code can cite the architecture theorem
-instead of re-deriving the shape and semantic story.
-
-## What GraphSpec Can Support
-
-GraphSpec is useful evidence when a claim needs an architecture-level statement:
-
-- the parameter list has a specific shape and order,
-- a residual connection really reuses the intended intermediate,
-- a model family lowers to executable TorchLean code,
-- a pure interpreter agrees with a reference spec for a compact architecture,
-- the later IR/export/checker path is attached to a named model structure.
-
-Robustness, native-runtime agreement, and checkpoint provenance are later claims. GraphSpec gives
-those layers a named architecture, parameter ABI, and pure semantics to cite; verification, runtime,
-and trust-boundary modules then state the additional assumptions or checks needed for the full
-claim.
+GraphSpec records architecture and parameter order. Optimizer state, device buffers, checkpoint
+bytes, imported weights, and certificate files belong to the runtime, interoperability, or
+verification modules. `NN.IR.Graph` is the lower-level artifact used when a verifier or exporter
+needs an op-tagged graph.
 
 ## References
 
-- ResNets / skip connections: He et al. (2016), "Deep Residual Learning for Image Recognition".
-- SSA form: Cytron et al. (1991), "Efficiently Computing Static Single Assignment Form".
-- Automatic differentiation: Baydin et al. (2018), "Automatic Differentiation in Machine Learning:
-  a Survey".
-- PyTorch architecture references: `torch.nn.Sequential` and `torch.fx`.
+- Kaiming He et al., [Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385), 2016.
+- Ron Cytron et al., [Efficiently Computing Static Single Assignment Form and the Control Dependence Graph](https://doi.org/10.1145/115372.115320), 1991.
+- Atılım Güneş Baydin et al., [Automatic Differentiation in Machine Learning: a Survey](https://jmlr.org/papers/v18/17-468.html), 2018.

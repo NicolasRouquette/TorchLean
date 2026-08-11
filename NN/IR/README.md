@@ -16,17 +16,16 @@ import NN.IR.Graph
 import NN.IR.Semantics
 ```
 
-There is intentionally no extra top-level `NN.IR` umbrella. Use `NN` for the broad library import,
-`NN.IR` for the IR subsystem, and the individual `NN.IR.*` files when a module needs a
-precise internal dependency.
+`NN/IR.lean` is the subsystem umbrella imported by `NN.IR`. Internal modules should import the
+smallest `NN.IR.*` dependency they need.
 
-## What Belongs Here
+## Directory Layout
 
 - `Graph.lean`: graph syntax, node ids, op tags, arity conventions, and topological well formedness.
 - `OpContracts.lean`: shared shape arithmetic for ops such as concat, matmul, pooling, conv, and
   axis-moving utilities. Concat rank checks and leading-axis output inference are list-indexed
   rather than duplicated by parent count.
-- `Infer.lean`: the single source of truth for declared-output-shape validation.
+- `Infer.lean`: canonical declared-output-shape validation.
 - `Check.lean`: public validation wrappers and proposition-level `WellFormed` / `WellShaped` names.
 - `Semantics.lean`: denotational evaluator into spec-layer tensor operations with explicit payloads,
   including the checked `Graph.expectLeadingAxisInput` boundary used by list-indexed concat, plus

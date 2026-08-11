@@ -318,8 +318,7 @@ explicit absolute and relative tolerances.
 
 A host timer does not automatically measure asynchronous device work. The TorchLean integration
 can wait for device completion before closing a span; that number is completion latency, not
-per-kernel CUDA or CUPTI time. The distinction matters when a short host call merely queues a long
-GPU operation.
+per-kernel CUDA or CUPTI time. A short host call may merely queue a much longer GPU operation.
 
 # External Oracles And Certificates
 

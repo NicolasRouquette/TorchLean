@@ -14,7 +14,7 @@ import NN.Examples.ModelZoo
 /-!
 # PyTorch Round-Trip Driver
 
-This module is the single source of truth for the state-dict round-trip examples.
+This module assembles the state-dict round-trip examples.
 
 It does **not** re-implement model math. Instead it wires together the existing:
 

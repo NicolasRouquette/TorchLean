@@ -68,6 +68,18 @@ def splitAppend {α : Type} : {ss₁ ss₂ : List Spec.Shape} →
       let (xs₁, xs₂) := splitAppend (α := α) (ss₁ := ss₁) (ss₂ := ss₂) xs
       (.cons x xs₁, xs₂)
 
+/-- Splitting a concatenated typed list recovers its two inputs. -/
+@[simp] theorem splitAppend_append {α : Type} {ss₁ ss₂ : List Spec.Shape}
+    (xs : TList α ss₁) (ys : TList α ss₂) :
+    splitAppend (append xs ys) = (xs, ys) := by
+  induction ss₁ with
+  | nil => cases xs; rfl
+  | cons shape rest ih =>
+      cases xs with
+      | cons x xs =>
+          simp only [append, splitAppend]
+          rw [ih xs]
+
 end Proofs.Autograd.Algebra.TList
 
 namespace Runtime

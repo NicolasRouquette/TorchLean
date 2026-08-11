@@ -50,7 +50,7 @@ lake exe torchlean ppo_gridworld --device cpu \
 The current checkout produces:
 
 ```
-[TorchLean] dtype: Float (Lean `Float`, trusted runtime semantics)
+[TorchLean] dtype: Float (Lean binary64; native execution boundary)
 [TorchLean] backend: Runtime.Autograd.Torch.Backend.eager
 [TorchLean] device: cpu
 torchlean ppo_gridworld: PPO on Lean-native GridWorld (4x4, horizon=64) (device=cpu)

@@ -48,7 +48,7 @@ namespace NN
 namespace GraphSpec
 namespace Models
 
-open Spec
+open _root_.NN.Spec
 open NN.Tensor
 
 /-! ### Conv/pool output size helpers -/

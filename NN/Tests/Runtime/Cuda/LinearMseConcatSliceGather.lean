@@ -24,8 +24,6 @@ Small forward/backward comparisons (CPU tape vs CUDA tape) for:
 
 @[expose] public section
 
-set_option maxRecDepth 2048
-
 namespace Tests
 namespace Cuda
 namespace LinearMseConcatSliceGather

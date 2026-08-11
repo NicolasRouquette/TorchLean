@@ -18,8 +18,8 @@ combines SMAP (Soil Moisture Active Passive) and NISAR (NASA–ISRO Synthetic
 Aperture Radar) observations through the AVS (Attenuation–Volume–Surface) model,
 whose surface term is $\exp(-2b\,\mathrm{NDVI})\,c\,|R|^2$.
 
-The point is that these ops are differentiated by the **autograd engine**, so a
-forward model written once yields its gradient with no hand-coded derivative.
+These operations are differentiated by the **autograd engine**, so a forward model written once
+yields its gradient without a hand-coded derivative.
 This file has two layers:
 
 * a proof layer handle for the real-valued `exp` op, using
@@ -30,7 +30,7 @@ This file has two layers:
 
 The runtime checks below are not the proof. They make sure the executable tape path used by
 scientific examples still follows the expected derivative numerically. The proof layer declarations
-show where the corresponding theorem-backed op-spec story lives.
+state the corresponding operation specifications and derivative theorems.
 
 Each runtime check differentiates a tiny function and compares the autograd gradient to the closed
 form:
@@ -51,7 +51,6 @@ autograd uses the native tape externs, which the interpreter cannot load (see th
 
 namespace NN.Examples.Functional.Transcendentals
 
-open Spec
 open Spec.Tensor
 open NN.Tensor
 open TorchLean

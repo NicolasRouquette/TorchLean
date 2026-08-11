@@ -267,7 +267,7 @@ theorem alphaBetaCrown_transfer_sound
                                     exact Subsingleton.elim _ _
                                   have := (castDimScalar_trans (h₁ := hdn.symm) (h₂ := hout) (t :=
                                     vp.v)).symm
-                                  simpa [zXin, z, htrans] using this
+                                  simp [zXin, z] at this ⊢
                                 let lAff : Tensor ℝ (.dim preB.dim .scalar) :=
                                   affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := preB.dim)
                                     xLo x'

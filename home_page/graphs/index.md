@@ -7,8 +7,8 @@ title: Graphs
   <a class="secondary-link" href="{{ '/performance/' | relative_url }}">View build performance</a>
 </div>
 
-This page shows the Lean import graph. Search for a module to see what it imports, what imports it,
-and how far a change can travel through the source tree.
+Search the Lean import graph by module name to inspect its dependencies, reverse dependencies, and
+the part of the source tree affected by a change.
 
 <div class="dep-dashboard" id="dep-dashboard">
   <section class="dep-panel dep-summary graph-overview">

@@ -55,7 +55,6 @@ References:
 
 namespace NN.Examples.BugZoo.AttentionMask
 
-open Spec
 open Spec.Tensor
 
 /-- Exact extended-real masked logit: allowed entries keep their real score, blocked entries are

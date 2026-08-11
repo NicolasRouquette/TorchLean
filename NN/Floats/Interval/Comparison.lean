@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import Init.Data.Float32
+public import Init.Data.Float.Float32
 public import Init.Data.Rat
 public import NN.Floats.Interval.IEEEExec32
 

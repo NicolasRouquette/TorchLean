@@ -2,7 +2,7 @@ import VersoManual
 
 open Verso.Genre Manual
 
-#doc (Manual) "Why Running The Model Is Not The Whole Story" =>
+#doc (Manual) "Why Execution Alone Is Not Enough" =>
 %%%
 tag := "motivation"
 %%%

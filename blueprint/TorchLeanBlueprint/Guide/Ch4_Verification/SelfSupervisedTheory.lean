@@ -307,8 +307,8 @@ theorems do not need to be reproved.
 
 The maintained `mae` application is one such runtime neighbor, but not yet that bridge: it performs
 deterministic patch masking and Float reconstruction training. Its mask construction, tensor
-reduction, and stopped-gradient choices must be related explicitly to `maskedLoss` before the exact
-list identities on this page become theorems about that command.
+reduction, and stopped-gradient choices must be related explicitly to `maskedLoss` before applying
+these exact list identities to that command.
 
 The objective shapes are motivated by MAE (He et al.), VICReg (Bardes, Ponce, and LeCun), Barlow
 Twins (Zbontar et al.), and joint-embedding predictive architectures. The Lean statements are

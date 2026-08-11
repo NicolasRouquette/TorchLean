@@ -26,7 +26,7 @@ public import NN.Floats.IEEEExec.Bridge.ERealTotal
 public import NN.Floats.IEEEExec.Bridge.FP32
 public import NN.Floats.IEEEExec.Bridge.Expressions
 public import NN.Floats.IEEEExec.Bridge.FP32Total
-public import NN.Floats.IEEEExec.Bridge.RuntimeFloat32
+public import NN.Floats.IEEEExec.Bridge.LeanFloat32
 public import NN.Floats.IEEEExec.DirectedRoundingSoundness
 public import NN.Floats.IEEEExec.Semantics.ERealSemantics
 public import NN.Floats.IEEEExec.Exec32

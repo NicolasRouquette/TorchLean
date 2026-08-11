@@ -81,17 +81,11 @@ We use this for small exponent-range arguments (e.g. `2^23 ≤ 2^24`) without im
 monotonicity machinery.
 -/
 lemma pow2_le_pow2_succ (k : Nat) : pow2 k ≤ pow2 (k + 1) := by
-  -- `pow2 (k+1) = 2 * pow2 k` by the shift-left recursion.
-  simpa [pow2, Nat.shiftLeft_succ] using
-    (Nat.le_mul_of_pos_left (pow2 k) (by decide : 0 < 2))
+  simp [pow2, Nat.shiftLeft_succ]
 
 /-- Strict growth of `pow2`: `pow2 k < pow2 (k+1)`. -/
 lemma pow2_lt_pow2_succ (k : Nat) : pow2 k < pow2 (k + 1) := by
-  have hkpos : 0 < pow2 k := pow2_pos k
-  have h' : 1 * pow2 k < 2 * pow2 k :=
-    Nat.mul_lt_mul_of_pos_right (by decide : (1 : Nat) < 2) hkpos
-  -- `1 * pow2 k = pow2 k` and `pow2 (k+1) = 2 * pow2 k`.
-  simpa [pow2, Nat.shiftLeft_succ] using h'
+  simp [pow2, Nat.shiftLeft_succ]
 
 lemma pow2_add (a b : Nat) : pow2 (a + b) = pow2 a * pow2 b := by
   -- `pow2 k = 2^k`, so this is `2^(a+b) = 2^a * 2^b`.
@@ -1205,7 +1199,6 @@ theorem toEReal_roundDyadicPosUp_ge (mant : Nat) (exp : Int) (hm : mant ≠ 0) :
               rw [if_neg hkHiNot]
               rw [if_neg hkUnder'']
               rw [if_neg hkNorm]
-              simp (config := { zeta := true }) [m24, k', m24']
               rw [if_pos hkHi2_expanded]
           have hE : toEReal (posInf : IEEE32Exec) = (⊤ : EReal) := by
             simp
@@ -1687,8 +1680,6 @@ theorem toEReal_roundDyadicPosUp_ge (mant : Nat) (exp : Int) (hm : mant ≠ 0) :
               rw [if_neg hkHiNot]
               rw [if_neg hkUnder'']
               rw [if_neg hkNorm]
-              -- Unfold `m24/k'/m24'` and then discharge the overflow guard in its expanded form.
-              simp (config := { zeta := true }) [m24, k', m24']
               rw [if_neg hkHi2_guard]
             simp (config := { zeta := true }) [expNat, frac, k', m24', m24, hk, log2m]
           simpa [hOut] using hle_final

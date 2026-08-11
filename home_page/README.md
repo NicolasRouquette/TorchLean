@@ -11,8 +11,7 @@ public site:
 - CI timing history under `/performance/`
 - Status/update notes under `/updates/`
 
-The source of truth is split deliberately. Edit the source that owns the idea, then rebuild the
-generated output.
+Each generated page has an owning source. Edit that source, then rebuild the generated output.
 
 The Tools directory is maintained in `home_page/tools/index.md`. Its links should point to the
 documentation owned by each companion repository rather than copying those manuals into this site.

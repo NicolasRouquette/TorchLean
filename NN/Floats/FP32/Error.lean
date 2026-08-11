@@ -23,8 +23,8 @@ We collect those lemmas for TorchLean’s `FP32` model:
 - each primitive op is interpreted as “compute in `ℝ`, then round to the binary32 grid”, and
 - the rounding step has a standard **half-ULP** absolute error bound.
 
-This mirrors the standard mental model behind PyTorch/IEEE float analysis (even though our proof
-backend is not a bit-level model): it’s the classic “real computation + rounding error” split.
+This is the standard real-computation-plus-rounding-error model used in numerical analysis. It is
+not a bit-level IEEE execution model.
 
 The pattern is always:
 
@@ -114,7 +114,7 @@ theorem add_residual_isRepresentable (a b : FP32)
     (ha : NF.IsRepresentable a) (hb : NF.IsRepresentable b) :
     neuralGenericFormat binaryRadix fexp32
       ((a + b).val - (a.val + b.val)) := by
-  letI : NeuralMonotoneExp fexp32 := fltMonotoneExp (-149) 24
+  let _ : NeuralMonotoneExp fexp32 := fltMonotoneExp (-149) 24
   simpa [HAdd.hAdd, Add.add, NF.ofReal, NF.roundR, rnd32] using
     (neural_add_round_error_generic (β := binaryRadix) (fexp := fexp32) ha hb)
 

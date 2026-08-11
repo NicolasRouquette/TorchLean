@@ -100,5 +100,28 @@ lemma roundQuotEven_le_div_add1 (num den : Nat) :
   · simp [hq, q]
   · simp [hq, q]
 
+/-- A nonnegative rational strictly below one half rounds to zero. -/
+theorem roundQuotEven_eq_zero_of_two_mul_lt
+    (num den : Nat) (h : 2 * num < den) :
+    roundQuotEven num den = 0 := by
+  have hnum : num < den := by grind
+  simp [roundQuotEven, Nat.div_eq_of_lt hnum, Nat.mod_eq_of_lt hnum, h]
+
+/-- A rational lower bound is inherited by its nearest-even integer rounding. -/
+theorem le_roundQuotEven_of_mul_le
+    (num den lower : Nat) (hden : den ≠ 0) (h : lower * den ≤ num) :
+    lower ≤ roundQuotEven num den := by
+  have hdenPos : 0 < den := Nat.pos_of_ne_zero hden
+  have hfloor : lower ≤ num / den := (Nat.le_div_iff_mul_le hdenPos).2 h
+  exact hfloor.trans (div_le_roundQuotEven num den)
+
+/-- A strict rational upper bound is a weak upper bound after nearest-even rounding. -/
+theorem roundQuotEven_le_of_lt_mul
+    (num den upper : Nat) (hden : den ≠ 0) (h : num < upper * den) :
+    roundQuotEven num den ≤ upper := by
+  have hdenPos : 0 < den := Nat.pos_of_ne_zero hden
+  have hfloor : num / den < upper := (Nat.div_lt_iff_lt_mul hdenPos).2 h
+  exact (roundQuotEven_le_div_add1 num den).trans (by grind)
+
 end IEEE32Exec
 end TorchLean.Floats.IEEE754

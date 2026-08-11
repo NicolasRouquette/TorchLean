@@ -54,8 +54,8 @@ theorem neural_generic_format_FLX_mono {coarsePrec finePrec : ℤ}
     (hx : @neuralGenericFormat β (FLXExp coarsePrec)
       (flxValidExp coarsePrec hcoarse) x) :
     @neuralGenericFormat β (FLXExp finePrec) (flxValidExp finePrec hfine) x := by
-  letI : NeuralValidExp (FLXExp coarsePrec) := flxValidExp coarsePrec hcoarse
-  letI : NeuralValidExp (FLXExp finePrec) := flxValidExp finePrec hfine
+  let _ : NeuralValidExp (FLXExp coarsePrec) := flxValidExp coarsePrec hcoarse
+  let _ : NeuralValidExp (FLXExp finePrec) := flxValidExp finePrec hfine
   apply neural_generic_inclusion (fexp₁ := FLXExp coarsePrec) (fexp₂ := FLXExp finePrec)
   · intro e
     simp [FLXExp]
@@ -72,8 +72,8 @@ theorem neuralRound_floor_double_FLX {coarsePrec finePrec : ℤ}
           neuralFloorRound x) =
       @neuralRound β (FLXExp coarsePrec) (flxValidExp coarsePrec hcoarse)
         neuralFloorRound x := by
-  letI : NeuralValidExp (FLXExp coarsePrec) := flxValidExp coarsePrec hcoarse
-  letI : NeuralValidExp (FLXExp finePrec) := flxValidExp finePrec hfine
+  let _ : NeuralValidExp (FLXExp coarsePrec) := flxValidExp coarsePrec hcoarse
+  let _ : NeuralValidExp (FLXExp finePrec) := flxValidExp finePrec hfine
   let fineValue := @neuralRound β (FLXExp finePrec) (flxValidExp finePrec hfine)
     neuralFloorRound x
   let coarseValue := @neuralRound β (FLXExp coarsePrec) (flxValidExp coarsePrec hcoarse)
@@ -99,8 +99,8 @@ theorem neuralRound_ceil_double_FLX {coarsePrec finePrec : ℤ}
           neuralCeilRound x) =
       @neuralRound β (FLXExp coarsePrec) (flxValidExp coarsePrec hcoarse)
         neuralCeilRound x := by
-  letI : NeuralValidExp (FLXExp coarsePrec) := flxValidExp coarsePrec hcoarse
-  letI : NeuralValidExp (FLXExp finePrec) := flxValidExp finePrec hfine
+  let _ : NeuralValidExp (FLXExp coarsePrec) := flxValidExp coarsePrec hcoarse
+  let _ : NeuralValidExp (FLXExp finePrec) := flxValidExp finePrec hfine
   let fineValue := @neuralRound β (FLXExp finePrec) (flxValidExp finePrec hfine)
     neuralCeilRound x
   let coarseValue := @neuralRound β (FLXExp coarsePrec) (flxValidExp coarsePrec hcoarse)

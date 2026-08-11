@@ -19,8 +19,8 @@ There are two validation levels:
 - `Graph.checkShapes` lives here and checks the declared `Node.outShape`s against the shared shape
   inference rules from `NN.IR.Infer`.
 
-Shape logic has **one source of truth**: `Infer.inferNodeOutShape` states the per-op shape rules,
-and `Graph.checkShapes` validates graph nodes through those rules.
+`Infer.inferNodeOutShape` states the per-operation shape rules, and `Graph.checkShapes` validates
+graph nodes through those rules.
 -/
 
 @[expose] public section

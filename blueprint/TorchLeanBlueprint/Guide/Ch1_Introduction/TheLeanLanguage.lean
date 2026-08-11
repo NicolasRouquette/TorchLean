@@ -12,8 +12,8 @@ training entry points are `IO` programs, and proofs are terms checked by Lean's 
 need to learn all of Lean before running a model, but a few language ideas make the rest of this
 guide much easier to read.
 
-This chapter is a working primer. Put the snippets in a file named `Primer.lean` at the TorchLean
-repository root and run:
+You can run every snippet below from a file named `Primer.lean` at the TorchLean repository
+root:
 
 ```
 lake env lean Primer.lean
@@ -57,7 +57,7 @@ Trainer.new ... : Trainer.Handle σ τ
 ```
 
 The full output contains qualified internal names and implicit arguments. That detail is useful when
-debugging, but the second line already tells the main story: a `2 → 4` linear layer is a seeded model
+debugging, but the second line already gives the useful information: a `2 → 4` linear layer is a seeded model
 builder whose input and output shapes occur in its type.
 
 # Definitions Compute
@@ -298,10 +298,10 @@ theorem hasOneOutput : HasOneOutput := by
 Here `rfl` works because the two definitions reduce to the same natural number. When Lean accepts
 `hasOneOutput`, the kernel has checked a proof of exactly `outputWidth = 1`.
 
-This distinction scales to verification. An interval pass computes a candidate output box. A
-predicate says that the box contains every semantic output. A soundness theorem proves the
-implication under its stated assumptions. Running the pass and proving its soundness are related
-activities, but they are not the same declaration.
+The same separation appears in verification. An interval pass computes a candidate output box. A
+predicate states that the box contains every semantic output, and a soundness theorem proves that
+statement under explicit assumptions. Running the pass produces data; the theorem explains what
+accepting that data establishes.
 
 # Effects Appear In The Result Type
 

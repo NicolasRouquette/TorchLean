@@ -197,7 +197,7 @@ lemma ibp_sin_sound_real {n : Nat} (xB : Box ℝ (.dim n .scalar)) (x : Tensor �
                     Real.sin v ≤ Real.sin ((l + u) / 2) + (u - l) / 2 := by
                   dsimp [m, r] at hmidHi
                   exact hmidHi
-                simp [Tensor.mapSpec, NN.MLTheory.CROWN.Box.contains,
+                simp [NN.MLTheory.CROWN.Box.contains,
                   MathFunctions.sin, Numbers.neg_one, Numbers.one, Numbers.two,
                   Context.neg_one, Context.two, One.one,
                   hL, hU, hX]
@@ -262,7 +262,7 @@ lemma ibp_cos_sound_real {n : Nat} (xB : Box ℝ (.dim n .scalar)) (x : Tensor �
                     Real.cos v ≤ Real.cos ((l + u) / 2) + (u - l) / 2 := by
                   dsimp [m, r] at hmidHi
                   exact hmidHi
-                simp [Tensor.mapSpec, NN.MLTheory.CROWN.Box.contains,
+                simp [NN.MLTheory.CROWN.Box.contains,
                   MathFunctions.cos, Numbers.neg_one, Numbers.one, Numbers.two,
                   Context.neg_one, Context.two, One.one,
                   hL, hU, hX]

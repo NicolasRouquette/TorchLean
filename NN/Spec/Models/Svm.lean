@@ -13,7 +13,7 @@ public import NN.Spec.Core.TensorReductionShape
 
 This file provides a small **linear SVM** baseline with explicit gradients.
 
-PyTorch mental model:
+PyTorch analogue:
 
 - scoring function: `score = X @ w + b` (like `nn.Linear(p, 1)` without an activation),
 - loss: hinge loss on signed labels `y ∈ {−1, +1}`:

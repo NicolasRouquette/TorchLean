@@ -276,9 +276,13 @@ private lemma conv_input_val_eq_padded
           getAtOrZero layer.bias [out_ch.val] := by
     classical
     unfold Spec.conv2dSpec
+    have hi : i.val < Shape.slidingWindowOutDim inH kH stride padding := by
+      simpa [conv2dOutH] using i.isLt
+    have hj : j.val < Shape.slidingWindowOutDim inW kW stride padding := by
+      simpa [conv2dOutW] using j.isLt
     -- The output indices are in bounds for the shared totalized window shape by construction.
     simp [conv2dOutH, conv2dOutW, Spec.get_at_or_zero_dim_cons, Spec.get_at_or_zero_scalar_nil,
-      out_ch.isLt]
+      out_ch.isLt, hi, hj]
     rfl
 
 -- ---------------------------------------------------------------------------

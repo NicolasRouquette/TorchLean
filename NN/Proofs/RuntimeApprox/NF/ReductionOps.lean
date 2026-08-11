@@ -64,14 +64,10 @@ private lemma reduce_sum_by_row_get
       Tensor.scalar (sumSpec (α := α) (s := .dim n .scalar) (getAtSpec x i)) := by
   cases x with
   | dim rows =>
-      cases hRed with
-      | tail hRed' =>
-          cases h : rows i with
-          | dim slices =>
-              aesop (add simp [Spec.Tensor.reduceSum, Spec.Tensor.reduceDim,
-                Spec.Tensor.reduceDim.aux,
-                Spec.Tensor.reduceFirstDim, Spec.Tensor.shapeAfterSum, getAtSpec, sumSpec, h,
-                hRed', tensorFoldlSpec])
+      cases hRed
+      change Spec.Tensor.reduceFirstDim (fun {s} t => sumSpec (s := s) t) (rows i) = _
+      cases hrow : rows i
+      simp [hrow, getAtSpec, Spec.Tensor.reduceFirstDim, sumSpec, tensorFoldlSpec]
 
 private lemma reduce_mean_by_row_get
     {α : Type} [Context α]
@@ -82,16 +78,11 @@ private lemma reduce_mean_by_row_get
       Tensor.scalar (sumSpec (α := α) (s := .dim n .scalar) (getAtSpec x i) / (n : α)) := by
   cases x with
   | dim rows =>
-      cases hRed with
-      | tail hRed' =>
-          cases h : rows i with
-          | dim slices =>
-              aesop (add simp [Spec.Tensor.reduceMean, Spec.Tensor.reduceSum,
-                Spec.Tensor.reduceDim,
-                Spec.Tensor.reduceDim.aux, Spec.Tensor.reduceFirstDim,
-                  Spec.Tensor.shapeAfterSum,
-                Spec.Tensor.getDimSize, getAtSpec, sumSpec, mapSpec, h, hRed',
-                  tensorFoldlSpec])
+      cases hRed
+      change mapSpec (fun x => x / (n : α))
+        (Spec.Tensor.reduceFirstDim (fun {s} t => sumSpec (s := s) t) (rows i)) = _
+      cases hrow : rows i
+      simp [hrow, getAtSpec, Spec.Tensor.reduceFirstDim, sumSpec, tensorFoldlSpec]
 
 private lemma reduce_sum_by_column_get
     {α : Type} [Add α] [Zero α]
@@ -101,11 +92,9 @@ private lemma reduce_sum_by_column_get
       | Tensor.dim f => f j) =
       Tensor.scalar (sumSpec (α := α) (s := .dim m .scalar)
         (Tensor.dim (fun i : Fin m => sliceSpec (getAtSpec x i) j))) := by
-  cases x with
-  | dim rows =>
-      simp [Spec.Tensor.reduceSum, Spec.Tensor.reduceDim, Spec.Tensor.reduceDim.aux,
-        Spec.Tensor.reduceFirstDim, Spec.Tensor.shapeAfterSum, getAtSpec, sliceSpec,
-        sumSpec, tensorFoldlSpec]
+  cases x
+  cases hRed
+  rfl
 
 -- ---------------------------------------------------------------------------
 -- Row-wise sum (axis=1) on a 2D tensor
@@ -187,17 +176,12 @@ theorem approxT_reduce_sum_by_row_2d
             (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).2
               (by
               simpa [abs_sub_comm] using this)
-          -- Rewrite the component of `reduce_sum` at axis=1 to the row sum.
-          cases hRed' with
-          | tail hRedTail =>
-              cases hs : xSf i with
-              | dim slicesS =>
-                  cases hr : xRf i with
-                  | dim slicesR =>
-                      simpa [Spec.Tensor.reduceSum, Spec.Tensor.reduceDim,
-                        Spec.Tensor.reduceDim.aux, Spec.Tensor.reduceFirstDim,
-                        Spec.Tensor.shapeAfterSum, getAtSpec, sumSpec, hs, hr, hRedTail,
-                        tensorFoldlSpec] using hScalarApprox
+          have hEqS := reduce_sum_by_row_get (x := Tensor.dim xSf) hRed' i
+          have hEqR := reduce_sum_by_row_get (x := Tensor.dim xRf) hRed' i
+          change _ = Tensor.scalar (sumSpec (xSf i)) at hEqS
+          change _ = Tensor.scalar (sumSpec (xRf i)) at hEqR
+          rw [← hEqS, ← hEqR] at hScalarApprox
+          exact hScalarApprox
 
 -- ---------------------------------------------------------------------------
 -- Row-wise mean (axis=1) on a 2D tensor
@@ -312,42 +296,18 @@ theorem approxT_reduce_mean_by_row_2d
             (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).2
               (by
               simpa [abs_sub_comm] using this)
-          -- Rewrite the component of `reduce_mean` at axis=1.
-          cases hRed' with
-          | tail hRedTail =>
-              cases hs : xSf i with
-              | dim slicesS =>
-                  cases hr : xRf i with
-                  | dim slicesR =>
-                      have hScalarApprox' :
-                          approxT (α := R)
-                            (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
-                            (Tensor.scalar
-                              (tensorFoldlSpec.go (fun x1 x2 : SpecScalar => x1 + x2) n
-                                Shape.scalar (fun i => slicesS i) 0 0 / (n : SpecScalar)))
-                            (Tensor.scalar
-                              (tensorFoldlSpec.go (fun x1 x2 : R => x1 + x2) n
-                                Shape.scalar (fun i => slicesR i) 0 0 / (n : R)))
-                            (linfNorm boundVec) := by
-                        simpa [sumSpec, hs, hr, tensorFoldlSpec] using hScalarApprox
-                      simp [Spec.Tensor.reduceMean, Spec.Tensor.reduceSum,
-                        Spec.Tensor.reduceDim, Spec.Tensor.reduceDim.aux,
-                        Spec.Tensor.reduceFirstDim, Spec.Tensor.shapeAfterSum,
-                        Spec.Tensor.getDimSize, getAtSpec, sumSpec, mapSpec, hs, hr,
-                        tensorFoldlSpec]
-                      change
-                        approxT (α := R)
-                          (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
-                          (Tensor.scalar
-                            (tensorFoldlSpec.go (fun x1 x2 : SpecScalar => x1 + x2) n
-                              Shape.scalar (fun i => slicesS i) 0 0 / (n : SpecScalar)))
-                          (Tensor.scalar
-                            (tensorFoldlSpec.go (fun x1 x2 : R => x1 + x2) n
-                              Shape.scalar (fun i => slicesR i) 0 0 /
-                                TorchLean.Floats.NF.ofReal (β := β) (fexp := fexp) (rnd := rnd)
-                                  (n : ℝ)))
-                          (linfNorm boundVec)
-                      simpa using hScalarApprox'
+          have hEqS :
+              (match Spec.Tensor.reduceMean (α := SpecScalar) 1 (Tensor.dim xSf) hRed' with
+                | Tensor.dim f => f i) =
+                Tensor.scalar (sumSpec (s := .dim n .scalar) (xSf i) / (n : SpecScalar)) :=
+            reduce_mean_by_row_get (x := Tensor.dim xSf) hRed' i
+          have hEqR :
+              (match Spec.Tensor.reduceMean (α := R) 1 (Tensor.dim xRf) hRed' with
+                | Tensor.dim f => f i) =
+                Tensor.scalar (sumSpec (s := .dim n .scalar) (xRf i) / (n : R)) :=
+            reduce_mean_by_row_get (x := Tensor.dim xRf) hRed' i
+          rw [← hEqS, ← hEqR] at hScalarApprox
+          exact hScalarApprox
 
 -- ---------------------------------------------------------------------------
 -- Column-wise sum (axis=0) on a 2D tensor

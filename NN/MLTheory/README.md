@@ -14,7 +14,7 @@ import NN.MLTheory.API
 Most users should not need to import individual theory files directly. The subdirectories are still
 public Lean modules, but they are organized by proof topic rather than by beginner-facing API.
 
-## How To Read This Layer
+## Definitions, Checkers, And Theorems
 
 TorchLean separates three kinds of evidence.
 
@@ -127,7 +127,7 @@ The ridge-regression bridge is deliberately local. It relates a small executable
 a semantics that rounds after each primitive, under finiteness assumptions. Broader `Float` or CUDA
 claims should point to the runtime bridge or trust boundary used for that execution path.
 
-## What Belongs Here
+## Adding Theory
 
 Add a file to `NN/MLTheory` when the main object is a mathematical statement or proof interface.
 Add it somewhere else when the main object is:

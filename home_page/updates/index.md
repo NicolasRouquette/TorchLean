@@ -3,6 +3,7 @@ title: Updates
 ---
 
 <nav class="timeline-nav" aria-label="TorchLean update timeline">
+  <a href="#august-2026-lean-433">Lean 4.33</a>
   <a href="#august-2026-autograd-cuda">August 2026</a>
   <a href="#july-2026-refactor">July 2026</a>
   <a href="#june-2026-reliability">June 2026 reliability</a>
@@ -15,6 +16,34 @@ title: Updates
 </nav>
 
 <div class="updates-timeline">
+
+<article class="update-card" id="august-2026-lean-433" markdown="1">
+  <div class="update-date">August 2026</div>
+  <div class="update-body" markdown="1">
+
+## Lean 4.33
+
+TorchLean now builds on Lean and mathlib 4.33. The migration touched dependent tensor casts,
+autograd derivative proofs, graph evaluation, CROWN certificates, and the documentation toolchain.
+The full library builds without compiler warnings on the new toolchain.
+
+Lean's `Float32.Model` exposes the logical definitions of core binary32 operations. TorchLean now
+proves agreement between that model and its independent raw-bit `IEEE32Exec` implementation for
+classification, comparison, addition, subtraction, multiplication, division, square root,
+negation, and absolute value. The arithmetic proofs cover normal and subnormal inputs, signed zeros,
+infinities, NaNs, underflow, overflow, and nearest-even rounding. NaN results are canonicalized
+before their bits are compared because the models retain different payload information.
+
+Compiler lowering, processors, CUDA, cuBLAS, and LibTorch retain their own backend contracts.
+Transcendental `Float32` functions also remain outside the core logical model.
+
+The logical model is part of
+[Lean 4.33](https://lean-lang.org/doc/reference/latest/releases/v4.33.0/), and its binary32
+implementation is available in
+[`Init.Data.Float.Model.Float32`](https://github.com/leanprover/lean4/blob/v4.33.0/src/lean/Init/Data/Float/Model/Float32.lean).
+
+  </div>
+</article>
 
 <article class="update-card" id="august-2026-autograd-cuda" markdown="1">
   <div class="update-date">August 2026</div>
@@ -635,8 +664,8 @@ steps, logging, and checkpoint-style parameter files.
   <section>
     <h3>Initialization</h3>
     <p>
-      Runtime-side Float initializers and shape-indexed initializer plans give parameter bundles a
-      clear construction story: the model declares the parameter shape, the initializer plan selects
+      Runtime-side Float initializers and shape-indexed initializer plans make parameter construction
+      explicit: the model declares the parameter shape, the initializer plan selects
       the distribution or constant, and the runtime builds each tensor once.
     </p>
   </section>

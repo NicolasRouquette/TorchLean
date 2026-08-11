@@ -7,13 +7,13 @@ open Verso.Genre Manual
 tag := "examples"
 %%%
 
-This chapter follows a small model from the first value we can print to an artifact we can check.
-We begin by asking what a tensor contains, then watch derivatives flow, train two deliberately small
+The examples follow a small model from the first printable value to an artifact that Lean can check.
+They begin with tensor contents, then show derivatives, train two deliberately small
 models, lower a graph for verification, and finally replay numerical evidence. The last lab crosses
 an external-tool boundary and shows the limits of what accepting an imported graph establishes.
 
-Run the labs in order the first time. Each keeps the previous objects in view, so a tensor never
-disappears behind the words “training run” and a successful command never silently becomes a proof.
+The labs build on one another, keeping the tensors, graphs, and checked statements explicit at each
+stage.
 
 # Lab One: A Tensor Has A Shape And A Scalar Meaning
 

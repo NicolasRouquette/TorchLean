@@ -41,7 +41,6 @@ the public TorchLean spec terms used by the Python reproducer notes.
 
 namespace NN.Examples.BugZoo.LayerNormDegenerateAxis
 
-open Spec
 open Spec.Tensor
 
 abbrev OneMat (α : Type) := Spec.Tensor α (.dim 1 (.dim 1 .scalar))

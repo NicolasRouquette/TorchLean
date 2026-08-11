@@ -46,7 +46,7 @@ namespace NN
 namespace GraphSpec
 namespace Models
 
-open Spec
+open _root_.NN.Spec
 open Spec.Tensor
 open NN.Tensor
 open NN.GraphSpec.DAG
@@ -81,11 +81,11 @@ def residualLinear (d : Nat) :
   let Γ : List Shape :=
     [.dim d (.dim d .scalar), .dim d .scalar, .dim d .scalar]
   let w : DAG.Term Γ (.dim d (.dim d .scalar)) :=
-    DAG.Term.var (Γ := Γ) ⟨0, by simp [Γ]⟩
+    DAG.Term.var (Γ := Γ) .head
   let b : DAG.Term Γ (.dim d .scalar) :=
-    DAG.Term.var (Γ := Γ) ⟨1, by simp [Γ]⟩
+    DAG.Term.var (Γ := Γ) (.tail .head)
   let x : DAG.Term Γ (.dim d .scalar) :=
-    DAG.Term.var (Γ := Γ) ⟨2, by simp [Γ]⟩
+    DAG.Term.var (Γ := Γ) (.tail (.tail .head))
   let y : DAG.Term Γ (.dim d .scalar) :=
     DAG.Term.op (Γ := Γ) (DAG.PrimOp.linear (inDim := d) (outDim := d))
       (DAG.Args.cons w (DAG.Args.cons b (DAG.Args.cons x (DAG.Args.nil))))
@@ -99,12 +99,12 @@ def residualLinear (d : Nat) :
         let Γ' : List Shape :=
           [.dim d (.dim d .scalar), .dim d .scalar, .dim d .scalar, .dim d .scalar]
         let yv : DAG.Term Γ' (.dim d .scalar) :=
-          DAG.Term.var (Γ := Γ') ⟨3, by simp [Γ']⟩
+          DAG.Term.var (Γ := Γ') (.tail (.tail (.tail .head)))
         let add : DAG.Term Γ' (.dim d .scalar) :=
           DAG.Term.op (Γ := Γ') (DAG.PrimOp.add (s := .dim d .scalar))
             (DAG.Args.cons yv
               (DAG.Args.cons
-                (DAG.Term.var (Γ := Γ') ⟨2, by simp [Γ']⟩)
+                (DAG.Term.var (Γ := Γ') (.tail (.tail .head)))
                 (DAG.Args.nil)))
         DAG.Term.op (Γ := Γ') (DAG.PrimOp.relu (s := .dim d .scalar)) (DAG.Args.cons add
           (DAG.Args.nil))

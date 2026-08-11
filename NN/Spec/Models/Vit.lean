@@ -24,7 +24,7 @@ This is a compact “ViT-style” specification:
 - mean-pool tokens and apply a linear classifier head.
 
 Notes:
-- PyTorch mental model: this corresponds to the core dataflow of `torchvision.models.vit_*`,
+- PyTorch analogue: this corresponds to the core dataflow of `torchvision.models.vit_*`,
   but written without batching: tensors are `(C,H,W)` images and `(T,D)` token sequences.
 - This file provides both mean-pool (`ViTSpec`) and CLS-token (`ViTClsSpec`) variants. The CLS-token
   variant prepends one learnable token before the encoder and pools by taking token `0`.

@@ -29,7 +29,7 @@ References:
 
 namespace NN.Proofs.Models.Attention
 
-open Spec
+open _root_.NN.Spec
 open Spec.Tensor
 
 /-!

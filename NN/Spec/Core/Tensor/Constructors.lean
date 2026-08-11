@@ -44,6 +44,16 @@ def fill {α : Type} (value : α): (s : Shape) → Tensor α s
   | Shape.scalar => Tensor.scalar value
   | Shape.dim _ s' => Tensor.dim (fun _ => fill value s')
 
+/-- Every outer coordinate of a filled tensor is the corresponding filled subtensor. -/
+@[simp] theorem get_fill {α : Type} (value : α) (n : Nat) (s : Shape) (i : Fin n) :
+    get (fill value (.dim n s)) i = fill value s := by
+  rfl
+
+/-- Every coordinate of a filled matrix contains its fill value. -/
+@[simp] theorem get2_fill {α : Type} (value : α) (m n : Nat) (i : Fin m) (j : Fin n) :
+    get2 (fill value (.dim m (.dim n .scalar))) i j = value := by
+  rfl
+
 /-- Scalar constructor (explicit name).
 
 PyTorch analogy: a `0`-dim tensor holding one value.

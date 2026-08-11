@@ -29,7 +29,7 @@ PyTorch analogy:
 
 References:
 - GraphViz DOT language: https://graphviz.org/doc/info/lang.html
-- PyTorch FX (for the mental model of an op-tagged graph): https://pytorch.org/docs/stable/fx.html
+- PyTorch FX (a related op-tagged graph representation): https://pytorch.org/docs/stable/fx.html
 -/
 
 @[expose] public section

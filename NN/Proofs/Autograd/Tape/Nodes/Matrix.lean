@@ -55,6 +55,13 @@ abbrev vecSize (n : Nat) : Nat :=
     -- n)`.
     finProdFinEquiv (i, Fin.cast hn.symm j)
 
+  /-- Casting a column index through `vecSize n = n` leaves its flattened index unchanged. -/
+  private lemma idxMN_cast_vecSize {m n : Nat} (i : Fin m) (j : Fin (vecSize n))
+      (h : vecSize n = n) :
+      idxMN i (Fin.cast h j) = finProdFinEquiv (i, j) := by
+    apply Fin.ext
+    simp [idxMN]
+
   /-- Relate the tensor vectorization `toVecT` to `Spec.get2` at a matrix coordinate. -/
   private lemma toVecT_get2 {m n : Nat} (A : Tensor ℝ (.dim m (.dim n .scalar))) (i : Fin m) (j :
     Fin n) :
@@ -150,15 +157,16 @@ abbrev vecSize (n : Nat) : Nat :=
     classical
     ext ip
     let hp : vecSize n = n := by simp [vecSize, Spec.Shape.size]
-    let i : Fin m := (ip.divNat (m := m) (n := vecSize n))
-    let j' : Fin (vecSize n) := (ip.modNat (m := m) (n := vecSize n))
+    let i : Fin m := ip.divNat (m := m) (n := vecSize n)
+    let j' : Fin (vecSize n) := ip.modNat (m := m) (n := vecSize n)
     let j : Fin n := Fin.cast hp j'
     have hip : idxMN (m := m) (n := n) i j = ip := by
-      have hbase : finProdFinEquiv (i, j') = ip := by
-        simpa [i, j'] using
-          (Equiv.apply_symm_apply (e := (finProdFinEquiv : Fin m × Fin (vecSize n) ≃ Fin (m * vecSize
-            n))) ip)
-      simpa [idxMN, j, hp, matSize, vecSize, Spec.Shape.size] using hbase
+      have hCast : idxMN i j = finProdFinEquiv (i, j') := idxMN_cast_vecSize i j' hp
+      have hPair : finProdFinEquiv (i, j') = ip := by
+        apply Fin.ext
+        change j'.val + vecSize n * i.val = ip.val
+        exact Nat.mod_add_div _ _
+      exact hCast.trans hPair
     -- Convert the LHS via `get2`, use elementwise addition, then convert back.
     have hgetL : toVecT (t := addSpec A B) ip = Spec.get2 (addSpec A B) i j := by
       -- rewrite the index to match `toVecT_get2`
@@ -180,8 +188,8 @@ abbrev vecSize (n : Nat) : Nat :=
 def matmulVec {m n p : Nat} (a : Vec (matSize m n)) (b : Vec (matSize n p)) : Vec (matSize m p) :=
   vecOfFun (n := matSize m p) fun ip =>
     let hp : vecSize p = p := vecSize_eq p
-    let i : Fin m := (ip.divNat (m := m) (n := vecSize p))
-    let k' : Fin (vecSize p) := (ip.modNat (m := m) (n := vecSize p))
+    let i : Fin m := ip.divNat (m := m) (n := vecSize p)
+    let k' : Fin (vecSize p) := ip.modNat (m := m) (n := vecSize p)
     let k : Fin p := Fin.cast hp k'
     ∑ j : Fin n, a (idxMN (m := m) (n := n) i j) * b (idxMN (m := n) (n := p) j k)
 
@@ -189,8 +197,8 @@ def matmulVec {m n p : Nat} (a : Vec (matSize m n)) (b : Vec (matSize n p)) : Ve
     (ip : Fin (matSize m p)) :
     matmulVec (m := m) (n := n) (p := p) a b ip =
       let hp : vecSize p = p := vecSize_eq p
-      let i : Fin m := (ip.divNat (m := m) (n := vecSize p))
-      let k' : Fin (vecSize p) := (ip.modNat (m := m) (n := vecSize p))
+      let i : Fin m := ip.divNat (m := m) (n := vecSize p)
+      let k' : Fin (vecSize p) := ip.modNat (m := m) (n := vecSize p)
       let k : Fin p := Fin.cast hp k'
       ∑ j : Fin n, a (idxMN (m := m) (n := n) i j) * b (idxMN (m := n) (n := p) j k) := by
   simp [matmulVec]
@@ -414,8 +422,8 @@ lemma forward_eq_matmulVec {m n p : Nat} (aV : Vec (matSize m n)) (bV : Vec (mat
   classical
   ext ip
   -- represent `ip` as a row/column pair using `Fin.divNat/modNat` for `m * vecSize p`
-  let i : Fin m := (ip.divNat (m := m) (n := vecSize p))
-  let k' : Fin (vecSize p) := (ip.modNat (m := m) (n := vecSize p))
+  let i : Fin m := ip.divNat (m := m) (n := vecSize p)
+  let k' : Fin (vecSize p) := ip.modNat (m := m) (n := vecSize p)
   let hp : vecSize p = p := by simp [vecSize, Spec.Shape.size]
   let k : Fin p := Fin.cast hp k'
   -- interpret LHS coordinate via `get2` and the matrix entry lemma
@@ -429,11 +437,12 @@ lemma forward_eq_matmulVec {m n p : Nat} (aV : Vec (matSize m n)) (bV : Vec (mat
             (ofVecT (s := .dim n (.dim p .scalar)) bV)) i k := by
     -- rewrite `ip` as the flattened `(i,k)` index
     have hip : idxMN (m := m) (n := p) i k = ip := by
-      have hbase : finProdFinEquiv (i, k') = ip := by
-        simpa [i, k'] using
-          (Equiv.apply_symm_apply (e := (finProdFinEquiv : Fin m × Fin (vecSize p) ≃ Fin (m *
-            vecSize p))) ip)
-      simpa [idxMN, k, hp, matSize, vecSize, Spec.Shape.size] using hbase
+      have hCast : idxMN i k = finProdFinEquiv (i, k') := idxMN_cast_vecSize i k' hp
+      have hPair : finProdFinEquiv (i, k') = ip := by
+        apply Fin.ext
+        change k'.val + vecSize p * i.val = ip.val
+        exact Nat.mod_add_div _ _
+      exact hCast.trans hPair
     rw [←hip]
     exact toVecT_get2
       (A := Spec.matMulSpec (ofVecT (s := .dim m (.dim n .scalar)) aV)
@@ -465,7 +474,7 @@ lemma forward_eq_matmulVec {m n p : Nat} (aV : Vec (matSize m n)) (bV : Vec (mat
     _ = ∑ j : Fin n, aV (idxMN (m := m) (n := n) i j) * bV (idxMN (m := n) (n := p) j k) := by
           simp [hA, hB]
     _ = matmulVec (m := m) (n := n) (p := p) aV bV ip := by
-          simp [matmulVec, i, k, k']
+          rw [matmulVec_apply]
 
 end Matmul
 
@@ -894,12 +903,21 @@ def rowSumCLM {m n : Nat} : Vec (matSize m n) →L[ℝ] Vec m := by
     { toFun := fun x => vecOfFun (n := m) fun i => ∑ j : Fin (vecSize n), x (finProdFinEquiv (i, j))
       map_add' := by
         intro x y
-        ext i
-        simp [vecOfFun, Finset.sum_add_distrib]
+        apply PiLp.ext
+        intro i
+        simp only [vecOfFun_ofLp, WithLp.ofLp_add, Pi.add_apply]
+        rw [← Finset.sum_add_distrib]
+        apply Finset.sum_congr rfl
+        intro j _
+        rfl
       map_smul' := by
         intro a x
-        ext i
-        simp [vecOfFun, Finset.mul_sum, smul_eq_mul] }
+        apply PiLp.ext
+        intro i
+        simp only [vecOfFun_ofLp, WithLp.ofLp_smul, Pi.smul_apply, RingHom.id_apply,
+          smul_eq_mul]
+        rw [Finset.mul_sum]
+        rfl }
   refine { toLinearMap := fLin, cont := ?_ }
   exact LinearMap.continuous_of_finiteDimensional (f := fLin)
 

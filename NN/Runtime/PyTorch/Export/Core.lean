@@ -26,7 +26,7 @@ PyTorch also has *graph capture* / *serialization* mechanisms such as ONNX expor
 Those APIs produce IR-like artifacts intended for execution in other runtimes. TorchLean's exporter
 in this folder emits auditable Python source for parity checks and round-trip tests.
 
-Reading map:
+The public helpers are organized as follows:
 
 - `generatePyTorchImports` / `generatePyTorchHelperModules` provide the shared Python prelude.
 - `generateBasePyTorchModule` is the reusable class skeleton for the example exporters.

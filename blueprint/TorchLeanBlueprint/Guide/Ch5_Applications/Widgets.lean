@@ -92,7 +92,7 @@ Here is the short lookup table; the sections below turn each row into a working 
 # How Widgets Fit Application Workflows
 
 Some values live only while a file elaborates; others are written by a command and inspected later.
-The distinction matters. A graph or tape definition can sit immediately above its view. A GPT or
+A graph or tape definition can sit immediately above its view. A GPT or
 PPO run instead writes a named artifact, which a later Lean file reads:
 
 ```

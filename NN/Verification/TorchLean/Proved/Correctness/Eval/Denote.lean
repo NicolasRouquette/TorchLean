@@ -126,7 +126,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
         -- (doing this case-by-case avoids `simp` timeouts on the full IR evaluator).
         cases node with
         | const wf t =>
-            letI : Shape.WellFormed mid₀ := wf
+            let : Shape.WellFormed mid₀ := wf
             -- Show the const payload is present and evaluates back to `t`.
             let flat : NN.MLTheory.CROWN.Graph.FlatVec α :=
               flatOfTensor (α := α) (s := mid₀) wf t
@@ -183,7 +183,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             simp [hEvalNode]
             exact hEvalAt
         | paramConst wf p =>
-            letI : Shape.WellFormed mid₀ := wf
+            let : Shape.WellFormed mid₀ := wf
             -- Same as `const`, but the stored constant comes from `params`.
             let tp : Tensor α mid₀ := getParam (α := α) (paramShapes := paramShapes) params p
             let flat : NN.MLTheory.CROWN.Graph.FlatVec α :=
@@ -301,10 +301,8 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[xIdx.id]!) = Except.ok tx
                   := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos hx]
-              rfl
+              simpa [tx] using
+                expectShape_eq_ok (expected := mid₀) (v := vals[xIdx.id]!) hx
             have hGetValX :
                 getVal (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) vals xIdx = Except.ok
                   tx := by
@@ -367,18 +365,16 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 NN.IR.Graph.expectShape (α := α)
                     (expected := .dim m (.dim nDim .scalar)) (vals[a.id]!) =
                   Except.ok ta := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos haF]
-              rfl
+              simpa [ta] using
+                expectShape_eq_ok (expected := .dim m (.dim nDim .scalar))
+                  (v := vals[a.id]!) haF
             have hExpectB :
                 NN.IR.Graph.expectShape (α := α)
                     (expected := .dim nDim (.dim p .scalar)) (vals[b.id]!) =
                   Except.ok tb := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos hbF]
-              rfl
+              simpa [tb] using
+                expectShape_eq_ok (expected := .dim nDim (.dim p .scalar))
+                  (v := vals[b.id]!) hbF
             have hGetValA :
                 getVal (α := α) (inShape := inShape) (ss := ss₀)
                     (s := .dim m (.dim nDim .scalar)) vals a =
@@ -438,18 +434,16 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 NN.IR.Graph.expectShape (α := α)
                     (expected := .dim batch (.dim m (.dim nDim .scalar))) (vals[a.id]!) =
                   Except.ok ta := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos haF]
-              rfl
+              simpa [ta] using
+                expectShape_eq_ok (expected := .dim batch (.dim m (.dim nDim .scalar)))
+                  (v := vals[a.id]!) haF
             have hExpectB :
                 NN.IR.Graph.expectShape (α := α)
                     (expected := .dim batch (.dim nDim (.dim p .scalar))) (vals[b.id]!) =
                   Except.ok tb := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos hbF]
-              rfl
+              simpa [tb] using
+                expectShape_eq_ok (expected := .dim batch (.dim nDim (.dim p .scalar)))
+                  (v := vals[b.id]!) hbF
             have hGetValA :
                 getVal (α := α) (inShape := inShape) (ss := ss₀)
                     (s := .dim batch (.dim m (.dim nDim .scalar))) vals a =
@@ -502,10 +496,8 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α) (expected := inS) (vals[xIdx.id]!) = Except.ok tx
                   := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos hxF]
-              rfl
+              simpa [tx] using
+                expectShape_eq_ok (expected := inS) (v := vals[xIdx.id]!) hxF
             have hGetValX :
                 getVal (α := α) (inShape := inShape) (ss := ss₀) (s := inS) vals xIdx = Except.ok tx
                   := by
@@ -551,10 +543,9 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 NN.IR.Graph.expectShape (α := α) (expected := .dim m (.dim nDim rest))
                   (vals[xIdx.id]!) =
                   Except.ok tx := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos hxF]
-              rfl
+              simpa [tx] using
+                expectShape_eq_ok (expected := .dim m (.dim nDim rest))
+                  (v := vals[xIdx.id]!) hxF
             have hGetValX :
                 getVal (α := α) (inShape := inShape) (ss := ss₀) (s := .dim m (.dim nDim rest)) vals
                   xIdx =
@@ -601,10 +592,9 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 NN.IR.Graph.expectShape (α := α)
                     (expected := .dim a (.dim b (.dim c .scalar))) (vals[xIdx.id]!) =
                   Except.ok tx := by
-              unfold NN.IR.Graph.expectShape
-              simp [DVal.shape]
-              rw [dif_pos hxF]
-              rfl
+              simpa [tx] using
+                expectShape_eq_ok (expected := .dim a (.dim b (.dim c .scalar)))
+                  (v := vals[xIdx.id]!) hxF
             have hGetValX :
                 getVal (α := α) (inShape := inShape) (ss := ss₀)
                     (s := .dim a (.dim b (.dim c .scalar))) vals xIdx =
@@ -969,13 +959,45 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               simp [compileNode, res, n]
             have hnOut : n.outShape = .scalar := by
               simp [compileNode, res, n]
-            -- `evalAt` and `evalNode` do the same dynamic check (`yhat.shape = target.shape`) and
-            -- then compute
-            -- the same scalar MSE.
-            simp (config := { zeta := true })
-              [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, NN.IR.Graph.mseLossDVal, hGetNode, hnKind, hnParents, hnOut,
-              evalNode, getDVal?, yV, tV, hSomeY, hSomeT, hy, ht, DVal.shape, DVal.tensor,
-              DVal.mk, Bind.bind, Except.bind, Except.pure, bind, pure, Except.pure, Pure.pure]
+            have hn :
+                n =
+                  ({ id := id
+                     parents := [yhat.id, target.id]
+                     kind := .mseLoss
+                     outShape := .scalar } : NN.IR.Node) := by
+              simp [n, res, compileNode]
+            have hValsSameShape :
+                (vals[yhat.id]!).fst = (vals[target.id]!).fst :=
+              hy.trans ht.symm
+            have hSameShape : yV.shape = tV.shape := by
+              simpa [yV, tV, DVal.shape] using hy.trans ht.symm
+            let yT : Tensor α yV.shape := yV.tensor
+            let tT : Tensor α yV.shape := hSameShape.symm ▸ tV.tensor
+            let diff : Tensor α yV.shape := Tensor.subSpec (α := α) yT tT
+            let mean : α :=
+              (Tensor.mulSpec (α := α) diff diff).sumSpec /
+                (↑(NN.IR.Graph.meanDenom yV.shape) : α)
+            let result : DVal α := DVal.mk (α := α) .scalar (Tensor.scalar mean)
+            have hIREval :
+                NN.IR.Graph.evalAt (α := α)
+                    (g := cOut.graph)
+                    (payload := payloadOfParamStore (α := α) cOut.ps)
+                    (input := DVal.mk (α := α) inShape x)
+                    (vals := vals) (i := id) =
+                  Except.ok result := by
+              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.normalizeNodeOutput, NN.IR.Graph.mseLossDVal,
+                hGetNode, hn, hValsSameShape, result, mean, diff, yT, tT, yV, tV,
+                DVal.shape, DVal.tensor, DVal.mk, Bind.bind, Except.bind,
+                Pure.pure, Except.pure]
+            have hTypedEval :
+                evalNode (α := α) (paramShapes := paramShapes) (inShape := inShape)
+                    (ss := ss₀) (out := .scalar) (.mseLoss yhat target) params vals =
+                  Except.ok result := by
+              simp only [evalNode, getDVal?, hSomeY, hSomeT, Bind.bind, Except.bind]
+              rw [dif_pos hSameShape]
+              rfl
+            exact hIREval.trans hTypedEval.symm
       -- Unfold both evaluators one step, then dispatch by cases on the shared `evalNode`.
       have hStart :
           NN.IR.Graph.denoteAllFrom (α := α) (g := cOut.graph)

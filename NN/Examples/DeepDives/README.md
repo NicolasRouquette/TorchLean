@@ -1,9 +1,8 @@
 # Deep Dives
 
 This folder contains examples for readers who already know the quickstart path and want to inspect
-TorchLean's internal boundaries more carefully. The files are small, concrete tours of the layers
-underneath the public trainer: float semantics, GraphSpec lowering, IR shape behavior, widgets,
-PyTorch export, and the shared graph/checker story.
+TorchLean's internal boundaries more carefully. The files cover float semantics, GraphSpec lowering,
+IR shape behavior, widgets, PyTorch export, and graph-based verification.
 
 Build the whole slice with:
 
@@ -24,7 +23,7 @@ lake build NN.Examples.DeepDives
 | `OneSemanticUniverse.lean` | `lake exe torchlean one_semantic_universe --samples 50` | One IR graph interpreted through execution, interval bounds, and checker-facing semantics. |
 | `Widgets.lean` | open in an editor with the Lean infoview | Tensor, graph, Float32, CROWN, autograd, training, and runtime-context widgets. |
 
-## How To Read This Folder
+## Topics
 
 Each file isolates one boundary:
 

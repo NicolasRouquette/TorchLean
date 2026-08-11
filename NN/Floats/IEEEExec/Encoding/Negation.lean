@@ -8,6 +8,7 @@ module
 
 public import Mathlib.Data.Nat.Bitwise
 public import NN.Floats.IEEEExec.Exec32
+import Mathlib.Tactic.IntervalCases
 
 /-!
 # Lemmas about sign-bit flips (`b ^^^ signMask`)
@@ -24,6 +25,32 @@ This file centralizes those bit-manipulation lemmas for the large proof modules.
 
 namespace TorchLean.Floats.IEEE754
 namespace IEEE32Exec
+
+/-- Flipping the sign supplied to `mkBits` flips exactly the encoded sign bit. -/
+theorem mkBits_not_sign (sign : Bool) (exponent fraction : Nat) :
+    mkBits (!sign) exponent fraction = mkBits sign exponent fraction ^^^ signMask := by
+  rw [← UInt32.toBitVec_inj]
+  cases sign <;>
+    simp [mkBits, signMask, expAllOnes, fracMask,
+      UInt32.toBitVec_shiftLeft, UInt32.toBitVec_and,
+      UInt32.toBitVec_or, UInt32.toBitVec_xor]
+  all_goals
+    apply BitVec.eq_of_getLsbD_eq
+    intro i hi
+    interval_cases i <;> simp
+
+/-- Clearing the sign supplied to `mkBits` clears exactly the encoded sign bit. -/
+theorem mkBits_clear_sign (sign : Bool) (exponent fraction : Nat) :
+    mkBits false exponent fraction = mkBits sign exponent fraction &&& (~~~signMask) := by
+  rw [← UInt32.toBitVec_inj]
+  cases sign <;>
+    simp [mkBits, signMask, expAllOnes, fracMask,
+      UInt32.toBitVec_shiftLeft, UInt32.toBitVec_and,
+      UInt32.toBitVec_or, UInt32.toBitVec_not]
+  all_goals
+    apply BitVec.eq_of_getLsbD_eq
+    intro i hi
+    interval_cases i <;> simp
 
 /--
 Flipping the sign bit of a float32 encoding does not affect its exponent field.

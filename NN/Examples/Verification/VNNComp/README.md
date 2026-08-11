@@ -4,11 +4,9 @@ This folder documents TorchLean's current VNN-COMP-facing shape: exported JSON a
 small MNIST fully-connected benchmark family, checked by Lean through
 `NN.Verification.VNNComp.MnistFC`.
 
-The goal is not to mirror the whole VNN-COMP infrastructure inside the repository. VNN-COMP uses
-standard benchmark packages, network formats, property files, timeouts, and solver reporting rules.
-TorchLean's current entry point is narrower and more formalization-friendly: convert the benchmark
-instance into explicit JSON objects, then run a Lean side checker over the exported weights,
-properties, and optional verifier metadata.
+VNN-COMP uses standard benchmark packages, network formats, property files, timeouts, and solver
+reporting rules. TorchLean currently converts a benchmark instance into explicit JSON objects, then
+runs a Lean checker over the exported weights, properties, and optional verifier metadata.
 
 Expected local layout:
 

@@ -8,7 +8,7 @@ tag := "twostage"
 %%%
 
 A branch-and-bound verifier may spend hours splitting boxes, optimizing linear relaxations, and
-running GPU kernels. Reimplementing that search inside Lean would make the trusted story simpler,
+running GPU kernels. Reimplementing that search inside Lean would reduce the trusted code,
 but it would also discard mature solvers and make large examples impractical. A two-stage workflow
 separates the expensive search from the small object that must be checked.
 

@@ -416,14 +416,10 @@ theorem backwardDenseFrom_compileAuxData_eq_backpropAllCtx {α : Type} {Δ : Typ
           have hreqLast : runtimeNode.requires_grad = true := by rfl
           have hout : outAny.s = τ := by rfl
           have hshapeNode : outAny.s = runtimeNode.value.s := by rfl
-          have hcast : Tensor.castShape seedOut hout = seedOut := by
-            cases hout
-            rfl
-
           have hbackLast :
               runtimeNode.backward outAny =
                 .ok (TList.toIndexedAnyList (α := α) (ss := Γ ++ ssPrev) contrib 0) := by
-            simp [runtimeNode, outAny, hctxPrev, ctx, contrib, Tensor.castShape,
+            simp [runtimeNode, outAny, hctxPrev, ctx, contrib,
               Runtime.Autograd.AnyTensor.mk]
 
           have hbackLast2 :

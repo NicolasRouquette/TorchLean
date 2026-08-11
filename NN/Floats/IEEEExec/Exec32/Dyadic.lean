@@ -8,6 +8,7 @@ module
 
 public import NN.Floats.IEEEExec.Exec32.Core
 import Mathlib.Data.Nat.Bitwise
+import Mathlib.Tactic.IntervalCases
 
 /-!
 Dyadic helpers for executable IEEE32 arithmetic.
@@ -65,6 +66,50 @@ Construct a raw binary32 bit-pattern from fields.
   let e : UInt32 := ((UInt32.ofNat exp) &&& expAllOnes) <<< 23
   let f : UInt32 := (UInt32.ofNat frac) &&& fracMask
   s ||| e ||| f
+
+/-- Reassembling the decoded sign, exponent, and fraction fields recovers the original value. -/
+theorem ofBits_mkBits_fields (x : IEEE32Exec) :
+    ofBits (mkBits (signBit x) (expField x).toNat (fracField x).toNat) = x := by
+  cases x with
+  | mk bits =>
+      apply congrArg IEEE32Exec.mk
+      simp only [mkBits, expField, fracField, UInt32.ofNat_toNat]
+      rw [← UInt32.toBitVec_inj]
+      cases hsign : (bits &&& signMask != 0) with
+      | false =>
+          simp [bne, signMask] at hsign
+          have hsignBV := congrArg UInt32.toBitVec hsign
+          simp [UInt32.toBitVec_and] at hsignBV
+          have hbit : bits.toBitVec.getLsbD 31 = false := by
+            have h := congrArg (fun x : BitVec 32 => x.getLsbD 31) hsignBV
+            simpa [BitVec.getLsbD_and, BitVec.getLsbD_ofNat] using h
+          simp [signBit, signMask, expAllOnes, fracMask,
+            UInt32.toBitVec_shiftRight, UInt32.toBitVec_shiftLeft,
+            UInt32.toBitVec_and, UInt32.toBitVec_or, hsign]
+          apply BitVec.eq_of_getLsbD_eq
+          intro i hi
+          interval_cases i <;> simp_all
+      | true =>
+          simp [bne, signMask] at hsign
+          have hsignBV : bits.toBitVec &&& 2147483648#32 ≠ 0#32 := by
+            intro h
+            apply hsign
+            rw [← UInt32.toBitVec_inj]
+            simpa [UInt32.toBitVec_and]
+          have hbit : bits.toBitVec.getLsbD 31 = true := by
+            cases hbitEq : bits.toBitVec.getLsbD 31
+            · exfalso
+              apply hsignBV
+              apply BitVec.eq_of_getLsbD_eq
+              intro i hi
+              interval_cases i <;> simp_all
+            · rfl
+          simp [signBit, signMask, expAllOnes, fracMask,
+            UInt32.toBitVec_shiftRight, UInt32.toBitVec_shiftLeft,
+            UInt32.toBitVec_and, UInt32.toBitVec_or, hsign]
+          apply BitVec.eq_of_getLsbD_eq
+          intro i hi
+          interval_cases i <;> simp_all
 
 /--
 Decode a finite binary32 into an exact dyadic value.
@@ -284,6 +329,18 @@ lemma isZero_eq_true_of_toDyadic?_some_of_mant_eq_zero {x : IEEE32Exec} {d : Dya
         exact lt_of_lt_of_le (by decide : 0 < pow2 23) (Nat.le_add_right (pow2 23) f.toNat)
       exact (Nat.ne_of_gt hpos hm).elim
 
+/-- A decoded dyadic with nonzero mantissa cannot have come from either signed zero. -/
+lemma isZero_eq_false_of_toDyadic?_some_of_mant_ne_zero {x : IEEE32Exec} {d : Dyadic}
+    (hx : toDyadic? x = some d) (hm : d.mant ≠ 0) : isZero x = false := by
+  cases hzero : isZero x with
+  | false => rfl
+  | true =>
+      have hdy := toDyadic?_eq_zero_of_isZero hzero
+      rw [hx] at hdy
+      have hmant : d.mant = 0 :=
+        congrArg Dyadic.mant (Option.some.inj hdy)
+      exact (hm hmant).elim
+
 /-!
 ## Rounding back to binary32
 
@@ -350,6 +407,155 @@ This function implements:
         let fracNat : Nat := m24' - pow2 23
         ofBits (mkBits d.sign expNat fracNat)
 
+/-- Decoding a finite binary32 value and rounding the exact dyadic back recovers its bits. -/
+theorem roundDyadicToIEEE32_of_toDyadic?_some
+    {x : IEEE32Exec} {d : Dyadic} (hx : toDyadic? x = some d) :
+    roundDyadicToIEEE32 d = x := by
+  have hnan : isNaN x = false := isNaN_eq_false_of_toDyadic?_some hx
+  have hinf : isInf x = false := isInf_eq_false_of_toDyadic?_some hx
+  have hfin : isFinite x = true := isFinite_eq_true_of_toDyadic?_some hx
+  by_cases he : expField x = 0
+  · by_cases hf : fracField x = 0
+    · have hd : d = { sign := signBit x, mant := 0, exp := 0 } := by
+        have hsome : some { sign := signBit x, mant := 0, exp := 0 } = some d := by
+          simpa [toDyadic?, hnan, hinf, he, hf] using hx
+        exact (Option.some.inj hsome).symm
+      subst d
+      calc
+        roundDyadicToIEEE32 { sign := signBit x, mant := 0, exp := 0 } =
+            ofBits (mkBits (signBit x) 0 0) := by
+          cases signBit x <;> decide
+        _ = ofBits (mkBits (signBit x) (expField x).toNat (fracField x).toNat) := by
+          simp [he, hf]
+        _ = x := ofBits_mkBits_fields x
+    · have hd : d =
+          { sign := signBit x, mant := (fracField x).toNat, exp := -149 } := by
+        have hsome :
+            some { sign := signBit x, mant := (fracField x).toNat, exp := -149 } =
+              some d := by
+          simpa [toDyadic?, hnan, hinf, he, hf] using hx
+        exact (Option.some.inj hsome).symm
+      subst d
+      have hmant : (fracField x).toNat ≠ 0 := by
+        intro hzero
+        apply hf
+        exact UInt32.toNat_inj.mp (by simpa using hzero)
+      have hmantLt : (fracField x).toNat < 2 ^ 23 := fracField_toNat_lt_pow2_23 x
+      have hlogLt : (fracField x).toNat.log2 < 23 :=
+        (Nat.log2_lt hmant).2 hmantLt
+      have hkNotOver :
+          ¬ (127 : Int) < Int.ofNat (fracField x).toNat.log2 + -149 := by
+        simp only [Int.ofNat_eq_natCast]
+        grind
+      have hkNotUnder :
+          ¬ Int.ofNat (fracField x).toNat.log2 + -149 < (-150 : Int) := by
+        simp only [Int.ofNat_eq_natCast]
+        grind
+      have hkSubnormal :
+          Int.ofNat (fracField x).toNat.log2 + -149 < (-126 : Int) := by
+        simp only [Int.ofNat_eq_natCast]
+        grind
+      have hpowNotLe : ¬ pow2 23 ≤ (fracField x).toNat := by
+        simpa [pow2, Nat.shiftLeft_eq] using Nat.not_le_of_lt hmantLt
+      have hshiftZero : (fracField x).toNat.shiftLeft 0 = (fracField x).toNat := by
+        change (fracField x).toNat <<< 0 = (fracField x).toNat
+        exact Nat.shiftLeft_zero
+      calc
+        roundDyadicToIEEE32
+            { sign := signBit x, mant := (fracField x).toNat, exp := -149 } =
+            ofBits (mkBits (signBit x) 0 (fracField x).toNat) := by
+          simp only [roundDyadicToIEEE32]
+          rw [if_neg (by simpa using hmant)]
+          rw [if_neg hkNotOver, if_neg hkNotUnder, if_pos hkSubnormal]
+          simp only [Int.reduceNeg, Int.reduceAdd]
+          rw [hshiftZero]
+          rw [if_neg (by simpa using hmant)]
+          cases hdec : Nat.decLe (pow2 23) (fracField x).toNat with
+          | isTrue h => exact (hpowNotLe h).elim
+          | isFalse _ => rfl
+        _ = ofBits (mkBits (signBit x) (expField x).toNat (fracField x).toNat) := by
+          simp [he]
+        _ = x := ofBits_mkBits_fields x
+  · have hd : d =
+        { sign := signBit x,
+          mant := pow2 23 + (fracField x).toNat,
+          exp := Int.ofNat (expField x).toNat - 150 } := by
+      have hsome :
+          some
+              { sign := signBit x,
+                mant := pow2 23 + (fracField x).toNat,
+                exp := Int.ofNat (expField x).toNat - 150 } = some d := by
+        simpa [toDyadic?, hnan, hinf, he] using hx
+      exact (Option.some.inj hsome).symm
+    subst d
+    have hfracLt : (fracField x).toNat < 2 ^ 23 := fracField_toNat_lt_pow2_23 x
+    have hmantPos : 0 < pow2 23 + (fracField x).toNat := by
+      change 0 < 2 ^ 23 + (fracField x).toNat
+      grind
+    have hmantLt : pow2 23 + (fracField x).toNat < 2 ^ 24 := by
+      change 2 ^ 23 + (fracField x).toNat < 2 ^ 24
+      grind
+    have hlog : (pow2 23 + (fracField x).toNat).log2 = 23 := by
+      rw [Nat.log2_eq_iff (Nat.ne_of_gt hmantPos)]
+      change 2 ^ 23 ≤ 2 ^ 23 + (fracField x).toNat ∧
+        2 ^ 23 + (fracField x).toNat < 2 ^ (23 + 1)
+      grind
+    have hexpPos : 0 < (expField x).toNat := by
+      have hne : (expField x).toNat ≠ 0 := by
+        intro hzero
+        apply he
+        apply UInt32.toNat_inj.mp
+        simpa using hzero
+      grind
+    have hexpLe : (expField x).toNat ≤ 254 :=
+      expField_toNat_le_254_of_isFinite x hfin
+    have hkLower : (-126 : Int) ≤ Int.ofNat (expField x).toNat - 127 := by
+      simp only [Int.ofNat_eq_natCast]
+      grind
+    have hkUpper : Int.ofNat (expField x).toNat - 127 ≤ 127 := by
+      simp only [Int.ofNat_eq_natCast]
+      grind
+    have hnotCarry : pow2 23 + (fracField x).toNat ≠ pow2 24 :=
+      Nat.ne_of_lt hmantLt
+    have hexpToNat :
+        (Int.ofNat (expField x).toNat - 127 + 127).toNat = (expField x).toNat := by
+      simp only [Int.ofNat_eq_natCast]
+      grind
+    have hkEq : Int.ofNat 23 + (Int.ofNat (expField x).toNat - 150) =
+        Int.ofNat (expField x).toNat - 127 := by
+      simp only [Int.ofNat_eq_natCast]
+      grind
+    have hkNotOver : ¬ Int.ofNat (expField x).toNat - 127 > 127 := by grind
+    have hkNotUnder : ¬ Int.ofNat (expField x).toNat - 127 < -150 := by grind
+    have hkNormal : ¬ Int.ofNat (expField x).toNat - 127 < -126 := by grind
+    have hlogGe : 23 ≤ (pow2 23 + (fracField x).toNat).log2 := by grind
+    have hshift :
+        roundShiftRightEven (pow2 23 + (fracField x).toNat)
+            ((pow2 23 + (fracField x).toNat).log2 - 23) =
+          pow2 23 + (fracField x).toNat := by
+      simp [hlog, roundShiftRightEven]
+    have hmantNe : pow2 23 + (fracField x).toNat ≠ 0 := Nat.ne_of_gt hmantPos
+    have hcarryFalse :
+        (pow2 23 + (fracField x).toNat == pow2 24) = false :=
+      beq_eq_false_iff_ne.mpr hnotCarry
+    calc
+      roundDyadicToIEEE32
+          { sign := signBit x,
+            mant := pow2 23 + (fracField x).toNat,
+            exp := Int.ofNat (expField x).toNat - 150 } =
+          ofBits (mkBits (signBit x) (expField x).toNat (fracField x).toNat) := by
+        simp only [roundDyadicToIEEE32]
+        rw [if_neg (by simpa using hmantNe)]
+        rw [hlog, hkEq]
+        rw [if_neg hkNotOver, if_neg hkNotUnder, if_neg hkNormal]
+        simp only [ge_iff_le, le_refl, ↓reduceIte, Nat.sub_self, roundShiftRightEven,
+          beq_self_eq_true]
+        simp only [hcarryFalse, Bool.false_eq_true, ↓reduceIte]
+        rw [if_neg hkNotOver]
+        rw [hexpToNat]
+        simp only [Nat.add_sub_cancel_left]
+      _ = x := ofBits_mkBits_fields x
+
 /-!
 ## Exact dyadic arithmetic (finite core)
 
@@ -364,7 +570,14 @@ We align exponents by shifting the mantissa of the operand with the larger expon
 integers, and then return an exact dyadic (no rounding yet).
 -/
 @[inline] def addDyadic (a b : Dyadic) : Dyadic :=
-  if a.exp ≤ b.exp then
+  if a.mant == 0 then
+    if b.mant == 0 then
+      { sign := a.sign && b.sign, mant := 0, exp := 0 }
+    else
+      b
+  else if b.mant == 0 then
+    a
+  else if a.exp ≤ b.exp then
     let sh : Nat := Int.toNat (b.exp - a.exp)
     let m1 : Int := if a.sign then -(Int.ofNat a.mant) else (Int.ofNat a.mant)
     let m2s : Nat := Nat.shiftLeft b.mant sh
@@ -425,6 +638,16 @@ powers of two.
   let k1 : Int := if ratLtPow2 num den k0 then k0 - 1 else k0
   if ratGePow2 num den (k1 + 1) then k1 + 1 else k1
 
+/-- Represent `(num / den) * 2^exponent` as a ratio of natural numbers.
+
+Nonnegative exponents shift the numerator; negative exponents shift the denominator. The
+operation deliberately does not cancel common factors, since the rounding algorithms consume the
+quotient and remainder of this exact representation directly.
+-/
+@[inline] def scaleRatByPow2 (num den : Nat) : Int → Nat × Nat
+  | .ofNat shift => (Nat.shiftLeft num shift, den)
+  | .negSucc shift => (num, Nat.shiftLeft den (shift + 1))
+
 /--
 Round an exact rational `num/den` to binary32 (ties-to-even).
 
@@ -454,10 +677,7 @@ the same final mantissa rounding policy.
     else
       -- normal: m = round_to_even( (num/den) * 2^(23-k) )
       let shift : Int := 23 - k
-      let (num', den') :=
-        match shift with
-        | .ofNat sh => (Nat.shiftLeft num sh, den)
-        | .negSucc sh => (num, Nat.shiftLeft den (sh + 1))
+      let (num', den') := scaleRatByPow2 num den shift
       let m := roundQuotEven num' den'
       let k' : Int := if m == pow2 24 then k + 1 else k
       let m' : Nat := if m == pow2 24 then pow2 23 else m
@@ -467,6 +687,18 @@ the same final mantissa rounding policy.
         let expNat : Nat := Int.toNat (k' + 127)
         let fracNat : Nat := m' - pow2 23
         ofBits (mkBits sign expNat fracNat)
+
+/-- Rounding an exact zero rational preserves its requested sign. -/
+@[simp] theorem roundRatToIEEE32_zero (sign : Bool) (den : Nat) :
+    roundRatToIEEE32 sign 0 den = if sign then negZero else posZero := by
+  simp [roundRatToIEEE32]
+
+/-- Scaling a zero rational by a power of two still rounds to signed zero. -/
+theorem roundRatToIEEE32_scaleRatByPow2_zero
+    (sign : Bool) (den : Nat) (exponent : Int) :
+    let scaled := scaleRatByPow2 0 den exponent
+    roundRatToIEEE32 sign scaled.1 scaled.2 = if sign then negZero else posZero := by
+  cases exponent <;> simp [scaleRatByPow2]
 
 
 end IEEE32Exec

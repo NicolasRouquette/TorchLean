@@ -121,6 +121,26 @@ def blockMask {d : Nat} (shape : Vector Nat d) (blocks : Vector (Option Nat) d)
     Spec.Tensor Float (Spec.Shape.ofList shape.toList) :=
   blockMaskAux shape.toList blocks.toList period offset [] shape.toList x
 
+@[simp] private theorem blockMaskAux_dim
+    (shape : List Nat) (blocks : List (Option Nat)) (period offset : Nat)
+    (coordinatePrefix : List Nat) (extent : Nat) (extents : List Nat)
+    (values : Fin extent → Spec.Tensor Float (Spec.Shape.ofList extents)) :
+    blockMaskAux shape blocks period offset coordinatePrefix (extent :: extents) (.dim values) =
+      .dim (fun coordinate =>
+        blockMaskAux shape blocks period offset (coordinatePrefix ++ [coordinate.val]) extents
+          (values coordinate)) := by
+  rfl
+
+@[simp] private theorem scalarAt_dim_cons {α : Type} (extent : Nat) (extents : List Nat)
+    (values : Fin extent → Spec.Tensor α (Spec.Shape.ofList extents))
+    (coordinate : Nat) (coordinates : List Nat) :
+    scalarAt (extent :: extents) (.dim values) (coordinate :: coordinates) =
+      if h : coordinate < extent then
+        scalarAt extents (values ⟨coordinate, h⟩) coordinates
+      else
+        none := by
+  rfl
+
 theorem scalarAt_blockMaskAux
     (shape : List Nat) (blocks : List (Option Nat)) (period offset : Nat)
     (coordinatePrefix : List Nat) :
@@ -145,11 +165,13 @@ theorem scalarAt_blockMaskAux
           cases coordinates with
           | nil => rfl
           | cons coordinate coordinates =>
+              rw [blockMaskAux_dim, scalarAt_dim_cons, scalarAt_dim_cons]
               by_cases h : coordinate < extent
-              · simpa [scalarAt, blockMaskAux, h, List.append_assoc] using
+              · simp only [dif_pos h]
+                simpa [List.append_assoc] using
                   ih (coordinatePrefix := coordinatePrefix ++ [coordinate])
                     (values ⟨coordinate, h⟩) coordinates
-              · simp [scalarAt, blockMaskAux, h]
+              · simp [h]
 
 /-- Exact coordinate semantics of `blockMask`, including out-of-bounds coordinates. -/
 theorem blockMask_scalarAt {d : Nat} (shape : Vector Nat d)

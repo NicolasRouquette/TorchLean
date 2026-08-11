@@ -1260,7 +1260,7 @@ theorem alphaCrown_transfer_sound
                                 -- Cast composition aligns with `z` (up to proof irrelevance).
                                 have := (castDimScalar_trans (h₁ := hdn.symm) (h₂ := hout) (t :=
                                   vp.v)).symm
-                                simpa [zXin, z, htrans] using this
+                                simp [zXin, z] at this ⊢
                               have hl :
                                   castDimScalar (α := ℝ) hout (boundsEvalAt (α := ℝ) xin x').lo =
                                     lAff := by
@@ -1592,7 +1592,7 @@ theorem alphaCrown_transfer_sound
                                   exact Subsingleton.elim _ _
                                 have := (castDimScalar_trans (h₁ := hdn.symm) (h₂ := hout) (t :=
                                   vp.v)).symm
-                                simpa [zXin, z, htrans] using this
+                                simp [zXin, z] at this ⊢
                               have hl :
                                   castDimScalar (α := ℝ) hout (boundsEvalAt (α := ℝ) xin x').lo =
                                     lAff := by

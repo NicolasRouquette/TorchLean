@@ -145,7 +145,7 @@ Lipschitz ratios from finite samples and deterministic perturbation sampling. We
 engineers need fast diagnostics, but its documentation is explicit: a sampled maximum is not a
 global certificate. It is evidence, a debugging aid, or a counterexample search tool.
 
-That distinction is one of the main differences from mainstream ML evaluation scripts. A typical
+This is stricter than a typical ML evaluation script. A
 robustness notebook might compute "max observed ratio" and report it as if it were a property of
 the model. TorchLean names it as an empirical runtime quantity unless a separate proof connects it
 to a certified bound.
@@ -286,8 +286,8 @@ The dataset is the same `Dataset` representation from the stability core. The bo
 assumptions are carried by types and hypotheses. The final statement is a Lean theorem, not a prose
 claim next to a Python implementation.
 
-A reader should notice what this theorem does and does not say. It proves a real-valued stability
-bound for the closed-form ridge estimator under bounded data and positive regularization. It does
+The theorem proves a real-valued stability bound for the closed-form ridge estimator under bounded
+data and positive regularization. It does
 not say that an arbitrary minibatch trainer, an iterative solver stopped early, or a float32
 implementation has the same bound. Those variants need their own algorithm and numerical bridge.
 

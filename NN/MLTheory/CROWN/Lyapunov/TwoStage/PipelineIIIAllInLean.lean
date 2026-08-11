@@ -31,11 +31,9 @@ Everything runs *inside Lean*:
 - Final: compile the same TorchLean loss program to the shared verifier IR and run in-repo IBP/CROWN
   bound propagation to check the loss on a small box around the origin.
 
-Notes:
-- This workflow uses the in-repo IBP/CROWN engine, so its bounds are meant to exercise TorchLean's
-  own verifier path rather than reproduce every optimization used by external α/β-CROWN systems.
-- The point is the *trust boundary*: the whole compute path, including float32 semantics, is inside
-  Lean, and external tooling is not required to run the end-to-end pipeline.
+The workflow uses the in-repo IBP/CROWN engine rather than reproducing every optimization from
+external α/β-CROWN systems. The complete computation, including its float32 semantics, runs inside
+Lean and requires no external verifier.
 
 Run:
 `lake exe verify -- twostage-torchlean-cegis-van`
@@ -50,8 +48,8 @@ open Tensor
 namespace NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineIII.AllInLean
 
 open _root_.TorchLean.Floats.IEEE754
-open Runtime
-open Runtime.Autograd
+open _root_.Runtime
+open _root_.Runtime.Autograd
 open NN.MLTheory.CROWN.Graph
 open NN.MLTheory.CROWN
 

@@ -28,7 +28,6 @@ shape.
 
 namespace NN.Examples.BugZoo.AutogradDomain
 
-open Spec
 open Spec.Tensor
 
 /--

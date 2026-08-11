@@ -95,8 +95,8 @@ theorem neural_add_round_error_generic {x y : ℝ}
 theorem neural_generic_format_FLT_to_FIX (emin prec : ℤ) (hprec : 0 < prec) {x : ℝ}
     (hx : @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) x) :
     neuralGenericFormat β (FIXExp emin) x := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
-  letI : NeuralValidExp (FIXExp emin) := fixValidExp emin
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FIXExp emin) := fixValidExp emin
   obtain ⟨m, hm⟩ :=
     (neural_generic_format_iff_scaled_mantissa_int
       (β := β) (fexp := FLTExp emin prec) x).mp hx
@@ -123,8 +123,8 @@ theorem neural_generic_format_FIX_to_FLT_of_abs_le (emin prec : ℤ) (hprec : 0 
     {x : ℝ} (hx : neuralGenericFormat β (FIXExp emin) x)
     (hbound : abs x ≤ neuralBpow β (prec + emin)) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) x := by
-  letI : NeuralValidExp (FIXExp emin) := fixValidExp emin
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FIXExp emin) := fixValidExp emin
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
   by_cases hx0 : x = 0
   · subst x
     exact neural_generic_format_zero
@@ -152,7 +152,7 @@ theorem neural_generic_format_FLT_add_small (emin prec : ℤ) (hprec : 0 < prec)
     (hy : @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) y)
     (hbound : abs (x + y) ≤ neuralBpow β (prec + emin)) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) (x + y) := by
-  letI : NeuralValidExp (FIXExp emin) := fixValidExp emin
+  let _ : NeuralValidExp (FIXExp emin) := fixValidExp emin
   have hxFix := neural_generic_format_FLT_to_FIX (β := β) emin prec hprec hx
   have hyFix := neural_generic_format_FLT_to_FIX (β := β) emin prec hprec hy
   obtain ⟨fx, hfx, ex⟩ := (generic_format_FIX_iff (β := β) emin x).mp hxFix

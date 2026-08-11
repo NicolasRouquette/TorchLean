@@ -20,8 +20,6 @@ algorithm use the canonical `Optim.Muon` namespace.
 
 namespace NN.Examples.Optimization.MuonCertificates
 
-open Spec
-
 /--
 Using the QR checked backend, a positive-pivot proof gives a certified step; from that step we can
 recover both the exact Gram certificate for the direction and the parameter-update equation.

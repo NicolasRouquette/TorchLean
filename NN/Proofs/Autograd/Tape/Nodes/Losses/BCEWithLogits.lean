@@ -380,8 +380,9 @@ def bceWithLogitsFderiv {Γ : List Shape} {s : Shape} (logits target : Idx Γ s)
               c * sumCLM (n := n) (vecOfFun (n := n) (fun j => dx j * sp' j) -
                 (vecOfFun (n := n) fun j => dt j * x j + t j * dx j)))
             (i := i) using 1
-      simpa [bceWithLogits, Node.jvpVec_ofVec, x, dx, t, dt, sp', logitsV, targetV, c,
-        elemwiseVec, vecOfFun, Spec.Shape.size, n] using hscalar
+      simp only [bceWithLogits, Node.jvpVec_ofVec]
+      simpa [x, dx, t, dt, sp', logitsV, targetV, c, elemwiseVec, vecOfFun,
+        Spec.Shape.size, n] using hscalar
     let spDeriv : CtxVec Γ →L[ℝ] Vec n :=
       (elemwiseDerivCLM (n := n) (f' := Activation.Math.softplusDerivSpec (α := ℝ)) x).comp
         logitsCLM

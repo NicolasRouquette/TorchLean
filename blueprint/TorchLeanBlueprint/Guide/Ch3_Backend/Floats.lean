@@ -7,9 +7,10 @@ open Verso.Genre Manual
 tag := "floats"
 %%%
 
-Neural-network papers write equations over real numbers. Hardware evaluates a sequence of finite
-operations. Most of the time we can ignore the difference. This chapter is about the times when we
-cannot.
+Neural-network papers write equations over real numbers, while hardware evaluates a sequence of
+finite operations. Rounding, overflow, underflow, subnormals, infinities, and NaNs can therefore
+change the value computed by a model. TorchLean gives these effects explicit mathematical and
+executable meanings instead of treating them as details of the runtime.
 
 # Using The Numerical Library By Itself
 
@@ -425,6 +426,90 @@ algorithms with explicit special-value behavior; a numerical claim needs a range
 interval contract for the particular function. The small Taylor bounds in the rules library do not
 by themselves certify every executable `sin`, `cos`, or `tanh` input.
 
+# Lean `Float32`
+
+Lean gives core `Float32` operations a kernel-visible semantics through `Float32.Model`. The model
+defines bit conversion, classification, comparison, addition, subtraction, multiplication,
+division, negation, absolute value, and square root. Compiled programs may replace these logical
+definitions with native instructions through `@[extern]`; native conformance is recorded separately
+for each runtime provider.
+
+TorchLean compares `Float32.Model` with `IEEE32Exec`, its independent raw-bit implementation. The
+classification theorem has no runtime assumption:
+
+```
+open TorchLean.Floats.IEEE754
+open TorchLean.Floats.IEEE754.Float32Bridge
+
+example (a : Float32) :
+    Float32.isFinite a = IEEE32Exec.isFinite (toIEEE32Exec a) := by
+  exact float32_isFinite_eq_ieee32 a
+```
+
+The theorem ranges over every canonical binary32 value. Addition has a corresponding arithmetic
+theorem:
+
+```
+example (a b : Float32) :
+    toIEEE32Exec (a + b) =
+      canonicalize (IEEE32Exec.add (toIEEE32Exec a) (toIEEE32Exec b)) := by
+  exact toIEEE32Exec_add a b
+```
+
+The proof covers NaNs, signed infinities and zeros, subnormals, cancellation, normal rounding,
+underflow, and overflow. Subtraction follows from addition and the sign-bit negation bridge.
+Multiplication, division, square root, negation, and absolute value have analogous theorems.
+
+`Float32.Model` is a canonical binary32 representation. It stores a `UInt32` together with a proof
+that every NaN uses Lean's chosen canonical encoding. Addition, subtraction, multiplication,
+division, negation, absolute value, square root, comparisons, and classification operate by
+unpacking that value, computing in Lean's `UnpackedFloat` model, and repacking. Transcendental
+functions such as `sin`, `exp`, and `log` remain opaque and need separate contracts.
+
+`IEEE32Exec` accepts every raw binary32 bit pattern, retains deterministic NaN payload information,
+reports IEEE exception status, and connects finite executions to the rounded-real and interval
+developments. `Float32.Model` uses one canonical NaN representation. The bridge therefore
+canonicalizes arithmetic results before comparing their bits.
+
+The bridge has two parts:
+
+```
+Float32 operation
+  = Float32.Model operation
+
+Float32.Model operation
+  = canonicalize (TorchLean IEEE32Exec operation)
+                                             -- independent algorithm-equivalence obligation
+```
+
+TorchLean proves both equalities for the modeled core operations. The second proof is not a test or
+an assumption about an opaque runtime call: it compares two pure Lean algorithms. Canonicalization
+appears because Lean stores one NaN bit pattern while `IEEE32Exec` retains payload and sign bits.
+
+The resulting interfaces have three separate scopes:
+
+:::table +header
+*
+  * Claim
+  * Current status
+*
+  * A Lean `Float32` core operation denotes its `Float32.Model` operation.
+  * Defined by Lean.
+*
+  * `Float32.Model` and `IEEE32Exec` classify canonical bit patterns identically.
+  * Proved for finiteness, infinity, and NaN.
+*
+  * `Float32.Model` and `IEEE32Exec` compute the same canonical result.
+  * Proved for comparison, addition, subtraction, multiplication, division, square root, negation,
+    and absolute value.
+*
+  * Compiled CPU, CUDA, or library code computes the logical result.
+  * A provider-specific backend contract, checked separately.
+:::
+
+The bridge makes `IEEE32Exec` error, interval, and reduction results available to logical
+`Float32` proofs. Compiled execution uses the contract attached to its runtime provider.
+
 # Following One Addition Through The Layers
 
 The addition above has four useful interpretations.
@@ -450,18 +535,19 @@ returned by executable `ulpExp?` with `ulp32` in the rounded-real model. The abs
 states that a successful finite executable absorption check implies the corresponding `round32`
 addition leaves the left operand unchanged.
 
-This is the pattern used throughout the library:
+The representations line up as follows:
 
 ```
 exact real expression
   -> generic format and rounding theorem
   -> FP32 finite specialization
   -> IEEE32Exec bit-level operation
-  -> runtime/backend bridge
+  <-> Lean Float32.Model
+  -> compiled CPU, CUDA, or external provider
 ```
 
-The first four lines are Lean definitions and theorems. The final line is supplied by a runtime
-bridge or a backend contract.
+The mathematical layers and both bit-level models are Lean definitions. The last arrow is supplied
+by a native backend contract and its validation evidence.
 
 # Exact Subtraction: A More Interesting Example
 
@@ -512,11 +598,10 @@ storage without changing these scalar theorems.
 
 # From Lean Semantics To A Training Run
 
-Lean's runtime `Float32`, C and CUDA `float`, cuBLAS reductions, and LibTorch tensors are the values
-used to run a model quickly. `RuntimeFloat32FiniteMatchesIEEE32Exec` is the bridge interface for
-Lean's runtime type: an instance supplies bit-level agreement with the executable reference when
-inputs and results are finite, and classification agreement for special values. It does not assume
-that the runtime preserves a particular NaN payload.
+Lean `Float32`, C and CUDA `float`, cuBLAS reductions, and LibTorch tensors can all appear in an
+execution path. TorchLean proves that `Float32.Model` agrees with its independent executable
+reference for classification, comparison, addition, subtraction, multiplication, division, square
+root, negation, and absolute value. Native instructions are described by provider contracts.
 
 Native providers follow the same pattern. A kernel capsule names:
 
@@ -526,7 +611,7 @@ Native providers follow the same pattern. A kernel capsule names:
 - rounding, contraction, subnormal, and reduction policies;
 - the evidence level attached to the numerical contract.
 
-The capsule makes the selected numerical story available to the graph-level error analysis. A
+The capsule makes the provider's numerical policies available to graph-level error analysis. A
 provider may come with a proved bridge, a checked guard, parity evidence, or an explicit external
 assumption. Those evidence levels were defined in the introduction, so later reports can name
 the one attached to each operation.
@@ -552,6 +637,9 @@ Use the smallest layer that states the claim accurately:
   * What bits and IEEE exceptional cases result?
   * `IEEE32Exec`
 *
+  * What does a Lean `Float32` core operation mean in the logic?
+  * `Float32.Model`
+*
   * Does an interval enclose an operation?
   * directed `IEEE32Exec` or proved interval rounders
 *
@@ -566,6 +654,10 @@ before blaming the real-valued model.
 
 # References
 
+- Lean FRO,
+  [`Float32.Model` source](https://github.com/leanprover/lean4/blob/v4.33.0/src/lean/Init/Data/Float/Model/Float32.lean).
+- The Lean Language Reference,
+  [Floating-Point Numbers](https://lean-lang.org/doc/reference/latest/Basic-Types/Floating-Point-Numbers/).
 - Sylvie Boldo and Guillaume Melquiond,
   [“Flocq: A Unified Library for Proving Floating-Point Algorithms in
   Coq”](https://doi.org/10.1109/ARITH.2011.40), IEEE ARITH 2011.

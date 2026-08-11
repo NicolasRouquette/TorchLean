@@ -80,10 +80,7 @@ namespace IEEE32Exec
       else
         -- Exact quotient: (mx * 2^ex) / (my * 2^ey) = (mx/my) * 2^(ex-ey).
         let eDiff : Int := dx.exp - dy.exp
-        let (num, den) :=
-          match eDiff with
-          | .ofNat sh => (Nat.shiftLeft dx.mant sh, dy.mant)
-          | .negSucc sh => (dx.mant, Nat.shiftLeft dy.mant (sh + 1))
+        let (num, den) := scaleRatByPow2 dx.mant dy.mant eDiff
         roundRatToIEEE32 sign num den
   | _, _ =>
       match chooseNaN2 x y with
@@ -219,10 +216,7 @@ theorem div_eq_roundRatToIEEE32_of_toDyadic? {x y : IEEE32Exec} {dx dy : Dyadic}
     div x y =
       let sign : Bool := Bool.xor dx.sign dy.sign
       let eDiff : Int := dx.exp - dy.exp
-      let (num, den) :=
-        match eDiff with
-        | .ofNat sh => (Nat.shiftLeft dx.mant sh, dy.mant)
-        | .negSucc sh => (dx.mant, Nat.shiftLeft dy.mant (sh + 1))
+      let (num, den) := scaleRatByPow2 dx.mant dy.mant eDiff
       roundRatToIEEE32 sign num den := by
   unfold div
   simp only [hx, hy]
@@ -231,7 +225,8 @@ theorem div_eq_roundRatToIEEE32_of_toDyadic? {x y : IEEE32Exec} {dx dy : Dyadic}
   · split <;> rename_i hnum
     · have hnum' : dx.mant = 0 := (beq_iff_eq).1 hnum
       rw [hnum']
-      cases dx.exp - dy.exp <;> simp [roundRatToIEEE32]
+      exact (roundRatToIEEE32_scaleRatByPow2_zero
+        (Bool.xor dx.sign dy.sign) dy.mant (dx.exp - dy.exp)).symm
     · rfl
 
 /-- IEEE754 square root (ties-to-even). -/
@@ -430,10 +425,7 @@ def divWithStatus (x y : IEEE32Exec) : IEEEOutcome :=
         { value := if sign then negZero else posZero, status := .clear }
       else
         let eDiff := dx.exp - dy.exp
-        let (num, den) :=
-          match eDiff with
-          | .ofNat sh => (Nat.shiftLeft dx.mant sh, dy.mant)
-          | .negSucc sh => (dx.mant, Nat.shiftLeft dy.mant (sh + 1))
+        let (num, den) := scaleRatByPow2 dx.mant dy.mant eDiff
         let value := roundRatToIEEE32 sign num den
         { value, status := rationalRoundingStatus sign num den value }
   | _, _ =>

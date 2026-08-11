@@ -110,13 +110,13 @@ The RL proof files name the pieces that are easy to blur in executable examples:
 Gymnasium is an external environment boundary. TorchLean proof statements are about the boundary
 object once an external observation has been parsed, checked, and admitted into the TorchLean side.
 
-## What Belongs Here
+## Adding Proofs
 
 Add a proof here when it is reusable across examples or checkers. Keep one-off command tests in
 `NN/Tests` and runnable examples in `NN/Examples`. If a theorem belongs to a specific theory family,
 such as CROWN, optimizer laws, or learning theory, it may belong under `NN/MLTheory` instead.
 
-When adding a proof file, make the theorem boundary obvious:
+Document the following information in each new proof file:
 
 - what semantic object is being proved about,
 - whether the scalar world is exact `ℝ`, executable IEEE-style, `Float`, or another scalar model,

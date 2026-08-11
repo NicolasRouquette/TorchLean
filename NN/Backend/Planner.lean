@@ -16,7 +16,7 @@ The planner is the bridge between a semantic graph and backend capsules.
 At this stage it is deliberately small: given an execution config, an operation tag, and a capsule
 registry, choose an admissible capsule or explain why none is available. Graph-aware layers can
 recover those operation tags from `NN.IR.OpKind`, lower adjacent nodes, and eventually produce
-executable command buffers without changing the contract story.
+executable command buffers while preserving the declared contracts.
 -/
 
 @[expose] public section

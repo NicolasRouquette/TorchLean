@@ -27,8 +27,8 @@ For parameterized ops whose output shape depends on external parameters (notably
 we treat the node's declared `outShape` as an input to the checker and validate the local contracts
 we can check (e.g. input/output are vectors).
 
-This is the single source of truth for `Graph.checkShapes`: adding a new `OpKind` should extend
-this match first, then the semantics/export/verification passes can rely on the same contract.
+`Graph.checkShapes` uses these rules directly. Adding a new `OpKind` should extend this match before
+the semantics, export, and verification passes rely on its shape contract.
 
 PyTorch analogy:
 - `inferNodeOutShape` corresponds to shape propagation used when validating an FX graph.

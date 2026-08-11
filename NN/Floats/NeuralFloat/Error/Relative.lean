@@ -27,7 +27,7 @@ variable {β : NeuralRadix}
 theorem neuralUlp_div_abs_le_FLX (prec : ℤ) (hprec : 0 < prec) (x : ℝ) (hx : x ≠ 0) :
     @neuralUlp β (FLXExp prec) (flxValidExp prec hprec) x / abs x ≤
       neuralBpow β (1 - prec) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   rw [div_le_iff₀ (abs_pos.mpr hx)]
   rw [neuralUlp.of_ne_zero β (FLXExp prec) x hx]
   have hlower := neuralBpow_magnitude_sub_one_le β x hx
@@ -46,7 +46,7 @@ theorem relative_error_round_FLX (prec : ℤ) (hprec : 0 < prec)
     ErrorBounds.relativeError x
         (@neuralRound β (FLXExp prec) (flxValidExp prec hprec) rnd x) hx ≤
       neuralBpow β (1 - prec) / 2 := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   calc
     ErrorBounds.relativeError x (neuralRound (β := β) (fexp := FLXExp prec) rnd x) hx ≤
         neuralUlp β (FLXExp prec) x / (2 * abs x) :=
@@ -65,7 +65,7 @@ theorem neural_round_relative_error_FLX (prec : ℤ) (hprec : 0 < prec)
     ∃ δ : ℝ,
       abs δ ≤ neuralBpow β (1 - prec) / 2 ∧
       @neuralRound β (FLXExp prec) (flxValidExp prec hprec) rnd x = x * (1 + δ) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   obtain ⟨δ, hδ, hround⟩ :=
     ErrorBounds.neural_round_relative_error_ulp
       (β := β) (fexp := FLXExp prec) rnd x hx
@@ -83,7 +83,7 @@ theorem neuralUlp_div_abs_le_FLT_normal (emin prec : ℤ) (hprec : 0 < prec)
     (hnormal : neuralBpow β (emin + prec - 1) ≤ abs x) :
     @neuralUlp β (FLTExp emin prec) (fltValidExp emin prec hprec) x / abs x ≤
       neuralBpow β (1 - prec) := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
   have hupper := abs_lt_neuralBpow_magnitude β x hx
   have hpowLt : neuralBpow β (emin + prec - 1) <
       neuralBpow β (neuralMagnitude β x) := hnormal.trans_lt hupper
@@ -109,7 +109,7 @@ theorem relative_error_round_FLT_normal (emin prec : ℤ) (hprec : 0 < prec)
     ErrorBounds.relativeError x
         (@neuralRound β (FLTExp emin prec) (fltValidExp emin prec hprec) rnd x) hx ≤
       neuralBpow β (1 - prec) / 2 := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
   calc
     ErrorBounds.relativeError x
         (neuralRound (β := β) (fexp := FLTExp emin prec) rnd x) hx ≤

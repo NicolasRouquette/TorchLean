@@ -19,8 +19,8 @@ This entrypoint collects the ReLU-specific proof layer. It includes:
 - multiplication approximation on boxes by ReLU networks; and
 - compact-set approximation by coordinate-polynomial density plus ReLU realizations.
 
-This module stays separate from the architecture files: the model files define how an MLP computes,
-while this chapter proves what ReLU networks can represent and approximate.
+The architecture files define how an MLP computes. These modules establish what ReLU networks can
+represent and approximate.
 -/
 
 @[expose] public section

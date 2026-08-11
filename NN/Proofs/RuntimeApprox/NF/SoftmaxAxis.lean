@@ -41,7 +41,7 @@ namespace AxisSoftmax
 
 open scoped BigOperators
 
-open Autograd
+open _root_.Proofs.Autograd
 open Spec
 open Tensor
 open NN.MLTheory.Robustness.Spec
@@ -428,7 +428,7 @@ theorem hardMaskedNumerators_eq_fused {α : Type} [Context α] {n : Nat}
           | scalar score =>
               cases hmask : maskValues i with
               | scalar allowed =>
-                  simp [mapSpec, map2Spec, Tensor.replicate, hscore]
+                  simp [map2Spec, Tensor.replicate, hscore]
 
 /-- Error after subtracting an approximate allowed-row maximum from every score. -/
 def hardMaskedShiftError {n : Nat} (epsScores epsMax : ℝ)

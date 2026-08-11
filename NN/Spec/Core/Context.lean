@@ -15,24 +15,24 @@ public import Mathlib.Logic.Basic
 TorchLean is designed to be *scalar-polymorphic*: the same model/layer definitions can be
 instantiated over many numeric backends:
 
-- `Float` (fast execution; trusted runtime semantics),
+- `Float` (fast binary64 execution with a logical model and a separate native boundary),
 - `TorchLean.Floats.IEEE754.IEEE32Exec` (executable bit-level IEEE-754 binary32),
 - interval enclosures for verification (see `NN/Floats/Interval/*`),
 - `ℝ` (proof-level mathematics).
 
-Why we designed it this way:
+The scalar parameter serves several purposes:
 
 - We did not want separate "Float model code", "proof model code", and "verification model code"
   that slowly diverge and become inconsistent.
 - In practice, we iterate across phases: execute a compact model, state the proof-level contract, then
   run verification bounds. Rewriting each model for each phase is error-prone.
-- A single scalar-polymorphic spec gives one source of truth for layers/models, while letting us
-  swap numeric meaning by changing the scalar instance.
+- A scalar-polymorphic specification keeps the layer and model definitions shared while the scalar
+  instance determines their numerical meaning.
 - Cross-checking happens at the scalar semantics layer, not inside duplicated model definitions.
-- The tradeoff is a slightly larger scalar interface (`Context α`), but we accept that complexity
-  to keep architecture-level duplication low and proofs/reuse high.
+- `Context α` is larger than a minimal arithmetic interface, but avoids duplicating architectures
+  across execution, proof, and verification code.
 
-Some relevant literature we were following / taking inspiration from:
+Related work:
 
 - Bezanson et al., "Julia: A Fresh Approach to Numerical Computing" (generic numeric code across
   many scalar types; performance via specialization): https://arxiv.org/abs/1411.1607

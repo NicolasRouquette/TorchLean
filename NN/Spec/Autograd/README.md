@@ -22,7 +22,7 @@ PyTorch analogy:
 - `Ops.lean`: common `OpSpec`s built from spec tensor primitives: activations, pointwise math,
   reductions, broadcasting-aware wrappers, and loss functions.
 
-## Where To Look For The Other Layers
+## Related Modules
 
 - `NN/Runtime/Autograd/`: executable tape/graph engines and training utilities.
 - `NN/GraphSpec/` and `NN/IR/`: typed DAG and op-tagged IR representations used by compilation and

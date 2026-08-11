@@ -42,7 +42,7 @@ If you’re coming from PyTorch:
 - PyTorch’s autograd engine computes gradients by recording an eager tape; this bridge is about
   running the forward pass of an IR graph with a proof that it matches the IR semantics.
 
-## Reading map
+## Main declarations
 
 - `ExecGraphData` packages a compiled graph with its input shape.
 - `IRExec.dValsOfCtx` converts typed runtime contexts back into IR-style value arrays.

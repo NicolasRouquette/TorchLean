@@ -223,7 +223,6 @@ theorem buildFrom_denoteAllFrom_layernorm
               · exact False.elim <|
                   throw_bind_ne_ok (by simpa [hp, hParams, view2D, hNumel] using hBuild)
 
-set_option maxRecDepth 3000 in
 /-- Correctness lemma for eval-mode NCHW BatchNorm2d lowering. -/
 theorem buildFrom_denoteAllFrom_batchNorm2dNchwEval
     {α : Type} [Context α] [DecidableEq Shape]

@@ -202,7 +202,8 @@ def mseLossFderiv {Γ : List Shape} {s : Shape} (yhat target : Idx Γ s) :
           (↑(Spec.meanDenom s))⁻¹ *
             ‖CtxVec.get (Γ := Γ) (s := s) yhat x -
               CtxVec.get (Γ := Γ) (s := s) target x‖ ^ 2 := by
-            simp [mseLoss, Node.forwardVec_ofVec, Spec.Shape.size, div_eq_mul_inv]
+            simp only [mseLoss, Node.forwardVec_ofVec]
+            simp [Spec.Shape.size, div_eq_mul_inv]
         _ = (vecScalarCLM (g x)).ofLp ⟨0, by simp [Spec.Shape.size]⟩ := by
             simp [g, c, n, smul_eq_mul, div_eq_mul_inv]
     exact hwrap.congr_of_eventuallyEq hEq.eventuallyEq
@@ -228,7 +229,8 @@ def mseLossFderiv {Γ : List Shape} {s : Shape} (yhat target : Idx Γ s) :
         (Node.jvpVec (Γ := Γ) (τ := Shape.scalar) (mseLoss (Γ := Γ) (s := s) yhat target) xV
           dxV).ofLp i =
           c * (2 * inner ℝ diffV ddiffV) := by
-      simp [mseLoss, Node.jvpVec_ofVec, diffV, ddiffV, Spec.Shape.size, c, n, div_eq_mul_inv]
+      simp only [mseLoss, Node.jvpVec_ofVec]
+      rw [vecOfFun_ofLp]
     have hR : ((vecScalarCLM.comp D0) dxV).ofLp i = D0 dxV := by
       simp [ContinuousLinearMap.comp_apply]
     calc

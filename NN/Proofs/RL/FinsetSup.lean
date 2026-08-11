@@ -40,8 +40,8 @@ theorem sup'_le_add_const
   refine Finset.sup'_le hs f ?_
   intro i hi
   have hsup : g i + c ≤ s.sup' hs g + c := by
-    -- `Finset.le_sup'` gives `g i ≤ sup g`; we add `c` to both sides.
-    simpa [add_comm, add_left_comm, add_assoc] using add_le_add_left (Finset.le_sup' g hi) c
+    have hgi : g i ≤ s.sup' hs g := Finset.le_sup' g hi
+    exact add_le_add_left hgi c
   exact (hfg i hi).trans hsup
 
 end RL

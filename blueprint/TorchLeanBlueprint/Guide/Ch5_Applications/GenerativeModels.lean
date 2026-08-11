@@ -13,8 +13,8 @@ sampling procedure that may not resemble the training pass. TorchLean does not p
 under one vague claim of “verified generation.” It gives the pieces separate Lean definitions and
 connects them where the current proofs justify the connection.
 
-This chapter begins with one complete diffusion run. It then uses the VAE, VQ-VAE, GAN, and masked
-autoencoder examples to show where executable training and formal objective theory currently meet.
+We begin with one complete diffusion run, then use the VAE, VQ-VAE, GAN, and masked autoencoder
+examples to compare executable training with the formal objective theory currently available.
 
 # A Diffusion Run From Data To Sample
 

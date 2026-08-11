@@ -43,9 +43,9 @@ fractions. `IEEE32Exec` stores and executes explicit binary32 bit patterns. `Flo
 runtime. The final attempted tensor over `ℝ` is a mathematical object; arbitrary real numbers are
 not executable data, so printing it is rejected rather than pretending to approximate it.
 
-The source is
-[`TensorBasics.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Quickstart/TensorBasics.lean).
-Keep it open while reading this chapter: every definition below is a small variation of that file.
+The complete program is in
+[`TensorBasics.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Quickstart/TensorBasics.lean),
+and the following definitions develop the same ideas one operation at a time.
 
 # One Tensor Type
 
@@ -84,6 +84,39 @@ At the type level, `rankFourShape` is an ordinary rank-four tensor. NCHW, NHWC, 
 feature conventions come from operations and models rather than separate tensor datatypes. The
 same tensor core can therefore represent language tokens, PDE grids, volumetric data, batched
 matrices, or an unusual scientific coordinate system.
+
+# The Logical Representation
+
+The definition of `Spec.Tensor` follows the definition of `Shape`:
+
+```
+inductive Tensor (α : Type) : Shape → Type
+  | scalar : α → Tensor α .scalar
+  | dim : ∀ {n s}, (Fin n → Tensor α s) → Tensor α (.dim n s)
+```
+
+A scalar tensor contains one `α`. Adding an outer dimension of length `n` gives a total function
+from `Fin n` to the tensor stored at each position. A value of shape `[2, 3]` is therefore a
+function selecting one of two rows, where each row is a function selecting one of three scalars.
+
+This representation was chosen for the specification layer, not because nested functions are the
+fastest way to store a minibatch. It gives us three useful facts directly from the type:
+
+- every axis has the length written in the shape;
+- every legal index carries its own bounds proof;
+- definitions and proofs can recurse over the shape and tensor together.
+
+For example, `Spec.mapTensor` changes the scalar type while preserving every dimension:
+
+```
+#check Spec.mapTensor
+
+-- Spec.mapTensor : (α → β) → Spec.Tensor α s → Spec.Tensor β s
+```
+
+The result shape is fixed before any values are evaluated. The definition recurses through
+`scalar` and `dim`, applies the supplied function only at scalar leaves, and therefore works at
+every rank.
 
 # Literals Prove Their Own Shape
 
@@ -300,6 +333,25 @@ does not prove layout agreement, so backend capsules record layout requirements 
 Runtime CPU and CUDA code uses arrays, native storage, or device buffers. These are not competing
 tensor systems; they are two representations with an explicit bridge.
 
+There is one runtime detail worth knowing even when writing pure Lean code. Repeated functional
+updates can build chains of closures. A long optimizer run that repeatedly asks for the newest
+value may then spend more time walking old closures than doing arithmetic. `Tensor.materialize`
+rebuilds the same mathematical tensor into an array-backed normal form at each dimension:
+
+```
+#check Spec.Tensor.materialize
+#check Spec.Tensor.materialize_eq
+```
+
+The second declaration proves
+
+$$`\operatorname{materialize}(t)=t.`
+
+So materialization is not an approximation and does not change the tensor seen by a theorem. It is
+a representation change used to keep repeated updates from accumulating runtime indirection. It
+visits every scalar once, so its work is linear in `Shape.size s`; callers should place it at a
+deliberate boundary rather than inside every small tensor operation.
+
 The deep-dive file
 [`Tensors/Basic.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/DeepDives/Tensors/Basic.lean)
 shows both:
@@ -317,6 +369,95 @@ def matrixSpec : Spec.Tensor Float (listToShape [2, 3]) :=
 
 `TensorArray` makes row-major storage explicit. `Spec.Tensor` makes shape recursion explicit.
 Conversion theorems and runtime checks connect them.
+
+The runtime-oriented `TensorArray.Tensor α dims` stores:
+
+```
+data        : Array α
+shape_valid : data.size = TensorArray.shapeProd dims
+```
+
+Its `get?` operation accepts a runtime list of indices. It returns `none` when the rank differs or
+an index is outside its dimension. This is a different interface from indexing `Spec.Tensor` with
+`Fin`: external indices are checked dynamically, while an index already inside a proof uses the
+total specification interface.
+
+# Cost And Representation Notes
+
+The shape indices remove ambiguity, but they do not erase the cost of an operation. The useful
+cost model is:
+
+:::table +header
+*
+  * Operation
+  * Specification view
+  * Array or native view
+*
+  * index a rank-$`r` tensor
+  * apply one finite function per axis
+  * compute a row-major offset, then read the buffer
+*
+  * map
+  * visit every scalar and preserve the shape
+  * one pass over contiguous storage
+*
+  * reshape
+  * prove equal element counts and reinterpret index structure
+  * retain or rebuild storage according to the runtime path
+*
+  * materialize
+  * extensionally the identity
+  * one traversal that removes accumulated closure chains
+*
+  * matrix multiplication
+  * the mathematical sum declared by the spec
+  * a loop nest, CUDA kernel, cuBLAS call, or another accepted capsule
+:::
+
+Big-O notation alone cannot settle provider agreement. Two matrix multiplications may both take
+$`O(mnk)` arithmetic operations while accumulating in different orders and returning different
+Float32 bits. The graph and backend chapters keep the operation, provider, and numerical contract
+separate for this reason.
+
+# Common Tensor Declarations
+
+These are the names I reach for most often when reading or writing a small example:
+
+:::table +header
+*
+  * Declaration
+  * Use
+*
+  * `shape![d₀, ..., dₙ]`
+  * build a shape known while Lean elaborates the file
+*
+  * `tensor!`
+  * construct a rectangular nested literal and infer its shape
+*
+  * `tensorOfList!`
+  * construct a statically shaped tensor from a flat literal
+*
+  * `Tensor.ofList`
+  * check runtime data against a requested static shape
+*
+  * `NN.Tensor.dynamicOfList`
+  * retain an existential shape when dimensions are known only at runtime
+*
+  * `Spec.Tensor.castShape`
+  * transport a tensor along a proved equality of shapes
+*
+  * `Spec.Tensor.materialize`
+  * normalize the pure representation without changing its value
+*
+  * `TensorArray.ofArray`
+  * pair a flat array with runtime dimensions and a size proof
+*
+  * `TensorArray.get?`
+  * check a runtime multi-index before reading array-backed storage
+:::
+
+The generated API reference gives the complete signatures. This table is the smaller working set
+used by the examples in this guide.
 
 # Inspect Tensors In The Lean Infoview
 

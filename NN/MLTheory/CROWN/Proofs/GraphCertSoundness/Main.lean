@@ -340,7 +340,7 @@ theorem cert_encloses_semantics
                                                 = y := by
                                             have := (castDimScalar_trans (h₁ := hxy.symm) (h₂ :=
                                               hDim1.symm) (t := v2.v)).symm
-                                            simpa [y, hProof] using this
+                                            simp [y] at this ⊢
                                           simpa [x, y, h2] using h1
                                         -- Prove enclosure for the canonical “equal-dimension”
                                         -- result box,
@@ -536,10 +536,8 @@ theorem cert_encloses_semantics
                                                       =
                                                       castDimScalar (α := ℝ) (Eq.trans (Eq.symm hxy)
                                                         hDim1.symm) v2.v := by
-                                                  simpa using
-                                                    (castDimScalar_trans (h₁ := (Eq.symm hxy)) (h₂
-                                                      := hDim1.symm) (t := v2.v)).symm
-                                                simpa [y, hEq] using hnest
+                                                  simp
+                                                simp [y] at hnest ⊢
                                               -- Now simplify using `x` and `hyCast`.
                                               simp [x, castDimScalar_mul_spec, hyCast]
                                             have hvCast :
@@ -568,12 +566,7 @@ theorem cert_encloses_semantics
                                                             v2.v))) := by
                                                       -- Reassociate casts along `hDim1.symm` then
                                                       -- `hDimMul.symm`.
-                                                      simpa [hts] using
-                                                        (castDimScalar_trans (h₁ := hDim1.symm) (h₂
-                                                          := hDimMul.symm)
-                                                          (t := Tensor.mulSpec (α := ℝ) v1.v
-                                                            (castDimScalar (α := ℝ) (Eq.symm hxy)
-                                                              v2.v)))
+                                                      simp
                                                 _ = castDimScalar (α := ℝ) hDimMul.symm
                                                   (Tensor.mulSpec (α := ℝ) x y) := by
                                                       simpa using
@@ -703,7 +696,7 @@ theorem cert_encloses_semantics
                                                 = y := by
                                             have := (castDimScalar_trans (h₁ := hxy.symm) (h₂ :=
                                               hDim1.symm) (t := v2.v)).symm
-                                            simpa [y, hProof] using this
+                                            simp [y] at this ⊢
                                           simpa [x, y, h2] using h1
                                         have hCanon :
                                             EnclosesBox
@@ -835,9 +828,7 @@ theorem cert_encloses_semantics
                             _ =
                                 castDimScalar (α := ℝ) (Eq.trans hDim.symm hOuter)
                                   (Activation.reluSpec (α := ℝ) v1.v) := by
-                                  simpa using
-                                    (castDimScalar_trans (h₁ := hDim.symm) (h₂ := hOuter)
-                                      (t := Activation.reluSpec (α := ℝ) v1.v)).symm
+                                  simp
                             _ =
                                 castDimScalar (α := ℝ) hDimOut.symm
                                   (Activation.reluSpec (α := ℝ) v1.v) := by
@@ -911,14 +902,13 @@ theorem cert_encloses_semantics
                           (castDimScalar_map_spec (h := hDim.symm)
                             (f := Activation.Math.tanhSpec (α := ℝ)) (t := v1.v))
                       refine ⟨hDim, ?_⟩
-                      convert
-                        (encloses_of_contains (n := B1.dim)
+                      have hout := encloses_of_contains (n := B1.dim)
                           (B := NN.MLTheory.CROWN.Runtime.Ops.IBP.tanh (α := ℝ) (n := B1.dim)
                             (ofFlatBox (α := ℝ) B1))
-                          (x := Activation.tanhSpec (α := ℝ) (castDimScalar (α := ℝ) hDim.symm
-                            v1.v))
-                          houtContains) using 1
-                      exact hvCast
+                          (x := Activation.tanhSpec (α := ℝ) (castDimScalar (α := ℝ)
+                            hDim.symm v1.v))
+                          houtContains
+                      simpa only [toFlatBox, hvCast] using hout
         case sigmoid =>
           cases hparents : (g.nodes[k]!).parents with
           | nil =>
@@ -986,14 +976,13 @@ theorem cert_encloses_semantics
                           (castDimScalar_map_spec (h := hDim.symm)
                             (f := Activation.Math.sigmoidSpec (α := ℝ)) (t := v1.v))
                       refine ⟨hDim, ?_⟩
-                      convert
-                        (encloses_of_contains (n := B1.dim)
-                          (B := NN.MLTheory.CROWN.Runtime.Ops.IBP.sigmoid (α := ℝ) (n := B1.dim)
-                            (ofFlatBox (α := ℝ) B1))
-                          (x := Activation.sigmoidSpec (α := ℝ) (castDimScalar (α := ℝ) hDim.symm
-                            v1.v))
-                          houtContains) using 1
-                      exact hvCast
+                      have hout := encloses_of_contains (n := B1.dim)
+                          (B := NN.MLTheory.CROWN.Runtime.Ops.IBP.sigmoid (α := ℝ)
+                            (n := B1.dim) (ofFlatBox (α := ℝ) B1))
+                          (x := Activation.sigmoidSpec (α := ℝ) (castDimScalar (α := ℝ)
+                            hDim.symm v1.v))
+                          houtContains
+                      simpa only [toFlatBox, hvCast] using hout
         case sin =>
           cases hparents : (g.nodes[k]!).parents with
           | nil =>
@@ -1060,14 +1049,13 @@ theorem cert_encloses_semantics
                           (castDimScalar_map_spec (h := hDim.symm)
                             (f := fun z : ℝ => Real.sin z) (t := v1.v))
                       refine ⟨hDim, ?_⟩
-                      convert
-                        (encloses_of_contains (n := B1.dim)
+                      have hout := encloses_of_contains (n := B1.dim)
                           (B := NN.MLTheory.CROWN.Runtime.Ops.IBP.sin (α := ℝ) (n := B1.dim)
                             (ofFlatBox (α := ℝ) B1))
                           (x := Tensor.mapSpec (α := ℝ) (s := .dim B1.dim .scalar) Real.sin
                             (castDimScalar (α := ℝ) hDim.symm v1.v))
-                            (by simpa [castDimScalar] using houtContains)) using 1
-                      exact hvCast
+                          (by simpa [castDimScalar] using houtContains)
+                      simpa only [toFlatBox, hvCast] using hout
         case cos =>
           cases hparents : (g.nodes[k]!).parents with
           | nil =>
@@ -1133,14 +1121,13 @@ theorem cert_encloses_semantics
                           (castDimScalar_map_spec (h := hDim.symm)
                             (f := fun z : ℝ => Real.cos z) (t := v1.v))
                       refine ⟨hDim, ?_⟩
-                      convert
-                        (encloses_of_contains (n := B1.dim)
+                      have hout := encloses_of_contains (n := B1.dim)
                           (B := NN.MLTheory.CROWN.Runtime.Ops.IBP.cos (α := ℝ) (n := B1.dim)
                             (ofFlatBox (α := ℝ) B1))
                           (x := Tensor.mapSpec (α := ℝ) (s := .dim B1.dim .scalar) Real.cos
                             (castDimScalar (α := ℝ) hDim.symm v1.v))
-                            (by simpa [castDimScalar] using houtContains)) using 1
-                      exact hvCast
+                          (by simpa [castDimScalar] using houtContains)
+                      simpa only [toFlatBox, hvCast] using hout
         case linear =>
           cases hparents : (g.nodes[k]!).parents with
           | nil =>
@@ -1215,13 +1202,13 @@ theorem cert_encloses_semantics
                                       (castDimScalar (α := ℝ) hDim.symm v1.v) := by
                                 -- `hxDim'` and `Eq.trans hDim.symm hXin` are the same equality, up
                                 -- to proof irrelevance.
-                                simpa [hProof] using
-                                  (castDimScalar_trans (h₁ := hDim.symm) (h₂ := hXin) (t := v1.v))
+                                simp
                               have hxContains :
                                   Box.contains (α := ℝ)
                                     (castBoxDim (α := ℝ) hXin (ofFlatBox (α := ℝ) B1))
                                     (castDimScalar (α := ℝ) hxDim' v1.v) := by
-                                simpa [hxCastEq] using hxContains1
+                                rw [hxCastEq]
+                                exact hxContains1
                               have hb : Box.contains (α := ℝ) (Box.point (α := ℝ) p.b) p.b := by
                                 cases p.b with
                                 | dim fb =>
@@ -1320,13 +1307,13 @@ theorem cert_encloses_semantics
                                   castDimScalar (α := ℝ) hxDim' v1.v
                                     = castDimScalar (α := ℝ) hXin
                                       (castDimScalar (α := ℝ) hDim.symm v1.v) := by
-                                simpa [hProof] using
-                                  (castDimScalar_trans (h₁ := hDim.symm) (h₂ := hXin) (t := v1.v))
+                                simp
                               have hxContains :
                                   Box.contains (α := ℝ)
                                     (castBoxDim (α := ℝ) hXin (ofFlatBox (α := ℝ) B1))
                                     (castDimScalar (α := ℝ) hxDim' v1.v) := by
-                                simpa [hxCastEq] using hxContains1
+                                rw [hxCastEq]
+                                exact hxContains1
                               let z : Tensor ℝ (.dim p.m .scalar) :=
                                 Spec.fill (α := ℝ) 0 (.dim p.m .scalar)
                               have hz : Box.contains (α := ℝ) (Box.point (α := ℝ) z) z := by

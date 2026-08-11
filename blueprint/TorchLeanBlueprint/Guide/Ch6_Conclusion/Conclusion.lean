@@ -108,8 +108,8 @@ missing nouns:
 The result might then read: “checker `C` accepted parameter artifact `P`, lowered to graph `G`, and
 established class margin `Q` for the box $`[\mathrm{lo},\mathrm{hi}]` under the graph's declared scalar semantics;
 artifact generation and the named native providers remain outside the checked implication.” The
-actual names matter more than this template. The point is that a later reader can replace the
-parameters, box, or backend and know exactly which part of the argument must be repeated.
+actual names matter more than this template. With them recorded, replacing the parameters, box, or
+backend reveals exactly which part of the argument must be repeated.
 
 # What Is Checked Or Proved In Lean
 
@@ -151,7 +151,7 @@ implementation responsibility, and evidence. Artifact parsers and policy gates r
 inadmissible input. Those mechanisms make the remaining trust visible; wrapping a native library or
 Python script in a Lean function would not make it proved.
 
-# The Numerical Story
+# Numerical Guarantees
 
 The floating-point stack has three central levels:
 
@@ -190,7 +190,7 @@ format constructors, operation-specific runtime guards, native-buffer validation
 parsers all apply this principle at their own boundary. These checks do not prove an external
 implementation; they keep later theorems and tests from silently operating on a different problem.
 
-# The Scaling Story
+# Scaling Through Backend Contracts
 
 TorchLean is not meant to replace every tuned numeric kernel with a slow Lean implementation.
 Large models need industrial matrix multiplication, convolution, attention, FFT, and communication
@@ -211,7 +211,7 @@ implementation to a checked or explicitly trusted external kernel.
 Scaling and verification therefore meet at the backend contract, not by pretending that outsourced
 numerics were executed inside the theorem prover.
 
-# The Scientific-ML Story
+# Scientific ML
 
 A PINN or neural operator usually participates in a larger chain:
 

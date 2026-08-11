@@ -2,9 +2,10 @@
 title: Examples
 ---
 
-TorchLean includes runnable training, autograd, data-loading, export, generation, and verification
-examples. Each page records the command, input data, produced artifact, and the claim checked by
-Lean.
+These examples show TorchLean at work on real machine-learning problems: training models,
+differentiating tensor programs, moving weights through PyTorch, and checking numerical or
+verification claims in Lean. Open an example for the runnable code and the theorem or contract
+behind it.
 
 ## Featured Examples
 
@@ -126,23 +127,3 @@ Lean.
     </span>
   </a>
 </div>
-
-CUDA is opt-in. The build flags, runtime path, and agreement assumptions are explained in
-[GPU and CUDA]({{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }}).
-For the broader backend design, read
-[Backend Selection and Trust]({{ '/blueprint/Runtime___-Autograd___-and-Interop/Choosing-How-A-Model-Runs/' | relative_url }}).
-For long CUDA training runs, model commands also expose allocator telemetry through
-`--cuda-mem-watch N`; longer runs choose a small default cadence so device-memory behavior is visible
-while the example is running. The report separates live tensor storage from released blocks kept for
-reuse. Set `TORCHLEAN_CUDA_CACHE_CAP_BYTES` before launch to bound that reuse cache; the
-[GPU chapter]({{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }})
-shows the command and explains the allocator fields.
-
-The command registry is:
-
-```bash
-lake exe torchlean --help
-lake exe verify --help
-```
-
-The help output is the authoritative list of runnable entry points and their current flags.

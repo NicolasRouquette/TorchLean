@@ -151,44 +151,27 @@ theorem flattenCtx_snoc {Γ : List Shape} {τ : Shape} (xs : TList Γ) (y : Tens
   induction Γ with
   | nil =>
     cases xs
-    show flattenCtx (TList.cons y TList.nil) = _
-    ext i
-    have hi : (i : Nat) < Spec.Shape.size τ := by
-      have h := i.isLt
-      simp only [ctxSize, Nat.add_zero] at h
-      exact h
-    simp [flattenCtx, snocCtx, appendVec, castVec_apply, Fin.append, Fin.addCases, hi, ctxSize]
-    all_goals rfl
+    change flattenCtx (TList.cons y TList.nil) = _
+    rw [flattenCtx_cons, flattenCtx_nil]
+    let h : ctxSize [] + τ.size = τ.size + ctxSize [] := by simp [ctxSize]
+    change appendVec (toVecT y) 0 = castVec h (appendVec 0 (toVecT y))
+    apply PiLp.ext
+    intro i
+    induction i using Fin.addCases with
+    | left i =>
+      rw [appendVec_ofLp_castAdd, castVec_ofLp]
+      have hidx :
+          Fin.cast h.symm (Fin.castAdd (ctxSize []) i) = Fin.natAdd (ctxSize []) i := by
+        apply Fin.ext
+        simpa only [ctxSize, Fin.val_natAdd, Nat.zero_add, Fin.val_castAdd] using
+          Fin.val_cast h.symm (Fin.castAdd (ctxSize []) i)
+      rw [hidx, appendVec_ofLp_natAdd]
+    | right i => exact i.elim0
   | cons s Γ ih =>
     cases xs with
-    | cons xh xt =>
-      show flattenCtx (TList.cons xh (TList.snoc xt y)) = _
-      simp only [flattenCtx, ih]
-      ext i
-      induction i using Fin.addCases with
-      | left i =>
-        have h1 : (i : Nat) < ctxSize (s :: Γ) := by
-          have h := i.isLt
-          simp only [ctxSize]
-          exact Nat.lt_of_lt_of_le h (Nat.le_add_right _ _)
-        simp [snocCtx, appendVec, castVec_apply, Fin.append, Fin.addCases, h1]
-        all_goals rfl
-      | right i =>
-        by_cases h2 : (i : Nat) < ctxSize Γ
-        · have h3 : Spec.Shape.size s + (i : Nat) < ctxSize (s :: Γ) := by
-            simp only [ctxSize]
-            exact Nat.add_lt_add_left h2 _
-          simp [snocCtx, appendVec, castVec_apply, Fin.append, Fin.addCases,
-            h2, h3, Fin.subNat, Fin.natAdd]
-          all_goals rfl
-        · have h3 : ¬ Spec.Shape.size s + (i : Nat) < ctxSize (s :: Γ) := by
-            simp only [ctxSize]
-            exact fun hc => h2 (Nat.lt_of_add_lt_add_left hc)
-          have h4 : Spec.Shape.size s + (i : Nat) - ctxSize (s :: Γ) = (i : Nat) - ctxSize Γ := by
-            simp only [ctxSize]
-            exact Nat.add_sub_add_left _ _ _
-          simp [snocCtx, appendVec, castVec_apply, Fin.append, Fin.addCases,
-            h2, h3, h4, Fin.subNat, Fin.natAdd]
+    | cons x xs =>
+      change flattenCtx (TList.cons x (TList.snoc xs y)) = _
+      rw [flattenCtx_cons, ih, flattenCtx_cons, appendVec_snocCtx]
 
 /-- `flattenCtx` maps `TList.unsnoc` to `unsnocCtx`. -/
 theorem unsnocCtx_flattenCtx {Γ : List Shape} {τ : Shape} (w : TList (Γ ++ [τ])) :

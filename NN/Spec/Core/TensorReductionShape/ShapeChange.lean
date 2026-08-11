@@ -189,10 +189,7 @@ theorem flatten_unflatten_inverse {α : Type} [Inhabited α] :
   | .scalar, t => by
       cases t with
       | scalar x =>
-          -- Do the computation step by step instead of asking `simp` to choose how far to unfold
-          -- the shape-indexed round trip.
-          simp [flattenSpec, Spec.Shape.size]
-          unfold unflattenSpec
+          change unflattenSpec Shape.scalar (Tensor.dim fun _ => Tensor.scalar x) = Tensor.scalar x
           rfl
   | .dim n s, t => by
       cases t with
@@ -260,6 +257,7 @@ theorem unflatten_flatten_inverse {α : Type} [Inhabited α] :
                 simp [unflattenSpec, idx0, h0]
               rw [hunflat]
               simp [flattenSpec, Spec.Shape.size]
+              apply congrArg Tensor.dim
               funext i
               have hival : i.val = 0 := by
                 have : i.val < 1 := by simp
@@ -268,7 +266,7 @@ theorem unflatten_flatten_inverse {α : Type} [Inhabited α] :
               have hi : i = idx0 := by
                 apply Fin.ext
                 simp [idx0]
-              simp [hi, h0]
+              simpa [hi] using h0.symm
   | .dim n s, v => by
       cases v with
       | dim g =>

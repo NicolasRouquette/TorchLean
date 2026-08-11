@@ -28,7 +28,7 @@ theorem neural_generic_format_FLX_mul_bpow (prec : ℤ) (hprec : 0 < prec)
     (e : ℤ) :
     @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec)
       (x * neuralBpow β e) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   by_cases hx0 : x = 0
   · subst x
     simp
@@ -66,7 +66,7 @@ theorem neural_mul_round_error_FLX_exists_repr (prec : ℤ) (hprec : 0 < prec)
         f.exponent ∧
       f.exponent = @neuralCexp β (FLXExp prec) (flxValidExp prec hprec) x +
         @neuralCexp β (FLXExp prec) (flxValidExp prec hprec) y := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   let product := x * y
   let rounded := neuralRound (β := β) (fexp := FLXExp prec) rnd product
   let err := rounded - product
@@ -142,7 +142,7 @@ theorem neural_mul_round_error_FLX (prec : ℤ) (hprec : 0 < prec)
     (hy : @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) y) :
     @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec)
       (@neuralRound β (FLXExp prec) (flxValidExp prec hprec) rnd (x * y) - x * y) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   let err := neuralRound (β := β) (fexp := FLXExp prec) rnd (x * y) - x * y
   by_cases herr0 : err = 0
   · change neuralGenericFormat β (FLXExp prec) err
@@ -157,8 +157,8 @@ theorem neural_mul_round_error_FLX (prec : ℤ) (hprec : 0 < prec)
 theorem neural_generic_format_FLT_to_FLX (emin prec : ℤ) (hprec : 0 < prec) {x : ℝ}
     (hx : @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) x) :
     @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) x := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   apply neural_generic_inclusion (fexp₁ := FLTExp emin prec) (fexp₂ := FLXExp prec)
   · intro e
     simp [FLTExp, FLXExp]
@@ -176,8 +176,8 @@ theorem neural_mul_round_error_FLT (emin prec : ℤ) (hprec : 0 < prec)
       neuralBpow β (emin + 2 * prec - 1) ≤ abs (x * y)) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec)
       (@neuralRound β (FLTExp emin prec) (fltValidExp emin prec hprec) rnd (x * y) - x * y) := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   let product := x * y
   let roundFLT := neuralRound (β := β) (fexp := FLTExp emin prec) rnd product
   let roundFLX := neuralRound (β := β) (fexp := FLXExp prec) rnd product
@@ -245,7 +245,7 @@ theorem neural_generic_format_FLT_mul_bpow (emin prec : ℤ) (hprec : 0 < prec)
     (hshift : emin + prec - neuralMagnitude β x ≤ e) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec)
       (x * neuralBpow β e) := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
   by_cases hx0 : x = 0
   · subst x
     simp
@@ -277,7 +277,7 @@ theorem neural_generic_format_FLT_mul_bpow_of_nonneg (emin prec : ℤ) (hprec : 
       (fltValidExp emin prec hprec) x) (e : ℤ) (he : 0 ≤ e) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec)
       (x * neuralBpow β e) := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
   by_cases hx0 : x = 0
   · subst x
     simp

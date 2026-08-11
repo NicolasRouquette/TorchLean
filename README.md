@@ -3,10 +3,11 @@
   Formalizing Neural Networks in Lean
 </h1>
 
-TorchLean is a Lean 4 framework for writing, running, inspecting, and verifying
-neural-network programs. It provides typed tensors and model APIs, a shared graph
-IR, runtime/autograd support, finite-precision semantics, certificate checkers,
-CUDA/runtime boundaries, and examples across modern ML and scientific ML.
+TorchLean brings neural-network programming and formal reasoning into one Lean project. Tensor
+shapes are part of the types, models are executable Lean programs, and the same definitions can be
+used by training code, graph transformations, certificate checkers, and proofs. CPU and CUDA
+backends handle numerical work; the Lean library records the mathematical meaning and assumptions
+attached to each path.
 
 ## Installation
 
@@ -21,7 +22,7 @@ For Linux, macOS, Windows/WSL, CUDA, optional LibTorch support, and an explanati
 TorchLean's backend architecture, see the [Installation guide](https://lean-dojo.github.io/TorchLean/installation/).
 
 TorchLean is pinned by `lean-toolchain` and currently builds with
-`leanprover/lean4:v4.32.0`.
+`leanprover/lean4:v4.33.0`.
 
 ## Quickstart
 
@@ -34,11 +35,9 @@ lake -R -K cuda=true build
 lake -R -K cuda=true exe torchlean mlp --device cuda --steps 1000
 ```
 
-The first quickstart uses TorchLean's executable IEEE-style Float32 scalar. The
-second uses Lean's builtin `Float` runtime path. The CUDA command uses the
-native GPU runtime path and checks that the CUDA backend is available. Theorem
-statements that mention CUDA cite the native-runtime boundary in
-`TRUST_BOUNDARIES.md` instead of treating a kernel launch as Lean proof evidence.
+The first quickstart uses TorchLean's executable binary32 scalar. The second uses Lean's builtin
+`Float` runtime path. The CUDA command selects the native GPU runtime and reports an error when CUDA
+is unavailable.
 
 Application code looks like this:
 
@@ -83,7 +82,7 @@ def trainOnce : IO Unit := do
   trained.printSummary
 ```
 
-## First Things To Try
+## Commands
 
 ```bash
 lake exe torchlean --help
@@ -168,57 +167,18 @@ require TorchLean from "../TorchLean"
 - `blueprint/TorchLeanBlueprint/Guide`: source for the guide.
 - `home_page`: project website sources.
 
-## Current Capabilities
+## Proofs And Runtime Boundaries
 
-The same rule applies across the tree: name the object, name the artifact, and name the boundary.
+TorchLean proves properties of explicit Lean definitions. It also checks certificates produced by
+external tools, including bound-propagation and scientific-computing workflows. A successful
+certificate check proves the predicate implemented by that checker; it does not certify the program
+that produced the certificate.
 
-- **Training and runtime.** `Trainer.new` supports supervised tasks, scalar/backend choices,
-  trained handles, prediction, logs, typed step streams, generated or file-backed batches, and
-  optional CUDA-backed Float32 runtime paths. Application code uses one trainer with selected
-  backend options instead of one forward method per backend.
-- **Graphs and compiler fragments.** TorchLean models can be lowered to a shared IR. A first-order
-  forward fragment has Lean-side compiler-correctness theorems, and coverage grows operation by
-  operation. GraphSpec describes typed architectures above the lower-level op-tagged DAG consumed by
-  runtime, widgets, exporters, and verification passes.
-- **Verification.** The repository includes IBP/CROWN-style graph checks, α/β-CROWN-style artifact
-  replay, robustness workflows, VNN-COMP-style MNIST checks, PINN residual checks, ODE corridors,
-  spline certificates, and 3D geometry projection certificates. External producers write compact
-  artifacts; Lean parses the artifact, checks the stated predicate, and records any remaining
-  producer assumptions.
-- **ML theory.** The theory layer covers CROWN/LiRPA objects, optimizer laws, Muon
-  orthogonalization certificates, learning-theory examples, generative objective identities,
-  self-supervised-learning algebra, approximation theorems, and floating-point bridges. Optimizers
-  use a generic `TensorOptimizer` interface so new update rules share finite-stream laws. A
-  `StepSpec` is available when an independent mathematical recurrence must be related to the
-  executable update.
-- **Scientific ML.** The FNO Burgers and PINN/ODE paths show how numerical artifacts can be carried
-  back into Lean checks. External simulators and optimizers remain named producers; Lean owns the
-  artifact schemas, residual predicates, dataset checks, and certificate replay statements that sit
-  at the verification boundary.
-
-## What To Cite For A Claim
-
-| Claim shape | Where to look |
-| --- | --- |
-| "This model runs and trains" | `NN/Examples`, `NN/Runtime`, command output, and regression tests. |
-| "This graph has a checked bound/certificate" | `NN/Verification`, `NN/MLTheory/CROWN`, and the artifact schema named by the command. |
-| "This compilation/evaluation fragment preserves meaning" | `NN/Verification/TorchLean/Proved` and the theorem imported through `NN.Verification`. |
-| "This optimizer update follows the intended equation" | `NN/Runtime/Optim` for executable equations and `NN/MLTheory/Optimization` for reusable laws. |
-| "This finite-precision statement has a formal model" | `NN/Floats`, `NN/Proofs/RuntimeApprox`, and the relevant bridge hypotheses. |
-| "This CUDA/LibTorch/PyTorch/Julia/Gymnasium path was used" | `TRUST_BOUNDARIES.md`, the runtime module docstring, and the command or artifact provenance. |
-
-## Correctness and Boundaries
-
-For correctness claims, trust assumptions, and third-party tooling:
-
-- `TRUST_BOUNDARIES.md`
-- `AI_USAGE.md`
-- `THIRD_PARTY_NOTICES.md`
-- `CONTRIBUTING.md`
-
-Lean proofs, executable checkers, Lake builds, tests, and explicit
-trust-boundary documentation are the source of truth for what is proved,
-checked, or assumed.
+CPU instructions, CUDA kernels, cuBLAS, LibTorch, PyTorch, Julia, and other external systems are
+runtime providers. Their interfaces, assumptions, and available checks are listed in
+[`TRUST_BOUNDARIES.md`](TRUST_BOUNDARIES.md). Third-party sources and licenses are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and [`AI_USAGE.md`](AI_USAGE.md) describes the
+project's use of coding assistants.
 
 ## Citation
 

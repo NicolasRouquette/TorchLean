@@ -109,7 +109,7 @@ def sampleAt (sch : Scheme) (seed idx : Nat) : Float :=
 
 end Internal
 
-open Internal
+open _root_.Runtime.Autograd.Torch.Init.Internal
 
 /--
 Create a `Tensor Float s` by sampling a `Scheme` deterministically.

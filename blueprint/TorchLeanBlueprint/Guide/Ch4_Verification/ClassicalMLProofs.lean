@@ -14,8 +14,8 @@ larger approximation constructions possible. Recurrent state-space models are ca
 models.
 
 TorchLean formalizes such results beside its runtime developments so that later work can connect
-them. The proofs in this chapter do not certify a CUDA implementation, but neither are they
-informal descriptions of an architecture. They are Lean theorems about the spec-level definitions.
+them. These theorems concern the spec-level definitions; they do not by themselves certify a CUDA
+implementation.
 
 # Hopfield Dynamics
 

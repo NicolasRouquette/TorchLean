@@ -42,6 +42,26 @@ noncomputable def dyadicToReal (d : Dyadic) : ℝ :=
   let s : ℝ := if d.sign then (-1 : ℝ) else (1 : ℝ)
   s * (d.mant : ℝ) * neuralBpow binaryRadix d.exp
 
+/-- Scaling cannot turn a nonzero numerator into zero. -/
+theorem scaleRatByPow2_fst_ne_zero
+    (num den : Nat) (exponent : Int) (hnum : num ≠ 0) :
+    (scaleRatByPow2 num den exponent).1 ≠ 0 := by
+  cases exponent with
+  | ofNat shift =>
+      simp only [scaleRatByPow2]
+      exact mt Nat.shiftLeft_eq_zero_iff.mp hnum
+  | negSucc shift => simpa [scaleRatByPow2] using hnum
+
+/-- Scaling cannot turn a nonzero denominator into zero. -/
+theorem scaleRatByPow2_snd_ne_zero
+    (num den : Nat) (exponent : Int) (hden : den ≠ 0) :
+    (scaleRatByPow2 num den exponent).2 ≠ 0 := by
+  cases exponent with
+  | ofNat shift => simpa [scaleRatByPow2] using hden
+  | negSucc shift =>
+      simp only [scaleRatByPow2]
+      exact mt Nat.shiftLeft_eq_zero_iff.mp hden
+
 /-- Scale a rational by a nonnegative exponent difference by shifting the numerator. -/
 lemma scaleRat_ofNat (num den sh : Nat) :
     ((num : ℝ) / (den : ℝ)) * neuralBpow binaryRadix (Int.ofNat sh) =
@@ -80,6 +100,20 @@ lemma scaleRat_negSucc (num den sh : Nat) :
           (den : ℝ) * ((2 ^ (sh + 1) : Nat) : ℝ) = ((Nat.shiftLeft den (sh + 1) : Nat) : ℝ) := by
         simp [Nat.shiftLeft_eq, Nat.cast_mul]
       rw [hdenShift]
+
+/-- `scaleRatByPow2` preserves the exact rational value after multiplying by the chosen power of
+two. -/
+theorem scaleRatByPow2_real (num den : Nat) (exponent : Int) :
+    ((scaleRatByPow2 num den exponent).1 : ℝ) /
+        ((scaleRatByPow2 num den exponent).2 : ℝ) =
+      ((num : ℝ) / (den : ℝ)) * neuralBpow binaryRadix exponent := by
+  cases exponent with
+  | ofNat shift =>
+      simpa [scaleRatByPow2] using
+        (scaleRat_ofNat (num := num) (den := den) (sh := shift)).symm
+  | negSucc shift =>
+      simpa [scaleRatByPow2] using
+        (scaleRat_negSucc (num := num) (den := den) (sh := shift)).symm
 
 /-- Exponent subtraction law for `neuralBpow`, packaged as a division identity. -/
 lemma neural_bpow_div (e1 e2 : Int) :

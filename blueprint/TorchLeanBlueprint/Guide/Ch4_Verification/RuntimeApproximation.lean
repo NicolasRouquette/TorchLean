@@ -26,10 +26,9 @@ may differ from that ideal, and how we keep that difference explicit.
 
 # Why Real Proofs Are Not Float Proofs
 
-It is tempting to prove a property over real numbers and then deploy float32 code with the same
-sentence in mind. TorchLean does not allow that step to be implicit: a real valued safety theorem
-does not become a float32 safety theorem unless there is a bridge theorem that relates the runtime
-path to the real specification.
+It is tempting to prove a property over real numbers and then deploy float32 code under the same
+assumption. TorchLean requires a bridge theorem relating the runtime path to the real specification
+before applying the real-valued result to float32 execution.
 
 That implication is not free. It needs a bridge theorem. Rounding, cancellation, overflow,
 different reduction orders, fused kernels, and domain guards can all change the behavior. A
@@ -79,7 +78,7 @@ $$`|r-s|
 +\varepsilon_{\mathrm{rel}}\,|s|
 +\varepsilon_{\mathrm{slack}}.`
 
-That distinction is practical. An absolute tolerance of `1e-6` may be meaningful near zero and
+The choice is practical. An absolute tolerance of `1e-6` may be meaningful near zero and
 irrelevant near `1e9`. A relative tolerance captures "small compared with the scale of the value."
 TorchLean uses both styles, but it makes the choice explicit instead of burying it in test
 thresholds.
@@ -348,7 +347,7 @@ matches the stable programming pattern users ought to deploy.
 
 ## Reductions And Softmax: Where Error Budgets Grow
 
-Elementwise operations are only half the story. Reductions and normalization layers create coupled
+Reductions and normalization layers create coupled
 error terms because many inputs flow into one output. TorchLean has explicit reduction approximation
 lemmas in
 [NN.Proofs.RuntimeApprox.NF.ReductionOps](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/ReductionOps.lean):

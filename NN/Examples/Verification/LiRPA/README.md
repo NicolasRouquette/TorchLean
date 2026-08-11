@@ -30,7 +30,7 @@ lake exe verify -- lirpa-gru
 lake exe verify -- lirpa-encoder
 ```
 
-The important distinction is producer versus checker. Python scripts may use ordinary numerical
+The producer and checker have separate roles. Python scripts may use ordinary numerical
 code to construct the example artifact. TorchLean's Lean code checks the artifact it receives. If a
 larger auto-LiRPA experiment is used as the producer, its raw logs, checkpoints, and large JSON
 outputs should live in `_external/`, `/tmp`, or another documented generated-data directory. This

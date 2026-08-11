@@ -163,53 +163,18 @@ def sumFderiv {Γ : List Shape} {s : Shape} (idx : Idx Γ s) :
         (Node.forwardVec (Γ := Γ) (τ := Shape.scalar) (sum (Γ := Γ) (s := s) idx)) = fun x : CtxVec
           Γ => D x := by
       funext x
-      ext i
-      change (Node.forwardVec (Γ := Γ) (τ := Shape.scalar) (sum (Γ := Γ) (s := s) idx) x).ofLp i =
-        (D x).ofLp i
-      -- unfold both sides down to scalars
-      have hL :
-          (Node.forwardVec (Γ := Γ) (τ := Shape.scalar) (sum (Γ := Γ) (s := s) idx) x).ofLp i
-            =
-          (sumCLM (n := Spec.Shape.size s)) (CtxVec.get (Γ := Γ) (s := s) idx x) := by
-        simp [sum, Node.forwardVec_ofVec, Spec.Shape.size]
-      have hR :
-          (D x).ofLp i =
-            (sumCLM (n := Spec.Shape.size s)) (CtxVec.get (Γ := Γ) (s := s) idx x) := by
-        change
-            (vecScalarCLM (((sumCLM (n := Spec.Shape.size s)).comp (CtxVec.getCLM (Γ := Γ) (s := s) idx))
-              x)).ofLp i
-              =
-            (sumCLM (n := Spec.Shape.size s)) (CtxVec.get (Γ := Γ) (s := s) idx x)
-        simpa [ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply, Function.comp, Spec.Shape.size] using
-          (vecScalarCLM_ofLp (a := (sumCLM (n := Spec.Shape.size s))
-            (CtxVec.get (Γ := Γ) (s := s) idx x)) (i := i))
-      exact hL.trans hR.symm
+      simp only [sum, Node.forwardVec_ofVec, D, ContinuousLinearMap.comp_apply,
+        CtxVec.getCLM_apply]
+      apply PiLp.ext
+      intro i
+      simp only [vecOfFun_ofLp, vecScalarCLM_ofLp]
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   jvp_eq := by
     intro xV dxV
-    ext i
-    change (Node.jvpVec (Γ := Γ) (τ := Shape.scalar) (sum (Γ := Γ) (s := s) idx) xV dxV).ofLp i =
-      (vecScalarCLM.comp ((sumCLM (n := Spec.Shape.size s)).comp (CtxVec.getCLM (Γ := Γ) (s := s) idx))
-        dxV).ofLp i
-    have hL :
-        (Node.jvpVec (Γ := Γ) (τ := Shape.scalar) (sum (Γ := Γ) (s := s) idx) xV dxV).ofLp i
-          =
-        (sumCLM (n := Spec.Shape.size s)) (CtxVec.get (Γ := Γ) (s := s) idx dxV) := by
-      simp [sum, Node.jvpVec_ofVec, Spec.Shape.size]
-    have hR :
-        (vecScalarCLM.comp ((sumCLM (n := Spec.Shape.size s)).comp (CtxVec.getCLM (Γ := Γ) (s := s) idx))
-          dxV).ofLp i
-          =
-        (sumCLM (n := Spec.Shape.size s)) (CtxVec.get (Γ := Γ) (s := s) idx dxV) := by
-      change
-          (vecScalarCLM (((sumCLM (n := Spec.Shape.size s)).comp (CtxVec.getCLM (Γ := Γ) (s := s) idx))
-            dxV)).ofLp i
-            =
-          (sumCLM (n := Spec.Shape.size s)) (CtxVec.get (Γ := Γ) (s := s) idx dxV)
-      simpa [ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply, Function.comp, Spec.Shape.size] using
-        (vecScalarCLM_ofLp (a := (sumCLM (n := Spec.Shape.size s))
-          (CtxVec.get (Γ := Γ) (s := s) idx dxV)) (i := i))
-    exact hL.trans hR.symm }
+    simp only [sum, Node.jvpVec_ofVec, ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
+    apply PiLp.ext
+    intro i
+    simp only [vecOfFun_ofLp, vecScalarCLM_ofLp] }
 
 -- ---------------------------------------------------------------------------
 -- Shape ops: broadcast, reductions, concat, losses

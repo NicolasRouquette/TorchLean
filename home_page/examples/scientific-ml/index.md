@@ -7,7 +7,7 @@ library. The model should run on real data, but the run should also leave behind
 meaning: a grid, a PDE, a parameter file, a residual expression, a certificate, or a prediction
 artifact that Lean can reload.
 
-Two examples carry the story. The first is a one-dimensional Fourier neural operator for Burgers'
+The first example is a one-dimensional Fourier neural operator for Burgers'
 equation. It is a real training run: prepare simulation data, train an operator model, and export
 loss logs plus prediction curves. The second is PINN-style checking. There the artifacts are kept
 small enough for Lean to inspect directly: PDE residual expressions, dataset samples, compact

@@ -30,7 +30,7 @@ private theorem neuralMagnitude_le_round_FLX_of_pos (prec : ℤ) (hprec : 0 < pr
     neuralMagnitude β x ≤
       neuralMagnitude β
         (@neuralRound β (FLXExp prec) (flxValidExp prec hprec) rnd x) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   have hlarge : FLXExp prec (neuralMagnitude β x) < neuralMagnitude β x := by
     simp [FLXExp]
     linarith
@@ -53,7 +53,7 @@ theorem neuralMagnitude_le_round_FLX (prec : ℤ) (hprec : 0 < prec)
     neuralMagnitude β x ≤
       neuralMagnitude β
         (@neuralRound β (FLXExp prec) (flxValidExp prec hprec) rnd x) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   rcases lt_trichotomy x 0 with hx | hx | hx
   · let nrnd := neuralNegRound rnd
     have hpos : 0 < -x := neg_pos.mpr hx
@@ -73,7 +73,7 @@ theorem neural_div_round_residual_FLX (prec : ℤ) (hprec : 0 < prec)
     (hy : @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) y) :
     @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec)
       (x - @neuralRound β (FLXExp prec) (flxValidExp prec hprec) rnd (x / y) * y) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   let z := x / y
   let q := neuralRound (β := β) (fexp := FLXExp prec) rnd z
   let residual := x - q * y
@@ -205,7 +205,7 @@ theorem neural_sqrt_round_residual_FLX (prec : ℤ) (hprec : 1 < prec) {x : ℝ}
       (x - (@neuralRound β (FLXExp prec) (flxValidExp prec (by linarith))
         neuralNearestEven (Real.sqrt x)) ^ 2) := by
   have hp0 : 0 < prec := by linarith
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hp0
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hp0
   let s := Real.sqrt x
   let q := neuralRound (β := β) (fexp := FLXExp prec) neuralNearestEven s
   let residual := x - q ^ 2

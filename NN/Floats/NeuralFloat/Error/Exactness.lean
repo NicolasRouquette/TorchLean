@@ -99,7 +99,7 @@ theorem neural_generic_format_FLX_add_of_repr_bounds (prec : ℤ) (hprec : 0 < p
     (hxf : abs (x + y) < neuralBpow β (prec + f.exponent))
     (hyg : abs (x + y) < neuralBpow β (prec + g.exponent)) :
     @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) (x + y) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   by_cases hzero : x + y = 0
   · rw [hzero]
     exact neural_generic_format_zero

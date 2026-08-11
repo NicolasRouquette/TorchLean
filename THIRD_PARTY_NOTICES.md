@@ -20,7 +20,7 @@ After `lake update`, their license files are available under `.lake/packages/` a
 | Component | Role in TorchLean | Notice |
 | --- | --- | --- |
 | Lean 4, Lake, and Std | Compiler, package manager, and standard library, selected by `lean-toolchain`. | Source project: `leanprover/lean4`. |
-| Mathlib | Formal mathematics used by specifications, proofs, probability, real analysis, tensors, and optimization files. | Source project: `leanprover-community/mathlib4`, pinned to the Lean 4.32 line here. Mathlib is Apache-2.0 licensed. |
+| Mathlib | Formal mathematics used by specifications, proofs, probability, real analysis, tensors, and optimization files. | Source project: `leanprover-community/mathlib4`, pinned to the Lean 4.33 line here. Mathlib is Apache-2.0 licensed. |
 | Batteries, Aesop, Qq, ProofWidgets, LeanSearchClient, importGraph, plausible, Cli, leansqlite, MD4Lean, BibtexQuery, UnicodeBasic | Lean ecosystem packages pulled directly or transitively for proofs, tactics, widgets, documentation, dependency analysis, and command-line tooling. | Their license files are fetched with the Lake package cache. |
 | doc-gen4 | Generates the API documentation built with `lake build NN:docs`. | Source project: `leanprover/doc-gen4`, Apache-2.0 licensed. |
 | Verso, VersoBlueprint, SubVerso, Illuminate | Build the TorchLean guide/blueprint documentation. | Upstream Lean documentation tooling. |

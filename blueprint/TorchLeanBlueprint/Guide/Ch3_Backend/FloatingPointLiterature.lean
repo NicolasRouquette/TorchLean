@@ -222,7 +222,7 @@ uses the opposite operand; a normalization VJP uses saved statistics; attention 
 probabilities and mask semantics from the forward pass. Bounding only the final forward output
 would throw away the information needed to analyze those gradients.
 
-# The Optimizer Is Part Of The Numerical Story
+# Optimizer Arithmetic
 
 Training does not stop at a gradient. SGD computes
 
@@ -259,10 +259,10 @@ optimizer state, and updates for SGD, momentum/Nesterov, AdaGrad, RMSProp, Adam,
 Adadelta. `OptimStateDict` preserves the global step, per-parameter Adam steps, group configuration,
 and state buffers for save/restore.
 
-This distinction matters for conditional or sparse-gradient models. The global optimizer-call
-counter advances on every step, while an Adam-family parameter advances its bias-correction counter
-only when that parameter receives a gradient. Reloaded state and gradients are checked against the
-current parameter shape before an update.
+Conditional and sparse-gradient models require two counters. The global optimizer-call counter
+advances on every step, while an Adam-family parameter advances its bias-correction counter only when
+that parameter receives a gradient. Reloaded state and gradients are checked against the current
+parameter shape before an update.
 
 The proved NF numerical contracts currently cover plain SGD, momentum SGD, and AdamW; AdamW also
 carries the positivity data needed for its square-root denominator. Runtime support for the other

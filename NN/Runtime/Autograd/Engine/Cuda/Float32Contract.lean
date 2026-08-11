@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Floats.IEEEExec.Semantics.ErrorBounds
-public import NN.Floats.IEEEExec.Bridge.RuntimeFloat32
+public import NN.Floats.IEEEExec.Bridge.LeanFloat32
 
 /-!
 # CUDA float32 contract
@@ -107,7 +107,7 @@ theorem fromLeanFloat_bits_eq_ieee32_ofFloat_bits (x : Float) :
   rfl
 
 /-- Runtime Lean `Float32` values can also be reinterpreted as the same bit-level reference scalar. -/
-theorem runtimeFloat32_toRef_eq_bridge (x : Float32) :
+theorem float32_toRef_eq_bridge (x : Float32) :
     fromNativeBits x.toBits = Float32Bridge.toIEEE32Exec x := by
   rfl
 

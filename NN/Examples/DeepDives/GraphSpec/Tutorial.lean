@@ -52,8 +52,8 @@ or `--backend compiled`.
 
 namespace NN.Examples.DeepDives.GraphSpec.Tutorial
 
-open Spec
-open Spec.Tensor
+open _root_.Spec
+open _root_.Spec.Tensor
 open NN.Tensor
 open _root_.TorchLean
 

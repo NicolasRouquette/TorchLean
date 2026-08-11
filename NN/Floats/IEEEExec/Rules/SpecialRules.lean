@@ -129,6 +129,32 @@ theorem expField_quietNaN_eq (x : IEEE32Exec) :
     simpa [IEEE32Exec.ofBits] using (expField_ofBits_or_quietBit (b := x.bits))
   · simp [quietNaN, hx]
 
+/-- Quieting a NaN preserves its NaN classification. -/
+theorem isNaN_quietNaN_eq_true (x : IEEE32Exec) (hx : isNaN x = true) :
+    isNaN (quietNaN x) = true := by
+  have hxParts : expField x = expAllOnes ∧ fracField x ≠ 0 := by
+    simpa [isNaN] using hx
+  have hExponent : expField (quietNaN x) = expAllOnes := by
+    rw [expField_quietNaN_eq]
+    exact hxParts.1
+  have hFraction : fracField (quietNaN x) ≠ 0 := by
+    unfold quietNaN
+    rw [if_pos hx]
+    intro hZero
+    have hQuiet : quietBit.toNat = 2 ^ 22 := by decide
+    have hMask : fracMask.toNat = 2 ^ 23 - 1 := by decide
+    have hMaskBit : Nat.testBit fracMask.toNat 22 = true := by
+      simpa [hMask] using (Nat.testBit_two_pow_sub_one 23 22)
+    have hQuietBit : Nat.testBit quietBit.toNat 22 = true := by
+      simpa [hQuiet] using (Nat.testBit_two_pow_self (n := 22))
+    have hSet : Nat.testBit (fracField (ofBits (x.bits ||| quietBit))).toNat 22 = true := by
+      simp [fracField, ofBits, UInt32.toNat_and, UInt32.toNat_or,
+        Nat.testBit_or, Nat.testBit_and, hMaskBit, hQuietBit]
+    have := congrArg UInt32.toNat hZero
+    rw [this] at hSet
+    simp at hSet
+  simp [isNaN, hExponent, hFraction]
+
 /-- If `x` is a NaN, then its exponent field is all ones. -/
 theorem expField_eq_expAllOnes_of_isNaN (x : IEEE32Exec) (hx : isNaN x = true) :
     expField x = expAllOnes := by

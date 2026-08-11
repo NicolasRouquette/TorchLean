@@ -101,7 +101,7 @@ Some representative contract shapes:
   * appended key/value appears at the final slot
 *
   * Float boundary
-  * runtime Float32 agrees with `IEEE32Exec` under a named agreement
+  * classification is proved; arithmetic uses a named model-agreement premise
 *
   * Compiler boundary
   * target output equals source output
@@ -265,20 +265,22 @@ invalidated by finite precision, exceptional values, fused operations, denorm be
 reduction order. The example cites
 [Jia and Rinard's warning paper](https://doi.org/10.1109/SPW50608.2020.00058).
 
-TorchLean's answer is explicit modeling. `IEEE32Exec` is the executable bit level float32 model.
-Runtime `Float32` primitives are not transparent to the Lean kernel, so the theorem
-`runtimeFloat32_add_rewrites_to_ieee32` requires the named assumption
-`RuntimeFloat32FiniteMatchesIEEE32Exec`, together with finite-input and finite-result hypotheses.
-We built that friction on purpose. If a proof uses the
-float32 model, the boundary says where runtime conformance entered.
+`IEEE32Exec` is the executable bit-level binary32 model. Lean gives ordinary `Float32`
+core arithmetic a logical definition through `Float32.Model`. The canonical bridge theorem
+`Float32Bridge.toModel_add` exposes that definition, and `Float32Bridge.toIEEE32Exec_add` proves
+that Lean's model and the independent executor agree on the canonical result. Results are compared
+after NaN canonicalization because Lean's model intentionally forgets payload and sign bits that
+`IEEE32Exec` retains. Compiled CPU instructions and CUDA kernels remain separate runtime boundaries.
+
+TorchLean also proves that `Float32.Model` and `IEEE32Exec` agree on finiteness, infinity, NaN,
+comparison, and the canonical results of addition, subtraction, multiplication, division, square
+root, negation, and absolute value for every canonical `Float32` input.
 
 The boundary is therefore visible in the theorem shape:
 
-$$`\operatorname{RuntimeFloat32FiniteMatchesIEEE32Exec}
-\quad\Longrightarrow\quad
-\operatorname{runtimeAdd}(x,y)
+$$`\operatorname{Float32.add}(x,y)
 =
-\operatorname{IEEE32Exec.add}(x,y)`
+\operatorname{canonicalize}(\operatorname{IEEE32Exec.add}(x,y))`
 
 ## Normalization State
 

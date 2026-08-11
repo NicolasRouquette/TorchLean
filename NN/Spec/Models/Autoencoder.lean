@@ -16,7 +16,7 @@ This file defines a small **fully-connected autoencoder**:
 - encoder: `h = act(W_enc x + b_enc)`
 - decoder: `x̂ = W_dec h + b_dec`
 
-PyTorch mental model: `nn.Sequential(nn.Linear(inputDim, hiddenDim), act, nn.Linear(hiddenDim,
+PyTorch analogue: `nn.Sequential(nn.Linear(inputDim, hiddenDim), act, nn.Linear(hiddenDim,
   inputDim))`
 applied to a single vector (no batch dimension).
 

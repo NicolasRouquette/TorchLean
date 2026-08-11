@@ -133,7 +133,7 @@ def mseSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) : α :=
 /-- Derivative of `mse_spec` w.r.t. `predicted`. -/
 def mseDerivSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) : Tensor α s :=
   let diff := subSpec predicted target
-  -- PyTorch mental model: `MSELoss(reduction="mean")`.
+  -- Corresponds to PyTorch's `MSELoss(reduction="mean")`.
   -- d/dpred ( (1/N) * Σᵢ (predᵢ - tgtᵢ)^2 ) = (2/N) * (pred - tgt)
   let n : α := (meanDenom s : α)
   scaleSpec diff (Numbers.two / n)
@@ -147,7 +147,7 @@ def maeSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) : α :=
 /-- Derivative of `mae_spec` w.r.t. `predicted` (subgradient via sign). -/
 def maeDerivSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) : Tensor α s :=
   let diff := subSpec predicted target
-  -- PyTorch mental model: `L1Loss(reduction="mean")`.
+  -- Corresponds to PyTorch's `L1Loss(reduction="mean")`.
   -- This is a subgradient at 0.
   let grad :=
     mapSpec (fun x => if x > (0 : α) then (1 : α) else if x < (0 : α) then -(1 : α) else (0 : α))

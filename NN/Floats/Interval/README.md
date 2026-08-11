@@ -1,13 +1,13 @@
 # Interval Arithmetic (`NN/Floats/Interval`)
 
-This folder collects interval and enclosure utilities that sit between:
+This folder contains interval and enclosure utilities for:
 
 - proof-oriented rounded-real models (`NN/Floats/NeuralFloat`, `NN/Floats/FP32`), and
 - executable bit-level kernels (`NN/Floats/IEEEExec`), and
 - external validated numerics backends (`NN/Floats/Arb`).
 
-The interval layer supports bound propagation, numerical soundness envelopes, and executable
-endpoint checks reusable across the codebase, while keeping the trust boundary explicit.
+The definitions support bound propagation, numerical error enclosures, and executable endpoint
+checks.
 
 ## Files
 
@@ -48,11 +48,10 @@ endpoint checks reusable across the codebase, while keeping the trust boundary e
 - Use `IEEEExec32ArbTrans.lean` when the endpoint computation for a transcendental depends on the
   Arb/python-flint oracle.
 
-The final bullet is intentionally different from the others: Arb-backed endpoints are useful and
-often rigorous in practice, but the Lean claim must name the oracle boundary unless a separate
-certificate checker has discharged it.
+Arb-backed endpoints depend on the oracle described in `NN/Floats/Arb/README.md` unless a Lean
+certificate checker verifies the returned enclosure independently.
 
-## Running an example workflow
+## Examples
 
 ```bash
 lake exe torchlean floats_arb_ieee_compare

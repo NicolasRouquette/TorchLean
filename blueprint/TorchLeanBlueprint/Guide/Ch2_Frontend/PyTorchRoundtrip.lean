@@ -37,8 +37,7 @@ The round trip has five steps:
 The boundary between Lean and PyTorch stays small enough that failures are usually local: a missing
 name, a nonnumeric entry, or a mismatched nested-array shape.
 
-If any of those checks fail, the artifact stops at the boundary. It does not become a TorchLean
-model by accident.
+If any check fails, TorchLean rejects the artifact before constructing a model.
 
 The shape of the boundary is intentionally closer to a `state_dict` contract than to Python object
 serialization. PyTorch users are used to seeing names such as:

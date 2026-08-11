@@ -27,7 +27,7 @@ Regenerate or recheck the curated ODE group with:
 python3 scripts/verification/regenerate_assets.py --group ode --run
 ```
 
-The useful mental model is:
+The data flow is:
 
 ```text
 ODE and candidate tube

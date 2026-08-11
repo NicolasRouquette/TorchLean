@@ -479,7 +479,9 @@ theorem nested_lipschitz_composition {s : Shape}
         exact ih cs h_len_tail h_nonneg_tail h_lipschitz_tail (f x) (f y)
 
       have head_bound : tensorL2Dist (f x) (f y) ≤ c * tensorL2Dist x y := by
-        simpa using h_lipschitz ⟨0, by simp⟩ x y
+        have h := h_lipschitz ⟨0, by simp⟩ x y
+        change tensorL2Dist (f x) (f y) ≤ c * tensorL2Dist x y at h
+        exact h
 
       have cs_nonneg : 0 ≤ cs.foldl (· * ·) 1 := by
         -- `cs.foldl (·*·) 1 = cs.prod` and products of nonneg terms are nonneg.

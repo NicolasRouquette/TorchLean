@@ -8,13 +8,13 @@ This document records the assumptions that matter for correctness claims: Lean a
 contracts, CUDA and FFI code, external numeric oracles, PyTorch import/export scripts, Julia/Python
 producers, and artifact-checking conventions.
 
-## Reading This File
+## Levels of Assurance
 
-| Layer | Example | How to read it |
+| Layer | Example | Assurance |
 | --- | --- | --- |
 | Lean theorem | graph semantics, selected autograd correctness theorems | checked by Lean |
 | Executable checker | certificate parser, shape checker | checked by code/tests |
-| Prop-valued contract | runtime Float32 agreement | assumption supplied by caller |
+| Prop-valued contract | agreement between independently defined semantics | hypothesis supplied by caller |
 | FFI/native runtime | CUDA kernels, cuBLAS, cuFFT | external implementation path |
 | External producer | Python, Julia, Arb, alpha-beta-CROWN | produces artifacts Lean may check |
 
@@ -69,9 +69,6 @@ make those assumptions visible.
 
 Important examples include:
 
-- `TorchLean.Floats.IEEE754.Float32Bridge.RuntimeFloat32FiniteMatchesIEEE32Exec`, the runtime
-  contract for bit-level agreement on finite inputs and finite results, plus classification
-  agreement for special values. NaN payload propagation is deliberately not assumed.
 - `NN.MLTheory.CROWN.Graph.CrownCertSoundness.CrownTransferSound`, the transfer-rule soundness
   assumption used by graph-CROWN certificate theorems for backend-dependent relaxations.
 - `NN.MLTheory.Proofs.UniversalApproximation.FloatIntervalApprox.OpsExact.Sound`, the local
@@ -167,6 +164,18 @@ Important examples include:
 
 - `NN/Floats/IEEEExec/` proves and implements a deterministic IEEE-style executable model for many
   core operations.
+- Lean defines ordinary `Float32` addition, subtraction, multiplication, division, negation,
+  absolute value, square root, bit conversion, comparison, and classification through the
+  canonical `Float32.Model` visible to the kernel.
+  `NN/Floats/IEEEExec/Bridge/LeanFloat32.lean` exposes those definitional equalities
+  and proves agreement with TorchLean's independent executable algorithm for classification,
+  comparison, addition, subtraction, multiplication, division, square root, negation, and absolute
+  value.
+  Arithmetic results are compared after canonicalizing NaNs because the two models deliberately
+  retain different payload information.
+  The `@[extern]` implementations used by compiled programs are still native code and remain a
+  deployment boundary. Lean's transcendental `Float32` functions are opaque and are not covered by
+  the core model bridge.
 - `NN/Proofs/RuntimeApprox/Graph/NumericalCertificate.lean` checks graph-wide binary32 interval
   traces against the canonical `NN.IR.Graph`. It rebuilds ranges rather than trusting claimed
   endpoints, rejects non-finite replay values, and re-runs backend planning before accepting the
@@ -209,7 +218,8 @@ Use the float layers as follows:
 | precision-parametric rounding theorem | `NN/Floats/NeuralFloat` |
 | endpoint interval enclosure | `NN/Floats/Interval` |
 | external high-precision enclosure evidence | `NN/Floats/Arb` plus the oracle boundary |
-| runtime CUDA/LibTorch/Lean `Float` behavior | runtime bridge or trust-boundary statement |
+| logical meaning of Lean `Float32` core arithmetic | `Float32.Model` and `NN/Floats/IEEEExec/Bridge/LeanFloat32.lean` |
+| compiled Lean `Float`/`Float32`, CUDA, or LibTorch behavior | provider bridge or trust-boundary statement |
 
 ## External Numeric Oracles
 

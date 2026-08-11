@@ -302,6 +302,12 @@ def getAtSpec {α : Type} {n s} (t : Tensor α (.dim n s)) (i : Fin n) : Tensor 
 def get {α : Type} {n s} (t : Tensor α (.dim n s)) (i : Fin n) : Tensor α s :=
   getAtSpec t i
 
+/-- Indexing a tensor built from an outer coordinate function returns that coordinate. -/
+@[simp] theorem get_dim {α : Type} {n : Nat} {s : Shape}
+    (values : Fin n → Tensor α s) (i : Fin n) :
+    get (Tensor.dim values) i = values i := by
+  rfl
+
 /--
 Enable Lean’s indexing syntax for spec tensors.
 
@@ -320,6 +326,11 @@ namespace Tensor
 def vecGet {α : Type} {n : Nat} (x : Tensor α (.dim n .scalar)) (i : Fin n) : α :=
   Tensor.toScalar (_root_.Spec.get x i)
 
+/-- Reading a vector constructed coordinatewise returns the selected scalar. -/
+@[simp] theorem vecGet_dim {α : Type} {n : Nat} (values : Fin n → α) (i : Fin n) :
+    vecGet (Tensor.dim (fun j => Tensor.scalar (values j))) i = values i := by
+  rfl
+
 end Tensor
 
 /-- Matrix element access: `get2 A i j` returns `A[i, j]` as a scalar. -/
@@ -328,6 +339,13 @@ def get2 {α : Type} {m n : ℕ}
   match get A i with
   | Tensor.dim row => match row j with
     | Tensor.scalar v => v
+
+/-- Reading a matrix constructed coordinatewise returns the selected scalar. -/
+@[simp] theorem get2_dim {α : Type} {m n : Nat} (values : Fin m → Fin n → α)
+    (i : Fin m) (j : Fin n) :
+    get2 (Tensor.dim (fun row => Tensor.dim (fun column =>
+      Tensor.scalar (values row column)))) i j = values i j := by
+  rfl
 
 /--
 Enable Lean’s indexing syntax for matrix-shaped scalar tensors.

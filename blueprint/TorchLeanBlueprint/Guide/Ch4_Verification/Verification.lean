@@ -65,9 +65,9 @@ must connect the compiled graph to the source model, the propagated boxes to the
 and the positive lower margin to the classification property. A claim about native Float32 needs
 one more link: that native execution refines the arithmetic used in the proof.
 
-This distinction is practical. If the model compiler changes, obligation 1 is the place to look.
-If a new activation is added to CROWN, obligation 2 changes. If the deployment claim concerns
-CUDA rather than real semantics, obligation 4 cannot be skipped.
+The obligations also localize maintenance. A compiler change affects the source-to-graph argument;
+a new CROWN activation affects bound propagation; and a CUDA deployment claim requires the native
+arithmetic link in addition to the real-valued theorem.
 
 # Semantic Target And Graph Boundary
 

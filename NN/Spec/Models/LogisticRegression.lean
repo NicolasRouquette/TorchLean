@@ -18,7 +18,7 @@ Model (binary classification):
 - logits: `z = X w + b`
 - probabilities: `p = σ(z)` where `σ` is the logistic sigmoid
 
-PyTorch mental model:
+PyTorch analogue:
 
 - parameters correspond to `nn.Linear(p, 1)` (weights + bias),
 - probabilities correspond to `torch.sigmoid(logits)`,

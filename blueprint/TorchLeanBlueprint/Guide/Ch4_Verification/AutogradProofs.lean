@@ -122,7 +122,7 @@ The main theorem is `Graph.backpropVec_eq_adjoint_fderiv`. In plain English:
 > adjoint of the Fréchet derivative of graph evaluation.
 
 There is also a pointwise version, `Graph.backpropVec_eq_adjoint_fderiv_at`, for hypotheses that
-only hold at a particular input. That distinction matters for neural networks. ReLU, normalization,
+only hold at a particular input. Neural networks need this local form because ReLU, normalization,
 division, logarithms, and square roots all have domain or nondifferentiability issues. TorchLean
 states those conditions explicitly instead of using a blanket "autograd works" slogan. The theorem
 can demand exactly the local smoothness or nonzero hypotheses needed by the graph being
@@ -292,7 +292,7 @@ ideal VJP theorem
 Without the middle bridge, we only have a theorem about the proof graph. Without the last bridge, we
 only have a theorem about ideal arithmetic.
 
-# MLP And MSE Gradients: A Concrete Scalar Loss Story
+# MLP And MSE Gradients
 
 The [MLP/MSE derivative API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/FDeriv/MlpMse.lean)
 turns the abstract autograd theorem into a familiar training example: a small MLP followed by mean

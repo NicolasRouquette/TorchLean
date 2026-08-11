@@ -68,8 +68,15 @@ def neuralNearestEvenChoice (m : ℤ) : Bool := decide (¬Even m)
 /-- Choice-based nearest rounding with the parity decision is TorchLean's nearest-even mode. -/
 theorem neuralNearestChoice_even_eq (x : ℝ) :
     neuralNearestChoice neuralNearestEvenChoice x = neuralNearestEven x := by
-  simp only [neuralNearestChoice, neuralNearestEven, neuralNearestEvenChoice, Int.fract]
-  split_ifs with hlt hgt hnotEven heven <;> simp_all
+  simp only [neuralNearestChoice, neuralNearestEven, neuralNearestEvenChoice]
+  rw [Int.fract]
+  split
+  · rfl
+  · split
+    · rfl
+    · by_cases heven : Even ⌊x⌋
+      · simp [heven]
+      · simp [heven]
 
 /-- A certified unit bracket determines floor exactly. -/
 theorem neuralInbetweenInt_floor {m : ℤ} {x : ℝ} {location : NeuralLocation}
@@ -127,6 +134,7 @@ theorem neuralInbetweenInt_nearestChoice (chooseUp : ℤ → Bool)
             linarith
           simp [neuralNearestChoice, hfloor, heq, neuralConditionalIncrement,
             neuralRoundNearestLocation]
+          rfl
       | gt =>
           have hgt : Int.fract x > (2⁻¹ : ℝ) := by
             rw [cmp_eq_gt_iff] at hmid

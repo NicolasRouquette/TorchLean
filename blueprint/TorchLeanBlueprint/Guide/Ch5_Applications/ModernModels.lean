@@ -12,11 +12,9 @@ not enough to test whether an ML library has found the right abstractions. Moder
 branches, state, masks, patch grids, spectral transforms, latent variables, and interaction with an
 environment. Each addition creates a new place where an informal convention can become a bug.
 
-The useful way to read this chapter is not as a menu of architectures. Carry one question from
-section to section: *which convention did this model make explicit?* A residual network must align
-two branches. A vision Transformer must turn a patch grid into a token sequence. A recurrent model
-must expose state, and a causal model must expose its mask. An FNO must say which Fourier modes it
-retains.
+Each architecture makes a different convention explicit. A residual network must align two
+branches. A vision Transformer must turn a patch grid into a token sequence. A recurrent model must
+expose state, a causal model must expose its mask, and an FNO must say which Fourier modes it retains.
 
 Through all of them, the outer discipline stays the same. Inputs, outputs, and parameter layout are
 typed; the forward program names its runtime; specifications and proofs refer to identifiable
@@ -27,7 +25,7 @@ The reusable constructors live under
 [`NN/API/Models`](https://github.com/lean-dojo/TorchLean/tree/main/NN/API/Models).
 The runnable applications live under
 [`NN/Examples/Models`](https://github.com/lean-dojo/TorchLean/tree/main/NN/Examples/Models).
-That distinction matters. A constructor such as `nn.models.resnet` is reusable and
+A constructor such as `nn.models.resnet` is reusable and
 rank-polymorphic; the `resnet` command chooses a deliberately small CIFAR configuration so that a
 reader can run the whole data and training path locally.
 

@@ -112,6 +112,14 @@ def swapAtDepthHelper {β : Type} {shape : Shape} (tensor : Tensor β shape) (d 
         -- Only one dimension at this level - no swap possible
         .dim g
 
+/-- Swapping at depth zero exchanges the two leading axes. -/
+@[simp] theorem swapAtDepthHelper_zero {β : Type} {m n : Nat} {s : Shape}
+    (tensor : Tensor β (.dim m (.dim n s))) :
+    swapAtDepthHelper tensor 0 =
+      .dim (fun j => .dim (fun i => _root_.Spec.get (_root_.Spec.get tensor i) j)) := by
+  cases tensor
+  rfl
+
 /-- Swap adjacent dimensions at a given depth inside a leading batch dimension. -/
 def swapAtDepthSpec {α : Type} {n : Nat} {s : Shape}
   (t : Tensor α (.dim n s)) (depth : Nat) :

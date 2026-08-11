@@ -1,91 +1,85 @@
 ---
-title: Bug Zoo Walkthrough
+title: Bug Zoo
 ---
 
-Bug Zoo is TorchLean’s collection of small case studies for semantic bugs that can pass ordinary
-runtime checks. These examples focus on cases where code still returns tensors, losses, or tokens,
-but the returned value no longer satisfies the intended contract.
+# Bug Zoo
 
-Bug Zoo shows the motivation for TorchLean in miniature: many ML failures are not type errors or
-crashes, but silent changes in meaning.
+Bug Zoo collects mistakes that are easy to miss in ordinary machine-learning tests. The program
+still runs and returns a tensor, loss, or token sequence, but the result no longer has the meaning
+the caller assumed.
 
-Each card starts with a bug pattern, then isolates the small mathematical contract that would have
-made the intended behavior explicit. Some cards make a mistake unrepresentable in the checked
-fragment. Others turn the mistake into a theorem obligation or a runtime agreement that has to be
-named.
+Each example is deliberately small. It states the intended behavior as a Lean definition or
+theorem, shows where an implementation can depart from it, and identifies any runtime assumption
+that remains outside the proof. Together they cover attention, decoding, data boundaries,
+normalization, losses, compilation, floating point, and geometry.
 
-## A Few Case Studies
+## Attention and Autoregressive Decoding
 
-<div class="showcase-grid bug-zoo-grid">
-  <a class="showcase-card showcase-image-card" href="#what-a-checked-claim-looks-like-here">
-    <img class="showcase-media" src="{{ '/assets/media/examples/bug-zoo/attention-masks.png' | relative_url }}" alt="Attention mask Bug Zoo case study"/>
-    <span class="showcase-body">
-      <span class="showcase-title">Attention Masks</span>
-      <span class="showcase-text">Checks that masked future positions receive exactly zero attention weight under the stated causal mask semantics.</span>
-    </span>
-  </a>
+A causal mask should exclude future keys exactly. Replacing $-\infty$ with a large finite negative
+number only approximates that behavior and can fail when logits leave the expected range.
+[`AttentionMask.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/BugZoo/AttentionMask.lean)
+uses hard-mask semantics and proves that every strict-future attention weight is zero.
 
-  <a class="showcase-card showcase-image-card" href="#what-a-checked-claim-looks-like-here">
-    <img class="showcase-media" src="{{ '/assets/media/examples/bug-zoo/kv-cache-rope.png' | relative_url }}" alt="KV cache and RoPE Bug Zoo case study"/>
-    <span class="showcase-body">
-      <span class="showcase-title">KV Cache and RoPE</span>
-      <span class="showcase-text">Makes the cache-position contract explicit so incremental decoding agrees with the intended full-sequence computation.</span>
-    </span>
-  </a>
+Incremental decoding introduces a different problem. A key/value cache must contain the same keys
+and values that full-sequence attention would have seen, in the same positions.
+[`KVCache.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/BugZoo/KVCache.lean)
+checks the append operation, while
+[`RoPEPosition.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/BugZoo/RoPEPosition.lean)
+records the position assigned to the new token. These contracts isolate the two common off-by-one
+errors instead of hiding them inside a generation loop.
 
-  <a class="showcase-card showcase-image-card" href="#what-a-checked-claim-looks-like-here">
-    <img class="showcase-media" src="{{ '/assets/media/examples/bug-zoo/tokenizer-boundaries.png' | relative_url }}" alt="Tokenizer boundary Bug Zoo case study"/>
-    <span class="showcase-body">
-      <span class="showcase-title">Tokenizer Boundaries</span>
-      <span class="showcase-text">Separates byte/token assumptions from model assumptions, so text preprocessing cannot silently change the checked claim.</span>
-    </span>
-  </a>
+## Data, Batches, and Normalization State
 
-  <a class="showcase-card showcase-image-card" href="#what-a-checked-claim-looks-like-here">
-    <img class="showcase-media" src="{{ '/assets/media/examples/bug-zoo/normalization-state.png' | relative_url }}" alt="Normalization state Bug Zoo case study"/>
-    <span class="showcase-body">
-      <span class="showcase-title">Normalization State</span>
-      <span class="showcase-text">Tracks which statistics are training state, inference state, or explicit inputs rather than treating normalization as a black box.</span>
-    </span>
-  </a>
+Tokenizer errors often appear much earlier than the model. A checkpoint may expect one vocabulary
+or special-token convention while the data loader supplies another.
+[`TokenizerBoundary.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/BugZoo/TokenizerBoundary.lean)
+requires imported token ids to inhabit `Fin vocabSize`, making the vocabulary bound part of the
+object passed to the network.
 
-  <a class="showcase-card showcase-image-card" href="#what-a-checked-claim-looks-like-here">
-    <img class="showcase-media" src="{{ '/assets/media/examples/bug-zoo/batch-invariance.png' | relative_url }}" alt="Batch invariance Bug Zoo case study"/>
-    <span class="showcase-body">
-      <span class="showcase-title">Batch Invariance</span>
-      <span class="showcase-text">States when processing one sample alone should agree with processing it as part of a batch.</span>
-    </span>
-  </a>
+Batching should normally change throughput, not the prediction for an individual sample.
+[`BatchInvariance.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/BugZoo/BatchInvariance.lean)
+states that selecting a row from a batched reference run agrees with evaluating that row alone.
+This catches accidental reductions across the batch axis and state that leaks between samples.
 
-  <a class="showcase-card showcase-image-card" href="#what-a-checked-claim-looks-like-here">
-    <img class="showcase-media" src="{{ '/assets/media/examples/bug-zoo/float-autograd-boundaries.png' | relative_url }}" alt="Float and autograd boundaries Bug Zoo case study"/>
-    <span class="showcase-body">
-      <span class="showcase-title">Float and Autograd Boundaries</span>
-      <span class="showcase-text">Shows how runtime <code>Float32</code> and reverse-mode claims are connected through named assumptions and proof statements.</span>
-    </span>
-  </a>
-</div>
+Normalization has its own hidden state. Batch normalization uses learned affine parameters and
+running statistics at inference time; layer normalization has a degenerate one-feature case that
+is easy to mishandle. The normalization examples make the axes, epsilon placement, running state,
+and zero-gradient corner cases explicit.
 
-## How To Read The Zoo
+## Losses, Floating Point, and Compilation
 
-Each Bug Zoo file is small enough to read directly. Read the whole chain: the bug
-family, the bad pattern, the TorchLean object that names the intended behavior, and the theorem or
-checker condition that makes the contract explicit.
+Several examples concern computations that are mathematically familiar but numerically unsafe.
+Masking a quotient after division does not repair a division by zero, and a direct implementation
+of a logit loss can overflow even when its stable form is finite. `AutogradDomain.lean` and
+`StableLoss.lean` put the domain restriction and stable formula into the contract before reverse
+mode is considered.
 
-Build the whole set:
+Real-number proofs do not automatically describe a binary32 run.
+[`FloatBoundary.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/BugZoo/FloatBoundary.lean)
+uses Lean's logical `Float32.Model` and TorchLean's independent bit-level executor to state the
+connection explicitly. `CompilerBoundary.lean` does the analogous job for optimized graphs: an
+accepted rewrite must preserve operations, shapes, dtypes, weights, and buffers.
+
+The final geometry case starts from tensors exported by a detector. Lean recomputes camera
+projection and positive depth, then checks that the reported two-dimensional box encloses every
+projected corner. The detector remains an external producer; the enclosure claim does not.
+
+## Run the Examples
+
+Build the complete collection with:
 
 ```bash
 lake build NN.Examples.BugZoo.All
 ```
 
-For the cases that also have runnable checker commands, use:
+The cases with registered certificate checkers can also be run from the verification command:
 
 ```bash
 lake exe verify -- camera-box3d-cert
 lake exe verify -- all
 ```
 
-The Lean files are the primary artifacts:
+The source files and the contracts they expose are listed below.
 
 | Source file | Bug family | Contract exposed |
 | --- | --- | --- |
@@ -102,30 +96,32 @@ The Lean files are the primary artifacts:
 | `StableLoss.lean` | Numerically unstable losses and domain-sensitive ops | Logit losses use the stable log-softmax path. |
 | `ShapeAndBroadcast.lean` | Missing axes and silent broadcasts | Dimension changes are explicit terms with shape evidence. |
 | `CompilerBoundary.lean` | Optimized graphs silently changing semantics | Backend acceptance is a preservation obligation over ops, shapes, dtypes, weights, and buffers. |
-| `FloatBoundary.lean` | Real-valued reasoning applied to Float32 runs | Runtime Float32 claims pass through a named IEEE-style bridge assumption. |
+| `FloatBoundary.lean` | Real-valued reasoning applied to Float32 runs | Lean's logical Float32 model and TorchLean's independent executor are connected by a named equivalence obligation. |
 | `Geometry3DProjection.lean` | Camera convention, depth, layout, and projection-box errors | The checker recomputes projection, positive depth, and 2D box enclosure. |
 
-## What “A Checked Claim” Looks Like Here
+## Two Checked Statements
 
-Each case study should end in a precise statement.
-
-Here is the attention-mask claim in one line: under the hard-mask semantics, strict-future keys get
-exactly zero attention weight.
+Under hard-mask semantics, every strict-future key receives exactly zero attention weight:
 
 ```lean
 theorem trueInfinityMask_future_attention_weight_zero :
   Spec.get2 (Spec.hardMaskedSoftmaxSpec scores (Spec.causalMask n)) i j = 0
 ```
 
-And here is the Float32 boundary claim: runtime arithmetic rewrites to the explicit `IEEE32Exec`
-model only under a named assumption.
+Lean 4.33 defines core `Float32` operations through `Float32.Model`. TorchLean proves that the model
+agrees with its independently implemented `IEEE32Exec` arithmetic:
 
 ```lean
-theorem runtimeFloat32_add_rewrites_to_ieee32
-    [RuntimeFloat32FiniteMatchesIEEE32Exec] (a b : _root_.Float32)
-    (ha : Float32.isFinite a = true) (hb : Float32.isFinite b = true)
-    (hr : Float32.isFinite (Float32.add a b) = true) :
-    toIEEE32Exec (Float32.add a b) = IEEE32Exec.add (toIEEE32Exec a) (toIEEE32Exec b)
+theorem Float32Bridge.float32_isFinite_eq_ieee32 (a : _root_.Float32) :
+    Float32.isFinite a = IEEE32Exec.isFinite (toIEEE32Exec a)
+
+theorem Float32Bridge.toIEEE32Exec_add
+    (a b : _root_.Float32) :
+    toIEEE32Exec (a + b) =
+      canonicalize (IEEE32Exec.add (toIEEE32Exec a) (toIEEE32Exec b))
 ```
 
-Those are the statement shapes Bug Zoo makes routine.
+Classification and addition need no finiteness premise. The addition theorem covers finite values,
+signed zeros, infinities, NaNs, underflow, overflow, and nearest-even rounding. NaNs are
+canonicalized before comparing bits because Lean stores one NaN representation while
+`IEEE32Exec` retains payload and sign information.

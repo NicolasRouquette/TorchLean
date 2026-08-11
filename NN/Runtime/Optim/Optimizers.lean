@@ -333,7 +333,7 @@ def Adam.update {α : Type} [Context α] [DecidableRel ((· > ·) : α → α �
 /--
 AdamW state (per parameter tensor).
 
-AdamW is “Adam + decoupled weight decay”. The key point is that weight decay is applied as a
+AdamW is “Adam + decoupled weight decay”. Weight decay is applied as a
 separate parameter decay term rather than being folded into the gradient that feeds the moments.
 -/
 structure AdamW.State (α : Type) (s : Shape) where

@@ -69,7 +69,7 @@ lists concatenate, giving a typed “ABI” for model parameters.
 namespace NN
 namespace GraphSpec
 
-open Spec
+open _root_.NN.Spec
 open Spec.Tensor
 open NN.Tensor
 

@@ -32,10 +32,9 @@ keeps one graph format usable across:
 - export (where parameters may be emitted as PyTorch `nn.Parameter`s or ONNX initializers),
 - and runtime execution/tracing (where parameters may already live in a separate module state).
 
-If you are coming from PyTorch: the mental model is similar to a PyTorch FX graph or TorchScript IR:
-nodes are ops, edges are “data dependencies”, and execution is in topological order. The difference
-is that TorchLean attaches explicit *shape* metadata at every node, since our verification and
-proof tooling needs shape information to be first-class.
+Like a PyTorch FX graph or TorchScript IR, nodes are operations, edges are data dependencies, and
+execution follows topological order. TorchLean additionally attaches explicit *shape* metadata to
+every node for verification and proofs.
 
 References / related systems:
 - PyTorch FX docs: https://pytorch.org/docs/stable/fx.html

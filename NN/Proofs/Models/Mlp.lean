@@ -23,7 +23,7 @@ open scoped NN.Spec.RationalAlgebraic
 
 namespace NN.Proofs.Models.Mlp
 
-open Spec
+open _root_.NN.Spec
 open Spec.Tensor
 open Examples
 open ModSpec

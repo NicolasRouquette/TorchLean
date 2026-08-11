@@ -169,6 +169,42 @@ Every symbol is structured:
 An optimizer is therefore not merely a function from a flat vector to a flat vector. It owns
 shape-aligned state.
 
+# The State Carried Between Updates
+
+It is tempting to describe training as repeated calls to `backward`, but the value passed from one
+update to the next is larger than a gradient. For a reproducible run we need to account for:
+
+:::table +header
+*
+  * State
+  * Why the next update needs it
+*
+  * parameters
+  * they are the point at which the next loss and gradient are evaluated
+*
+  * optimizer memory
+  * Adam moments, momentum buffers, and step counters change the update
+*
+  * scheduler state
+  * the update index determines the learning rate
+*
+  * loader or stream position
+  * it determines the next samples and final partial-batch behavior
+*
+  * random-generator state
+  * dropout, augmentation, sampling, and some data sources consume it
+*
+  * model buffers and mode
+  * normalization statistics and other persistent state may change in training mode
+*
+  * backend profile
+  * it fixes the providers and backward ownership used by the executable step
+:::
+
+The high-level trainer retains these pieces behind one handle. The manual API exposes them when an
+experiment needs a custom loop or a checkpoint must record more than parameter tensors. Saving
+only weights is enough for inference, but it is not enough to resume Adam at the same update.
+
 # Adam's Hidden State Is Explicit
 
 Adam maintains first and second moment estimates:

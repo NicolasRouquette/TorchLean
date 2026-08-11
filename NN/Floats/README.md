@@ -1,161 +1,169 @@
-# Floats (`NN/Floats`)
+# Floating-Point Arithmetic
 
-This directory contains TorchLean's floating-point semantics and their supporting numerical theory.
+`NN.Floats` is TorchLean's numerical library for floating-point formats, rounding, executable
+binary32 arithmetic, interval enclosures, and error analysis. It can be imported without the tensor,
+model, autograd, CUDA, or certificate-checking code:
 
-- `FP32/`: a proof oriented, finite float32 model based on rounding over `ℝ`.
-- `NeuralFloat/`: generic rounding over `ℝ` (`NeuralRadix`, `NF`, rounding, ULPs, and error bounds).
-- `Calc/`: mantissa/exponent calculations, including brackets, rounding decisions, exact
-  addition and multiplication, and rounded division and square root.
-- `IEEEExec/`: an executable IEEE-754 binary32 kernel (`IEEE32Exec`) plus bridge theorems to `FP32`.
-- `Interval/`: interval and enclosure utilities, including quantized intervals over `ℝ` and executable endpoint intervals.
-- `Arb/`: an optional external Arb/FLINT oracle adapter (python-flint) for ball and interval
-  enclosures. It is not imported by `NN.Floats`.
+```lean
+import NN.Floats
+open TorchLean.Floats
+```
 
-The generic theory is a native Lean development informed by Flocq's organization and results. It is
-not a claim that every Coq module has been translated. TorchLean keeps the parts used by its tensor,
-error-analysis, verification, and runtime-refinement developments, and proves executable binary32
-behavior separately under `IEEEExec/`.
+Smaller imports are available when only one part of the library is needed:
 
-Import `NN.Floats` for the complete Lean-native numerical library. This import does not include
-tensors, models, autograd, CUDA, certificate checkers, or external processes. Import a narrower
-umbrella such as `NN.Floats.NeuralFloat`, `NN.Floats.FP32`, `NN.Floats.IEEEExec`, or
-`NN.Floats.Interval` when only one layer is needed. The tensor adapter for affine quantization lives
-in `NN.Spec.Quantization`, and runtime-approximation results live in
-`NN.Proofs.RuntimeApprox.FP32`.
+```lean
+import NN.Floats.NeuralFloat
+import NN.Floats.FP32
+import NN.Floats.IEEEExec
+import NN.Floats.Interval
+```
 
-Executable examples that exercise this infrastructure live under `NN/Examples/`.
+Tensor quantization is defined separately in `NN.Spec.Quantization`. Proofs comparing rounded
+execution with ideal tensor operations live in `NN.Proofs.RuntimeApprox.FP32`. The optional Arb
+adapter under `NN.Floats.Arb` is not imported by `NN.Floats`.
 
-## Which Layer Should I Cite?
+## Numerical Models
 
-| If your claim is about... | Use this layer |
-| --- | --- |
-| executable binary32 values inside Lean | `IEEEExec` |
-| finite float32-as-rounded-real error bounds | `FP32` |
-| precision-parametric rounding and ULP facts | `NeuralFloat` / `NF` |
-| the mantissa and exponent produced by a rounding operation | `Calc`, specialized through `FP32` when appropriate |
-| interval enclosures with directed endpoints | `Interval` |
-| high-precision external enclosure evidence | `Arb`, with the oracle boundary named and its exact rational endpoints enclosed by proved directed rounders |
-| CUDA, LibTorch, or Lean runtime `Float` | a runtime bridge or `TRUST_BOUNDARIES.md` assumption |
+The library has several representations because rounded-real error analysis and complete IEEE
+execution answer different mathematical questions.
 
-This distinction is part of the correctness story. A theorem over `FP32` does not become a CUDA
-claim until a runtime bridge or trust-boundary statement connects the executable path to that model.
+### `NeuralFloat`
 
-## The Three Float32 Views
+`NeuralFloat` defines floating-point formats over `ℝ` with configurable radix, precision, exponent
+range, and rounding policy. It contains:
 
-TorchLean uses three complementary notions of float32. They have different
-strengths, and the bridge files let us move between them without blurring the
-trust boundary.
+- representability and neighboring-value results;
+- directed, nearest-even, round-to-odd, and fixed-grid rounding;
+- ULP and absolute or relative error bounds;
+- double-rounding theorems;
+- Sterbenz subtraction with gradual underflow;
+- generic addition, multiplication, division, and square-root results.
 
-### 1. `IEEE32Exec` (Executable IEEE-754 Binary32)
+The main modules are `NeuralFloat/Format.lean`, `NeuralFloat/Rounding.lean`,
+`NeuralFloat/Scalar.lean`, `NeuralFloat/Analysis.lean`, and `NeuralFloat/Error.lean`.
+`NN.Floats.Quantization` uses the fixed-grid rounding operation for affine scalar quantization.
 
-Folder: `NN/Floats/IEEEExec/`
+This development is written in Lean. Flocq influenced its organization and several results, but the
+directory is not a translation of every Flocq module.
 
-This is the executable backend. Values are 32-bit encodings, and operations are implemented as pure
-Lean code over those bits.
+### `FP32`
 
-Why we keep it:
-- we can execute models inside Lean without relying on opaque runtime float calls,
-- we can state and prove theorems about the kernel itself (NaN/Inf propagation, signed zeros, etc.),
-- and it provides a stable target for connecting to the mathematical models below.
+`FP32` specializes rounded-real arithmetic to the finite binary32 grid. An operation is modeled as
+an exact real operation followed by binary32 rounding. NaNs and infinities are absent, which makes
+this model convenient for numerical error proofs.
 
-Where to look:
-- `NN/Floats/IEEEExec/Exec32.lean`: the core executable kernel (`IEEE32Exec`),
-- `NN/Floats/IEEEExec/Rules/SpecialRules.lean`: NaN/Inf propagation rules,
-- `NN/Floats/IEEEExec/Reductions.lean`: reduction semantics (sums/dot products) that match deployment realities,
-- `NN/Floats/IEEEExec/Bridge/FP32/Core.lean`: finite bit-pattern representability in `fexp32`,
-- `NN/Floats/IEEEExec/Bridge/FP32/Ops.lean`: arithmetic refinement and executable exact subtraction,
-- `NN/Floats/IEEEExec/Bridge/FP32/Ulp.lean`: executable ULP exponents and absorption soundness.
-  (For executable endpoint-interval arithmetic, see `NN/Floats/Interval/IEEEExec32.lean`.)
+- `FP32/Core.lean` defines the format and rounded operations.
+- `FP32/Error.lean` proves error bounds.
+- `FP32/Sterbenz.lean` proves exact subtraction for nearby representable operands.
+- `Interval/FP32.lean` derives interval enclosures.
 
-### 2. `FP32` (Finite Real Rounded Float32 Model)
+### `IEEE32Exec`
 
-Folder: `NN/Floats/FP32/`
+`IEEE32Exec` is an independent executable binary32 implementation over 32-bit encodings. Its Lean
+definitions cover normal and subnormal values, signed zeros, infinities, NaNs, overflow, underflow,
+nearest-even rounding, and the five IEEE exception indicators.
 
-This is the mathematical view: float32 computation is modeled as real arithmetic followed by a
-float32 rounding operator. It is finite only, with no NaNs or infinities, which keeps many error
-analysis statements manageable.
+The core implementation is in `IEEEExec/Exec32.lean`. Special-value rules are in
+`IEEEExec/Rules/SpecialRules.lean`, status-bearing operations are gathered under
+`IEEEExec/Status.lean`, and order-sensitive reductions are in `IEEEExec/Reductions.lean`.
+Executable directed rounding is also available for addition, subtraction, multiplication,
+division, fused multiply-add, and square root.
 
-Why we keep it:
-- most error-bound theorems are naturally stated over reals + rounding,
-- it composes cleanly with `NeuralFloat`/`NF` error bounds,
-- it gives a clear semantic target when we want to describe what a float32 computation means.
+### Lean `Float32`
 
-Where to look:
-- `NN/Floats/FP32/Core.lean`: the main definitions,
-- `NN/Floats/FP32/Error.lean`: error bounds,
-- `NN/Floats/FP32/Sterbenz.lean`: exact subtraction for nearby representable operands,
-- `NN/Floats/Interval/FP32.lean`: interval-style enclosure corollaries.
+Lean versions before 4.33 exposed the bits of a `Float32` but kept its arithmetic opaque to the
+kernel. Lean 4.33 introduced `Float32.Model`, so proofs can inspect the logical definitions of core
+`Float32` operations. TorchLean removed its former assumption-based bridge and now proves that
+`Float32.Model` and `IEEE32Exec` agree.
 
-### 3. `NeuralFloat` / `NF` (Generic Format And Error Analysis)
+The bridge in `IEEEExec/Bridge/LeanFloat32.lean` covers:
 
-Folder: `NN/Floats/NeuralFloat/`
+- bit conversion and canonical representation;
+- finite, infinite, and NaN classification;
+- comparison, `<`, `≤`, and Boolean equality;
+- addition, subtraction, multiplication, and division;
+- negation, absolute value, and square root.
 
-This layer abstracts over radix, precision, and exponent range. It is where we develop reusable facts
-about rounding, ULPs, and relative or absolute error bounds. `FP32` is the
-binary32-specialized instance of this generic layer.
+The arithmetic proofs include normal and subnormal operands, signed zeros, infinities, NaNs,
+underflow, overflow, and nearest-even ties. Lean uses one canonical NaN encoding, while
+`IEEE32Exec` preserves NaN sign and payload bits. Arithmetic results are therefore compared after
+the explicit `canonicalize` operation.
 
-Why we keep it:
-- we want one set of theorems that applies to multiple precisions and training phases,
-- it lets us reuse the same reasoning patterns for float32 and other formats.
+```lean
+import NN.Floats.IEEEExec.Bridge.LeanFloat32
 
-Where to look:
-- `NN/Floats/NeuralFloat/Format.lean` for representable grids,
-- `NN/Floats/NeuralFloat/Rounding.lean` for rounding semantics,
-- `NN/Floats/NeuralFloat/Scalar.lean` for `NF`,
-- `NN/Floats/Quantization.lean` for scalar affine quantization,
-- `NN/Floats/NeuralFloat/Analysis/SterbenzFLT.lean` for exact subtraction with gradual underflow,
-- `NN/Floats/NeuralFloat/Analysis.lean` and `NN/Floats/NeuralFloat/Error.lean` for numerical bounds.
+open TorchLean.Floats.IEEE754
+open TorchLean.Floats.IEEE754.Float32Bridge
 
-## How The Bridge Layers Fit Together
+example (x : Float32) :
+    Float32.isFinite x = IEEE32Exec.isFinite (toIEEE32Exec x) := by
+  exact float32_isFinite_eq_ieee32 x
 
-`IEEE32Exec` is executable; `FP32` and `NF` are aimed at proofs. `Calc` supplies representation-level
-arithmetic between them. Given a bracket for an exact value, it records the value's position between
-adjacent representable numbers, makes the rounding-mode decision, and returns a `NeuralFloat`
-mantissa and exponent. Theorems in `FP32/Core.lean` identify the real value of that representation
-with `fp32Round`. Thus `Calc` is not another floating-point semantics: it exposes the integer
-calculation underlying the rounding operation used by the proof model. Calculations starting from an
-arbitrary Lean real remain noncomputable; executable runs use `IEEE32Exec` or a named runtime backend.
+example (x y : Float32) :
+    toIEEE32Exec (x + y) =
+      canonicalize (IEEE32Exec.add (toIEEE32Exec x) (toIEEE32Exec y)) := by
+  exact toIEEE32Exec_add x y
 
-The bridge files then connect the executable bit model to that result:
+example (x : Float32) :
+    toIEEE32Exec (Float32.sqrt x) =
+      canonicalize (IEEE32Exec.sqrt (toIEEE32Exec x)) := by
+  exact toIEEE32Exec_sqrt x
+```
 
-- `NN/Floats/IEEEExec/Bridge/FP32.lean`: core refinement theorems on the **finite/no-overflow** path:
-  $\operatorname{toReal}(\operatorname{op}_{\mathrm{exec}}(\ldots))=\operatorname{fp32Round}(\operatorname{op}_{\mathrm{real}}(\ldots))$.
-- `NN/Floats/IEEEExec/Bridge/FP32Total.lean`: total wrappers that combine NaN/Inf propagation rules
-  with the finite refinement theorems, phrased using `toReal?`.
-- `NN/Floats/IEEEExec/Bridge/Expressions.lean`: a compact scalar AST + a whole-expression refinement theorem.
-- `NN/Floats/IEEEExec/Bridge/ERealTotal.lean`: an `EReal`-valued semantics that distinguishes
-  $+\infty$ and $-\infty$.
-- `NN/Floats/IEEEExec/Bridge/RuntimeFloat32.lean`: an assumption-based bridge from Lean's runtime
-  `Init.Float32` to `IEEE32Exec`. Exact bit agreement covers finite inputs and finite results;
-  classification is stated for all values because runtime NaN payload propagation is opaque.
+Lean defines the language model in
+[`Init.Data.Float.Model.Float32`](https://github.com/leanprover/lean4/blob/v4.33.0/src/lean/Init/Data/Float/Model/Float32.lean).
 
-The standard rounding choices are available through `NeuralRoundingMode`: nearest-even,
-toward-zero, toward-positive, and toward-negative. The lower-level function-valued API remains the
-right one for round-to-odd and other proof-specific policies. Directed binary32 addition,
-subtraction, multiplication, division, fused multiply-add, and square root have executable lower
-and upper operations with semantic enclosure theorems.
+## Rounding Calculations
 
-The executable arithmetic also has status-bearing wrappers such as `addWithStatus`,
-`divWithStatus`, and `sqrtWithStatus`. They return the same binary32 value together with the five
-IEEE exception indicators. Underflow uses tininess after rounding and is raised only for an inexact
-tiny result; this policy is part of the Lean definition rather than inherited from the host.
+`Calc` exposes the integer calculation behind a rounded-real result. Starting from a bracket around
+an exact value, it determines the adjacent representable numbers, applies a rounding policy, and
+returns a mantissa and exponent. Theorems in `FP32/Core.lean` identify the real value of the result
+with `fp32Round`.
 
-`neuralRoundAtScale` supplies the common fixed-grid operation used by affine quantization and
-fixed-point arguments and requires a proof that the grid step is positive. The round-to-odd theorem
-in `NeuralFloat/Rounding/Odd.lean` shows that a
-sufficiently fine binary intermediate prevents nearest-even double rounding on an arbitrary
-coarser grid.
+This is useful when a proof needs both the mathematical rounding theorem and the mantissa/exponent
+that an implementation should produce. Calculations from arbitrary real numbers are noncomputable;
+executable programs use `IEEE32Exec` or a named runtime provider.
 
-`NN/Examples/DeepDives/Floats/EffectiveRounding.lean` follows one shaped tensor addition through the
-rounded-real and executable IEEE paths. Its theorems expose the computed mantissa/exponent result on
-both sides of the finite bridge.
+## Bridges
 
-For native CUDA and LibTorch paths, the bridge is not in this folder by default. Those backends
-are runtime providers. A proof layer float claim should say which Lean model it uses and where the
-runtime/backend agreement assumption is discharged or documented.
+The bridge modules connect the rounded-real and executable representations:
 
-Background references that informed the design:
-- IEEE 754-2019: https://doi.org/10.1109/IEEESTD.2019.8766229
-- Goldberg (1991): https://doi.org/10.1145/103162.103163
-- Higham (2002): *Accuracy and Stability of Numerical Algorithms* (2nd ed.), ISBN 0-89871-521-0
-- Flocq (Boldo–Melquiond, 2011): https://doi.org/10.1109/ARITH.2011.40
+- `IEEEExec/Bridge/FP32.lean` proves finite, no-overflow refinement results of the form
+  `toReal (opExec ...) = fp32Round (opReal ...)`.
+- `IEEEExec/Bridge/FP32Total.lean` combines finite refinement with NaN and infinity rules using
+  `toReal?`.
+- `IEEEExec/Bridge/Expressions.lean` proves refinement for a scalar expression language.
+- `IEEEExec/Bridge/ERealTotal.lean` gives a total `EReal` semantics that distinguishes positive
+  and negative infinity.
+- `IEEEExec/Bridge/LeanFloat32.lean` proves agreement with Lean's logical `Float32` operations.
+
+These theorems concern Lean definitions. Compiled CPU instructions, CUDA kernels, cuBLAS, and
+LibTorch are runtime providers with contracts recorded in `TRUST_BOUNDARIES.md`.
+
+## Intervals And Quantization
+
+`Interval` contains outward rounders and endpoint enclosures over both real-valued and executable
+representations. `IEEEExec32Interval` evaluates endpoint arithmetic with directed binary32
+operations.
+
+`neuralRoundAtScale` provides fixed-grid rounding with a positive grid step. It is used by affine
+quantization and fixed-point proofs. The round-to-odd theorem in
+`NeuralFloat/Rounding/Odd.lean` shows when a fine binary intermediate prevents nearest-even double
+rounding on a coarser grid.
+
+The tensor adapter in `NN.Spec.Quantization` is rank-polymorphic. Integer code ranges determine
+int8, uint8, int4, or custom quantizers; tensor layout is not part of the scalar arithmetic.
+
+## Examples
+
+`NN/Examples/DeepDives/Floats/EffectiveRounding.lean` follows a shaped tensor addition through the
+rounded-real and executable binary32 models. `NN/Examples/BugZoo/FloatBoundary.lean` shows how a
+real-valued theorem can fail to describe a rounded computation until the required bridge has been
+proved.
+
+## References
+
+- IEEE 754-2019, [IEEE Standard for Floating-Point Arithmetic](https://doi.org/10.1109/IEEESTD.2019.8766229).
+- David Goldberg, [What Every Computer Scientist Should Know About Floating-Point Arithmetic](https://doi.org/10.1145/103162.103163), 1991.
+- Nicholas J. Higham, *Accuracy and Stability of Numerical Algorithms*, second edition, 2002.
+- Sylvie Boldo and Guillaume Melquiond, [Flocq: A Unified Library for Proving Floating-Point Algorithms in Coq](https://doi.org/10.1109/ARITH.2011.40), 2011.

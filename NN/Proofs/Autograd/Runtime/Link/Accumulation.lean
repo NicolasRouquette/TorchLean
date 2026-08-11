@@ -115,7 +115,7 @@ theorem foldlM_addGradAll_toIndexedAnyList_eq_add {α : Type} [Add α] [Decidabl
                   (Runtime.Autograd.AnyTensor.mk contribHead).s := by
               rfl
             cases hs
-            simp [Runtime.Autograd.AnyTensor.add, Runtime.Autograd.AnyTensor.mk, Tensor.castShape,
+            simp [Runtime.Autograd.AnyTensor.add, Runtime.Autograd.AnyTensor.mk,
               seedHeadAny, contribHeadAny, newHeadAny]
 
           have hset :
@@ -208,7 +208,7 @@ theorem foldlM_addGradAll_toIndexedAnyList_eq_add {α : Type} [Add α] [Decidabl
                   cases hseedShape
                   cases hcontribShape
                   simp [Runtime.Autograd.AnyTensor.add, Runtime.Autograd.AnyTensor.mk,
-                    Tensor.castShape, seedHeadAny, contribHeadAny, newHeadAny] at hsummed ⊢
+                    seedHeadAny, contribHeadAny, newHeadAny] at hsummed ⊢
 
                 rw [hsummed']
                 simp [newHeadAny]

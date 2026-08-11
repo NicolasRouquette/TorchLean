@@ -31,7 +31,7 @@ noncomputable section
 
 namespace NN.Proofs.Models.Attention
 
-open Spec
+open _root_.NN.Spec
 open Spec.Tensor
 
 abbrev Shape := Spec.Shape
@@ -165,7 +165,7 @@ private theorem softmax_vec_spec_eq_plain {n : Nat} (t : Tensor ℝ (.dim (Nat.s
         cases hj : f j with
         | scalar xj =>
             simp [Activation.maxShiftedExpVecSpec, Activation.maxVecSpec, Spec.replicate,
-              Spec.Tensor.expSpec, Spec.Tensor.subSpec, Spec.Tensor.mapSpec,
+              Spec.Tensor.expSpec, Spec.Tensor.subSpec,
               Spec.Tensor.map2Spec, Spec.toVec, m, first, x, scalarVal, hj,
               Proofs.mathfunc_exp_eq_rexp]
       have hsumShift :

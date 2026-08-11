@@ -10,10 +10,9 @@ external dataset -> Python converter/downloader -> .npy or numeric CSV -> TorchL
 Use Python for JPEG folders, `.pt`, `.npz`, `.mat`, and dataset downloads. Use Lean for typed
 tensors, typed batching, training, verification, and reproducible evaluation.
 
-The important point is that data enters TorchLean through a small boundary file. A loader should not
-hide where the samples came from, what shape was expected, or whether labels were interpreted as
-integer ids or one-hot targets. Those details are part of the claim whenever a trained model,
-prediction artifact, or certificate is later discussed.
+Data enters TorchLean through a small boundary file. Loaders record where the samples came from,
+their expected shape, and whether labels are integer ids or one-hot targets. Those details remain
+available when a trained model, prediction artifact, or certificate is inspected later.
 
 ## Local Tutorial Artifacts
 

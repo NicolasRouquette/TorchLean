@@ -154,7 +154,10 @@ theorem stateActionValue_le_bellmanOptimality
     stateActionValue mdp values state action ≤
       valueAt (bellmanOptimality mdp values) state := by
   let _ : Nonempty (Fin nActions) := ⟨⟨0, Fact.out⟩⟩
-  simp [bellmanOptimality, valueAt]
+  change
+    stateActionValue mdp values state action ≤
+      (Finset.univ : Finset (Fin nActions)).sup' Finset.univ_nonempty
+        (stateActionValue mdp values state)
   exact Finset.le_sup' (stateActionValue mdp values state) (Finset.mem_univ action)
 
 /-- Bellman optimality dominates Bellman evaluation under any deterministic policy. -/
@@ -180,7 +183,11 @@ theorem bellmanOptimality_monotone
     valueAt (bellmanOptimality mdp values₁) state ≤
       valueAt (bellmanOptimality mdp values₂) state := by
   let _ : Nonempty (Fin nActions) := ⟨⟨0, Fact.out⟩⟩
-  simp [bellmanOptimality, valueAt]
+  change
+    (Finset.univ : Finset (Fin nActions)).sup' Finset.univ_nonempty
+        (stateActionValue mdp values₁ state) ≤
+      (Finset.univ : Finset (Fin nActions)).sup' Finset.univ_nonempty
+        (stateActionValue mdp values₂ state)
   refine Finset.sup'_le Finset.univ_nonempty (stateActionValue mdp values₁ state) ?_
   intro action _
   exact (stateActionValue_monotone mdp values₁ values₂ hγ hValues state action).trans

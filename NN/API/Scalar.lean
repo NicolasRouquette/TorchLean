@@ -94,7 +94,8 @@ parametric in the scalar type `α`.
 
 This corresponds loosely to choosing `dtype=` in PyTorch, but with additional "proof-only"
 variants:
-- `.float` uses Lean's builtin `Float` (executable, but its IEEE-754 behavior is trusted),
+- `.float` uses Lean's builtin binary64 `Float`; Lean gives it a logical model, while compiled
+  native execution remains a backend boundary,
 - `.float32` uses TorchLean's float32 model (either proof-only or executable),
 - `.complex` uses TorchLean's parametric complex scalar over a float32 backend,
 - `.real` uses `ℝ` (proof-only; not executable).
@@ -120,7 +121,7 @@ def isExecutable : DType → Bool
 /-- Log a short description of the chosen dtype to stdout. -/
 def log : DType → IO Unit
   | .float =>
-      IO.println "[TorchLean] dtype: Float (Lean `Float`, trusted runtime semantics)"
+      IO.println "[TorchLean] dtype: Float (Lean binary64; native execution boundary)"
   | .real =>
       IO.println "[TorchLean] dtype: ℝ (proof-only; not executable)"
   | .float32 cfg =>

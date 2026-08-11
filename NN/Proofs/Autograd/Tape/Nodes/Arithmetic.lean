@@ -110,9 +110,11 @@ def addFderiv {Γ : List Shape} {s : Shape} (a b : Idx Γ s) :
             ((CtxVec.getCLM (Γ := Γ) (s := s) a) + (CtxVec.getCLM (Γ := Γ) (s := s) b)) x := by
       funext x
       simp [CtxVec.getCLM_apply]
-    simpa [add, Node.forwardVec_ofVec, hfun] using
-      (((CtxVec.getCLM (Γ := Γ) (s := s) a) + (CtxVec.getCLM (Γ := Γ) (s := s) b)).hasFDerivAt (x :=
-        xV))
+    have h :=
+      ((CtxVec.getCLM (Γ := Γ) (s := s) a) +
+        (CtxVec.getCLM (Γ := Γ) (s := s) b)).hasFDerivAt (x := xV)
+    have hderiv := h.congr_of_eventuallyEq hfun.eventuallyEq
+    simpa [add, Node.forwardVec_ofVec] using hderiv
   jvp_eq := by
     intro xV dxV
     simp [add, Node.jvpVec_ofVec, CtxVec.getCLM_apply] }
@@ -145,9 +147,11 @@ def subFderiv {Γ : List Shape} {s : Shape} (a b : Idx Γ s) :
             ((CtxVec.getCLM (Γ := Γ) (s := s) a) - (CtxVec.getCLM (Γ := Γ) (s := s) b)) x := by
       funext x
       simp [CtxVec.getCLM_apply]
-    simpa [sub, Node.forwardVec_ofVec, hfun] using
-      (((CtxVec.getCLM (Γ := Γ) (s := s) a) - (CtxVec.getCLM (Γ := Γ) (s := s) b)).hasFDerivAt (x :=
-        xV))
+    have h :=
+      ((CtxVec.getCLM (Γ := Γ) (s := s) a) -
+        (CtxVec.getCLM (Γ := Γ) (s := s) b)).hasFDerivAt (x := xV)
+    have hderiv := h.congr_of_eventuallyEq hfun.eventuallyEq
+    simpa [sub, Node.forwardVec_ofVec] using hderiv
   jvp_eq := by
     intro xV dxV
     simp [sub, Node.jvpVec_ofVec, CtxVec.getCLM_apply] }
@@ -176,8 +180,9 @@ def scaleFderiv {Γ : List Shape} {s : Shape} (idx : Idx Γ s) (c : ℝ) :
         fun x : CtxVec Γ => (c • (CtxVec.getCLM (Γ := Γ) (s := s) idx)) x := by
       funext x
       simp [CtxVec.getCLM_apply]
-    simpa [scale, Node.forwardVec_ofVec, hfun] using
-      ((c • (CtxVec.getCLM (Γ := Γ) (s := s) idx)).hasFDerivAt (x := xV))
+    have h := (c • (CtxVec.getCLM (Γ := Γ) (s := s) idx)).hasFDerivAt (x := xV)
+    have hderiv := h.congr_of_eventuallyEq hfun.eventuallyEq
+    simpa [scale, Node.forwardVec_ofVec] using hderiv
   jvp_eq := by
     intro xV dxV
     simp [scale, Node.jvpVec_ofVec, CtxVec.getCLM_apply] }

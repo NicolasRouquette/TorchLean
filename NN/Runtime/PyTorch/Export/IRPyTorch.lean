@@ -23,7 +23,7 @@ What this is (and isn't):
 * This is an extraction/convenience layer used in round-trip examples: run/train in Python, then
   optionally import weights back to Lean.
 * This is **not** a formal proof of semantic equivalence between PyTorch execution and the Lean IR
-  denotation. The "source of truth" semantics live on the Lean side (`NN.IR.Graph.denote*`, and the
+  denotation. The reference semantics remain the Lean definitions (`NN.IR.Graph.denote*` and the
   compiled runtime).
 
 Assumptions:

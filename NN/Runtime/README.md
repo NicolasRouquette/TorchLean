@@ -14,9 +14,8 @@ Most downstream code should not import modules from this directory directly. Pre
 * `import NN.API.Runtime` when you are extending the runtime subsystem itself, or
 * `import NN.Runtime` when you need the broad executable umbrella.
 
-There is no top level `NN.Runtime` Lean file. User-facing code goes through the `TorchLean` API;
-subsystem code uses focused `NN.API.*` or direct subsystem imports so implementation files do not
-become a second public API.
+`NN/Runtime.lean` is the executable subsystem umbrella. User-facing code goes through the
+`TorchLean` API, while runtime implementation files use focused subsystem imports.
 
 ## How A Run Moves
 
@@ -81,14 +80,13 @@ The names separate intent from implementation.
 The compiled path runs the same TorchLean model through its graph/IR representation. Compiled/eager
 equivalence checks and graph-correctness modules connect that execution path to the original object.
 
-The ATen/libtorch direction follows the same rule. For no-grad inference, an external provider can
-return a value under an explicit agreement assumption. For training, TorchLean cannot hand the whole
-autograd story to libtorch without changing the proof boundary. A supported ATen-backed operation
+For no-grad inference, an ATen/libtorch provider can return a value under an explicit agreement
+assumption. During training, a supported ATen-backed operation
 should compute the forward value, attach that value to the normal TorchLean node/cache, and use the
 normal TorchLean backward rule. If an operation cannot preserve that relation yet, the training path
 should fall back to the TorchLean-native forward for that op.
 
-## What Counts As Evidence
+## Tests, Checkers, And Proofs
 
 Runtime evidence and proof evidence are different, and both have a role.
 
@@ -108,5 +106,5 @@ interfaces for the objects those systems produce. Claims that depend on foreign 
 Python, or Julia code should cite the corresponding producer boundary or a separate checker/theorem
 that discharges it.
 
-For the proof story, look at `NN.Proofs.*`, `NN.MLTheory.*`, and `NN.Verification.*`. This directory
-supplies the executable objects those theorems and checkers connect to.
+Theorems and checkers live under `NN.Proofs.*`, `NN.MLTheory.*`, and `NN.Verification.*`; this
+directory supplies the executable objects they refer to.

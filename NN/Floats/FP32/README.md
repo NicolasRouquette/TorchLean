@@ -4,7 +4,7 @@
 theorem statements and compositional error arguments when the proof should look like finite
 precision arithmetic but does not need NaNs, infinities, signed zero, or bit-level payloads.
 
-Use this layer when you want clean statements such as:
+The typical proof has the form:
 
 ```text
 real spec value
@@ -12,8 +12,8 @@ real spec value
   -> bounded error or interval enclosure
 ```
 
-Do not use it as the executable IEEE-754 model. For bit-level binary32 behavior, including special
-values, use `TorchLean.Floats.IEEE754.IEEE32Exec` from `NN/Floats/IEEEExec/`.
+Bit-level binary32 behavior, including special values, is defined by
+`TorchLean.Floats.IEEE754.IEEE32Exec` under `NN/Floats/IEEEExec/`.
 
 ## Files
 
@@ -28,6 +28,5 @@ Interval enclosures live in `NN/Floats/Interval/FP32.lean` and are imported by `
 
 ## Relationship To Runtime
 
-The runtime may use Lean `Float`, C/CUDA `float`, or external kernels. A theorem over `FP32` becomes
-a runtime claim only after an explicit bridge says the executable path agrees with, or is bounded by,
-the proof model. That bridge is intentionally separate from this folder.
+Bridges and provider contracts outside this directory connect `FP32` results with Lean `Float`,
+C/CUDA `float`, and external kernels.

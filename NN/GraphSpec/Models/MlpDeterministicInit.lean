@@ -36,7 +36,7 @@ namespace NN
 namespace GraphSpec
 namespace Models
 
-open Spec
+open _root_.NN.Spec
 open Spec.Tensor
 open NN.Tensor
 

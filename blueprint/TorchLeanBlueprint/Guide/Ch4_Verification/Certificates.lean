@@ -231,10 +231,9 @@ does not replay the producer's bound propagation.
 
 # From Checker To Producer
 
-This chapter owns the accepted format and checker claim. The next chapter begins with the external
-producer and shows how `scripts/verification/abcrown/export_leaf_artifact.py` converts terminal
-domains into this schema, both as a command and as a function called inside a producer process.
-Keeping those directions there avoids mixing artifact semantics with external-tool setup.
+The accepted format and checker statement are defined here. The producer workflow uses
+`scripts/verification/abcrown/export_leaf_artifact.py` to convert terminal domains into this schema,
+either from the command line or from inside the producer process.
 
 # How To Check In Lean
 

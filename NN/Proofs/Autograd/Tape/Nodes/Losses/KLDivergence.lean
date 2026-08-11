@@ -401,8 +401,9 @@ def klDivLastFderivAt {Γ : List Shape} {m n : Nat}
             (n := Spec.Shape.size Shape.scalar)
             (f := fun _ : Fin (Spec.Shape.size Shape.scalar) => c * (inner ℝ dq rhs + inner ℝ q drhs))
             (i := i) using 1
-      simpa [klDivLast, Node.jvpVec_ofVec, qMN, lpMN, logqMN, c, s,
-        q, dq, lp, dlp, logq, dlogq, rhs, drhs, vecOfFun, Spec.Shape.size] using hscalar
+      simp only [klDivLast, Node.jvpVec_ofVec]
+      simpa [qMN, lpMN, logqMN, c, s, q, dq, lp, dlp, logq, dlogq, rhs, drhs,
+        vecOfFun, Spec.Shape.size] using hscalar
     let D : CtxVec Γ →L[ℝ] ℝ := c • (fderivInnerCLM ℝ (qMN xV, rhsMN xV)).comp (qMNCLM.prod
       rhsDeriv)
     have hD :

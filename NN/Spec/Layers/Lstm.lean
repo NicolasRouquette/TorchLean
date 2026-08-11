@@ -214,7 +214,7 @@ Outputs:
 - gradients w.r.t. `x_t` and the previous state,
 - plus gradients for each parameter tensor.
 
-PyTorch mental model: this is what `autograd` computes for `nn.LSTMCell` when unrolled in time.
+This is the quantity computed by PyTorch autograd for an `nn.LSTMCell` unrolled in time.
 -/
 def lstmCellBackwardSpec {inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize)

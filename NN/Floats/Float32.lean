@@ -15,9 +15,9 @@ import Mathlib.Algebra.Order.Algebra
 
 Unified Float32 entrypoint (TorchLean).
 
-This file keeps several common meanings of "float32" separate and explicit: the trusted runtime
-`Float` implementation, a proof-oriented rounding model (`FP32`), and an executable bit-level model
-(`IEEE32Exec`).
+This file keeps several common meanings of "float32" separate: TorchLean's proof-oriented
+rounded-real model (`FP32`), its executable bit-level model (`IEEE32Exec`), and Lean's builtin
+`Float32` with its logical `Float32.Model`.
 
 ## What “32-bit precision” means here
 
@@ -27,14 +27,14 @@ Throughout TorchLean, *float32* refers to **IEEE-754 binary32**: a 32-bit floati
 - 8 exponent bits,
 - 23 fraction bits (24 bits of precision including the implicit leading 1 for normals).
 
-This is a widely supported baseline dtype for ML workloads; other formats (bf16/fp16/tf32, etc.) can
-be added on top of the same structure.
+This is the binary32 specialization used by TorchLean's runtime and numerical proofs.
 
 ## The three meanings we support
 
-- **Lean runtime `Float` / `Float32`** are fast and convenient, but their arithmetic is implemented
-  by external/runtime code. That behavior is *not* kernel-reducible, so we treat it as
-  an explicit trust boundary.
+- **Lean `Float` / `Float32`** now have logical models that the kernel can reduce. Compiled programs
+  replace core operations with native implementations, so compiler and hardware conformance remain
+  explicit runtime boundaries. `NN.Floats.IEEEExec.Bridge.LeanFloat32` connects the logical
+  binary32 model to TorchLean's independent executor where agreement has been proved or stated.
 
 - **`FP32`** is our *proof-oriented* float32 semantics: a finite-only “rounding-on-ℝ” model
   (in the style of Flocq) where each primitive operation is specified as “compute in `ℝ`, then
@@ -53,7 +53,8 @@ keeping the boundary easy to see and easy to swap:
 
 - theorem statements and error bounds typically use `FP32`,
 - runnable examples typically use `IEEE32Exec`,
-- runtime `Float32` is treated as an explicitly trusted/assumed implementation detail.
+- ordinary Lean `Float32` proofs unfold through `Float32.Model`, while compiled execution is
+  covered by a separate provider contract.
 
 This design is described in the TorchLean paper appendix ("Appendix C (Numerical Semantics)"):
 `arXiv:2602.22631` (https://arxiv.org/abs/2602.22631).

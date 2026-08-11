@@ -78,9 +78,9 @@ under `NN/Examples/Verification`; reusable checkers live under `NN/Verification`
    the proof examples small so the connection between a model-shaped object and a theorem statement
    is visible.
 
-## What To Learn From The Quickstarts
+## Shared Conventions
 
-The quickstarts teach the public story in its smallest complete form:
+The quickstarts use the same public conventions:
 
 - user code starts with `import NN.API` and `open TorchLean`;
 - tensors carry enough shape information to make common mistakes visible;

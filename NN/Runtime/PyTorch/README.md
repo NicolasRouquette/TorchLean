@@ -36,7 +36,7 @@ do not hand model ownership or backward semantics to PyTorch.
 - `Export/TorchExport.lean` emits a Python adapter that captures a PyTorch `nn.Module` with
   `torch.export`/FX and writes TorchLean IR JSON for the supported op subset.
 
-Reading map:
+Choose the exporter by artifact type:
 
 - Use `Export/Core.lean` for shared formatting helpers.
 - Use `Export/StateDict.lean` when you already have PyTorch weights and need a model agnostic
@@ -47,16 +47,16 @@ Reading map:
   lowering into the checked TorchLean IR artifact.
 - Use `Export/IRPyTorch.lean` when you want a general `NN.IR.Graph` lowering path.
 
-The exported Python code is ordinary runtime code. It is useful for debugging and comparison, but a
-formal claim should name the Lean object that is checked after export: a parsed tensor bundle, a
-validated IR graph, a certificate, or a theorem over the imported graph semantics.
+The exported Python code supports runtime comparison and debugging. Formal results begin with the
+Lean object produced after import: a parsed tensor bundle, validated IR graph, checked certificate,
+or theorem over the imported graph semantics.
 
 ## Import
 
 `Import/` parses JSON encoded weights and graphs into TorchLean artifacts.
 
-Why JSON? Python can write it directly, and Lean can parse it without depending on Python pickle
-formats.
+The bridge uses JSON because Python can write it directly and Lean can parse it without depending on
+Python pickle formats.
 
 - `Import/Core.lean` defines `parseTensor`, which turns nested JSON arrays into a `Tensor Float s` when the JSON shape matches `s`.
   It also provides small error reporting wrappers (`loadWeightsE`, `getTensorE`) for debugging missing keys and shape mismatches.
@@ -64,7 +64,7 @@ formats.
 - `Import/TorchExport.lean` parses TorchLean IR JSON from the generated graph capture adapter and
   accepts only graphs that pass the shared IR validators.
 
-Reading map:
+Choose the importer by artifact type:
 
 - Use `Import/Core.lean` for the generic JSON parsing path.
 - Use `Import/TorchExport.lean` when you have a captured PyTorch graph JSON artifact.

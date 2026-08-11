@@ -19,8 +19,8 @@ certificates. The files underneath prove:
 - logit margins plus output perturbation bounds preserve the `argmax` classifier; and
 - basic MLP/ReLU Lipschitz lemmas used by certified-robustness statements.
 
-The executable verifiers live elsewhere; this chapter supplies the mathematical statements that
-make those certificates meaningful.
+Executable verifiers live elsewhere. These modules state the mathematical consequences of their
+robustness certificates.
 
 References:
 - Hein and Andriushchenko, "Formal guarantees on the robustness of a classifier against

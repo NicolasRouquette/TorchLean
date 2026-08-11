@@ -39,7 +39,7 @@ file demonstrates the artifact-generation and replay path that a larger graph us
 namespace NN.Examples.DeepDives.Floats.GraphNumericalCertificate
 
 open Proofs.RuntimeApprox.NumericalCertificate
-open Spec
+open _root_.Spec
 open TorchLean.Floats.IEEE754
 
 /-- The example uses scalar nodes so the interval endpoints remain easy to inspect. The certificate

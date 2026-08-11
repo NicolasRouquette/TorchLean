@@ -61,7 +61,7 @@ public meta section
 
 open scoped ProofWidgets.Jsx
 
-open Spec
+open _root_.NN.Spec
 open Spec.RL
 open Spec.RL.Envs
 open UI

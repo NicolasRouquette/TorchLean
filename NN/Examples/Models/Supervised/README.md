@@ -42,7 +42,7 @@ but the log records the run metadata, metric names, steps, and values.
 | Example | Data boundary | Main runtime path | Artifact to inspect |
 | --- | --- | --- | --- |
 | `Mlp.lean` | Auto MPG CSV or generated tabular tensors | public `Trainer` regression/classification path | `TrainLog`, before/after predictions |
-| `Kan.lean` | same tabular loader conventions | public trainer with KAN-style model structure | loss curve and parameter-shape story |
+| `Kan.lean` | same tabular loader conventions | public trainer with KAN-style model structure | loss curve and parameter shapes |
 | `LstmRegression.lean` | household-power windows exported to `.npy` | CUDA-capable sequence layer used for supervised forecasting | forecast rows and `TrainLog` |
 
 These examples are useful when changing the public API because they touch the common path: build a

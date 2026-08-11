@@ -23,7 +23,7 @@ and Lyapunov/controller experiments.
 7. `Runtime/Ops.lean`: the canonical executable ReLU relaxation definitions used by both the graph
    engine and MLP development, kept separate from heavier proof imports.
 
-## How To Read The Layering
+## Bound Computation And Proofs
 
 CROWN-style code has three distinct jobs:
 

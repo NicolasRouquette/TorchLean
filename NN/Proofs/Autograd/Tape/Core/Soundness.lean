@@ -194,9 +194,9 @@ private theorem fill_eq_scale_one {s : Shape} (c : ℝ) :
     fill c s = scaleSpec (α:=ℝ) (s:=s) (fill (1 : ℝ) s) c := by
   induction s with
   | scalar =>
-    simp [fill, scaleSpec, mapSpec]
+    simp [fill, scaleSpec]
   | dim n s ih =>
-    simp [fill, scaleSpec, mapSpec, ih]
+    simp [fill, scaleSpec, ih]
 
 /--
 Dotting any tensor with a zero-filled tensor gives `0`.
@@ -300,21 +300,21 @@ theorem dotList_single {Γ : List Shape} {s : Shape}
             cases val with
             | zero =>
               -- head index
-              cases h
-              have hs : (s0 :: Γtail).get ⟨0, isLt⟩ = s0 := by rfl
+              have hs0 : (s0 :: Γtail).get ⟨0, isLt⟩ = s0 := by
+                rfl
+              have hs : s0 = s := by
+                simpa [hs0] using h
               cases hs
-              -- Head case: `single` puts `v` in the head slot and zeros elsewhere, so `dotList`
-              -- picks `dx0`.
-              have hget0 : (Algebra.TList.cons dx0 dxRest).get 0 = dx0 := by
-                have hz : (0 : Fin (s0 :: Γtail).length) = ⟨0, isLt⟩ := by
-                  apply Fin.ext
-                  simp
-                -- `get_cons_zero` is the stable simp lemma for head access.
-                simpa [hz, TList.get] using
-                  (Proofs.Autograd.Algebra.TList.get_cons_zero (α := ℝ) (s := s0) (ss := Γtail) dx0
-                    dxRest isLt)
-              simpa [TList.dotList, single, getIdx, Tensor.castShape, TList.get, TList.zero,
-                TList.dotList_zero_right] using congrArg (fun t => dot t v) hget0.symm
+              calc
+                TList.dotList (TList.cons dx0 dxRest) (single ⟨⟨0, isLt⟩, rfl⟩ v) =
+                    dot dx0 v := by
+                  simp [TList.dotList, single, Tensor.castShape, TList.dotList_zero_right]
+                _ = dot (getIdx (TList.cons dx0 dxRest) ⟨⟨0, isLt⟩, rfl⟩) v := by
+                  dsimp [getIdx, Tensor.castShape]
+                  have hget0 :
+                      (TList.cons dx0 dxRest).get (0 : Fin (s :: Γtail).length) = dx0 := by
+                    rfl
+                  exact (congrArg (fun t => dot t v) hget0).symm
             | succ j =>
               -- tail index
               have h0 : dot dx0 (fill (0 : ℝ) s0) = 0 := dot_fill_zero_right (a := dx0)

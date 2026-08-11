@@ -11,7 +11,7 @@ project:
   license: MIT
 
 toolchain:
-  lean: "leanprover/lean4:v4.32.0"
+  lean: "leanprover/lean4:v4.33.0"
   package_manager: Lake
   primary_package_file: lakefile.lean
   documentation_package: blueprint/lakefile.toml

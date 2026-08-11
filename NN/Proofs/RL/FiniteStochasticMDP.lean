@@ -130,7 +130,11 @@ theorem bellmanOptimality_monotone
     valueAt (Spec.RL.FiniteStochastic.bellmanOptimality mdp values₁) state ≤
       valueAt (Spec.RL.FiniteStochastic.bellmanOptimality mdp values₂) state := by
   let _ : Nonempty (Fin nActions) := ⟨⟨0, Fact.out⟩⟩
-  simp [Spec.RL.FiniteStochastic.bellmanOptimality, valueAt]
+  change
+    (Finset.univ : Finset (Fin nActions)).sup' Finset.univ_nonempty
+        (Spec.RL.FiniteStochastic.actionValue mdp values₁ state) ≤
+      (Finset.univ : Finset (Fin nActions)).sup' Finset.univ_nonempty
+        (Spec.RL.FiniteStochastic.actionValue mdp values₂ state)
   refine Finset.sup'_le (s := (Finset.univ : Finset (Fin nActions))) Finset.univ_nonempty
     (Spec.RL.FiniteStochastic.actionValue mdp values₁ state) ?_
   intro action _
@@ -283,7 +287,10 @@ theorem actionValue_le_bellmanOptimality
     Spec.RL.FiniteStochastic.actionValue mdp values state action ≤
       valueAt (Spec.RL.FiniteStochastic.bellmanOptimality mdp values) state := by
   let _ : Nonempty (Fin nActions) := ⟨⟨0, Fact.out⟩⟩
-  simp [Spec.RL.FiniteStochastic.bellmanOptimality, valueAt]
+  change
+    Spec.RL.FiniteStochastic.actionValue mdp values state action ≤
+      (Finset.univ : Finset (Fin nActions)).sup' Finset.univ_nonempty
+        (Spec.RL.FiniteStochastic.actionValue mdp values state)
   exact Finset.le_sup' (Spec.RL.FiniteStochastic.actionValue mdp values state) (Finset.mem_univ action)
 
 /-- Bellman optimality dominates Bellman evaluation under any deterministic policy. -/

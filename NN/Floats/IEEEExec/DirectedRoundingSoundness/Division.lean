@@ -448,6 +448,7 @@ theorem toEReal_divDown_le (x y : IEEE32Exec)
                 have hround : divDown x y = roundRatDown sign num den := by
                   simp (config := { zeta := true })
                     [divDown, hchoose, hxInf, hyInf, hy0, hdx, hdy, hx0', sign, hE, num, den]
+                  rfl
                 have hrat :
                     dyadicToReal dx / dyadicToReal dy =
                       (if sign then -((num : ℝ) / (den : ℝ)) else (num : ℝ) / (den : ℝ)) := by
@@ -486,6 +487,7 @@ theorem toEReal_divDown_le (x y : IEEE32Exec)
                 have hround : divDown x y = roundRatDown sign num den := by
                   simp (config := { zeta := true })
                     [divDown, hchoose, hxInf, hyInf, hy0, hdx, hdy, hx0', sign, hE, num, den]
+                  rfl
                 have hrat :
                     dyadicToReal dx / dyadicToReal dy =
                       (if sign then -((num : ℝ) / (den : ℝ)) else (num : ℝ) / (den : ℝ)) := by
@@ -572,6 +574,7 @@ theorem toEReal_divUp_ge (x y : IEEE32Exec)
                 have hround : divUp x y = roundRatUp sign num den := by
                   simp (config := { zeta := true })
                     [divUp, hchoose, hxInf, hyInf, hy0, hdx, hdy, hx0', sign, hE, num, den]
+                  rfl
                 have hrat :
                     dyadicToReal dx / dyadicToReal dy =
                       (if sign then -((num : ℝ) / (den : ℝ)) else (num : ℝ) / (den : ℝ)) := by
@@ -606,6 +609,7 @@ theorem toEReal_divUp_ge (x y : IEEE32Exec)
                 have hround : divUp x y = roundRatUp sign num den := by
                   simp (config := { zeta := true })
                     [divUp, hchoose, hxInf, hyInf, hy0, hdx, hdy, hx0', sign, hE, num, den]
+                  rfl
                 have hrat :
                     dyadicToReal dx / dyadicToReal dy =
                       (if sign then -((num : ℝ) / (den : ℝ)) else (num : ℝ) / (den : ℝ)) := by

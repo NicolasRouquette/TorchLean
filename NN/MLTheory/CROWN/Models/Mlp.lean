@@ -434,7 +434,7 @@ theorem ibp_linear_sound_real {m n : Nat}
     (Spec.linearSpec (α:=ℝ) { weights := W, bias := b } x) := by
   classical
   -- Make the `BoundOps` instance explicit (and named) so `simp [instBO]` can unfold primitives.
-  letI instBO : NN.MLTheory.CROWN.BoundOps ℝ :=
+  let instBO : NN.MLTheory.CROWN.BoundOps ℝ :=
     { addDown := (· + ·)
       addUp := (· + ·)
       subDown := (· - ·)

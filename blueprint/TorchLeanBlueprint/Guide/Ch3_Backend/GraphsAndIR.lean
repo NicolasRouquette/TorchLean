@@ -71,6 +71,32 @@ valid.
 
 The price of an import-friendly representation is an explicit validation phase.
 
+# The Node Record
+
+Every node has four fields:
+
+```
+structure NN.IR.Node where
+  id       : Nat
+  parents  : List Nat
+  kind     : OpKind
+  outShape : Shape
+```
+
+`kind` contains operation-local data such as an axis, permutation, convolution geometry, or hard
+mask. Large tensor values do not belong there. Constants and learned parameters live in the
+payload discussed below.
+
+This split makes a graph pleasant to inspect, but each field has a separate obligation. `id` must
+agree with the array position, every parent must already exist, the parent count must suit the
+operation, and `outShape` must agree with independent inference. An operation tag by itself does
+not certify any of those facts.
+
+The node array is stored in topological order rather than as an arbitrary edge set. Structural
+validation and ordinary evaluation can therefore scan from left to right. The work of the
+structural pass is proportional to the number of nodes plus the number of parent references; it
+does not need a graph search to rediscover an execution order.
+
 # Structure And Shape Are Separate Checks
 
 `Graph.checkWellFormed` checks graph structure:

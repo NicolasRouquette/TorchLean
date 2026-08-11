@@ -1,8 +1,6 @@
 # Native TorchLean Verification
 
-This folder is for workflows where the model starts inside TorchLean, is compiled to the verifier
-IR, and is checked by Lean side bound propagation. That is different from importing a certificate
-from an external verifier. Here the point is to keep the path visible:
+These workflows compile a TorchLean model to the verifier IR and run Lean-side bound propagation:
 
 ```text
 TorchLean model
@@ -31,9 +29,8 @@ Implementation map:
 - `torchlean-transformer-ibp`: `NN.Verification.TorchLean.TransformerIBPWorkflow`
 - `torchlean-mlp-workflow`: `NN.Verification.TorchLean.MlpTrainVerifyWorkflow`
 
-The `Proved/` subtree is for theorem-backed fragments of this path. The docs and code should keep
-the levels of support separate: a runtime report, a Lean checker, and a theorem-backed compiler
-fragment are different kinds of evidence.
+The `Proved/` subtree contains theorem-backed compiler and evaluator fragments. Runtime reports and
+checker results remain separate from those theorems.
 
 The model training examples elsewhere in `NN/Examples/Models` cover ordinary eager, compiled, and
 CUDA training. The workflows here are verifier workflows: after training, the parameters must be

@@ -127,8 +127,7 @@ def anotherBuild := nn.run 7 model
 `firstBuild` and `secondBuild` consume the same sequence of initialization seeds. `anotherBuild`
 uses the same architecture and parameter shapes but a different initialization stream.
 
-This distinction matters when reproducing a run. The architecture alone does not determine the
-initial parameter values. TorchLean can therefore state separately:
+The architecture alone does not determine a reproducible run. TorchLean records separately:
 
 - which seeded builder describes the architecture;
 - which seed initialized it;

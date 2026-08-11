@@ -36,10 +36,9 @@ layer stays focused on ergonomics:
 - `tensor!` accepts nested bracket syntax and flattens in row-major order, which is handy for
   handwritten examples.
 
-This separation matters for the proof story. A tensor literal can appear in a training example, an
-executable regression check, or a theorem statement, but the mathematical meaning of operations such
-as matrix multiplication, convolution, softmax, and reductions is defined elsewhere. The tensor API
-is the front door; it is not the proof boundary.
+A tensor literal can appear in a training example, an executable regression check, or a theorem
+statement. The mathematical meanings of matrix multiplication, convolution, softmax, and reductions
+are defined in `NN.Spec`; this directory provides their convenient tensor syntax.
 
 ## Static And Dynamic Shapes
 

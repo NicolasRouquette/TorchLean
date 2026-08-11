@@ -17,7 +17,7 @@ This module contains correctness infrastructure used by the end-to-end semantic 
 these lemmas separate from `...Correctness.Common` because they are specific to the recursive
 `buildFrom` proof shape rather than generally useful per-op infrastructure.
 
-Reading map:
+The lemmas are grouped as follows:
 
 * `denoteAllState_nil`: base case table lemma for the empty compiled prefix.
 * `permuteDVal_eq_applySwapsTensor` (+ helper): connects IR permutation semantics to the runtime

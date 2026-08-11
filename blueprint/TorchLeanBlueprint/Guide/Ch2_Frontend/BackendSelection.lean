@@ -26,7 +26,7 @@ $$`
 \longrightarrow \text{typed handler}.
 `
 
-This chapter follows that path from an operation request to the handler that executes it.
+The sections below trace that path from an operation request to the handler that executes it.
 
 # Kernel Capsules
 
@@ -96,7 +96,7 @@ and that a VJP descriptor names the capsule's declared VJP mode. Thus a value te
 shape field is rejected rather than counted as shape evidence. A forward-only capsule uses a
 separate `vjpUnavailable` claim; it cannot describe `.none` as though it were a VJP refinement.
 
-The distinction matters:
+Each evidence kind records a different claim:
 
 - *runtime-guard evidence* records validation performed at an execution boundary;
 - *test evidence* records a regression or differential test suite;

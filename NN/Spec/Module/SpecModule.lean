@@ -28,7 +28,7 @@ We keep that metadata separate from the semantics: `forward` is the mathematical
 `SpecChain` is a dependent composition operator that enforces intermediate shape agreement at
 compile time, so you can build pipelines without runtime shape casts.
 
-Mental model (PyTorch analogy):
+The closest PyTorch analogues are:
 
 - `NNModuleSpec` is like a compact, pure `nn.Module` with just a `forward`.
 - `SpecChain` is like `nn.Sequential`, but shape-safe by construction.

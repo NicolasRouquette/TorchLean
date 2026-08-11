@@ -8,8 +8,8 @@ to compare rounded execution with exact real semantics. Both are assembled from 
 contracts, so neither checker needs a separate case for an MLP, transformer, convolutional model,
 or neural operator.
 
-This page runs the canonical-IR path on a two-layer MLP and then explains where the backward and
-optimizer theorems attach.
+The example runs the canonical-IR path on a two-layer MLP and identifies the corresponding backward
+and optimizer theorems.
 
 ## Run the Example
 

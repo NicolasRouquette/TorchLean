@@ -712,20 +712,23 @@ private def convBilin
       Fin.cast (size_sX IC IH IW) (idx3S (C := IC) (H := IH) (W := IW) ic i j)
         =
       idx3 (C := IC) (H := IH) (W := IW) ic i j := by
-    simp [idx3S, idx3, Spec.Shape.size]
+    apply Fin.ext
+    rfl
 
   private lemma idx3S_cast_size_sY {OC OH OW : Nat} (oc : Fin OC) (i : Fin OH) (j : Fin OW) :
       Fin.cast (size_sY OC OH OW) (idx3S (C := OC) (H := OH) (W := OW) oc i j)
         =
       idx3 (C := OC) (H := OH) (W := OW) oc i j := by
-    simp [idx3S, idx3, Spec.Shape.size]
+    apply Fin.ext
+    rfl
 
   private lemma idx4S_cast_size_sK {OC IC KH KW : Nat}
       (oc : Fin OC) (ic : Fin IC) (di : Fin KH) (dj : Fin KW) :
       Fin.cast (size_sK OC IC KH KW) (idx4S (OC := OC) (IC := IC) (KH := KH) (KW := KW) oc ic di dj)
         =
       idx4 (OC := OC) (IC := IC) (KH := KH) (KW := KW) oc ic di dj := by
-    simp [idx4S, idx4, Spec.Shape.size]
+    apply Fin.ext
+    rfl
 
   private lemma get_at_or_zero_ofVecT_sX_eq_getInput
       {IC IH IW : Nat} (xRaw : Vec (IC * (IH * IW))) (ic : Fin IC) (p q : Nat) :
@@ -943,7 +946,12 @@ private def convBilin
         get1_ofVecT (v := bShape) (c := oc)
       have hbShape :
           bShape (Fin.cast (by simp [Spec.Shape.size]) oc) = bRaw oc := by
-        simp [bShape, Spec.Shape.size]
+        have hidx :
+            Fin.cast (size_sB OC) (Fin.cast (by simp [Spec.Shape.size]) oc) = oc := by
+          apply Fin.ext
+          rfl
+        have h := congrArg bRaw.ofLp hidx
+        simp [bShape, castVec_apply] at h ⊢
       simpa [db] using hget1.trans hbShape
 
     -- finish by rewriting the casted index to a 3D coordinate and evaluating one broadcast entry

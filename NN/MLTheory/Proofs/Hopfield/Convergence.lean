@@ -32,7 +32,7 @@ We keep the statement at the “sweep level” (one full pass over coordinates).
 namespace NN.MLTheory.Proofs.Hopfield
 
 open scoped BigOperators
-open Spec
+open _root_.NN.Spec
 
 open Spec.Hopfield
 

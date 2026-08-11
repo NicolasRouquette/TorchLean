@@ -29,8 +29,8 @@ So why do we also lower to `TorchLean.NN.Seq`?
 - and it plugs easily into existing training-loop code that expects a
   sequential layer stack.
 
-GraphSpec remains the source of truth for the model structure. `Seq` is a secondary view for the
-subset of models that are layer stacks.
+GraphSpec is the canonical model structure. `Seq` is a secondary view for the subset of models that
+are layer stacks.
 
 ## Partial compilation: `Except String`
 
@@ -71,7 +71,7 @@ namespace NN
 namespace GraphSpec
 namespace ToTorchLean
 
-open Spec
+open _root_.NN.Spec
 open NN.Tensor
 
 /-- Convenience constructor for an error result in the `Except String` lowering pipeline. -/

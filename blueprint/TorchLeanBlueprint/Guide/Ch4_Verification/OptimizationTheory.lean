@@ -123,8 +123,8 @@ has to state its own projection contract instead of being hidden inside the word
 
 This naming is reflected in the trainer API. Standard trainer configs use names such as
 `optim.sgd`, `optim.adamw`, and `optim.adadelta`. Runtime-level extension points use more explicit
-names such as `optim.runtimeMuon` and `optim.galore.projectedSGD`, because those calls need a
-backend or projection story as part of the mathematical object.
+names such as `optim.runtimeMuon` and `optim.galore.projectedSGD`, because those calls must record
+their backend or projection as part of the mathematical object.
 
 # Gradient Descent As A Contractive Map
 
@@ -212,8 +212,8 @@ Concrete theorem names:
 The result is the standard smooth/strongly-monotone contraction argument found in convex
 optimization texts such as Nesterov's
 [*Introductory Lectures on Convex Optimization*](https://link.springer.com/book/10.1007/978-1-4419-8853-9).
-TorchLean attaches this familiar rate to the exact update map and assumptions used by the rest of
-the verified training story.
+TorchLean attaches this familiar rate to the exact update map and assumptions used by its training
+theorems.
 
 # Smoothness, Strong Convexity, And The Bridge
 

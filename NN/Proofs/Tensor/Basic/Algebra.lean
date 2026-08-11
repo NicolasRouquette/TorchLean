@@ -253,14 +253,6 @@ theorem mat_vec_linear_combination {m n : Nat}
   -- Combine mat_vec_add and mat_vec_scale
   rw [mat_vec_add, mat_vec_scale, mat_vec_scale]
 
-/--
-Simplification lemmas for common patterns.
-Useful for automated proof tactics.
--/
-@[simp]
-theorem get_dim_scalar {n : Nat} (f : Fin n → Tensor ℝ .scalar) (i : Fin n) :
-  get (Tensor.dim f) i = f i := by rfl
-
 /-- Mapping `0 + ·` over an `Option` is the identity. -/
 lemma option_zero_add (o : Option ℝ) : o.map (fun x => 0 + x) = o := by
   cases o
@@ -324,5 +316,20 @@ theorem mul_spec_one_right {s : Shape} : ∀ (t : Tensor ℝ s),
       intro i
       -- recursively apply theorem to component
       exact mul_spec_one_right (fx i)
+
+/-- Adding scalar tensors in a left fold agrees with folding their scalar values. -/
+theorem foldl_add_scalar {ι : Type} (values : ι → Tensor ℝ .scalar) (items : List ι)
+    (initial : ℝ) :
+    items.foldl (fun total item => total + values item) (Tensor.scalar initial) =
+      Tensor.scalar (items.foldl (fun total item => total + (values item).toScalar) initial) := by
+  induction items generalizing initial with
+  | nil => rfl
+  | cons item rest ih =>
+      simp only [List.foldl_cons]
+      cases hValue : values item with
+      | scalar value =>
+          rw [show Tensor.scalar initial + Tensor.scalar value =
+            Tensor.scalar (initial + value) by rfl]
+          simpa [hValue] using ih (initial := initial + value)
 
 end Spec

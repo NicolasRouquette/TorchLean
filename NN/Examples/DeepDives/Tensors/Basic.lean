@@ -37,7 +37,7 @@ TorchLean keeps two tensor representations because they serve different goals:
 The conversion boundary is where you want to be explicit about layout and conventions. TorchLean
 uses a *row-major* convention for flattening/unflattening, so that the last axis varies fastest.
 
-## How to read it
+## Examples
 
 The sections below are small "micro examples" you can copy into other scratch files:
 
@@ -48,7 +48,7 @@ The sections below are small "micro examples" you can copy into other scratch fi
 Put your cursor on the `#tensor_view` and `#tensor_stats_view` commands to inspect the values in
 the Lean infoview. The notes below also show the closest PyTorch spelling for each operation.
 
-Important distinction:
+The file contains two kinds of declarations:
 - Ordinary tutorial definitions use plain `def`; this is the code you should copy into normal
   TorchLean modules.
 - A few `meta def ...View` declarations exist only for widgets. The infoview evaluator needs
@@ -61,7 +61,7 @@ Important distinction:
 
 namespace NN.Examples.DeepDives.Tensors.Basic
 
-open TensorArray Spec TensorBridge
+open TensorArray _root_.Spec TensorBridge
 
 /-! ## 1) Array-backed matrix → spec tensor (and indexing) -/
 

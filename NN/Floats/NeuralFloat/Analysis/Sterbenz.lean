@@ -71,7 +71,7 @@ theorem neural_generic_format_FLX_sub_of_le_two_mul (prec : ℤ) (hprec : 0 < pr
     (hxFmt : @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) x)
     (hyFmt : @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) y) :
     @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) (x - y) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   by_cases hxy : x = y
   · rw [hxy, sub_self]
     exact neural_generic_format_zero
@@ -148,7 +148,7 @@ theorem neural_generic_format_FLX_sterbenz (prec : ℤ) (hprec : 0 < prec)
     (hxFmt : @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) x)
     (hyFmt : @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) y) :
     @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) (x - y) := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   rcases le_total y x with hyx | hxy
   · exact neural_generic_format_FLX_sub_of_le_two_mul
       prec hprec hy hyx hx2y hxFmt hyFmt

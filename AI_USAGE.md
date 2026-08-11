@@ -46,8 +46,8 @@ technical, or easy to get lost in:
 
 Most of the repository was written and formalized manually. When we used AI
 help, we treated it the same way we would treat a colleague's sketch on a
-whiteboard: useful for ideas, search, debugging, and wording, but not itself a
-source of truth.
+whiteboard: useful for ideas, search, debugging, and wording, but always checked
+against the code, the cited mathematics, and Lean's kernel.
 
 For the release:
 

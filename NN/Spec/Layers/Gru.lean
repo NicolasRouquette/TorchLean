@@ -578,7 +578,7 @@ def gruCellBackwardFullSpec {inputSize hiddenSize : Nat}
 Reverse-mode backprop through an unrolled GRU over `seqLen` steps (BPTT).
 
 This function consumes the same intermediates produced by `gruExtractIntermediateValues`:
-per-timestep gate activations and candidates. This mirrors the PyTorch mental model: the forward
+per-timestep gate activations and candidates. As in PyTorch, the forward
 pass produces a sequence of hidden states and saves what it needs; the backward pass walks time
 in reverse and accumulates gradients.
 -/

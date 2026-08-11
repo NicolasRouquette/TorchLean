@@ -59,6 +59,44 @@ $$`W\in\mathbb{R}^{3\times 2},
 The order is the same convention used by PyTorch's `nn.Linear`: output features index the rows of
 the weight matrix.
 
+# Algebra Comes From The Scalar Context
+
+The shape fixes where values live. The scalar context fixes which formulas are available. A linear
+layer needs zero, addition, and multiplication. Softmax also needs exponentiation and division.
+Square root, comparison, trigonometric operations, and Boolean decisions require their own pieces
+of structure.
+
+TorchLean packages the common operations in `Context α`, so the same tensor definition can be
+interpreted over reals, rounded formats, interval endpoints, or executable binary32. This
+polymorphism is useful only when the hypotheses remain honest. A proof of a softmax identity over
+`ℝ` may use properties of the real exponential that an arbitrary `Context α` does not provide.
+
+The usual progression is:
+
+:::table +header
+*
+  * Level
+  * Typical statement
+*
+  * generic scalar context
+  * the operation is well shaped and computes the declared recursion
+*
+  * algebraic structure
+  * addition, multiplication, linearity, or order laws
+*
+  * real analysis
+  * derivatives, continuity, convexity, and analytic bounds
+*
+  * rounded arithmetic
+  * representability, rounding error, and finite-path conditions
+*
+  * native execution
+  * agreement with one selected provider and reduction policy
+:::
+
+Moving down this table adds hypotheses. A theorem should not inherit a stronger numerical meaning
+because the same operation name appears at every level.
+
 # One Layer, Forward And Backward
 
 The forward definition is deliberately short:

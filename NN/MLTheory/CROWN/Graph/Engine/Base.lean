@@ -952,8 +952,15 @@ Cast a dim-scalar tensor across an equality of dimensions.
 We keep this as an `abbrev` so it unfolds aggressively in simp-based soundness proofs.
 -/
 abbrev castDimScalar {n n' : Nat}
-  (h : n = n') (t : Tensor α (.dim n .scalar)) : Tensor α (.dim n' .scalar) := by
-  simpa [h] using t
+    (h : n = n') (t : Tensor α (.dim n .scalar)) : Tensor α (.dim n' .scalar) :=
+  Tensor.castShape t (congrArg (fun k => Shape.dim k Shape.scalar) h)
+
+omit [Context α] [BoundOps α] in
+/-- Casting a flat vector tensor along an equality from a dimension to itself changes no data. -/
+@[simp] theorem castDimScalar_self {n : Nat}
+    (h : n = n) (t : Tensor α (.dim n .scalar)) :
+    castDimScalar (α := α) h t = t := by
+  exact Tensor.cast_shape_self t _
 
 /-- IBP propagation through explicit linear parameters. -/
 @[expose]

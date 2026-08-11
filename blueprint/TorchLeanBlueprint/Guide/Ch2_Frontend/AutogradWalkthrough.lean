@@ -401,6 +401,56 @@ Widgets visualize an executable artifact. They do not add a theorem to it.
 
 # API Summary
 
+The derivative APIs differ in what they seed and what they return:
+
+:::table +header
+*
+  * Query
+  * Seed
+  * Result
+  * Best use
+*
+  * `grad`
+  * scalar output cotangent `1`
+  * one gradient with the input shape
+  * scalar objectives
+*
+  * `valueAndGradScalar`
+  * scalar output cotangent `1`
+  * primal value and gradient
+  * losses that should be evaluated only once
+*
+  * `vjp`
+  * caller-supplied output cotangent
+  * pullback into the input shape
+  * vector-valued functions
+*
+  * `jacfwd`
+  * input basis tangents
+  * full Jacobian
+  * small input dimension
+*
+  * `jacrev`
+  * output basis cotangents
+  * full Jacobian
+  * small output dimension
+*
+  * `hessian`
+  * nested forward/reverse queries
+  * full second-derivative array
+  * small scalar problems
+*
+  * `hvpParams`
+  * one parameter-shaped direction
+  * Hessian-vector product
+  * curvature information without a full Hessian
+:::
+
+A full Jacobian or Hessian can be much larger than the model output. The API makes those requests
+explicit rather than computing them as a side effect of ordinary training. For a scalar loss with
+millions of parameters, reverse mode gives all parameter gradients in one traversal; constructing
+the full Hessian would be a very different computation.
+
 For one-input tensor functions:
 
 ```

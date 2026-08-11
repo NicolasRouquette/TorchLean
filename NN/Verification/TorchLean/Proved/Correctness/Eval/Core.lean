@@ -172,10 +172,10 @@ theorem getVal_eq_ok
     (h : (vals[idx.id]!).1 = expected) :
     getVal (α := α) (inShape := inShape) (ss := ss) (s := expected) vals idx =
       Except.ok (h ▸ (vals[idx.id]!).snd) := by
-  simp [getVal, getDVal?, hSome, DVal.shape, Bind.bind, Except.bind]
-  split
-  · rfl
-  · contradiction
+  have hShape : (vals[idx.id]!).shape = expected := h
+  simp only [getVal, getDVal?, hSome, Bind.bind, Except.bind]
+  rw [dif_pos hShape]
+  rfl
 
   /--
   Generic prefix-preservation argument for `ParamStore` lookups.

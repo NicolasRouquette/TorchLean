@@ -4,7 +4,7 @@ This directory contains the maintained TorchLean model commands. The files read 
 training scripts: instantiate a model, prepare a dataset or token stream, train for several
 optimizer updates, and optionally write a training curve.
 
-For the narrative walkthrough, use the website guide. This file is the local command map.
+The website guide explains the examples in context. This file lists the local commands.
 
 ## Directory Map
 

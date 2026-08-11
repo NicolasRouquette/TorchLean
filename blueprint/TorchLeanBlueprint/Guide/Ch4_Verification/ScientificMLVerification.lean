@@ -33,7 +33,7 @@ The registered verification tools can be listed with:
 lake exe verify -- list
 ```
 
-Three entries correspond to the scientific paths in this chapter:
+Three entries cover the scientific workflows described here:
 
 ```
 pinn-cert [<path>]    -- PINN certificate recomputation check
@@ -314,7 +314,7 @@ This is the same checked/proved/assumed distinction used for robustness certific
 may be a numerical solver; the theorem applies only to the artifact fields that Lean checked or to
 producer hypotheses named in the statement.
 
-# Scientific Artifacts In The Same Trust Story
+# Checking Scientific Artifacts
 
 Scientific ML often lives at the boundary between theorem proving and numerical tooling. The
 working discipline is simple: export a small artifact, recompute as much of it as practical in

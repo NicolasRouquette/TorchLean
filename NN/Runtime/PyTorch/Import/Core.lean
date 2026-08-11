@@ -35,7 +35,7 @@ This module is where we keep the shared logic that most PyTorch → TorchLean im
 - handle a small amount of “state_dict ergonomics” (key lookup, optional wrappers, index parsing),
 - keep everything model-agnostic, so the *model-specific* code can stay small and readable.
 
-Reading map:
+The public helpers are organized as follows:
 
 - `parseTensor` is the core JSON-to-tensor conversion.
 - `loadWeights?` and `unwrapParams` handle the two JSON layouts we accept.

@@ -295,15 +295,8 @@ lemma dot_biasBroadcast_eq_dot_bias_deriv
           (outW := (Shape.slidingWindowOutDim inW kW stride padding)) db) oc) i j
           =
         getAtOrZero db [oc.val] := by
-      -- `biasBroadcast` is constant across the spatial indices.
-      -- First rewrite `get2` to a `get_at_or_zero` on the matrix slice.
-      have h := get2_eq_get_at_or_zero
-        (A := get (biasBroadcast (outC := outC)
-          (outH := (Shape.slidingWindowOutDim inH kH stride padding))
-          (outW := (Shape.slidingWindowOutDim inW kW stride padding)) db) oc) i j
-      -- Then simplify the broadcast slice read.
-      -- (All indices are in bounds, so `get_at_or_zero` takes the `if_pos` branches.)
-      simpa [biasBroadcast, get_eq, oc.isLt, i.isLt, j.isLt] using h
+      -- `biasBroadcast` is constant across the spatial indices, and all three reads are in bounds.
+      simp [biasBroadcast, get_eq]
     have hB2 :
         get2 (get δ oc) i j = getAtOrZero δ [oc.val, i.val, j.val] := by
       have h := get2_eq_get_at_or_zero (A := get δ oc) i j
@@ -814,16 +807,23 @@ lemma conv2d_spec_noBias_get
   intro layerK
   classical
   unfold Spec.conv2dSpec
+  have hi : i.val < Shape.slidingWindowOutDim inH kH stride padding := by
+    simpa [outH] using i.isLt
+  have hj : j.val < Shape.slidingWindowOutDim inW kW stride padding := by
+    simpa [outW] using j.isLt
   -- Peel the requested output entry and convert the nested `finRange` folds into `Finset` sums.
-  simp [outH, outW, layerK, fill, getAtOrZero, oc.isLt,
+  simp [outH, outW, layerK, fill, getAtOrZero, oc.isLt, hi, hj,
     Spec.finRange_foldl_add_acc]
   -- Rewrite the `mkInputIdx?`-based read into the `paddedInput` helper, then commute the product
   -- so the summand matches the statement (`kernel * paddedInput`).
-  refine Finset.sum_congr rfl ?_
+  refine Finset.sum_congr (M := ℝ)
+    (rfl : (Finset.univ : Finset (Fin inC)) = Finset.univ) ?_
   intro ic _
-  refine Finset.sum_congr rfl ?_
+  refine Finset.sum_congr (M := ℝ)
+    (rfl : (Finset.univ : Finset (Fin kH)) = Finset.univ) ?_
   intro di _
-  refine Finset.sum_congr rfl ?_
+  refine Finset.sum_congr (M := ℝ)
+    (rfl : (Finset.univ : Finset (Fin kW)) = Finset.univ) ?_
   intro dj _
   have hread :=
     mkInputIdx_match_eq_paddedInput (stride := stride) (padding := padding) (img := input) (c := ic)

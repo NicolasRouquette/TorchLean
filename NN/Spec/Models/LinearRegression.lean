@@ -16,7 +16,7 @@ Defines linear regression as a dot product plus bias (one output):
 
 `y = wᵀ x + b`
 
-We aim to stay close to PyTorch's mental model:
+The corresponding PyTorch operations are:
 
 - `torch.nn.Linear(in_features, out_features=1)` for the forward pass,
 - `torch.nn.functional.mse_loss(..., reduction="mean")` for the MSE objective,

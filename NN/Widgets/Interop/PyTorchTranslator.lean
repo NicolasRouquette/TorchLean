@@ -239,9 +239,8 @@ The result has three possible meanings:
 - `some (.unsupported ...)`: the line looks like a PyTorch operation but is outside the supported
   translator subset.
 
-This distinction keeps the report readable. We do not want to complain about every `class` or
-`return`, but we do want to flag `nn.BatchNorm2d` or `torch.reshape` if the user expected a model
-translation.
+Ordinary Python structure is omitted from the report. Unsupported PyTorch operations such as
+`nn.BatchNorm2d` or `torch.reshape` are retained because they prevent a complete model translation.
 -/
 private def analyzeLine (raw : String) : Option Layer :=
   let s := lineClean raw

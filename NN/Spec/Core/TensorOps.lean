@@ -54,6 +54,26 @@ def mapSpec {s : Shape} (f : α → α) : Tensor α s → Tensor α s
   | Tensor.dim g => Tensor.dim (fun i => mapSpec f (g i))
 
 omit [Context α] in
+/-- Elementwise mapping computes directly on a scalar tensor. -/
+@[simp] theorem mapSpec_scalar (f : α → α) (x : α) :
+    mapSpec f (Tensor.scalar x) = Tensor.scalar (f x) := by
+  rfl
+
+omit [Context α] in
+/-- Elementwise mapping distributes over the leading tensor dimension. -/
+@[simp] theorem mapSpec_dim {n : Nat} {s : Shape} (f : α → α)
+    (values : Fin n → Tensor α s) :
+    mapSpec f (Tensor.dim values) = Tensor.dim (fun i => mapSpec f (values i)) := by
+  rfl
+
+omit [Context α] in
+/-- Extracting a scalar after an elementwise map applies the scalar function once. -/
+@[simp] theorem toScalar_mapSpec (f : α → α) (x : Tensor α .scalar) :
+    (mapSpec f x).toScalar = f x.toScalar := by
+  cases x
+  rfl
+
+omit [Context α] in
 /-- Transport a pointwise tensor property through an elementwise operation. -/
 theorem forall_mapSpec {p q : α → Prop} {f : α → α} {s : Shape} {x : Tensor α s}
     (hx : Forall p x) (hf : ∀ a, p a → q (f a)) :
@@ -80,6 +100,34 @@ Broadcasting is handled separately in `NN/Spec/Core/TensorReductionShape.lean`.
 def map2Spec {α β γ : Type} (f : α → β → γ) : ∀ {s : Shape}, Tensor α s → Tensor β s → Tensor γ s
   | Shape.scalar, Tensor.scalar x, Tensor.scalar y => Tensor.scalar (f x y)
   | Shape.dim _ _, Tensor.dim fx, Tensor.dim fy => Tensor.dim (fun i => map2Spec f (fx i) (fy i))
+
+/-- Indexing a pointwise binary operation applies the scalar operation after indexing. -/
+@[simp] theorem get_map2Spec {α β γ : Type} {f : α → β → γ} {n : Nat} {s : Shape}
+    (left : Tensor α (.dim n s)) (right : Tensor β (.dim n s)) (i : Fin n) :
+    _root_.Spec.get (map2Spec f left right) i =
+      map2Spec f (_root_.Spec.get left i) (_root_.Spec.get right i) := by
+  cases left
+  cases right
+  rfl
+
+/-- Matrix indexing commutes with a pointwise binary tensor operation. -/
+@[simp] theorem get2_map2Spec {α β γ : Type} {f : α → β → γ} {m n : Nat}
+    (left : Tensor α (.dim m (.dim n .scalar)))
+    (right : Tensor β (.dim m (.dim n .scalar))) (i : Fin m) (j : Fin n) :
+    _root_.Spec.get2 (map2Spec f left right) i j =
+      f (_root_.Spec.get2 left i j) (_root_.Spec.get2 right i j) := by
+  cases left with
+  | dim leftRows =>
+      cases right with
+      | dim rightRows =>
+          cases hLeft : leftRows i with
+          | dim leftRow =>
+              cases hRight : rightRows i with
+              | dim rightRow =>
+                  cases hLeftCell : leftRow j
+                  cases hRightCell : rightRow j
+                  simp [map2Spec, _root_.Spec.get2, _root_.Spec.get,
+                    _root_.Spec.getAtSpec, hLeft, hRight, hLeftCell, hRightCell]
 
 /-- Transport two pointwise properties through a binary shape-preserving operation. -/
 theorem forall_map2Spec {α β γ : Type} {p : α → Prop} {q : β → Prop} {r : γ → Prop}
@@ -111,6 +159,24 @@ instance {α : Type} [Add α] {s : Shape} : Add (Tensor α s) :=
 /-- Element‑wise multiplication (shape preserved). -/
 def mulSpec {α : Type} [Mul α] {s : Shape} (T₁ T₂ : Tensor α s) : Tensor α s :=
   map2Spec (· * ·) T₁ T₂
+
+/-- Scalar extraction commutes with pointwise tensor multiplication. -/
+@[simp] theorem toScalar_mulSpec {α : Type} [Mul α]
+    (left right : Tensor α .scalar) :
+    (mulSpec left right).toScalar = left.toScalar * right.toScalar := by
+  cases left
+  cases right
+  rfl
+
+/-- Multiplication by a filled tensor is coordinatewise multiplication by its scalar value. -/
+@[simp] theorem mulSpec_fill_left {α : Type} [Mul α] {s : Shape} (coefficient : α) :
+    ∀ t : Tensor α s, mulSpec (fill coefficient s) t = mapSpec (coefficient * ·) t
+  | .scalar value => rfl
+  | .dim values => by
+      simp only [mulSpec, map2Spec, fill, mapSpec]
+      congr 1
+      funext index
+      exact mulSpec_fill_left coefficient (values index)
 
 /-- `Mul` instance for shape-indexed tensors: multiply pointwise, preserving the shape. -/
 instance {α : Type} [Mul α] {s : Shape} : Mul (Tensor α s) :=
@@ -215,6 +281,12 @@ def notSpec {s : Shape} (x : Tensor Bool s) : Tensor Bool s :=
 /-- Element‑wise reciprocal (`1/x`). -/
 def invSpec {s : Shape} (x : Tensor α s) : Tensor α s :=
   mapSpec (fun x => 1 / x) x
+
+/-- Scalar extraction commutes with coordinatewise reciprocal. -/
+@[simp] theorem toScalar_invSpec (x : Tensor α .scalar) :
+    (invSpec x).toScalar = 1 / x.toScalar := by
+  cases x
+  rfl
 
 /-- Element‑wise clamp into `[min_val, max_val]`. -/
 def clampSpec {s : Shape} (x : Tensor α s) (min_val max_val : α) : Tensor α s :=

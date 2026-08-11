@@ -302,7 +302,7 @@ instrumented external verifier to write the schema that Lean checks. The externa
 the branch-and-bound run; TorchLean owns the exported artifact schema and the local witness
 predicate replayed by the checker.
 
-## How To Read A Verification Result
+## Verification Results
 
 The native and external examples produce different kinds of evidence:
 

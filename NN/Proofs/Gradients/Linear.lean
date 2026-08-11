@@ -64,8 +64,8 @@ For `y = W x + b`, if `δ = ∂L/∂y` then the weight gradient is
 
 `∂L/∂W = δ ⊗ x`.
 
-PyTorch mental model: this is the per-sample formula whose batched version becomes a matmul
-against the input batch.
+For a batch, PyTorch evaluates the corresponding formula as a matrix multiplication against the
+input batch.
 -/
 theorem linear_weight_gradient_correct
   {inDim outDim : Nat}

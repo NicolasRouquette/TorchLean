@@ -29,9 +29,10 @@ title: Tools
     <p class="tool-kind">Checked case studies</p>
     <h2>TorchLean Verified Examples</h2>
     <p>
-      The current examples cover batch-invariant inference and a verifiable transformer
-      checkpoint. Each README says what Lean checks and what still depends on Python, CUDA, solver
-      output, or hardware.
+      TorchLean Verified Examples develops larger case studies outside the core library. They range
+      from batch-invariant inference and replayable checkpoints to GPT training and a formal Kimi
+      K3 architecture specification. Each project pairs the runnable experiment with the exact Lean
+      statements proved about it.
     </p>
     <nav class="tool-links" aria-label="TorchLean Verified Examples links">
       <a href="https://github.com/Robertboy18/TorchLean-Verified-Examples">
@@ -44,6 +45,14 @@ title: Tools
       <a
         href="https://github.com/Robertboy18/TorchLean-Verified-Examples/tree/master/week-02-verifiable-transformer-checkpoint">
         Verifiable transformer checkpoint
+      </a>
+      <a
+        href="https://github.com/Robertboy18/TorchLean-Verified-Examples/tree/master/week-03-gpt-training">
+        GPT training in Lean
+      </a>
+      <a
+        href="https://github.com/Robertboy18/TorchLean-Verified-Examples/tree/master/week-04-kimi-k3-specification">
+        Kimi K3 specification
       </a>
     </nav>
   </article>

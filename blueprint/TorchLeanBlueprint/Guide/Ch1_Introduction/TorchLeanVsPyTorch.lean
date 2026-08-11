@@ -119,8 +119,8 @@ $$`\bar{x}=J_f(x)^\mathsf{T}\bar{y}`.
 The runtime rule is the fast implementation. The ideal VJP is the equation we want it to implement.
 The theorem, when available for that operation, connects the two.
 
-This distinction becomes especially important for external kernels. The maintained
-LibTorch-forward attention path asks LibTorch to compute the forward value, records the ordinary
+External kernels make the three layers particularly important. The maintained LibTorch-forward
+attention path asks LibTorch to compute the forward value, records the ordinary
 TorchLean tape node, and uses TorchLean's local backward rule. Handing both forward and backward to
 LibTorch would instead trust LibTorch autograd, saved-tensor conventions, gradient extraction, and
 parameter ownership. Kernel capsules record which choice was made.
@@ -182,7 +182,7 @@ TorchLean's backend framework expresses a smaller but more explicit decision:
 This planner answers a question that is often surprisingly hard to answer after a large run:
 *which implementation actually handled each expensive operation?* If LibTorch supplies attention
 while native CUDA supplies matrix multiplication, the audit report names both. If the requested
-provider is unavailable, planning fails instead of quietly choosing a different story.
+provider is unavailable, planning fails instead of silently selecting another implementation.
 
 This is also how TorchLean scales. It can keep ownership of the model, parameter layout, graph, and
 tape while calling industrial kernels for the expensive arithmetic.

@@ -52,9 +52,8 @@ Every loader should make these facts visible:
 - whether labels are one-hot encoded or integer ids,
 - whether shuffling is deterministic and which seed controls it.
 
-This matters for verification. A classifier margin certificate, a PINN dataset containment check, or
-an FNO prediction artifact is only meaningful if the data shape and ordering are the ones the
-checker thinks it is using.
+A classifier margin certificate, PINN dataset containment check, or FNO prediction artifact depends
+on the data shape and ordering supplied to its checker.
 
 The loader is therefore part of the trust boundary. It does not certify that an external dataset is
 scientifically correct, but it does make the imported tensor shape, label interpretation, and sample

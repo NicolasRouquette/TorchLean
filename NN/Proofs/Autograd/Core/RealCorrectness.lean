@@ -443,9 +443,9 @@ def sumCorrect {s : Shape} : OpSpecCorrect s Shape.scalar :=
             scaleSpec (α:=ℝ) (s:=s) (fill (1 : ℝ) s) g := by
         induction s with
         | scalar =>
-          simp [replicate, fill, scaleSpec, mapSpec]
+          simp [replicate, fill, scaleSpec]
         | dim n s ih =>
-          simp [replicate, fill, scaleSpec, mapSpec]
+          simp [replicate, fill, scaleSpec]
           funext i
           simpa [scaleSpec] using ih
       -- Reduce both sides using `dot_scale_left` and the fact that `fill 1` is multiplicative

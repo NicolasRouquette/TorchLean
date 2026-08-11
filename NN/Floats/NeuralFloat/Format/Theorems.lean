@@ -62,7 +62,7 @@ theorem neuralBpow_eq_natPow (p : ℤ) (hp : 0 ≤ p) :
 theorem FLXFormat_of_generic (prec : ℤ) (hprec : 0 < prec) (x : ℝ)
     (hx : @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) x) :
     FLXFormat (β := β) prec x := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   let m : ℤ := ⌊neuralScaledMantissa β (FLXExp prec) x⌋
   let e : ℤ := neuralCexp β (FLXExp prec) x
   have hsint : neuralScaledMantissa β (FLXExp prec) x = m := by
@@ -116,7 +116,7 @@ theorem FLXFormat_of_generic (prec : ℤ) (hprec : 0 < prec) (x : ℝ)
 theorem generic_of_FLXFormat (prec : ℤ) (hprec : 0 < prec) (x : ℝ)
     (hx : FLXFormat (β := β) prec x) :
     @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) x := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   obtain ⟨_, f, hxf, hmant⟩ := hx
   by_cases hm0 : f.mantissa = 0
   · have hx0 : x = 0 := by simp [hxf, neuralToReal, hm0]
@@ -163,7 +163,7 @@ theorem generic_format_FLX_iff (prec : ℤ) (hprec : 0 < prec) (x : ℝ) :
 theorem FLTFormat_of_generic (emin prec : ℤ) (hprec : 0 < prec) (x : ℝ)
     (hx : @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) x) :
     FLTFormat (β := β) emin prec x := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
   let m : ℤ := ⌊neuralScaledMantissa β (FLTExp emin prec) x⌋
   let e : ℤ := neuralCexp β (FLTExp emin prec) x
   have hsint : neuralScaledMantissa β (FLTExp emin prec) x = m := by
@@ -222,7 +222,7 @@ theorem FLTFormat_of_generic (emin prec : ℤ) (hprec : 0 < prec) (x : ℝ)
 theorem generic_of_FLTFormat (emin prec : ℤ) (hprec : 0 < prec) (x : ℝ)
     (hx : FLTFormat (β := β) emin prec x) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) x := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
   obtain ⟨_, f, hxf, hmant, hexp⟩ := hx
   by_cases hm0 : f.mantissa = 0
   · have hx0 : x = 0 := by simp [hxf, neuralToReal, hm0]

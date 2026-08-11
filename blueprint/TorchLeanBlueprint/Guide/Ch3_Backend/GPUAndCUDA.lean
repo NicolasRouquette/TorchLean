@@ -16,8 +16,8 @@ sees something quite different: contiguous buffers, dimensions, an execution str
 kernel, a broadcast, and several error checks. TorchLean keeps both views and records the contract
 at the boundary between them.
 
-This chapter follows one training step all the way to the GPU. CUDA is the maintained accelerator
-today; the capsule and target types are intentionally not CUDA-specific, so a future Metal, ROCm,
+The path below follows one training step all the way to the GPU. CUDA is the maintained accelerator
+today; capsule and target types are not CUDA-specific, so a future Metal, ROCm,
 TPU, or custom-chip provider can state the same kinds of obligations without pretending that its
 implementation already exists.
 

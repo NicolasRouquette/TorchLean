@@ -155,7 +155,7 @@ GraphSpec is intended to grow into a hygienic “write once, run/prove many” l
 namespace NN
 namespace GraphSpec
 
-open Spec
+open _root_.NN.Spec
 open Spec.Tensor
 open NN.Tensor
 
@@ -670,7 +670,7 @@ def mkParamTerm
         get_append_left_nat (as := ps) (bs := post) (i := i.1) (hi := i.2)
       simp
     exact Eq.trans hExtra (Eq.trans hPre (Eq.trans hPost rfl))
-  simpa [Γ] using castTerm hGet (DAG.Term.var (Γ := Γ) idx)
+  simpa [Γ] using castTerm hGet (DAG.Term.var (Γ := Γ) (DAG.Var.ofFin idx))
 
 /--
 Lower a unary `Primitive` application into the DAG term language.
@@ -748,7 +748,7 @@ def toTerm
           rfl
         have hGet : bodyEnv.get boundIdx = τm := by
           simpa [hIdx] using hGet0
-        castTerm hGet (DAG.Term.var (Γ := bodyEnv) boundIdx)
+        castTerm hGet (DAG.Term.var (Γ := bodyEnv) (DAG.Var.ofFin boundIdx))
       -- Translate `g₂` under its own parenthesization, then cast back to `bodyEnv`.
       let rhsEnv : List Shape := ((pre ++ ps₁) ++ ps₂ ++ post) ++ (extra ++ [τm])
       have hRhs : rhsEnv = bodyEnv := by
@@ -853,7 +853,7 @@ def Graph.toDAGTerm {ps : List Shape} {σ τ : Shape} (g : Graph ps σ τ) :
       rfl
     have hGet : Γ.get xIdx = σ := by
       simpa [hxIdx] using hGet0
-    exact castTerm hGet (DAG.Term.var (Γ := Γ) xIdx)
+    exact castTerm hGet (DAG.Term.var (Γ := Γ) (DAG.Var.ofFin xIdx))
   -- `toTerm`’s environment is definitional `([] ++ ps ++ [] ++ [σ])`; normalize to `ps ++ [σ]`.
   by
     simpa [List.nil_append, List.append_nil, List.append_assoc] using

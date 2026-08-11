@@ -416,7 +416,7 @@ Implementation detail:
 
   /-- Multi-head attention forward pass (self-attention when `mask` is square).
 
-High-level structure (PyTorch mental model):
+High-level structure:
 
 1. project `x` into `Q,K,V`
 2. split the projection dimension into heads
@@ -635,7 +635,7 @@ def MultiHeadAttentionJvp
 This uses the same input `x` for Q/K/V, runs scaled dot-product attention, then applies the output
 projection `Wo`.
 
-PyTorch mental model: the core of `nn.MultiheadAttention` / `TransformerEncoderLayer` (ignoring the
+PyTorch analogue: the core of `nn.MultiheadAttention` / `TransformerEncoderLayer` (ignoring the
 batch axis).
 -/
 def selfAttention
@@ -660,7 +660,7 @@ def selfAttention
 
 `query` is length `n1` and attends to `key/value` of length `n2`.
 
-PyTorch mental model: the attention block in a Transformer decoder layer (`nn.MultiheadAttention`
+PyTorch analogue: the attention block in a Transformer decoder layer (`nn.MultiheadAttention`
 with distinct query and key/value inputs).
 -/
 def crossAttention {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]

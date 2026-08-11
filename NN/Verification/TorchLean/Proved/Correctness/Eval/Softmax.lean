@@ -84,25 +84,23 @@ theorem evalAt_softmax_permuted_axis_eq
       =
       Except.ok (DVal.mk (α := α) s y) := by
   simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
-    Graph.expectShape, hAxis, hNotLast, hToLast, hBack,
+    hAxis, hNotLast, hToLast, hBack,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
+  have hInput : Graph.expectShape (α := α) (expected := s) (DVal.mk (α := α) s x) = .ok x := by
+    simpa [DVal.mk] using
+      expectShape_eq_ok (expected := s) (v := DVal.mk (α := α) s x) rfl
+  change Graph.expectShape (α := α) (expected := s) ⟨s, x⟩ = .ok x at hInput
   have hXLast' : Graph.permuteDVal (α := α) (v := ⟨s, x⟩) permToLast = .ok xLast := by
     simpa [DVal.mk] using hXLast
+  rw [hInput]
+  simp only
   rw [hXLast']
   cases xLast with
   | mk sLast tLast =>
       simp [DVal.mk] at hYBack ⊢
       rw [hYBack]
-      simp
-      have hYShape' :
-          (if h : yBack.1 = s then Except.ok (h ▸ yBack.2)
-            else
-              (throw
-                (s!"IR eval: shape mismatch: expected {repr s}, got {repr yBack.1}") :
-                Except String (Tensor α s))) =
-            Except.ok y := by
-        exact hYShape
-      rw [hYShape']
+      simp only
+      rw [hYShape]
 
 end IRStep
 

@@ -122,11 +122,22 @@ lemma forwardKernel_apply (a b : ℝ) (x : E) :
   unfold forwardKernel forwardNoising
   simp [Kernel.map_apply, hg, Kernel.prod_apply, Kernel.id_apply, Kernel.const_apply,
     Measure.dirac_prod]
-  rw [Measure.map_map hh hf']
   rw [Measure.map_map hg hmk]
-  apply Measure.map_congr
-  filter_upwards with z
-  simp [Function.comp]
+  calc
+    Measure.map ((fun p : E × E ↦ a • p.1 + b • p.2) ∘ Prod.mk x)
+          (ProbabilityTheory.stdGaussian E) =
+        Measure.map
+          ((fun y : E ↦ a • x + y) ∘
+            ((b • (ContinuousLinearMap.id ℝ E) : E →L[ℝ] E) : E → E))
+          (ProbabilityTheory.stdGaussian E) := by
+      apply Measure.map_congr
+      filter_upwards with z
+      simp [Function.comp]
+    _ = Measure.map (fun y : E ↦ a • x + y)
+          (Measure.map
+            ((b • (ContinuousLinearMap.id ℝ E) : E →L[ℝ] E) : E → E)
+            (ProbabilityTheory.stdGaussian E)) :=
+      (Measure.map_map hh hf').symm
 
 /-- Each transition distribution of the forward kernel is Gaussian. -/
 lemma isGaussian_forwardKernel (a b : ℝ) (x : E) :

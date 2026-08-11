@@ -61,7 +61,6 @@ with types and proof evidence.
 
 namespace NN.Examples.BugZoo.ShapeAndBroadcast
 
-open Spec
 open Spec.Tensor
 
 abbrev ImageShape : Spec.Shape :=

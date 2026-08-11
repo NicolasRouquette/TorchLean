@@ -456,8 +456,7 @@ theorem backwardDenseFrom_compileAux_eq_backpropAllCtx {α : Type} {Δ : Type} [
                     { s := runtimeNode.value.s
                       t := Tensor.castShape outAny.t hshapeNode } =
                   .ok (TList.toIndexedAnyList (α := α) (ss := Γ ++ ssPrev) contrib 0) := by
-              simp [runtimeNode, outAny, hctxPrev, ctx, contrib, Tensor.castShape,
-                Runtime.Autograd.AnyTensor.mk]
+              simp [runtimeNode, outAny, hctxPrev, ctx, contrib, Runtime.Autograd.AnyTensor.mk]
             -- Unfold the step and reduce the control flow (`getNode?`, `requires_grad`, `acc[id]?`,
             -- shape check).
             simp [Runtime.Autograd.Tape.backwardDenseFromStep, hnodeLast, hreqLast, haccLast]

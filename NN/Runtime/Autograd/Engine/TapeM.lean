@@ -24,7 +24,7 @@ like PyTorch.
 For training scripts/tests, also see `NN.Runtime.Autograd.Utils` which provides small helpers
 for common patterns (reading scalar losses, extracting typed grads, simple SGD loops).
 
-## Reading map
+## Main declarations
 
 - `NN.Runtime.Autograd.Engine.Core` contains the pure tape and low-level node constructors.
 - `TapeM.run` / `TapeM.eval` / `TapeM.exec` are the main control-flow wrappers.

@@ -70,13 +70,8 @@ lemma dyadicToReal_zero (sign : Bool) :
   by_cases hs : sign <;> simp [dyadicToReal, hs, TorchLean.Floats.neuralBpow, binaryRadix,
     NeuralRadix.toReal]
 
-/--
-`addDyadic` is exact with respect to `dyadicToReal`.
-
-Informal: `addDyadic` aligns exponents, adds signed mantissas, and normalizes; decoding the result
-gives the sum of the decoded inputs.
--/
-theorem dyadicToReal_addDyadic_exact (a b : Dyadic) :
+private theorem dyadicToReal_addDyadic_exact_of_mant_ne_zero (a b : Dyadic)
+    (ha0 : a.mant ≠ 0) (hb0 : b.mant ≠ 0) :
     dyadicToReal (addDyadic a b) = dyadicToReal a + dyadicToReal b := by
   classical
   by_cases hab : a.exp ≤ b.exp
@@ -101,7 +96,7 @@ theorem dyadicToReal_addDyadic_exact (a b : Dyadic) :
         addDyadic a b =
           if s == 0 then { sign := a.sign && b.sign, mant := 0, exp := 0 }
           else { sign := decide (s < 0), mant := Int.natAbs s, exp := a.exp } := by
-      simp (config := { zeta := true }) [addDyadic, hab, sh, m1, m2, s, signedMant]
+      simp (config := { zeta := true }) [addDyadic, ha0, hb0, hab, sh, m1, m2, s, signedMant]
 
     have ha : dyadicToReal a = (m1 : ℝ) * neuralBpow binaryRadix a.exp := by
       simp [m1, dyadicToReal_eq_signedMant, signedMant]
@@ -168,7 +163,7 @@ theorem dyadicToReal_addDyadic_exact (a b : Dyadic) :
         addDyadic a b =
           if s == 0 then { sign := a.sign && b.sign, mant := 0, exp := 0 }
           else { sign := decide (s < 0), mant := Int.natAbs s, exp := b.exp } := by
-      simp (config := { zeta := true }) [addDyadic, hab, sh, m1, m2, s, signedMant]
+      simp (config := { zeta := true }) [addDyadic, ha0, hb0, hab, sh, m1, m2, s, signedMant]
 
     have hb' : dyadicToReal b = (m2 : ℝ) * neuralBpow binaryRadix b.exp := by
       simp [m2, dyadicToReal_eq_signedMant, signedMant]
@@ -212,6 +207,28 @@ theorem dyadicToReal_addDyadic_exact (a b : Dyadic) :
         simpa using (dyadicToReal_ofNatAbs (s := s) (e := b.exp))
       rw [hadd]
       simp [hs0b, hres, hsum]
+
+/--
+`addDyadic` is exact with respect to `dyadicToReal`.
+
+Zero operands are handled before exponent alignment. For nonzero operands, the implementation
+aligns exponents, adds signed mantissas, and returns an exact dyadic without rounding.
+-/
+theorem dyadicToReal_addDyadic_exact (a b : Dyadic) :
+    dyadicToReal (addDyadic a b) = dyadicToReal a + dyadicToReal b := by
+  by_cases ha0 : a.mant = 0
+  · have haReal : dyadicToReal a = 0 := by
+      simp [dyadicToReal, ha0]
+    by_cases hb0 : b.mant = 0
+    · have hbReal : dyadicToReal b = 0 := by
+        simp [dyadicToReal, hb0]
+      simp [addDyadic, ha0, hb0, haReal, hbReal, dyadicToReal_zero]
+    · simp [addDyadic, ha0, hb0, haReal]
+  · by_cases hb0 : b.mant = 0
+    · have hbReal : dyadicToReal b = 0 := by
+        simp [dyadicToReal, hb0]
+      simp [addDyadic, ha0, hb0, hbReal]
+    · exact dyadicToReal_addDyadic_exact_of_mant_ne_zero a b ha0 hb0
 
 /--
 For a nonzero dyadic, `neural_magnitude` matches the expected “power-of-two interval”

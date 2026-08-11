@@ -472,7 +472,8 @@ lemma grad_b2_mse :
           -- `simp` doesn't unfold `1` to `ContinuousLinearMap.id` in this context.
           change ((ContinuousLinearMap.id ℝ (Vec outDim)).adjoint (mseGrad (n := outDim) y t)) =
             mseGrad (n := outDim) y t
-          simp
+          rw [ContinuousLinearMap.adjoint_id]
+          rfl
 
 /--
 Fréchet derivative of the network output with respect to the first-layer bias `b1`,

@@ -18,8 +18,8 @@ The responsibilities are separate:
 - CUDA owns selected Float32 kernels, device buffers, launches, and library calls;
 - tests, sanitizer runs, and trust-boundary docs say what evidence supports the native path.
 
-The distinction matters because "ran on GPU" is not the same statement as "proved correct." CUDA can
-make training and inference realistic without making the CUDA machine code part of Lean's kernel.
+Running on a GPU and proving an implementation correct are separate claims. CUDA makes realistic
+training and inference possible, while its machine code remains outside Lean's kernel.
 
 ## Build and Run
 

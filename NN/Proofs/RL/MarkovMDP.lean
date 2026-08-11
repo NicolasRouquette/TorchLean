@@ -149,11 +149,11 @@ theorem expectedNextValue_abs_sub_le [Nonempty S]
     (action : A) :
     |expectedNextValue mdp values₁ state action - expectedNextValue mdp values₂ state action|
       ≤ valueSupDist values₁ values₂ := by
-  haveI : IsMarkovKernel mdp.transition := valid.isMarkov
+  have : IsMarkovKernel mdp.transition := valid.isMarkov
   let μ : Measure S := mdp.transition (state, action)
-  haveI : IsProbabilityMeasure μ := by
+  have : IsProbabilityMeasure μ := by
     simpa [μ] using (by infer_instance : IsProbabilityMeasure (mdp.transition (state, action)))
-  haveI : IsFiniteMeasure μ := by
+  have : IsFiniteMeasure μ := by
     simpa [μ] using (by infer_instance : IsFiniteMeasure (mdp.transition (state, action)))
   have hBddDiff : BddAbove (Set.range fun s => |values₁ s - values₂ s|) :=
     bddAbove_abs_sub_of_bddAbove_abs (S := S) values₁ values₂ hBdd₁ hBdd₂

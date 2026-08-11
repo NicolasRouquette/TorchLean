@@ -57,6 +57,54 @@ nn.M A
 which is a seeded construction of `A`. It allocates deterministic seeds for parameterized layers
 but does not run a forward pass or optimizer update.
 
+# What A Layer Definition Contains
+
+When I add a layer, I check more than its input and output shape. `nn.LayerDef σ τ` stores the
+pieces that have to remain aligned as the layer moves from model construction to execution:
+
+:::table +header
+*
+  * Field
+  * Meaning
+*
+  * `kind`
+  * the name printed in model summaries
+*
+  * `paramShapes`
+  * the ordered shapes of parameters and persistent buffers
+*
+  * `initParams`
+  * reproducible Float-authored initial values for that shape list
+*
+  * `runtimeInit`
+  * an optional storage-first initializer for executable Float runtimes
+*
+  * `paramRequiresGrad`
+  * one gradient flag for each entry of `paramShapes`
+*
+  * `updateBuffers`
+  * an optional train/eval-dependent update for state such as running statistics
+*
+  * `forward`
+  * the backend-polymorphic tensor program from `σ` to `τ`
+:::
+
+The forward program receives the parameters followed by the layer input. Its input shape list is
+`paramShapes ++ [σ]`, and its result has shape `τ`. A new layer cannot provide an initializer in one
+order and quietly read parameters in another; both uses share the same dependent shape list.
+
+Sequential composition is correspondingly small. The internal type is `Seq`, exported to
+application code as `nn.Sequential`:
+
+```
+inductive Seq : Shape → Shape → Type
+  | id (s : Shape) : Seq s s
+  | cons : nn.LayerDef σ τ → Seq τ υ → Seq σ υ
+```
+
+The middle shape `τ` appears on both sides of `cons`. This is the check performed by
+`nn.Sequential!`; the macro saves syntax but does not weaken the type.
+
 # The Running MLP
 
 Here is the model used throughout the introduction:
@@ -319,7 +367,7 @@ lake exe torchlean transformer \
 The current example reports:
 
 ```
-[TorchLean] dtype: Float (Lean `Float`, trusted runtime semantics)
+[TorchLean] dtype: Float (Lean binary64; native execution boundary)
 [TorchLean] backend: Runtime.Autograd.Torch.Backend.eager
 [TorchLean] device: cpu
 dataset size = 1

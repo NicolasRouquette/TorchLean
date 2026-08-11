@@ -17,7 +17,7 @@ These lemmas relate the typed runtime context (`TList`) to the untyped IR value 
   DVal`),
 and provide small “building block” correctness steps that are reused across the per-op proofs.
 
-Reading map:
+The lemmas are grouped as follows:
 
 * `dValsOfCtx*` lemmas: relate the typed context produced by `GraphData.eval` to an untyped
   `Array (NN.IR.DVal α)` (this is what the IR evaluator uses).
@@ -570,11 +570,6 @@ theorem denoteAllState_snoc {α : Type} [Context α]
   simp [denoteAllState, execOfState, ExecGraphData.denoteAll, ExecGraphData.eval]
   -- Now unfold `GraphData.eval` for the snoc graph.
   simp [GraphData.eval]
-  -- At this point the goal is exactly the `dValsOfCtx_snoc` lemma, up to unfolding `DVal.mk`.
-  simpa [NN.IR.DVal.mk] using
-    (dValsOfCtx_snoc (α := α) (ss := ([inShape] ++ ss)) (τ := τ)
-      (ctx := GraphData.eval (ss := ss) gd (.cons x .nil) ())
-      (t := nodeData.forward (GraphData.eval (ss := ss) gd (.cons x .nil) ()) ()))
 
 /--
 Build a typed runtime index (`Idx`) for a numeric IR parent id.

@@ -18,8 +18,9 @@ This file is **backend-agnostic**: it proves that approximation bounds compose o
 tape/SSA-style graph, assuming each node provides a local forward approximation lemma.
 
 It is intended to be instantiated by proof-relevant runtimes such as rounding models
-(`NF` / `neural_round`). Lean's builtin `Float` is treated as trusted (see
-`NN/Runtime/Scalar.lean`).
+(`NF` / `neural_round`). Lean gives builtin `Float` a logical model, but connecting that model
+and its compiled implementation to these approximation bounds requires separate per-operation
+proofs.
 
 ## What you get
 - `FwdGraph.eval_approx`: an end-to-end theorem saying that if the runtime input context is within

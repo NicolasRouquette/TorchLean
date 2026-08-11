@@ -18,7 +18,7 @@ NF (rounded) backend: approximation lemmas for shape-only tensor operators.
 These operators do not perform arithmetic on scalars (they only permute/replicate entries), so
 they preserve existing `approxT` error bounds.
 
-That distinction matters: shape-only ops should not introduce extra rounding error. Their proofs
+Shape-only operations should not introduce extra rounding error. Their proofs
 are mostly transport/indexing arguments rather than numerical analysis.
 
 ## PyTorch correspondence / citations

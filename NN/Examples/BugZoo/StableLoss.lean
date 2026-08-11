@@ -69,7 +69,6 @@ pattern.
 
 namespace NN.Examples.BugZoo.StableLoss
 
-open Spec
 open Spec.Tensor
 
 /--

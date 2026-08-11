@@ -124,6 +124,39 @@ difference is:
 TorchLean proves such relationships at the primitive or model level where they are available.
 This avoids a global axiom saying that every future GraphSpec operation is correct by construction.
 
+There are two more fields that matter when a primitive enters the model API:
+
+:::table +header
+*
+  * Field
+  * Role
+*
+  * `name`
+  * a short identifier for summaries and errors
+*
+  * `specFwd`
+  * the pure tensor function used by `Interp.spec`
+*
+  * `torchProgram`
+  * the backend-polymorphic executable program
+*
+  * `toLayerDefM?`
+  * an optional lowering to an initialized `nn.LayerDef`
+*
+  * `countsAsLayer`
+  * whether deterministic layer indexing advances at this primitive
+:::
+
+The optional lowering explains why a GraphSpec can have a mathematical and executable
+interpretation yet still fail to become an `nn.Sequential`. The primitive may be meaningful as a
+graph operation without defining parameter initialization, buffer behavior, or the layer metadata
+expected by the high-level trainer.
+
+When I review a new primitive, I check the parameter order in all three places: `ps`, `specFwd`,
+and `torchProgram`. Shape typing proves that each slot has the right shape. It does not prove that
+two same-shaped parameters, such as two biases, have not been exchanged. That agreement belongs in
+the primitive's correctness theorem.
+
 # Current Primitive Adapters
 
 The minimal sequential vocabulary in `NN.GraphSpec.Core` is `linear`, `relu`, and `softmax`.

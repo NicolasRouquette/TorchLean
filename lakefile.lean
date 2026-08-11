@@ -331,8 +331,8 @@ lean_exe transcendentals_check where
 
 -- Complete API documentation (HTML) via `lake build TorchLeanDocs:docs`.
 require «doc-gen4» from git
-  "https://github.com/leanprover/doc-gen4" @ "v4.32.0"
+  "https://github.com/leanprover/doc-gen4" @ "v4.33.0"
 
 -- Keep `mathlib` last so Mathlib’s dependency versions win, which is required for cache tooling.
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.32.0"
+  "https://github.com/leanprover-community/mathlib4" @ "v4.33.0"

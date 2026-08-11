@@ -274,6 +274,24 @@ def normalizeL2Spec {n : Nat} (vector : Tensor α (.dim n .scalar)) :
     vector
 
 /--
+L2-normalize a vector with an additive regularizer under the square root.
+
+The denominator is
+
+`sqrt (sumᵢ vector[i] ^ 2 + regularizer)`.
+
+Unlike `normalizeL2Spec`, this operation has no zero-norm branch. Callers are responsible for
+choosing a regularizer that makes the denominator meaningful in their scalar context. This is the
+normalization convention used by several attention and recurrent architectures, where the exact
+regularizer is part of the model specification.
+-/
+def normalizeL2RegularizedSpec {n : Nat}
+    (vector : Tensor α (.dim n .scalar)) (regularizer : α) :
+    Tensor α (.dim n .scalar) :=
+  let norm := MathFunctions.sqrt (sumSpec (squareSpec vector) + regularizer)
+  Tensor.mapSpec (fun value => value / norm) vector
+
+/--
 Z-score normalization: subtract mean and divide by standard deviation.
 
 If the standard deviation is `0`, this returns the mean-centered vector.

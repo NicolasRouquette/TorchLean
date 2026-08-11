@@ -84,9 +84,8 @@ This is the helper you typically want in spec code:
 - then `map2_spec` the pointwise operation.
 
 PyTorch analogy: `f(x, y)` where `x` and/or `y` are broadcastable to a common shape.
-We make the common shape explicit instead of "discovering" it, because at the spec layer we want:
-- predictable typing,
-- a single source of truth for what the output shape is.
+The common shape is explicit rather than discovered at runtime, which makes the result type
+predictable and fixes the intended output shape at the call site.
 -/
 def broadcastMapTo {α} [Inhabited α] (f : α → α → α)
     {s₁ s₂ t : Shape} (cbx : Shape.CanBroadcastTo s₁ t) (cby : Shape.CanBroadcastTo s₂ t) :

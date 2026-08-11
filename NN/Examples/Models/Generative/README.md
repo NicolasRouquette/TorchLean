@@ -10,8 +10,8 @@ model-zoo path honest across families whose losses and artifacts look very diffe
 classification. The mathematical identities behind the objectives live in the theory layer:
 variational objectives for VAEs, codebook commitments for VQ-VAE, min-max losses for GAN-style
 updates, masking/reconstruction contracts for MAE-style models, and denoising/noise-schedule
-contracts for diffusion. If one of the generated artifacts is later used in a formal claim, that
-claim should name the checker or theorem that consumes the artifact.
+contracts for diffusion. Formal use of a generated artifact begins with the checker or theorem that
+consumes it.
 
 ## Files
 
@@ -67,9 +67,8 @@ lake -R -K cuda=true exe torchlean diffusion --device cuda \
   --log data/model_zoo/diffusion_trainlog.json
 ```
 
-## What To Inspect
+## Outputs
 
-The useful artifacts are training logs, generated/reconstructed images, and runtime behavior under
-CUDA. A low loss curve or sample image is runtime evidence about the command that produced it. A
-verified claim begins at the later boundary where Lean checks a predicate over the exported artifact
-or proves a theorem about the objective/specification it represents.
+The commands produce training logs, generated or reconstructed images, and CUDA runtime output.
+Lean checkers can consume exported artifacts, while theory files prove properties of the objective
+and model specification.

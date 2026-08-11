@@ -72,7 +72,7 @@ def main (args : List String) : IO Unit := do
       IO.eprintln s!"Unknown args: {args}"
       IO.eprintln ""
       IO.eprintln usage
-      IO.throwServerError "bad CLI args"
+      throw <| IO.userError "bad CLI args"
 
 end NN.Tests
 

@@ -92,8 +92,8 @@ theorem normalizeCore_scalar_uses_variance_plus_epsilon
     Spec.Tensor.scalar
       (((x - mean) / MathFunctions.sqrt (Max.max (variance + epsilon) 0)) * gamma + beta) := by
   simp [Spec.normalizeCore, Spec.Tensor.broadcastTo, Spec.Tensor.addSpec, Spec.Tensor.subSpec,
-    Spec.Tensor.mulSpec, Spec.Tensor.divSpec, Spec.Tensor.sqrtSpec, Spec.Tensor.mapSpec,
-    Spec.Tensor.map2Spec, Spec.fill, Spec.replicate]
+    Spec.Tensor.mulSpec, Spec.Tensor.divSpec, Spec.Tensor.sqrtSpec, Spec.Tensor.map2Spec,
+    Spec.fill, Spec.replicate]
 
 /--
 Running statistics are part of the BatchNorm inference contract.

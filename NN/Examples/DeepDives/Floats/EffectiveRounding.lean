@@ -29,7 +29,7 @@ same canonical mantissa and exponent.
 
 namespace NN.Examples.DeepDives.Floats.EffectiveRounding
 
-open Spec
+open _root_.Spec
 open TorchLean.Floats
 open TorchLean.Floats.IEEE754
 open TorchLean.Floats.IEEE754.IEEE32Exec

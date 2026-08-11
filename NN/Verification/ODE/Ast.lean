@@ -34,7 +34,7 @@ the checker mode being used.
 
 namespace NN.Verification.ODE
 
-open Spec
+open _root_.NN.Spec
 
 /--
 `Expr` is an AST for ODE right-hand sides $f(t,u)$.

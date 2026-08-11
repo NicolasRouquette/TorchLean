@@ -257,14 +257,14 @@ def swapFirstTwo3dFderiv {Γ : List Shape} {m n : Nat} {rest : Shape}
           =
         fun x : CtxVec Γ => D x := by
       funext x
-      ext i
-      simp [swapFirstTwo3d, D, P, k, e, Node.forwardVec_ofVec, CtxVec.getCLM_apply,
-        ContinuousLinearMap.comp_apply]
+      simp only [swapFirstTwo3d, Node.forwardVec_ofVec, D, P,
+        ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
+      exact (reindexLin_apply e _).symm
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
-    ext i
-    -- Unfold the RHS into a pointwise application of `reindexLin`, then rewrite to `reindexVec`.
-    simp [swapFirstTwo3d, D, P, k, e, Node.jvpVec_ofVec]
+    simp only [swapFirstTwo3d, Node.jvpVec_ofVec, D, P,
+      ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
+    exact (reindexLin_apply e _).symm
 
 -- ---------------------------------------------------------------------------
 -- 3D transpose of the last two axes: `.dim a (.dim b (.dim c .scalar)) ↦ .dim a (.dim c (.dim b
@@ -355,13 +355,14 @@ def transpose3dLastTwoFderiv {Γ : List Shape} {a b c : Nat}
           =
         fun x : CtxVec Γ => D x := by
       funext x
-      simp [transpose3dLastTwo, D, P, Node.forwardVec_ofVec, CtxVec.getCLM_apply,
-        ContinuousLinearMap.comp_apply, e]
+      simp only [transpose3dLastTwo, Node.forwardVec_ofVec, D, P,
+        ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
+      exact (reindexLin_apply e _).symm
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
-    ext i
-    simp [transpose3dLastTwo, D, P, Node.jvpVec_ofVec]
-    simp [e]
+    simp only [transpose3dLastTwo, Node.jvpVec_ofVec, D, P,
+      ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
+    exact (reindexLin_apply e _).symm
 
 end ShapeOps
 

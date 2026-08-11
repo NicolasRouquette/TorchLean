@@ -24,7 +24,7 @@ well-formedness assumption that each row admits at least one key.
 
 namespace NN.Proofs.Models.Attention
 
-open Spec
+open _root_.NN.Spec
 open Spec.Tensor
 open scoped BigOperators
 

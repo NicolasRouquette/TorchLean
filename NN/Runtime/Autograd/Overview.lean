@@ -62,7 +62,7 @@ trusted kernel.
 
 - PyTorch `torch.autograd` docs:
   https://pytorch.org/docs/stable/autograd.html
-- PyTorch "Autograd mechanics" note (good mental model of dynamic graph construction):
+- PyTorch "Autograd mechanics" note on dynamic graph construction:
   https://pytorch.org/docs/stable/notes/autograd.html
 - `torch.nn.functional.mse_loss` (mean reduction semantics):
   https://pytorch.org/docs/stable/generated/torch.nn.functional.mse_loss.html

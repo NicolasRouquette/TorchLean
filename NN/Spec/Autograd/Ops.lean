@@ -20,7 +20,7 @@ public import NN.Spec.Layers.Normalization
 This file defines small `OpSpec` building blocks (forward + VJP) for common tensor operations.
 The definitions are intentionally direct mathematical contracts and live purely in the spec layer.
 
-How to read this file:
+The declarations follow a uniform pattern:
 
 - Each operation below is an `OpSpec`: a pure `forward` plus a pure VJP `backward`.
 - Most ops here package `*Spec` and derivative-spec definitions from `NN/Spec/*`.

@@ -49,7 +49,7 @@ Concretely:
 - `NN.MLTheory.CROWN.Graph`
   - `box_add`, `box_sub`, `box_mul_elem`: endpoint propagation uses `BoundOps`.
 
-The distinction matters for executable certificate replay. A backend may support directed binary
+Executable certificate replay relies on this separation. A backend may support directed binary
 arithmetic without having a correctly rounded `exp` or `log`; in that case the graph checker leaves
 the corresponding node unresolved instead of treating an ordinary library call as an enclosure.
 -/

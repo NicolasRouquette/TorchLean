@@ -119,8 +119,8 @@ the initialization analogue of `TList`: the type says there is exactly one initi
 for each parameter shape, in the same order.  That removes the annoying runtime failure mode where a
 plain list is one element too short or too long.
 
-The initializers themselves are runtime schemes rather than proof objects.  The proof layer story
-is still the ordinary `Tensor Float s` parameter value; this plan only controls how the executable
+The initializers themselves are runtime schemes rather than proof objects.  Proofs still concern
+the ordinary `Tensor Float s` parameter value; this plan only controls how the executable
 Float runtime materializes those tensors on CPU or CUDA.
 -/
 inductive Plan : List Shape → Type where
@@ -337,7 +337,7 @@ def zeroFloatTList : {ss : List Shape} → Torch.TList Float ss
 /--
 Apply a shape-indexed initialization plan to an already-created parameter list.
 
-The key point is that the shape list appears on both sides of the type:
+The shape list appears on both sides of the type:
 
 ```lean
 Torch.ParamList Float ss → RuntimeInit.Plan ss → IO Unit

@@ -17,7 +17,7 @@ Behind that call, TorchLean may construct a tape, replay a compiled derivative g
 CUDA kernels, and return a dependent gradient pack. Other parts of the repository also use explicit
 IR graphs and backend execution plans. These objects are related, but they are not interchangeable.
 
-This chapter identifies each artifact, its lifetime, and the claim it can support.
+Their lifetimes and uses determine which conclusions can be drawn from each one.
 
 # Four Objects Commonly Called “The Graph”
 
@@ -277,8 +277,8 @@ Dropout and stochastic model components need explicit generator state. A replaya
 which random state was used at each operation. The tape records the realized forward values needed
 by the backward rule; it should not resample a different mask during reverse traversal.
 
-This distinction becomes important for checkpointing. Saving parameters without RNG, optimizer, and
-loader state can reproduce inference but not necessarily the next training update.
+A checkpoint containing only parameters can reproduce inference, but not necessarily the next
+training update. Replaying that update also requires the RNG, optimizer, and loader state.
 
 # Autograd Interfaces
 

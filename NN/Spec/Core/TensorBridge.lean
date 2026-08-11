@@ -183,7 +183,10 @@ theorem flatten_unflatten {α : Type} :
       let k := TensorArray.shapeProd ns
       have hx : xs.length = n * k := by
         simpa [k] using h
-      simp [flatten, unflatten, flatten_unflatten (shape := ns)]
+      rw [unflatten]
+      change (List.finRange n).flatMap (fun i : Fin n =>
+        flatten (unflatten ns ((xs.drop (i.val * k)).take k) _)) = xs
+      simp_rw [flatten_unflatten (shape := ns)]
       exact flatMap_drop_take_eq n k xs hx
 
 /-- Slice out the `i`-th `k`-block from a flatMap of equal-length blocks. -/
@@ -255,6 +258,7 @@ theorem unflatten_flatten {α : Type} :
       | scalar x =>
           intro h
           simp [flatten, unflatten]
+          rfl
   | cons n ns ih =>
       cases t with
       | dim f =>

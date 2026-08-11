@@ -52,8 +52,6 @@ proof to elaborate.
 
 namespace NN.Examples.BugZoo.CompilerBoundary
 
-open Spec
-
 /--
 The semantic contract at compiler/export/backend boundaries.
 

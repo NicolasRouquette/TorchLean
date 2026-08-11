@@ -31,8 +31,8 @@ What this file does **not** contain:
 
 Those are separate on purpose. The high-level runtime bridge in
 `NN.Runtime.Autograd.TorchLean.Optim` lifts these pure single-tensor equations to parameter lists,
-and `NN.API.Runtime` exposes user-facing optimizer configs. Keeping this layer pure gives proofs,
-tests, and runtime code one shared source of truth for the actual update formulas.
+and `NN.API.Runtime` exposes user-facing optimizer configs. Proofs, tests, and runtime code all use
+these pure update formulas.
 -/
 
 @[expose] public section

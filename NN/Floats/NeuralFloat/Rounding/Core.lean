@@ -501,8 +501,8 @@ theorem neural_scaled_mantissa_int_of_generic (x : ℝ) (hx : neuralGenericForma
     _ = m * (neuralBpow β e * neuralBpow β (-e))          := by rw [mul_assoc]
     _ = m * neuralBpow β (e + (-e))                        := by rw [← neuralBpow.add_exp]
     _ = m * neuralBpow β 0                                 := by simp [add_neg_cancel]
-    _ = m * 1                                               := by simp [neuralBpow,
-      NeuralRadix.toReal, zpow_zero]
+    _ = m * 1                                               := by
+      simp [neuralBpow, NeuralRadix.toReal]
     _ = m                                                   := by rw [mul_one]
     _ = ↑m                                                  := by simp
 
@@ -553,7 +553,7 @@ lemma neural_scaled_mantissa_mul_bpow (x : ℝ) :
   simp only [neuralScaledMantissa]
   rw [mul_assoc, ← neuralBpow.add_exp]
   simp only [neuralBpow]
-  simp [NeuralRadix.toReal, zpow_zero, mul_one]
+  simp [NeuralRadix.toReal, mul_one]
 
 /-- An integral canonical scaled mantissa is sufficient for exact representability. -/
 theorem neural_generic_format_of_scaled_mantissa_int (x : ℝ) (n : ℤ)

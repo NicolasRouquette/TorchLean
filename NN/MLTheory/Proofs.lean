@@ -13,7 +13,7 @@ public import NN.MLTheory.Proofs.StateSpace
 public import NN.MLTheory.Proofs.Verification
 
 /-!
-# MLTheory proof chapter
+# MLTheory proofs
 
 This is the curated entrypoint for theorem-heavy MLTheory developments. It groups the proof files
 by mathematical theme:
@@ -24,8 +24,8 @@ by mathematical theme:
 - state-space / Mamba scan and causality laws; and
 - robustness theorems used by verification workflows.
 
-We keep this as a proof chapter rather than mixing it into model definitions. The model/spec layer
-defines semantics; this chapter proves reusable mathematical properties about those semantics.
+Model and specification modules define the semantics; these imports collect reusable mathematical
+properties of those definitions.
 -/
 
 @[expose] public section

@@ -256,32 +256,16 @@ def reduceDim
   (axis : Nat)
   (x : Tensor α s)
   (_h : Shape.reducibleAlong axis s) : Tensor α (shapeAfterSum s axis) :=
-
-  -- Design note:
-  -- We implement `reduce_dim` by recursing down the shape tree until we hit the axis,
-  -- then using `reduce_first_dim` at that level. This mirrors how you would implement
-  -- `torch.sum(x, dim=axis)` via indexing/slicing, but keeps everything total and
-  -- shape-correct by construction.
-  let rec aux
-    {inShape outShape : Shape} (axisAdjusted : Nat)
-    (h_eq : outShape = shapeAfterSum inShape axisAdjusted)
-    (t : Tensor α inShape) : Tensor α outShape :=
-
-    match inShape, axisAdjusted with
-    | .scalar, _ =>
-      cast (congrArg (Tensor α) h_eq.symm) t
-
-    | .dim n innerIn, 0 =>
-      let reduced := reduceFirstDim f t
-      cast (congrArg (Tensor α) h_eq.symm) reduced
-
-    | .dim n innerIn, Nat.succ k =>
-      let innerOut := shapeAfterSum innerIn k
-      let recFun : Fin n → Tensor α innerOut := fun i =>
-        aux k (by rfl) (getAtSpec t i)
-      Tensor.dim recFun |> cast (congrArg (Tensor α) h_eq.symm)
-
-  aux axis (by rfl) x
+  -- Recurse until the selected axis becomes the outer axis. Returning `shapeAfterSum`
+  -- directly keeps the shape change visible to Lean and avoids proof-carrying casts.
+  let rec aux {inShape : Shape} (axisAdjusted : Nat) (t : Tensor α inShape) :
+      Tensor α (shapeAfterSum inShape axisAdjusted) :=
+    match inShape, axisAdjusted, t with
+    | .scalar, _, t => t
+    | .dim _ _, 0, t => reduceFirstDim f t
+    | .dim _ _, Nat.succ k, .dim values =>
+        Tensor.dim (fun i => aux k (values i))
+  aux axis x
 
 /-- Sum-reduction along a given axis. -/
 def reduceSum {α : Type} [Add α] [Zero α] {s : Shape} (axis : Nat) (t : Tensor α s) (h :
@@ -294,6 +278,13 @@ def reduceSumAuto {α : Type} [Add α] [Zero α] {s : Shape} (axis : Nat) [h : S
   axis s] (t : Tensor α s) :
   Tensor α (shapeAfterSum s axis) :=
   reduceSum axis t (Shape.proveReducibleAlong axis s h.proof)
+
+/-- Sum reduction on the leading axis is the corresponding first-dimension fold. -/
+theorem reduceSumAuto_zero_eq_reduceFirstDim {α : Type} [Add α] [Zero α]
+    {n : Nat} {s : Shape} (h : 0 < n) (tensor : Tensor α (.dim n s)) :
+    reduceSumAuto (h := Shape.validAxisInstZeroAlt2 h) 0 tensor =
+      reduceFirstDim (fun {sliceShape} => sumSpec (s := sliceShape)) tensor := by
+  rfl
 
 /-- Product-reduction along a given axis. -/
 def reduceProd {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.reducibleAlong axis s) :

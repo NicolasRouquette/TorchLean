@@ -64,17 +64,16 @@ open scoped BigOperators
 @[simp] lemma inner_scalarVec_left (a : ℝ) (δ : Vec (Spec.Shape.size Shape.scalar)) :
     inner ℝ (vecOfFun (n := Spec.Shape.size Shape.scalar) fun _ => a) δ = a * δ.ofLp ⟨0, by simp
       [Spec.Shape.size]⟩ := by
-  calc
-    inner ℝ (vecOfFun (n := Spec.Shape.size Shape.scalar) fun _ => a) δ
-        =
-      ∑ i : Fin (Spec.Shape.size Shape.scalar), (vecOfFun (n := Spec.Shape.size Shape.scalar) (fun _ =>
-        a)).ofLp i * δ.ofLp i := by
-          simpa using
-            (inner_eq_sum_mul
-              (x := vecOfFun (n := Spec.Shape.size Shape.scalar) (fun _ => a))
-              (y := δ))
-    _ = a * δ.ofLp ⟨0, by simp [Spec.Shape.size]⟩ := by
-          simp [Spec.Shape.size]
+  rw [inner_eq_sum_mul]
+  simp only [vecOfFun_ofLp]
+  rw [show Finset.univ = {(⟨0, by simp [Spec.Shape.size]⟩ :
+      Fin (Spec.Shape.size Shape.scalar))} by
+    apply Finset.eq_singleton_iff_unique_mem.2
+    constructor
+    · simp
+    · intro b _
+      exact Fin.eq_of_val_eq (Nat.eq_zero_of_le_zero (Nat.le_of_lt_succ b.isLt))]
+  simp
 
 -- We use `inner_append` (proved once in `NN/Proofs/Autograd/Tape/Core/FDeriv.lean`) to split
 -- inner products on concatenated Euclidean vectors `appendVec a b`.
@@ -251,11 +250,13 @@ def headCLM {s : Shape} {ss : List Shape} : CtxVec (s :: ss) →L[ℝ] Vec (Spec
       map_add' := by
         intro x y
         ext j
-        simp
+        change x.ofLp _ + y.ofLp _ = _
+        rfl
       map_smul' := by
         intro a x
         ext j
-        simp [smul_eq_mul] }
+        change a * x.ofLp _ = _
+        rfl }
   refine ⟨fLin, ?_⟩
   exact LinearMap.continuous_of_finiteDimensional (f := fLin)
 
@@ -272,11 +273,13 @@ def tailCLM {s : Shape} {ss : List Shape} : CtxVec (s :: ss) →L[ℝ] CtxVec ss
       map_add' := by
         intro x y
         ext j
-        simp
+        change x.ofLp _ + y.ofLp _ = _
+        rfl
       map_smul' := by
         intro a x
         ext j
-        simp [smul_eq_mul] }
+        change a * x.ofLp _ = _
+        rfl }
   refine ⟨fLin, ?_⟩
   exact LinearMap.continuous_of_finiteDimensional (f := fLin)
 
@@ -305,8 +308,6 @@ def getCLMRaw : {Γ : List Shape} → (i : Fin Γ.length) → CtxVec Γ →L[ℝ
           | zero =>
               ext j
               simp [getCLMRaw, getRaw]
-              change headCLM (s := s) (ss := ss) x j = x (Fin.castAdd (ctxSize ss) j)
-              exact headCLM_apply (s := s) (ss := ss) x j
           | succ k =>
               -- peel one dimension and apply IH to the tail context
               let iTail : Fin ss.length := ⟨k, Nat.lt_of_succ_lt_succ isLt⟩

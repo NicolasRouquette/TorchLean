@@ -32,6 +32,61 @@ This lets the same Float-authored data feed several scalar runtimes while keepin
 visible at materialization. It also means a proof-level real tensor is not accidentally passed to
 an IO training loop.
 
+The relevant field is small enough to read directly:
+
+```
+structure Trainer.Dataset (σ τ : Shape) where
+  build :
+    {α : Type} →
+    [Context α] →
+    [Runtime.FromFloat α] →
+    IO (Training.Dataset (SupervisedSample α σ τ))
+```
+
+The `IO` is doing real work. A dataset may open a file, parse text, allocate arrays, or discover a
+bad row. The shape indices describe each accepted sample; they do not claim that file access is
+pure or that every source record is valid.
+
+# When The Checks Happen
+
+I find data bugs much easier to diagnose when I write down the boundary at which each fact becomes
+known:
+
+:::table +header
+*
+  * Stage
+  * What is known
+  * Typical failure
+*
+  * source description
+  * paths, format, requested dimensions, tokenizer or preprocessing choice
+  * unsupported format or incomplete configuration
+*
+  * parsing
+  * bytes or text can be decoded into values
+  * missing file, malformed number, corrupt header
+*
+  * shape validation
+  * element count and sample dimensions agree
+  * short row, mismatched leading counts, invalid token id
+*
+  * scalar materialization
+  * every numeric value can be represented by the selected runtime scalar
+  * unsupported dtype or rejected conversion
+*
+  * batching
+  * each emitted item has the model's input and target shape
+  * final partial batch under a fixed-size policy
+*
+  * training
+  * the runner receives typed samples
+  * numerical failure, unsupported operation, or backend rejection
+:::
+
+Moving a check earlier improves the error message, but it does not change its logical strength. A
+CSV width check proves that accepted rows have the requested number of fields. It says nothing
+about whether the second field is the physical quantity the experiment intended to measure.
+
 # Begin With Four Samples
 
 The XOR table is small enough to see in full:
@@ -281,7 +336,7 @@ numeric, image, and text datasets: what a batch means and when it is materialize
 
 # Two Meanings Of “Batch Size”
 
-The distinction here is important.
+TorchLean uses “batch size” for two related operations:
 
 ## Tensor minibatches
 

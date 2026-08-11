@@ -54,7 +54,7 @@ you actually want to display.
 
 namespace NN.Tensor
 
-open Spec
+open _root_.NN.Spec
 
 /-- Local alias for the canonical spec shape type. -/
 abbrev Shape := Spec.Shape

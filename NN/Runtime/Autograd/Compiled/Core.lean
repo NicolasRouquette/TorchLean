@@ -25,7 +25,7 @@ Notes / trust boundaries:
 - The proof-carrying graph (`Proofs.Autograd.Algebra.Graph`) remains available for backends
   where you can actually discharge algebraic/calc correctness assumptions (e.g. `ℝ`, `ℚ`).
 
-## Reading map
+## Main declarations
 
 - `NN.Runtime.Autograd.Compiled.GraphM` is the small authoring DSL for compiled graphs.
 - `NN.Runtime.Autograd.Compiled.IRExec` bridges `NN.IR.Graph` to executable graph data.

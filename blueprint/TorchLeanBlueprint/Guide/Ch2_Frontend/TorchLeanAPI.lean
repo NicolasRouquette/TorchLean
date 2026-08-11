@@ -18,7 +18,7 @@ open TorchLean
 optimizers, prediction, and explicit differentiation. It does not pull every proof, verifier,
 floating-point implementation, widget, and backend-internal module into a small training file.
 
-This chapter builds one program using only that API, then explains when a narrower or
+We will build one program using only that API, then explain when a narrower or
 lower import is appropriate.
 
 # The Namespaces

@@ -28,7 +28,7 @@ The same IR artifact can be used both for verification and for execution.
 
 namespace NN.Verification.TorchLean
 
-open Spec
+open _root_.NN.Spec
 open Tensor
 open NN.IR
 

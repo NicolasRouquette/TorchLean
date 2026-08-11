@@ -29,7 +29,7 @@ public import NN.Spec.Layers.Utils
 
 Umbrella import for layer-level denotational semantics and explicit backward/VJP definitions.
 
-The files under this chapter define what each neural-network layer computes. Higher-level modules,
+The imported modules define what each neural-network layer computes. Higher-level modules,
 models, runtime execution, and verification all build on these reference definitions.
 -/
 

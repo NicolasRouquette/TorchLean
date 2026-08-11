@@ -20,7 +20,7 @@ matrix does not need to be materialized. TorchLean models that idea in three lay
   runtime path;
 - the CUDA FFI boundary is documented separately because Lean does not verify CUDA machine code.
 
-The key point is that the fused op has the same denotation as standard masked scaled dot-product
+The fused operation has the same denotation as standard masked scaled dot-product
 attention over the spec scalar. Different tile sizes are runtime scheduling choices, not semantic
 choices.
 

@@ -32,7 +32,7 @@ namespace NN
 namespace GraphSpec
 namespace Primitive
 
-open Spec
+open _root_.NN.Spec
 open Spec.Tensor
 open NN.Tensor
 

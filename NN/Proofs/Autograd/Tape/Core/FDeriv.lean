@@ -120,6 +120,12 @@ def vecOfFun {n : Nat} (f : Fin n → ℝ) : Vec n :=
     (vecOfFun (n := n) f).ofLp i = f i := by
   simp [vecOfFun, EuclideanSpace.equiv]
 
+/-- Removing the `WithLp` wrapper from `vecOfFun` recovers its coordinate function. -/
+lemma vecOfFun_ofLp_eq {n : Nat} (f : Fin n → ℝ) :
+    (vecOfFun (n := n) f).ofLp = f := by
+  funext i
+  exact vecOfFun_ofLp f i
+
 @[simp] lemma vecOfFun_eta {n : Nat} (v : Vec n) :
     vecOfFun (n := n) (fun i => v i) = v := by
   classical
@@ -162,7 +168,25 @@ def unflattenCtx : {Γ : List Shape} → CtxVec Γ → TList Γ
   | cons s ss ih =>
       cases xs with
       | cons x xs =>
-          simp [flattenCtx, unflattenCtx, ih]
+          have hhead :
+              vecOfFun (n := Spec.Shape.size s) (fun i =>
+                (flattenCtx (Γ := s :: ss) (.cons x xs)) (Fin.castAdd (ctxSize ss) i)) =
+                toVecT x := by
+            rw [show flattenCtx (Γ := s :: ss) (.cons x xs) =
+              vecOfFun (Fin.append (toVecT x) (flattenCtx xs)) by rfl]
+            ext i
+            simp
+          have htail :
+              vecOfFun (n := ctxSize ss) (fun i =>
+                (flattenCtx (Γ := s :: ss) (.cons x xs))
+                  (Fin.natAdd (Spec.Shape.size s) i)) =
+                flattenCtx xs := by
+            rw [show flattenCtx (Γ := s :: ss) (.cons x xs) =
+              vecOfFun (Fin.append (toVecT x) (flattenCtx xs)) by rfl]
+            ext i
+            simp
+          simp only [unflattenCtx]
+          rw [hhead, ofVecT_toVecT, htail, ih]
 
 @[simp] theorem flattenCtx_unflattenCtx {Γ : List Shape} (v : CtxVec Γ) :
     flattenCtx (Γ := Γ) (unflattenCtx (Γ := Γ) v) = v := by
@@ -171,9 +195,18 @@ def unflattenCtx : {Γ : List Shape} → CtxVec Γ → TList Γ
       ext i
       exact i.elim0
   | cons s ss ih =>
+      let head : Vec (Spec.Shape.size s) :=
+        vecOfFun fun i => v (Fin.castAdd (ctxSize ss) i)
+      let tail : Vec (ctxSize ss) :=
+        vecOfFun fun i => v (Fin.natAdd (Spec.Shape.size s) i)
+      rw [show unflattenCtx (Γ := s :: ss) v =
+        .cons (ofVecT head) (unflattenCtx tail) by rfl]
+      rw [show flattenCtx (Γ := s :: ss) (.cons (ofVecT head) (unflattenCtx tail)) =
+        vecOfFun (Fin.append (toVecT (ofVecT head)) (flattenCtx (unflattenCtx tail))) by rfl]
+      rw [toVecT_ofVecT, ih]
       ext i
-      -- reduce to the `Fin.append_castAdd_natAdd` lemma on the underlying functions
-      simpa [flattenCtx, unflattenCtx, ih, vecOfFun, EuclideanSpace.equiv] using
+      rw [vecOfFun_apply]
+      simpa only [head, tail, vecOfFun_ofLp_eq] using
         congrArg (fun f : Fin (Spec.Shape.size s + ctxSize ss) → ℝ => f i)
           (Fin.append_castAdd_natAdd (f := v) (m := Spec.Shape.size s) (n := ctxSize ss))
 
@@ -187,6 +220,11 @@ def castVec {n m : Nat} (h : n = m) : Vec n → Vec m :=
 
 @[simp] lemma castVec_apply {n m : Nat} (h : n = m) (v : Vec n) (i : Fin m) :
     castVec (n := n) (m := m) h v i = v (Fin.cast h.symm i) := by
+  simp [castVec]
+
+/-- `castVec` reindexes the coordinate function stored under the `WithLp` wrapper. -/
+@[simp] lemma castVec_ofLp {n m : Nat} (h : n = m) (v : Vec n) (i : Fin m) :
+    (castVec (n := n) (m := m) h v).ofLp i = v.ofLp (Fin.cast h.symm i) := by
   simp [castVec]
 
 @[simp] lemma castVec_rfl {n : Nat} (v : Vec n) : castVec (n := n) (m := n) rfl v = v := by
@@ -507,6 +545,38 @@ theorem dot_eq_inner_toVecT {s : Shape} (a b : Tensor ℝ s) :
 def appendVec {m n : Nat} (a : Vec m) (b : Vec n) : Vec (m + n) :=
   vecOfFun (n := m + n) (Fin.append a b)
 
+@[simp] lemma flattenCtx_nil :
+    flattenCtx (TList.nil : TList []) = 0 := rfl
+
+@[simp] lemma flattenCtx_cons {s : Shape} {ss : List Shape}
+    (x : Tensor ℝ s) (xs : TList ss) :
+    flattenCtx (TList.cons x xs) = appendVec (toVecT x) (flattenCtx xs) := rfl
+
+@[simp] lemma appendVec_ofLp_castAdd {m n : Nat} (a : Vec m) (b : Vec n) (i : Fin m) :
+    (appendVec a b).ofLp (Fin.castAdd n i) = a.ofLp i := by
+  simp [appendVec]
+
+@[simp] lemma appendVec_ofLp_natAdd {m n : Nat} (a : Vec m) (b : Vec n) (i : Fin n) :
+    (appendVec a b).ofLp (Fin.natAdd m i) = b.ofLp i := by
+  simp [appendVec]
+
+/-- Reassociating concatenated vectors only changes their finite-index representation. -/
+lemma castVec_appendVec_assoc {m n p : Nat} (a : Vec m) (b : Vec n) (c : Vec p) :
+    castVec (Nat.add_assoc m n p) (appendVec (appendVec a b) c) =
+      appendVec a (appendVec b c) := by
+  apply PiLp.ext
+  intro i
+  simp only [castVec_ofLp, appendVec, vecOfFun_ofLp_eq]
+  rw [Fin.append_assoc]
+  rfl
+
+/-- Casting the right block of a concatenation is the same as casting the full vector. -/
+lemma appendVec_cast_right {m n p : Nat} (h : n = p) (a : Vec m) (b : Vec n) :
+    appendVec a (castVec h b) =
+      castVec (congrArg (m + ·) h) (appendVec a b) := by
+  subst p
+  simp
+
 /-- Inner product of concatenated vectors splits as a sum of inner products. -/
 lemma inner_append {m n : Nat} (a c : Vec m) (b d : Vec n) :
     inner ℝ (appendVec (m := m) (n := n) a b) (appendVec (m := m) (n := n) c d)
@@ -595,7 +665,7 @@ theorem dotList_eq_inner_flattenCtx {Γ : List Shape} (x y : TList Γ) :
                         simp [dot_eq_inner_toVecT, ih]
                 _ = inner ℝ (flattenCtx (Γ := s :: ss) (TList.cons xh xt))
                         (flattenCtx (Γ := s :: ss) (TList.cons yh yt)) := by
-                        simp [hinter]
+                        exact hinter.symm
 
 -- ---------------------------------------------------------------------------
 -- Vector graph semantics (for calculus)
@@ -648,6 +718,17 @@ lemma ctxSize_snoc (ss : List Shape) (τ : Shape) :
 def snocCtx {Γ : List Shape} {τ : Shape} (ctx : CtxVec Γ) (t : Vec (Spec.Shape.size τ)) : CtxVec (Γ ++
   [τ]) :=
   castVec (ctxSize_snoc Γ τ).symm (appendVec (m := ctxSize Γ) (n := Spec.Shape.size τ) ctx t)
+
+/-- Prefixing a context vector commutes with appending its final tensor block. -/
+lemma appendVec_snocCtx {s : Shape} {Γ : List Shape} {τ : Shape}
+    (a : Vec s.size) (ctx : CtxVec Γ) (t : Vec τ.size) :
+    appendVec a (snocCtx ctx t) =
+      snocCtx (Γ := s :: Γ) (appendVec a ctx) t := by
+  unfold snocCtx
+  rw [appendVec_cast_right]
+  rw [← castVec_appendVec_assoc]
+  rw [castVec_castVec]
+  congr 1
 
 /-- Inverse of `snocCtx`: split `CtxVec (Γ ++ [τ])` into its prefix and last block. -/
 def unsnocCtx {Γ : List Shape} {τ : Shape} (ctx : CtxVec (Γ ++ [τ])) : CtxVec Γ × Vec (Spec.Shape.size τ)

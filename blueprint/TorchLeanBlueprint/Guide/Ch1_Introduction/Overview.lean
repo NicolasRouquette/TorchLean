@@ -23,10 +23,10 @@ checkpoint loader may transpose a weight matrix. A verification script may forge
 expects normalized inputs. A compiler may replace separate multiplication and addition with an FMA.
 The program still runs, but computes a different function from the one we had in mind.
 
-TorchLean was designed around that problem. It is a neural-network library, but it is also a place
-where the architecture, parameter payload, graph, arithmetic, and property can be named in the same
-language. The point is not to force every numerical kernel through Lean's evaluator. The point is
-to stop losing the identity of the computation as it moves from mathematics to execution.
+TorchLean was designed around that problem. It is a neural-network library in which the
+architecture, parameter payload, graph, arithmetic, and property can be named in the same language.
+Numerical kernels may still run through optimized native providers; their inputs, outputs, and
+assumptions remain attached to the computation being studied.
 
 # A First Program
 

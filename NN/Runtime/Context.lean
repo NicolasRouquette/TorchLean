@@ -18,7 +18,7 @@ to store a heterogeneous map from names to values. We solve this by storing an e
 `AnyTensor` that carries the `Shape` alongside the tensor. Lookup functions then *check* the shape
 and use the resulting equality proof to cast the stored tensor to the requested shape.
 
-## Reading map
+## Main declarations
 
 - `AnyTensor` is the shape-erased wrapper used by the registries.
 - `RuntimeContext` is the mutable-looking record that stores values, gradients, and a fresh-id

@@ -26,7 +26,7 @@ This file wires together a small CNN in two styles:
 
 `Conv → ReLU → MaxPool → Conv → ReLU → MaxPool → Flatten → Linear`
 
-PyTorch mental model (single image, no batch):
+PyTorch analogue (single image, no batch):
 
 ```python
 nn.Sequential(
@@ -341,7 +341,7 @@ Parameters:
 - `pool1`, `pool2 : MaxPool2d` (no padding in this spec)
 - `head : Linear(c2 * H2 * W2 -> outDim)`
 
-PyTorch mental model:
+PyTorch analogue:
 
 `Conv → ReLU → MaxPool → Conv → ReLU → MaxPool → Flatten → Linear`.
 

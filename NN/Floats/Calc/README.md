@@ -24,9 +24,8 @@ The central proved chain is:
 4. nearest-even chooses one of the adjacent representable values;
 5. the selected `NeuralFloat` denotes the same real as generic `neuralRound`.
 
-Calculations beginning with an arbitrary Lean real are noncomputable. TorchLean training uses a
-runtime scalar backend; the `FP32` and `Calc` theorems state what that backend result means once an
-executable bridge or backend contract has been established.
+Calculations beginning with an arbitrary Lean real are noncomputable. Executable scalar operations
+are connected to these results by the bridges under `NN/Floats/IEEEExec/Bridge/`.
 
 Import the complete calculation layer with:
 

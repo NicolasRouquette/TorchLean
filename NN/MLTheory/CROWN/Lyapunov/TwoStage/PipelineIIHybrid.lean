@@ -66,8 +66,8 @@ open Lean.Json
 open NN.Verification.Json
 
 open _root_.TorchLean.Floats.IEEE754
-open Runtime
-open Runtime.Autograd
+open _root_.Runtime
+open _root_.Runtime.Autograd
 open NN.MLTheory.CROWN.Graph
 open NN.MLTheory.CROWN
 

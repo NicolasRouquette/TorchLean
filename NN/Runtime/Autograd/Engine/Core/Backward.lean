@@ -196,8 +196,8 @@ def backwardDenseFrom {α : Type} [Add α] [DecidableEq Shape]
 /-- Reverse-mode accumulation that returns a dense gradient array for every node id.
 
 Propagation uses `backwardDense`, so local VJP closures run only for nodes reached from `outId`.
-The optional result is then totalized with explicit zero tensors for disconnected nodes. Keeping
-that distinction matters at singular forward values: applying a disconnected VJP to a synthetic
+The optional result is then totalized with explicit zero tensors for disconnected nodes. This is
+necessary at singular forward values: applying a disconnected VJP to a synthetic
 zero cotangent can manufacture `NaN` through expressions such as `0 * (1 / 0)`, even though the
 mathematical gradient of the selected output with respect to that node is zero.
 -/

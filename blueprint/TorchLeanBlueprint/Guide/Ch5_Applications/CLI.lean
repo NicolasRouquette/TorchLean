@@ -32,8 +32,8 @@ The dispatch tables are ordinary Lean definitions:
 - [`NN.Verification.CLI`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/CLI.lean)
   routes the `verify` tools.
 
-Treat this chapter as a guided map. The help printed by your checkout is the final word on names and
-flags, because it is generated from the executable you are about to run.
+The help printed by your checkout is authoritative for command names and flags because it is
+generated from the executable being run.
 
 # Discovering Commands
 

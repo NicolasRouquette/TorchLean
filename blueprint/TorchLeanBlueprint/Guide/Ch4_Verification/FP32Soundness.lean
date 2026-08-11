@@ -17,9 +17,8 @@ The classification still survives, but for a numerical reason that must appear i
 the original margin had been `0.04`, the same real theorem would no longer settle the Float32
 question.
 
-This chapter follows that `0.03` backward. We first say which Float32 object it describes, then see
-how an operator theorem produces a budget, how network theorems compose it, and finally how a
-verifier spends it.
+To justify the `0.03`, we must choose a Float32 model, derive an operator-level error budget, compose
+those bounds through the network, and account for the result in the verifier's final margin.
 
 # Two Float32 Objects, Two Jobs
 

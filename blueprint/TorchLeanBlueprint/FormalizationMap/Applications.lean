@@ -19,7 +19,7 @@ open Informal
 #doc (Manual) "Models and Mathematical Examples" =>
 
 The model API provides seeded architecture builders, while the proof library also studies compact
-mathematical models directly. This chapter samples both sides: an implemented MLP, reference
+mathematical models directly. The examples include an implemented MLP, reference
 specifications, and theorem families for approximation, diffusion, associative memory,
 reinforcement learning, attention, state-space models, and self-supervised objectives.
 

@@ -7,15 +7,15 @@ open Verso.Genre Manual
 tag := "model-examples-deep-dive"
 %%%
 
-This chapter follows three case studies far enough to inspect the objects that move through
-TorchLean. The first is a character-level Transformer, where sequence length, masking, and
+Three case studies expose the objects that move through TorchLean. The first is a character-level
+Transformer, where sequence length, masking, and
 generation matter. The second compares two runs, residual and patch-token vision models, on the same
 prepared dataset. The third is a Fourier neural operator, where the important boundary is the
 spectral kernel rather than an image or token representation.
 
 The commands below were run against the current checkout. The displayed losses are deterministic
-for the stated seeds and one-example datasets, but they are not performance benchmarks. Their
-purpose is to make the data path, model shape, runtime selection, and generated artifacts concrete.
+for the stated seeds and one-example datasets, but they are not performance benchmarks. They make
+the data path, model shape, runtime selection, and generated artifacts concrete.
 
 # Case Study One: CharGPT
 

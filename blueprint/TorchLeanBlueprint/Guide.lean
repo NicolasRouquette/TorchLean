@@ -176,7 +176,7 @@ explicit correspondence questions.
 # Floating Point and Native Boundaries
 
 Our graph equations use real numbers, but the program does not. This part starts with that mismatch
-and develops TorchLean's floating-point stack. The story begins with Flocq's influential separation
+and develops TorchLean's floating-point stack. It begins with Flocq's influential separation
 of formats from rounding, continues through TorchLean's generic `NeuralFloat` theory, and ends with
 executable binary32 and native kernels.
 

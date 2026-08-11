@@ -266,11 +266,9 @@ lemma encloses_castDim {B : FlatBox ℝ} {n' : Nat}
                  hi := castDimScalar (α := ℝ) h B.hi }
         (castDimScalar (α := ℝ) h x) := by
   intro hx
-  cases B with
-  | mk n lo hi =>
-      -- Now `h : n = n'`; rewrite indices and finish by `simp`.
-      cases h
-      simpa [encloses, castDimScalar] using hx
+  subst n'
+  convert hx using 1 <;>
+    simp only [NN.MLTheory.CROWN.Graph.castDimScalar_self]
 
 theorem encloses_of_contains {n : Nat}
     (B : Box ℝ (.dim n .scalar)) (x : Tensor ℝ (.dim n .scalar)) :
@@ -284,7 +282,7 @@ theorem encloses_of_contains {n : Nat}
       | dim fhi =>
         cases x with
         | dim fx =>
-          rw [encloses]
+          dsimp only [encloses, NN.MLTheory.CROWN.Graph.Theorems.Semantics.encloses]
           rw [NN.MLTheory.CROWN.Box.contains.eq_def] at hx
           intro i
           have hx_i := hx i

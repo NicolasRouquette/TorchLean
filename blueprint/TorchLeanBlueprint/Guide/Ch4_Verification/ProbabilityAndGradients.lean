@@ -12,7 +12,7 @@ about affine images of Gaussian noise. An autograd theorem needs the derivative 
 A linear-layer proof needs to agree on whether weights are stored by input or output coordinate.
 TorchLean keeps these local facts small enough to use independently.
 
-This chapter follows two such pieces:
+Two examples show how these local results are used:
 
 1. the forward noising kernel used by diffusion models;
 2. scalar activation derivatives and linear-layer backward specifications.
@@ -197,7 +197,7 @@ and reducing them, because `linearWeightsDerivSpec` was defined as the outer pro
 `linearInputDerivSpec` was defined as the transposed weight action. They document and stabilize the
 backward ABI, but they are not themselves a Fréchet-differentiability proof for the tensor map.
 
-That distinction is worth testing. In an editor:
+You can inspect the backward ABI directly in an editor:
 
 ```
 import NN.Proofs.Gradients.Linear

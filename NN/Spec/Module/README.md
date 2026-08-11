@@ -9,8 +9,8 @@ ModSpec.NNModuleSpec α inShape outShape
 ```
 
 That lets TorchLean compose blocks with `ModSpec.SpecChain`, attach export/pretty-printing
-metadata, and keep model-shaped specs close to the public `nn.Sequential` style without making the
-runtime the source of truth.
+metadata, and keep model-shaped specs close to the public `nn.Sequential` style. Evaluation remains
+defined by the wrapped specification.
 
 ## Files
 

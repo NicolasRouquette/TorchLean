@@ -58,8 +58,8 @@ The usual chain is:
 2. execute or lower a runtime object elsewhere,
 3. state a bridge, checker, test, or theorem connecting the runtime/artifact back to the spec.
 
-This distinction matters for common ML conventions. For example, boolean attention masks always use
-the hard-mask meaning: blocked positions contribute exactly zero softmax numerator. An additive
+Boolean attention masks use the hard-mask meaning: blocked positions contribute exactly zero
+softmax numerator. An additive
 attention bias is a different operation and must not be used as an approximation to that mask.
 Similarly, a real-valued layer spec, an executable `IEEE32Exec` path, and
 a CUDA `Float32` kernel are related objects, not interchangeable words.

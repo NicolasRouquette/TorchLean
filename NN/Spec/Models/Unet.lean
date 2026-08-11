@@ -24,7 +24,7 @@ This file defines a small U-Net style architecture (a single downsample + upsamp
 - skip connection: concatenate channels and run two conv blocks,
 - output head: `Conv2d(1x1)` to map `baseC -> outC`.
 
-PyTorch mental model:
+PyTorch analogue:
 - this matches the common "U-Net block diagram" but written without a batch axis, so our tensor
   convention is `(C,H,W)` rather than `(N,C,H,W)`;
 - the skip connection concatenates on the channel axis (in PyTorch with a batch axis that would be
@@ -63,7 +63,7 @@ variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)
 
 Architectural hyperparameters live in a dedicated config record.
 
-PyTorch mental model:
+PyTorch analogue:
 - this mirrors the way you would pass `kernel_size/stride/padding` to `nn.Conv2d`,
   `nn.MaxPool2d`, and `nn.ConvTranspose2d`, plus the base channel width.
 -/

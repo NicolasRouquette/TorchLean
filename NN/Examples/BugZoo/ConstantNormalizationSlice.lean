@@ -59,8 +59,8 @@ theorem constant_slice_normalizeCore_outputs_bias (x gamma beta epsilon : ℝ) :
         (cb_beta := Spec.Shape.CanBroadcastTo.scalar_to_any .scalar)
       = Spec.Tensor.scalar beta := by
   simp [Spec.normalizeCore, Spec.Tensor.broadcastTo, Spec.Tensor.addSpec, Spec.Tensor.subSpec,
-    Spec.Tensor.mulSpec, Spec.Tensor.divSpec, Spec.Tensor.sqrtSpec, Spec.Tensor.mapSpec,
-    Spec.Tensor.map2Spec, Spec.fill, Spec.replicate]
+    Spec.Tensor.mulSpec, Spec.Tensor.divSpec, Spec.Tensor.sqrtSpec, Spec.Tensor.map2Spec,
+    Spec.fill, Spec.replicate]
 
 /-- The scale gradient contribution from a constant normalized slice is zero. -/
 theorem constant_slice_scale_grad_zero (dy x epsilon : ℝ) :

@@ -40,8 +40,8 @@ theorem neural_generic_format_FLX_to_FLT_of_normal (emin prec : ℤ) (hprec : 0 
     {x : ℝ} (hxFLX : @neuralGenericFormat β (FLXExp prec) (flxValidExp prec hprec) x)
     (hnorm : neuralBpow β (emin + prec - 1) ≤ abs x) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) x := by
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
   obtain ⟨_, f, hxf, hmant⟩ := (generic_format_FLX_iff (β := β) prec hprec x).mp hxFLX
   refine (generic_format_FLT_iff (β := β) emin prec hprec x).mpr ⟨hprec, f, hxf, hmant, ?_⟩
   have hmabs : abs (f.mantissa : ℝ) = (f.mantissa.natAbs : ℝ) := by
@@ -79,8 +79,8 @@ theorem neural_generic_format_FLT_sub_of_le_two_mul (emin prec : ℤ) (hprec : 0
     (hxFmt : @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) x)
     (hyFmt : @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) y) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) (x - y) := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   by_cases hsmall : abs (x - y) ≤ neuralBpow β (emin + prec - 1)
   · have hxFix := neural_generic_format_FLT_to_FIX (β := β) emin prec hprec hxFmt
     have hyFix := neural_generic_format_FLT_to_FIX (β := β) emin prec hprec hyFmt
@@ -104,7 +104,7 @@ theorem neural_generic_format_FLT_sterbenz (emin prec : ℤ) (hprec : 0 < prec)
     (hxFmt : @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) x)
     (hyFmt : @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) y) :
     @neuralGenericFormat β (FLTExp emin prec) (fltValidExp emin prec hprec) (x - y) := by
-  letI : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
+  let _ : NeuralValidExp (FLTExp emin prec) := fltValidExp emin prec hprec
   rcases le_total y x with hyx | hxy
   · exact neural_generic_format_FLT_sub_of_le_two_mul emin prec hprec hy hyx hx2y hxFmt hyFmt
   · have hdiff :=

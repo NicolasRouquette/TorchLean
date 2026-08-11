@@ -4,8 +4,7 @@ This folder contains TorchLean's pure reinforcement-learning semantics. It is wh
 what an environment, return, Bellman backup, advantage estimate, and policy objective mean before any
 runtime collector or optimizer is involved.
 
-The point is not to reproduce a full RL framework inside the spec layer. The point is to isolate the
-mathematical contract that runtime code is supposed to approximate or implement. Rollout buffers,
+These definitions are the mathematical contracts implemented or approximated by runtime code. Rollout buffers,
 Gymnasium sessions, CUDA kernels, logging, and optimizer state live under `NN/Runtime`; the objects in
 this folder are the reference definitions those systems can be compared against.
 
@@ -33,8 +32,8 @@ There are three different questions that should stay separate:
 
 For example, PPO code may use minibatches, clipping, logging, and runtime tensors. The spec layer
 should still expose the idealized return and advantage quantities that make the objective meaningful.
-Likewise, a Gymnasium adapter may talk to Python, but the mathematical environment interface here has
-an explicit state transition, reward, and termination story.
+Likewise, a Gymnasium adapter may talk to Python, but the mathematical environment interface here
+defines its state transition, reward, and termination condition explicitly.
 
 ## What To Prove Here
 

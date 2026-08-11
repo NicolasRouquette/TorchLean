@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import Batteries.Lean.Float
+public import Batteries.Data.Float.Basic
 public import NN.API
 public import NN.Floats
 public import NN.Widgets

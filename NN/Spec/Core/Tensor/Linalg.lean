@@ -115,4 +115,17 @@ def outerProductSpec {α : Type} [Mul α] {m n : Nat} (a : Tensor α (.dim m .sc
         match f1 i, f2 j with
         | Tensor.scalar x, Tensor.scalar y => Tensor.scalar (x * y)))
 
+/-- A coordinate of an outer product is the product of the corresponding vector entries. -/
+@[simp] theorem get2_outerProductSpec {α : Type} [Mul α] {m n : Nat}
+    (left : Tensor α (.dim m .scalar)) (right : Tensor α (.dim n .scalar))
+    (i : Fin m) (j : Fin n) :
+    get2 (outerProductSpec left right) i j = Tensor.vecGet left i * Tensor.vecGet right j := by
+  cases left with
+  | dim leftValues =>
+      cases right with
+      | dim rightValues =>
+          cases hLeft : leftValues i
+          cases hRight : rightValues j
+          simp [outerProductSpec, get2, Tensor.vecGet, get, getAtSpec, hLeft, hRight]
+
 end Spec

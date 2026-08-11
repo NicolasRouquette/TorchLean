@@ -12,7 +12,7 @@ public import NN.MLTheory.Proofs.Verification.Robustness
 # Verification-oriented proofs
 
 This entrypoint gathers theorem files that connect verification certificates to mathematical
-properties. At present this chapter focuses on robustness: Lipschitz and margin certificates imply
+properties. The current results focus on robustness: Lipschitz and margin certificates imply
 stable classifier outputs under bounded perturbations.
 -/
 

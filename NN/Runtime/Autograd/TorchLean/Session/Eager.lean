@@ -15,7 +15,7 @@ import Mathlib.Algebra.Order.Algebra
 
 TorchLean unified imperative session.
 
-## Mental Model
+## Session state
 
 A `Session α` is TorchLean's runtime analogue of a PyTorch "training loop environment". It:
 - owns a collection of *leaf tensors* (parameters and inputs),

@@ -21,7 +21,7 @@ This file supports both:
 - discrete token id inputs (non‑differentiable lookup, good for runtime examples), and
 - one‑hot / token‑distribution inputs (differentiable embedding via a matrix multiply).
 
-PyTorch mental model:
+PyTorch analogue:
 
 - encoder: `nn.RNN` / `nn.LSTM` (or `nn.TransformerEncoder`) over source token embeddings
 - decoder: `nn.RNN` over target embeddings (teacher forcing in training), then a final `nn.linear`

@@ -81,7 +81,7 @@ private def scalarElim {β : Sort _} (t : Tensor ℝ .scalar) (k : ℝ → β) :
 private abbrev scalarVal (t : Tensor ℝ .scalar) : ℝ :=
   scalarElim (β := ℝ) t (fun v => v)
 
--- Keep these two facts specialized to `ℝ`. Lean 4.32 distinguishes the `LE` projection inherited
+-- Keep these two facts specialized to `ℝ`. Lean distinguishes the `LE` projection inherited
 -- through a synthesized generic lattice from `Real.instLE`; spelling the real order directly
 -- avoids leaking that implementation detail into public softmax theorems.
 private theorem real_le_foldl_max_of_mem {ι : Type} (l : List ι) (f : ι -> ℝ)

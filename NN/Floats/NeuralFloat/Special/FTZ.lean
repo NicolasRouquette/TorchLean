@@ -128,7 +128,7 @@ theorem FTZThreshold_negligible (emin prec : ℤ) :
 theorem neuralUlp_zero_FTZ (emin prec : ℤ) (hprec : 0 < prec) :
     @neuralUlp β (FTZExp emin prec) (ftzValidExp emin prec hprec) 0 =
       neuralBpow β (FTZThreshold emin prec) := by
-  letI : NeuralValidExp (FTZExp emin prec) := ftzValidExp emin prec hprec
+  let _ : NeuralValidExp (FTZExp emin prec) := ftzValidExp emin prec hprec
   rw [neuralUlp.zero]
   cases hopt : neuralNegligibleExp (FTZExp emin prec) with
   | none =>
@@ -198,7 +198,7 @@ theorem neuralRound_FTZ_small (emin prec : ℤ) (hprec : 0 < prec)
     (hsmall : abs x < neuralBpow β (FTZThreshold emin prec)) :
     @neuralRound β (FTZExp emin prec) (ftzValidExp emin prec hprec)
       (neuralFTZRound rnd) x = 0 := by
-  letI : NeuralValidExp (FTZExp emin prec) := ftzValidExp emin prec hprec
+  let _ : NeuralValidExp (FTZExp emin prec) := ftzValidExp emin prec hprec
   by_cases hx : x = 0
   · subst x
     simp [neuralRound, neuralScaledMantissa, neuralFTZRound, neuralToReal]
@@ -222,8 +222,8 @@ theorem neuralRound_FTZ_eq_FLX_of_normal (emin prec : ℤ) (hprec : 0 < prec)
     @neuralRound β (FTZExp emin prec) (ftzValidExp emin prec hprec)
         (neuralFTZRound rnd) x =
       @neuralRound β (FLXExp prec) (flxValidExp prec hprec) rnd x := by
-  letI : NeuralValidExp (FTZExp emin prec) := ftzValidExp emin prec hprec
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FTZExp emin prec) := ftzValidExp emin prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   have hx : x ≠ 0 := by
     intro hx0
     rw [hx0, abs_zero] at hnormal
@@ -279,8 +279,8 @@ theorem not_FTZFormat_of_nonpos (emin prec : ℤ) (hprec : prec ≤ 0) (x : ℝ)
 theorem FTZFormat_of_generic (emin prec : ℤ) (hprec : 0 < prec) {x : ℝ}
     (hx : @neuralGenericFormat β (FTZExp emin prec) (ftzValidExp emin prec hprec) x) :
     FTZFormat (β := β) emin prec x := by
-  letI : NeuralValidExp (FTZExp emin prec) := ftzValidExp emin prec hprec
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FTZExp emin prec) := ftzValidExp emin prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   constructor
   · rw [← generic_format_FLX_iff prec hprec]
     apply neural_generic_inclusion (fexp₁ := FTZExp emin prec) (fexp₂ := FLXExp prec)
@@ -328,8 +328,8 @@ theorem FTZFormat_of_generic (emin prec : ℤ) (hprec : 0 < prec) {x : ℝ}
 theorem generic_of_FTZFormat (emin prec : ℤ) (hprec : 0 < prec) {x : ℝ}
     (hx : FTZFormat (β := β) emin prec x) :
     @neuralGenericFormat β (FTZExp emin prec) (ftzValidExp emin prec hprec) x := by
-  letI : NeuralValidExp (FTZExp emin prec) := ftzValidExp emin prec hprec
-  letI : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
+  let _ : NeuralValidExp (FTZExp emin prec) := ftzValidExp emin prec hprec
+  let _ : NeuralValidExp (FLXExp prec) := flxValidExp prec hprec
   rcases hx with ⟨hxFLX, hxRange⟩
   rcases hxRange with rfl | hnormal
   · exact neural_generic_format_zero

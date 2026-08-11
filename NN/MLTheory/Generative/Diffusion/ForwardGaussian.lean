@@ -71,7 +71,7 @@ def forwardGaussian (c0 c1 : ℝ) (x0 : E) : Measure E :=
 instance (c0 c1 : ℝ) (x0 : E) : IsProbabilityMeasure (forwardGaussian (ι := ι) c0 c1 x0) := by
   -- We use that `stdGaussian` is a probability measure and measurable push-forwards preserve mass.
   let ν : Measure E := (stdGaussian E).map (c1 • (ContinuousLinearMap.id ℝ E))
-  haveI : IsProbabilityMeasure ν := by
+  have : IsProbabilityMeasure ν := by
     dsimp [ν]
     exact Measure.isProbabilityMeasure_map (μ := stdGaussian E)
       (f := (c1 • (ContinuousLinearMap.id ℝ E) : E → E)) (by fun_prop)
@@ -82,7 +82,7 @@ theorem forwardGaussian_isGaussian (c0 c1 : ℝ) (x0 : E) :
     IsGaussian (forwardGaussian (ι := ι) c0 c1 x0) := by
   -- Gaussian laws are closed under continuous linear maps and translations.
   let ν : Measure E := (stdGaussian E).map (c1 • (ContinuousLinearMap.id ℝ E))
-  haveI : IsGaussian ν := by
+  have : IsGaussian ν := by
     dsimp [ν]
     exact isGaussian_map_of_measurable (μ := stdGaussian E)
       (L := c1 • (ContinuousLinearMap.id ℝ E)) (by fun_prop)

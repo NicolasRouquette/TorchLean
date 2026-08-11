@@ -3,7 +3,7 @@
 This folder integrates Arb ball arithmetic, through python-flint and FLINT/Arb, as an external oracle
 callable from Lean.
 
-## What You Get
+## Ball Arithmetic
 
 - Rigorous enclosures: Arb tracks a real value as a ball `m ± r` that contains the true value
   according to Arb's interval arithmetic.
@@ -18,19 +18,18 @@ callable from Lean.
 
 ## Trust Model
 
-This backend is not kernel reducible and should be treated as untrusted by default:
+This backend runs outside Lean's kernel:
 
 - Lean calls a Python process.
 - The Python process calls Arb/FLINT.
 - The result is a JSON payload that can be checked or inspected by Lean code.
 
-Arb is a serious validated-numerics library, but an Arb response is still an external result from
-Lean's point of view. A strong TorchLean claim should either:
+An Arb response can be used in either of two ways:
 
 - check a small certificate derived from the Arb result, or
 - state explicitly that the claim depends on the Arb/python-flint oracle.
 
-If you want semantics defined inside Lean, use TorchLean's native float backends instead:
+For semantics defined entirely in Lean, use:
 
 - `IEEE32Exec`: executable bit level float32 kernel (`NN/Floats/IEEEExec/`).
 - `FP32` / `NF`: proof oriented rounding over `ℝ` (`NN/Floats/FP32/`, `NN/Floats/NeuralFloat/`).
@@ -66,7 +65,7 @@ The oracle script supports unary functions (in `unary` mode):
 For monotone functions (`tanh/exp/log/sqrt/sigmoid`) we use endpoint evaluation plus union for a
 tight enclosure on `[lo, hi]`. For others we fall back to evaluating on the convex-hull ball.
 
-## Beyond unary: expression / MLP requests
+## Expression And MLP Requests
 
 To handle more than single unary calls without using `eval`, the oracle also supports a small JSON
 request format via `--request <file.json>`:
@@ -74,9 +73,9 @@ request format via `--request <file.json>`:
 - `kind = "expr"`: evaluate a safe, whitelisted expression AST over Arb balls.
 - `kind = "mlp"`: evaluate a simple MLP given weights/biases/activations using ball arithmetic.
 
-These modes are intended for exploratory checks and certificate generation. They can produce useful
-enclosures, but they may be looser than dedicated neural-network bound methods because repeated
-variables introduce dependency effects.
+These modes support exploratory checks and certificate generation. Repeated variables introduce
+dependency effects, so the resulting enclosures may be looser than those from dedicated
+neural-network bound methods.
 
 See the docstring at the top of `NN/Floats/Arb/arb_oracle.py` for the exact JSON shapes.
 

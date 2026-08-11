@@ -11,8 +11,8 @@ public import NN.Floats.IEEEExec.Exec32.Arithmetic
 /-!
 Directed executable IEEE32 operations.
 
-This file provides lower and upper rounding variants for arithmetic operations, forming the
-runtime side of the interval-enclosure story.
+This file provides lower and upper rounding variants for arithmetic operations used to compute
+outward interval enclosures.
 -/
 
 @[expose] public section
@@ -448,10 +448,7 @@ def divDown (x y : IEEE32Exec) : IEEE32Exec :=
               if sign then negZero else posZero
             else
               let eDiff : Int := dx.exp - dy.exp
-              let (num, den) :=
-                match eDiff with
-                | .ofNat sh => (Nat.shiftLeft dx.mant sh, dy.mant)
-                | .negSucc sh => (dx.mant, Nat.shiftLeft dy.mant (sh + 1))
+              let (num, den) := scaleRatByPow2 dx.mant dy.mant eDiff
               roundRatDown sign num den
         | _, _ => canonicalNaN
 
@@ -478,10 +475,7 @@ def divUp (x y : IEEE32Exec) : IEEE32Exec :=
               if sign then negZero else posZero
             else
               let eDiff : Int := dx.exp - dy.exp
-              let (num, den) :=
-                match eDiff with
-                | .ofNat sh => (Nat.shiftLeft dx.mant sh, dy.mant)
-                | .negSucc sh => (dx.mant, Nat.shiftLeft dy.mant (sh + 1))
+              let (num, den) := scaleRatByPow2 dx.mant dy.mant eDiff
               roundRatUp sign num den
         | _, _ => canonicalNaN
 

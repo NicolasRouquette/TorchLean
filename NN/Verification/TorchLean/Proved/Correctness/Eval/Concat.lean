@@ -184,6 +184,7 @@ theorem evalConcatLeadingAxisFold_eq
   rw [mapM_expectLeadingAxisInput_toDVal (α := α) i (head :: tail)]
   simp [LeadingAxisConcat.fold, LeadingAxisConcat.Input.toDVal, DVal.mk,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
+  congr
 
 /-- Leading-axis shape inference sums every input's leading dimension for any arity of at least two. -/
 theorem inferConcatOutShape_leadingAxis_eq

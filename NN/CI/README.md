@@ -15,7 +15,7 @@ See:
 If you run one of these locally and it appears to pause, Lean is often elaborating one large module
 without intermediate progress output.
 
-## What Belongs In CI
+## CI Targets
 
 CI targets should answer questions that are broader than a local executable regression check:
 
@@ -23,8 +23,7 @@ CI targets should answer questions that are broader than a local executable regr
 - do slow proof modules still elaborate on the pinned Lean toolchain?
 - do generated or bundled verification artifacts still parse under the current checker code?
 - do CUDA and non-CUDA builds still expose the same Lean names where the public API expects them?
-- do import umbrellas stay honest, or did an implementation file accidentally become the only way
-  to reach a feature?
+- do import umbrellas still expose every intended public feature?
 
 This directory is not a second documentation tree and not a dumping ground for examples. It should
 contain import targets whose job is to make CI exercise a meaningful slice of the repository.
