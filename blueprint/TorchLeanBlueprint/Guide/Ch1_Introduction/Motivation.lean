@@ -103,8 +103,8 @@ The current checked-in example prints:
 
 ```
 === TorchLean → IR → IBP (small MLP) workflow ===
-[TorchLean] Float32 mode: IEEE32Exec: executable IEEE-754 binary32 kernel (bit-level; includes NaN/Inf)
-compiled IR nodes: 20
+[TorchLean] scalar: native IEEE-754 binary32
+lowered IR nodes: 20
 output box lo: [1.904000]
 output box hi: [2.256000]
 ```
@@ -188,7 +188,7 @@ TorchLean therefore gives several numerical interpretations distinct names:
 - `FP32`, a rounded-real model with binary32 precision and gradual-underflow parameters but no
   upper exponent bound or IEEE special values;
 - executable bit-level IEEE binary32;
-- host `Float`, native CUDA, and external runtime providers.
+- native `Float32`, host `Float`, CUDA, and external runtime providers.
 
 A real-valued enclosure theorem cannot be silently relabeled as a theorem about every GPU execution.
 A bridge theorem or an explicit backend contract must carry the result across that boundary. Later

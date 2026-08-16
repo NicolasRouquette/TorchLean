@@ -11,7 +11,7 @@ public import NN.Verification.TorchLean.Proved.Correctness.Eval.PayloadOps
 /-!
 # BatchNorm IR Evaluation
 
-The TorchLean compiler, PyTorch importer, verifier, and PyTorch exporter all meet at the IR
+The TorchLean lowering pass, PyTorch importer, verifier, and PyTorch exporter all meet at the IR
 BatchNorm node.  This file records the small semantic fact that matters at that boundary: once the
 payload is present and the input has matching NCHW channels, IR evaluation is the standard
 eval-mode BatchNorm formula applied independently at each `(N,C,H,W)` coordinate.

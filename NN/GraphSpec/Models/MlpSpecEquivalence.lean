@@ -32,7 +32,7 @@ Why this matters:
 Related context (informal pointers):
 
 - Many projects formalize neural-network semantics in a proof assistant, but the combination of
-  (1) a typed architecture DSL, (2) a pure “Spec” semantics, and (3) a compilation path to an
+  (1) a typed architecture DSL, (2) pure “Spec” semantics, and (3) a lowering path to an
   executable runtime is still relatively uncommon.
 - For comparison, see e.g.:
   - Brucker & Stell (2025), “Formalizing Neural Networks” (Isabelle/HOL; relates two network
@@ -132,7 +132,7 @@ theorem mlp_interp_eq_spec_mlp_forward
                 Spec.linearSpec (α := α) l2
                   (Activation.reluSpec (Spec.linearSpec (α := α) l1 x)) := by
               unfold Interp.spec mlp
-              simp [Graph.linear, Graph.relu, Primitive.linear, Primitive.relu]
+              simp [Chain.linear, Chain.relu, Primitive.linear, Primitive.relu]
               cases hsplit1
               cases hsplit2
               rfl

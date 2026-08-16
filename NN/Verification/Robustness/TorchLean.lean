@@ -9,14 +9,14 @@ module
 public import NN.API
 public import NN.MLTheory.CROWN.Core
 public import NN.MLTheory.CROWN.Graph
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 
 /-!
 # TorchLean Robustness Workflow
 
 End-to-end robustness certification for a TorchLean model.
 
-We build a compact 2-class classifier in TorchLean, compile it to the verifier IR, and certify a
+We build a compact 2-class classifier in TorchLean, lower it to the verifier IR, and certify a
 margin condition on an $\ell^\infty$ input box using:
 
 - IBP (`runIBP`)
@@ -31,7 +31,7 @@ $$
 
 Run:
   `lake exe verify -- torchlean-robustness`
-  `lake exe verify -- torchlean-robustness --float32-mode ieee754exec`
+  `lake exe verify -- torchlean-robustness --scalar ieee32-exec`
 -/
 
 @[expose] public section
@@ -66,13 +66,13 @@ def xShape : Spec.Shape := .dim inDim .scalar
 /-- Output/logit shape. -/
 def yShape : Spec.Shape := .dim outDim .scalar
 
-/-- Parameter shapes list used by the compiled TorchLean program (`[hiddenWeight,hiddenBias,outputWeight,outputBias]`). -/
+/-- Parameter shapes list used by the lowered TorchLean program (`[hiddenWeight,hiddenBias,outputWeight,outputBias]`). -/
 def paramShapes : List Spec.Shape := [hiddenWeightShape, hiddenBiasShape, outputWeightShape, outputBiasShape]
 
 /-- Compute a conservative margin lower bound
 $\mathrm{lo}_0-\mathrm{hi}_1$ from logit bounds. -/
 def margin {α : Type} [Context α]
-    (lo hi : Tensor α yShape) : α :=
+    (lo hi : Spec.Tensor α yShape) : α :=
   let lo0 := _root_.Spec.Tensor.vecGet lo fin0!
   let hi1 := _root_.Spec.Tensor.vecGet hi fin1!
   lo0 - hi1
@@ -80,7 +80,7 @@ def margin {α : Type} [Context α]
 /-- Decide if the output bounds certify
 $\operatorname{logit}_0>\operatorname{logit}_1$. -/
 def certifiedMargin {α : Type} [Context α]
-    (lo hi : Tensor α yShape) : Bool :=
+    (lo hi : Spec.Tensor α yShape) : Bool :=
   let lo0 := _root_.Spec.Tensor.vecGet lo fin0!
   let hi1 := _root_.Spec.Tensor.vecGet hi fin1!
   Context.gtBool lo0 hi1
@@ -99,7 +99,7 @@ def classifier {α : Type} [Context α] [DecidableEq Spec.Shape] :
 /--
 Run the robustness check once under a chosen scalar backend `α`.
 
-This compiles the TorchLean program to the verifier IR, then computes output bounds with IBP and an
+This lowers the TorchLean program to the verifier IR, then computes output bounds with IBP and an
 affine/CROWN-style pass.
 -/
 def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
@@ -111,43 +111,43 @@ def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
   --
   -- The chosen weights keep the hidden pre-activation positive over the whole ε-box, so the ReLU
   -- stays linear and the expected certified margin is easy to inspect by hand.
-  let hiddenWeight : Tensor α hiddenWeightShape :=
+  let hiddenWeight : Spec.Tensor α hiddenWeightShape :=
     NN.Tensor.ofListOfLength (α := α) [1, 2] [cast 1.0, cast 1.0] (by rfl)
-  let hiddenBias : Tensor α hiddenBiasShape :=
+  let hiddenBias : Spec.Tensor α hiddenBiasShape :=
     NN.Tensor.ofListOfLength (α := α) [1] [cast 0.0] (by rfl)
-  let outputWeight : Tensor α outputWeightShape :=
+  let outputWeight : Spec.Tensor α outputWeightShape :=
     NN.Tensor.ofListOfLength (α := α) [2, 1] [cast 1.0, cast (-1.0)] (by rfl)
-  let outputBias : Tensor α outputBiasShape :=
+  let outputBias : Spec.Tensor α outputBiasShape :=
     NN.Tensor.ofListOfLength (α := α) [2] [cast 0.0, cast 0.0] (by rfl)
 
   let params : TensorPack α paramShapes :=
     tensorpack.quad hiddenWeight hiddenBias outputWeight outputBias
 
-  let compiled ←
-    match Verification.compileProgram
+  let lowered ←
+    match Verification.lowerProgramToIR
           (α := α) (paramShapes := paramShapes) (σ := xShape) (τ := yShape)
           (classifier (α := α)) params with
     | .ok c => pure c
     | .error e => throw <| IO.userError e
 
-  let x0 : Tensor α xShape :=
+  let x0 : Spec.Tensor α xShape :=
     NN.Tensor.ofListOfLength (α := α) [2] [cast 1.0, cast 1.0] (by rfl)
   let eps : α := Runtime.ofFloat 0.1
   let xB : FlatBox α := Verification.lInfBall (α := α) x0 eps
-  let ps : ParamStore α := compiled.seedInputBox xB
+  let ps : ParamStore α := lowered.seedInputBox xB
 
-  IO.println s!"compiled IR nodes: {compiled.graph.nodes.size}"
+  IO.println s!"lowered IR nodes: {lowered.graph.nodes.size}"
   IO.println s!"x0 = {pretty x0}, eps = {eps}"
 
   -- IBP
-  let ibp := compiled.runIBP ps
-  let outB ← compiled.outputBoxOrThrow ibp
+  let ibp := lowered.runIBP ps
+  let outB ← lowered.outputBoxOrThrow ibp
   IO.println s!"[IBP] logits lo = {pretty outB.lo}"
   IO.println s!"[IBP] logits hi = {pretty outB.hi}"
   if h : outB.dim = outDim then
-    let loY : Tensor α yShape := by
+    let loY : Spec.Tensor α yShape := by
       simpa [yShape] using outB.loAsDim h
-    let hiY : Tensor α yShape := by
+    let hiY : Spec.Tensor α yShape := by
       simpa [yShape] using outB.hiAsDim h
     IO.println s!"[IBP] margin(lo0 - hi1) = {margin (α := α) loY hiY}"
     IO.println s!"[IBP] certified? {certifiedMargin (α := α) loY hiY}"
@@ -155,18 +155,18 @@ def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
     IO.println s!"[IBP] unexpected output dim {outB.dim} (expected {outDim}); skipping margin check"
 
   -- CROWN / affine (w.r.t. the input node)
-  let ctx : AffineCtx := { inputId := compiled.inputId, inputDim := inDim }
-  let affs := runAffine (α := α) compiled.graph ps ctx ibp
-  match compiled.outputAffine? affs with
+  let ctx : AffineCtx := { inputId := lowered.inputId, inputDim := inDim }
+  let affs := runAffine (α := α) lowered.graph ps ctx ibp
+  match lowered.outputAffine? affs with
   | .error msg =>
       IO.println s!"[CROWN] {msg}"
   | .ok outAff =>
       if hIn : outAff.inDim = inDim then
         if hOut : outAff.outDim = outDim then
           let outC := outAff.evalOnFlatBoxAsDim xB hIn.symm hOut
-          let loY : Tensor α yShape := by
+          let loY : Spec.Tensor α yShape := by
             simpa [yShape] using outC.lo
-          let hiY : Tensor α yShape := by
+          let hiY : Spec.Tensor α yShape := by
             simpa [yShape] using outC.hi
           IO.println s!"[CROWN] logits lo = {pretty loY}"
           IO.println s!"[CROWN] logits hi = {pretty hiY}"
@@ -181,10 +181,10 @@ def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
           s!"[CROWN] unexpected input dim {outAff.inDim} (expected {inDim}); skipping affine eval"
 
   -- Backward/dual CROWN (objective-dependent) for the margin: logit0 - logit1.
-  let objV : Tensor α (.dim outDim .scalar) :=
+  let objV : Spec.Tensor α (.dim outDim .scalar) :=
     NN.Tensor.ofListOfLength (α := α) [2] [cast 1.0, cast (-1.0)] (by rfl)
   let obj : FlatVec α := { n := outDim, v := objV }
-  match compiled.backwardObjectiveBox? ps ibp xB obj with
+  match lowered.backwardObjectiveBox? ps ibp xB obj with
   | .ok outC =>
       let loM : α := getAtOrZero outC.lo [0]
       let hiM : α := getAtOrZero outC.hi [0]
@@ -200,7 +200,7 @@ CLI entry point for the TorchLean robustness workflow.
 This is wired into `lake exe verify -- torchlean-robustness`.
 -/
 def main (args : List String) : IO Unit :=
-  NN.Verification.TorchLean.runWithBoundDType "TorchLean → IR → IBP/CROWN robustness" args
+  NN.Verification.TorchLean.runWithBoundScalar "TorchLean → IR → IBP/CROWN robustness" args
     (@runOnce)
 
 end NN.Verification.Robustness.TorchLean

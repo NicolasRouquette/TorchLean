@@ -56,7 +56,7 @@ def run : IO Unit := do
     Tensor.dim (fun i => Tensor.scalar ([0.5, 0.8][i.val]!))
 
   -- Extract TorchLean parameters and reinterpret them as Spec `LinearSpec`s.
-  let ps := Runtime.Autograd.TorchLean.NN.Seq.initParams (m := model)
+  let ps := Runtime.Autograd.TorchLean.NN.Seq.initState (m := model)
   let (w1, b1, w2, b2) :=
     match ps with
     | .cons w1 (.cons b1 (.cons w2 (.cons b2 .nil))) => (w1, b1, w2, b2)
@@ -67,18 +67,18 @@ def run : IO Unit := do
   -- Spec forward reference.
   let ySpec : Tensor Float yShape := Examples.mlpForward (α := Float) l1 l2 x
 
-  -- TorchLean forward reference (compiled-out evaluation of the TorchLean forwardProgram).
-  let compiled ← Runtime.Autograd.TorchLean.Autodiff.compileGraph (α := Float)
-    (paramShapes := Runtime.Autograd.TorchLean.NN.Seq.paramShapes model)
+  -- TorchLean forward reference (typed graph evaluation of the TorchLean forward program).
+  let graph ← Runtime.Autograd.TorchLean.Autodiff.lowerToTypedGraph (α := Float)
+    (paramShapes := Runtime.Autograd.TorchLean.NN.Seq.stateShapes model)
     (inputShapes := [xShape]) (τ := yShape)
-    (fun {β} _ _ => Runtime.Autograd.TorchLean.NN.Seq.forwardProgram (model := model) (α := β))
+    (fun {β} _ _ => Runtime.Autograd.TorchLean.NN.Seq.forward model (α := β))
 
-  let args : TorchLean.TensorPack Float (Runtime.Autograd.TorchLean.NN.Seq.paramShapes model ++ [xShape])
+  let args : TorchLean.TensorPack Float (Runtime.Autograd.TorchLean.NN.Seq.stateShapes model ++ [xShape])
     :=
     tensorpack! w1, b1, w2, b2, x
 
   let yTorch : Tensor Float yShape :=
-    _root_.Runtime.Autograd.Torch.CompiledGraph.forward compiled args
+    _root_.Runtime.Autograd.Torch.TypedGraph.forward graph args
 
   -- Since `outDim = 1`, check the single coordinate. (Kept structured so it scales to `outDim >
   -- 1`.)

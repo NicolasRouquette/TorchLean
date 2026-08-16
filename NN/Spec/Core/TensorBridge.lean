@@ -294,7 +294,7 @@ def toTensor {α : Type} {shape : List Nat} :
   | t =>
     unflatten shape t.data.toList (by
       calc
-        t.data.toList.length = t.data.size := TensorArray.Array.size_toList t.data
+        t.data.toList.length = t.data.size := Array.length_toList
         _ = TensorArray.shapeProd shape := by
             simpa [TensorArray.shapeProd] using t.shape_valid)
 

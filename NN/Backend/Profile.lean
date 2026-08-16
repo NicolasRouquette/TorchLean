@@ -14,9 +14,9 @@ public import NN.Backend.Accepted
 Named backend profiles bundle the choices that should move together:
 
 - target/build availability,
-- execution configuration,
+- kernel-selection policy,
 - ordered capsule modules,
-- graph lowering mode,
+- graph-plan grouping mode,
 - and assurance policy.
 
 This gives downstream APIs one object to pass around instead of separately threading flags such as
@@ -28,31 +28,31 @@ This gives downstream APIs one object to pass around instead of separately threa
 namespace NN
 namespace Backend
 
-/-- How graph-node plans are lowered to backend execution groups. -/
-inductive LoweringMode where
+/-- How adjacent graph-node plans are grouped for scheduling and audit. -/
+inductive GroupingMode where
   | singleton
   | coalesced
   deriving DecidableEq, Repr
 
-/-- One named backend execution profile. -/
+/-- A named kernel-selection profile for one target. -/
 structure BackendProfile where
   /-- Human-readable profile name used in diagnostics and reports. -/
   name : String
-  /-- Device, provider preference, assurance policy, and VJP execution mode. -/
-  config : ExecutionConfig
+  /-- Device, provider preference, assurance policy, and VJP ownership. -/
+  policy : KernelPolicy
   /-- Operating-system, architecture, and accelerator capabilities available to planning. -/
   target : Target
   /-- Capsule modules used to construct and validate the profile's planning registry. -/
   capsuleModules : List Registry.CapsuleModule := Registry.maintainedModules
-  /-- Whether accepted nodes remain separate or are combined into compatible execution groups. -/
-  loweringMode : LoweringMode := .coalesced
+  /-- Whether accepted nodes remain separate or share compatible scheduling/audit groups. -/
+  groupingMode : GroupingMode := .coalesced
   deriving Repr
 
 namespace BackendProfile
 
 /--
 Extend a profile with operation/provider capsule modules without changing model semantics, target
-selection, lowering, or assurance policy.
+selection, grouping, or assurance policy.
 
 A new contribution replaces an existing module with the same name. Duplicate names within `modules`
 are still rejected when the profile is planned.
@@ -72,47 +72,47 @@ def availability (p : BackendProfile) : Availability :=
 def registry (p : BackendProfile) : List KernelCapsule :=
   Registry.flatten p.capsuleModules
 
-/-- Plan operations using the profile registry, target, and execution config. -/
-def planOps (p : BackendProfile) (ops : List BackendOp) : Except String ExecutionPlan := do
+/-- Select capsules using the profile registry, target, and kernel policy. -/
+def planOps (p : BackendProfile) (ops : List BackendOp) : Except String KernelPlan := do
   Registry.validateModules p.capsuleModules
-  NN.Backend.planOpsAvailable p.config p.availability p.registry ops
+  NN.Backend.planOpsAvailable p.policy p.availability p.registry ops
 
 /-- Gate a planned operation sequence under the profile's assurance policy. -/
 def gateOps (p : BackendProfile) (ops : List BackendOp) : Except String GateResult := do
   let plan ← p.planOps ops
-  pure <| plan.gate p.config.assurance
+  pure <| plan.gate p.policy.assurance
 
-/-- Plan runtime-relevant IR nodes using the profile registry, target, and execution config. -/
+/-- Select a capsule for every runtime-relevant IR node. -/
 def planGraphNodes (p : BackendProfile) (g : NN.IR.Graph) :
-    Except String NN.Backend.IR.GraphExecutionPlan := do
+    Except String NN.Backend.IR.GraphKernelPlan := do
   Registry.validateModules p.capsuleModules
-  NN.Backend.IR.checkedPlanGraphNodesWithRegistry p.config p.availability p.registry g
+  NN.Backend.IR.checkedPlanGraph p.policy p.availability p.registry g
 
-/-- Lower a graph-node execution plan according to the profile's lowering mode. -/
-def lowerGraphPlan (p : BackendProfile) (plan : NN.Backend.IR.GraphExecutionPlan) :
-    GraphLoweringPlan :=
-  match p.loweringMode with
-  | .singleton => plan.toSingletonLoweringPlan
-  | .coalesced => plan.toCoalescedLoweringPlan
+/-- Group a graph kernel plan according to the profile's audit grouping mode. -/
+def groupGraphPlan (p : BackendProfile) (plan : NN.Backend.IR.GraphKernelPlan) :
+    GroupedKernelPlan :=
+  match p.groupingMode with
+  | .singleton => plan.toSingletonGroups
+  | .coalesced => plan.toCoalescedGroups
 
-/-- Plan, lower, and gate a graph under the profile. -/
+/-- Plan, group, and gate a graph under the profile. -/
 def acceptGraph (p : BackendProfile) (g : NN.IR.Graph) :
-    Except String AcceptedPlanResult := do
+    Except String GraphKernelPlanResult := do
   let graphPlan ← p.planGraphNodes g
-  let loweringPlan := p.lowerGraphPlan graphPlan
-  pure <| acceptGraphPlan graphPlan loweringPlan p.config.assurance
+  let groupedPlan := p.groupGraphPlan graphPlan
+  pure <| acceptGraphKernelPlan graphPlan groupedPlan p.policy.assurance
 
 /-- Maintained portable CPU/reference profile with runtime guards and regression evidence. -/
 def checkedCpu : BackendProfile :=
   { name := "checked_cpu"
-    config :=
+    policy :=
       { device := .cpu
-        backend := .auto
+        provider := .auto
         assurance := .checked
         vjpMode := .torchLeanTape }
     target := Target.portableCpu
     capsuleModules := Registry.maintainedModules
-    loweringMode := .coalesced }
+    groupingMode := .coalesced }
 
 /-- Checked CPU/reference profile for a named operating system and architecture. -/
 def checkedCpuTarget (os : OperatingSystem) (arch : Architecture := .unknown) : BackendProfile :=
@@ -123,14 +123,14 @@ def checkedCpuTarget (os : OperatingSystem) (arch : Architecture := .unknown) : 
 /-- Checked native CUDA profile. External trusted providers are not admitted. -/
 def checkedCuda : BackendProfile :=
   { name := "checked_cuda"
-    config :=
+    policy :=
       { device := .cuda
-        backend := .prefer .torchLean
+        provider := .prefer .torchLean
         assurance := .checked
         vjpMode := .torchLeanTape }
     target := Target.linuxCuda false
     capsuleModules := Registry.maintainedModules
-    loweringMode := .coalesced }
+    groupingMode := .coalesced }
 
 /--
 LibTorch forward scaling profile.
@@ -140,14 +140,14 @@ boundary and does not hand local backward ownership to LibTorch autograd.
 -/
 def libTorchForwardCuda : BackendProfile :=
   { name := "libtorch_forward_cuda"
-    config :=
+    policy :=
       { device := .cuda
-        backend := .prefer .libTorch
+        provider := .prefer .libTorch
         assurance := .external
         vjpMode := .torchLeanTape }
     target := Target.linuxCuda true
     capsuleModules := Registry.maintainedModules ++ [Registry.libTorchModule]
-    loweringMode := .coalesced }
+    groupingMode := .coalesced }
 
 /-- Checked macOS CPU/reference profile. -/
 def macOSCpu : BackendProfile :=
@@ -171,7 +171,7 @@ def maintainedForDevice? : Device → Option BackendProfile
 /-- Whether this profile registers at least one capsule for its selected device. -/
 def hasDeviceCapsule (profile : BackendProfile) : Bool :=
   profile.registry.any fun capsule =>
-    capsule.device == profile.config.device
+    capsule.device == profile.policy.device
 
 end BackendProfile
 

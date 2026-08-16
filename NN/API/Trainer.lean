@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Trainer.Handle
+public import NN.API.Trainer.Core
 public import NN.API.Trainer.Constructor
 public import NN.API.Trainer.FixedSample
 public import NN.API.Trainer.Manual

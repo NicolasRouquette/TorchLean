@@ -25,7 +25,7 @@ This subsystem contains pure, tensor-level pieces:
 
 What this file does **not** contain:
 
-- heterogeneous parameter-list handling, optimizer handles, or training-loop mutation;
+- heterogeneous parameter-list handling, bound optimizer state, or training-loop mutation;
 - the public `optim.sgd` / `optim.adam` API; or
 - CUDA / PyTorch fused optimizer kernels.
 

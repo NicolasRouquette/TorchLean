@@ -35,7 +35,7 @@ def inDim : Nat := 2
 def outDim : Nat := 1
 
 def model :
-    nn.M (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
+    nn.Builder (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
   nn.Sequential![
     nn.linear inDim 8,
     nn.relu,
@@ -43,7 +43,7 @@ def model :
   ]
 ```
 
-Read the type before the body. `nn.M` says that model construction consumes a deterministic seed
+Read the type before the body. `nn.Builder` says that model construction consumes a deterministic seed
 stream. `nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)` says that the initialized model will map a
 length-two tensor to a length-one tensor. The hidden width `8` is checked through composition: the
 first linear layer produces length eight, ReLU preserves the shape, and the second linear layer
@@ -61,7 +61,7 @@ state computation:
 
 ```
 def initialized :=
-  nn.run 2026 model
+  nn.build 2026 model
 ```
 
 Running the same builder with the same seed produces the same initialization stream. The resulting
@@ -75,8 +75,8 @@ Running the same builder with the same seed produces the same initialization str
 We can ask Lean for that layout:
 
 ```
-#check nn.paramShapes initialized
-#check nn.initParams initialized
+#check nn.stateShapes initialized
+#check nn.initState initialized
 ```
 
 The order is part of the forward-program interface. It is not a PyTorch-style dictionary of names.
@@ -98,7 +98,7 @@ def target (x1 x2 : Float) : Float :=
 examples. Each input has shape `[2]` and each target has shape `[1]`:
 
 ```
-def dataset : Trainer.Dataset (.dim 2 .scalar) (.dim 1 .scalar) :=
+def dataset : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
   Data.regressionGrid (-1.0) 1.0 5 target
 ```
 
@@ -174,9 +174,9 @@ The repository contains four views of this step:
 
 That gives us a running program, an ideal derivative, and a way to discuss the gap between them.
 
-Running the model once with host `Float` and once with `IEEE32Exec` compares the two homogeneous
-interpretations described in the tensor chapter. This matters when reading a checkpoint or backend
-report: the scalar choice belongs to the run.
+Running the model once with native `Float32` and once with `IEEE32Exec` compares Lean's binary32
+arithmetic with TorchLean's independent raw-bit reference. This matters when reading a checkpoint
+or backend report: the scalar semantics belong to the run.
 
 # Changing The Device
 
@@ -208,28 +208,28 @@ import NN
 
 open TorchLean
 
-#check Verification.compileForward
+#check Verification.lowerForwardToIR
   initialized
-  (nn.initParams initialized)
+  (nn.initState initialized)
 ```
 
-The result is a `CompiledIR Float` containing:
+The result is a `LoweredIR Float` containing:
 
 - an `NN.IR.Graph`;
 - the payload store used by parameterized operations;
 - the distinguished input node;
 - the distinguished output node.
 
-`CompiledIR Float` makes the scalar choice visible. The underlying operation graph records shapes
-and operation tags, while this compiled artifact and its payload use the scalar type selected for
+`LoweredIR Float` makes the scalar choice visible. The underlying operation graph records shapes
+and operation tags, while the lowered artifact and its payload use the scalar type selected for
 the run.
 
 For this MLP, the graph has an input, two linear operations, a ReLU, and an output path determined by
-the compiler's lowering. Each node records its parents and output shape. The parameter store carries
+lowering. Each node records its parents and output shape. The parameter store carries
 the matrices and biases.
 
-Using `nn.initParams initialized` analyzes the initial model. To analyze the trained model, the
-compiler must receive the trained runtime parameters through the lower-level manual interface or a
+Using `nn.initState initialized` analyzes the initial model. To analyze the trained model, the
+lowering must receive the trained runtime parameters through the lower-level manual interface or a
 saved exact-bits payload. Reusing the initial payload after training would verify another function.
 
 # An Input Region Instead Of One Point

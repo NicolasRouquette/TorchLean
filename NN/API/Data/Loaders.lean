@@ -28,7 +28,7 @@ def supervisedRows {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.Fro
     (X : Spec.Tensor Float (.dim n (.dim inDim .scalar)))
     (Y : Spec.Tensor Float (.dim n (.dim outDim .scalar))) :
     Dataset (_root_.TorchLean.TensorPack α [.dim inDim .scalar, .dim outDim .scalar]) :=
-  supervisedFromLeadingAxisFloat (α := α) X Y
+  TensorDataset.supervisedFloat (α := α) X Y
 
 /--
 Collate a length-`n` supervised batch into a single sample with a leading batch axis.
@@ -105,7 +105,7 @@ namespace BatchLoader
 def dataset {α : Type} {n : Nat} {σ τ : Spec.Shape}
     (dl : BatchLoader α n σ τ) :
     Dataset (TorchLean.Sample.Supervised α σ τ) :=
-  dl.raw.dataset
+  dl.loader.dataset
 
 /-- The batch size `n` carried in the type of a `BatchLoader`. -/
 def batchSize {α : Type} {n : Nat} {σ τ : Spec.Shape}
@@ -115,31 +115,31 @@ def batchSize {α : Type} {n : Nat} {σ τ : Spec.Shape}
 /-- Whether the loader is configured to shuffle samples each epoch. -/
 def shuffled {α : Type} {n : Nat} {σ τ : Spec.Shape}
     (dl : BatchLoader α n σ τ) : Bool :=
-  dl.raw.shuffle
+  dl.loader.shuffle
 
 /-- RNG seed used for shuffling (if enabled). -/
 def seed {α : Type} {n : Nat} {σ τ : Spec.Shape}
     (dl : BatchLoader α n σ τ) : Nat :=
-  dl.raw.seed
+  dl.loader.seed
 
 /-- Materialize the dataset as a dataset of full minibatches (dropping any final partial batch). -/
 def batchDataset {α : Type} {n : Nat} {σ τ : Spec.Shape}
     (dl : BatchLoader α n σ τ) :
     Except String (Dataset (TorchLean.Sample.Batch α n σ τ)) :=
-  batchedSupervised (α := α) (σ := σ) (τ := τ) n dl.raw.dataset
+  batchedSupervised (α := α) (σ := σ) (τ := τ) n dl.loader.dataset
 
 /-- Run one epoch: return the updated loader state and a list of typed minibatches. -/
 def epoch {α : Type} {n : Nat} {σ τ : Spec.Shape}
     (name : String) (dl : BatchLoader α n σ τ) :
     Except String (BatchLoader α n σ τ × List (TorchLean.Sample.Batch α n σ τ)) := do
-  if dl.raw.batchSize != n then
-    throw s!"{name}: expected typed batch size {n}, got loader.batchSize={dl.raw.batchSize}"
-  if !dl.raw.dropLast then
+  if dl.loader.batchSize != n then
+    throw s!"{name}: expected typed batch size {n}, got loader.batchSize={dl.loader.batchSize}"
+  if !dl.loader.dropLast then
     throw s!"{name}: BatchLoader requires dropLast=true"
   let (raw', batches) ←
-    _root_.Runtime.Autograd.Train.DataLoader.epochCollate name dl.raw
+    _root_.Runtime.Autograd.Train.DataLoader.epochCollate name dl.loader
       (fun batch => collateSupervised (α := α) (σ := σ) (τ := τ) n batch)
-  pure ({ raw := raw' }, batches)
+  pure ({ loader := raw' }, batches)
 
 /-- Like `epoch`, but post-process each minibatch with a user-supplied collate/transform `f`. -/
 def epochCollate {α β : Type} {n : Nat} {σ τ : Spec.Shape}
@@ -163,7 +163,7 @@ def nonemptyEpoch {α : Type} {n : Nat} {σ τ : Spec.Shape}
   match batches with
   | _ :: _ => pure (dl', batches)
   | [] =>
-      throw s!"{name}: no full minibatch available (batch={n}, rows={Data.size dl.raw.dataset})"
+      throw s!"{name}: no full minibatch available (batch={n}, rows={Data.size dl.loader.dataset})"
 
 /-- Run one epoch and return its first full typed minibatch. -/
 def firstFullBatch {α : Type} {n : Nat} {σ τ : Spec.Shape}
@@ -187,7 +187,7 @@ def batchLoader {α : Type} {σ τ : Spec.Shape}
     (ds : Dataset (TorchLean.Sample.Supervised α σ τ))
     (batchSize : Nat) (shuffle : Bool := false) (seed : Nat := 0) (dropLast : Bool := true) :
     BatchLoader α batchSize σ τ :=
-  { raw := loader ds batchSize (shuffle := shuffle) (seed := seed) (dropLast := dropLast) }
+  { loader := loader ds batchSize (shuffle := shuffle) (seed := seed) (dropLast := dropLast) }
 
 /--
 Load a numeric supervised CSV and immediately wrap it as a typed minibatch loader.

@@ -8,7 +8,7 @@ module
 
 public import NN.API
 public import NN.IR.Check
-public import NN.Runtime.Autograd.Compiled.IRExec
+public import NN.Runtime.Autograd.IRExec
 
 /-!
 # IR axis operations
@@ -29,13 +29,13 @@ Why this tutorial exists:
 * The denotational IR semantics supports the PyTorch meaning on *any* valid axis:
   it implements non-last axes by reshaping/permuting into a form the spec primitive already
   supports.
-* The compiled IRExec backend is more conservative today. This tutorial runs compiled execution only for
+* Forward-graph IR execution is more conservative today. This tutorial runs it only for
   supported cases and prints an explicit skip for known backend gaps, instead of treating the
   backend covers more than it does.
 
 Run:
 
-`lake exe torchlean ir_axis_ops --dtype float --backend eager`
+`lake exe torchlean ir_axis_ops --scalar float32 --execution eager`
 -/
 
 @[expose] public section
@@ -45,7 +45,7 @@ namespace NN.Examples.DeepDives.IRAxisOps
 open TorchLean
 open NN.IR
 
-open Runtime.Autograd.Compiled
+open Runtime.Autograd.TypedGraph
 
 /-- Command-line help for the IR axis-ops tutorial. -/
 def usage : String :=
@@ -56,8 +56,8 @@ def usage : String :=
     , "  lake exe torchlean ir_axis_ops [options]"
     , ""
     , "Options:"
-    , "  --dtype float|float32|ieee32"
-    , "  --backend eager|compiled"
+    , "  --scalar float32|ieee32-exec|complex64"
+    , "  --execution eager|typed-graph"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "  --show-backend                    print backend capsules as they execute"
     ]
@@ -121,7 +121,7 @@ def runOne
     (inputShape : Shape)
     (x : Spec.Tensor α inputShape)
     (outputId : Fin g.nodes.size)
-    (forwardArtifact : Bool := true) : IO Unit := do
+    (runForward : Bool := true) : IO Unit := do
   checkIR tag g
 
   -- Spec semantics (denotational model).
@@ -133,13 +133,13 @@ def runOne
   IO.println s!"[{tag}] spec outShape: {repr sSpec}"
   IO.println s!"[{tag}] spec first scalars: {firstScalars (Spec.toList tSpec)}"
 
-  if !forwardArtifact then
-    IO.println s!"[{tag}] compiled skipped: current IRExec backend supports fewer axis cases than the spec semantics."
+  if !runForward then
+    IO.println s!"[{tag}] IR execution skipped: current IRExec path supports fewer axis cases than the spec semantics."
     return ()
 
-  -- Compiled bridge (IR → executable SSA) + execution.
-  let eg ← CLI.orThrow s!"{tag}:compiled" <|
-    Runtime.Autograd.Compiled.execGraphOfIR (α := α) (g := g) (payload := payload)
+  -- Lower the IR to its forward-only executable graph, then evaluate it.
+  let eg ← CLI.orThrow s!"{tag}:forward-graph" <|
+    Runtime.Autograd.IRExec.lowerToForwardGraph (α := α) (g := g) (payload := payload)
   let xExec : Spec.Tensor α eg.inShape ←
     if hIn : inputShape = eg.inShape then
       pure <| Spec.Tensor.castShape (t := x) hIn
@@ -148,22 +148,22 @@ def runOne
       -- graph edit and the `inputShape` argument drift apart.
       throw <| IO.userError
         s!"{tag}: inputShape mismatch: arg={repr inputShape}, graph={repr eg.inShape}"
-  let valsExec := Runtime.Autograd.Compiled.ExecGraphData.denoteAll (α := α) eg xExec
+  let valsExec := Runtime.Autograd.IRExec.ForwardGraph.denoteAll (α := α) eg xExec
   let outExec ←
     if hOut : outputId.1 < valsExec.size then
       pure <| valsExec[outputId.1]'hOut
     else
       throw <| IO.userError
-        s!"{tag}: compiled output index out of bounds: index={outputId.1}, size={valsExec.size}"
+        s!"{tag}: forward graph output index out of bounds: index={outputId.1}, size={valsExec.size}"
   let ⟨sExec, tExec⟩ := outExec
-  IO.println s!"[{tag}] compiled outShape: {repr sExec}"
-  IO.println s!"[{tag}] compiled first scalars: {firstScalars (Spec.toList tExec)}"
+  IO.println s!"[{tag}] forward graph outShape: {repr sExec}"
+  IO.println s!"[{tag}] forward graph first scalars: {firstScalars (Spec.toList tExec)}"
 
   if sExec = sSpec then
     pure ()
   else
     throw <| IO.userError
-      s!"{tag}: spec/compiled outShape mismatch: spec={repr sSpec}, compiled={repr sExec}"
+      s!"{tag}: spec/forward-graph outShape mismatch: spec={repr sSpec}, forwardGraph={repr sExec}"
 
 def runOnce
     {α : Type} [_root_.Context α] [DecidableEq Shape] [ToString α] [Runtime.FromFloat α]
@@ -177,18 +177,18 @@ def runOnce
 
   IO.println ""
   IO.println "== IR axis ops tutorial =="
-  IO.println "This checks shape validation + runs both the spec semantics and compiled IRExec path."
+  IO.println "This checks shape validation and compares the spec semantics with forward-graph execution."
 
   IO.println ""
   IO.println "-- softmax axis=1 on shape [2,3,4]"
   runOne (α := α) (tag := "softmax_middle_axis") (g := softmaxMiddleAxisGraph) (payload := payload)
-    (inputShape := baseRankThreeShape) (x := x234) (outputId := ⟨1, by decide⟩) (forwardArtifact := false)
+    (inputShape := baseRankThreeShape) (x := x234) (outputId := ⟨1, by decide⟩) (runForward := false)
 
   IO.println ""
   IO.println "-- layernorm axis=1 on rank-3 shape [2,3,4]"
   IO.println "PyTorch meaning: normalized_shape = x.shape[axis:] = [3,4]"
   runOne (α := α) (tag := "layernorm_rank3_middle_axis") (g := layerNormMiddleAxisGraph) (payload := payload)
-    (inputShape := baseRankThreeShape) (x := x234) (outputId := ⟨1, by decide⟩) (forwardArtifact := false)
+    (inputShape := baseRankThreeShape) (x := x234) (outputId := ⟨1, by decide⟩) (runForward := false)
 
   IO.println ""
   IO.println "-- concat axis=1: [2,3,4] ++ [2,5,4] -> [2,8,4]"
@@ -209,6 +209,7 @@ def main (args : List String) : IO Unit := do
   if CLI.hasHelp args then
     IO.println usage
     return
-  Runtime.withOptionsScalar args (fun {α} _ _ _ _ _opts rest => runSelected (α := α) rest)
+  Module.withRuntime args
+    (fun {α} _ _ _ _ _cast _opts rest => runSelected (α := α) rest)
 
 end NN.Examples.DeepDives.IRAxisOps

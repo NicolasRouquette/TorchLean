@@ -8,13 +8,13 @@ module
 
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.Main
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.Coverage
-public import NN.Verification.TorchLean.Proved.Correctness.Eval.CompilePayload
+public import NN.Verification.TorchLean.Proved.Correctness.Eval.LoweringPayload
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.PayloadBridge
 
 /-!
 Evaluation lemmas for proved TorchLean correctness.
 
-This import point collects denotation-side facts used when moving from compiled/evaluated
+This import point collects denotation-side facts used when moving from lowered and evaluated
 TorchLean graphs back to their specification semantics.
 
 Current bridge coverage includes:
@@ -30,5 +30,5 @@ Current bridge coverage includes:
 - graph-structural nodes such as `input` and `detach`, plus scalar MSE loss;
 - eval-mode NCHW BatchNorm with payload-backed running statistics.
 - exact `ParamStore` to IR `Payload` forwarding facts for every payload-backed op.
-- compiler insertion facts for the payload-backed nodes in the proved forward fragment.
+- lowering pass insertion facts for the payload-backed nodes in the proved forward fragment.
 -/

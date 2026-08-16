@@ -1,0 +1,34 @@
+/-
+Copyright (c) 2026 TorchLean
+Released under MIT license as described in the file LICENSE.
+Authors: TorchLean Team
+-/
+
+module
+
+public import NN.Runtime.Autograd.TypedGraph.Core
+public import NN.Runtime.Autograd.TypedGraph.GraphM
+
+/-!
+# Typed Graph Autograd Runtime
+
+This is the runtime umbrella for TorchLean's typed graph execution path.
+
+The typed graph path is the middle layer between:
+
+- the low-level dynamic tape engine in `NN.Runtime.Autograd.Engine`, and
+- the user-facing TorchLean session/model API in `NN.Runtime.Autograd.TorchLean`.
+
+It has two pieces:
+
+- `TypedGraph.Core`: packages executable `GraphData`, lowers it to a tape, and exposes dense
+  reverse-mode entry points;
+- `TypedGraph.GraphM`: a typed builder DSL for authoring `GraphData` without manually threading
+  dependent node indices.
+
+Forward-only execution of the separate operation-tagged `NN.IR.Graph` representation lives under
+`NN.Runtime.Autograd.IRExec`. Its `ForwardGraph` stores only forward operations, so it cannot be
+mistaken for the differentiable typed graphs exposed here.
+-/
+
+@[expose] public section

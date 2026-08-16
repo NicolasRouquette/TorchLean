@@ -97,7 +97,7 @@ def layerNorm {α : Type} (s : EagerSession α) [Context α]
 
 /-- BatchNorm for channel-first images `(C,H,W)` (no batch axis). PyTorch: `nn.BatchNorm2d`
   (conceptually). -/
-def batchnormChannelFirst {α : Type} (s : EagerSession α) [Context α]
+def batchNormChannelFirst {α : Type} (s : EagerSession α) [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
   {channels height width : Nat} (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0)
   (x : TensorRef α (.dim channels (.dim height (.dim width .scalar))))
@@ -106,7 +106,7 @@ def batchnormChannelFirst {α : Type} (s : EagerSession α) [Context α]
     width .scalar)))) := do
   let cpu := do
     let t0 ← s.tape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.batchnormChannelFirst (t := t0)
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.batchNormChannelFirst (t := t0)
       (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h) (h_w :=
         h_w)
       x.id gamma.id beta.id)
@@ -114,7 +114,7 @@ def batchnormChannelFirst {α : Type} (s : EagerSession α) [Context α]
     pure { id := id }
   let cuda := do
     let t0 ← s.cudaTape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.batchnormChannelFirst (t := t0)
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.batchNormChannelFirst (t := t0)
       (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h)
       (h_w := h_w)
       x.id gamma.id beta.id)

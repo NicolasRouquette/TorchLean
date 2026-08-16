@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+public import Mathlib.Algebra.BigOperators.Group.List.Basic
 
 /-!
 # `TensorArray`: a simple array-backed tensor representation
@@ -40,6 +41,9 @@ Why this representation exists:
 
 namespace TensorArray
 
+/-- Product of the dimensions in a runtime shape. -/
+def shapeProd (shape : List Nat) : Nat := shape.prod
+
 /--
   A tensor is represented as a flat array of elements and a shape (as a list of dimensions).
   The shape_valid proof ensures the array size matches the product of the shape dimensions.
@@ -48,15 +52,7 @@ structure Tensor (α : Type) (shape : List Nat) where
   /-- Flat row-major data buffer. -/
   data : Array α
   /-- Proof that the buffer length matches the product of the runtime dimensions. -/
-  shape_valid : data.size = shape.foldl (· * ·) 1
-
-/--
-Product of dimensions for a runtime shape list.
-
-This is the runtime analogue of `Spec.Shape.size` for `Spec.Shape`. It is a reusable `def` because
-it appears wherever `shape_valid` is constructed or rewritten.
--/
-def shapeProd (shape : List Nat) : Nat := shape.foldl (· * ·) 1
+  shape_valid : data.size = shapeProd shape
 
 /--
 Build a tensor from an array when you already have a size proof.
@@ -74,67 +70,14 @@ def ofArray {α : Type} (arr : Array α) (shape : List Nat) (h : arr.size = shap
 @[simp]
 theorem shapeProd_nil : shapeProd [] = 1 := rfl
 
-/--
-Helper lemma: factoring a left-multiplication out of the `foldl` product.
-
-This is used to prove `shapeProd_cons` and similar "shape product algebra" facts.
--/
-theorem foldl_mul_factor (n : Nat) (ns : List Nat) :
-  List.foldl (fun x1 x2 ↦ x1 * x2) n ns = n * List.foldl (fun x1 x2 ↦ x1 * x2) 1 ns := by
-  induction ns generalizing n with
-  | nil =>
-    simp [List.foldl]
-  | cons head tail ih =>
-    simp [List.foldl]
-    rw [ih]
-    grind
-
 /-- Step case for `shapeProd`: the product satisfies
 $\operatorname{shapeProd}(n::ns)=n\operatorname{shapeProd}(ns)$. -/
 @[simp]
 theorem shapeProd_cons (n : Nat) (ns : List Nat) :
-  shapeProd (n :: ns) = n * shapeProd ns := by
-  unfold shapeProd
-  rw [List.foldl_cons]
-  simpa using (foldl_mul_factor n ns)
+  shapeProd (n :: ns) = n * shapeProd ns := by simp [shapeProd]
 
 -- Tell `grind` about the standard runtime-shape "numel algebra" rules.
 attribute [grind =] shapeProd_nil shapeProd_cons
-
--- Helper lemmas for list/array length calculations used in proofs below.
-/--
-Length of `List.zipWith` is the minimum of the input lengths.
-
-We keep these small list lemmas local to this file because they are only needed to justify
-`shape_valid` proofs for array operations like `zipWith`.
--/
-theorem List.length_zipWith {α β γ : Type} (f : α → β → γ) (l1 : List α) (l2 : List β) :
-  (List.zipWith f l1 l2).length = min l1.length l2.length := by
-  simp
-
-/-- Length of a `map` is the same as the input length. -/
-theorem List.length_map {α β : Type} (f : α → β) (l : List α) :
-  (l.map f).length = l.length := by
-  simp
-
-/--
-Length of `flatten` is the sum of lengths of each inner list.
-
-This kind of fact comes up any time we build an `Array`/`List` by flattening a list-of-lists.
--/
-theorem List.length_flatten {α : Type} (ll : List (List α)) :
-  ll.flatten.length = (ll.map List.length).sum := by
-  induction ll with
-  | nil => simp [List.flatten]
-  | cons head tail ih => simp [List.flatten, List.sum_cons, ih]
-
-/-- `Array.toList` preserves size as `List.length`. -/
-theorem Array.size_toList {α : Type} (a : Array α) : a.toList.length = a.size := by
-  cases a
-  simp [Array.size]
-
--- These are small list/array bookkeeping lemmas that `grind` can use as rewrite rules.
-attribute [grind =] List.length_zipWith List.length_map List.length_flatten Array.size_toList
 
 /-- Compute the flat index for a given multi-index.
 
@@ -222,9 +165,7 @@ def get? {α : Type} {shape : List Nat} [Inhabited α] (t : Tensor α shape) (in
   match h : flatIndex shape indices with
   | some idx =>
     have hlt : idx < shapeProd shape := flatIndex_lt_shapeProd shape indices idx h
-    have hsize : t.data.size = shapeProd shape := by
-      -- `shapeProd` is definitional equal to `List.foldl (· * ·) 1`.
-      simpa [shapeProd] using t.shape_valid
+    have hsize : t.data.size = shapeProd shape := t.shape_valid
     have hlt' : idx < t.data.size := Nat.lt_of_lt_of_eq hlt hsize.symm
     some (t.data[idx]'hlt')
   | none => none
@@ -281,7 +222,7 @@ Create a tensor filled with a constant value.
 PyTorch analogy: `torch.full(shape, val)`.
 -/
 def full {α : Type} (shape : List Nat) (val : α) : Tensor α shape :=
-  { data := Array.replicate (shape.foldl (· * ·) 1) val
+  { data := Array.replicate (shapeProd shape) val
     shape_valid := by simp [Array.size_replicate] }
 
 /-- Pointwise addition of two array-backed tensors with the same shape. -/

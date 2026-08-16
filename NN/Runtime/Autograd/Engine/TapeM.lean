@@ -189,7 +189,7 @@ def linear {α : Type} [Add α] [Mul α] [Zero α] [DecidableEq Shape]
   set t'
   pure id
 
-/-- StateT wrapper around `Tape.matmul`. PyTorch comparison: `torch.matmul(a, b)`. -/
+/-- StateT wrapper around `Tape.matmul`. PyTorch comparison: `torch.mm(a, b)`. -/
 def matmul {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
   {m n p : Nat} (aId bId : Nat) : TapeM α Nat := do
   let t ← get
@@ -341,13 +341,13 @@ def layerNorm {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → 
 
 /-- StateT wrapper around `Tape.batchnorm_channel_first`. PyTorch comparison: `torch.nn.BatchNorm2d`
   in channel-first layout. -/
-def batchnormChannelFirst {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+def batchNormChannelFirst {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   [DecidableEq Shape]
   {channels height width : Nat}
   (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0)
   (xId gammaId betaId : Nat) : TapeM α Nat := do
   let t ← get
-  let (t', id) ← liftM (Tape.batchnormChannelFirst (t := t)
+  let (t', id) ← liftM (Tape.batchNormChannelFirst (t := t)
     (channels := channels) (height := height) (width := width)
     (h_c := h_c) (h_h := h_h) (h_w := h_w) xId gammaId betaId)
   set t'

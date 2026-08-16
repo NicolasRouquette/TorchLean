@@ -63,7 +63,7 @@ def inW : Nat := 8
 def outDim : Nat := RealData.cifarClasses
 
 /-- Shared CNN configuration used by shapes and the reusable public model constructor. -/
-def cfg : nn.models.CnnConfig 2 :=
+def cfg : nn.models.CNNConfig 2 :=
   { batch := batch
     inChannels := inC
     spatial := #v[inH, inW]
@@ -93,7 +93,7 @@ Small convolutional classifier from the public model API.
 The command chooses the CIFAR paths and runtime flags; the model itself stays an ordinary
 `nn.Sequential` value built from the public API.
 -/
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   by
     simpa [σ, τ, cfg, nn.models.cnnInShape, nn.models.cnnOutShape, Spec.Shape.ofList] using
       nn.models.cnn cfg
@@ -107,8 +107,8 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := flags.lr } })
-        .classification
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := flags.lr } })
+        .oneHotCrossEntropy
         (seed := flags.seed)
   let trained ← trainer.train
     (Data.floatSamples batches)

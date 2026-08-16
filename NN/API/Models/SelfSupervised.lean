@@ -40,26 +40,26 @@ The input/output contract is MAE-style:
 
 `reconDim` can be the full image size (`C*H*W`) or a prefix for faster experiments.
 -/
-structure VitMaeConfig (d : Nat) where
+structure ViTMAEConfig (d : Nat) where
   /-- Patch-transformer encoder configuration. -/
-  encoder : VitConfig d
+  encoder : ViTConfig d
   /-- Number of reconstructed output coordinates. -/
   reconDim : Nat
 
 /-- Masked input shape. -/
-def vitMaeInShape {d : Nat} (cfg : VitMaeConfig d) : Spec.Shape :=
+def vitMaeInShape {d : Nat} (cfg : ViTMAEConfig d) : Spec.Shape :=
   vitInShape cfg.encoder
 
 /-- Reconstruction-vector output shape. -/
-def vitMaeOutShape {d : Nat} (cfg : VitMaeConfig d) : Spec.Shape :=
+def vitMaeOutShape {d : Nat} (cfg : ViTMAEConfig d) : Spec.Shape :=
   .dim cfg.encoder.batch (.dim cfg.reconDim .scalar)
 
 /-- Number of patch tokens produced by the ViT-MAE patch embedding. -/
-def VitMaeConfig.seqLen {d : Nat} (cfg : VitMaeConfig d) : Nat :=
+def ViTMAEConfig.seqLen {d : Nat} (cfg : ViTMAEConfig d) : Nat :=
   cfg.encoder.seqLen
 
 /-- Flattened encoded-token representation size before the MAE decoder head. -/
-def VitMaeConfig.flatDim {d : Nat} (cfg : VitMaeConfig d) : Nat :=
+def ViTMAEConfig.flatDim {d : Nat} (cfg : ViTMAEConfig d) : Nat :=
   cfg.encoder.flatDim
 
 /--
@@ -71,15 +71,15 @@ This is a real image/patch transformer path:
 3. one transformer encoder block,
 4. a linear pixel decoder from encoded patch tokens to a reconstruction vector.
 
-The masking objective is provided by `TorchLean.ssl.blockMaeSample`. Its axis policy is independent of
-the model architecture and spatial rank, so this constructor uses the same checked operation as
-signal, volume, and higher-dimensional masked-prediction models.
+The masking objective is provided by `TorchLean.ssl.BlockMAE.sample`. Its axis policy is
+independent of the model architecture and spatial rank, so this constructor uses the same checked
+operation as signal, volume, and higher-dimensional masked-prediction models.
 -/
-def vitMaskedAutoencoder {d : Nat} (cfg : VitMaeConfig d)
+def vitMaskedAutoencoder {d : Nat} (cfg : ViTMAEConfig d)
     (h_inC : cfg.encoder.inChannels ≠ 0 := by decide)
     (h_seqLen : cfg.seqLen ≠ 0 := by decide)
     (h_dModel : cfg.encoder.patch.outChannels ≠ 0 := by decide) :
-    nn.M (nn.Sequential (vitMaeInShape cfg) (vitMaeOutShape cfg)) :=
+    nn.Builder (nn.Sequential (vitMaeInShape cfg) (vitMaeOutShape cfg)) :=
   let vitCfg := cfg.encoder
   letI : NeZero vitCfg.inChannels := ⟨h_inC⟩
   letI : NeZero vitCfg.seqLen := ⟨h_seqLen⟩
@@ -95,7 +95,7 @@ def vitMaskedAutoencoder {d : Nat} (cfg : VitMaeConfig d)
         ffnHidden := vitCfg.ffnHidden
         activation := .gelu
         dropout? := none },
-    flattenBatch,
+    flattenLeading (.dim vitCfg.batch .scalar),
     linear cfg.flatDim cfg.reconDim (pfx := .dim vitCfg.batch .scalar)
   ]
 
@@ -103,11 +103,11 @@ def vitMaskedAutoencoder {d : Nat} (cfg : VitMaeConfig d)
 Compact vector masked autoencoder.
 
 Architecturally this reuses the vector autoencoder body; the self-supervised part is in
-`TorchLean.ssl.vectorMaeSample` or `TorchLean.ssl.tensorPrefixMaeSample`, which mask the input while
-keeping the original tensor content as the target.
+`TorchLean.ssl.VectorMAE.sample` or `TorchLean.ssl.VectorMAE.tensorPrefixSample`, which mask the
+input while keeping the original tensor content as the target.
 -/
 def vectorMaskedAutoencoder (cfg : VectorGenerativeConfig) :
-    nn.M (nn.Sequential (vectorDataShape cfg) (vectorDataShape cfg)) :=
+    nn.Builder (nn.Sequential (vectorDataShape cfg) (vectorDataShape cfg)) :=
   vectorAutoencoder cfg
 
 end models

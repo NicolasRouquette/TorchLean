@@ -71,7 +71,7 @@ abbrev σ : Shape := shape![batch, seqLen, vocab]
 abbrev τ : Shape := σ
 ```
 
-The function `Data.causalLmOneHotSample` converts a token window of length
+The function `Data.CausalLM.oneHotBatch` converts a token window of length
 $\mathtt{seqLen}+1$ into $(x,y)$:
 input tokens and the same window shifted by one position as the target. The trainer consumes those
 typed tensors directly.
@@ -80,7 +80,7 @@ The Lean sample constructor is explicit:
 
 ```lean
 def mkSampleFromTokenIds (toks : List Nat) : SupervisedSample Float σ τ :=
-  Data.causalLmOneHotSample (α := Float) batch seqLen vocab toks (padId := 32)
+  Data.CausalLM.oneHotBatch (α := Float) batch seqLen vocab toks (padId := 32)
 ```
 
 The tutorial keeps the dataloader convention visible: a supervised example is a pair of typed
@@ -97,7 +97,7 @@ but it is still large enough to learn short structure from Tiny Shakespeare.
 The model declaration is a normal Lean value:
 
 ```lean
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.CausalTransformerOneHot
     { batch := batch
       seqLen := seqLen
@@ -112,7 +112,7 @@ The training loop stays on the same public API used by the simpler quickstarts:
 
 ```lean
 let trainer := Trainer.new model <|
-  Trainer.Config.fromRunConfig run (.crossEntropy)
+  Trainer.Config.fromRunConfig run (.oneHotCrossEntropy)
 let trained ← trainer.train data train.options probes
 trained.printSummary
 ```
@@ -139,16 +139,16 @@ For a tiny runtime check, keep the same CUDA path and shrink the workload:
 lake -R -K cuda=true exe torchlean gpt2 --device cuda --tiny-shakespeare --steps 1 --windows 1 --generate 0
 ```
 
-## Saving and Reloading Parameters
+## Saving and Reloading A Model
 
-TorchLean’s checkpoint format is kept simple: a model’s parameters are a shape-indexed
-pack, and the save/load operations round-trip exact IEEE-754 bit patterns through JSON.
+TorchLean’s checkpoint format stores the model's shape-indexed state and round-trips exact
+IEEE-754 bit patterns through JSON.
 
-`gpt2_saved` is a separate example because it loads a parameter pack, checks that the shapes
+`gpt2_saved` is a separate example because it loads a state pack, checks that the shapes
 match the model architecture, and runs sampling without touching an optimizer.
 
-The GPT-2 command exposes parameter export through `--save-params`; the saved-parameter example
-reloads the same shape-indexed parameter pack before sampling. If the shape list no longer matches
+The GPT-2 command writes a checkpoint through `--save-checkpoint`; the inference example reloads
+the same shape-indexed state before sampling. If the shape list no longer matches
 the model, loading fails before the weights are used.
 
 <a id="mamba"></a>
@@ -169,10 +169,10 @@ logits out, cross-entropy loss, optimizer step, JSON log.
 The Mamba example has the same tutorial shape:
 
 ```lean
-abbrev σ : Shape := nn.models.mambaTokenMat cfg seqLen
-abbrev τ : Shape := nn.models.mambaLogitMat cfg seqLen
+abbrev σ : Shape := nn.models.Mamba.inputShape cfg seqLen
+abbrev τ : Shape := nn.models.Mamba.outputShape cfg seqLen
 
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.MambaTextLM cfg seqLen
 ```
 
@@ -180,7 +180,7 @@ and the training body is still an ordinary trainer call:
 
 ```lean
 let trainer := Trainer.new model <|
-  Trainer.Config.fromRunConfig run (.crossEntropy)
+  Trainer.Config.fromRunConfig run (.oneHotCrossEntropy)
 let trained ← trainer.train data train.options probes
 trained.printSummary
 ```

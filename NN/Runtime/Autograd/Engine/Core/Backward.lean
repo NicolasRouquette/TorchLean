@@ -170,7 +170,7 @@ def backwardDenseFromStep {α : Type} [Add α] [DecidableEq Shape]
 Reverse-mode accumulation over the first `n` nodes in reverse order.
 
 The recursion visits node ids `n-1, n-2, ..., 0`. Passing `n = t.nodes.size` therefore traverses the
-entire tape. This structurally recursive loop is the one used by proof-linked compiled sessions.
+entire tape. This structurally recursive loop is also used by typed graph sessions after lowering.
 -/
 def backwardDenseFromLoop {α : Type} [Add α] [DecidableEq Shape]
   (t : Tape α) : Nat → Array (Runtime.AnyTensor α) → Result (Array (Runtime.AnyTensor α))

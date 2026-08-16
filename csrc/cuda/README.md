@@ -57,7 +57,7 @@ separate runtime layer with:
 - explicit invalidation when shapes, masks, or parameter layouts change,
 - regression tests comparing captured replay against the eager CUDA tape for every supported op.
 
-Until that layer exists, `--backend compiled` should be read as TorchLean's proof/SSA graph backend,
+Until that layer exists, `--execution typed-graph` should be read as TorchLean's proof/SSA graph backend,
 not as CUDA Graph execution.
 
 For a CUDA training check:

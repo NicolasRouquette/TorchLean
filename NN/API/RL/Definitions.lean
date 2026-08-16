@@ -143,14 +143,14 @@ Differentiable policy-gradient losses over TorchLean backend references.
 
 The pure exports above are algebra over concrete spec tensors. These helpers are the training-time
 counterpart: they build scalar losses from backend refs, so the same formulas can run through eager
-or compiled autograd.
+or typed graph autograd.
 -/
 export _root_.Runtime.RL.PolicyGradient.Autograd
   (actionLogProbOneHotBatch
    entropyMean
    ppoClippedObjectiveBatch
    ppoLossBatch
-   ppoActorCriticScalarModuleDef)
+   ppoActorCriticObjectiveDef)
 end autograd
 end policy
 

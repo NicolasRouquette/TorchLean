@@ -120,11 +120,11 @@ def globalAvgPool (leading : Spec.Shape := .scalar) {d channels : Nat}
     (channels :: (Spec.poolOutSpatialPad spatial spatial
       (Vector.replicate d 1) (Vector.replicate d 0)).toList))
   let outputShape := leading.concat (.dim channels .scalar)
-  let removeSingletons : LayerDef pooledShape outputShape :=
+  let removeSingletons : Layer pooledShape outputShape :=
     { kind := "GlobalAvgPool"
-      paramShapes := []
-      initParams := .nil
-      paramRequiresGrad := []
+      stateShapes := []
+      initState := .nil
+      requiresGrad := []
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun x =>
@@ -240,20 +240,9 @@ structure ChannelNorm where
 
 namespace Implementation
 
-/-- A checked reshape layer used internally to flatten and restore spatial axes. -/
-def reshapeLayer (source target : Spec.Shape)
-    (sameSize : Spec.Shape.size source = Spec.Shape.size target) :
-    LayerDef source target :=
-  { kind := "Reshape"
-    paramShapes := []
-    initParams := .nil
-    paramRequiresGrad := []
-    forward := fun _ {α} _ _ => fun {m} _ _ => fun x =>
-      _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α) (s₁ := source) (s₂ := target) x sameSize }
-
 /-- Apply a channel-first normalization kernel after adding its singleton trailing axis. -/
 def channelFirstKernel (leadingSize channels spatialSize : Nat)
-    (kernel : LayerDef
+    (kernel : Layer
       (.dim leadingSize (.dim channels (.dim spatialSize (.dim 1 .scalar))))
       (.dim leadingSize (.dim channels (.dim spatialSize (.dim 1 .scalar))))) :
     Sequential
@@ -262,9 +251,9 @@ def channelFirstKernel (leadingSize channels spatialSize : Nat)
   let source := .dim leadingSize (.dim channels (.dim spatialSize .scalar))
   let target := .dim leadingSize (.dim channels (.dim spatialSize (.dim 1 .scalar)))
   seq!
-    of (reshapeLayer source target (by simp [source, target, Spec.Shape.size])),
+    reshape source target (by simp [source, target, Spec.Shape.size]),
     of kernel,
-    of (reshapeLayer target source (by simp [source, target, Spec.Shape.size]))
+    reshape target source (by simp [source, target, Spec.Shape.size])
 
 /-- Flatten arbitrary spatial axes to the channel-first kernel representation. -/
 def spatialReshape {d channels : Nat} (leading : Spec.Shape)
@@ -273,7 +262,7 @@ def spatialReshape {d channels : Nat} (leading : Spec.Shape)
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))
       (.dim (Spec.Shape.size leading)
         (.dim channels (.dim (Spec.Shape.size (Spec.Shape.ofList spatial.toList)) .scalar))) :=
-  of <| reshapeLayer _ _ (by simp [Spec.Shape.size_concat, Spec.Shape.ofList, Spec.Shape.size])
+  reshape _ _ (by simp [Spec.Shape.size_concat, Spec.Shape.ofList, Spec.Shape.size])
 
 /-- Restore the original spatial axes after channel normalization. -/
 def spatialRestore {d channels : Nat} (leading : Spec.Shape)
@@ -282,7 +271,7 @@ def spatialRestore {d channels : Nat} (leading : Spec.Shape)
       (.dim (Spec.Shape.size leading)
         (.dim channels (.dim (Spec.Shape.size (Spec.Shape.ofList spatial.toList)) .scalar)))
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList))) :=
-  of <| reshapeLayer _ _ (by simp [Spec.Shape.size_concat, Spec.Shape.ofList, Spec.Shape.size])
+  reshape _ _ (by simp [Spec.Shape.size_concat, Spec.Shape.ofList, Spec.Shape.size])
 
 end Implementation
 

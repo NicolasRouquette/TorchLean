@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Trainer.Handle
+public import NN.API.Trainer.Core
 
 /-!
 # Training Results
@@ -24,7 +24,7 @@ namespace Trainer
 
 /-- Result of checking an output box with the trained-model IBP verifier. -/
 structure VerificationReport where
-  /-- Number of IR nodes in the compiled verifier graph. -/
+  /-- Number of IR nodes in the lowered verifier graph. -/
   nodes : Nat
   /-- Flattened output dimension reported by the verifier. -/
   outputDim : Nat
@@ -51,20 +51,20 @@ end VerificationReport
 /--
 A trained TorchLean model.
 
-The handle owns the live runtime state through its closures. `predict` and `predictBatch` are
-available for every task. `verifyRobustLInf?` is present when the training path can compile the
+The result retains the live runtime state through its closures. `predict` and `predictMany` are
+available for every task. `verifyRobustLInf?` is present when the training path can lower the
 trained parameters to the checked IBP verifier.
 -/
 structure TrainResult (σ τ : Shape) where
   /-- Before/after scalar summary for the completed run. -/
   report : TrainSummary
   /-- Run one `Float` input through the trained model. -/
-  predict : Tensor.T Float σ → IO (Tensor.T Float τ)
+  predict : Tensor Float σ → IO (Tensor Float τ)
   /-- Run several `Float` inputs through the trained model. -/
-  predictBatch : List (Tensor.T Float σ) → IO (List (Tensor.T Float τ))
+  predictMany : List (Tensor Float σ) → IO (List (Tensor Float τ))
   /-- Optional verifier for a uniform $\ell_\infty$ input ball. -/
   verifyRobustLInf? :
-    Option (Tensor.T Float σ → Float → IO VerificationReport) := none
+    Option (Tensor Float σ → Float → IO VerificationReport) := none
 
 namespace TrainResult
 
@@ -78,7 +78,7 @@ def printSummary {σ τ : Shape} (result : TrainResult σ τ) : IO Unit :=
 
 /-- Print one prediction with a caller-supplied label. -/
 def printPrediction {σ τ : Shape}
-    (result : TrainResult σ τ) (label : String) (x : Tensor.T Float σ) : IO Unit := do
+    (result : TrainResult σ τ) (label : String) (x : Tensor Float σ) : IO Unit := do
   let yhat ← result.predict x
   IO.println s!"{label} = {Tensor.pretty yhat}"
 
@@ -88,7 +88,7 @@ Verify a uniform $\ell_\infty$ ball around `center`.
 The method fails explicitly when the training path did not attach the checked IBP capability.
 -/
 def verifyRobustLInf {σ τ : Shape}
-    (result : TrainResult σ τ) (center : Tensor.T Float σ) (eps : Float) :
+    (result : TrainResult σ τ) (center : Tensor Float σ) (eps : Float) :
     IO VerificationReport :=
   match result.verifyRobustLInf? with
   | some verify => verify center eps
@@ -98,7 +98,7 @@ def verifyRobustLInf {σ τ : Shape}
 
 /-- Verify a uniform $\ell_\infty$ ball and print the resulting output interval. -/
 def printRobustLInf {σ τ : Shape}
-    (result : TrainResult σ τ) (center : Tensor.T Float σ) (eps : Float) : IO Unit := do
+    (result : TrainResult σ τ) (center : Tensor Float σ) (eps : Float) : IO Unit := do
   let report ← result.verifyRobustLInf center eps
   report.printSummary
 
@@ -110,11 +110,11 @@ end TrainResult
 /--
 A trained model returned by step-indexed stream training.
 
-Generated or resampled workloads may not have one static dataset to summarize. The ordinary trained
-handle is paired with the evaluation curve collected from a caller-provided sample.
+Generated or resampled workloads may not have one static dataset to summarize. The ordinary training
+result is paired with the evaluation curve collected from a caller-provided sample.
 -/
 structure StreamTrainResult (σ τ : Shape) where
-  /-- Trained model handle. -/
+  /-- Trained model result. -/
   result : TrainResult σ τ
   /-- Evaluation loss curve recorded during stream training. -/
   curve : Training.Curve
@@ -131,14 +131,14 @@ def printSummary {σ τ : Shape} (result : StreamTrainResult σ τ) : IO Unit :=
 
 /-- Run one prediction through the trained stream result. -/
 def predict {σ τ : Shape}
-    (result : StreamTrainResult σ τ) (x : Tensor.T Float σ) : IO (Tensor.T Float τ) :=
+    (result : StreamTrainResult σ τ) (x : Tensor Float σ) : IO (Tensor Float τ) :=
   result.result.predict x
 
 /-- Run several predictions through the trained stream result. -/
-def predictBatch {σ τ : Shape}
-    (result : StreamTrainResult σ τ) (xs : List (Tensor.T Float σ)) :
-    IO (List (Tensor.T Float τ)) :=
-  result.result.predictBatch xs
+def predictMany {σ τ : Shape}
+    (result : StreamTrainResult σ τ) (xs : List (Tensor Float σ)) :
+    IO (List (Tensor Float τ)) :=
+  result.result.predictMany xs
 
 instance {σ τ : Shape} : ToString (StreamTrainResult σ τ) where
   toString := summary
@@ -147,9 +147,9 @@ end StreamTrainResult
 
 /-- Two trained regression models and the coupled metric recorded by an alternating stream. -/
 structure PairStreamTrainResult (σ₁ τ₁ σ₂ τ₂ : Shape) where
-  /-- Trained handle for the first model. -/
+  /-- Trained result for the first model. -/
   first : TrainResult σ₁ τ₁
-  /-- Trained handle for the second model. -/
+  /-- Trained result for the second model. -/
   second : TrainResult σ₂ τ₂
   /-- Task-specific curve recorded by the caller-provided evaluation function. -/
   curve : Training.Curve
@@ -161,7 +161,7 @@ def summary {σ₁ τ₁ σ₂ τ₂ : Shape} (result : PairStreamTrainResult σ
     String :=
   s!"first: {result.first.summary}; second: {result.second.summary}"
 
-/-- Print the trained-handle summary for both models. -/
+/-- Print the training summary for both models. -/
 def printSummary {σ₁ τ₁ σ₂ τ₂ : Shape} (result : PairStreamTrainResult σ₁ τ₁ σ₂ τ₂) :
     IO Unit :=
   IO.println result.summary
@@ -172,8 +172,9 @@ def printCurveSummary {σ₁ τ₁ σ₂ τ₂ : Shape}
     (metric : String := "loss") : IO Unit := do
   let endpoints ←
     Training.Curve.endpoints result.curve "PairStreamTrainResult.printCurveSummary"
-  IO.println
-    s!"  steps={endpoints.finalStep} {metric}0={endpoints.first} {metric}{endpoints.finalStep}={endpoints.last}"
+  let firstMetric := s!"{metric}0={endpoints.first}"
+  let lastMetric := s!"{metric}{endpoints.finalStep}={endpoints.last}"
+  IO.println s!"  steps={endpoints.finalStep} {firstMetric} {lastMetric}"
 
 instance {σ₁ τ₁ σ₂ τ₂ : Shape} : ToString (PairStreamTrainResult σ₁ τ₁ σ₂ τ₂) where
   toString := summary

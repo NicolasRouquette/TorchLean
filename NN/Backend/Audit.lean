@@ -11,7 +11,7 @@ public import NN.Backend.Planner
 /-!
 # Backend Plan Audits
 
-Inspection data for contract-carrying backend plans.
+Inspection data for contract-carrying kernel plans.
 
 The planner chooses capsules. The audit layer records what that choice means for trust boundaries:
 which provider was selected, which device it targets, how its value and VJP obligations are
@@ -68,46 +68,46 @@ def isTrustedExternal (a : KernelAudit) : Bool :=
 
 end KernelAudit
 
-/-- Audit view of an execution plan. -/
-structure ExecutionAudit where
+/-- Audit view of selected kernel capsules. -/
+structure KernelPlanAudit where
   kernels : List KernelAudit
   deriving DecidableEq, Repr
 
-namespace ExecutionAudit
+namespace KernelPlanAudit
 
 /-- Trust levels selected by the plan, in plan order. -/
-def trustLevels (a : ExecutionAudit) : List TrustLevel :=
+def trustLevels (a : KernelPlanAudit) : List TrustLevel :=
   a.kernels.map (·.trustLevel)
 
 /-- Capsule names selected by the plan, in plan order. -/
-def capsuleNames (a : ExecutionAudit) : List String :=
+def capsuleNames (a : KernelPlanAudit) : List String :=
   a.kernels.map (·.capsuleName)
 
 /-- Operation names whose selected capsule is trusted external. -/
-def trustedExternalOps (a : ExecutionAudit) : List String :=
+def trustedExternalOps (a : KernelPlanAudit) : List String :=
   (a.kernels.filter KernelAudit.isTrustedExternal).map (·.op.name)
 
 /-- Whether the plan crosses any trusted external boundary. -/
-def hasTrustedExternal (a : ExecutionAudit) : Bool :=
+def hasTrustedExternal (a : KernelPlanAudit) : Bool :=
   a.kernels.any KernelAudit.isTrustedExternal
 
-end ExecutionAudit
+end KernelPlanAudit
 
-namespace ExecutionPlan
+namespace KernelPlan
 
-/-- Audit a selected execution plan. -/
-def audit (p : ExecutionPlan) : ExecutionAudit :=
+/-- Audit a selected kernel plan. -/
+def audit (p : KernelPlan) : KernelPlanAudit :=
   { kernels := p.kernels.map KernelAudit.ofPlannedKernel }
 
-/-- Whether a selected execution plan crosses any trusted external boundary. -/
-def hasTrustedExternal (p : ExecutionPlan) : Bool :=
+/-- Whether a selected kernel plan crosses any trusted external boundary. -/
+def hasTrustedExternal (p : KernelPlan) : Bool :=
   p.audit.hasTrustedExternal
 
 /-- Operation names whose selected capsules are trusted external. -/
-def trustedExternalOps (p : ExecutionPlan) : List String :=
+def trustedExternalOps (p : KernelPlan) : List String :=
   p.audit.trustedExternalOps
 
-end ExecutionPlan
+end KernelPlan
 
 end Backend
 end NN

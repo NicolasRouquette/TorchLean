@@ -40,16 +40,6 @@ deriving Repr
 def vectorGenerativeConfig (batch dataDim hiddenDim latentDim : Nat) : VectorGenerativeConfig :=
   { batch, dataDim, hiddenDim, latentDim }
 
-/--
-Default config used by the runnable image-vector examples.
-
-The input dimension is a prefix of a flattened image rather than a full image decoder. That keeps
-examples fast while still exercising real data, batched training, and generative model constructors.
--/
-def compactImageConfig (batch : Nat := 1) (dataDim : Nat := 16)
-    (hiddenDim : Nat := 8) (latentDim : Nat := 4) : VectorGenerativeConfig :=
-  vectorGenerativeConfig batch dataDim hiddenDim latentDim
-
 /-- Batched data-vector shape shared by vector generative examples. -/
 abbrev vectorDataShape (cfg : VectorGenerativeConfig) : Spec.Shape :=
   .dim cfg.batch (.dim cfg.dataDim .scalar)
@@ -72,17 +62,6 @@ runtime. The formal VAE ELBO/KL objective lives in `NN.Spec.Models.Vae` and
 -/
 abbrev vectorVaeOutShape (cfg : VectorGenerativeConfig) : Spec.Shape :=
   .dim cfg.batch (.dim (cfg.dataDim + 2 * cfg.latentDim) .scalar)
-
-/--
-flatten each sample in a batch and keep the first `cfg.dataDim` entries.
-
-This is useful for image-vector experiments: a model can train on a typed vector view of an image
-without every example needing to carry its own flattening proof adapters.
--/
-def flattenBatchPrefix {α : Type} [Inhabited α] (cfg : VectorGenerativeConfig) {source : Spec.Shape}
-    (hData : cfg.dataDim ≤ Spec.Shape.size source)
-    (x : Spec.Tensor α (.dim cfg.batch source)) : Spec.Tensor α (vectorDataShape cfg) :=
-  TorchLean.Tensor.flattenBatchPrefix cfg.batch cfg.dataDim hData x
 
 /-- Supervised reconstruction sample: target equals input. -/
 def reconstructionSample {α : Type} (cfg : VectorGenerativeConfig)
@@ -148,7 +127,7 @@ def zerosScore (cfg : VectorGenerativeConfig) : Spec.Tensor Float (.dim cfg.batc
 
 /-- Autoencoder: `x -> hidden -> latent -> hidden -> reconstruction`. -/
 def vectorAutoencoder (cfg : VectorGenerativeConfig) :
-    nn.M (nn.Sequential (vectorDataShape cfg) (vectorDataShape cfg)) :=
+    nn.Builder (nn.Sequential (vectorDataShape cfg) (vectorDataShape cfg)) :=
   nn.Sequential![
     linear cfg.dataDim cfg.hiddenDim (pfx := .dim cfg.batch .scalar),
     relu,
@@ -162,7 +141,7 @@ def vectorAutoencoder (cfg : VectorGenerativeConfig) :
 
 /-- Compact β-VAE-style network producing reconstruction plus latent statistics. -/
 def vectorVae (cfg : VectorGenerativeConfig) :
-    nn.M (nn.Sequential (vectorDataShape cfg) (vectorVaeOutShape cfg)) :=
+    nn.Builder (nn.Sequential (vectorDataShape cfg) (vectorVaeOutShape cfg)) :=
   nn.Sequential![
     linear cfg.dataDim cfg.hiddenDim (pfx := .dim cfg.batch .scalar),
     relu,
@@ -176,7 +155,7 @@ def vectorVae (cfg : VectorGenerativeConfig) :
 
 /-- VQ-VAE-style encoder/decoder with a narrow discrete-code proxy bottleneck. -/
 def vectorVqVae (cfg : VectorGenerativeConfig) :
-    nn.M (nn.Sequential (vectorDataShape cfg) (vectorDataShape cfg)) :=
+    nn.Builder (nn.Sequential (vectorDataShape cfg) (vectorDataShape cfg)) :=
   nn.Sequential![
     linear cfg.dataDim cfg.hiddenDim (pfx := .dim cfg.batch .scalar),
     relu,
@@ -190,7 +169,7 @@ def vectorVqVae (cfg : VectorGenerativeConfig) :
 
 /-- Generator `z -> x`. -/
 def vectorGanGenerator (cfg : VectorGenerativeConfig) :
-    nn.M (nn.Sequential (vectorLatentShape cfg) (vectorDataShape cfg)) :=
+    nn.Builder (nn.Sequential (vectorLatentShape cfg) (vectorDataShape cfg)) :=
   nn.Sequential![
     linear cfg.latentDim cfg.hiddenDim (pfx := .dim cfg.batch .scalar),
     relu,
@@ -202,7 +181,7 @@ def vectorGanGenerator (cfg : VectorGenerativeConfig) :
 
 /-- Discriminator/critic `x -> score`. -/
 def vectorGanDiscriminator (cfg : VectorGenerativeConfig) :
-    nn.M (nn.Sequential (vectorDataShape cfg) (.dim cfg.batch (.dim 1 .scalar))) :=
+    nn.Builder (nn.Sequential (vectorDataShape cfg) (.dim cfg.batch (.dim 1 .scalar))) :=
   nn.Sequential![
     linear cfg.dataDim cfg.hiddenDim (pfx := .dim cfg.batch .scalar),
     relu,

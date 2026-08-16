@@ -30,7 +30,7 @@ the right place for ordinary training losses, not for Hessians or differentiatin
 
 For higher derivatives, use the functional autodiff surface in `NN.Runtime.Autograd.TorchLean`
 (`hvpInputs`, `hessianInput`, and the public API wrappers). That path rebuilds the program over dual
-numbers / compiled graph structure and is the correct architecture for JVP-over-VJP style
+numbers and typed graph structure; it is the correct architecture for JVP-over-VJP style
 derivatives.
 -/
 

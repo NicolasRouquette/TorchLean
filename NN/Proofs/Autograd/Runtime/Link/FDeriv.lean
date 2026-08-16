@@ -45,8 +45,8 @@ node for node — what has been missing is the formal connection. This file supp
   `backpropVec_flattenCtx`.
 * **The composed endpoints.** `backpropCtx_eq_adjoint_fderiv` upgrades the algebraic
   backpropagation at `ℝ` to the Fréchet-adjoint characterization, and
-  `backwardDenseFrom_compileAux_adjoint_fderiv` combines it with the runtime link: the tape
-  model's dense reverse pass on a compiled graph, instantiated at `α := ℝ`, succeeds with the
+  `backwardDenseFrom_lowerGraphToTape_adjoint_fderiv` combines it with the runtime link: the tape
+  model's dense reverse pass on a lowered graph, instantiated at `α := ℝ`, succeeds with the
   full backpropagation context, whose input prefix is exactly `(fderiv ℝ eval x)† seed`. The
   `_at` variants assume
   differentiability only at the actual execution point (`GraphFDerivCorrectAt`), covering
@@ -511,43 +511,43 @@ theorem toReal_evalVec {ss : List Shape} (g : Graph (α := ℝ) (Δ := Δ) (Γ :
 
 /--
 **Tape-model reverse pass = adjoint of the Fréchet derivative.** Running the tape engine's
-dense reverse pass (`Tape.backwardDenseFrom`) on a compiled graph — the exact tape model
+dense reverse pass (`Tape.backwardDenseFrom`) on a lowered graph — the exact tape model
 instantiated at `α := ℝ`, not the native `Float` or CUDA execution path — succeeds and returns
 the full backpropagation context, whose input (`Γ`-prefix) block is exactly the adjoint of the
 Fréchet derivative of the graph's forward evaluation applied to the seed.
 
-This composes the runtime link (`backwardDenseFrom_compileAux_eq_backpropAllCtx`) with the
+This composes the runtime link (`backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx`) with the
 analytic upgrade above.
 -/
-theorem backwardDenseFrom_compileAux_adjoint_fderiv [DecidableEq Shape] {ss : List Shape}
+theorem backwardDenseFrom_lowerGraphToTape_adjoint_fderiv [DecidableEq Shape] {ss : List Shape}
     (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (x : TList ℝ Γ) (d0 : Δ)
     (seed : TList ℝ (Γ ++ ss)) (hg : GraphFDerivCorrect (Γ := Γ) (toReal g d0)) :
     Runtime.Autograd.Tape.backwardDenseFrom
-        (t := (compileAux (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1)
+        (t := (lowerGraphToTape (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1)
         (grads0 := TList.toAnyArray (α := ℝ) (ss := Γ ++ ss) seed)
       = .ok (TList.toAnyArray (α := ℝ) (ss := Γ ++ ss)
           (backpropAllCtx (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0 seed))
     ∧ flattenCtx (TList.takeLeft (backpropAllCtx (α := ℝ) g x d0 seed))
       = (fderiv ℝ (_root_.Proofs.Autograd.Graph.evalVec (toReal g d0))
           (flattenCtx x)).adjoint (flattenCtx seed) := by
-  refine ⟨backwardDenseFrom_compileAux_eq_backpropAllCtx (α := ℝ) g x d0 seed, ?_⟩
+  refine ⟨backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx (α := ℝ) g x d0 seed, ?_⟩
   rw [takeLeft_backpropAllCtx]
   exact backpropCtx_eq_adjoint_fderiv g d0 hg x seed
 
-/-- Pointwise variant of `backwardDenseFrom_compileAux_adjoint_fderiv`. -/
-theorem backwardDenseFrom_compileAux_adjoint_fderiv_at [DecidableEq Shape] {ss : List Shape}
+/-- Pointwise variant of `backwardDenseFrom_lowerGraphToTape_adjoint_fderiv`. -/
+theorem backwardDenseFrom_lowerGraphToTape_adjoint_fderiv_at [DecidableEq Shape] {ss : List Shape}
     (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (x : TList ℝ Γ) (d0 : Δ)
     (seed : TList ℝ (Γ ++ ss))
     (hg : GraphFDerivCorrectAt (Γ := Γ) (toReal g d0) (flattenCtx x)) :
     Runtime.Autograd.Tape.backwardDenseFrom
-        (t := (compileAux (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1)
+        (t := (lowerGraphToTape (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1)
         (grads0 := TList.toAnyArray (α := ℝ) (ss := Γ ++ ss) seed)
       = .ok (TList.toAnyArray (α := ℝ) (ss := Γ ++ ss)
           (backpropAllCtx (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0 seed))
     ∧ flattenCtx (TList.takeLeft (backpropAllCtx (α := ℝ) g x d0 seed))
       = (fderiv ℝ (_root_.Proofs.Autograd.Graph.evalVec (toReal g d0))
           (flattenCtx x)).adjoint (flattenCtx seed) := by
-  refine ⟨backwardDenseFrom_compileAux_eq_backpropAllCtx (α := ℝ) g x d0 seed, ?_⟩
+  refine ⟨backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx (α := ℝ) g x d0 seed, ?_⟩
   rw [takeLeft_backpropAllCtx]
   exact backpropCtx_eq_adjoint_fderiv_at g d0 x hg seed
 

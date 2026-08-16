@@ -37,7 +37,7 @@ under `NN/Examples/Verification`; reusable checkers live under `NN/Verification`
    This is the API shape we want people to copy first: `import NN.API`, `nn.Sequential![...]`,
    `Data.tensorDataset xs ys`, `Trainer.new model { task := .regression, optimizer := ... }`,
    `trainer.predict x`, `trainer.train data { steps := ..., batchSize := ..., logEvery := ... }`,
-   and then one trained-handle prediction plus one $\ell_\infty$ IBP verification call. The task field chooses
+   and then one trained-model prediction plus one $\ell_\infty$ IBP verification call. The task field chooses
    the loss kind: regression means MSE, classification means one-hot cross entropy.
    The example is small enough to read in one sitting and already has the ownership pattern used by
    the larger examples: the trainer owns parameters, optimizer state, backend selection, and
@@ -57,18 +57,18 @@ under `NN/Examples/Verification`; reusable checkers live under `NN/Verification`
    under `NN/Proofs`.
 
 5. `SimpleMlpTrain.lean`
-   Command: `lake exe torchlean quickstart_mlp --steps 200 --dtype float32 --backend compiled`
-   Alternate trusted-runtime run: `lake exe torchlean quickstart_mlp --steps 200 --dtype float --backend compiled`
+   Command: `lake exe torchlean quickstart_mlp --steps 200 --scalar ieee32-exec --execution typed-graph`
+   Alternate trusted-runtime run: `lake exe torchlean quickstart_mlp --steps 200 --scalar float32 --execution typed-graph`
    This is the smallest training loop with command-line scalar/backend choices. It is the right
    place to check that the public trainer path still feels like one model rather than many backend
    functions.
 
 6. `MinibatchMlpTrain.lean`
-   Command: `lake exe torchlean quickstart_minibatch_mlp --steps 30 --batch 5 --dtype float --backend eager`
-   This adds deterministic minibatching and a trained handle for batched follow-up predictions.
+   Command: `lake exe torchlean quickstart_minibatch_mlp --steps 30 --batch 5 --scalar float32 --execution eager`
+   This adds deterministic minibatching and a training result for batched follow-up predictions.
 
 7. `SimpleCnnTrain.lean`
-   Command: `lake exe torchlean quickstart_cnn --steps 5 --batch 2 --dtype float --backend eager`
+   Command: `lake exe torchlean quickstart_cnn --steps 5 --batch 2 --scalar float32 --execution eager`
    This moves from vector inputs to image-shaped tensors and convolutional layers without changing
    the public trainer pattern.
 
@@ -84,8 +84,8 @@ The quickstarts use the same public conventions:
 
 - user code starts with `import NN.API` and `open TorchLean`;
 - tensors carry enough shape information to make common mistakes visible;
-- training code goes through `Trainer.new`, `trainer.train`, and trained handles;
-- backend and dtype choices are configuration, not separate public forward functions;
+- training code goes through `Trainer.new`, `trainer.train`, and training results;
+- execution mode and scalar choices are configuration, not separate public forward functions;
 - runtime checks and proofs are both useful, but they answer different questions.
 
 Once those moves are familiar, the model zoo and verification examples add scale, file-backed data,

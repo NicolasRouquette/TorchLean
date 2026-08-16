@@ -20,7 +20,7 @@ the surrounding project: What is the exact shape contract? Which parameter paylo
 read? What equation does this graph node denote? Which arithmetic appears in the theorem?
 
 That difference is easier to see in code than in slogans, so we will build the same MLP in both
-systems and follow it through initialization, autograd, compilation, and execution.
+systems and follow it through initialization, autograd, lowering, and execution.
 
 # The Same MLP In Both Systems
 
@@ -45,7 +45,7 @@ import NN.API
 open TorchLean
 
 def model :
-    nn.M (nn.Sequential (.dim 4 .scalar) (.dim 2 .scalar)) :=
+    nn.Builder (nn.Sequential (.dim 4 .scalar) (.dim 2 .scalar)) :=
   nn.Sequential![
     nn.linear 4 8,
     nn.relu,
@@ -62,13 +62,24 @@ shape constraints later, but an ordinary annotation such as `torch.Tensor` does 
 vector of length four from a matrix with four columns.
 
 In TorchLean, the input and output shapes index the `nn.Sequential` type. Layer composition is
-checked while Lean elaborates the definition. `nn.M` also records that `model` is a deterministic
+checked while Lean elaborates the definition. `nn.Builder` also records that `model` is a deterministic
 seed-state computation waiting to initialize its parameters.
 
 Dynamic shapes are convenient during exploration and for data-dependent programs. Shape-indexed
 types require more information up front, but they make layer composition and later theorem
 statements much cleaner. TorchLean still accepts runtime-loaded data; it checks the dimensions once
 at the boundary and then works with the resulting typed tensor.
+
+Operator names match PyTorch only when the semantics match. TorchLean's `mm` multiplies two
+rank-two tensors and `bmm` multiplies a rank-three batch, just like `torch.mm` and `torch.bmm`.
+There is no public `matmul` spelling yet because TorchLean does not currently implement the full
+rank-polymorphic broadcasting contract of `torch.matmul`.
+
+There is also no special batch tensor type. Operations that preserve outer axes accept a leading
+shape explicitly. Thus `nn.flattenLeading shape![batch, time]` keeps the batch and time axes and
+flattens everything after them. Classification and regression heads use the same argument, so one
+definition works for single examples, batches, sequences of examples, and higher-rank collections.
+The resulting input and output shapes are still checked while the model is built.
 
 # Parameters: Object Fields Versus Explicit Payloads
 
@@ -82,21 +93,38 @@ Initialization and execution are therefore related but distinguishable:
 
 ```
 def initialized :=
-  nn.run 2026 model
+  nn.build 2026 model
 
-#check nn.paramShapes initialized
-#check nn.initParams initialized
+#check nn.stateShapes initialized
+#check nn.initState initialized
 #check nn.forwardProgram (model := initialized)
 ```
 
-The initial tensors are part of the initialized description. Training creates a runtime module from
-them and updates the runtime's parameter state. A theorem about `nn.initParams initialized` is not a
-theorem about the parameters after 10,000 optimizer steps.
+The initial tensors are part of the initialized description. Execution instantiates a mutable
+`nn.Module` from them:
 
-This explicit payload pays off when the model becomes a graph. The compiler receives the graph and
+```
+let module ← nn.Module.instantiate initialized { device := .cpu }
+let before ← module.state
+let output ← module.run input
+module.eval
+```
+
+The module owns the live parameters, persistent buffers, and train/eval mode. The immutable
+`nn.Sequential` remains the value used by graph lowering and proofs. A theorem about
+`nn.initState initialized` is therefore not a theorem about the parameters after 10,000 optimizer
+steps; a claim about trained weights must name the saved payload it analyzes.
+
+This explicit payload pays off when the model becomes a graph. Lowering receives the graph and
 the exact tensors being analyzed rather than reading whatever happens to be stored in mutable fields
 at that moment. A PyTorch checkpoint importer therefore has a concrete job: map names, shapes,
 order, and layout into this payload.
+
+Integer-indexed embeddings follow the same rule without encoding token ids as floating-point
+one-hot vectors. `nn.embedding vocab embedDim` constructs a trainable table,
+`nn.Embedding.ofWeight weight` preserves an existing table exactly, and `freeze := true` keeps that
+table in module state without requesting a parameter gradient. An index tensor of shape `σ` produces
+an output of shape `σ.appendDim embedDim`; repeated ids accumulate into the same gradient row.
 
 # Autograd: A Tape In Two Different Roles
 
@@ -143,7 +171,7 @@ TorchLean's trainer packages the same lifecycle:
 ```
 def trainer :=
   Trainer.new model
-    { task := .classification
+    { task := .oneHotCrossEntropy
       optimizer := optim.adam { lr := 0.001 }
       seed := 2026 }
 
@@ -205,29 +233,30 @@ Another profile can use native TorchLean CUDA for both forward and backward. A f
 delegate both directions, but that would be a different capsule because it would trust LibTorch's
 autograd state as well as its forward kernel.
 
-# Graphs And Compilation
+# Graphs, Lowering, And Compilation
 
 PyTorch offers FX, `torch.export`, AOTAutograd, and compiler stacks such as `torch.compile`.
 Their graphs support transformation and deployment inside the PyTorch ecosystem.
 
 TorchLean has two graph-facing layers with different purposes:
 
-- `GraphSpec` describes structured architectures and compiles them to TorchLean programs;
+- `GraphSpec` describes structured architectures and lowers them to TorchLean programs;
 - `NN.IR.Graph` is the canonical operation DAG used by lower-level evaluation and verification.
 
 An IR node contains an operation tag, parent ids, and an output shape. Parameter and constant values
 live in payload stores. `NN.IR.Semantics` defines how supported nodes are interpreted over a scalar
 domain.
 
-The verification compiler can lower supported initialized models and parameter payloads to
+The verification lowering pass can lower supported initialized models and parameter payloads to
 this IR. A separate first-order source language under `NN.Verification.TorchLean.Proved` has an
-end-to-end compiler-correctness theorem. They share an IR target, but the theorem applies to the
-proved source fragment, not automatically to every model accepted by the broader executable
-compiler.
+end-to-end lowering-correctness theorem. They share an IR target, but the theorem applies to the
+proved source fragment, not automatically to every model accepted by the broader lowering pass.
 
-This is a deliberate difference from a marketing-style "compiled" flag. TorchLean keeps the
-executable compiler and the proved compiler fragment separately named so users can see which
-guarantee they actually have.
+TorchLean calls the conversion to `NN.IR.Graph` *verification lowering*. Typed graph lowering is a
+separate path: it records a shape-indexed SSA graph whose nodes store forward and differentiation
+functions. Derivative correctness is established by separate theorems over proof-carrying nodes and
+graphs. Neither lowering path performs optimization, fusion, scheduling, or native code generation,
+so selecting typed graph execution does not imply a `torch.compile`-style compiler.
 
 # Checkpoints And Graph Import
 
@@ -274,24 +303,6 @@ derive these layers from examples and show how they reconnect to a runtime.
 Training can proceed without this extra structure. Claims that compare an exact equation with an
 executable result need it.
 
-# Mixed Precision Is A Current Difference
-
-PyTorch tensors carry dtype at runtime, and operators define promotion, casting, and autocast
-behavior. It is therefore natural for one PyTorch graph to combine integer tokens, FP8 or FP16
-activations, BF16 weights, and FP32 accumulation.
-
-TorchLean's numeric tensor type is `Tensor.T α s`. A current model execution and an
-`NN.IR.Semantics` evaluation select one numeric `α` for parameters, activations, intermediates, and
-outputs. The same model can be instantiated under another `α`, but two numeric nodes do not carry
-independent dtype indices. Boolean masks and integer indexing data use dedicated interfaces; they
-do not amount to general numeric dtype promotion.
-
-Consequently, choosing executable binary32 or complex binary32 changes the scalar interpretation
-of a whole supported run. It does not reproduce PyTorch autocast or mixed-precision master weights.
-A faithful mixed FP8/BF16/FP16/FP32 graph will require explicit dtype-indexed values, cast and
-quantize nodes, promotion rules, accumulation dtypes, and backend contracts for each conversion.
-Until then, numerical claims should describe the homogeneous scalar semantics that actually ran.
-
 # What TorchLean Adds
 
 For the small MLP, PyTorch gives an excellent route from Python source to fast training. TorchLean
@@ -328,6 +339,9 @@ different parts of the same problem.
 
 # References
 
+- [PyTorch `nn.Module`](https://pytorch.org/docs/stable/generated/torch.nn.Module.html).
+- [PyTorch `nn.Embedding`](https://pytorch.org/docs/stable/generated/torch.nn.Embedding.html).
+- [PyTorch `torch.compile`](https://pytorch.org/docs/stable/generated/torch.compile.html).
 - Adam Paszke et al.,
   [“PyTorch: An Imperative Style, High-Performance Deep Learning
   Library”](https://arxiv.org/abs/1912.01703), NeurIPS 2019.

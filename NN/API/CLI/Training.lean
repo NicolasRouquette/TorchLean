@@ -87,7 +87,7 @@ def parse
     (allowZeroSteps : Bool := false) :
     Except String (OptimizerOptions × List String) := do
   let (run, args) ← RunOptions.parse exeName args defaultLogPath defaultSteps allowZeroSteps
-  let (lr, args) ← CLI.takePositiveFloatFlagDefault args exeName "lr" defaultLr
+  let (lr, args) ← CLI.takePositiveFloatFlag args exeName "lr" defaultLr
   pure ({ toRunOptions := run, lr }, args)
 
 /-- Write a before-and-after loss log for an optimizer command. -/

@@ -28,12 +28,12 @@ Start here if you want a compact tour from typed tensors to training and verific
 | --- | --- | --- | --- |
 | Typed tensors | `Quickstart/TensorBasics.lean` | `lake exe torchlean quickstart_tensors` | Shape-indexed tensors, constructors, and basic operations before any training machinery appears. |
 | Editor widgets | `Quickstart/Widgets.lean` | open the file and run the `#..._view` commands | Lean side views for tensors, graphs, and small runtime objects. |
-| Runtime scalar modes | `DeepDives/Floats/Float32Modes.lean` | `lake exe torchlean float32_modes` | The difference between exact/ideal values and executable Float32 paths. |
+| Float32 semantics | `DeepDives/Floats/Float32Semantics.lean` | `lake exe torchlean float32_semantics` | Native binary32 execution compared with the bit-level IEEE reference. |
 | Effective float32 rounding | `DeepDives/Floats/EffectiveRounding.lean` | `lake build NN.Examples.DeepDives.Floats.EffectiveRounding` | The same shaped tensor addition in the `FP32` proof model and the executable IEEE model, with the resulting mantissa and exponent exposed by theorem. |
 | Autograd API | `Quickstart/AutogradBasics.lean` | `lake exe torchlean quickstart_autograd` | The tape records operations, runs backward, and reports gradients for closed-form checks. |
 | Proof basics | `Quickstart/Proofs.lean` | `lake build NN.Examples.Quickstart.Proofs` | Small theorem statements over tensor expressions and model fragments. |
-| Simple training | `Quickstart/SimpleMlpTrain.lean` | `lake exe torchlean quickstart_mlp --steps 200 --dtype float32 --backend compiled` | A `Trainer` run with compiled execution, loss reporting, and parameter updates. |
-| Data loading | `Data/Loaders/Csv.lean` | `lake exe torchlean data_csv --steps 30 --batch 5 --dtype float --backend eager` | A file-backed batch stream crossing into typed TorchLean data. |
+| Simple training | `Quickstart/SimpleMlpTrain.lean` | `lake exe torchlean quickstart_mlp --steps 200 --scalar ieee32-exec --execution typed-graph` | A `Trainer` run with typed graph execution, loss reporting, and parameter updates. |
+| Data loading | `Data/Loaders/Csv.lean` | `lake exe torchlean data_csv --steps 30 --batch 5 --scalar float32 --execution eager` | A file-backed batch stream crossing into typed TorchLean data. |
 | Verification | `Verification/TorchLean/*` | `lake exe verify -- torchlean-ibp` | A TorchLean model lowered into a verifier graph and checked by a native bound workflow. |
 | PyTorch import/export | `Interop/PyTorch/Roundtrip.lean` | `lake exe torchlean pytorch_roundtrip --model mlp --action import` | Weight and graph exchange at an explicit trust boundary. |
 
@@ -121,7 +121,7 @@ export, and a later certificate check.
 ## Common Commands
 
 ```bash
-lake exe torchlean quickstart_mlp --steps 10 --dtype float32 --backend compiled
+lake exe torchlean quickstart_mlp --steps 10 --scalar ieee32-exec --execution typed-graph
 lake exe torchlean mlp --steps 10
 lake -R -K cuda=true exe torchlean cnn --device cuda --steps 10
 lake -R -K cuda=true exe torchlean gpt2 --device cuda --tiny-shakespeare --steps 10 --windows 1 --generate 0

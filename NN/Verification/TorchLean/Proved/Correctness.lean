@@ -12,5 +12,5 @@ public import NN.Verification.TorchLean.Proved.Correctness.Eval
 /-!
 # Verified Forward Fragment: Correctness
 
-Compiler well-formedness and semantic correctness for the first-order forward fragment.
+Lowering pass well-formedness and semantic correctness for the first-order forward fragment.
 -/

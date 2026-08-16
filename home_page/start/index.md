@@ -12,7 +12,7 @@ graph representation, and the checker that reasons about the graph.
 
 ```bash
 lake build
-lake exe torchlean quickstart_mlp --device cpu --steps 10 --dtype float32 --backend eager
+lake exe torchlean quickstart_mlp --device cpu --steps 10 --scalar ieee32-exec --execution eager
 lake exe verify -- torchlean-ibp
 ```
 
@@ -41,7 +41,7 @@ certificates, and two-stage Lyapunov experiments.
 2. [Building Models]({{ '/blueprint/Building-Models/' | relative_url }}) introduces typed tensors,
    layers, parameter packs, datasets, losses, optimizers, and the trainer.
 3. [Runtime and Interop]({{ '/blueprint/Runtime___-Autograd___-and-Interop/' | relative_url }})
-   explains eager and compiled execution, autograd, runtime artifacts, PyTorch interop boundaries,
+   explains eager and typed graph execution, autograd, runtime artifacts, PyTorch interop boundaries,
    data streams, and backend selection.
 4. [Semantics and Graphs]({{ '/blueprint/Semantics-and-Graphs/' | relative_url }}) explains the
    graph IR, graph denotation, shape discipline, named operations, and why verifiers reuse the same
@@ -57,7 +57,7 @@ certificates, and two-stage Lyapunov experiments.
 
 ## Common Next Steps
 
-- Train a model: `lake exe torchlean mlp --device cpu --steps 100 --dtype float32`.
+- Train a model: `lake exe torchlean mlp --device cpu --steps 100 --scalar ieee32-exec`.
 - Inspect a scientific ML run: [Scientific ML]({{ '/examples/scientific-ml/' | relative_url }}).
 - Check a certificate or bound pass: [Verification Bounds]({{ '/examples/verification/' | relative_url }}).
 - Start from the main import: `import NN; open TorchLean`.

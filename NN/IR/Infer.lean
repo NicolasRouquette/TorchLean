@@ -241,7 +241,7 @@ namespace Graph
 /--
 Infer shapes for every node (in topo/id order) and check that `Node.outShape` matches.
 
-This is meant as a compiler/back-end consistency check and as a clean IR invariant for the docs:
+This is meant as a lowering/backend consistency check and as a clean IR invariant for the docs:
 well-formed graphs have *self-consistent declared shapes*.
 -/
 def checkShapes (g : Graph) : Except String Unit := do

@@ -184,16 +184,16 @@ run may proceed.
 
 The implementation follows one explicit path:
 
-1. `Target` describes the operating system, architecture, accelerator, and compiled features.
+1. `Target` describes the operating system, architecture, accelerator, and enabled build features.
 2. `Availability` states the devices and providers declared for planning. Eager execution performs
    the separate linked-library and hardware probes before launching a kernel.
 3. `Registry` supplies compatible capsules, and `Planner` chooses one `PlannedKernel` for each graph
-   operation. Together these choices form an `ExecutionPlan`.
+   operation. Together these choices form a `KernelPlan`.
 4. `Audit` and `Recheck` expose the selected evidence and any obligations that must be discharged
    again for this run.
 5. `Gate` applies the requested assurance policy. Eager execution receives an `AcceptedKernel` for
-   each operation. Graph lowering can similarly produce an `AcceptedGraphPlan` for a later graph
-   executor; the current eager runtime does not pretend that this data-level graph plan is executable.
+   each operation. Graph kernel selection can similarly produce an `AcceptedGraphKernelPlan` for a
+   later graph executor; the current eager runtime does not pretend that this metadata is executable.
 6. The eager session binds the selected capsule to a `KernelHandler` with the same operation,
    provider, and device. If this build has no such handler, execution fails before entering a
    different provider's code.
@@ -205,7 +205,7 @@ eager runtime consumes the accepted per-operation value, binds it to the impleme
 call, and records the capsule it actually used. Inspection tools can retain rejected graph plans
 and explain why they failed.
 
-`AcceptedKernel` and `AcceptedGraphPlan` carry the equality proof that their policy gate returned
+`AcceptedKernel` and `AcceptedGraphKernelPlan` carry the equality proof that their policy gate returned
 `accepted`; they are not records that a caller can populate while omitting the gate result.
 
 Runtime policies state whether guards, regression tests, fuzzing, or a named external dependency
@@ -213,7 +213,7 @@ are acceptable for a run. The `verified` policy rejects all of those engineering
 The gate itself has a small Lean theorem:
 
 ```
-#check ExecutionAudit.gate_eq_accepted_iff_gateFailures_eq_nil
+#check KernelPlanAudit.gate_eq_accepted_iff_gateFailures_eq_nil
 ```
 
 This theorem says exactly what the policy function does: it accepts precisely when the audit has no
@@ -228,29 +228,36 @@ prevent malformed launches; they complement rather than replace a mathematical v
 argument.
 
 Capsule selection follows the run's scalar semantics, while a native capsule may separately state
-that its device storage is Float32. The mixed-precision distinction is described once in
-*TorchLean And PyTorch*; choosing another provider does not alter it.
+that its device storage is Float32. Choosing another provider does not change that scalar contract.
 
 # Runtime Configuration
 
 The model API stays independent of these implementation details:
 
 ```
-def trainerFor (backend : TorchLean.Runtime.Backend) :=
+def trainerFor (execution : TorchLean.Runtime.ExecutionMode) :=
   Trainer.new mkModel
     { task := .regression
       optimizer := optim.adam { lr := 0.01 }
-      dtype := .float32
-      backend := backend }
+      scalar := .ieee32Exec
+      execution := execution }
 
 let eagerTrainer := trainerFor .eager
-let compiledTrainer := trainerFor .compiled
+let typedGraphTrainer := trainerFor .typedGraph
 ```
 
-Device and provider selection live in runtime configuration and command-line options. Backend
-selection leaves the model's forward function unchanged, much like the separation
-between calling a PyTorch model and wrapping it with `torch.compile`: compilation changes
-execution, not the mathematical intention of the model.
+Device and provider selection live in runtime configuration and command-line options. They leave
+the model's forward function unchanged. The public choices remain separate:
+
+```
+{ execution := .typedGraph
+  device := .cpu }
+```
+
+In this trainer path, typed graph execution records and reuses a typed SSA graph. It is not TorchLean's name for
+`torch.compile` and does not imply optimization, fusion, scheduling, or native code generation.
+TorchLean reserves *compilation* for those future transformations; conversion into the executable
+typed graph is *lowering*.
 
 # Reading The Report
 

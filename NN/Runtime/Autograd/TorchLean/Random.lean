@@ -19,10 +19,10 @@ Deterministic RNG utilities for TorchLean (seed-threaded, *pure*).
 Lean (and mathlib) can generate random numbers via `IO`, but that gives *effectful* randomness
 whose results depend on hidden runtime state. For TorchLean, that is a poor fit:
 
-- it breaks the “one semantics” contract for compilation/verification (graphs stop being a pure
+- it breaks the “one semantics” contract for lowering and verification (graphs stop being a pure
   mathematical object unless you model the RNG state explicitly),
 - it makes replays and certificate checking depend on hidden runtime state,
-- it complicates the proof-linked compilation path (effects and mixed dtypes).
+- it complicates typed graph recording (effects and mixed dtypes).
 
 Instead we use a deterministic pseudorandom generator and treat “randomness” as
 **a deterministic function of an explicit seed** (and a counter/stream id). This mirrors the

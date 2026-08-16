@@ -271,7 +271,7 @@ def evalConv2D {α : Type} [Context α] [DecidableEq Shape]
 Apply fixed-statistics BatchNorm2d to a batched channel-first tensor.
 
 The input shape records the batch, channel, height, and width axes. Naming the shared tensor
-operation independently of that layout notation keeps compiler and evaluator code concise while
+operation independently of that layout notation keeps lowering and evaluator code concise while
 the type retains the exact contract.
 -/
 def batchNorm2dEvalTensor {α : Type} [Context α]
@@ -1071,7 +1071,7 @@ Evaluate a graph to a table of node values.
 
 This returns an array `vals` of length `g.size` where `vals[i]` is the value of node `i`.
 
-We do a structural well-formedness check once up front (ids/arity/topology). For compiler-produced
+We do a structural well-formedness check once up front (ids/arity/topology). For lowering-produced
 graphs, the boolean `Graph.wellFormed` check is a fast path; if it fails we fall back to the
 exception-producing `Graph.checkWellFormed` so callers get a readable error message.
 
@@ -1082,7 +1082,7 @@ The evaluator is total in the sense that it always returns either:
 def denoteAll
     {α : Type} [Context α] [DecidableEq Shape]
     (g : Graph) (payload : Payload α) (input : DVal α) : Except String (Array (DVal α)) := do
-  -- Fast path: compiler-produced graphs typically satisfy the boolean `wellFormed` discipline.
+  -- Fast path: lowering-produced graphs typically satisfy the boolean `wellFormed` discipline.
   if g.wellFormed then
     pure ()
   else

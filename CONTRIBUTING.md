@@ -53,8 +53,8 @@ Run a few small examples:
 
 ```bash
 lake env lean --run NN/Examples/Quickstart/TensorBasics.lean
-lake env lean --run NN/Examples/Quickstart/AutogradBasics.lean -- --dtype float
-lake exe torchlean mlp --cpu --steps 10
+lake exe torchlean quickstart_autograd
+lake exe torchlean mlp --device cpu --steps 10 --scalar float32
 ```
 
 Run verifier commands:

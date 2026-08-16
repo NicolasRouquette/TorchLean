@@ -11,7 +11,7 @@ public import NN.Verification.TorchLean.Proved.Correctness.Eval.LayerNorm
 /-!
 # Miscellaneous IR Evaluation
 
-Local semantics for graph-structural nodes and scalar losses that appear in imported or compiled IR
+Local semantics for graph-structural nodes and scalar losses that appear in imported or lowered IR
 graphs.
 -/
 

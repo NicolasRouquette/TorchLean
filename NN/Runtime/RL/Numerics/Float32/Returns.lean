@@ -127,7 +127,7 @@ The runtime return type is `Except String …` so training code can choose to:
 - fall back to a safer scalar backend (interval/oracle), or
 - log and skip a bad sample.
 -/
-def discountedBackupIEEE32ExecChecked
+def discountedBackupChecked
     (reward gamma bootstrap : Float32Exec) (done : Bool) :
     Except String Float32Exec :=
   let mask : Float32Exec := Spec.RL.continueMask (α := Float32Exec) done
@@ -151,14 +151,14 @@ semantic bridge theorems hold automatically.*
 -/
 
 /--
-If `discountedBackupIEEE32ExecChecked` returns `.ok out`, then:
+If `discountedBackupChecked` returns `.ok out`, then:
 
 - every IEEE32Exec intermediate used by the refinement theorem is finite, and
 - `out` agrees with the spec-layer `discountedBackup` formula.
 -/
-theorem discountedBackupIEEE32ExecChecked_eq_ok
+theorem discountedBackup_eq_ok
     (reward gamma bootstrap : Float32Exec) (done : Bool) (out : Float32Exec)
-    (h : discountedBackupIEEE32ExecChecked reward gamma bootstrap done = .ok out) :
+    (h : discountedBackupChecked reward gamma bootstrap done = .ok out) :
     TorchLean.Floats.IEEE754.IEEE32Exec.isFinite
         (TorchLean.Floats.IEEE754.IEEE32Exec.mul gamma (continueMask (α := Float32Exec) done)) =
       true ∧
@@ -190,7 +190,7 @@ theorem discountedBackupIEEE32ExecChecked_eq_ok
         -- contradicting `h`.
         have : False := by
           have h' := h
-          simp [discountedBackupIEEE32ExecChecked, checkedMul, requireFinite, mask, t1, hft1] at h'
+          simp [discountedBackupChecked, checkedMul, requireFinite, mask, t1, hft1] at h'
         exact this.elim
 
   have ht2 : TorchLean.Floats.IEEE754.IEEE32Exec.isFinite t2 = true := by
@@ -200,7 +200,7 @@ theorem discountedBackupIEEE32ExecChecked_eq_ok
     | false =>
         have : False := by
           have h' := h
-          simp [discountedBackupIEEE32ExecChecked, checkedMul, requireFinite, mask, t1, t2, ht1, hft2] at h'
+          simp [discountedBackupChecked, checkedMul, requireFinite, mask, t1, t2, ht1, hft2] at h'
         exact this.elim
 
   have hout0 : TorchLean.Floats.IEEE754.IEEE32Exec.isFinite out0 = true := by
@@ -210,14 +210,14 @@ theorem discountedBackupIEEE32ExecChecked_eq_ok
     | false =>
         have : False := by
           have h' := h
-          simp [discountedBackupIEEE32ExecChecked, checkedMul, checkedAdd, requireFinite,
+          simp [discountedBackupChecked, checkedMul, checkedAdd, requireFinite,
             mask, t1, t2, out0, ht1, ht2, hfout] at h'
         exact this.elim
 
   -- If all checks passed, the routine returns the plain `discountedBackup` expression.
   have hout : out = out0 := by
-    have : discountedBackupIEEE32ExecChecked reward gamma bootstrap done = .ok out0 := by
-      simp [discountedBackupIEEE32ExecChecked, checkedMul, checkedAdd, requireFinite, mask, t1, t2, out0, ht1, ht2, hout0]
+    have : discountedBackupChecked reward gamma bootstrap done = .ok out0 := by
+      simp [discountedBackupChecked, checkedMul, checkedAdd, requireFinite, mask, t1, t2, out0, ht1, ht2, hout0]
     -- Both `h` and `this` identify the return value; compare them by constructor injection.
     have hok : (Except.ok out : Except String Float32Exec) = Except.ok out0 := by
       exact h.symm.trans this
@@ -244,7 +244,7 @@ Checked fixed-horizon discounted returns (no `done` flags), specialized to `IEEE
 
 This is the checked/finite counterpart to `Runtime.RL.Core.discountedReturnsVecFrom`.
 -/
-def discountedReturnsVecFromIEEE32ExecChecked {n : Nat}
+def discountedReturnsChecked {n : Nat}
     (gamma : Float32Exec) (rewards : Tensor Float32Exec (.dim n .scalar))
     (bootstrap : Float32Exec := (0 : Float32Exec)) :
     Except String (Tensor Float32Exec (.dim n .scalar)) := do
@@ -255,7 +255,7 @@ def discountedReturnsVecFromIEEE32ExecChecked {n : Nat}
   let mut g : Float32Exec := bootstrap
   for t in [0:n] do
     let idx := n - 1 - t
-    g ← discountedBackupIEEE32ExecChecked (reward := rArr[idx]!) (gamma := gamma) (bootstrap := g) (done := false)
+    g ← discountedBackupChecked (reward := rArr[idx]!) (gamma := gamma) (bootstrap := g) (done := false)
     out := out.set! idx g
 
   pure <| Tensor.dim (fun i : Fin n => Tensor.scalar (out[i.val]!))

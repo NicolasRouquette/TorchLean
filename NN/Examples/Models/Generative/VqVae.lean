@@ -41,7 +41,8 @@ Shared vector-image configuration.
 The VQ-VAE runtime path uses the same compact flattened-CIFAR boundary as the autoencoder and VAE
 commands, so the model comparison changes the bottleneck while keeping data handling fixed.
 -/
-def cfg : nn.models.VectorGenerativeConfig := nn.models.compactImageConfig
+def cfg : nn.models.VectorGenerativeConfig :=
+  nn.models.vectorGenerativeConfig 1 16 8 4
 
 /-- Input shape: a batch of flattened CIFAR image vectors. -/
 abbrev σ := nn.models.vectorDataShape cfg
@@ -55,11 +56,11 @@ Trainable VQ-VAE-style vector model.
 The codebook-facing objective is handled in the imported spec/theory modules; this command exercises
 the executable reconstruction path with a narrow quantization-style bottleneck.
 -/
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.vectorVqVae cfg
 
 /-- Public singleton dataset for compact CIFAR reconstruction. -/
-def data (flags : RealData.CifarModelTrainFlags) : Trainer.Dataset σ τ :=
+def data (flags : RealData.CifarModelTrainFlags) : Trainer.DataSource σ τ :=
   RealData.cifarVectorDataset cfg (by decide) exeName (nn.models.reconstructionSample cfg)
     flags.xPath flags.yPath flags.nRows flags.seed
 
@@ -73,7 +74,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := flags.lr } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := flags.lr } })
         .regression
         (seed := flags.seed)
   trainer.train

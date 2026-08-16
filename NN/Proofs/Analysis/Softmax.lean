@@ -81,37 +81,6 @@ private def scalarElim {β : Sort _} (t : Tensor ℝ .scalar) (k : ℝ → β) :
 private abbrev scalarVal (t : Tensor ℝ .scalar) : ℝ :=
   scalarElim (β := ℝ) t (fun v => v)
 
--- Keep these two facts specialized to `ℝ`. Lean distinguishes the `LE` projection inherited
--- through a synthesized generic lattice from `Real.instLE`; spelling the real order directly
--- avoids leaking that implementation detail into public softmax theorems.
-private theorem real_le_foldl_max_of_mem {ι : Type} (l : List ι) (f : ι -> ℝ)
-    {acc : ℝ} {i : ι} (hi : i ∈ l) :
-    f i <= l.foldl (fun a j => max a (f j)) acc := by
-  induction l generalizing acc with
-  | nil => cases hi
-  | cons head tail ih =>
-      rcases List.mem_cons.mp hi with rfl | hiTail
-      · exact (le_max_right acc (f i)).trans
-          (List.le_foldl_max_init tail f (max acc (f i)))
-      · simpa only [List.foldl] using ih (acc := max acc (f head)) hiTail
-
-private theorem real_foldl_max_eq_init_or_mem {ι : Type} (l : List ι) (f : ι -> ℝ)
-    (acc : ℝ) :
-    l.foldl (fun a i => max a (f i)) acc = acc ∨
-      ∃ i ∈ l, l.foldl (fun a j => max a (f j)) acc = f i := by
-  induction l generalizing acc with
-  | nil => simp
-  | cons head tail ih =>
-      rcases ih (acc := max acc (f head)) with hinit | ⟨i, hi, hvalue⟩
-      · by_cases h : acc <= f head
-        · right
-          exact ⟨head, by simp, by simpa [List.foldl, max_eq_right h] using hinit⟩
-        · left
-          have hle : f head <= acc := le_of_not_ge h
-          simpa [List.foldl, max_eq_left hle] using hinit
-      · right
-        exact ⟨i, by simp [hi], by simpa [List.foldl] using hvalue⟩
-
 /-! ## Stable max shift -/
 
 /-- Every coordinate is bounded above by the exact maximum used by softmax and log-softmax. -/
@@ -125,7 +94,7 @@ theorem toVec_le_maxVecSpec {n : Nat}
         (List.finRange (Nat.succ n)).foldl
           (fun acc j => max acc (Tensor.toScalar (values j)))
           (Tensor.toScalar (values ⟨0, Nat.succ_pos n⟩))
-      exact real_le_foldl_max_of_mem (List.finRange (Nat.succ n))
+      exact List.le_foldl_max_of_mem (List.finRange (Nat.succ n))
         (fun j => Tensor.toScalar (values j))
         (acc := Tensor.toScalar (values ⟨0, Nat.succ_pos n⟩)) (i := i)
         (List.mem_finRange i)
@@ -141,7 +110,7 @@ theorem exists_toVec_eq_maxVecSpec {n : Nat}
       change ∃ i, value i =
         (List.finRange (Nat.succ n)).foldl (fun acc j => max acc (value j))
           (value firstIndex)
-      rcases real_foldl_max_eq_init_or_mem (List.finRange (Nat.succ n)) value
+      rcases List.foldl_max_eq_init_or_mem (List.finRange (Nat.succ n)) value
           (value firstIndex) with hfirst | ⟨i, hi, hvalue⟩
       · exact ⟨firstIndex, hfirst.symm⟩
       · exact ⟨i, hvalue.symm⟩

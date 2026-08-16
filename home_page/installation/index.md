@@ -47,7 +47,7 @@ lake exe torchlean --help
 lake exe verify --help
 ```
 
-That CPU build is the common starting point on every platform. From there, TorchLean can compile
+That CPU build is the common starting point on every platform. From there, TorchLean can build
 its native CUDA runtime or link an external provider without changing the Lean model being run.
 The table below separates paths that work today from targets that are represented in the backend
 architecture but still need platform-specific runtime work.

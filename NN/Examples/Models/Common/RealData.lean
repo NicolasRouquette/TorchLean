@@ -79,8 +79,8 @@ abbrev CifarTarget : Shape :=
 /-- Take the top-left `h × w` view of a CIFAR image batch. -/
 def cropCifarImages (batch h w : Nat)
     (hH : h ≤ cifarHeight) (hW : w ≤ cifarWidth)
-    (x : Tensor.T Float (.dim batch (.dim cifarChannels (.dim cifarHeight (.dim cifarWidth .scalar))))) :
-    Tensor.T Float (.dim batch (.dim cifarChannels (.dim h (.dim w .scalar)))) :=
+    (x : Tensor Float (.dim batch (.dim cifarChannels (.dim cifarHeight (.dim cifarWidth .scalar))))) :
+    Tensor Float (.dim batch (.dim cifarChannels (.dim h (.dim w .scalar)))) :=
   Spec.Tensor.dim (fun bi =>
     let img := Spec.getAtSpec x bi
     Spec.Tensor.dim (fun ch =>
@@ -219,7 +219,7 @@ Parse the standard CIFAR plus optimizer/training flags.
 
 Vision examples share the same CIFAR data boundary and optimizer controls; architecture files only
 need to provide the model constructor and logging title. Any remaining arguments are preserved so
-the caller can forward runtime flags such as `--device cpu`, `--device cuda`, or `--backend compiled` to the
+the caller can forward runtime flags such as `--device cpu`, `--device cuda`, or `--execution typed-graph` to the
 public `Trainer.RunConfig` parser.
 -/
 def parse (exeName : String) (args : List String)
@@ -235,7 +235,7 @@ end CifarModelTrainFlags
 def cifarTrainNotes (opts : Options)
     (flags : CifarLoggedTrainFlags) (extra : Array String := #[]) : Array String :=
   ModelZoo.NpyDataFlags.trainLogNotes flags.toNpyDataFlags "cifar10" ++
-  #[ModelZoo.deviceNote opts, ModelZoo.cudaMemWatchNote opts flags.steps flags.cudaMemWatch]
+  #[ModelZoo.deviceNote opts, ModelZoo.cudaMemoryNote opts flags.steps flags.cudaMemWatch]
   ++ extra
 
 namespace ForecastWindowDataFlags
@@ -253,7 +253,7 @@ def parse
     Except String (ModelZoo.ForecastWindowDataFlags × List String) := do
   let (dataDir, args) ← _root_.NN.Examples.Data.RealPaths.takeDataDir args
   let (seed, args) ← CLI.takeSeed args (default := 0)
-  let (windows, args) ← CLI.takePositiveNatFlagDefault args exeName "windows" defaultWindows
+  let (windows, args) ← CLI.takePositiveNatFlag args exeName "windows" defaultWindows
   let (reportOffset, args) ← CLI.takeNatFlagDefault args "report-offset" defaultReportOffset
   let (xPath, args) ←
     CLI.takePathFlagDefault args "x" (_root_.NN.Examples.Data.RealPaths.householdPowerX dataDir)
@@ -335,7 +335,7 @@ def loadCifarLoader
 
 /-- Public trainer dataset for prepared CIFAR-10 NPY image/label arrays. -/
 def cifarDataset (nRows : Nat) (xPath yPath : System.FilePath) :
-    Trainer.Dataset CifarImage CifarTarget :=
+    Trainer.DataSource CifarImage CifarTarget :=
   let src := Data.LabeledSource.ofPaths .npy xPath yPath nRows
     [cifarChannels, cifarHeight, cifarWidth] cifarClasses
   Data.labeledDataset src
@@ -448,9 +448,9 @@ public generative-model API so users can reuse it with their own image tensors.
 def loadCifarVectorBatch (cfg : nn.models.VectorGenerativeConfig)
     (hData : cfg.dataDim ≤ Spec.Shape.size CifarImage)
     (exeName : String) (xPath yPath : System.FilePath) (nRows seed : Nat) :
-    IO (Tensor.T Float (nn.models.vectorDataShape cfg)) := do
+    IO (Tensor Float (nn.models.vectorDataShape cfg)) := do
   let batchSample ← loadCifarBatch exeName cfg.batch nRows seed xPath yPath
-  pure (nn.models.flattenBatchPrefix cfg hData (Sample.x batchSample))
+  pure (Tensor.flattenPrefix (.dim cfg.batch .scalar) cfg.dataDim hData (Sample.x batchSample))
 
 /--
 Public singleton dataset for compact vector generative examples over flattened CIFAR batches.
@@ -464,10 +464,10 @@ def cifarVectorDataset {τ : Shape}
     (cfg : nn.models.VectorGenerativeConfig)
     (hData : cfg.dataDim ≤ Spec.Shape.size CifarImage)
     (exeName : String)
-    (mkSample : Tensor.T Float (nn.models.vectorDataShape cfg) →
+    (mkSample : Tensor Float (nn.models.vectorDataShape cfg) →
       SupervisedSample Float (nn.models.vectorDataShape cfg) τ)
     (xPath yPath : System.FilePath) (nRows seed : Nat) :
-    Trainer.Dataset (nn.models.vectorDataShape cfg) τ :=
+    Trainer.DataSource (nn.models.vectorDataShape cfg) τ :=
   Data.ioSingletonFloat do
     let x ← loadCifarVectorBatch cfg hData exeName xPath yPath nRows seed
     pure (mkSample x)

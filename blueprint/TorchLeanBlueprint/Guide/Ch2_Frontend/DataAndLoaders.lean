@@ -20,22 +20,22 @@ every step whether a row had the right number of columns.
 The trainer-facing type is:
 
 ```
-Trainer.Dataset inputShape targetShape
+Trainer.DataSource inputShape targetShape
 ```
 
 It describes one training item. The scalar type is intentionally absent. Its `build` field
-materializes a concrete dataset after the trainer chooses `Float`, `IEEE32Exec`, or another
-supported executable scalar. Materialization chooses one scalar type for every numeric input and
-target in that run; it is not a per-column dtype schema.
+materializes a concrete dataset after the trainer chooses native `Float32`, `IEEE32Exec`, or
+another supported executable scalar. Materialization chooses one arithmetic semantics for every
+numeric input and target in that run; it is not a per-column dtype schema.
 
-This lets the same Float-authored data feed several scalar runtimes while keeping the conversion
-visible at materialization. It also means a proof-level real tensor is not accidentally passed to
-an IO training loop.
+This lets the same host-`Float` data source feed several scalar runtimes while keeping the
+conversion visible at materialization. It also means a proof-level real tensor is not accidentally
+passed to an IO training loop.
 
 The relevant field is small enough to read directly:
 
 ```
-structure Trainer.Dataset (σ τ : Shape) where
+structure Trainer.DataSource (σ τ : Shape) where
   build :
     {α : Type} →
     [Context α] →
@@ -95,7 +95,7 @@ The XOR table is small enough to see in full:
 import NN.API
 open TorchLean
 
-def xs : Tensor.T Float (shape![4, 2]) :=
+def xs : Tensor Float (shape![4, 2]) :=
   tensor! [
     [0.0, 0.0],
     [0.0, 1.0],
@@ -103,10 +103,10 @@ def xs : Tensor.T Float (shape![4, 2]) :=
     [1.0, 1.0]
   ]
 
-def ys : Tensor.T Float (shape![4, 1]) :=
+def ys : Tensor Float (shape![4, 1]) :=
   tensor! [[0.0], [1.0], [1.0], [0.0]]
 
-def xorData : Trainer.Dataset (shape![2]) (shape![1]) :=
+def xorData : Trainer.DataSource (shape![2]) (shape![1]) :=
   Data.tensorDataset xs ys
 ```
 
@@ -212,7 +212,7 @@ def source : Data.SupervisedSource :=
     [2]
     [1]
 
-def data : Trainer.Dataset (shape![2]) (shape![1]) :=
+def data : Trainer.DataSource (shape![2]) (shape![1]) :=
   Data.supervisedDataset source
 ```
 
@@ -269,8 +269,8 @@ successful load alone is not a complete integrity check for an untrusted `merges
 
 Encoding has four visible stages. It applies the GPT-2 pre-tokenizer, converts each fragment's UTF-8
 bytes through GPT-2's reversible byte-to-Unicode table, repeatedly applies the best-ranked adjacent
-merge, and finally looks up every piece in `vocab.json`. `Gpt2Bpe.encode` returns an error when a
-piece has no id. `Gpt2Bpe.decode?` performs the inverse vocabulary lookup and byte decoding, and
+merge, and finally looks up every piece in `vocab.json`. `GPT2BPE.encode` returns an error when a
+piece has no id. `GPT2BPE.decode?` performs the inverse vocabulary lookup and byte decoding, and
 reports an unknown id or invalid UTF-8 rather than inventing text.
 
 Here is a direct round-trip from the repository root after placing a matching tokenizer pair at the
@@ -281,19 +281,19 @@ import NN.API.Text.Bpe
 open TorchLean.text
 
 def inspectBpe : IO Unit := do
-  let tok ← Gpt2Bpe.load
+  let tok ← GPT2BPE.load
     "data/real/gpt2/vocab.json"
     "data/real/gpt2/merges.txt"
-  match Gpt2Bpe.encode tok "naïve café" with
+  match GPT2BPE.encode tok "naïve café" with
   | .error e => throw <| IO.userError e
   | .ok ids =>
       IO.println s!"ids = {repr ids}"
-      match Gpt2Bpe.decode? tok ids with
+      match GPT2BPE.decode? tok ids with
       | .error e => throw <| IO.userError e
       | .ok decoded => IO.println s!"decoded = {decoded}"
 ```
 
-`decodeD` and the generic-tokenizer adapter are intended for display and convenience: they collapse
+`decodeOrEmpty` and the generic-tokenizer adapter are intended for display and convenience: they collapse
 decode or encode failures to empty output. Use the error-reporting `encode` and `decode?` functions
 at an artifact-validation boundary.
 
@@ -344,7 +344,7 @@ TorchLean uses “batch size” for two related operations:
 
 ```
 def batched :
-    Trainer.Dataset (shape![2, 2]) (shape![2, 1]) :=
+    Trainer.DataSource (shape![2, 2]) (shape![2, 1]) :=
   Data.batchDataset 2 xorData
     (shuffle := true)
     (seed := 42)
@@ -389,7 +389,7 @@ last item.
 
 # Materialized Loaders And Epoch State
 
-`Trainer.Dataset` delays scalar choice. Lower-level manual code may already own a
+`Trainer.DataSource` delays scalar choice. Lower-level manual code may already own a
 materialized:
 
 ```

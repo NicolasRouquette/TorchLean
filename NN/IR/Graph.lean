@@ -14,13 +14,13 @@ public import NN.Spec.Core.Shape
 `NN.IR.Graph` is TorchLean’s canonical *op-tagged* DAG IR.
 
 Today it is used as the shared target for:
-- TorchLean → verifier compilation (`NN/Verification/TorchLean/Compile.lean`),
+- TorchLean to verifier lowering (`NN/Verification/TorchLean/Lowering.lean`),
 - bound-propagation / verification tooling (CROWN/LiRPA) (`NN/MLTheory/CROWN/Graph.lean`),
 - IR → PyTorch emission (`NN/Runtime/PyTorch/Export/IRPyTorch.lean`),
 - compact example graphs (e.g. `NN/Examples/DeepDives/GraphSpec/Tutorial.lean`).
 
 Longer-term, the intent is to use the same IR as a bridge target for:
-- spec-level graphs (compile a model spec to an IR graph),
+- spec-level graphs (lower a model spec to an IR graph),
 - runtime autograd traces (reify a runtime tape/graph into the same IR),
 - verifiers (IBP/CROWN/affine passes) and export tooling.
 
@@ -45,7 +45,7 @@ References / related systems:
 
 - **Topo order**: a node only references parents with smaller ids.
 - **Id discipline**: in most builders, `node.id` is expected to equal its index in `Graph.nodes`.
-  (E.g. the TorchLean compiler uses `freshId := nodes.size` and then appends.)
+  (For example, TorchLean lowering uses `freshId := nodes.size` and then appends.)
 - **External parameters**:
   - `OpKind.const` stores its `valueShape` here, but the constant value is stored externally
     (e.g. in a verifier `ParamStore` keyed by node id).

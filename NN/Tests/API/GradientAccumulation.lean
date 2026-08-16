@@ -37,7 +37,7 @@ def sample (x y : Float) :
   .cons (vector1 x) (.cons (vector1 y) .nil)
 
 def readLinearParams
-    (ps : _root_.Runtime.Autograd.Torch.TList Float (paramShapes task)) :
+    (ps : _root_.Runtime.Autograd.Torch.TList Float (stateShapes task)) :
     Float × Float :=
   match ps with
   | .cons weight (.cons bias .nil) =>
@@ -57,7 +57,7 @@ def batchNormModel :
       (.dim 1 (.dim 1 (.dim 2 .scalar)))
       (.dim 1 (.dim 1 (.dim 2 .scalar))) :=
   _root_.Runtime.Autograd.TorchLean.NN.singleLayer <|
-    _root_.Runtime.Autograd.TorchLean.NN.batchnormChannelFirstMode 1 1 2
+    _root_.Runtime.Autograd.TorchLean.NN.batchNormChannelFirstMode 1 1 2
       (h_c := by decide) (h_h := by decide) (h_w := by decide) (momentum := 0.5)
 
 def batchNormTask :
@@ -71,7 +71,7 @@ def batchNormSample (value : Float) :
   .cons (constantImage value) (.cons (constantImage 0.0) .nil)
 
 def readBatchNormBuffers
-    (ps : _root_.Runtime.Autograd.Torch.TList Float (paramShapes batchNormTask)) :
+    (ps : _root_.Runtime.Autograd.Torch.TList Float (stateShapes batchNormTask)) :
     Float × Float :=
   match ps with
   | .cons _gamma (.cons _beta (.cons mean (.cons variance (.cons _momentum .nil)))) =>
@@ -115,7 +115,7 @@ The no-loss hook completes the update itself. The loss hook returns `none` after
 attempt, allowing the normal same-tape fallback to produce the scalar when a test enables logging.
 -/
 def probeOptimizer (counters : ProbeCounters) :
-    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer Float (paramShapes task) where
+    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer Float (stateShapes task) where
   State := ProbeState
   init := fun _ => pure { scheduleValue := 0, counters }
   step := fun state _ _ => do
@@ -133,8 +133,8 @@ def expectNat (label : String) (actual expected : Nat) : IO Unit :=
     throw <| IO.userError s!"{label}: got {actual}, expected {expected}"
 
 def checkClosedFormMeanGradient : IO Unit := do
-  let runner ← instantiateConfiguredFloat task { backend := .compiled }
-  let (weight, bias) := readLinearParams (← params runner)
+  let runner ← Runner.instantiateFloat64 task { execution := .typedGraph }
+  let (weight, bias) := readLinearParams (← Runner.state runner)
   let x₁ := 1.0
   let y₁ := 0.0
   let x₂ := 3.0
@@ -150,7 +150,7 @@ def checkClosedFormMeanGradient : IO Unit := do
       optimizer := .sgd lr
       logEvery := 0 }
     [sample x₁ y₁, sample x₂ y₂]
-  let (weight', bias') := readLinearParams (← params runner)
+  let (weight', bias') := readLinearParams (← Runner.state runner)
   unless close weight' (weight - lr * gradWeight) && close bias' (bias - lr * gradBias) do
     throw <| IO.userError <|
       s!"minibatch update mismatch: got ({weight'}, {bias'}), expected "
@@ -186,10 +186,10 @@ def checkWarmupCosineSchedule : IO Unit := do
 
 /-- A batch size of one keeps the native no-loss route when progress logging is disabled. -/
 def checkNoLossFastPath : IO Unit := do
-  let runner ← instantiateConfiguredFloat task { backend := .compiled }
+  let runner ← Runner.instantiateFloat64 task { execution := .typedGraph }
   let counters ← newProbeCounters
   let opt := probeOptimizer counters
-  let state ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.initOptim runner.module opt
+  let state ← _root_.Runtime.Autograd.TorchLean.Module.Objective.initOptimizer runner.module opt
   let batches ← IO.mkRef [[sample 1.0 0.0]]
   let nextBatch := do
     let remaining ← batches.get
@@ -211,10 +211,10 @@ A loader with multi-sample batches keeps every update on the generic optimizer s
 final singleton batch.
 -/
 def checkPartialBatchStateRoute : IO Unit := do
-  let runner ← instantiateConfiguredFloat task { backend := .compiled }
+  let runner ← Runner.instantiateFloat64 task { execution := .typedGraph }
   let counters ← newProbeCounters
   let opt := probeOptimizer counters
-  let state ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.initOptim runner.module opt
+  let state ← _root_.Runtime.Autograd.TorchLean.Module.Objective.initOptimizer runner.module opt
   let loader : _root_.Runtime.Autograd.Train.DataLoader
       (_root_.Runtime.Autograd.Torch.TList Float [.dim 1 .scalar, .dim 1 .scalar]) := {
     dataset := _root_.Runtime.Autograd.Train.Dataset.ofList
@@ -229,10 +229,10 @@ def checkPartialBatchStateRoute : IO Unit := do
 
 /-- Loader schedules advance once per epoch while logging keeps a global update counter. -/
 def checkEpochSchedulerCadence : IO Unit := do
-  let runner ← instantiateConfiguredFloat task { backend := .compiled }
+  let runner ← Runner.instantiateFloat64 task { execution := .typedGraph }
   let counters ← newProbeCounters
   let opt := probeOptimizer counters
-  let state ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.initOptim runner.module opt
+  let state ← _root_.Runtime.Autograd.TorchLean.Module.Objective.initOptimizer runner.module opt
   let loader : _root_.Runtime.Autograd.Train.DataLoader
       (_root_.Runtime.Autograd.Torch.TList Float [.dim 1 .scalar, .dim 1 .scalar]) := {
     dataset := _root_.Runtime.Autograd.Train.Dataset.ofList
@@ -253,19 +253,21 @@ second buffer update.
 -/
 def checkBatchNormBuffers : IO Unit := do
   let batch := [batchNormSample 2.0, batchNormSample 4.0]
-  let runner ← instantiateConfiguredFloat batchNormTask { backend := .compiled }
-  trainMode runner
-  let opt := noOpOptimizer (paramShapes batchNormTask)
-  let state ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.initOptim runner.module opt
+  let runner ← Runner.instantiateFloat64 batchNormTask { execution := .typedGraph }
+  Runner.train runner
+  let opt := noOpOptimizer (stateShapes batchNormTask)
+  let state ← _root_.Runtime.Autograd.TorchLean.Module.Objective.initOptimizer runner.module opt
   let _ ← Internal.stepBatch runner opt state false batch
-  let noLossBuffers := readBatchNormBuffers (← params runner)
+  let noLossBuffers := readBatchNormBuffers
+    (← TorchLean.Trainer.Manual.Runner.state runner)
 
-  let loggedRunner ← instantiateConfiguredFloat batchNormTask { backend := .compiled }
-  trainMode loggedRunner
+  let loggedRunner ← Runner.instantiateFloat64 batchNormTask { execution := .typedGraph }
+  Runner.train loggedRunner
   let loggedState ←
-    _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.initOptim loggedRunner.module opt
+    _root_.Runtime.Autograd.TorchLean.Module.Objective.initOptimizer loggedRunner.module opt
   let _ ← Internal.stepBatchAndLoss loggedRunner opt loggedState false batch
-  let loggedBuffers := readBatchNormBuffers (← params loggedRunner)
+  let loggedBuffers := readBatchNormBuffers
+    (← TorchLean.Trainer.Manual.Runner.state loggedRunner)
 
   unless close noLossBuffers.1 2.5 && close noLossBuffers.2 0.25 do
     throw <| IO.userError <|

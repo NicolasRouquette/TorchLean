@@ -49,21 +49,21 @@ def trainCycleOptim
       let mut st := st0
       for step in [0:steps] do
         let xs := samples.getD (step % samples.length) hd
-        let (st', lossT) ←
+        let (st', lossTensor) ←
           match ← opt.trainerStepWithLoss? tr st xs .nil with
           | some result =>
               pure result
           | none => do
-              let (lossT, grads) ←
-                _root_.Runtime.Autograd.Torch.ScalarTrainer.lossAndBackwardT
+              let (lossTensor, grads) ←
+                _root_.Runtime.Autograd.Torch.ScalarTrainer.lossAndGradStatePacked
                   (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) tr xs
                   .nil
-              let _ ← tr.getParams
-              let st' ← opt.step st tr.params grads
-              pure (st', lossT)
+              let _ ← tr.getState
+              let st' ← opt.step st tr.state grads
+              pure (st', lossTensor)
         st := st'
         if logEvery != 0 && step % logEvery = 0 then
-          IO.println s!"step {step}: loss={_root_.Runtime.Autograd.Torch.scalarOf lossT}"
+          IO.println s!"step {step}: loss={_root_.Runtime.Autograd.Torch.scalarOf lossTensor}"
       pure st
 
 end TorchLean

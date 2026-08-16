@@ -143,7 +143,7 @@ This is wired into the unified dispatcher as:
 The JSON schema matches the exporter used by `train_pinn_1d.py --dataset-json`.
 -/
 def main (args : List String) : IO Unit := do
-  let args := TorchLean.CLI.defaultPathFlagFromPositional args "dataset" defaultDatasetPath
+  let args := TorchLean.CLI.normalizePathFlag args "dataset" defaultDatasetPath
   let opts ←
     match parseArgs args with
     | .ok o => pure o

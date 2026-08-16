@@ -44,8 +44,8 @@ def model :=
   ]
 
 /-- Checks that KAN constructors are available from `NN.API`. -/
-def kanModel : nn.M (nn.Sequential (.dim 4 (.dim 2 .scalar)) (.dim 4 (.dim 1 .scalar))) :=
-  nn.models.KAN
+def kanModel : nn.Builder (nn.Sequential (.dim 4 (.dim 2 .scalar)) (.dim 4 (.dim 1 .scalar))) :=
+  nn.models.kan
     { batch := 4
       inDim := 2
       hidden := [8]
@@ -60,12 +60,12 @@ Tiny in-memory regression dataset.
 
 The important bit is the last line: `Data.tensorDataset xs ys` turns ordinary `Float` tensors into a
 runtime-polymorphic dataset, so the trainer can still choose `Float`, executable IEEE32, CPU, CUDA,
-eager, or compiled execution later.
+eager or typed graph execution later.
 -/
-def data : Trainer.Dataset (.dim 2 .scalar) (.dim 1 .scalar) :=
-  let xs : Tensor.T Float (shape![4, 2]) :=
+def data : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
+  let xs : Tensor Float (shape![4, 2]) :=
     tensorOfList! [4, 2] [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]
-  let ys : Tensor.T Float (shape![4, 1]) :=
+  let ys : Tensor Float (shape![4, 1]) :=
     tensorOfList! [4, 1] [target 0.0 0.0, target 0.0 1.0, target 1.0 0.0, target 1.0 1.0]
   Data.tensorDataset xs ys
 
@@ -88,10 +88,10 @@ Run the public API example from another command or from `#eval` while developing
 The shape below is the user-facing training path:
 
 - build the trainer from the model,
-- attach optimizer/backend choices once,
+- attach optimizer, execution, and device choices once,
 - call `trainer.predict` for initial prediction,
 - call `trainer.train`,
-- use the returned trained handle for prediction.
+- use the returned training result for prediction.
 - call `trained.verifyRobustLInf` on a small $\ell_\infty$ box.
 
 The quickstart build only checks that these declarations typecheck; it does not train during
@@ -102,9 +102,10 @@ def run (_args : List String := []) : IO Unit := do
     Trainer.new model
       { task := .regression
         optimizer := optim.adam { lr := 0.03 }
-        backend := .compiled
-        dtype := .float32 }
-  let heldout : Tensor.T Float (.dim 2 .scalar) := tensorOfList! [2] [0.5, -0.25]
+        execution := .typedGraph
+        device := .cpu
+        scalar := .ieee32Exec }
+  let heldout : Tensor Float (.dim 2 .scalar) := tensorOfList! [2] [0.5, -0.25]
   let initial ← trainer.predict heldout
   IO.println s!"initial(heldout) = {Tensor.pretty initial}"
   let trained ← trainer.train data { steps := 25, batchSize := 4, logEvery := 10 } probes

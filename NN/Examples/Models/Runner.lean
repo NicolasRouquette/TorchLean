@@ -54,13 +54,13 @@ def usage : String :=
     , "  autoencoder | vae | gan | diffusion | ppo_cartpole | dqn_replay"
     , "  pytorch_roundtrip | pytorch_export_check"
     , "  data_csv | data_npy | data_cifar10"
-    , "  float32_modes | numerical_certificate | graphspec | ir_axis_ops | one_semantic_universe"
+    , "  float32_semantics | numerical_certificate | graphspec | ir_axis_ops | one_semantic_universe"
     , ""
     , "Runtime flags:"
     , "  --choose                         ask for runtime choices before running"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
-    , "  --dtype float|ieee754exec"
-    , "  --backend eager|compiled"
+    , "  --scalar float32|ieee32-exec|complex64"
+    , "  --execution eager|typed-graph"
     , "  --seed N"
     , "  --show-backend"
     , ""
@@ -71,9 +71,8 @@ def usage : String :=
 /-- Runtime flags that consume the following command-line token. -/
 def prefixFlagTakesValue (a : String) : Bool :=
   a == "--device" ||
-  a == "--dtype" ||
-  a == "--float32-mode" ||
-  a == "--backend" ||
+  a == "--scalar" ||
+  a == "--execution" ||
   a == "--seed"
 
 /--
@@ -184,7 +183,7 @@ def runCmd (cmd : String) (args : List String) : IO UInt32 := do
   | "vit" => NN.Examples.Models.Vision.Vit.main args
   | "gpt2" => NN.Examples.Models.Sequence.Gpt2.main args
   | "gpt2_saved" => NN.Examples.Models.Sequence.Gpt2Saved.main args
-  | "text_gpt2" => NN.Examples.Models.Sequence.TextGpt2.main args
+  | "text_gpt2" => NN.Examples.Models.Sequence.TextGPT2.main args
   | "chargpt" => NN.Examples.Models.Sequence.CharGpt.main args
   | "gpt_adder" => NN.Examples.Models.Sequence.GptAdder.main args
   | "mamba" => NN.Examples.Models.Sequence.Mamba.main args
@@ -206,8 +205,8 @@ def runCmd (cmd : String) (args : List String) : IO UInt32 := do
       pure 0
   | "pytorch_export_check" => NN.Examples.Interop.PyTorch.TorchExportCheck.main args
   | "floats_arb_ieee_compare" => NN.Examples.DeepDives.Floats.ArbIEEEExecCompare.main args
-  | "float32_modes" =>
-      NN.Examples.DeepDives.Floats.Float32Modes.main args
+  | "float32_semantics" =>
+      NN.Examples.DeepDives.Floats.Float32Semantics.main args
       pure 0
   | "numerical_certificate" =>
       NN.Examples.DeepDives.Floats.GraphNumericalCertificate.main args

@@ -371,4 +371,79 @@ instance instNonlinearBoundOpsFloat : NonlinearBoundOps Float where
   layerNormAbsBound := fun _ => none
   supportsIdealCoupledDerivatives := false
 
+/-!
+## Native binary32 endpoints
+
+The same one-ULP widening policy is available for Lean's native `Float32`. The operations execute
+with binary32 rounding; moving to the adjacent representable value turns each nearest-rounded
+result into an outward endpoint.
+-/
+
+namespace HostFloat32
+
+def signMask : UInt32 := 0x80000000
+def posInfBits : UInt32 := 0x7f800000
+def negInfBits : UInt32 := 0xff800000
+
+/-- Adjacent binary32 value above `x`, preserving NaNs and positive infinity. -/
+def nextUp (x : Float32) : Float32 :=
+  let bits := x.toBits
+  if x.isNaN || bits = posInfBits then
+    x
+  else if bits = signMask || bits = 0 then
+    Float32.ofBits 1
+  else if bits &&& signMask = 0 then
+    Float32.ofBits (bits + 1)
+  else
+    Float32.ofBits (bits - 1)
+
+/-- Adjacent binary32 value below `x`, preserving NaNs and negative infinity. -/
+def nextDown (x : Float32) : Float32 :=
+  let bits := x.toBits
+  if x.isNaN || bits = negInfBits then
+    x
+  else if bits = signMask || bits = 0 then
+    Float32.ofBits (signMask + 1)
+  else if bits &&& signMask = 0 then
+    Float32.ofBits (bits - 1)
+  else
+    Float32.ofBits (bits + 1)
+
+end HostFloat32
+
+/-- Outward-widened native binary32 operations. -/
+instance instBoundOpsFloat32 : BoundOps Float32 where
+  addDown a b := HostFloat32.nextDown (a + b)
+  addUp a b := HostFloat32.nextUp (a + b)
+  subDown a b := HostFloat32.nextDown (a - b)
+  subUp a b := HostFloat32.nextUp (a - b)
+  mulDown a b := HostFloat32.nextDown (a * b)
+  mulUp a b := HostFloat32.nextUp (a * b)
+
+/-- Native binary32 nonlinear enclosures for division and square root. -/
+instance instNonlinearBoundOpsFloat32 : NonlinearBoundOps Float32 where
+  divBounds aLo aHi bLo bHi :=
+    if NonlinearBoundOps.denominatorAvoidsZero bLo bHi then
+      let p1 := aLo / bLo
+      let p2 := aLo / bHi
+      let p3 := aHi / bLo
+      let p4 := aHi / bHi
+      let lo := NonlinearBoundOps.min4 p1 p2 p3 p4
+      let hi := NonlinearBoundOps.max4 p1 p2 p3 p4
+      some (HostFloat32.nextDown lo, HostFloat32.nextUp hi)
+    else
+      none
+  expBounds := fun _ _ => none
+  logBounds := fun _ _ => none
+  sqrtBounds lo hi :=
+    if hi < 0 then none
+    else some (HostFloat32.nextDown (Float32.sqrt (max lo 0)),
+      HostFloat32.nextUp (Float32.sqrt hi))
+  sigmoidBounds := fun _ _ => none
+  tanhBounds := fun _ _ => none
+  sinBounds := fun _ _ => some (-1, 1)
+  cosBounds := fun _ _ => some (-1, 1)
+  layerNormAbsBound := fun _ => none
+  supportsIdealCoupledDerivatives := false
+
 end NN.MLTheory.CROWN

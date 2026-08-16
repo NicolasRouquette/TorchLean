@@ -54,6 +54,12 @@ explicit `vocab.json` and `merges.txt` files under `data/real/gpt2/`. Saved-para
 reload a shape-indexed parameter pack and fail before sampling if the saved shapes no longer match
 the model architecture.
 
+The causal-transformer training command uses `CausalTransformer.Indexed`. Its batches contain
+`Tensor Nat` token IDs, the embedding layer gathers table rows directly, and repeated IDs
+scatter-add into the same weight-gradient row. It does not allocate one-hot token vectors. The
+separate `oneHot` constructor remains available for proofs and small examples whose inputs are
+already one-hot tensors.
+
 Useful commands:
 
 ```bash
@@ -68,10 +74,10 @@ For a save/reload check:
 
 ```bash
 lake -R -K cuda=true exe torchlean gpt2 --device cuda --tiny-shakespeare \
-  --steps 1 --windows 1 --generate 0 --save-params /tmp/gpt2.params.json
+  --steps 1 --windows 1 --generate 0 --save-checkpoint /tmp/gpt2.state.json
 
 lake -R -K cuda=true exe torchlean gpt2_saved --device cuda \
-  --params /tmp/gpt2.params.json --prompt "ROMEO:" --generate 16
+  --checkpoint /tmp/gpt2.state.json --prompt "ROMEO:" --generate 16
 ```
 
 ## What To Inspect

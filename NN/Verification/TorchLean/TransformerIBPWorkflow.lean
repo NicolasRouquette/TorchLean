@@ -7,14 +7,14 @@ Authors: TorchLean Team
 module
 
 public import NN.API
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 
 /-!
 # TorchLean Transformer IBP Workflow
 
 Small end-to-end workflow:
 
-TorchLean (MHA + LayerNorm + MSE) → compile to `NN.IR.Graph` → run:
+TorchLean (MHA + LayerNorm + MSE) → lower to `NN.IR.Graph` → run:
 - IBP (`runIBP`)
 - basic CROWN forward bounds (`runCROWN`)
 - objective-dependent backward/dual CROWN (`runCROWNBackwardObjective`)
@@ -22,7 +22,7 @@ TorchLean (MHA + LayerNorm + MSE) → compile to `NN.IR.Graph` → run:
 Run:
   `lake exe verify -- torchlean-transformer-ibp`
   `lake exe verify -- torchlean-transformer-ibp --with-crown`
-  `lake exe verify -- torchlean-transformer-ibp --dtype ieee754exec`
+  `lake exe verify -- torchlean-transformer-ibp --scalar ieee32-exec`
 -/
 
 @[expose] public section
@@ -104,25 +104,25 @@ def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
       (NN.Tensor.ofListOfLength (α := α) [1, 2, 2]
         [cast 0.0, cast 0.0, cast 0.0, cast 0.0] (by rfl))
 
-  let compiled ←
-    match Verification.compileProgram
+  let lowered ←
+    match Verification.lowerProgramToIR
           (α := α) (paramShapes := paramShapes) (σ := xShape)
           (τ := Spec.Shape.scalar)
           (modelLoss (α := α)) params with
     | .ok c => pure c
     | .error e => throw <| IO.userError e
 
-  IO.println s!"compiled IR nodes: {compiled.graph.nodes.size}"
+  IO.println s!"lowered IR nodes: {lowered.graph.nodes.size}"
 
-  let x0 : Tensor α xShape :=
+  let x0 : Spec.Tensor α xShape :=
     NN.Tensor.ofListOfLength (α := α) [1, 2, 2]
       [cast 0.2, cast (-0.3), cast 0.7, cast 0.1] (by rfl)
   let eps : α := Runtime.ofFloat 0.05
   let xB : FlatBox α := Verification.lInfBall (α := α) x0 eps
-  let ps : ParamStore α := compiled.seedInputBox xB
+  let ps : ParamStore α := lowered.seedInputBox xB
 
-  let boxes := compiled.runIBP ps
-  let outB ← compiled.outputBoxOrThrow boxes
+  let boxes := lowered.runIBP ps
+  let outB ← lowered.outputBoxOrThrow boxes
   IO.println s!"[IBP] loss lo: {pretty outB.lo}"
   IO.println s!"[IBP] loss hi: {pretty outB.hi}"
 
@@ -132,7 +132,7 @@ def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
 
   IO.println "[CROWN] running transformer-scale forward CROWN; this experimental path can take minutes"
   let inputDim := Spec.Shape.size xShape
-  match compiled.outputBoxCROWN? ps xB with
+  match lowered.outputBoxCROWN? ps xB with
   | .ok outC =>
       if hOut : outC.dim = 1 then
           IO.println s!"[CROWN] loss lo: {pretty outC.lo}"
@@ -144,7 +144,7 @@ def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
 
   IO.println "[CROWN-backward] running objective-dependent backward CROWN"
   let obj : FlatVec α := { n := 1, v := Spec.fill (α := α) Numbers.one (.dim 1 .scalar) }
-  match compiled.backwardObjectiveBox? ps boxes xB obj with
+  match lowered.backwardObjectiveBox? ps boxes xB obj with
   | .ok outC =>
       IO.println s!"[CROWN-backward] loss lo: {pretty outC.lo}"
       IO.println s!"[CROWN-backward] loss hi: {pretty outC.hi}"
@@ -168,7 +168,7 @@ CLI entry point for the transformer-IBP workflow.
 
 This is wired into `lake exe verify -- torchlean-transformer-ibp`.
 
-By default this command is a fast validation check: compile the TorchLean transformer fragment to the
+By default this command is a fast validation check: lower the TorchLean transformer fragment to the
 verification IR and run IBP on the scalar loss. Pass `--with-crown` to also run the experimental
 transformer-scale CROWN passes. The separate `torchlean-crown-ops` command keeps CROWN itself in the
 standard check suite on compact graphs, while this file focuses on the heavier attention/layer-norm
@@ -182,11 +182,11 @@ def main (args : List String) : IO Unit := do
   let withCrown : Bool := parsedWithCrown.1
   let restArgs : List String := parsedWithCrown.2
   if withCrown then
-    NN.Verification.TorchLean.runWithBoundDType
+    NN.Verification.TorchLean.runWithBoundScalar
       "TorchLean (MHA+LayerNorm+MSE) → IR → IBP" restArgs
       (@runMainWithCrown)
   else
-    NN.Verification.TorchLean.runWithBoundDType
+    NN.Verification.TorchLean.runWithBoundScalar
       "TorchLean (MHA+LayerNorm+MSE) → IR → IBP" restArgs
       (@runMainDefault)
 

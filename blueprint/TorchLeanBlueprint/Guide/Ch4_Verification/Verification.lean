@@ -25,7 +25,7 @@ with the mathematics before opening the general theorem stack.
 
 # A Complete Robustness Run
 
-The bundled robustness workflow constructs a two-output network, compiles it to TorchLean's
+The bundled robustness workflow constructs a two-output network, lowers it to TorchLean's
 canonical IR, places an $`\ell_\infty` box of radius `0.1` around `[1, 1]`, and computes both IBP and CROWN
 bounds:
 
@@ -36,7 +36,7 @@ lake exe verify -- torchlean-robustness
 The relevant part of the output is:
 
 ```
-compiled IR nodes: 4
+lowered IR nodes: 4
 x0 = [1.000000, 1.000000], eps = 0.100000
 [IBP] logits lo = [1.800000, -2.200000]
 [IBP] logits hi = [2.200000, -1.800000]
@@ -61,44 +61,44 @@ $`-1`, giving logits in $`[1.8,2.2]` and $`[-2.2,-1.8]`. The margin is twice the
 in $`[3.6,4.4]`. IBP is exact on this tiny path because the ReLU phase never changes.
 
 The printed `true` is useful, but it is not itself the theorem. To turn the run into a proof, we
-must connect the compiled graph to the source model, the propagated boxes to the graph denotation,
-and the positive lower margin to the classification property. A claim about native Float32 needs
+must connect the lowered graph to the source model, the propagated boxes to the graph denotation,
+and the positive lower margin to the classification property. A claim about Lean Float32 needs
 one more link: that native execution refines the arithmetic used in the proof.
 
-The obligations also localize maintenance. A compiler change affects the source-to-graph argument;
+The obligations also localize maintenance. A lowering change affects the source-to-graph argument;
 a new CROWN activation affects bound propagation; and a CUDA deployment claim requires the native
 arithmetic link in addition to the real-valued theorem.
 
 # Semantic Target And Graph Boundary
 
 The verifier operates on the canonical `NN.IR.Graph`. An interval or affine form is meaningful only
-relative to a denotation of that same graph, parameter store, and input box. A compiler theorem is
+relative to a denotation of that same graph, parameter store, and input box. A lowering theorem is
 therefore part of a source-model claim.
 
 TorchLean has two relevant forward correspondences. The typed first-order
-[proved forward fragment](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/TorchLean/Proved/Public.lean)
-compiles `NN.Verification.TorchLean.Proved.Program` values. Its constructors cover constants,
+[proved forward fragment](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/TorchLean/Proved.lean)
+lowers `NN.Verification.TorchLean.Proved.ForwardProgram` values. Its constructors cover constants,
 parameters, arithmetic, ReLU, `exp`, `log`, inverse, matrix products, reshapes and permutations,
 last-axis softmax, 2D LayerNorm, linear and convolution layers, and MSE loss.
-`compileForward_wellFormed` proves structural well-formedness, while
-`runForwardIR_eq_evalForward` proves equality with the typed program evaluator.
+`Correctness.lowerForwardProgramToIR_wellFormed` proves structural well-formedness, while
+`Correctness.runForwardIR_eq_evalForward` proves equality with the typed program evaluator.
 
 The second correspondence starts from canonical IR rather than the typed source language.
-`execGraphOfIR_semantics_eq` proves that a successful lowering to Lean's executable autograd
-`ExecGraphData` preserves denotation for every input, under `NoMSELoss`, `NoRawLog`, and
+`denoteAll_eq_of_lowerToForwardGraph` proves that a successful lowering to the forward-only
+`IRExec.ForwardGraph` preserves denotation for every input, under `NoMSELoss`, `NoRawLog`, and
 `NoConcat`.
 
 Both are Lean semantic equalities over an abstract scalar `Context`. They are not statements that a
-PyTorch module, CUDA kernel, or vendor library agrees with the graph. General API compilation also
+PyTorch module, CUDA kernel, or vendor library agrees with the graph. General API lowering also
 does not inherit the typed-fragment theorem merely because it returns the same IR type.
 
 ```
 import NN.Verification.TorchLean.Proved
-import NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence
+import NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence
 
-#check NN.Verification.TorchLean.Proved.compileForward_wellFormed
-#check NN.Verification.TorchLean.Proved.runForwardIR_eq_evalForward
-#check Runtime.Autograd.Compiled.execGraphOfIR_semantics_eq
+#check NN.Verification.TorchLean.Proved.Correctness.lowerForwardProgramToIR_wellFormed
+#check NN.Verification.TorchLean.Proved.Correctness.runForwardIR_eq_evalForward
+#check Runtime.Autograd.IRExec.denoteAll_eq_of_lowerToForwardGraph
 ```
 
 # IBP
@@ -138,10 +138,10 @@ executable `Graph.runIBP` path.
 #check NN.MLTheory.CROWN.Proofs.runIBP?_encloses_evalGraphRec
 ```
 
-## Train, Compile, Then Bound
+## Train, Lower, Then Bound
 
 The robustness command above begins with fixed parameters so the arithmetic is easy to inspect.
-The MLP workflow exercises a longer path: train a `2 -> 100 -> 1` model with the compiled backend,
+The MLP workflow exercises a longer path: train a `2 -> 100 -> 1` model with typed graph execution,
 lower the trained model, and run the maintained IBP implementation over a small input box.
 
 ```
@@ -152,7 +152,7 @@ One seeded run prints:
 
 ```
 == TorchLean MLP workflow (2 → 100 → 1) ==
-Training with backend=Runtime.Autograd.Torch.Backend.compiled, device=cpu
+Training with execution=Runtime.Autograd.Torch.ExecutionMode.typedGraph, device=cpu
 dataset size = 3
 mean_loss(before) = 4.751697
 mean_loss(after) = 0.834089
@@ -162,7 +162,7 @@ IBP nodes=20 output_dim=1 lo=[1.524955] hi=[1.826789]
 
 The loss decrease is a runtime observation. The final interval is a bound produced by the
 IBP implementation. A theorem about the trained model additionally needs the exact parameter
-store used in compilation and a soundness bridge for this executable bound path. Keeping those
+store used in lowering and a soundness bridge for this executable bound path. Keeping those
 claims separate prevents a successful training log from being mistaken for a robustness proof.
 
 # CROWN, Alpha-CROWN, And Alpha-Beta-CROWN
@@ -359,7 +359,7 @@ A verification report should make the following boundary visible:
   * Established in current source
   * Not established by that evidence
 *
-  * `runForwardIR_eq_evalForward`
+  * `Correctness.runForwardIR_eq_evalForward`
   * typed proved-program and IR evaluator agree
   * arbitrary frontend or native runtime agreement
 *

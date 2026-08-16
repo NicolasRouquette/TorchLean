@@ -30,7 +30,7 @@ Where this sits in TorchLean:
 - `NN.Spec.*` files define pure denotational semantics: what tensors/layers mean.
 - This file packages some of those pure definitions as unary `OpSpec`s: `forward` plus VJP.
 - `NN.Runtime.Autograd.*` executes programs, tracks parameters, manages tapes/sessions, dispatches
-  CUDA kernels, handles RNG, and compiles graphs.
+  CUDA kernels, handles RNG, and lowers graphs for reusable typed execution.
 
 This file adapts operations whose input-gradient VJP is naturally expressed as a single `OpSpec`.
 Larger multi-input or parameterized layers (convolution, attention, batchnorm, pooling, RNG)
@@ -163,7 +163,8 @@ This `OpSpec` only returns the input gradient $\partial L/\partial x$. Parameter
 $W$ and $b$
 are not part of `OpSpec` (those live at the graph/runtime level).
 
-PyTorch analogy: `torch.nn.linear` forward, with autograd producing grads for `x/W/b`. -/
+PyTorch analogy: `torch.nn.functional.linear` forward, with autograd producing gradients for
+`x`, `W`, and `b`. -/
 def linearOp {α : Type} [Add α] [Mul α] [Zero α] [One α] {inDim outDim : Nat}
   (m : LinearSpec α inDim outDim) :
   OpSpec α (.dim inDim .scalar) (.dim outDim .scalar) :=
@@ -622,11 +623,11 @@ def bmmLeftOp {batch m n p : Nat}
 
 /-- One-hot embedding as an OpSpec over the one-hot input. Parameter gradients stay outside
 `OpSpec`; this wrapper returns only `dOneHot`. -/
-def embeddingOnehotOp {vocab embedDim seqLen : Nat}
-  (emb : EmbeddingSpec vocab embedDim α) :
+def oneHotEmbeddingOp {vocab embedDim seqLen : Nat}
+  (embedding : Embedding vocab embedDim α) :
   OpSpec α (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
-{ forward      := fun oneHot => embeddingOnehotSpec (α:=α) emb oneHot
-, backward     := fun oneHot dLdy => (embeddingOnehotBackwardSpec (α:=α) emb oneHot dLdy).1 }
+{ forward      := fun oneHot => embedding.oneHot oneHot
+, backward     := fun oneHot dLdy => (embedding.oneHotVjp oneHot dLdy).1 }
 
 /-- Expand vector to column (unsqueeze last dim size 1) and the inverse. -/
 def expandToColOp {n : Nat} {s : Shape} :

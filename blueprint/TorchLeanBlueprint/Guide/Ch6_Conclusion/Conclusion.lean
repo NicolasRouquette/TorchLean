@@ -17,7 +17,7 @@ W_2\operatorname{ReLU}(W_1x+b_1)+b_2.
 
 At first it was tempting to call that one object “the model.” By the end of the guide, the formula
 had acquired a shape-checked declaration, seeded parameters, an autograd tape, a lowered operation
-graph, several scalar interpretations, a backend plan, and verification evidence. A training run
+graph, several scalar interpretations, a kernel plan, and verification evidence. A training run
 gave us values; a theorem spoke about a mathematical object; a certificate connected a particular
 checker result to a proposition.
 
@@ -44,15 +44,15 @@ lake exe torchlean quickstart_tensors
 lake exe torchlean quickstart_autograd
 lake exe torchlean quickstart_mlp \
   --device cpu --steps 200 --seed 2026
-lake exe torchlean graphspec --device cpu --backend eager
+lake exe torchlean graphspec --device cpu --execution eager
 lake exe torchlean one_semantic_universe
-lake exe torchlean float32_modes
+lake exe torchlean float32_semantics
 lake exe torchlean numerical_certificate
 ```
 
 The first three stay close to concrete tensors: print them, differentiate a linear map, and train a
 small network. `graphspec` and `one_semantic_universe` then show why lowering matters: the same
-operation graph can be evaluated for values or interpreted for bounds. `float32_modes` separates
+operation graph can be evaluated for values or interpreted for bounds. `float32_semantics` separates
 host arithmetic from executable binary32 semantics, and `numerical_certificate` finishes with a
 graph-level checker that also rejects deliberately malformed evidence.
 

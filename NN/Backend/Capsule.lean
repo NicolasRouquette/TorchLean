@@ -391,41 +391,41 @@ def bind {β : Type} (c : KernelCapsule) (handler : KernelHandler β) :
       s!"implements `{c.op.name}`"
 
 /-- Whether the assurance policy admits this capsule. -/
-def allowedBy (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
-  c.trustLevel != .verified && cfg.assurance.acceptsTrust c.trustLevel
+def allowedBy (policy : KernelPolicy) (c : KernelCapsule) : Bool :=
+  c.trustLevel != .verified && policy.assurance.acceptsTrust c.trustLevel
 
-/-- Whether the backend preference admits this capsule's provider. -/
-def matchesPreference (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
-  match cfg.backend with
+/-- Whether the provider preference admits this capsule. -/
+def matchesPreference (policy : KernelPolicy) (c : KernelCapsule) : Bool :=
+  match policy.provider with
   | .auto => true
   | .prefer _ => true
   | .only p => p = c.provider
 
 /-- Whether this capsule is available on the selected device. -/
-def matchesDevice (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
-  cfg.device = c.device
+def matchesDevice (policy : KernelPolicy) (c : KernelCapsule) : Bool :=
+  policy.device = c.device
 
 /--
-Whether the capsule's gradient boundary is compatible with the requested execution config.
+Whether the capsule's gradient boundary is compatible with the requested kernel policy.
 
 `none` is inference mode, so any forward-capable capsule is suitable even when it also advertises a
 VJP. In `torchLeanTape` mode TorchLean owns the global tape and backward traversal. A capsule may
 still implement its local VJP either as TorchLean operations or as a named backend kernel;
 `backendVJP` requests the latter specifically.
 -/
-def matchesVJP (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
-  if cfg.vjpMode == .none || !c.op.requiresVJP then
+def matchesVJP (policy : KernelPolicy) (c : KernelCapsule) : Bool :=
+  if policy.vjpMode == .none || !c.op.requiresVJP then
     true
   else
-    match cfg.vjpMode with
+    match policy.vjpMode with
     | .none => true
     | .torchLeanTape => c.vjpMode == .torchLeanTape || c.vjpMode == .backendVJP
     | .backendVJP => c.vjpMode == .backendVJP
 
 /-- Planner-side admissibility predicate for a single capsule. -/
-def admissible (cfg : ExecutionConfig) (c : KernelCapsule) : Bool :=
-  c.supportsForward && c.contractsAligned && c.allowedBy cfg && c.matchesPreference cfg &&
-    c.matchesDevice cfg && c.matchesVJP cfg
+def admissible (policy : KernelPolicy) (c : KernelCapsule) : Bool :=
+  c.supportsForward && c.contractsAligned && c.allowedBy policy && c.matchesPreference policy &&
+    c.matchesDevice policy && c.matchesVJP policy
 
 end KernelCapsule
 
@@ -480,13 +480,13 @@ theorem run_eq_specification {ι : Type u} {ο : Type v} {op : BackendOp}
 
 /-- Whether this proof-bearing kernel matches a proof-oriented execution request. -/
 def selectable {ι : Type u} {ο : Type v} {op : BackendOp} {specification : ι → ο}
-    (cfg : ExecutionConfig) (kernel : ProofCarryingKernel ι ο op specification) : Bool :=
-  cfg.assurance == AssurancePolicy.verified &&
+    (policy : KernelPolicy) (kernel : ProofCarryingKernel ι ο op specification) : Bool :=
+  policy.assurance == AssurancePolicy.verified &&
     kernel.capsule.supportsForward &&
     kernel.capsule.contractsAligned &&
-    kernel.capsule.matchesPreference cfg &&
-    kernel.capsule.matchesDevice cfg &&
-    kernel.capsule.matchesVJP cfg
+    kernel.capsule.matchesPreference policy &&
+    kernel.capsule.matchesDevice policy &&
+    kernel.capsule.matchesVJP policy
 
 end ProofCarryingKernel
 
@@ -497,10 +497,10 @@ An `.only` preference filters the catalog through `admissible`. An `.auto` prefe
 catalog order. A `.prefer provider` request first searches that provider and then falls back to the
 ordinary catalog, so preference does not depend on module registration order.
 -/
-def chooseCapsuleFor? (cfg : ExecutionConfig) (op : BackendOp)
+def chooseCapsuleFor? (policy : KernelPolicy) (op : BackendOp)
     (capsules : List KernelCapsule) : Option KernelCapsule :=
-  let eligible := fun c => c.op == op && c.admissible cfg
-  match cfg.backend with
+  let eligible := fun c => c.op == op && c.admissible policy
+  match policy.provider with
   | .prefer provider =>
       (capsules.find? fun c => eligible c && c.provider == provider).orElse fun _ =>
         capsules.find? eligible

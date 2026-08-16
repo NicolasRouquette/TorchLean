@@ -24,8 +24,8 @@ This is used to connect weight gradients produced by backprop to adjoints of `fd
 For a linear layer `y = W x + b`, PyTorch’s backward returns:
 - `∂L/∂W = δ ⊗ x` (outer product of upstream gradient and input), and
 - `∂L/∂x = Wᵀ δ`.
-See `torch.nn.linear` documentation for the forward definition and standard gradients:
-https://pytorch.org/docs/stable/generated/torch.nn.linear.html
+See `torch.nn.Linear` documentation for the forward definition and standard gradients:
+https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
 -/
 
 @[expose] public section

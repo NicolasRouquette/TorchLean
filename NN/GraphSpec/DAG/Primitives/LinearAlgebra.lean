@@ -35,9 +35,9 @@ def matmul (mDim nDim pDim : Nat) :
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons a (.cons b .nil) => _root_.Spec.matMulSpec (α := α) a b
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun a b =>
-        Runtime.Autograd.TorchLean.matmul (m := m) (α := α)
+        Runtime.Autograd.TorchLean.mm (m := m) (α := α)
           (mDim := mDim) (nDim := nDim) (pDim := pDim) a b }
 
 /-- Pure evaluation of statically shaped matrix multiplication. -/
@@ -59,7 +59,7 @@ def bmm (batch mDim nDim pDim : Nat) :
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons a (.cons b .nil) => _root_.Spec.Tensor.bmmSpec (α := α) a b
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun a b =>
         Runtime.Autograd.TorchLean.bmm (m := m) (α := α)
           (batch := batch) (mDim := mDim) (nDim := nDim) (pDim := pDim) a b }
@@ -80,7 +80,7 @@ def batchedSharedMatMul (batch mDim nDim pDim : Nat) :
       match xs with
       | .cons shared (.cons (.dim weights) .nil) =>
           .dim fun i => _root_.Spec.matMulSpec (α := α) shared (weights i)
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun shared weights =>
         (do
           let singleton ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
@@ -119,7 +119,7 @@ def batchedSharedVecMat (batch rows columns : Nat) :
       match xs with
       | .cons vector (.cons (.dim matrices) .nil) =>
           .dim fun i => _root_.Spec.vecMatMulSpec (α := α) vector (matrices i)
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun vector matrices =>
         (do
           let singleton ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
@@ -161,7 +161,7 @@ def batchedVecMat (batch rows columns : Nat) :
       match xs with
       | .cons (.dim vectors) (.cons (.dim matrices) .nil) =>
           .dim fun i => _root_.Spec.vecMatMulSpec (α := α) (vectors i) (matrices i)
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun vectors matrices =>
         (do
           let rows' ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
@@ -196,13 +196,13 @@ def batchedSharedDot (batch width : Nat) :
       match xs with
       | .cons vector (.cons (.dim vectors) .nil) =>
           .dim fun i => .scalar (_root_.Spec.Tensor.dotSpec (α := α) vector (vectors i))
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun vector vectors =>
         (do
           let column ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
             (s₂ := .dim width (.dim 1 .scalar)) vector
             (by simp [_root_.Spec.Shape.size])
-          Runtime.Autograd.TorchLean.matmul (m := m) (α := α)
+          Runtime.Autograd.TorchLean.mm (m := m) (α := α)
             (mDim := batch) (nDim := width) (pDim := 1) vectors column >>= fun result =>
           Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
             (s₂ := .dim batch .scalar) result (by simp [_root_.Spec.Shape.size]) :
@@ -236,7 +236,7 @@ def batchedDepthwiseWeightedSum (batch width channels : Nat)
       | .cons (.dim values) (.cons (.dim weights) .nil) =>
           .dim fun i => _root_.Spec.Tensor.reduceSumAuto (α := α) 0
             (_root_.Spec.Tensor.mulSpec (values i) (weights i))
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun values weights =>
         (do
           let weighted ← Runtime.Autograd.TorchLean.mul (m := m) (α := α)
@@ -275,7 +275,7 @@ def batchedOuter (batch rows columns : Nat) :
       match xs with
       | .cons (.dim left) (.cons (.dim right) .nil) =>
           .dim fun i => _root_.Spec.outerProductSpec (α := α) (left i) (right i)
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun left right =>
         (do
           let columns' ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
@@ -314,7 +314,7 @@ def batchedRowScale (batch rows columns : Nat) :
           .dim fun i => .dim fun row => .dim fun column => .scalar <|
             _root_.Spec.Tensor.vecGet (scales i) row *
               _root_.Spec.get2 (matrices i) row column
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun scales matrices =>
         (do
           let columns' ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
@@ -356,7 +356,7 @@ def batchedScale (batch : Nat) (elementShape : Shape) :
           .dim fun i => _root_.Spec.Tensor.mulSpec
             (_root_.Spec.fill (_root_.Spec.Tensor.toScalar (coefficients i))
               elementShape) (values i)
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun coefficients values =>
         (do
           let expanded ← Runtime.Autograd.TorchLean.broadcastTo (m := m) (α := α)
@@ -391,12 +391,12 @@ def vecMat (rows columns : Nat) :
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons vector (.cons matrix .nil) => _root_.Spec.vecMatMulSpec (α := α) vector matrix
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun vector matrix =>
         (do
           let row ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
             (s₂ := .dim 1 (.dim rows .scalar)) vector (by simp [Spec.Shape.size])
-          let product ← Runtime.Autograd.TorchLean.matmul (m := m) (α := α)
+          let product ← Runtime.Autograd.TorchLean.mm (m := m) (α := α)
             (mDim := 1) (nDim := rows) (pDim := columns) row matrix
           Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
             (s₂ := .dim columns .scalar) product (by simp [Spec.Shape.size]) :
@@ -414,7 +414,7 @@ def rowScale (rows columns : Nat) :
           _root_.Spec.Tensor.dim fun row => _root_.Spec.Tensor.dim fun column =>
             _root_.Spec.Tensor.scalar <|
               _root_.Spec.Tensor.vecGet scales row * _root_.Spec.get2 matrix row column
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun scales matrix =>
         (do
           let column ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
@@ -437,14 +437,14 @@ def outer (rows columns : Nat) :
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons left (.cons right .nil) => _root_.Spec.outerProductSpec (α := α) left right
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun left right =>
         (do
           let leftColumn ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
             (s₂ := .dim rows (.dim 1 .scalar)) left (by simp [Spec.Shape.size])
           let rightRow ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
             (s₂ := .dim 1 (.dim columns .scalar)) right (by simp [Spec.Shape.size])
-          Runtime.Autograd.TorchLean.matmul (m := m) (α := α)
+          Runtime.Autograd.TorchLean.mm (m := m) (α := α)
             (mDim := rows) (nDim := 1) (pDim := columns) leftColumn rightRow :
           m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
             (.dim rows (.dim columns .scalar)))) }
@@ -456,7 +456,7 @@ def scalarMul (s : Shape) : PrimOp [.scalar, s] s :=
       match xs with
       | .cons (.scalar coefficient) (.cons input .nil) =>
           _root_.Spec.Tensor.mulSpec (_root_.Spec.fill coefficient s) input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun scalar input =>
         (do
           let expanded ← Runtime.Autograd.TorchLean.broadcastTo (m := m) (α := α)
@@ -480,7 +480,7 @@ def sum (s : Shape) : PrimOp [s] .scalar :=
     specFwd := fun {_α} _ xs =>
       match xs with
       | .cons input .nil => .scalar (_root_.Spec.Tensor.sumSpec input)
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.sum (m := m) (α := α) (s := s) input }
 

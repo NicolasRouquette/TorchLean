@@ -9,20 +9,17 @@ module
 public import NN.Spec.Core.TensorReductionShape
 
 /-!
-# Embedding
+# Embeddings
 
-Spec-layer embedding primitives.
-
-We model embeddings through **single-scalar** one-hot tensors: inputs have the same scalar type `α`
-as the embedding matrix, so they compose cleanly with the rest of the tensor language.
-
-If you want index-based embeddings (integer token ids) in runtime graphs, that lives at the
-TorchLean/session layer via Nat channels; the spec layer stays purely numeric by default.
+An embedding is a table whose rows are indexed by a finite vocabulary. The primary definition in
+this file uses `Fin vocab`, so an invalid token id cannot be supplied to the mathematical model.
+The one-hot presentation is retained as a differentiable linear map and is useful when comparing
+an indexed lookup with matrix multiplication.
 
 References / analogies:
-- In most ML frameworks, an embedding table is a matrix `W : (vocab x embedDim)` and an index-based
-  lookup returns `W[token_id]`. One-hot embeddings are the equivalent linear map
-  `oneHot @ W` (this file).
+- In most ML frameworks, an embedding table is a matrix `weight : (vocab x embedDim)` and an
+  index-based lookup returns `weight[token_id]`. One-hot embeddings are the equivalent linear map
+  `oneHot @ weight`.
 - Bengio et al., "A Neural Probabilistic Language Model" (2003) for the classic embedding-table
   framing in neural language models.
 - Mikolov et al., "Efficient Estimation of Word Representations in Vector Space" (2013) for the
@@ -42,33 +39,47 @@ open Tensor
 
 variable {α : Type} [Context α]
 
-/-- Standard embedding weight matrix: `vocab × embedDim`. -/
-structure EmbeddingSpec (vocab embedDim : Nat) (α : Type) where
-  /-- W. -/
-  W : Tensor α (.dim vocab (.dim embedDim .scalar))
+/-- A trainable table with `vocab` rows of width `embedDim`. -/
+structure Embedding (vocab embedDim : Nat) (α : Type) where
+  /-- Embedding table, stored row-major by executable backends. -/
+  weight : Tensor α (.dim vocab (.dim embedDim .scalar))
+
+namespace Embedding
+
+/--
+Look up every finite index in a tensor and append the embedding dimension to its shape.
+
+The index type is `Fin vocab`, rather than `Nat`, so this specification has no out-of-range case.
+Executable APIs may accept natural-number tensors at file or tokenizer boundaries, but must check
+them before interpreting them as indices into this table.
+-/
+def lookup {vocab embedDim : Nat} (embedding : Embedding vocab embedDim α) :
+    {shape : Shape} → Tensor (Fin vocab) shape → Tensor α (shape.appendDim embedDim)
+  | .scalar, .scalar index => getAtSpec embedding.weight index
+  | .dim _ _, .dim values => Tensor.dim (fun i => lookup embedding (values i))
 
 /--
 Embed a batch/sequence of one-hot vectors:
 
 `oneHot : (seqLen × vocab)` and `W : (vocab × embedDim)` gives `(seqLen × embedDim)`.
 -/
-def embeddingOnehotSpec {vocab embedDim seqLen : Nat}
-    (emb : EmbeddingSpec vocab embedDim α)
+def oneHot {vocab embedDim seqLen : Nat}
+    (embedding : Embedding vocab embedDim α)
     (oneHot : Tensor α (.dim seqLen (.dim vocab .scalar))) :
     Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-  matMulSpec oneHot emb.W
+  matMulSpec oneHot embedding.weight
 
 /-!
 ## Gradients
 
-`embedding_onehot_spec` is matrix multiplication:
+`Embedding.oneHot` is matrix multiplication:
 
-`Y = oneHot @ W`.
+`Y = oneHot @ weight`.
 
 So the reverse-mode derivatives are the standard ones:
 
 - `dOneHot = dY @ Wᵀ`
-- `dW      = oneHotᵀ @ dY`
+- `dWeight = oneHotᵀ @ dY`
 
 Even though "true" one-hot tensors are often treated as non-differentiable in practice, having a
 named VJP is useful for:
@@ -78,13 +89,16 @@ named VJP is useful for:
 - and keeping this layer consistent with the rest of the spec library.
 -/
 
-/-- Backward/VJP for `embedding_onehot_spec`: returns `(dOneHot, dW)`. -/
-def embeddingOnehotBackwardSpec {vocab embedDim seqLen : Nat}
-    (emb : EmbeddingSpec vocab embedDim α)
+/-- VJP for `Embedding.oneHot`, returning gradients for the input and table. -/
+def oneHotVjp {vocab embedDim seqLen : Nat}
+    (embedding : Embedding vocab embedDim α)
     (oneHot : Tensor α (.dim seqLen (.dim vocab .scalar)))
     (dY : Tensor α (.dim seqLen (.dim embedDim .scalar))) :
     (Tensor α (.dim seqLen (.dim vocab .scalar))) × (Tensor α (.dim vocab (.dim embedDim .scalar)))
       :=
-  matMulBackwardSpec (α := α) (m := seqLen) (n := vocab) (p := embedDim) oneHot emb.W dY
+  matMulBackwardSpec (α := α) (m := seqLen) (n := vocab) (p := embedDim)
+    oneHot embedding.weight dY
+
+end Embedding
 
 end Spec

@@ -22,7 +22,7 @@ floating-point representation:
 
 * `NN.IR.Graph` remains the program being analysed;
 * `IEEE32Exec.Interval32` supplies executable, outward-rounded binary32 intervals;
-* `NN.Backend.ExecutionAudit` records the kernel capsules selected by backend planning.
+* `NN.Backend.KernelPlanAudit` records the selected kernel capsules.
 
 A raw certificate is proof-free data that an application may construct or decode using its own
 artifact format; this module does not prescribe a JSON schema. `check` does not trust its node
@@ -766,14 +766,14 @@ def meanLeftRange (count : Nat) (range : IEEE32Exec.Interval32) : IEEE32Exec.Int
     (IEEE32Exec.Interval32.point (count : IEEE32Exec))
 
 /-- Numerical policy selected for a runtime-relevant graph node. -/
-def nodeNumericalPolicy (plan : AcceptedGraphPlan) (nodeId : Nat) : Option NumericalPolicy :=
+def nodeNumericalPolicy (plan : AcceptedGraphKernelPlan) (nodeId : Nat) : Option NumericalPolicy :=
   (plan.graphPlan.kernels.find? (fun kernel => kernel.nodeId == nodeId)).map
     (fun kernel => kernel.capsule.numericalPolicy)
 
 /-- Reductions are propagated only when the selected capsule promises the same fixed left fold as
 the canonical tensor semantics. Other schedules need the order-independent reduction bound from
 `NN.Floats.IEEEExec.Reductions` and are rejected here rather than mislabeled as deterministic. -/
-def requireFixedLeftReduction (plan : AcceptedGraphPlan) (node : Node) : Except String Unit :=
+def requireFixedLeftReduction (plan : AcceptedGraphKernelPlan) (node : Node) : Except String Unit :=
   match nodeNumericalPolicy plan node.id with
   | some policy =>
       if policy.reduction = .fixedLeft then
@@ -855,7 +855,7 @@ def numericalOpKey : OpKind -> NumericalOpKey
 /-- Read-only state supplied to one local range transfer. -/
 structure NumericalRangeContext where
   sources : Array CheckedSourceRange
-  plan : AcceptedGraphPlan
+  plan : AcceptedGraphKernelPlan
   ranges : Array CheckedNodeRange
 
 /-- Result computed by one numerical operation contract. -/
@@ -1269,7 +1269,7 @@ def defaultRegistry : Except String GraphRangeRegistry :=
 
 /-- Compute one node range using an explicit numerical contract registry. -/
 def deriveNodeRangeWith (registry : GraphRangeRegistry)
-    (sources : Array CheckedSourceRange) (plan : AcceptedGraphPlan)
+    (sources : Array CheckedSourceRange) (plan : AcceptedGraphKernelPlan)
     (ranges : Array CheckedNodeRange) (node : Node) : Except String RangeTransferResult := do
   let key := numericalOpKey node.kind
   let contract <- match registry.find? key with
@@ -1279,7 +1279,7 @@ def deriveNodeRangeWith (registry : GraphRangeRegistry)
   contract.derive { sources, plan, ranges } node
 
 /-- Compute one node range using TorchLean's built-in registry. -/
-def deriveNodeRange (sources : Array CheckedSourceRange) (plan : AcceptedGraphPlan)
+def deriveNodeRange (sources : Array CheckedSourceRange) (plan : AcceptedGraphKernelPlan)
     (ranges : Array CheckedNodeRange) (node : Node) : Except String RangeTransferResult := do
   let registry <- defaultRegistry
   deriveNodeRangeWith registry sources plan ranges node
@@ -1287,7 +1287,7 @@ def deriveNodeRange (sources : Array CheckedSourceRange) (plan : AcceptedGraphPl
 /-- Construct and validate the canonical range trace using an explicit contract registry. -/
 def buildRangeTraceWith (registry : GraphRangeRegistry)
     (graph : Graph) (sources : Array CheckedSourceRange)
-    (plan : AcceptedGraphPlan) :
+    (plan : AcceptedGraphKernelPlan) :
     Except String (Array CheckedNodeRange) := do
   graph.checkWellFormed
   let _ <- requireNumericalCoverage registry graph
@@ -1308,7 +1308,7 @@ def buildRangeTraceWith (registry : GraphRangeRegistry)
 
 /-- Construct and validate the canonical range trace using TorchLean's built-in contracts. -/
 def buildRangeTrace (graph : Graph) (sources : Array CheckedSourceRange)
-    (plan : AcceptedGraphPlan) : Except String (Array CheckedNodeRange) := do
+    (plan : AcceptedGraphKernelPlan) : Except String (Array CheckedNodeRange) := do
   let registry <- defaultRegistry
   buildRangeTraceWith registry graph sources plan
 
@@ -1328,7 +1328,7 @@ def sameRangeTrace (checked : Array CheckedNodeRange) (raw : Array NodeRange) : 
 
 /-- Untrusted certificate data.
 
-The audit field records the data selected by backend planning. The checker replans the graph under
+The audit field records the data selected by kernel selection. The checker replans the graph under
 `profileName` and compares the complete audit, so an artifact cannot choose its own provider,
 trust level, or evidence classification.
 -/
@@ -1337,7 +1337,7 @@ structure GraphNumericalCertificate where
   registryName : String
   sources : Array SourceRange
   ranges : Array NodeRange
-  audit : ExecutionAudit
+  audit : KernelPlanAudit
 
 instance : Repr GraphNumericalCertificate where
   reprPrec certificate _ := Std.Format.text <|
@@ -1349,7 +1349,7 @@ instance : Repr GraphNumericalCertificate where
 /-- Proof-carrying result returned by `check`. Raw endpoint data has been replaced by the canonical
 trace reconstructed from the graph, and `backendPlan` contains the acceptance-gate proof. -/
 structure CheckedCertificate where
-  /-- The exact graph whose ranges and backend plan were reconstructed by the checker. -/
+  /-- The exact graph whose ranges and kernel plan were reconstructed by the checker. -/
   graph : Graph
   /-- The untrusted artifact supplied to the checker, retained for inspection and serialization. -/
   raw : GraphNumericalCertificate
@@ -1357,8 +1357,8 @@ structure CheckedCertificate where
   sources : Array CheckedSourceRange
   /-- The canonical node-by-node range trace reconstructed from the graph. -/
   ranges : Array CheckedNodeRange
-  /-- The backend plan accepted when the checker replanned `graph`. -/
-  backendPlan : AcceptedGraphPlan
+  /-- The kernel plan accepted when the checker replanned `graph`. -/
+  backendPlan : AcceptedGraphKernelPlan
   /-- Proof that the reconstructed trace matches every range row claimed by `raw`. -/
   rangesMatch : sameRangeTrace ranges raw.ranges = true
   /-- Proof that the accepted plan's audit is the one stored in `raw`. -/
@@ -1374,18 +1374,18 @@ structure CheckedExecution where
   values : Array (NN.IR.DVal IEEE32Exec)
   withinRanges : executionWithinRanges certificate.ranges values = true
 
-/-- Convert an accepted backend plan and checked range trace into raw certificate data. -/
+/-- Convert an accepted kernel plan and checked range trace into raw certificate data. -/
 def toRaw (profile : BackendProfile) (registry : GraphRangeRegistry)
     (sources : Array SourceRange)
-    (ranges : Array CheckedNodeRange) (plan : AcceptedGraphPlan) : GraphNumericalCertificate :=
+    (ranges : Array CheckedNodeRange) (plan : AcceptedGraphKernelPlan) : GraphNumericalCertificate :=
   { profileName := profile.name
     registryName := registry.name
     sources
     ranges := eraseRangeTrace ranges
     audit := plan.audit }
 
-/-- Obtain an accepted backend plan or report the acceptance-gate failures. -/
-def acceptedPlan (profile : BackendProfile) (graph : Graph) : Except String AcceptedGraphPlan := do
+/-- Obtain an accepted kernel plan or report the acceptance-gate failures. -/
+def acceptedPlan (profile : BackendProfile) (graph : Graph) : Except String AcceptedGraphKernelPlan := do
   match <- profile.acceptGraph graph with
   | .accepted plan => pure plan
   | .rejected _ failures =>

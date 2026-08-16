@@ -79,7 +79,7 @@ def maintainedModules : List CapsuleModule :=
   ]
 
 /-- LibTorch's independently maintained provider module. Profiles opt into it by adding this module
-to their catalog; provider preference is handled by the execution configuration, so module order
+to their catalog; provider preference is handled by the kernel policy, so module order
 does not encode backend selection. -/
 def libTorchModule : CapsuleModule :=
   { name := "libtorch", capsules := LibTorch.capsules }

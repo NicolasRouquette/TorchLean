@@ -54,11 +54,11 @@ abbrev fnoOutShape {d : Nat} (cfg : FNOConfig d) : Spec.Shape :=
 /--
 Build the portable multidimensional FNO model.
 
-The shape and mode contracts are independent of the execution backend and are retained when a fused
-kernel is chosen.
+The shape and mode contracts are independent of the selected device and provider and are retained
+when a fused kernel is chosen.
 -/
 def fno {d : Nat} (cfg : FNOConfig d) :
-    nn.M (nn.Sequential (fnoInShape cfg) (fnoOutShape cfg)) :=
+    nn.Builder (nn.Sequential (fnoInShape cfg) (fnoOutShape cfg)) :=
   pure <| _root_.Runtime.Autograd.TorchLean.NN.FNO.model
     cfg.spatial cfg.modes cfg.width cfg.blocks (seed := cfg.seed)
 

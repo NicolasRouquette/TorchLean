@@ -34,7 +34,7 @@ def runParsedWith {φ ρ : Type}
     (train : Options → φ → IO ρ)
     (finish : Options → φ → ρ → IO Unit) :
     IO UInt32 :=
-  Runtime.runFloat exeName args
+  Module.Command.runFloat32 exeName args
     (banner := banner)
     (k := fun opts rest => do
       let (flags, rest) ← ModelZoo.orThrow exeName <| parseFlags rest
@@ -146,8 +146,8 @@ def usage {δ : Type} (cfg : Config δ) : String :=
     , ""
     , "Runtime:"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
-    , "  --backend eager|compiled"
-    , "  --dtype float|float32|ieee32"
+    , "  --execution eager|typed-graph"
+    , "  --scalar float32|ieee32-exec|complex64"
     , "  --show-backend     print backend capsules as they execute"
     ]
 
@@ -156,7 +156,7 @@ def run {δ : Type} (cfg : Config δ) (args : List String) : IO UInt32 := do
   if args.contains "--help" || args.contains "-h" then
     IO.println (usage cfg)
     return 0
-  Runtime.runFloat cfg.exeName args
+  Module.Command.runFloat32 cfg.exeName args
     (banner := ModelZoo.bannerWithDevice cfg.exeName cfg.description)
     (k := fun opts rest => do
       let (dataArgs, rest) ← ModelZoo.orThrow cfg.exeName <| cfg.parseData rest

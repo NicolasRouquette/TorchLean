@@ -24,41 +24,23 @@ namespace Internal
 namespace heads
 
 
-/--
-Classification head: `Flatten -> Linear`.
-
-Named head constructor built from `nn.flattenLinear`.
--/
-def classifier {s : Spec.Shape} (classes : Nat) (seedW seedB : Nat := 0) :
-    Sequential s (.dim classes .scalar) :=
-  flattenLinear (s := s) classes seedW seedB
-
-/-- Regression head: `Flatten -> Linear` with `outDim` outputs. -/
-def regressor {s : Spec.Shape} (outDim : Nat := 1) (seedW seedB : Nat := 0) :
-    Sequential s (.dim outDim .scalar) :=
-  flattenLinear (s := s) outDim seedW seedB
-
-/--
-`Flatten(start_dim=1) -> Linear` head for batched tensors.
-
-Input:  `N × σ`
-Output: `Mat N classes`
--/
-def classifierBatch {n : Nat} {s : Spec.Shape} (classes : Nat) (seedW seedB : Nat := 0) :
-    Sequential (.dim n s) (.dim n (.dim classes .scalar)) :=
+/-- Classification head that preserves any supplied leading dimensions. -/
+def classifier (leading : Spec.Shape := .scalar) {s : Spec.Shape}
+    (classes : Nat) (seedW seedB : Nat := 0) :
+    Sequential (leading.concat s) (leading.appendDim classes) :=
   seq!
-    flattenBatch (n := n) (s := s),
+    flattenLeading leading (s := s),
     linear (Spec.Shape.size s) classes (seedW := seedW) (seedB := seedB) (pfx :=
-      .dim n .scalar)
+      leading)
 
-/-- Batched regression head: `Flatten(start_dim=1) -> Linear(_, outDim)` producing `Mat N outDim`.
-  -/
-def regressorBatch {n : Nat} {s : Spec.Shape} (outDim : Nat := 1) (seedW seedB : Nat := 0) :
-    Sequential (.dim n s) (.dim n (.dim outDim .scalar)) :=
+/-- Regression head that preserves any supplied leading dimensions. -/
+def regressor (leading : Spec.Shape := .scalar) {s : Spec.Shape}
+    (outDim : Nat := 1) (seedW seedB : Nat := 0) :
+    Sequential (leading.concat s) (leading.appendDim outDim) :=
   seq!
-    flattenBatch (n := n) (s := s),
+    flattenLeading leading (s := s),
     linear (Spec.Shape.size s) outDim (seedW := seedW) (seedB := seedB) (pfx :=
-      .dim n .scalar)
+      leading)
 
 end heads
 

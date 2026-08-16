@@ -23,8 +23,8 @@ What this is (and isn't):
 * This is an extraction/convenience layer used in round-trip examples: run/train in Python, then
   optionally import weights back to Lean.
 * This is **not** a formal proof of semantic equivalence between PyTorch execution and the Lean IR
-  denotation. The reference semantics remain the Lean definitions (`NN.IR.Graph.denote*` and the
-  compiled runtime).
+  denotation. The reference semantics remain the Lean definitions (`NN.IR.Graph.denote*`) and the
+  proved `IRExec.ForwardGraph` bridge.
 
 Assumptions:
 
@@ -195,7 +195,7 @@ private def isConstId (g : NN.IR.Graph) (id : Nat) : Bool :=
 
 /--
 Detect constant node ids that correspond to **LayerNorm affine parameters** (gamma/beta) emitted
-by the TorchLean→IR compiler.
+by TorchLean-to-IR lowering.
 
 In the IR backend, `layer_norm(x, gamma, beta)` is lowered into:
 1) `layernorm(x)` (pure normalization)

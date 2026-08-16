@@ -193,7 +193,7 @@ $$`\frac{d}{dx}\log x=\frac1x`
 also assumes $`x>0`.
 
 The eager CPU tape, explicit IR evaluator, and proved forward fragment reject nonpositive raw-log
-inputs. A compiled pure closure fails on an invalid domain rather than inventing a real logarithm of
+inputs. A lowered typed graph fails on an invalid domain rather than inventing a real logarithm of
 a negative value. CUDA follows the native buffer operation, whose agreement needs a backend
 contract.
 

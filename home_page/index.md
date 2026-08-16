@@ -29,10 +29,10 @@
     </p>
 
     <p>
-      Once a model runs, its Lean definition can be lowered to the graph used by the runtime.
-      Backends and accelerated kernels remain explicit, including the assumptions made at external
-      library boundaries. The graph can then be studied with formally verified floating-point
-      arithmetic, autograd theorems, robustness bounds, and certificate checkers.
+      A fixed model can be recorded as a shape-indexed SSA graph for execution and differentiation.
+      Supported forward programs can also be lowered to TorchLean's shared operation IR for
+      verification and export. Theorems about derivatives are stated separately from these executable
+      graph representations, and backend assumptions remain explicit.
     </p>
   </div>
 

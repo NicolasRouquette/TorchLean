@@ -9,7 +9,7 @@ module
 public import NN
 public import NN.IR.Semantics
 public import NN.Tests.Runtime.Floats.Utils
-public import NN.Verification.TorchLean.CompileExec
+public import NN.Verification.TorchLean.ExecutableLowering
 public import Std
 
 /-!
@@ -17,8 +17,8 @@ public import Std
 
 Runtime check: IR denotation agrees with the executable `IRExec` bridge.
 
-We compile a small TorchLean model to `NN.IR.Graph` (plus payload), then compile that IR to an
-executable `ExecGraphData` and check that both evaluators produce the same output tensor.
+We lower a small TorchLean model to `NN.IR.Graph` with its payload, then lower that IR to an
+`ForwardGraph` and check that both evaluators produce the same output tensor.
 -/
 
 @[expose] public section
@@ -208,17 +208,17 @@ def checkBatchedAttentionLowering : IO Unit := do
           (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
           hBatch hSeq wqR wkR wvR woR xR mask
 
-    let compiled ←
-      match NN.Verification.TorchLean.compileForward
+    let lowered ←
+      match NN.Verification.TorchLean.lowerForwardToIR
           (α := Float) (paramShapes := paramShapes) (inShape := inputShape)
           (outShape := inputShape) prog params with
       | .error e =>
-          throw <| IO.userError s!"{label} attention lowering compile failed: {e}"
+          throw <| IO.userError s!"{label} attention lowering failed: {e}"
       | .ok c => pure c
     let payload : NN.IR.Payload Float :=
-      NN.Verification.TorchLean.payloadOfParamStore (α := Float) compiled.ps
+      NN.Verification.TorchLean.payloadOfParamStore (α := Float) lowered.ps
     if mask.isSome then
-      let hasHardMask := compiled.graph.nodes.any fun node =>
+      let hasHardMask := lowered.graph.nodes.any fun node =>
         match node.kind with
         | .hardMaskedSoftmax _ => true
         | _ => false
@@ -226,9 +226,9 @@ def checkBatchedAttentionLowering : IO Unit := do
         throw <| IO.userError
           s!"{label} attention lowering did not emit a hard-masked-softmax node"
     let yIR : Tensor Float inputShape ←
-      match NN.IR.Graph.denote (α := Float) (g := compiled.graph) (payload := payload)
+      match NN.IR.Graph.denote (α := Float) (g := lowered.graph) (payload := payload)
           (input := NN.IR.DVal.mk (α := Float) inputShape x)
-          (outputId := compiled.outputId) with
+          (outputId := lowered.outputId) with
       | .error e => throw <| IO.userError s!"{label} attention lowering denote failed: {e}"
       | .ok out =>
           match NN.IR.Graph.expectShape (α := Float) (expected := inputShape) out with
@@ -250,8 +250,8 @@ def checkBatchedAttentionLowering : IO Unit := do
     -- An exact input box must remain evaluable by IBP.  In particular, a fully blocked mask may
     -- not leave an inverse whose interval contains zero.
     let inputBox := NN.Verification.TorchLean.lInfBall (α := Float) x 0.0
-    let boxes := compiled.runIBP (compiled.seedInputBox inputBox)
-    let _ ← compiled.outputBoxOrThrow boxes
+    let boxes := lowered.runIBP (lowered.seedInputBox inputBox)
+    let _ ← lowered.outputBoxOrThrow boxes
 
   checkMask "unmasked"
   checkMask "fully blocked" (some (Spec.allFalseMask n n))
@@ -275,25 +275,25 @@ def run : IO Unit := do
       (inDim := inDim) (hidDim := hidDim) (outDim := outDim)
       (seedW1 := 0) (seedB1 := 1) (seedW2 := 2) (seedB2 := 3)
 
-  let paramShapes := Runtime.Autograd.TorchLean.NN.Seq.paramShapes model
+  let paramShapes := Runtime.Autograd.TorchLean.NN.Seq.stateShapes model
   let params : Runtime.Autograd.Torch.TList Float paramShapes :=
-    Runtime.Autograd.TorchLean.NN.Seq.initParams (m := model)
+    Runtime.Autograd.TorchLean.NN.Seq.initState (m := model)
 
   -- One input vector.
   let x : Tensor Float xShape :=
     Tensor.dim (fun i => Tensor.scalar ([0.5, 0.8][i.val]!))
 
-  -- TorchLean forwardProgram for the model.
+  -- TorchLean forward computation for the model.
   let prog :
       Runtime.Autograd.TorchLean.Program Float (paramShapes ++ [xShape]) yShape :=
-    Runtime.Autograd.TorchLean.NN.Seq.forwardProgram (model := model) (α := Float)
+    Runtime.Autograd.TorchLean.NN.Seq.forward model (α := Float)
 
-  -- Compile to IR and executable `ExecGraphData`.
+  -- Lower to IR and executable typed graph data.
   let (c, exec) ←
-    match NN.Verification.TorchLean.compileForwardExec
+    match NN.Verification.TorchLean.lowerForwardExecutable
         (α := Float) (paramShapes := paramShapes) (inShape := xShape) (outShape := yShape) prog
           params with
-    | .error e => throw <| IO.userError s!"torchlean_ir_exec_equiv_check: compile failed: {e}"
+    | .error e => throw <| IO.userError s!"torchlean_ir_exec_equiv_check: lowering failed: {e}"
     | .ok r => pure r
 
   let payload : NN.IR.Payload Float :=
@@ -309,7 +309,7 @@ def run : IO Unit := do
           s!", expected {repr xShape}"
       throw <| IO.userError msg
 
-  -- IR denotation at the compiled output node.
+  -- IR denotation at the lowered output node.
   let yIR : Tensor Float yShape ←
     match NN.IR.Graph.denote (α := Float) (g := c.graph) (payload := payload)
         (input := NN.IR.DVal.mk (α := Float) xShape x) (outputId := c.outputId) with
@@ -321,7 +321,7 @@ def run : IO Unit := do
             throw <| IO.userError s!"torchlean_ir_exec_equiv_check: IR output shape mismatch: {e}"
 
   -- Executable `GraphData` evaluation, then read the IR output id from the full value table.
-  let execVals := Runtime.Autograd.Compiled.ExecGraphData.denoteAll (α := Float) exec xExec
+  let execVals := Runtime.Autograd.IRExec.ForwardGraph.denoteAll (α := Float) exec xExec
   let yExec : Tensor Float yShape ←
     match execVals[c.outputId]? with
     | none =>

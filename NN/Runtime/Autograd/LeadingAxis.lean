@@ -12,7 +12,7 @@ public import NN.Spec.Core.Shape
 # Leading-Axis Reference Maps
 
 A backend-independent recursion for applying an operation pointwise over the outer axis of a
-shape-typed reference. Eager and compiled runtimes supply their own slicing, reshaping, and
+shape-typed reference. Eager and typed graph execution supply their own slicing, reshaping, and
 concatenation operations; the traversal itself remains shared.
 -/
 

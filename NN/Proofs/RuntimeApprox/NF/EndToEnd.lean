@@ -18,8 +18,9 @@ End-to-end runtime→spec bridge for NF graphs executed as `GraphData`.
 `NN.Proofs.RuntimeApprox.NF` provides per-op NF approximation lemmas and composes them over
 `RevGraph` via `RevGraph.eval_approx` and `NFBackend.backprop_approx`.
 
-This file links those results to the executable SSA/DAG form used by the proof-compiled runtime:
-`Proofs.Autograd.Algebra.GraphData`.
+This file links those results to the executable SSA/DAG form used by typed graph execution:
+`Proofs.Autograd.Algebra.GraphData`. A `GraphData` stores forward, JVP, and VJP functions; it does
+not carry the derivative laws required by the proof-carrying `Graph` type.
 
 In other words, this is where the abstract approximation graph model meets the executable graph
 interpreter used elsewhere in TorchLean.

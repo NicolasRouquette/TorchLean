@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.TorchLean.Backend
+public import NN.Runtime.Autograd.TorchLean.Program
 public import NN.Runtime.Autograd.TorchLean.Dual
 
 import Mathlib.Algebra.Order.Algebra
@@ -41,7 +41,7 @@ namespace Internal
 /--
 Unwrap a runtime `Result` into `IO`, throwing a user error on failure.
 
-This is used throughout this module because compilation/backprop utilities return an
+This is used throughout this module because lowering and backpropagation utilities return an
 `Autograd.Result` with a structured error message.
 -/
 def okOrThrow {α : Type} : Runtime.Autograd.Result α → IO α
@@ -90,7 +90,7 @@ abbrev tlistSplitAppend {α : Type} :
 /--
 Cast a prefix of a dense gradient array into a typed list `TList α ss`.
 
-This is used when we ask the compiled engine for a dense list of gradients w.r.t. all inputs and
+This is used when we ask the typed graph engine for a dense list of gradients with respect to all inputs and
 need to recover a shape-typed view.
 -/
 def gradsPrefix {α : Type} [DecidableEq Shape] :
@@ -114,43 +114,43 @@ end Internal
 
 open Internal
 
-/--
-Compile a scalar TorchLean program to a reusable `CompiledScalar` (static SSA/DAG + output node).
--/
-def compileLoss {α : Type} [Context α] [DecidableEq Shape]
+/-- Lower a scalar-valued TorchLean program to a reusable typed graph. -/
+def lowerScalarToTypedGraph {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes inputShapes : List Shape}
-    (loss :
+    (program :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) Shape.scalar) :
-    IO (_root_.Runtime.Autograd.Torch.CompiledScalar α (paramShapes ++ inputShapes)) := do
+    IO (_root_.Runtime.Autograd.Torch.TypedScalarGraph α (paramShapes ++ inputShapes)) := do
   let Γ : List Shape := paramShapes ++ inputShapes
-  let build : Runtime.Autograd.Compiled.GraphM.M α Γ (Runtime.Autograd.Compiled.GraphM.Var
+  let build : Runtime.Autograd.TypedGraph.GraphM.M α Γ (Runtime.Autograd.TypedGraph.GraphM.Var
     Shape.scalar) := do
-    let vs ← Runtime.Autograd.Compiled.GraphM.args (α := α) (Γ := Γ)
+    let vs ← Runtime.Autograd.TypedGraph.GraphM.args (α := α) (Γ := Γ)
     CurriedRef.applyVarList (Γ := Γ)
-      (β := Runtime.Autograd.Compiled.GraphM.M α Γ (Runtime.Autograd.Compiled.GraphM.Var
+      (β := Runtime.Autograd.TypedGraph.GraphM.M α Γ (Runtime.Autograd.TypedGraph.GraphM.Var
         Shape.scalar))
-      (loss (β := α) (m := Runtime.Autograd.Compiled.GraphM.M α Γ)) vs
-  okOrThrow (_root_.Runtime.Autograd.Torch.compileScalar (α := α) (Γ := Γ) build)
+      (program (β := α) (m := Runtime.Autograd.TypedGraph.GraphM.M α Γ)) vs
+  okOrThrow (_root_.Runtime.Autograd.Torch.lowerScalarToTypedGraph (α := α) (Γ := Γ) build)
 
 /--
-Compile a TorchLean program to a reusable `CompiledGraph` (static SSA/DAG + output node).
+Lower a TorchLean program to a reusable `TypedGraph`.
 
-This is the non-scalar analogue of `compileLoss`. It is used by `jacrevOut*` and `vjpOut*`.
+The graph retains a typed reference to the value returned by the program, which may be an input or
+any recorded node. This is the tensor-output analogue of `lowerScalarToTypedGraph`; it is
+used by `jacrevOut*` and `vjpOut*`.
 -/
-def compileGraph {α : Type} [Context α] [DecidableEq Shape]
+def lowerToTypedGraph {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes inputShapes : List Shape} {τ : Shape}
     (f :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) τ) :
-    IO (_root_.Runtime.Autograd.Torch.CompiledGraph α (paramShapes ++ inputShapes) τ) := do
+    IO (_root_.Runtime.Autograd.Torch.TypedGraph α (paramShapes ++ inputShapes) τ) := do
   let Γ : List Shape := paramShapes ++ inputShapes
-  let build : Runtime.Autograd.Compiled.GraphM.M α Γ (Runtime.Autograd.Compiled.GraphM.Var τ) := do
-    let vs ← Runtime.Autograd.Compiled.GraphM.args (α := α) (Γ := Γ)
+  let build : Runtime.Autograd.TypedGraph.GraphM.M α Γ (Runtime.Autograd.TypedGraph.GraphM.Var τ) := do
+    let vs ← Runtime.Autograd.TypedGraph.GraphM.args (α := α) (Γ := Γ)
     CurriedRef.applyVarList (Γ := Γ)
-      (β := Runtime.Autograd.Compiled.GraphM.M α Γ (Runtime.Autograd.Compiled.GraphM.Var τ))
-      (f (β := α) (m := Runtime.Autograd.Compiled.GraphM.M α Γ)) vs
-  okOrThrow (_root_.Runtime.Autograd.Torch.compileGraph (α := α) (Γ := Γ) (τ := τ) build)
+      (β := Runtime.Autograd.TypedGraph.GraphM.M α Γ (Runtime.Autograd.TypedGraph.GraphM.Var τ))
+      (f (β := α) (m := Runtime.Autograd.TypedGraph.GraphM.M α Γ)) vs
+  okOrThrow (_root_.Runtime.Autograd.Torch.lowerToTypedGraph (α := α) (Γ := Γ) (τ := τ) build)
 
 /-- Jacobian (reverse-mode) of a tensor output w.r.t. parameters, as an array of VJPs. -/
 def jacrevOutParams {α : Type} [Context α] [DecidableEq Shape]
@@ -161,14 +161,14 @@ def jacrevOutParams {α : Type} [Context α] [DecidableEq Shape]
     (params : TList α paramShapes)
     (xs : TList α inputShapes) :
     IO (Array (TList α paramShapes)) := do
-  let c ← compileGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
+  let c ← lowerToTypedGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
   let Γ : List Shape := paramShapes ++ inputShapes
   let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
   let seeds : Array (Tensor α τ) := basisTensors (α := α) τ
   let rows : Array (TList α paramShapes) :=
     seeds.map (fun seedOut =>
       let gAll : TList α Γ :=
-        _root_.Runtime.Autograd.Torch.CompiledGraph.vjpWithSeed (α := α) (Γ := Γ) (τ := τ) c args
+        _root_.Runtime.Autograd.Torch.TypedGraph.vjpWithSeed (α := α) (Γ := Γ) (τ := τ) c args
           seedOut
       (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).1)
   pure rows
@@ -182,14 +182,14 @@ def jacrevOutInputs {α : Type} [Context α] [DecidableEq Shape]
     (params : TList α paramShapes)
     (xs : TList α inputShapes) :
     IO (Array (TList α inputShapes)) := do
-  let c ← compileGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
+  let c ← lowerToTypedGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
   let Γ : List Shape := paramShapes ++ inputShapes
   let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
   let seeds : Array (Tensor α τ) := basisTensors (α := α) τ
   let rows : Array (TList α inputShapes) :=
     seeds.map (fun seedOut =>
       let gAll : TList α Γ :=
-        _root_.Runtime.Autograd.Torch.CompiledGraph.vjpWithSeed (α := α) (Γ := Γ) (τ := τ) c args
+        _root_.Runtime.Autograd.Torch.TypedGraph.vjpWithSeed (α := α) (Γ := Γ) (τ := τ) c args
           seedOut
       (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).2)
   pure rows
@@ -199,8 +199,8 @@ Jacobian (forward-mode) of a tensor output for a *single* tensor input.
 
 Returns the Jacobian columns as `Array (Tensor α τ)`, one column per input basis direction.
 
-Implementation note: this uses **dual-number forward evaluation** (compile/run under `Dual α`)
-instead of graph-level `jvp`, because the compiled graph provides VJPs broadly but not
+Implementation note: this uses **dual-number forward evaluation** (record and run under `Dual α`)
+instead of graph-level `jvp`, because the typed graph provides VJPs broadly but not
 JVP rules for every op.
 -/
 def jacfwdInput {α : Type} [Context α] [DecidableEq Shape]
@@ -211,14 +211,14 @@ def jacfwdInput {α : Type} [Context α] [DecidableEq Shape]
     (x : Tensor α σ) :
     IO (Array (Tensor α τ)) := do
   let αD := Dual α
-  let c ← compileGraph (α := αD)
+  let c ← lowerToTypedGraph (α := αD)
     (paramShapes := ([] : List Shape)) (inputShapes := [σ]) (τ := τ)
     (fun {β} _ _ => f (β := β))
   let dirs : Array (Tensor α σ) := basisTensors (α := α) σ
   pure <| dirs.map (fun dx =>
     let xD : Tensor αD σ := DualTensor.withTangents (α := α) (s := σ) x dx
     let outD : Tensor αD τ :=
-      _root_.Runtime.Autograd.Torch.CompiledGraph.forward (α := αD) (Γ := [σ]) (τ := τ) c (.cons xD
+      _root_.Runtime.Autograd.Torch.TypedGraph.forward (α := αD) (Γ := [σ]) (τ := τ) c (.cons xD
         .nil)
     DualTensor.tangent (α := α) (s := τ) outD)
 
@@ -231,10 +231,11 @@ def gradParams {α : Type} [Context α] [DecidableEq Shape]
     (params : TList α paramShapes)
     (xs : TList α inputShapes) :
     IO (TList α paramShapes) := do
-  let c ← compileLoss (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) loss
+  let c ← lowerScalarToTypedGraph (α := α)
+    (paramShapes := paramShapes) (inputShapes := inputShapes) loss
   let Γ : List Shape := paramShapes ++ inputShapes
   let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.CompiledScalar.backward (α := α) (Γ := Γ) c
+  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.TypedScalarGraph.backward (α := α) (Γ := Γ) c
     args
   pure (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).1
 
@@ -247,10 +248,11 @@ def gradInputs {α : Type} [Context α] [DecidableEq Shape]
     (params : TList α paramShapes)
     (xs : TList α inputShapes) :
     IO (TList α inputShapes) := do
-  let c ← compileLoss (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) loss
+  let c ← lowerScalarToTypedGraph (α := α)
+    (paramShapes := paramShapes) (inputShapes := inputShapes) loss
   let Γ : List Shape := paramShapes ++ inputShapes
   let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.CompiledScalar.backward (α := α) (Γ := Γ) c
+  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.TypedScalarGraph.backward (α := α) (Γ := Γ) c
     args
   pure (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).2
 
@@ -264,10 +266,10 @@ def vjpOutParams {α : Type} [Context α] [DecidableEq Shape]
     (xs : TList α inputShapes)
     (seedOut : Tensor α τ) :
     IO (TList α paramShapes) := do
-  let c ← compileGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
+  let c ← lowerToTypedGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
   let Γ : List Shape := paramShapes ++ inputShapes
   let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.CompiledGraph.vjpWithSeed (α := α) (Γ := Γ) (τ
+  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.TypedGraph.vjpWithSeed (α := α) (Γ := Γ) (τ
     := τ) c args seedOut
   pure (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).1
 
@@ -281,10 +283,10 @@ def vjpOutInputs {α : Type} [Context α] [DecidableEq Shape]
     (xs : TList α inputShapes)
     (seedOut : Tensor α τ) :
     IO (TList α inputShapes) := do
-  let c ← compileGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
+  let c ← lowerToTypedGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
   let Γ : List Shape := paramShapes ++ inputShapes
   let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.CompiledGraph.vjpWithSeed (α := α) (Γ := Γ) (τ
+  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.TypedGraph.vjpWithSeed (α := α) (Γ := Γ) (τ
     := τ) c args seedOut
   pure (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).2
 
@@ -298,13 +300,14 @@ def jvpLossParams {α : Type} [Context α] [DecidableEq Shape]
     (xs : TList α inputShapes)
     (vparams : TList α paramShapes) :
     IO α := do
-  let c ← compileLoss (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) loss
+  let c ← lowerScalarToTypedGraph (α := α)
+    (paramShapes := paramShapes) (inputShapes := inputShapes) loss
   let Γ : List Shape := paramShapes ++ inputShapes
   let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
   let zerosX : TList α inputShapes := TList.zero (α := α) (ss := inputShapes)
   let dargs : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) vparams
     zerosX
-  let dl : Tensor α Shape.scalar := _root_.Runtime.Autograd.Torch.CompiledScalar.jvp (α := α) (Γ :=
+  let dl : Tensor α Shape.scalar := _root_.Runtime.Autograd.Torch.TypedScalarGraph.jvp (α := α) (Γ :=
     Γ) c args dargs
   match dl with
   | .scalar a => pure a
@@ -319,12 +322,13 @@ def jvpLossInputs {α : Type} [Context α] [DecidableEq Shape]
     (xs : TList α inputShapes)
     (vxs : TList α inputShapes) :
     IO α := do
-  let c ← compileLoss (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) loss
+  let c ← lowerScalarToTypedGraph (α := α)
+    (paramShapes := paramShapes) (inputShapes := inputShapes) loss
   let Γ : List Shape := paramShapes ++ inputShapes
   let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
   let zerosP : TList α paramShapes := TList.zero (α := α) (ss := paramShapes)
   let dargs : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) zerosP vxs
-  let dl : Tensor α Shape.scalar := _root_.Runtime.Autograd.Torch.CompiledScalar.jvp (α := α) (Γ :=
+  let dl : Tensor α Shape.scalar := _root_.Runtime.Autograd.Torch.TypedScalarGraph.jvp (α := α) (Γ :=
     Γ) c args dargs
   match dl with
   | .scalar a => pure a
@@ -358,23 +362,23 @@ def hvpParams {α : Type} [Context α] [DecidableEq Shape]
   let argsD : TList αD Γ :=
     tlistAppend (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) paramsD xsD
 
-  let build : Runtime.Autograd.Compiled.GraphM.M αD Γ (Runtime.Autograd.Compiled.GraphM.Var
+  let build : Runtime.Autograd.TypedGraph.GraphM.M αD Γ (Runtime.Autograd.TypedGraph.GraphM.Var
     Shape.scalar) := do
-    let vs ← Runtime.Autograd.Compiled.GraphM.args (α := αD) (Γ := Γ)
+    let vs ← Runtime.Autograd.TypedGraph.GraphM.args (α := αD) (Γ := Γ)
     CurriedRef.applyVarList (Γ := Γ)
-      (β := Runtime.Autograd.Compiled.GraphM.M αD Γ (Runtime.Autograd.Compiled.GraphM.Var
+      (β := Runtime.Autograd.TypedGraph.GraphM.M αD Γ (Runtime.Autograd.TypedGraph.GraphM.Var
         Shape.scalar))
-      (loss (β := αD) (m := Runtime.Autograd.Compiled.GraphM.M αD Γ)) vs
+      (loss (β := αD) (m := Runtime.Autograd.TypedGraph.GraphM.M αD Γ)) vs
 
-  let compiled ← okOrThrow (_root_.Runtime.Autograd.Torch.compileScalar (α := αD) (Γ := Γ) build)
-  let ssFull : List Shape := compiled.ssPrev ++ [Shape.scalar]
+  let graph ← okOrThrow (_root_.Runtime.Autograd.Torch.lowerScalarToTypedGraph (α := αD) (Γ := Γ) build)
+  let ssFull : List Shape := graph.nodeShapes
   let fullGraph : Proofs.Autograd.Algebra.GraphData αD Unit Γ ssFull :=
-    .snoc (ss := compiled.ssPrev) compiled.gPrev compiled.node
+    graph.data
 
-  let (tape, _ctx) := Runtime.Autograd.Compiled.compile (α := αD) (Γ := Γ) (ss := ssFull) fullGraph
+  let (tape, _ctx) := Runtime.Autograd.TypedGraph.lowerToTape (α := αD) (Γ := Γ) (ss := ssFull) fullGraph
     argsD
-  let gradsAny ← okOrThrow (Runtime.Autograd.Compiled.backwardDenseAllFromOutput (α := αD) (Γ := Γ)
-    (ss := ssFull) tape)
+  let gradsAny ← okOrThrow (Runtime.Autograd.TypedGraph.backwardDenseAllFrom (α := αD) (Γ := Γ)
+    (ss := ssFull) tape graph.output (Tensor.scalar (1 : αD)))
   let gradsD : TList αD Γ := ← gradsPrefix (α := αD) (ss := Γ) gradsAny 0
   let gradsParamsD : TList αD paramShapes :=
     (tlistSplitAppend (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) gradsD).1
@@ -410,23 +414,23 @@ def hvpInputs {α : Type} [Context α] [DecidableEq Shape]
   let argsD : TList αD Γ :=
     tlistAppend (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) paramsD xsD
 
-  let build : Runtime.Autograd.Compiled.GraphM.M αD Γ (Runtime.Autograd.Compiled.GraphM.Var
+  let build : Runtime.Autograd.TypedGraph.GraphM.M αD Γ (Runtime.Autograd.TypedGraph.GraphM.Var
     Shape.scalar) := do
-    let vs ← Runtime.Autograd.Compiled.GraphM.args (α := αD) (Γ := Γ)
+    let vs ← Runtime.Autograd.TypedGraph.GraphM.args (α := αD) (Γ := Γ)
     CurriedRef.applyVarList (Γ := Γ)
-      (β := Runtime.Autograd.Compiled.GraphM.M αD Γ (Runtime.Autograd.Compiled.GraphM.Var
+      (β := Runtime.Autograd.TypedGraph.GraphM.M αD Γ (Runtime.Autograd.TypedGraph.GraphM.Var
         Shape.scalar))
-      (loss (β := αD) (m := Runtime.Autograd.Compiled.GraphM.M αD Γ)) vs
+      (loss (β := αD) (m := Runtime.Autograd.TypedGraph.GraphM.M αD Γ)) vs
 
-  let compiled ← okOrThrow (_root_.Runtime.Autograd.Torch.compileScalar (α := αD) (Γ := Γ) build)
-  let ssFull : List Shape := compiled.ssPrev ++ [Shape.scalar]
+  let graph ← okOrThrow (_root_.Runtime.Autograd.Torch.lowerScalarToTypedGraph (α := αD) (Γ := Γ) build)
+  let ssFull : List Shape := graph.nodeShapes
   let fullGraph : Proofs.Autograd.Algebra.GraphData αD Unit Γ ssFull :=
-    .snoc (ss := compiled.ssPrev) compiled.gPrev compiled.node
+    graph.data
 
-  let (tape, _ctx) := Runtime.Autograd.Compiled.compile (α := αD) (Γ := Γ) (ss := ssFull) fullGraph
+  let (tape, _ctx) := Runtime.Autograd.TypedGraph.lowerToTape (α := αD) (Γ := Γ) (ss := ssFull) fullGraph
     argsD
-  let gradsAny ← okOrThrow (Runtime.Autograd.Compiled.backwardDenseAllFromOutput (α := αD) (Γ := Γ)
-    (ss := ssFull) tape)
+  let gradsAny ← okOrThrow (Runtime.Autograd.TypedGraph.backwardDenseAllFrom (α := αD) (Γ := Γ)
+    (ss := ssFull) tape graph.output (Tensor.scalar (1 : αD)))
   let gradsD : TList αD Γ := ← gradsPrefix (α := αD) (ss := Γ) gradsAny 0
   let gradsInputsD : TList αD inputShapes :=
     (tlistSplitAppend (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) gradsD).2

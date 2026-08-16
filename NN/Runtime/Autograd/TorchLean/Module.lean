@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Torch.Utils
-public import NN.Runtime.Autograd.TorchLean.Backend
+public import NN.Runtime.Autograd.TorchLean.Program
 public import NN.Runtime.Autograd.TorchLean.Training
 
 import Mathlib.Algebra.Order.Algebra
@@ -15,20 +15,21 @@ import Mathlib.Algebra.Order.Algebra
 /-!
 # Module
 
-TorchLean module wrappers with PyTorch-style ergonomics.
+Low-level executable state and scalar objectives.
 
 TorchLean already provides the core ingredients:
 - a small `Ops` interface, so you write a model once and run it on different backends;
-- `scalarTrainer`, which builds an eager or compiled training loop for scalar losses.
+- `scalarTrainer`, which builds an eager or typed graph training loop for scalar losses.
 
-This file adds a thin “`nn.Module`-style” wrapper so users can:
-- package **initial parameters** + a **loss definition** as a single object,
-- instantiate it under a chosen backend (`.eager` / `.compiled`),
-- call `forward / backward / step / params` with a small, consistent API.
+This file packages initial parameters, persistent buffers, and a scalar loss definition, then
+instantiates that definition under `.eager` or `.typedGraph` execution. The runtime module exposes
+loss evaluation, explicit state gradients, optimizer steps, and state readback. The application API
+in `NN.API.Module` provides the corresponding model-facing `run`, `train`, and `eval` operations.
 
-Important: dtype selection is handled in `TorchLean.Runtime.DType` (because it picks the Lean type `α`).
+Important: scalar selection is handled in `TorchLean.Runtime.ScalarMode` because it picks the Lean
+type `α`; it is not a per-tensor storage dtype.
 The module definitions here are **polymorphic in `α`**, so the same module can be:
-- used in executables with `Float` / `IEEE32Exec`, or
+- used in executables with native `Float32`, host `Float`, or `IEEE32Exec`, or
 - instantiated at `ℝ` in proofs (noncomputable; not for `IO` execution).
 -/
 
@@ -68,7 +69,7 @@ namespace RuntimeInit
 /--
 Runtime initializer for a Float parameter.
 
-The usual `ScalarModuleDef.initParams` path stores initializers as typed Lean tensors. That is the
+The usual `ObjectiveDef.initState` path stores initializers as typed Lean tensors. That is the
 right representation when the initial value itself is part of the Lean object being inspected.
 For large Float runs, it is better to allocate runtime storage from a compact initialization scheme
 and synchronize the host tensor only when parameters are explicitly read back.
@@ -319,9 +320,11 @@ def cudaBufferOf (n : Nat) (init : FloatInit) : IO _root_.Runtime.Autograd.Cuda.
           s!"torch.runtimeInit: flat initializer length mismatch (expected {n}, got {values.size})"
 
 /-- Materialize a runtime initializer as a normal host tensor. Used for CPU execution. -/
-def hostTensorOf {s : Shape} (init : FloatInit) : IO (Tensor Float s) := do
+def hostTensorOf {α : Type} (cast : Float → α) {s : Shape} (init : FloatInit) :
+    IO (Tensor α s) := do
   let values ← floatArrayOf (Spec.Shape.size s) init
-  pure <| _root_.Runtime.Autograd.Cuda.Convert.unflattenFloatUnsafe (s := s) values
+  let tensor := _root_.Runtime.Autograd.Cuda.Convert.unflattenFloatUnsafe (s := s) values
+  pure <| Spec.mapTensor cast tensor
 
 /--
 Host slots for a parameter list before runtime initialization installs the real values.
@@ -330,9 +333,9 @@ CUDA runtime initialization immediately replaces these with CUDA mirrors and mar
 stale. These entries still give the existing `Param` type a valid host slot for later explicit
 readback.
 -/
-def zeroFloatTList : {ss : List Shape} → Torch.TList Float ss
+def zeroTList {α : Type} (zero : α) : {ss : List Shape} → Torch.TList α ss
   | [] => .nil
-  | s :: ss => .cons (Spec.fill 0.0 s) (zeroFloatTList (ss := ss))
+  | s :: ss => .cons (Spec.fill zero s) (zeroTList zero (ss := ss))
 
 /--
 Apply a shape-indexed initialization plan to an already-created parameter list.
@@ -340,24 +343,25 @@ Apply a shape-indexed initialization plan to an already-created parameter list.
 The shape list appears on both sides of the type:
 
 ```lean
-Torch.ParamList Float ss → RuntimeInit.Plan ss → IO Unit
+Torch.ParamList α ss → RuntimeInit.Plan ss → IO Unit
 ```
 
 So Lean checks the bookkeeping that Python frameworks usually check at runtime: every parameter gets
 one initializer, and no extra initializer is silently ignored.
 -/
-def applyFloatPlan (opts : Torch.Options) :
-    {ss : List Shape} → Torch.ParamList Float ss → Plan ss → IO Unit
+def applyPlan {α : Type} [Torch.Internal.CudaBridge.TensorConv α]
+    (cast : Float → α) (opts : Torch.Options) :
+    {ss : List Shape} → Torch.ParamList α ss → Plan ss → IO Unit
   | [], .nil, .nil => pure ()
   | s :: ss, .cons p ps, .cons init rest => do
       if opts.usesCuda then
         let buf ← cudaBufferOf (Spec.Shape.size s) init
-        _root_.Runtime.Autograd.Torch.Internal.setParamCudaValue (α := Float) (sh := s) p
+        _root_.Runtime.Autograd.Torch.Internal.setParamCudaValue (α := α) (sh := s) p
           { s := s, buf := buf }
       else
-        let t ← hostTensorOf (s := s) init
-        _root_.Runtime.Autograd.Torch.Internal.setParamHostValue (α := Float) (sh := s) p t
-      applyFloatPlan (opts := opts) (ss := ss) ps rest
+        let t ← hostTensorOf cast (s := s) init
+        _root_.Runtime.Autograd.Torch.Internal.setParamHostValue (α := α) (sh := s) p t
+      applyPlan (α := α) cast (opts := opts) (ss := ss) ps rest
 
 /--
 Apply a runtime list of initializers after checking it against the parameter shapes.
@@ -366,27 +370,28 @@ Apply a runtime list of initializers after checking it against the parameter sha
 the initializer list comes from outside Lean's typechecker, such as a checkpoint, JSON file, or CLI
 experiment.
 -/
-def applyFloatInits (opts : Torch.Options) {ss : List Shape}
-    (ps : Torch.ParamList Float ss) (inits : List FloatInit) : IO Unit := do
+def applyInits {α : Type} [Torch.Internal.CudaBridge.TensorConv α]
+    (cast : Float → α) (opts : Torch.Options) {ss : List Shape}
+    (ps : Torch.ParamList α ss) (inits : List FloatInit) : IO Unit := do
   match Plan.ofList? ss inits with
-  | .ok plan => applyFloatPlan (opts := opts) ps plan
+  | .ok plan => applyPlan (α := α) cast (opts := opts) ps plan
   | .error msg => throw <| IO.userError msg
 
 end RuntimeInit
 
-/-! ## Scalar-loss module (training) -/
+/-! ## Modules With Scalar Objectives -/
 
 /--
-A scalar-loss module definition:
-- `initParams` is stored as Float constants (easy to write with `tensorOfList!`),
+An immutable scalar-objective definition:
+- `initState` stores initial trainable parameters and persistent buffers as `Float` tensors,
 - `loss` is *polymorphic in the scalar backend* (same code works for Float/IEEE32Exec/…).
 
-You can instantiate this definition as a `ScalarModule` under a chosen backend and dtype.
+You can instantiate this definition as an `Objective` under a chosen execution mode and scalar.
 -/
-structure ScalarModuleDef (paramShapes inputShapes : List Shape)
+structure ObjectiveDef (stateShapes inputShapes : List Shape)
     (natInputShapes : List Shape := []) where
-  /-- Initial parameter values, stored as `Float` tensors and cast at instantiation time. -/
-  initParams : Torch.TList Float paramShapes
+  /-- Initial parameter-and-buffer state, cast from `Float` at instantiation time. -/
+  initState : Torch.TList Float stateShapes
   /--
   Optional storage-first initialization plan for executable `Float` runs.
 
@@ -394,9 +399,9 @@ structure ScalarModuleDef (paramShapes inputShapes : List Shape)
   materialize the same initialization directly in backend storage without traversing a large
   nested Lean tensor first.
   -/
-  runtimeInit : Option (RuntimeInit.Plan paramShapes) := none
-  /-- Per-parameter `requiresGrad` flags aligned with `paramShapes`. -/
-  initRequiresGrad : List Bool := List.replicate paramShapes.length true
+  runtimeInit : Option (RuntimeInit.Plan stateShapes) := none
+  /-- Differentiability flags aligned with `stateShapes`; persistent buffers carry `false`. -/
+  requiresGrad : List Bool := List.replicate stateShapes.length true
   /--
   Scalar loss over differentiable tensors followed by discrete natural-number tensors.
 
@@ -407,148 +412,148 @@ structure ScalarModuleDef (paramShapes inputShapes : List Shape)
     ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
       ∀ {m : Type → Type}, [Monad m] → [Torch.Ops (m := m) (α := α)] →
         Torch.CurriedRef (fun s => Torch.Ops.Ref (m := m) (α := α) s)
-          (paramShapes ++ inputShapes)
+          (stateShapes ++ inputShapes)
           (Torch.CurriedRef (fun s => Torch.Ops.NatTensorRef (m := m) (α := α) s)
             natInputShapes (m (Torch.Ops.Ref (m := m) (α := α) Shape.scalar)))
 
 /--
-Runtime module instance (the thing you "run").
+Runtime state for a model together with a scalar objective.
 
-This wraps `Torch.ScalarTrainer`, but exposes a more `Module`-like set of methods.
+This is lower level than PyTorch's loss classes: it owns model state as well as the objective. It
+wraps `Torch.ScalarTrainer` and exposes objective evaluation, explicit gradients, and updates.
 -/
-structure ScalarModule (α : Type) [Context α] [DecidableEq Shape]
-    (paramShapes inputShapes : List Shape) (natInputShapes : List Shape := []) where
-  /-- Trainer that owns the parameters and runs the scalar-loss program. -/
-  trainer : Torch.ScalarTrainer α paramShapes inputShapes natInputShapes
+structure Objective (α : Type) [Context α] [DecidableEq Shape]
+    (stateShapes inputShapes : List Shape) (natInputShapes : List Shape := []) where
+  /-- Trainer that owns trainable parameters and persistent buffers. -/
+  trainer : Torch.ScalarTrainer α stateShapes inputShapes natInputShapes
   /-- Runtime options used to instantiate the module. -/
   opts : Torch.Options
   /-- Concrete host/device tensor conversion selected when the module was instantiated. -/
   tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α
 
 /--
-A reusable no-gradient evaluator over an existing parameter list.
+A reusable no-gradient evaluator over existing model state.
 
 The evaluator accepts ordinary tensors and discrete `Nat` tensors separately. It can therefore run
 both scalar objectives and tensor-valued forward programs without rebuilding a session for each
 input batch.
 -/
-structure Evaluator (α : Type) (paramShapes inputShapes natInputShapes : List Shape)
+structure Evaluator (α : Type) (stateShapes inputShapes natInputShapes : List Shape)
     (outputShape : Shape) where
   /-- Evaluate one input pack and return the program output. -/
   evaluate : Torch.Curried.Fn α inputShapes
     (Torch.Curried.Fn Nat natInputShapes (IO (Tensor α outputShape)))
 
 /-- Scalar-output specialization of `Evaluator`. -/
-abbrev ScalarEvaluator (α : Type) (paramShapes inputShapes : List Shape)
+abbrev ObjectiveEvaluator (α : Type) (stateShapes inputShapes : List Shape)
     (natInputShapes : List Shape := []) :=
-  Evaluator α paramShapes inputShapes natInputShapes Shape.scalar
+  Evaluator α stateShapes inputShapes natInputShapes Shape.scalar
 
-namespace ScalarModule
+namespace Objective
 
 /--
-Create a runtime scalar-loss module from an explicit loss program and initial parameter values.
+Create a runtime objective from an explicit scalar program and initial model state.
 
-This is the low-level constructor; public training code starts from a `ScalarModuleDef` and calls
-`ScalarModuleDef.instantiate`.
+This is the low-level constructor; public training code starts from an `ObjectiveDef` and calls
+`ObjectiveDef.instantiate`.
 -/
 def create {α : Type} [Context α] [DecidableEq Shape]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    {paramShapes inputShapes natInputShapes : List Shape}
+    {stateShapes inputShapes natInputShapes : List Shape}
     (opts : Torch.Options := {})
-    (initRequiresGrad : List Bool := List.replicate paramShapes.length true)
+    (requiresGrad : List Bool := List.replicate stateShapes.length true)
     (loss :
       ∀ {m : Type → Type}, [Monad m] → [Torch.Ops (m := m) (α := α)] →
-        Torch.CurriedRef (fun s => Torch.Ops.Ref (m := m) (α := α) s) (paramShapes ++ inputShapes)
+        Torch.CurriedRef (fun s => Torch.Ops.Ref (m := m) (α := α) s) (stateShapes ++ inputShapes)
           (Torch.CurriedRef (fun s => Torch.Ops.NatTensorRef (m := m) (α := α) s)
             natInputShapes (m (Torch.Ops.Ref (m := m) (α := α) Shape.scalar))))
-    (initParams : Torch.TList α paramShapes) :
-    IO (ScalarModule α paramShapes inputShapes natInputShapes) := do
+    (initState : Torch.TList α stateShapes) :
+    IO (Objective α stateShapes inputShapes natInputShapes) := do
   let mkTr :=
-    Torch.scalarTrainer (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+    Torch.scalarTrainer (α := α) (paramShapes := stateShapes) (inputShapes := inputShapes)
       (natInputShapes := natInputShapes)
-      (opts := opts) (initRequiresGrad := initRequiresGrad) (loss := loss)
-  let tr ← Torch.Curried.uncurry (α := α) (ss := paramShapes)
-    (β := IO (Torch.ScalarTrainer α paramShapes inputShapes natInputShapes)) mkTr initParams
+      (opts := opts) (initRequiresGrad := requiresGrad) (loss := loss)
+  let tr ← Torch.Curried.uncurry (α := α) (ss := stateShapes)
+    (β := IO (Torch.ScalarTrainer α stateShapes inputShapes natInputShapes)) mkTr initState
   pure { trainer := tr, opts := opts, tensorConv := inferInstance }
 
-/-- Run the forward pass and return the scalar loss value. -/
-def forward {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes natInputShapes)
+/-- Evaluate the scalar objective. -/
+def loss {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes natInputShapes)
     (xs : Torch.TList α inputShapes) (natInputs : Torch.TList Nat natInputShapes) :
     IO (Tensor α Shape.scalar) :=
-  Torch.ScalarTrainer.forwardT (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+  Torch.ScalarTrainer.lossPacked (α := α) (paramShapes := stateShapes) (inputShapes := inputShapes)
     m.trainer xs natInputs
 
-/-- Run one forward/backward pass and return gradients for all parameters. -/
-def backward {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes natInputShapes)
+/-- Return state-shaped gradients, using zero for entries that do not require gradients. -/
+def gradState {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes natInputShapes)
     (xs : Torch.TList α inputShapes) (natInputs : Torch.TList Nat natInputShapes) :
-    IO (Torch.TList α paramShapes) :=
-  Torch.ScalarTrainer.backwardT (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+    IO (Torch.TList α stateShapes) :=
+  Torch.ScalarTrainer.gradStatePacked (α := α) (paramShapes := stateShapes) (inputShapes := inputShapes)
     m.trainer xs natInputs
 
-/-- Return a scalar loss and its parameter gradients from one forward tape. -/
-def lossAndBackward {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes natInputShapes)
+/-- Return a scalar loss and its state-shaped gradients from one forward tape. -/
+def lossAndGradState {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes natInputShapes)
     (xs : Torch.TList α inputShapes) (natInputs : Torch.TList Nat natInputShapes) :
-    IO (Tensor α Shape.scalar × Torch.TList α paramShapes) :=
-  Torch.ScalarTrainer.lossAndBackwardT
-    (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) m.trainer xs natInputs
+    IO (Tensor α Shape.scalar × Torch.TList α stateShapes) :=
+  Torch.ScalarTrainer.lossAndGradStatePacked
+    (α := α) (paramShapes := stateShapes) (inputShapes := inputShapes) m.trainer xs natInputs
 
-/-- Convenience "one-step SGD": compute gradients and apply an SGD update with learning rate `lr`.
-  -/
-def step {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes natInputShapes)
+/-- Compute gradients and apply one SGD update with learning rate `lr`. -/
+def sgdStep {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes natInputShapes)
     (lr : α) (xs : Torch.TList α inputShapes) (natInputs : Torch.TList Nat natInputShapes) :
     IO Unit :=
-  Torch.ScalarTrainer.stepT (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+  Torch.ScalarTrainer.stepPacked (α := α) (paramShapes := stateShapes) (inputShapes := inputShapes)
     m.trainer lr xs natInputs
 
 /-- Apply one SGD update and return the loss from the tape that produced its gradients. -/
-def stepWithLoss {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes natInputShapes)
+def sgdStepWithLoss {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes natInputShapes)
     (lr : α) (xs : Torch.TList α inputShapes) (natInputs : Torch.TList Nat natInputShapes) :
     IO (Tensor α Shape.scalar) :=
-  Torch.ScalarTrainer.stepWithLossT
-    (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) m.trainer lr xs natInputs
+  Torch.ScalarTrainer.stepWithLossPacked
+    (α := α) (paramShapes := stateShapes) (inputShapes := inputShapes) m.trainer lr xs natInputs
 
-/-- Initialize an optimizer state for this module's parameters. -/
-def initOptim {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes natInputShapes)
-    (opt : TorchLean.Optim.Optimizer α paramShapes) :
+/-- Initialize optimizer state from this module's current state. -/
+def initOptimizer {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes natInputShapes)
+    (opt : TorchLean.Optim.Optimizer α stateShapes) :
     IO opt.State := do
   -- Generic optimizer states are initialized from host tensors. Synchronize device-backed
   -- parameters first so a CUDA module cannot seed those states from stale host mirrors.
-  let _ ← m.trainer.getParams
-  opt.init m.trainer.params
+  let _ ← m.trainer.getState
+  opt.init m.trainer.state
 
 /--
 Run one optimizer step using an explicit optimizer + state.
 
 This mirrors a PyTorch training step:
-1. compute gradients (`backwardT`)
+1. compute the explicit state gradient (`gradStatePacked`)
 2. update parameters via `opt.step` and return the new optimizer state
 -/
-def stepWith {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes natInputShapes)
-    (opt : TorchLean.Optim.Optimizer α paramShapes) (st : opt.State)
+def optimizerStep {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes natInputShapes)
+    (opt : TorchLean.Optim.Optimizer α stateShapes) (st : opt.State)
     (xs : Torch.TList α inputShapes) (natInputs : Torch.TList Nat natInputShapes) :
     IO opt.State := do
   match ← opt.trainerStep? m.trainer st xs natInputs with
   | some st' =>
       pure st'
   | none =>
-      let grads ← Torch.ScalarTrainer.backwardT (α := α)
-        (paramShapes := paramShapes) (inputShapes := inputShapes) m.trainer xs natInputs
-      let _ ← m.trainer.getParams
-      opt.step st m.trainer.params grads
+      let grads ← Torch.ScalarTrainer.gradStatePacked (α := α)
+        (paramShapes := stateShapes) (inputShapes := inputShapes) m.trainer xs natInputs
+      let _ ← m.trainer.getState
+      opt.step st m.trainer.state grads
 
 /--
 Run an explicit optimizer step and return both the next optimizer state and the loss used for it.
@@ -557,70 +562,70 @@ Native trainer hooks may keep gradients and optimizer state on the selected devi
 path computes the loss and gradients once, synchronizes parameter mirrors when needed, and applies
 the optimizer to those gradients.
 -/
-def stepWithOptimizerAndLoss {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes natInputShapes)
-    (opt : TorchLean.Optim.Optimizer α paramShapes) (st : opt.State)
+def optimizerStepWithLoss {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes natInputShapes)
+    (opt : TorchLean.Optim.Optimizer α stateShapes) (st : opt.State)
     (xs : Torch.TList α inputShapes) (natInputs : Torch.TList Nat natInputShapes) :
     IO (opt.State × Tensor α Shape.scalar) := do
   match ← opt.trainerStepWithLoss? m.trainer st xs natInputs with
   | some result =>
       pure result
   | none =>
-      let (loss, grads) ← Torch.ScalarTrainer.lossAndBackwardT (α := α)
-        (paramShapes := paramShapes) (inputShapes := inputShapes) m.trainer xs natInputs
-      let _ ← m.trainer.getParams
-      let st' ← opt.step st m.trainer.params grads
+      let (loss, grads) ← Torch.ScalarTrainer.lossAndGradStatePacked (α := α)
+        (paramShapes := stateShapes) (inputShapes := inputShapes) m.trainer xs natInputs
+      let _ ← m.trainer.getState
+      let st' ← opt.step st m.trainer.state grads
       pure (st', loss)
 
-/-- Fetch the current parameter values as a shape-indexed list. -/
-def params {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes natInputShapes) : IO (Torch.TList α paramShapes) :=
-  m.trainer.getParams
+/-- Read the complete parameter-and-buffer state as a shape-indexed list. -/
+def state {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes natInputShapes) : IO (Torch.TList α stateShapes) :=
+  m.trainer.getState
 
-/-- Overwrite all parameter values. -/
-def setParams {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes natInputShapes)
-    (ps : Torch.TList α paramShapes) : IO Unit :=
-  Torch.ParamList.setValues (α := α) (ss := paramShapes) m.trainer.params ps
+/-- Replace the complete parameter-and-buffer state. -/
+def loadState {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes natInputShapes)
+    (ps : Torch.TList α stateShapes) : IO Unit :=
+  Torch.ParamList.setValues (α := α) (ss := stateShapes) m.trainer.state ps
 
 /-- Train with vanilla SGD for a fixed number of steps on a fixed list of samples. -/
 def trainSGD {α : Type} [Context α] [DecidableEq Shape] [ToString α]
-    {paramShapes inputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes)
+    {stateShapes inputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes)
     (lr : α) (steps : Nat) (samples : List (Torch.TList α inputShapes))
     (logEvery : Nat := 1) : IO Unit :=
-  Torch.trainCycleSGD (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+  Torch.trainCycleSGD (α := α) (paramShapes := stateShapes) (inputShapes := inputShapes)
     m.trainer lr steps samples (logEvery := logEvery)
 
-/-- Like `trainSGD`, but with an explicit optimizer + mutable optimizer state. -/
-def trainWith {α : Type} [Context α] [DecidableEq Shape] [ToString α]
-    {paramShapes inputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes)
-    (opt : TorchLean.Optim.Optimizer α paramShapes) (st0 : opt.State)
+/-- Like `trainSGD`, but with an explicit optimizer and mutable optimizer state. -/
+def trainWithOptimizer {α : Type} [Context α] [DecidableEq Shape] [ToString α]
+    {stateShapes inputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes)
+    (opt : TorchLean.Optim.Optimizer α stateShapes) (st0 : opt.State)
     (steps : Nat) (samples : List (Torch.TList α inputShapes))
     (logEvery : Nat := 1) : IO opt.State :=
-  TorchLean.trainCycleOptim (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+  TorchLean.trainCycleOptim (α := α) (paramShapes := stateShapes) (inputShapes := inputShapes)
     m.trainer opt st0 steps samples (logEvery := logEvery)
 
 /-- Compute the mean loss over a list of samples (no parameter updates). -/
 def meanLoss {α : Type} [Context α] [DecidableEq Shape] [ToString α]
-    {paramShapes inputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes)
+    {stateShapes inputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes)
     (samples : List (Torch.TList α inputShapes)) : IO α :=
-  Torch.meanLoss (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) m.trainer
+  Torch.meanLoss (α := α) (paramShapes := stateShapes) (inputShapes := inputShapes) m.trainer
     samples
 
-end ScalarModule
+end Objective
 
 namespace Evaluator
 
 /-- Apply a reusable evaluator to shape-indexed ordinary and discrete input lists. -/
-def evaluateT {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
+def evaluatePacked {α : Type} {stateShapes inputShapes natInputShapes : List Shape}
     {outputShape : Shape}
-    (evaluator : Evaluator α paramShapes inputShapes natInputShapes outputShape)
+    (evaluator : Evaluator α stateShapes inputShapes natInputShapes outputShape)
     (xs : Torch.TList α inputShapes) (natInputs : Torch.TList Nat natInputShapes) :
     IO (Tensor α outputShape) :=
   let withNat := Torch.Curried.uncurry (α := α) (ss := inputShapes)
@@ -630,20 +635,20 @@ def evaluateT {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
     (β := IO (Tensor α outputShape)) withNat natInputs
 
 /--
-Create a reusable no-gradient evaluator for a backend-polymorphic program.
+Create a reusable no-gradient evaluator for an execution-polymorphic program.
 
 The evaluator shares the supplied live parameter objects. Its eager session is reset after every
 call, so validation and generation do not retain one execution graph per input batch.
 -/
-def withParams
+def withState
     {α : Type} [Context α] [DecidableEq Shape]
     [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    {paramShapes inputShapes natInputShapes : List Shape} {outputShape : Shape}
-    (program : ProgramWithNatInputs α (paramShapes ++ inputShapes) natInputShapes outputShape)
+    {stateShapes inputShapes natInputShapes : List Shape} {outputShape : Shape}
+    (program : ProgramWithNatInputs α (stateShapes ++ inputShapes) natInputShapes outputShape)
     (opts : Torch.Options)
-    (params : Torch.ParamList α paramShapes) :
-    IO (Evaluator α paramShapes inputShapes natInputShapes outputShape) := do
-  let opts := { opts with trackGradients := false }
+    (state : Torch.ParamList α stateShapes) :
+    IO (Evaluator α stateShapes inputShapes natInputShapes outputShape) := do
+  let opts := { opts with gradEnabled := false }
   let sess ← Torch.Internal.EagerSession.new (α := α) opts
   let programEager := program (m := Torch.Internal.EagerM α)
   let evaluate : Torch.Curried.Fn α inputShapes
@@ -655,12 +660,12 @@ def withParams
             sess.resetTape
             try
               let outRef ← (do
-                let pRefs ← Torch.Internal.useParams (α := α) (ss := paramShapes) params
+                let pRefs ← Torch.Internal.useParams (α := α) (ss := stateShapes) state
                 let xRefs ← Torch.Internal.useInputs (α := α) (ss := inputShapes) xs
                 let allRefs := Torch.RefList.append
-                  (ss₁ := paramShapes) (ss₂ := inputShapes) pRefs xRefs
+                  (ss₁ := stateShapes) (ss₂ := inputShapes) pRefs xRefs
                 let withNat := Torch.CurriedRef.uncurry
-                  (ss := paramShapes ++ inputShapes) programEager allRefs
+                  (ss := stateShapes ++ inputShapes) programEager allRefs
                 Torch.CurriedRef.uncurryTList
                   (α := Nat) (ss := natInputShapes) withNat natInputs) |>.run sess
               Torch.Internal.EagerSession.getValue (α := α) sess outRef
@@ -672,7 +677,7 @@ def withParams
 
 end Evaluator
 
-namespace ScalarModuleDef
+namespace ObjectiveDef
 
 /--
 Create a reusable no-gradient evaluator over an existing live parameter list.
@@ -682,54 +687,54 @@ for example training and evaluation losses for a model containing dropout. The e
 the parameter objects and their current backend storage with the training module. Its eager session
 is reset after every call, so repeated validation does not retain one execution graph per batch.
 -/
-def evaluatorWithParams
+def evaluatorWithState
     {α : Type} [Context α] [DecidableEq Shape]
     [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (d : ScalarModuleDef paramShapes inputShapes natInputShapes)
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (d : ObjectiveDef stateShapes inputShapes natInputShapes)
     (opts : Torch.Options)
-    (params : Torch.ParamList α paramShapes) :
-    IO (ScalarEvaluator α paramShapes inputShapes natInputShapes) :=
-  Evaluator.withParams (program := d.loss (α := α)) opts params
+    (state : Torch.ParamList α stateShapes) :
+    IO (ObjectiveEvaluator α stateShapes inputShapes natInputShapes) :=
+  Evaluator.withState (program := d.loss (α := α)) opts state
 
 /--
 Evaluate a scalar module definition once against an existing live parameter list.
 
-Use `evaluatorWithParams` when evaluating more than one batch. It reuses one no-gradient session
+Use `evaluatorWithState` when evaluating more than one batch. It reuses one no-gradient session
 and avoids repeatedly allocating the session state associated with a large model.
 -/
-def forwardWithParams
+def lossWithState
     {α : Type} [Context α] [DecidableEq Shape]
     [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (d : ScalarModuleDef paramShapes inputShapes natInputShapes)
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (d : ObjectiveDef stateShapes inputShapes natInputShapes)
     (opts : Torch.Options)
-    (params : Torch.ParamList α paramShapes)
+    (state : Torch.ParamList α stateShapes)
     (xs : Torch.TList α inputShapes) (natInputs : Torch.TList Nat natInputShapes) :
     IO (Tensor α Shape.scalar) := do
-  let evaluator ← evaluatorWithParams d opts params
-  Evaluator.evaluateT evaluator xs natInputs
+  let evaluator ← evaluatorWithState d opts state
+  Evaluator.evaluatePacked evaluator xs natInputs
 
 /--
-Instantiate a `ScalarModuleDef` by casting Float initializers to `α` and choosing Torch options.
+Instantiate an `ObjectiveDef` by casting Float initializers to `α` and choosing Torch options.
 
 This is the most general constructor. The shorter `instantiate` entrypoint chooses standard runtime
 options before calling this function.
 -/
 def instantiateWith {α : Type} [Context α] [DecidableEq Shape]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (d : ScalarModuleDef paramShapes inputShapes natInputShapes)
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (d : ObjectiveDef stateShapes inputShapes natInputShapes)
     (cast : Float → α) (opts : Torch.Options) :
-    IO (ScalarModule α paramShapes inputShapes natInputShapes) := do
-  let initParams : Torch.TList α paramShapes := castTList (α := α) cast d.initParams
-  ScalarModule.create (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+    IO (Objective α stateShapes inputShapes natInputShapes) := do
+  let initState : Torch.TList α stateShapes := castTList (α := α) cast d.initState
+  Objective.create (α := α) (stateShapes := stateShapes) (inputShapes := inputShapes)
     (natInputShapes := natInputShapes)
-    (opts := opts) (initRequiresGrad := d.initRequiresGrad)
-    (loss := d.loss (α := α)) initParams
+    (opts := opts) (requiresGrad := d.requiresGrad)
+    (loss := d.loss (α := α)) initState
 
 /--
-Instantiate a Float module using runtime parameter initializers.
+Instantiate a module using runtime parameter initializers.
 
 This is the runtime-initialized sibling of `instantiateWith`.  Instead of first building every initial
 parameter as a full Lean tensor, it creates minimal zero host tensors and then applies a
@@ -737,80 +742,85 @@ shape-indexed runtime plan to the module parameters.  In CUDA mode those initial
 device buffers directly and mark the host copies stale; public parameter readback still
 synchronizes them through the existing CUDA mirror machinery.
 -/
-def instantiateFloatWithRuntimePlan {paramShapes inputShapes natInputShapes : List Shape}
-    (d : ScalarModuleDef paramShapes inputShapes natInputShapes)
+def instantiateWithPlan {α : Type} [Context α] [DecidableEq Shape]
+    [Torch.Internal.CudaBridge.TensorConv α]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (d : ObjectiveDef stateShapes inputShapes natInputShapes)
+    (cast : Float → α)
     (opts : Torch.Options)
-    (plan : RuntimeInit.Plan paramShapes) :
-    IO (ScalarModule Float paramShapes inputShapes natInputShapes) := do
-  let initParams := RuntimeInit.zeroFloatTList (ss := paramShapes)
-  let module ← ScalarModule.create (α := Float) (paramShapes := paramShapes)
+    (plan : RuntimeInit.Plan stateShapes) :
+    IO (Objective α stateShapes inputShapes natInputShapes) := do
+  let initState := RuntimeInit.zeroTList (cast 0.0) (ss := stateShapes)
+  let module ← Objective.create (α := α) (stateShapes := stateShapes)
     (inputShapes := inputShapes) (natInputShapes := natInputShapes)
-    (opts := opts) (initRequiresGrad := d.initRequiresGrad)
-    (loss := d.loss (α := Float)) initParams
-  RuntimeInit.applyFloatPlan (opts := opts) module.trainer.params plan
+    (opts := opts) (requiresGrad := d.requiresGrad)
+    (loss := d.loss (α := α)) initState
+  RuntimeInit.applyPlan (α := α) cast (opts := opts) module.trainer.state plan
   pure module
 
 /--
-Instantiate a Float module from a plain initializer list.
+Instantiate a module from a plain initializer list.
 
 This wrapper is useful at file/JSON boundaries.  Internally it immediately checks the list against
-`paramShapes` and then delegates to `instantiateFloatWithRuntimePlan`, so the actual parameter
+`stateShapes` and then delegates to `instantiateWithPlan`, so the actual state
 mutation still goes through the shape-indexed path.
 -/
-def instantiateFloatWithRuntimeInit {paramShapes inputShapes natInputShapes : List Shape}
-    (d : ScalarModuleDef paramShapes inputShapes natInputShapes)
+def instantiateWithInit {α : Type} [Context α] [DecidableEq Shape]
+    [Torch.Internal.CudaBridge.TensorConv α]
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (d : ObjectiveDef stateShapes inputShapes natInputShapes)
+    (cast : Float → α)
     (opts : Torch.Options)
     (inits : List RuntimeInit.FloatInit) :
-    IO (ScalarModule Float paramShapes inputShapes natInputShapes) := do
-  match RuntimeInit.Plan.ofList? paramShapes inits with
-  | .ok plan => instantiateFloatWithRuntimePlan d opts plan
+    IO (Objective α stateShapes inputShapes natInputShapes) := do
+  match RuntimeInit.Plan.ofList? stateShapes inits with
+  | .ok plan => instantiateWithPlan d cast opts plan
   | .error msg => throw <| IO.userError msg
 
 /--
-Instantiate a `Float` module, using a storage-first plan when the definition supplies one.
+Instantiate a module over Lean's binary64 `Float` type.
 
-Definitions without a runtime plan retain the original tensor-valued initialization path. This
-makes runtime initialization an optimization with an explicit fallback, rather than a requirement
-on every custom layer.
+This is an explicit compatibility path rather than the public runtime default. Definitions with a
+storage-first plan use it; other definitions retain tensor-valued initialization.
 -/
-def instantiateFloat {paramShapes inputShapes natInputShapes : List Shape}
-    (d : ScalarModuleDef paramShapes inputShapes natInputShapes) (opts : Torch.Options) :
-    IO (ScalarModule Float paramShapes inputShapes natInputShapes) :=
+def instantiateFloat64 {stateShapes inputShapes natInputShapes : List Shape}
+    (d : ObjectiveDef stateShapes inputShapes natInputShapes) (opts : Torch.Options) :
+    IO (Objective Float stateShapes inputShapes natInputShapes) :=
   match d.runtimeInit with
-  | some plan => instantiateFloatWithRuntimePlan d opts plan
+  | some plan => instantiateWithPlan d id opts plan
   | none => instantiateWith (α := Float) d id opts
 
-/-- Convenience instantiator that chooses only the backend (`.eager` or `.compiled`). -/
+/-- Convenience instantiator that chooses only the execution mode. -/
 def instantiate {α : Type} [Context α] [DecidableEq Shape]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    {paramShapes inputShapes natInputShapes : List Shape}
-    (d : ScalarModuleDef paramShapes inputShapes natInputShapes)
-    (cast : Float → α) (backend : Torch.Backend := .eager) :
-    IO (ScalarModule α paramShapes inputShapes natInputShapes) := do
-  instantiateWith (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+    {stateShapes inputShapes natInputShapes : List Shape}
+    (d : ObjectiveDef stateShapes inputShapes natInputShapes)
+    (cast : Float → α) (execution : Torch.ExecutionMode := .eager) :
+    IO (Objective α stateShapes inputShapes natInputShapes) := do
+  instantiateWith (α := α) (stateShapes := stateShapes) (inputShapes := inputShapes)
     (natInputShapes := natInputShapes)
-    d cast { backend := backend }
+    d cast { execution := execution }
 
-end ScalarModuleDef
+end ObjectiveDef
 
 /-- Mutable optimizer state bound to one executable module. -/
-structure OptimizerHandle (α : Type) [Context α] [DecidableEq Shape]
-    (paramShapes inputShapes : List Shape) (State : Type) where
-  module : ScalarModule α paramShapes inputShapes
+structure BoundOptimizer (α : Type) [Context α] [DecidableEq Shape]
+    (stateShapes inputShapes : List Shape) (State : Type) where
+  module : Objective α stateShapes inputShapes
   state : IO.Ref State
   step : Torch.TList α inputShapes → IO Unit
 
 /-- Initialize an optimizer and bind its state and update operation to `module`. -/
-def optimizerHandle {α : Type} [Context α] [DecidableEq Shape]
-    {paramShapes inputShapes : List Shape}
-    (module : ScalarModule α paramShapes inputShapes)
-    (optimizer : Optim.Optimizer α paramShapes) :
-    IO (OptimizerHandle α paramShapes inputShapes optimizer.State) := do
-  let initialState ← ScalarModule.initOptim module optimizer
+def bindOptimizer {α : Type} [Context α] [DecidableEq Shape]
+    {stateShapes inputShapes : List Shape}
+    (module : Objective α stateShapes inputShapes)
+    (optimizer : Optim.Optimizer α stateShapes) :
+    IO (BoundOptimizer α stateShapes inputShapes optimizer.State) := do
+  let initialState ← Objective.initOptimizer module optimizer
   let state ← IO.mkRef initialState
   let step (sample : Torch.TList α inputShapes) : IO Unit := do
     let currentState ← state.get
-    let nextState ← ScalarModule.stepWith module optimizer currentState sample .nil
+    let nextState ← Objective.optimizerStep module optimizer currentState sample .nil
     state.set nextState
   pure { module, state, step }
 

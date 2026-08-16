@@ -80,23 +80,23 @@ def renderBand (height width : Nat) (axis : Axis) (offset : Nat) (thickness : Na
 structure Class where
   /-- Axis occupied by the band. -/
   axis : Axis
-  /-- Numeric class label. -/
-  label : Nat
+  /-- Class label for the two-class band task. -/
+  label : Fin 2
   /-- Display name used by reports. -/
   name : String
 
-/-- Construct a vertical-band class. -/
-def vertical (label : Nat := 0) (name : String := "vertical") : Class :=
-  { axis := .column, label, name }
+/-- Construct the vertical-band class. -/
+def vertical (name : String := "vertical") : Class :=
+  { axis := .column, label := 0, name }
 
-/-- Construct a horizontal-band class. -/
-def horizontal (label : Nat := 1) (name : String := "horizontal") : Class :=
-  { axis := .row, label, name }
+/-- Construct the horizontal-band class. -/
+def horizontal (name : String := "horizontal") : Class :=
+  { axis := .row, label := 1, name }
 
 /-- Generate `(tensor, label)` samples for every class/offset pair. -/
 def samples (height width : Nat) (classes : List Class) (offsets : List Nat)
     (thickness : Nat := 2) :
-    List (Spec.Tensor Float (.dim 1 (.dim height (.dim width .scalar))) × Nat) :=
+    List (Spec.Tensor Float (.dim 1 (.dim height (.dim width .scalar))) × Fin 2) :=
   classes.foldr
     (fun cls acc =>
       offsets.map (fun offset => (renderBand height width cls.axis offset thickness, cls.label)) ++
@@ -107,12 +107,12 @@ def samples (height width : Nat) (classes : List Class) (offsets : List Nat)
 def namedSamples (height width : Nat) (specs : List (Class × Nat)) (thickness : Nat := 2) :
     List (String × Spec.Tensor Float (.dim 1 (.dim height (.dim width .scalar))) × Nat) :=
   specs.map fun (cls, offset) =>
-    (s!"{cls.name}-{offset}", renderBand height width cls.axis offset thickness, cls.label)
+    (s!"{cls.name}-{offset}", renderBand height width cls.axis offset thickness, cls.label.val)
 
 /-- Canonical label set for the band dataset: vertical ↦ `0`, horizontal ↦ `1`. -/
 def classes : List Class :=
-  [ vertical 0
-  , horizontal 1
+  [ vertical
+  , horizontal
   ]
 
 /-! ### Typed Tensors (Tensor-First) -/
@@ -121,20 +121,20 @@ def classes : List Class :=
 abbrev shape : Spec.Shape := .dim 1 (.dim 4 (.dim 4 .scalar))
 
 /-- Training set samples: a small list of `(x, label)` pairs. -/
-def trainFloat : List (Spec.Tensor Float shape × Nat) :=
+def trainFloat : List (Spec.Tensor Float shape × Fin 2) :=
   samples 4 4 classes [0, 1, 2]
 
 /-- Probe set for reporting: `(name, x, expectedLabel)` triples. -/
 def probesFloat : List (String × Spec.Tensor Float shape × Nat) :=
   namedSamples 4 4
-    [ (vertical 0, 1)
-    , (vertical 0, 2)
-    , (horizontal 1, 1)
-    , (horizontal 1, 2)
+    [ (vertical, 1)
+    , (vertical, 2)
+    , (horizontal, 1)
+    , (horizontal, 2)
     ]
 
 /-- Small vertical-versus-horizontal dataset with one-hot class targets. -/
-def dataset : Trainer.Dataset shape (.dim 2 .scalar) :=
+def dataset : Trainer.DataSource shape (.dim 2 .scalar) :=
   { build := fun {α} _ =>
       pure <| labeled (α := α) (σ := shape) 2 trainFloat }
 
@@ -147,7 +147,7 @@ def probes : List (Trainer.ClassProbe shape) :=
       expected := expected })
 
 /-- Concrete `Float` probe inputs for prediction examples. -/
-def probeSamples : List (String × Tensor.T Float shape × Nat) :=
+def probeSamples : List (String × Tensor Float shape × Nat) :=
   probesFloat
 
 end Bands

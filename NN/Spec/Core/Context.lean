@@ -178,5 +178,7 @@ end NN.Spec.RationalAlgebraic
 
 /-- Full `Context` instance for `Float` (runtime backend). -/
 instance : Context Float := { decidable_gt := inferInstance }
+/-- Full `Context` instance for native binary32 execution. -/
+instance : Context Float32 := { decidable_gt := inferInstance }
 /-- Full `Context` instance for `ℝ` (proof backend, noncomputable). -/
 noncomputable instance : Context ℝ := { decidable_gt := Classical.decRel _ }

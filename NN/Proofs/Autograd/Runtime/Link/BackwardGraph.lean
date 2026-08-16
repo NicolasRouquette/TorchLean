@@ -11,7 +11,7 @@ public import NN.Proofs.Autograd.Runtime.Link.Accumulation
 /-!
 # Dense Runtime Backward Pass Link
 
-This file proves that the executable dense backward loop produced by graph compilation agrees with
+This file proves that the executable dense backward loop produced by graph-to-tape lowering agrees with
 the proof-level `backpropAllCtx` semantics. It is the main bridge between the runtime tape engine
 and the algebraic reverse-mode model.
 -/
@@ -32,16 +32,16 @@ open Runtime.Autograd
 
 /--
 **Main runtime/link theorem**: running the runtime dense backward loop on a tape produced by
-`compileAux` matches the proved “full backpropagation” `backpropAllCtx`.
+`lowerGraphToTape` matches the proved “full backpropagation” `backpropAllCtx`.
 
 This is the formal statement that the executable engine implements the same reverse-mode
 accumulation semantics as the proved tape model.
 -/
-theorem backwardDenseFrom_compileAux_eq_backpropAllCtx {α : Type} {Δ : Type} [DecidableEq Shape]
+theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : Type} [DecidableEq Shape]
   [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d0 : Δ)
     (seed : TList α (Γ ++ ss)) :
-    Runtime.Autograd.Tape.backwardDenseFrom (t := (compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ss)
+    Runtime.Autograd.Tape.backwardDenseFrom (t := (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss)
       g x d0).1)
         (grads0 := TList.toAnyArray (α := α) (ss := Γ ++ ss) seed) =
       .ok (TList.toAnyArray (α := α) (ss := Γ ++ ss)
@@ -162,20 +162,20 @@ theorem backwardDenseFrom_compileAux_eq_backpropAllCtx {α : Type} {Δ : Type} [
       -- Put it all together.
       -- `backpropAllCtx` is the identity in the nil case.
       -- Use the size check (`hnsize`) and rewrite away the `cast` on the seed array.
-      simpa [compileAux, backpropAllCtx, Runtime.Autograd.Tape.backwardDenseFrom, hnsize,
+      simpa [lowerGraphToTape, backpropAllCtx, Runtime.Autograd.Tape.backwardDenseFrom, hnsize,
         TList.toAnyArray_cast] using hloop
   | snoc g node ih =>
       rename_i ssPrev τ
-      -- Unpack the compilation of the prefix graph.
-      rcases hprev : compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0 with ⟨tPrev,
+      -- Unpack the lowering of the prefix graph.
+      rcases hprev : lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0 with ⟨tPrev,
         ctxPrev⟩
       have hctxPrev :
           ctxPrev = Graph.eval (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0 := by
         simpa [hprev] using
-          (compileAux_ctx_eq_eval (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
+          (lowerGraphToTape_ctx_eq_eval (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
       have htPrevSize : tPrev.nodes.size = Γ.length + ssPrev.length := by
         simpa [hprev] using
-          (compileAux_nodes_size (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
+          (lowerGraphToTape_nodes_size (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
 
       -- Unpack the seed into `(seedPrev, seedOut)` matching the snoc structure.
       let assoc : (Γ ++ ssPrev) ++ [τ] = Γ ++ (ssPrev ++ [τ]) := List.append_assoc Γ ssPrev [τ]
@@ -195,7 +195,7 @@ theorem backwardDenseFrom_compileAux_eq_backpropAllCtx {α : Type} {Δ : Type} [
       -- Define the runtime tape for the snoc graph explicitly.
       let y := node.forward ctxPrev d0
       let runtimeNode : Runtime.Autograd.Node α :=
-        { name := some "proof-compiled"
+        { name := some "proof-carrying-graph"
           value := Runtime.Autograd.AnyTensor.mk y
           requires_grad := true
           parents := []
@@ -241,7 +241,7 @@ theorem backwardDenseFrom_compileAux_eq_backpropAllCtx {α : Type} {Δ : Type} [
         -- LHS: `(Γ ++ ssPrev ++ [τ]).length`, RHS: `tPrev.size + 1`.
         simp [hseedArr, htNextSize, htPrevSize, TList.size_toAnyArray, Nat.add_assoc]
 
-      -- Expand both sides (`compileAux`, `backpropAllCtx`, and `backwardDenseFrom`) and reduce to:
+      -- Expand both sides (`lowerGraphToTape`, `backpropAllCtx`, and `backwardDenseFrom`) and reduce to:
       -- 1) one runtime step for the last node (adding `vjp` contributions to the prefix),
       -- 2) then the IH on the prefix graph.
       let ctx := Graph.eval (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0
@@ -253,13 +253,13 @@ theorem backwardDenseFrom_compileAux_eq_backpropAllCtx {α : Type} {Δ : Type} [
       -- 2) run the prefix loop, which matches the IH on `g`,
       -- 3) the last gradient entry `seedOut` is never modified afterwards.
 
-      -- Normalize `compileAux` and `backpropAllCtx` to our explicit `tNext`/`seedPrev`
+      -- Normalize `lowerGraphToTape` and `backpropAllCtx` to our explicit `tNext`/`seedPrev`
       -- decomposition.
       have hTape :
-          (compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev ++ [τ]) (.snoc (ss := ssPrev) (τ :=
+          (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev ++ [τ]) (.snoc (ss := ssPrev) (τ :=
             τ) g node) x d0).1 =
             tNext := by
-        simp [compileAux, hprev, tNext, y, runtimeNode]
+        simp [lowerGraphToTape, hprev, tNext, y, runtimeNode]
 
       have hBackpropArr :
           TList.toAnyArray (α := α) (ss := Γ ++ (ssPrev ++ [τ]))
@@ -315,14 +315,14 @@ theorem backwardDenseFrom_compileAux_eq_backpropAllCtx {α : Type} {Δ : Type} [
         -- `[outAny]` untouched.
         have hreqAll :
             ∀ i (hi : i < tPrev.nodes.size), (tPrev.nodes[i]'hi).requires_grad = true := by
-          -- Unfold the `let t := ...` binder in `compileAux_requires_grad_true` and rewrite by
+          -- Unfold the `let t := ...` binder in `lowerGraphToTape_requires_grad_true` and rewrite by
           -- `hprev`.
           have hreq0 :
-              ∀ i (hi : i < (compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x
+              ∀ i (hi : i < (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x
                 d0).1.nodes.size),
-                (((compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x
+                (((lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x
                   d0).1.nodes[i]'hi).requires_grad = true) := by
-            simpa using (compileAux_requires_grad_true (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x
+            simpa using (lowerGraphToTape_requires_grad_true (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x
               d0)
           simpa [hprev] using hreq0
 
@@ -361,7 +361,7 @@ theorem backwardDenseFrom_compileAux_eq_backpropAllCtx {α : Type} {Δ : Type} [
                 tPrev.nodes.map (fun nd => nd.value) =
                   TList.toAnyArray (α := α) (ss := Γ ++ ssPrev) ctxPrev := by
               simpa [hprev] using
-                (compileAux_values_eq (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
+                (lowerGraphToTape_values_eq (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
             have hvalOpt := congrArg (fun a => a[i]?) hvals
             -- Evaluate both sides at `i`.
             have hnodeVal :
@@ -670,13 +670,13 @@ theorem backwardDenseFrom_compileAux_eq_backpropAllCtx {α : Type} {Δ : Type} [
                             := by
                         intro pid pg hmem
                         have hgetComp :
-                            Runtime.Autograd.Tape.getNode? (t := (compileAux (α := α) (Δ := Δ) (Γ :=
+                            Runtime.Autograd.Tape.getNode? (t := (lowerGraphToTape (α := α) (Δ := Δ) (Γ :=
                               Γ) (ss := ssPrev) g x d0).1)
                                 id =
                               some nodeAt := by
                           simpa [hprev] using hnodePrev
                         exact
-                          compileAux_backward_pids_lt_id (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g
+                          lowerGraphToTape_backward_pids_lt_id (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g
                             x d0 id nodeAt hgetComp dLdy
                               contribs hback hmem
 

@@ -25,7 +25,7 @@ PyTorch analogy:
   `torch.optim.lr_scheduler.*`.
 
 All updates are *shape checked* and implemented using the pure `Spec` tensor operators, so they
-can be used in eager execution or lowered into the compiled IR.
+can be used in eager execution or lowered into a typed graph.
 
 Formula ownership:
 - this file owns the heterogeneous parameter-table handling, parameter groups, lazy state maps,

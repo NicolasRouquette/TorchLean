@@ -17,8 +17,8 @@ public import NN.Runtime.Autograd.Engine.Cuda.Ops
 This file provides a CUDA-only forward + VJP wrapper for a small real-valued FNO1D model whose
 spectral convolution is implemented by the fused cuFFT-backed primitive `Tape.spectralConv1dRfft`.
 
-Why this is not a `TorchLean.NN.LayerDef`:
-- `LayerDef` is backend-polymorphic and runs through the `Torch.Ops` interface.
+Why this is not a `TorchLean.NN.Layer`:
+- `Layer` is execution-polymorphic and runs through the `Torch.Ops` interface.
 - The fused `spectralConv1dRfft` op is implemented only for the CUDA tape backend.
 
 This module is meant to be called by runnable examples that want the performance path, while the

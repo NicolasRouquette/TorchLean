@@ -9,7 +9,7 @@ PINN/scientific ML checks, ODE and spline certificates, and graph-level IBP/CROW
 
 ## What Lives Here
 
-- `TorchLean/`: compilation and semantic glue for connecting TorchLean model fragments to the
+- `TorchLean/`: lowering and semantic glue for connecting TorchLean model fragments to the
   verifier graph IR, plus proof-backed fragments for supported forward programs.
 - `Cert/`: JSON certificate formats and executable recomputation checkers, including IBP, CROWN,
   alpha-CROWN, and alpha-beta-CROWN-style local node artifacts.
@@ -60,7 +60,7 @@ by an exporter/provenance argument, a replayable certificate, or a theorem about
 The theorem-level graph IBP/CROWN-family soundness results live under
 `NN.MLTheory.CROWN.Proofs.*` and are imported by `NN.Verification`.
 
-The TorchLean-to-IR proof API is separate. It covers the compiler proof fragment and local
+The TorchLean-to-IR proof API is separate. It covers the proved lowering fragment and local
 evaluator lemmas for supported imported operations. Current coverage includes elementwise
 arithmetic and activations, reshape/flatten/broadcast/sum, concat, axis reductions, supported
 transpose and permutation forms, rank-2/3 matrix multiplication, softmax through the evaluator's
@@ -100,12 +100,12 @@ Run TorchLean-native graph workflows:
 lake exe verify -- torchlean-ibp
 lake exe verify -- torchlean-crown-ops
 lake exe verify -- torchlean-robustness
-lake exe verify -- torchlean-mlp-workflow --dtype float
+lake exe verify -- torchlean-mlp-workflow --scalar float32
 ```
 
-These commands compile or build small TorchLean models, attach input regions, and run native bound
+These commands lower or build small TorchLean models, attach input regions, and run native bound
 passes over the graph-shaped object. Use them when changing graph lowering, bound propagation,
-compiled execution, or the verification API.
+typed graph execution, or the verification API.
 
 Run a compact PINN certificate and residual-expression check:
 

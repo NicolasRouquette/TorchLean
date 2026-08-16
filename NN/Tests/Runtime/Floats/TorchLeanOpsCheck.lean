@@ -24,8 +24,8 @@ public import Std
 Runtime checks for TorchLean operator wrappers over the float runtime.
 
 The file is intentionally fixture-driven: each helper builds one small tensor example, runs it
-through the relevant backend boundary, and compares the result against either another TorchLean
-backend, a closed form, or PyTorch when it is available.
+through the relevant execution path or external backend boundary, and compares the result against
+another TorchLean path, a closed form, or PyTorch when it is available.
 -/
 
 @[expose] public section
@@ -86,7 +86,7 @@ Check weighted cross entropy as a runtime operation.
 
 The first assertion changes only a zero-weight row and therefore must leave the loss unchanged. The
 second checks linearity in the explicit row weights. Together they catch accidental mean reduction,
-mask misalignment, and a weights tensor that is ignored by the backend.
+mask misalignment, and a weights tensor that is ignored by the runtime.
 -/
 def checkWeightedRowCrossEntropy : IO Unit := do
   let logitsA : Tensor Float (.dim 2 (.dim 2 .scalar)) :=
@@ -106,7 +106,7 @@ def checkWeightedRowCrossEntropy : IO Unit := do
 
 /-- Check that tied token lookup removes exactly one independent affine vocabulary head. -/
 def checkTiedTokenEmbeddingParameterCount : IO Unit := do
-  let cfg : TorchLean.nn.models.CausalTransformerConfig :=
+  let cfg : TorchLean.nn.models.CausalTransformer.Config :=
     { batch := 1
       seqLen := 2
       vocab := 7
@@ -114,14 +114,14 @@ def checkTiedTokenEmbeddingParameterCount : IO Unit := do
       headDim := 4
       ffnHidden := 8
       layers := 1 }
-  let untiedBody := TorchLean.nn.run 11 <|
-    TorchLean.nn.models.causalTransformerFromEmbeddings cfg
-  let tiedBody := TorchLean.nn.run 11 <|
-    TorchLean.nn.models.causalTransformerHiddenFromEmbeddings cfg
-  let untiedCount := TorchLean.nn.paramCount <|
-    TorchLean.nn.models.causalTransformerTokenParamShapes cfg untiedBody
-  let tiedCount := TorchLean.nn.paramCount <|
-    TorchLean.nn.models.causalTransformerTiedTokenParamShapes cfg tiedBody
+  let untiedBody := TorchLean.nn.build 11 <|
+    TorchLean.nn.models.CausalTransformer.fromEmbeddings cfg
+  let tiedBody := TorchLean.nn.build 11 <|
+    TorchLean.nn.models.CausalTransformer.hidden cfg
+  let untiedCount := TorchLean.nn.elementCount <|
+    TorchLean.nn.models.CausalTransformer.Indexed.stateShapes cfg untiedBody
+  let tiedCount := TorchLean.nn.elementCount <|
+    TorchLean.nn.models.CausalTransformer.Tied.stateShapes cfg tiedBody
   let independentHeadCount := cfg.vocab * cfg.dModel + cfg.vocab
   unless untiedCount = tiedCount + independentHeadCount do
     throw <| IO.userError <|
@@ -130,7 +130,7 @@ def checkTiedTokenEmbeddingParameterCount : IO Unit := do
 
 /-- Run a tied-token model through one loss and backward pass. -/
 def checkTiedTokenEmbeddingBackward : IO Unit := do
-  let cfg : TorchLean.nn.models.CausalTransformerConfig :=
+  let cfg : TorchLean.nn.models.CausalTransformer.Config :=
     { batch := 1
       seqLen := 2
       vocab := 7
@@ -138,15 +138,15 @@ def checkTiedTokenEmbeddingBackward : IO Unit := do
       headDim := 4
       ffnHidden := 8
       layers := 1 }
-  let body := TorchLean.nn.run 19 <|
-    TorchLean.nn.models.causalTransformerHiddenFromEmbeddings cfg
-  let definition := TorchLean.nn.models.causalTransformerTiedTokenScalarModuleDef cfg body
-  let module ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateFloat
-    definition { backend := .eager }
+  let body := TorchLean.nn.build 19 <|
+    TorchLean.nn.models.CausalTransformer.hidden cfg
+  let definition := TorchLean.nn.models.CausalTransformer.Tied.objective cfg body
+  let module ← _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef.instantiateFloat64
+    definition { execution := .eager }
   let inputs : Tensor Nat (.dim 2 .scalar) := tensorOfList! [2] [0, 1]
   let targets : Tensor Nat (.dim 2 .scalar) := tensorOfList! [2] [1, 2]
   let (loss, gradients) ←
-    _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.lossAndBackward module
+    _root_.Runtime.Autograd.TorchLean.Module.Objective.lossAndGradState module
       .nil (.cons inputs (.cons targets .nil))
   assertFinite "tied token embedding loss" (Tensor.toScalar loss)
   let sharedGradient := Proofs.Autograd.Algebra.TList.get gradients ⟨0, by simp⟩
@@ -171,7 +171,7 @@ def checkAttentionOutputProjectionInitializer : IO Unit := do
       (weightInit? := some .ones)
       (outputWeightInit? := some .zeros)
   let (wq, wk, wv, wo) :=
-    match layer.initParams with
+    match layer.initState with
     | .cons wq (.cons wk (.cons wv (.cons wo .nil))) => (wq, wk, wv, wo)
   for i in List.finRange 2 do
     for j in List.finRange 2 do
@@ -180,12 +180,34 @@ def checkAttentionOutputProjectionInitializer : IO Unit := do
       assertApprox s!"attention V initializer[{i.val},{j.val}]" (matVal wv i j) 1 1e-7
       assertApprox s!"attention output initializer[{i.val},{j.val}]" (matVal wo i j) 0 1e-7
 
-/-! ## Eager/compiled operator parity -/
+/-- Typed graph execution preserves leaf gradient flags and leaves frozen parameters unchanged. -/
+def checkTypedGraphLeafMetadata : IO Unit := do
+  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float)
+    (opts := { execution := .typedGraph })
+  let frozen ← _root_.Runtime.Autograd.TorchLean.Session.param sess
+    (Tensor.scalar 2.0) (name := some "frozen") (requiresGrad := some false)
+  let trainable ← _root_.Runtime.Autograd.TorchLean.Session.param sess
+    (Tensor.scalar 3.0) (name := some "trainable") (requiresGrad := some true)
+  let frozenRef ← _root_.Runtime.Autograd.TorchLean.Session.use sess frozen
+  let trainableRef ← _root_.Runtime.Autograd.TorchLean.Session.use sess trainable
+  let sum ← _root_.Runtime.Autograd.TorchLean.Session.add sess frozenRef trainableRef
+  let loss ← _root_.Runtime.Autograd.TorchLean.Session.mul sess sum sum
+  let grads ← _root_.Runtime.Autograd.TorchLean.Session.backwardScalarDenseAll sess loss
+  let frozenGrad ← _root_.Runtime.Autograd.TorchLean.Session.grad grads frozenRef
+  let trainableGrad ← _root_.Runtime.Autograd.TorchLean.Session.grad grads trainableRef
+  assertApprox "typed graph frozen gradient" (Tensor.toScalar frozenGrad) 0 1e-7
+  assertApprox "typed graph trainable gradient" (Tensor.toScalar trainableGrad) 10 1e-7
+  _root_.Runtime.Autograd.TorchLean.Session.sgdStepAll sess 0.1 grads
+  assertApprox "typed graph frozen parameter" (Tensor.toScalar (← frozen.value.get)) 2 1e-7
+  assertApprox "typed graph updated parameter" (Tensor.toScalar (← trainable.value.get)) 2 1e-7
 
-/-- Evaluate a fixed 2x3 by 3x2 matrix product through the selected public backend. -/
-def evalMatmulFixture (backend : _root_.Runtime.Autograd.Torch.Backend) :
+/-! ## Eager/typed graph operator parity -/
+
+/-- Evaluate a fixed 2x3 by 3x2 matrix product in the selected execution mode. -/
+def evalMatmulFixture (execution : _root_.Runtime.Autograd.Torch.ExecutionMode) :
     IO (Tensor Float (.dim 2 (.dim 2 .scalar))) := do
-  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float) (opts := { backend := backend })
+  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float)
+    (opts := { execution := execution })
   let a : Tensor Float (.dim 2 (.dim 3 .scalar)) :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (i.val + 2 * j.val + 1))))
   let b : Tensor Float (.dim 3 (.dim 2 .scalar)) :=
@@ -195,9 +217,11 @@ def evalMatmulFixture (backend : _root_.Runtime.Autograd.Torch.Backend) :
   let cR ← _root_.Runtime.Autograd.TorchLean.Session.matmul sess (m := 2) (n := 3) (p := 2) aR bR
   _root_.Runtime.Autograd.TorchLean.Session.getValue sess (sh := .dim 2 (.dim 2 .scalar)) cR
 
-/-- Evaluate a fixed length-2 plus length-3 vector concatenation through the selected backend. -/
-def evalConcatFixture (backend : _root_.Runtime.Autograd.Torch.Backend) : IO (Tensor Float (.dim 5 .scalar)) := do
-  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float) (opts := { backend := backend })
+/-- Evaluate a fixed length-2 plus length-3 vector concatenation in the selected execution mode. -/
+def evalConcatFixture (execution : _root_.Runtime.Autograd.Torch.ExecutionMode) :
+    IO (Tensor Float (.dim 5 .scalar)) := do
+  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float)
+    (opts := { execution := execution })
   let a : Tensor Float (.dim 2 .scalar) := Tensor.dim (fun i => Tensor.scalar (Float.ofNat (i.val +
     1)))
   let b : Tensor Float (.dim 3 .scalar) := Tensor.dim (fun i => Tensor.scalar (10.0 + Float.ofNat
@@ -207,10 +231,11 @@ def evalConcatFixture (backend : _root_.Runtime.Autograd.Torch.Backend) : IO (Te
   let cR ← _root_.Runtime.Autograd.TorchLean.Session.concatVectors sess (n := 2) (m := 3) aR bR
   _root_.Runtime.Autograd.TorchLean.Session.getValue sess (sh := .dim 5 .scalar) cR
 
-/-- Evaluate a fixed 2D max-pooling example through the selected public backend. -/
-def evalMaxPool2dFixture (backend : _root_.Runtime.Autograd.Torch.Backend) :
+/-- Evaluate a fixed 2D max-pooling example in the selected execution mode. -/
+def evalMaxPool2dFixture (execution : _root_.Runtime.Autograd.Torch.ExecutionMode) :
     IO (Tensor Float (.dim 1 (.dim 2 (.dim 2 .scalar)))) := do
-  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float) (opts := { backend := backend })
+  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float)
+    (opts := { execution := execution })
   let x : Tensor Float (.dim 1 (.dim 4 (.dim 4 .scalar))) :=
     Tensor.dim (fun _c =>
       Tensor.dim (fun i =>
@@ -222,10 +247,11 @@ def evalMaxPool2dFixture (backend : _root_.Runtime.Autograd.Torch.Backend) :
     (h1 := by decide) (h2 := by decide) xR
   _root_.Runtime.Autograd.TorchLean.Session.getValue sess (sh := .dim 1 (.dim 2 (.dim 2 .scalar))) yR
 
-/-- Evaluate a fixed 2D average-pooling example through the selected public backend. -/
-def evalAvgPool2dFixture (backend : _root_.Runtime.Autograd.Torch.Backend) :
+/-- Evaluate a fixed 2D average-pooling example in the selected execution mode. -/
+def evalAvgPool2dFixture (execution : _root_.Runtime.Autograd.Torch.ExecutionMode) :
     IO (Tensor Float (.dim 1 (.dim 2 (.dim 2 .scalar)))) := do
-  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float) (opts := { backend := backend })
+  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float)
+    (opts := { execution := execution })
   let x : Tensor Float (.dim 1 (.dim 4 (.dim 4 .scalar))) :=
     Tensor.dim (fun _c =>
       Tensor.dim (fun i =>
@@ -585,32 +611,33 @@ def run : IO Unit := do
   checkTiedTokenEmbeddingParameterCount
   checkTiedTokenEmbeddingBackward
   checkAttentionOutputProjectionInitializer
+  checkTypedGraphLeafMetadata
 
   let mmE ← evalMatmulFixture .eager
-  let mmC ← evalMatmulFixture .compiled
+  let mmC ← evalMatmulFixture .typedGraph
   for i in List.finRange 2 do
     for j in List.finRange 2 do
-      assertApprox s!"matmul[{i.val},{j.val}] eager/compiled" (matVal mmE i j) (matVal mmC i j) 1e-5
+      assertApprox s!"matmul[{i.val},{j.val}] eager/typed-graph" (matVal mmE i j) (matVal mmC i j) 1e-5
 
   let cvE ← evalConcatFixture .eager
-  let cvC ← evalConcatFixture .compiled
+  let cvC ← evalConcatFixture .typedGraph
   for i in List.finRange 5 do
-    assertApprox s!"concat[{i.val}] eager/compiled" (vecVal cvE i) (vecVal cvC i) 1e-5
+    assertApprox s!"concat[{i.val}] eager/typed-graph" (vecVal cvE i) (vecVal cvC i) 1e-5
 
   let mpE ← evalMaxPool2dFixture .eager
-  let mpC ← evalMaxPool2dFixture .compiled
+  let mpC ← evalMaxPool2dFixture .typedGraph
   for hi in List.finRange 2 do
     for wi in List.finRange 2 do
-      assertApprox s!"max_pool2d[{hi.val},{wi.val}] eager/compiled"
+      assertApprox s!"max_pool2d[{hi.val},{wi.val}] eager/typed-graph"
         (chwVal mpE ⟨0, by decide⟩ hi wi)
         (chwVal mpC ⟨0, by decide⟩ hi wi)
         1e-5
 
   let apE ← evalAvgPool2dFixture .eager
-  let apC ← evalAvgPool2dFixture .compiled
+  let apC ← evalAvgPool2dFixture .typedGraph
   for hi in List.finRange 2 do
     for wi in List.finRange 2 do
-      assertApprox s!"avg_pool2d[{hi.val},{wi.val}] eager/compiled"
+      assertApprox s!"avg_pool2d[{hi.val},{wi.val}] eager/typed-graph"
         (chwVal apE ⟨0, by decide⟩ hi wi)
         (chwVal apC ⟨0, by decide⟩ hi wi)
         1e-5

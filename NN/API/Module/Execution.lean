@@ -20,102 +20,68 @@ import NN.Spec.Autograd.AutogradSpec
 namespace TorchLean
 namespace Module
 
-export _root_.Runtime.Autograd.Torch (Backend Options)
+export _root_.Runtime.Autograd.Torch (ExecutionMode Options)
 
 /-!
 # Module Execution
 
-This file connects typed module definitions to executable scalar modules. It provides parameter
+This file connects typed module definitions to executable scalar modules. It provides state
 initialization, execution settings, and helpers that select a scalar type and device from command
 line arguments.
 
-`ScalarModuleDef` describes the forward and loss programs together with their parameter and input
-shapes. Instantiating it produces a mutable `ScalarModule` that can evaluate inputs, run backward,
-and update parameters. The shape lists remain part of both types, so construction and execution use
-the same parameter ordering.
+`ObjectiveDef` describes a scalar objective together with model state and input shapes.
+Instantiating it produces a mutable `Objective` that can evaluate the objective, return explicit
+state gradients, and update trainable entries. The shape lists remain part of both types, so
+construction and execution use the same state ordering.
 -/
 
 export _root_.Runtime.Autograd.TorchLean.Module
-  (Evaluator ScalarEvaluator ScalarModuleDef ScalarModule)
+  (Evaluator ObjectiveEvaluator ObjectiveDef Objective)
 namespace RuntimeInit
 export _root_.Runtime.Autograd.TorchLean.Module.RuntimeInit
   (FloatInit Plan xavierUniformForShape kaimingUniformForShape xavierLinearWeight
    kaimingLinearWeight)
 end RuntimeInit
-export _root_.Runtime.Autograd.TorchLean.Module.ScalarModule
-  (create forward lossAndBackward backward stepWithLoss step initOptim stepWith
-   stepWithOptimizerAndLoss params setParams trainSGD trainWith meanLoss)
-export _root_.Runtime.Autograd.TorchLean.Module.Evaluator (evaluateT withParams)
-export _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef
-  (evaluatorWithParams forwardWithParams instantiate instantiateFloat
-   instantiateFloatWithRuntimePlan instantiateFloatWithRuntimeInit)
+export _root_.Runtime.Autograd.TorchLean.Module.Objective
+  (create loss lossAndGradState gradState sgdStepWithLoss sgdStep initOptimizer optimizerStep
+   optimizerStepWithLoss state loadState trainSGD trainWithOptimizer meanLoss)
+export _root_.Runtime.Autograd.TorchLean.Module.Evaluator (evaluatePacked withState)
+export _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef
+  (evaluatorWithState lossWithState instantiate instantiateFloat64 instantiateWithPlan
+   instantiateWithInit)
 
 /--
-Instantiate a `ScalarModuleDef` under explicit Torch options such as `backend` and `device`.
+Instantiate an `ObjectiveDef` under explicit Torch options such as `execution` and `device`.
 
 The supplied options are passed unchanged to module construction, including the selected device and
 execution strategy.
 -/
-def instantiateConfigured
+def instantiateAs
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    {paramShapes inputShapes natInputShapes : List Spec.Shape}
-    (defn : ScalarModuleDef paramShapes inputShapes natInputShapes)
+    {stateShapes inputShapes natInputShapes : List Spec.Shape}
+    (defn : ObjectiveDef stateShapes inputShapes natInputShapes)
     (cast : Float → α) (opts : Options) :
-    IO (ScalarModule α paramShapes inputShapes natInputShapes) :=
-  _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith
-    (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
+    IO (Objective α stateShapes inputShapes natInputShapes) :=
+  _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef.instantiateWith
+    (α := α) (stateShapes := stateShapes) (inputShapes := inputShapes)
     (natInputShapes := natInputShapes) defn cast opts
-
-/--
-Instantiate a Float module with runtime layer parameter initializers.
-
-The initializer plan is indexed by the same `paramShapes` list as the module, so Lean checks that
-every parameter has exactly one initializer.
-In CUDA mode, supported initializers allocate device buffers directly instead of first constructing
-every parameter as a large nested Lean tensor.
--/
-def instantiateFloatWithPlan
-    {paramShapes inputShapes natInputShapes : List Spec.Shape}
-    (defn : ScalarModuleDef paramShapes inputShapes natInputShapes)
-    (opts : Options)
-    (plan : RuntimeInit.Plan paramShapes) :
-    IO (ScalarModule Float paramShapes inputShapes natInputShapes) :=
-  _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateFloatWithRuntimePlan
-    (paramShapes := paramShapes) (inputShapes := inputShapes)
-    (natInputShapes := natInputShapes) defn opts plan
-
-/--
-List-based wrapper for checkpoint/JSON boundaries.
-
-If the caller has a statically known parameter list, prefer
-`instantiateFloatWithPlan`; this wrapper checks the list length before applying it.
--/
-def instantiateFloatWithInit
-    {paramShapes inputShapes natInputShapes : List Spec.Shape}
-    (defn : ScalarModuleDef paramShapes inputShapes natInputShapes)
-    (opts : Options)
-    (inits : List RuntimeInit.FloatInit) :
-    IO (ScalarModule Float paramShapes inputShapes natInputShapes) :=
-  _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateFloatWithRuntimeInit
-    (paramShapes := paramShapes) (inputShapes := inputShapes)
-    (natInputShapes := natInputShapes) defn opts inits
 
 /--
 Execution configuration parsed from CLI flags.
 
 Supported flags (parsed by `ExecConfig.parseAndStrip`):
-- `--dtype ...` / `--float32-mode ...` (see `TorchLean.Runtime.DType`)
-- `--backend eager|compiled`
+- `--scalar float32|ieee32-exec|complex64` (see `TorchLean.Runtime.ScalarMode`)
+- `--execution eager|typed-graph`
 - `--device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external`
 - `--show-backend` (print backend capsules when the eager runtime first executes them)
 -/
 structure ExecConfig where
-  /-- Scalar dtype selection. -/
-  dtype : _root_.TorchLean.Runtime.DType := .float
-  /-- Execution backend selection. -/
-  backend : Backend := .eager
-  /-- Explicit eager execution device. -/
+  /-- Scalar semantics for this execution. -/
+  scalar : _root_.TorchLean.Runtime.ScalarMode := .float32
+  /-- Execution mode selection. -/
+  execution : ExecutionMode := .eager
+  /-- Requested execution device. -/
   device : NN.Backend.Device := .cpu
   /-- Print each backend capsule when the eager runtime first executes it. -/
   showBackend : Bool := false
@@ -123,14 +89,14 @@ structure ExecConfig where
 
 namespace ExecConfig
 
-/-- Parse a backend selector string into a runtime `Backend`. -/
-def parseBackend (v : String) : Except String Backend := do
+/-- Parse an execution-mode selector. -/
+def parseExecutionMode (v : String) : Except String ExecutionMode := do
   if v == "eager" then
     pure .eager
-  else if v == "compiled" then
-    pure .compiled
+  else if v == "typed-graph" then
+    pure .typedGraph
   else
-    throw s!"unknown --backend {v} (supported: eager | compiled)"
+    throw s!"unknown --execution {v} (supported: eager | typed-graph)"
 
 /-- Parse a CLI device selector. `auto` currently resolves to the portable CPU runtime. -/
 def parseDevice (value : String) : Except String NN.Backend.Device :=
@@ -147,17 +113,15 @@ def requestsCuda : List String → Bool
 Parse CLI flags handled by `ExecConfig` and return `(cfg, rest)`.
 
 Consumed flags:
-- `--backend eager|compiled` (at most once),
+- `--execution eager|typed-graph` (at most once),
 - `--device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external`,
 - `--show-backend` (boolean flag; removed from `rest`).
 
-All dtype/Float32 selection flags are delegated to
-`TorchLean.Runtime.DType.parseAndStripWithDefault`.
+Scalar selection is delegated to
+`TorchLean.Runtime.ScalarMode.parseAndStripWithDefault`.
 
-Default dtype policy:
-- If the user does not specify `--dtype` / `--float32-mode` and CUDA is selected, default to
-  `dtype=float` (CUDA eager supports `Float` upload/download).
-- Otherwise default to `dtype=float32` (executable IEEE-754 float32 semantics).
+The default is native `.float32` on both CPU and CUDA. The independent bit-level implementation is
+available explicitly as `.ieee32Exec` for reference execution and proof-oriented checks.
 
 Named future devices are accepted at parse time so `--show-backend` and planning diagnostics can
 explain them. Runtime session creation still rejects devices that this build cannot execute.
@@ -165,13 +129,13 @@ explain them. Runtime session creation still rejects devices that this build can
 The selected device chooses its normal registered kernels. Users do not need a second performance
 flag after selecting CUDA or another accelerator.
 -/
-def parseAndStripWithDefaultDType
-    (args : List String) (defaultDType : _root_.TorchLean.Runtime.DType) :
+def parseWithScalar
+    (args : List String) (defaultScalar : _root_.TorchLean.Runtime.ScalarMode) :
     Except String (ExecConfig × List String) := do
-  let (dtype, args1) ←
-    _root_.TorchLean.Runtime.DType.parseAndStripWithDefault args defaultDType
-  let (backend, args2) ←
-    _root_.TorchLean.CLI.takeParsedFlagDefault args1 "backend" "eager" parseBackend
+  let (scalar, args1) ←
+    _root_.TorchLean.Runtime.ScalarMode.parseAndStripWithDefault args defaultScalar
+  let (execution, args2) ←
+    _root_.TorchLean.CLI.takeParsedFlagDefault args1 "execution" "eager" parseExecutionMode
   let rec go (device : NN.Backend.Device) (showBackend : Bool) (acc : List String) :
       List String → Except String (NN.Backend.Device × Bool × List String)
     | [] => pure (device, showBackend, acc.reverse)
@@ -190,47 +154,46 @@ def parseAndStripWithDefaultDType
           go device showBackend (a :: acc) as
   let (device, showBackend, rest) ← go .cpu false [] args2
   pure ({
-    dtype := dtype,
-    backend := backend,
+    scalar := scalar,
+    execution := execution,
     device := device,
     showBackend := showBackend
   }, rest)
 
 /-- Convert a parsed CLI execution config to runtime `Options`. -/
 def toOptions (cfg : ExecConfig) (seed : Nat := 0) : Except String Options := do
-  let profile ← match NN.Backend.BackendProfile.maintainedForDevice? cfg.device with
+  let _ ← match NN.Backend.BackendProfile.maintainedForDevice? cfg.device with
     | some profile => pure profile
     | none =>
         throw s!"device `{cfg.device.cliName}` has no maintained runtime profile; use a programmatic backend profile"
   pure
-    { backend := cfg.backend
+    { execution := cfg.execution
+      device := cfg.device
       seed := seed
-      executionProfile := profile
+      backendProfile? := none
       showBackend := cfg.showBackend }
 
-/-- Parse CLI flags with the standard TorchLean default dtype policy. -/
+/-- Parse CLI flags with the standard TorchLean default scalar policy. -/
 def parseAndStrip (args : List String) : Except String (ExecConfig × List String) := do
-  let defaultDType : _root_.TorchLean.Runtime.DType :=
-    if requestsCuda args then .float else .float32 {}
-  parseAndStripWithDefaultDType args defaultDType
+  parseWithScalar args .float32
 
 /-- Log the chosen execution config to stdout for reproducible runs. -/
 def log (cfg : ExecConfig) : IO Unit := do
-  _root_.TorchLean.Runtime.DType.log cfg.dtype
-  IO.println s!"[TorchLean] backend: {reprStr cfg.backend}"
+  _root_.TorchLean.Runtime.ScalarMode.log cfg.scalar
+  IO.println s!"[TorchLean] execution: {reprStr cfg.execution}"
   IO.println s!"[TorchLean] device: {cfg.device.cliName}"
 
 end ExecConfig
 
 /--
-Parse runtime flags (`--dtype`, `--backend`, `--device`, `--show-backend`) and choose an executable
+Parse runtime flags (`--scalar`, `--execution`, `--device`, `--show-backend`) and choose an executable
 scalar `α`, then call `k` with:
 - `cast : Float → α` for building inputs from literals
-- `opts : Options` selecting the backend/kernel mode
+- `opts : Options` selecting the execution mode and kernel profile
 - `rest : List String` containing the remaining CLI arguments
 
 This is useful for scripts that need to build a dataset/loader (and maybe determine shapes/batch
-sizes) before instantiating a concrete `ScalarModuleDef`.
+sizes) before instantiating a concrete `ObjectiveDef`.
 -/
 def withRuntime
     (args : List String)
@@ -248,68 +211,27 @@ def withRuntime
     | .ok opts => pure opts
     | .error msg => throw <| IO.userError msg
   opts.validateForExecution
-  match (← _root_.TorchLean.Runtime.DType.withRuntime cfg.dtype (fun {α} _ _ _ _ => do
+  match (← _root_.TorchLean.Runtime.ScalarMode.withRuntime cfg.scalar (fun {α} _ _ _ _ => do
         k (α := α) (_root_.TorchLean.Runtime.ofFloat (α := α)) opts rest
       )) with
   | .ok () => pure ()
   | .error msg => throw <| IO.userError msg
 
 /--
-Instantiate a `ScalarModuleDef` under CLI runtime flags (`--dtype`, `--backend`, `--device`,
-`--show-backend`), then call a continuation.
+Instantiate an `ObjectiveDef` under CLI runtime flags, then call a continuation.
 
-This provides the cast function `Float → α` so call sites can build inputs from float literals.
+The continuation receives both the selected scalar instance and an explicit `Float → α` conversion
+for input data authored with host `Float` values.
 -/
 def withModule
-    {paramShapes inputShapes : List Spec.Shape}
-    (defn : ScalarModuleDef paramShapes inputShapes)
-    (args : List String)
-    (k :
-      ∀ {α : Type}, [_root_.Context α] → [DecidableEq Spec.Shape] → [ToString α] →
-        (cast : Float → α) → ScalarModule α paramShapes inputShapes → (rest : List String) →
-        IO Unit) :
-    IO Unit := do
-  let (cfg, rest) ←
-    match ExecConfig.parseAndStrip args with
-    | .ok v => pure v
-    | .error msg => throw <| IO.userError msg
-  ExecConfig.log cfg
-  let opts ← match ExecConfig.toOptions cfg with
-    | .ok opts => pure opts
-    | .error msg => throw <| IO.userError msg
-  opts.validateForExecution
-  match cfg.dtype with
-  | .float =>
-      -- Keep the Float branch explicit. If this path is hidden behind the scalar-polymorphic
-      -- `DType.withExec` continuation, Lean can elaborate module construction with the generic
-      -- fallback CUDA converter instead of the real Float upload bridge. That still compiles, but
-      -- a CUDA training step later fails when it tries to upload a Float tensor.
-      let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateFloat
-        (paramShapes := paramShapes) (inputShapes := inputShapes) defn opts
-      k (α := Float) id m rest
-  | _ =>
-      if (cfg.device == .cuda) then
-        throw <| IO.userError "torch: eager CUDA module execution currently requires --dtype float"
-      match (← _root_.TorchLean.Runtime.DType.withExec cfg.dtype (fun {α} _ _ _ cast => do
-            let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith
-              (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
-              defn cast opts
-            k (α := α) cast m rest
-          )) with
-      | .ok () => pure ()
-      | .error msg => throw <| IO.userError msg
-
-/--
-Like `withModule`, but also provides an `_root_.TorchLean.Runtime.FromFloat α` instance (for numeric literals).
--/
-def withModuleRuntime
-    {paramShapes inputShapes : List Spec.Shape}
-    (defn : ScalarModuleDef paramShapes inputShapes)
+    {stateShapes inputShapes : List Spec.Shape}
+    (defn : ObjectiveDef stateShapes inputShapes)
     (args : List String)
     (k :
       ∀ {α : Type}, [_root_.Context α] → [DecidableEq Spec.Shape] → [ToString α] →
         [_root_.TorchLean.Runtime.FromFloat α] →
-        ScalarModule α paramShapes inputShapes → (rest : List String) → IO Unit) :
+        (cast : Float → α) → Objective α stateShapes inputShapes →
+        (rest : List String) → IO Unit) :
     IO Unit := do
   let (cfg, rest) ←
     match ExecConfig.parseAndStrip args with
@@ -320,22 +242,21 @@ def withModuleRuntime
     | .ok opts => pure opts
     | .error msg => throw <| IO.userError msg
   opts.validateForExecution
-  match cfg.dtype with
-  | .float =>
-      -- Same reason as `withModule`: CUDA module construction should see `α = Float` directly, so
-      -- the Float-specific `TensorConv` instance is selected before the runner is handed to user
-      -- code.
-      let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateFloat
-        (paramShapes := paramShapes) (inputShapes := inputShapes) defn opts
-      k (α := Float) m rest
+  match cfg.scalar with
+  | .float32 =>
+      let m ← _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef.instantiateWith
+        (α := Float32) (stateShapes := stateShapes) (inputShapes := inputShapes)
+        defn Float.toFloat32 opts
+      k (α := Float32) Float.toFloat32 m rest
   | _ =>
       if (cfg.device == .cuda) then
-        throw <| IO.userError "torch: eager CUDA module execution currently requires --dtype float"
-      match (← _root_.TorchLean.Runtime.DType.withRuntime cfg.dtype (fun {α} _ _ _ _ => do
-            let m ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef.instantiateWith
-              (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes)
-              defn (_root_.TorchLean.Runtime.ofFloat (α := α)) opts
-            k (α := α) m rest
+        throw <| IO.userError "torch: CUDA module execution currently requires --scalar float32"
+      match (← _root_.TorchLean.Runtime.ScalarMode.withRuntime cfg.scalar (fun {α} _ _ _ _ => do
+            let cast := _root_.TorchLean.Runtime.ofFloat (α := α)
+            let m ← _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef.instantiateWith
+              (α := α) (stateShapes := stateShapes) (inputShapes := inputShapes)
+              defn cast opts
+            k (α := α) cast m rest
           )) with
       | .ok () => pure ()
       | .error msg => throw <| IO.userError msg

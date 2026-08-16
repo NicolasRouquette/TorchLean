@@ -27,17 +27,17 @@ TorchLean is pinned by `lean-toolchain` and currently builds with
 ## Quickstart
 
 ```bash
-lake exe torchlean quickstart_mlp --device cpu --steps 10 --dtype float32 --backend eager
-lake exe torchlean quickstart_mlp --device cpu --steps 10 --dtype float --backend eager
+lake exe torchlean quickstart_mlp --device cpu --steps 10 --scalar ieee32-exec --execution eager
+lake exe torchlean quickstart_mlp --device cpu --steps 10 --scalar float32 --execution eager
 
 # Optional CUDA run, if the CUDA toolkit and an NVIDIA GPU are available:
 lake -R -K cuda=true build
 lake -R -K cuda=true exe torchlean mlp --device cuda --steps 1000
 ```
 
-The first quickstart uses TorchLean's executable binary32 scalar. The second uses Lean's builtin
-`Float` runtime path. The CUDA command selects the native GPU runtime and reports an error when CUDA
-is unavailable.
+The first quickstart uses TorchLean's independent raw-bit binary32 reference. The second uses
+Lean's native `Float32` arithmetic. The CUDA command selects the native GPU runtime and reports an
+error when CUDA is unavailable.
 
 Application code looks like this:
 
@@ -48,31 +48,32 @@ open TorchLean
 /-- A two-layer regression model. The dimensions are checked when the layers are composed. -/
 def model :=
   nn.Sequential![
-    nn.Linear 2 8,
-    nn.ReLU,
-    nn.Linear 8 1
+    nn.linear 2 8,
+    nn.relu,
+    nn.linear 8 1
   ]
 
 -- Four input rows, each containing two features.
-def xs : Tensor.T Float (shape![4, 2]) :=
+def xs : Tensor Float (shape![4, 2]) :=
   tensorOfList! [4, 2] [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]
 
 -- One regression target for each input row.
-def ys : Tensor.T Float (shape![4, 1]) :=
+def ys : Tensor Float (shape![4, 1]) :=
   tensorOfList! [4, 1] [0.2, 1.0, 1.0, 1.8]
 
 -- The dataset type records the feature and target shapes expected by the trainer.
-def data : Trainer.Dataset (.dim 2 .scalar) (.dim 1 .scalar) :=
+def data : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
   Data.tensorDataset xs ys
 
 def trainOnce : IO Unit := do
-  -- Select the loss from the regression task and train through the compiled Float32 path.
+  -- Select the loss and train through a typed graph interpreted by IEEE32Exec.
   let trainer :=
     Trainer.new model
       { task := .regression
         optimizer := optim.sgd { lr := 0.05 }
-        backend := .compiled
-        dtype := .float32 }
+        execution := .typedGraph
+        device := .cpu
+        scalar := .ieee32Exec }
   -- Inspect the initialized model before any parameter updates.
   let initialPrediction ← trainer.predict (tensorOfList! [2] [0.5, -0.25])
   IO.println s!"initial={Tensor.pretty initialPrediction}"

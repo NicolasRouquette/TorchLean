@@ -36,11 +36,11 @@ open TorchLean
 open TorchLean.Floats.IEEE754
 
 /-- A small vector, built with the same typed tensor constructor used in ordinary code. -/
-def vector : Tensor.T Float (shape![4]) :=
+def vector : Tensor Float (shape![4]) :=
   tensor! [1.0, 2.0, 3.0, 4.0]
 
 /-- A small matrix where the shape is visible both in the type and in the widget. -/
-def matrix : Tensor.T Int (shape![2, 3]) :=
+def matrix : Tensor Int (shape![2, 3]) :=
   tensor! [
     [1, 2, 3],
     [4, 5, 6]

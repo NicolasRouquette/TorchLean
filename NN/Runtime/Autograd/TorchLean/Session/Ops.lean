@@ -11,9 +11,9 @@ public import NN.Runtime.Autograd.TorchLean.Session.Types
 /-!
 # Session Tensor Operations
 
-This file is the shared eager/compiled dispatch layer for elementary tensor operations. It keeps the
-public `Session` API uniform while routing each operation to either the eager tape backend or the
-compiled SSA/IR session.
+This file is the shared execution-mode dispatch layer for elementary tensor operations. It keeps
+the public `Session` API uniform while routing each operation to either the eager tape or the typed
+SSA graph session.
 -/
 
 @[expose] public section
@@ -27,32 +27,32 @@ open Tensor
 
 namespace Session
 
-/-- Elementwise addition (dispatches to eager vs compiled backend). -/
+/-- Elementwise addition (dispatches by execution mode). -/
 def add {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape] {sh : Shape}
   (a b : _root_.Runtime.Autograd.Torch.TensorRef α sh) : IO (_root_.Runtime.Autograd.Torch.TensorRef
     α sh) := do
   match s.impl with
   | .eager sess => EagerSession.add (α := α) sess (sh := sh) a b
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.add (α := α) sess (sh := sh) a b
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.add (α := α) sess (sh := sh) a b
 
-/-- Elementwise subtraction (dispatches to eager vs compiled backend). -/
+/-- Elementwise subtraction (dispatches by execution mode). -/
 def sub {α : Type} (s : Session α) [Sub α] [Add α] [Zero α] [DecidableEq Shape] {sh : Shape}
   (a b : _root_.Runtime.Autograd.Torch.TensorRef α sh) : IO (_root_.Runtime.Autograd.Torch.TensorRef
     α sh) := do
   match s.impl with
   | .eager sess => EagerSession.sub (α := α) sess (sh := sh) a b
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.sub (α := α) sess (sh := sh) a b
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.sub (α := α) sess (sh := sh) a b
 
-/-- Elementwise multiplication (dispatches to eager vs compiled backend). -/
+/-- Elementwise multiplication (dispatches by execution mode). -/
 def mul {α : Type} (s : Session α) [Mul α] [Add α] [Zero α] [DecidableEq Shape] {sh : Shape}
   (a b : _root_.Runtime.Autograd.Torch.TensorRef α sh) : IO (_root_.Runtime.Autograd.Torch.TensorRef
     α sh) := do
   match s.impl with
   | .eager sess => EagerSession.mul (α := α) sess (sh := sh) a b
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.mul (α := α) sess (sh := sh) a b
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.mul (α := α) sess (sh := sh) a b
 
 /--
 Scale a tensor by a scalar constant `c` (elementwise).
@@ -65,8 +65,8 @@ def scale {α : Type} (s : Session α) [Mul α] [Add α] [Zero α] [DecidableEq 
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.impl with
   | .eager sess => EagerSession.scale (α := α) sess (sh := sh) x c
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.scale (α := α) sess (sh := sh) x c
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.scale (α := α) sess (sh := sh) x c
 
 /--
 Dropout implemented as a Session-level derived op.
@@ -121,16 +121,16 @@ def dropout {α : Type} [Context α] [DecidableEq Shape]
         | .eager sess =>
             _root_.Runtime.Autograd.Torch.Internal.EagerSession.bernoulliMask (α := α) sess.inner
               (sh := sh) keepProbRef opSeed
-        | .compiled sess =>
-            _root_.Runtime.Autograd.Torch.Internal.SessionIR.commitGraphM (α := α) sess
+        | .typedGraph sess =>
+            _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.commitGraphM (α := α) sess
               (β := _root_.Runtime.Autograd.Torch.TensorRef α sh) (fun {Γ} {ss} xv nat g => do
-                let (v, st') ← _root_.Runtime.Autograd.Torch.Internal.SessionIR.runGraphM (α := α)
+                let (v, st') ← _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.runGraphM (α := α)
                   (Γ := Γ)
-                  (Runtime.Autograd.Compiled.GraphM.bernoulliMask (α := α) (Γ := Γ) (s := sh)
+                  (Runtime.Autograd.TypedGraph.GraphM.bernoulliMask (α := α) (Γ := Γ) (s := sh)
                     { id := keepProbRef.id } (seed := opSeed))
                   ss g
                 let ⟨ss', g'⟩ := st'
-                let st1 : _root_.Runtime.Autograd.Torch.Internal.SessionIRState α :=
+                let st1 : _root_.Runtime.Autograd.Torch.Internal.TypedGraphSessionState α :=
                   { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
                 pure ({ id := v.id }, st1))
 
@@ -140,27 +140,27 @@ def dropout {α : Type} [Context α] [DecidableEq Shape]
     else
       throw <| IO.userError "dropout: expected (1 - p) > 0"
 
-/-- Elementwise absolute value (dispatches to eager vs compiled backend). -/
+/-- Elementwise absolute value (dispatches by execution mode). -/
 def abs {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq
   Shape]
   {sh : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.impl with
   | .eager sess => EagerSession.abs (α := α) sess (sh := sh) x
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.abs (α := α) sess (sh := sh) x
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.abs (α := α) sess (sh := sh) x
 
-/-- Elementwise square root (dispatches to eager vs compiled backend). -/
+/-- Elementwise square root (dispatches by execution mode). -/
 def sqrt {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq
   Shape]
   {sh : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.impl with
   | .eager sess => EagerSession.sqrt (α := α) sess (sh := sh) x
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.sqrt (α := α) sess (sh := sh) x
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.sqrt (α := α) sess (sh := sh) x
 
-/-- Elementwise clamp to `[minVal, maxVal]` (dispatches to eager vs compiled backend). -/
+/-- Elementwise clamp to `[minVal, maxVal]` (dispatches by execution mode). -/
 def clamp {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   [DecidableEq Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
@@ -168,29 +168,29 @@ def clamp {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : �
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.impl with
   | .eager sess => EagerSession.clamp (α := α) sess (sh := sh) x minVal maxVal
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.clamp (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.clamp (α := α) sess
         (sh := sh) x minVal maxVal
 
-/-- Elementwise maximum (dispatches to eager vs compiled backend). -/
+/-- Elementwise maximum (dispatches by execution mode). -/
 def max {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq
   Shape]
   {sh : Shape} (a b : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.impl with
   | .eager sess => EagerSession.max (α := α) sess (sh := sh) a b
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.max (α := α) sess (sh := sh) a b
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.max (α := α) sess (sh := sh) a b
 
-/-- Elementwise minimum (dispatches to eager vs compiled backend). -/
+/-- Elementwise minimum (dispatches by execution mode). -/
 def min {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq
   Shape]
   {sh : Shape} (a b : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.impl with
   | .eager sess => EagerSession.min (α := α) sess (sh := sh) a b
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.min (α := α) sess (sh := sh) a b
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.min (α := α) sess (sh := sh) a b
 
 /--
 Matrix multiplication (rank-2 tensors).
@@ -204,8 +204,8 @@ def matmul {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim m (.dim p .scalar))) := do
   match s.impl with
   | .eager sess => EagerSession.matmul (α := α) sess (m := m) (n := n) (p := p) a b
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.matmul (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.matmul (α := α) sess
         (m := m) (n := n) (p := p) a b
 
 /--
@@ -220,11 +220,11 @@ def bmm {α : Type} (s : Session α) [Add α] [Mul α] [Zero α] [DecidableEq Sh
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim batch (.dim m (.dim p .scalar)))) := do
   match s.impl with
   | .eager sess => EagerSession.bmm (α := α) sess (batch := batch) (m := m) (n := n) (p := p) a b
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.bmm (α := α) sess (batch := batch) (m := m)
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.bmm (α := α) sess (batch := batch) (m := m)
         (n := n) (p := p) a b
 
-/-- Concatenate two vectors along dimension 0 (dispatches to eager vs compiled backend). -/
+/-- Concatenate two vectors along dimension 0 (dispatches by execution mode). -/
 def concatVectors {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   {n m : Nat}
   (a : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar))
@@ -232,11 +232,11 @@ def concatVectors {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim (n + m) .scalar)) := do
   match s.impl with
   | .eager sess => EagerSession.concatVectors (α := α) sess (n := n) (m := m) a b
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.concatVectors (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.concatVectors (α := α) sess
         (n := n) (m := m) a b
 
-/-- Concatenate along the outermost dimension (dimension 0) (dispatches to eager vs compiled
+/-- Concatenate along the outermost dimension (dimension 0) (dispatches to eager vs typed graph
   backend). -/
 def concatLeadingAxis {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   {n m : Nat} {sh : Shape}
@@ -245,8 +245,8 @@ def concatLeadingAxis {α : Type} (s : Session α) [Context α] [DecidableEq Sha
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim (n + m) sh)) := do
   match s.impl with
   | .eager sess => EagerSession.concatLeadingAxis (α := α) sess (n := n) (m := m) (sh := sh) a b
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.concatLeadingAxis (α := α) sess (n := n) (m := m)
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.concatLeadingAxis (α := α) sess (n := n) (m := m)
         (sh := sh) a b
 
 /--
@@ -261,8 +261,8 @@ def sliceLeadingAxisRange {α : Type} (s : Session α) [Zero α] [DecidableEq Sh
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim len sh)) := do
   match s.impl with
   | .eager sess => EagerSession.sliceLeadingAxisRange (α := α) sess (n := n) (sh := sh) x start len h
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.sliceLeadingAxisRange (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.sliceLeadingAxisRange (α := α) sess
         (n := n) (sh := sh) x start len h
 
 /--
@@ -279,8 +279,8 @@ def maxPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   | .eager sess =>
       EagerSession.maxPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
         (inC := inC) (stride := stride) (h1 := h1) (h2 := h2) x
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.maxPool2d (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.maxPool2d (α := α) sess
         (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
         (h1 := h1) (h2 := h2) x
 
@@ -300,8 +300,8 @@ def smoothMaxPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape
   | .eager sess =>
       EagerSession.smoothMaxPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
         (inC := inC) (stride := stride) (h1 := h1) (h2 := h2) x beta
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.smoothMaxPool2d (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.smoothMaxPool2d (α := α) sess
         (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
         (h1 := h1) (h2 := h2) x beta
 
@@ -319,8 +319,8 @@ def avgPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   | .eager sess =>
       EagerSession.avgPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
         (inC := inC) (stride := stride) h1 h2 x
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.avgPool2d (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.avgPool2d (α := α) sess
         (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
         h1 h2 x
 

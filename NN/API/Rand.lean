@@ -34,26 +34,27 @@ export _root_.Runtime.Autograd.TorchLean.Random (keyOf nextSeed uniform mask)
 Dimension-first random tensor builders for PyTorch-style workflows.
 
 `uniform` / `mask` are shape-indexed (`Tensor α s`) and are best used when `s` is already inferred.
-When you start from a runtime dims list (e.g. CLI args), `uniformND`/`maskND` are the ergonomic
+When you start from a runtime dimension list (for example, CLI arguments), `uniformDims` and
+`maskDims` are the ergonomic
 bridge.
 -/
 
 /-- Dimension-first wrapper: uniform random tensor at runtime `dims`. -/
-def uniformND {α : Type} [Context α] (key : UInt64) (dims : List Nat) :
+def uniformDims {α : Type} [Context α] (key : UInt64) (dims : List Nat) :
     Spec.Tensor α (NN.Tensor.shapeOfDims dims) :=
   uniform (α := α) key (s := NN.Tensor.shapeOfDims dims)
 
 /--
 Dimension-first wrapper: Bernoulli keep-mask at runtime `dims` (useful for dropout-style masks).
 -/
-def maskND {α : Type} [Context α] (key : UInt64) (keepProb : α) (dims : List Nat) :
+def maskDims {α : Type} [Context α] (key : UInt64) (keepProb : α) (dims : List Nat) :
     Spec.Tensor α (NN.Tensor.shapeOfDims dims) :=
   mask (α := α) key keepProb (s := NN.Tensor.shapeOfDims dims)
 
 /-- Deterministic uniform tensor at runtime `dims`, using `(seed,counter)` to derive a key. -/
-def randND {α : Type} [Context α] (seed counter : Nat) (dims : List Nat) :
+def randDims {α : Type} [Context α] (seed counter : Nat) (dims : List Nat) :
     Spec.Tensor α (NN.Tensor.shapeOfDims dims) :=
-  uniformND (α := α) (keyOf seed counter) dims
+  uniformDims (α := α) (keyOf seed counter) dims
 
 /-
 Seed management note:
@@ -130,7 +131,7 @@ end SeedM
 Global seed stream used by `rand.runGlobal` / `nn.runGlobal`.
 
 This is a convenience for script-like code that wants PyTorch-style "set the seed once" ergonomics.
-In proofs and reproducibility-sensitive code, prefer the pure interfaces (`nn.run`) and pass the
+In proofs and reproducibility-sensitive code, prefer the pure interfaces (`nn.build`) and pass the
 base seed explicitly.
 -/
 initialize globalSeedStream : IO.Ref SeedStream ← IO.mkRef (SeedStream.init 0)

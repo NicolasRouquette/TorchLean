@@ -33,10 +33,10 @@ The runner currently exposes these model and workflow commands:
 | Operator learning | `fno1d_burgers` |
 | Reinforcement learning | `ppo_cartpole`, `ppo_gridworld`, `ppo_pong_ram`, `dqn_replay` |
 | Data/interoperability | `data_csv`, `data_npy`, `data_cifar10`, `pytorch_roundtrip`, `pytorch_export_check` |
-| Deep dives | `floats_arb_ieee_compare`, `float32_modes`, `graphspec`, `ir_axis_ops`, `one_semantic_universe`, `torch_ir_pytorch` |
+| Deep dives | `floats_arb_ieee_compare`, `float32_semantics`, `graphspec`, `ir_axis_ops`, `one_semantic_universe`, `torch_ir_pytorch` |
 
 Use `lake exe torchlean --help` for the current command list and example invocations. Runtime flags
-such as `--device cpu`, `--device cuda`, `--dtype`, and `--backend` can appear before or after the command name.
+such as `--device cpu`, `--device cuda`, `--scalar`, and `--execution` can appear before or after the command name.
 
 For a compact application-level regression pass, run:
 

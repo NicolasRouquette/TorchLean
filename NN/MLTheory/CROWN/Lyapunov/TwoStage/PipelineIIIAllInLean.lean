@@ -12,12 +12,12 @@ public import NN.API.TensorPack
 public import NN.MLTheory.CROWN.Core
 public import NN.MLTheory.CROWN.Graph
 public import NN.MLTheory.CROWN.Lyapunov.TwoStage.Core
-public import NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis
+public import NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis
 public import NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils
 public import NN.Runtime.Autograd.TorchLean.Autodiff
-public import NN.Runtime.Autograd.TorchLean.Backend
+public import NN.Runtime.Autograd.TorchLean.Program
 public import NN.Runtime.Autograd.TorchLean.Module
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 
 /-!
 # Pipeline (iii): All-in-Lean TwoStage refinement + IBP/CROWN check
@@ -28,7 +28,7 @@ Everything runs *inside Lean*:
 - Stage 1: sample training points in a box and train parameters (SGD) under exact `IEEE32Exec`.
 - Stage 2: for each round, run a small PGD loop on the input `x` to find “counterexample-ish”
   points, then train on them (CEGIS flavor).
-- Final: compile the same TorchLean loss program to the shared verifier IR and run in-repo IBP/CROWN
+- Final: lower the same TorchLean loss program to the shared verifier IR and run in-repo IBP/CROWN
   bound propagation to check the loss on a small box around the origin.
 
 The workflow uses the in-repo IBP/CROWN engine rather than reproducing every optimization from
@@ -102,9 +102,9 @@ def initParamsF (width : Nat) : _root_.TorchLean.TensorPack Float (paramShapes w
     _root_.Runtime.Autograd.Torch.Init.tensor (s := .dim 1 .scalar) (sch := .zeros) (seed := 5)
   tensorpack! wC, bC, w1, b1, w2, b2
 
-def moduleDef (width : Nat) : TorchLean.Module.ScalarModuleDef (paramShapes width) [xShape]
+def objectiveDef (width : Nat) : TorchLean.Module.ObjectiveDef (paramShapes width) [xShape]
   :=
-  { initParams := initParamsF width
+  { initState := initParamsF width
     loss := Core.lossProgram width }
 
 /-- Main entrypoint for the all-in-Lean pipeline (width is a parameter; CLI default is
@@ -122,10 +122,10 @@ def run (width : Nat) (args : List String) : IO Unit := do
   IO.println
     s!"width={width} stage1Steps={stage1Steps} stage2Rounds={stage2Rounds} pgdSteps={pgdSteps}"
 
-  let mod ← TorchLean.Module.ScalarModuleDef.instantiate (α := α) (moduleDef width)
-    IEEE32Exec.ofFloat .compiled
+  let mod ← TorchLean.Module.ObjectiveDef.instantiate (α := α) (objectiveDef width)
+    IEEE32Exec.ofFloat .typedGraph
   let tr := mod.trainer
-  let cLoss ← TorchLean.Autodiff.compileLoss
+  let cLoss ← TorchLean.Autodiff.lowerScalarToTypedGraph
     (α := α) (paramShapes := paramShapes width) (inputShapes := [xShape]) (lossProg width)
 
   -- Stage 1: initialization pass on random x in [-rad, rad]^2
@@ -135,8 +135,8 @@ def run (width : Nat) (args : List String) : IO Unit := do
     seed := seed'
     let xs : _root_.TorchLean.TensorPack α [xShape] := tensorpack! x
     let currentLoss := _root_.Runtime.Autograd.Torch.scalarOf (←
-      _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr xs .nil)
-    _root_.Runtime.Autograd.Torch.ScalarTrainer.stepT tr lr xs .nil
+      _root_.Runtime.Autograd.Torch.ScalarTrainer.lossPacked tr xs .nil)
+    _root_.Runtime.Autograd.Torch.ScalarTrainer.stepPacked tr lr xs .nil
     if i % 5 = 0 then
       IO.println s!"[stage1] step {i}: loss={currentLoss}"
 
@@ -144,19 +144,19 @@ def run (width : Nat) (args : List String) : IO Unit := do
   for round in [0:stage2Rounds] do
     let (seed', x0) := sampleStateVector seed rad
     seed := seed'
-    let params ← tr.getParams
+    let params ← tr.getState
     let mut x := x0
     for _k in [0:pgdSteps] do
-      x := CompiledLossAnalysis.projectedGradientStep
+      x := LossAnalysis.projectedGradientStep
         width cLoss params x pgdStepSize rad
     let xs : _root_.TorchLean.TensorPack α [xShape] := tensorpack! x
     let lossFound := _root_.Runtime.Autograd.Torch.scalarOf (←
-      _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr xs .nil)
-    _root_.Runtime.Autograd.Torch.ScalarTrainer.stepT tr lr xs .nil
+      _root_.Runtime.Autograd.Torch.ScalarTrainer.lossPacked tr xs .nil)
+    _root_.Runtime.Autograd.Torch.ScalarTrainer.stepPacked tr lr xs .nil
     IO.println s!"[stage2] round {round}: loss={lossFound}"
 
-  let params ← tr.getParams
-  CompiledLossAnalysis.checkLossBox width params epsCheck
+  let params ← tr.getState
+  LossAnalysis.checkLossBox width params epsCheck
 
 /-- Default hidden width used by the Pipeline III all-in-Lean workflow. -/
 def defaultWidth : Nat := 100

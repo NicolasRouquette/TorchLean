@@ -18,7 +18,7 @@ This module provides differentiable policy-gradient / actor-critic helpers expre
 TorchLean's backend-generic `Ops` interface, so they can run under:
 
 - the eager runtime backend (imperative autograd, GPU-capable), and
-- the compiled backend (graph recording / proof tooling).
+- typed graph execution (recorded graph and proof tooling).
 
 This file lives with the RL runtime, not the TorchLean runtime internals, because these are RL
 objectives that happen to be differentiable through TorchLean. It is the autograd companion to the
@@ -184,7 +184,7 @@ def ppoLossBatch
 /-! ## PPO module wrapper (two-model actor/critic) -/
 
 /--
-Bundle an actor and critic into a `ScalarModuleDef` whose inputs are a PPO minibatch:
+Bundle an actor and critic into an `ObjectiveDef` whose inputs are a PPO minibatch:
 
 - `states : (N × stateDim)`
 - `actionsOneHot : (N × A)`
@@ -192,48 +192,56 @@ Bundle an actor and critic into a `ScalarModuleDef` whose inputs are a PPO minib
 - `advantages : (N)`
 - `valueTarget : (N × 1)`
 
-The parameters are `actor.params ++ critic.params`, and one optimizer step updates both.
+The model state is `actor.state ++ critic.state`, and one optimizer step updates both models.
 -/
-def ppoActorCriticScalarModuleDef
+def ppoActorCriticObjectiveDef
     {stateShape : Shape} {batch nActions : Nat}
     [hBatch : Fact (0 < batch)] [hAct : Fact (0 < nActions)]
     (actor : _root_.Runtime.Autograd.TorchLean.NN.Seq stateShape (.dim batch (.dim nActions .scalar)))
     (critic : _root_.Runtime.Autograd.TorchLean.NN.Seq stateShape (.dim batch (.dim 1 .scalar))) :
-    _root_.Runtime.Autograd.TorchLean.Module.ScalarModuleDef
-      (_root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes actor ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes critic)
+    _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef
+      (_root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes actor ++
+        _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes critic)
       [stateShape, (.dim batch (.dim nActions .scalar)), (.dim batch .scalar), (.dim batch .scalar),
         (.dim batch (.dim 1 .scalar))] :=
-  { initParams :=
+  { initState :=
       _root_.Proofs.Autograd.Algebra.TList.append (α := Float)
-        (ss₁ := _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes actor) (ss₂ := _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes critic)
-        (_root_.Runtime.Autograd.TorchLean.NN.Seq.initParams actor) (_root_.Runtime.Autograd.TorchLean.NN.Seq.initParams critic)
-    initRequiresGrad := _root_.Runtime.Autograd.TorchLean.NN.Seq.paramRequiresGrad actor ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.paramRequiresGrad critic
+        (ss₁ := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes actor)
+        (ss₂ := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes critic)
+        (_root_.Runtime.Autograd.TorchLean.NN.Seq.initState actor)
+        (_root_.Runtime.Autograd.TorchLean.NN.Seq.initState critic)
+    requiresGrad := _root_.Runtime.Autograd.TorchLean.NN.Seq.requiresGrad actor ++
+      _root_.Runtime.Autograd.TorchLean.NN.Seq.requiresGrad critic
     loss := fun {α} => by
       intro _ _; exact
         (fun {m} _ _ =>
           _root_.Runtime.Autograd.Torch.CurriedRef.curry (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
-            (ss := (_root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes actor ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes critic) ++
+            (ss := (_root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes actor ++
+              _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes critic) ++
               [stateShape, (.dim batch (.dim nActions .scalar)), (.dim batch .scalar), (.dim batch .scalar),
                 (.dim batch (.dim 1 .scalar))])
             (β := m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) Shape.scalar))
             (fun args => do
               let (ps, xs) :=
                 _root_.Runtime.Autograd.Torch.RefList.split (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
-                  (ss₁ := (_root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes actor ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes critic))
+                  (ss₁ := (_root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes actor ++
+                    _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes critic))
                   (ss₂ := [stateShape, (.dim batch (.dim nActions .scalar)), (.dim batch .scalar),
                     (.dim batch .scalar), (.dim batch (.dim 1 .scalar))])
                   args
               let (psActor, psCritic) :=
                 _root_.Runtime.Autograd.Torch.RefList.split (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
-                  (ss₁ := _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes actor)
-                  (ss₂ := _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes critic)
+                  (ss₁ := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes actor)
+                  (ss₂ := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes critic)
                   ps
               let .cons states (.cons actionsOneHot (.cons oldLogProb (.cons advantages (.cons valueTarget .nil)))) :=
                 xs
               let logits ←
-                _root_.Runtime.Autograd.TorchLean.NN.Seq.forwardParams (model := actor) (α := α) (m := m) .train psActor states
+                _root_.Runtime.Autograd.TorchLean.NN.Seq.forwardState
+                  (model := actor) (α := α) (m := m) .train psActor states
               let values ←
-                _root_.Runtime.Autograd.TorchLean.NN.Seq.forwardParams (model := critic) (α := α) (m := m) .train psCritic states
+                _root_.Runtime.Autograd.TorchLean.NN.Seq.forwardState
+                  (model := critic) (α := α) (m := m) .train psCritic states
               ppoLossBatch (m := m) (α := α) (batch := batch) (nActions := nActions)
                 logits actionsOneHot oldLogProb advantages values valueTarget))
   }

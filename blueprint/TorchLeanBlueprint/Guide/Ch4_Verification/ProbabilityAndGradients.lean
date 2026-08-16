@@ -300,7 +300,7 @@ A runtime-autograd proof adds:
 
 5. correctness of graph recording;
 6. correctness of saved tensors and cotangent accumulation;
-7. agreement of the selected execution backend with the operator semantics.
+7. agreement of the selected provider implementation with the operator semantics.
 
 The probability theorem has an analogous place in diffusion: it supplies the exact forward
 transition law, while a model proof must still connect that law to a schedule, a denoising

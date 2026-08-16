@@ -62,7 +62,7 @@ def run : IO Unit := do
   let (t2, gId) := Tape.leaf (t := t1) gamma (name := some "gamma")
   let (t3, bId) := Tape.leaf (t := t2) beta (name := some "beta")
   let (t4, yId) ← Utils.okOrThrow
-    (Tape.batchnormChannelFirst (α := Float) (t := t3) (channels := channels) (height := height)
+    (Tape.batchNormChannelFirst (α := Float) (t := t3) (channels := channels) (height := height)
       (width := width) (h_c := hC) (h_h := hH) (h_w := hW) xId gId bId)
   let yCpu ← Utils.cpuValue (s := outShape) t4 yId
   let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) outShape)
@@ -80,7 +80,7 @@ def run : IO Unit := do
   let (t3c, bIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t2c) (Utils.tensorToAnyBuffer beta)
     (name := some "beta")
   let (t4c, yIdc) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.batchnormChannelFirst (t := t3c) (channels := channels)
+    (Runtime.Autograd.Cuda.Tape.batchNormChannelFirst (t := t3c) (channels := channels)
       (height := height) (width := width) (h_c := hC) (h_h := hH) (h_w := hW) xIdc gIdc bIdc)
   let yCuda ← Utils.cudaValue (s := outShape) t4c yIdc
   let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=

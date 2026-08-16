@@ -61,7 +61,7 @@ def linear {α : Type} [Add α] [Mul α] [Zero α] [DecidableEq Shape]
 /--
 2D matrix multiplication.
 
-PyTorch comparison: `torch.matmul(a, b)` for 2D tensors.
+PyTorch comparison: `torch.mm(a, b)`.
 -/
 def matmul {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
   {m n p : Nat} (t : Tape α) (aId bId : Nat) : Result (Tape α × Nat) := do

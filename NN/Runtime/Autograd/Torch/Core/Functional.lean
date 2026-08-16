@@ -6,14 +6,14 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Torch.Core.Compiled
+public import NN.Runtime.Autograd.Torch.Core.TypedGraph
 public import NN.Runtime.Autograd.LeadingAxis
 
 /-!
-# Backend-Generic Functional API
+# Execution-Mode-Generic Functional API
 
 The `Ops` interface and curried helper syntax used to write one model once and run it on either the
-eager runtime or the compiled graph backend.
+eager execution path or the typed graph execution path.
 -/
 
 
@@ -28,15 +28,15 @@ open Tensor
 open Proofs.Autograd.Algebra
 
 /-
-Backend-generic "one API" layer
+Execution-mode-generic "one API" layer
 
-The eager backend builds a runtime tape each iteration.
-The `GraphM` authoring API provides a proof-compiled model.
+Eager execution builds a runtime tape each iteration.
+The `GraphM` authoring API provides a shape-indexed executable graph model.
 
 The definitions below let you write a single model/loss once (as a polymorphic program over a
 small `Ops` interface) and then choose:
-- `backend := .eager`    (build a tape each iteration)
-- `backend := .compiled` (compile once, run many)
+- `execution := .eager`    (build a tape each iteration)
+- `execution := .typedGraph` (construct shape-indexed typed graph data)
 -/
 
 end Torch
@@ -117,8 +117,8 @@ end Curried
 `RefList` is the reference-analogue of `TList`: a heterogeneous list of `Ref s` values indexed by
 a shape list.
 
-This is used to write backend-generic code over references (e.g. `TensorRef`s in eager mode, or
-`GraphM.Var`s in compiled mode).
+This is used to write execution-mode-generic code over references (for example, `TensorRef`s in
+eager mode or `GraphM.Var`s in typed graph mode).
 -/
 /-- Reference-analogue of `TList`: a heterogeneous list of `Ref s` values indexed by shapes. -/
 inductive RefList (Ref : Shape → Type) : List Shape → Type where
@@ -155,7 +155,7 @@ end RefList
 Type of a curried function over references, one `Ref s` argument per shape in `ss`.
 
 This mirrors `Curried.Fn`, but for `Ref`-valued arguments (e.g. `TensorRef`s in eager mode or
-`GraphM.Var`s in compiled mode).
+`GraphM.Var`s in typed graph mode).
 -/
 def CurriedRef (Ref : Shape → Type) : List Shape → Type → Type
   | [], β => β
@@ -184,18 +184,18 @@ def uncurryTList {α β : Type} : {ss : List Shape} →
 /--
 Apply a curried reference function to a `GraphM.VarList`.
 
-This is a convenience for the compiled backend, where leaves/inputs are represented as `Var`s.
+This is a convenience for the typed graph execution, where leaves/inputs are represented as `Var`s.
 -/
 def applyVarList {Γ : List Shape} {β : Type} :
-    CurriedRef (fun s => Runtime.Autograd.Compiled.GraphM.Var s) Γ β →
-      Runtime.Autograd.Compiled.GraphM.VarList Γ → β
+    CurriedRef (fun s => Runtime.Autograd.TypedGraph.GraphM.Var s) Γ β →
+      Runtime.Autograd.TypedGraph.GraphM.VarList Γ → β
   | f, .nil => f
   | f, .cons v vs => applyVarList (Γ := _) (β := β) (f v) vs
 
 /--
 Apply a curried function to the coordinate projections of a typed tensor list.
 
-Compiled module inputs use this to represent each non-differentiable natural-number tensor as a
+Typed graph module inputs use this to represent each non-differentiable natural-number tensor as a
 function of the complete runtime input pack. The projection is typed by the shape list, so neither
 numeric offsets nor runtime casts enter the graph definition.
 -/
@@ -216,14 +216,15 @@ def applyTListProjections {α : Type} {β : Type} {full : List Shape} :
 end CurriedRef
 
 /--
-Backend-generic interface for building and executing tensor programs.
+Execution-mode-generic interface for building and executing tensor programs.
 
 This typeclass lets you write a single model/loss once (polymorphic over `Ops m α`) and then choose:
-- an eager backend that executes immediately on a runtime tape, or
-- a compiled backend that records proved IR (`GraphM`) for later compilation/proofs.
+- eager execution, which evaluates immediately on a runtime tape, or
+- typed graph execution that records reusable graph data (`GraphM`) for later evaluation or
+  connection to separate correctness theorems.
 
 Each method corresponds to a Tensor op; implementations are expected to match the semantics of the
-corresponding `Runtime.Autograd.Tape.*` / `Compiled.GraphM.*` operator.
+corresponding `Runtime.Autograd.Tape.*` / `TypedGraph.GraphM.*` operator.
 -/
 class Ops (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape] where
   Ref : Shape → Type
@@ -351,7 +352,7 @@ class Ops (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape] where
     Ref (.dim embedDim .scalar) →
     Ref (.dim embedDim .scalar) →
     m (Ref (.dim seqLen (.dim embedDim .scalar)))
-  batchnormChannelFirst {channels height width : Nat} (h_c : channels > 0) (h_h : height > 0) (h_w
+  batchNormChannelFirst {channels height width : Nat} (h_c : channels > 0) (h_h : height > 0) (h_w
     : width > 0) :
     Ref (.dim channels (.dim height (.dim width .scalar))) →
     Ref (.dim channels .scalar) →
@@ -421,7 +422,7 @@ class Ops (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape] where
   - the provided `seed` (user-controlled), and
   - backend-specific internal counters (e.g. node id / call index).
 
-  They do not rely on `IO` randomness, so compiled graphs remain replayable.
+  They do not rely on `IO` randomness, so typed graphs remain replayable.
   -/
   randUniform : {s : Shape} → (seed : Nat) → m (Ref s)
   bernoulliMask : {s : Shape} → Ref Shape.scalar → (seed : Nat) → m (Ref s)
@@ -434,7 +435,7 @@ variable {m : Type → Type} {α : Type} [Context α] [DecidableEq Shape] [Monad
 /--
 Reference type for the current `Ops` instance.
 
-In eager mode this will typically be `TensorRef`; in compiled mode it will typically be
+In eager mode this will typically be `TensorRef`; in typed graph mode it will typically be
   `GraphM.Var`.
 -/
 abbrev Ref (s : Shape) : Type := Ops.Ref (m := m) (α := α) s
@@ -562,8 +563,13 @@ def scatterAddRow {rows cols : Nat}
   (i : Fin rows) :
   m (Ref (m := m) (α := α) (.dim rows (.dim cols .scalar))) :=
   Ops.scatterAddRow (m := m) (α := α) (rows := rows) (cols := cols) x v i
-/-- Re-export of `Ops.matmul`. PyTorch: `torch.matmul` for 2D tensors. -/
-def matmul {mDim nDim pDim : Nat}
+/--
+Multiply two rank-two matrices.
+
+This has the semantics of PyTorch's `torch.mm`. Use `bmm` for a rank-three batch of matrix
+products; `mm` never broadcasts batch axes.
+-/
+def mm {mDim nDim pDim : Nat}
   (a : Ref (m := m) (α := α) (.dim mDim (.dim nDim .scalar)))
   (b : Ref (m := m) (α := α) (.dim nDim (.dim pDim .scalar))) :
   m (Ref (m := m) (α := α) (.dim mDim (.dim pDim .scalar))) :=
@@ -593,7 +599,7 @@ def sliceLeadingAxisRange {nDim : Nat} {s : Shape} (start len : Nat) (h : len + 
   Ops.sliceLeadingAxisRange (m := m) (α := α) (nDim := nDim) (s := s) start len h x
 
 /--
-Backend-polymorphic leading-axis map.
+Execution-polymorphic leading-axis map.
 
 This is the reference implementation used by public model lifting and by batched primitives whose
 backend does not provide a fused implementation.
@@ -707,7 +713,7 @@ def sigmoid {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α :=
 /-- Re-export of `Ops.tanh`. -/
 def tanh {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) s) := Ops.tanh (m :=
   m) (α := α) x
-/-- Re-export of `Ops.softmax`. -/
+/-- Apply softmax over the final axis. -/
 def softmax {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) s) := Ops.softmax
   (m := m) (α := α) x
 /-- Re-export of `Ops.softplus`. -/
@@ -798,13 +804,13 @@ def layerNorm {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : em
     h_seq_pos h_embed_pos x gamma beta
 
 /-- Re-export of `Ops.batchnorm_channel_first`. PyTorch: `nn.BatchNorm2d` (conceptually). -/
-def batchnormChannelFirst {channels height width : Nat} (h_c : channels > 0) (h_h : height > 0)
+def batchNormChannelFirst {channels height width : Nat} (h_c : channels > 0) (h_h : height > 0)
   (h_w : width > 0)
   (x : Ref (m := m) (α := α) (.dim channels (.dim height (.dim width .scalar))))
   (gamma : Ref (m := m) (α := α) (.dim channels .scalar))
   (beta : Ref (m := m) (α := α) (.dim channels .scalar)) :
   m (Ref (m := m) (α := α) (.dim channels (.dim height (.dim width .scalar)))) :=
-  Ops.batchnormChannelFirst (m := m) (α := α) (channels := channels) (height := height) (width :=
+  Ops.batchNormChannelFirst (m := m) (α := α) (channels := channels) (height := height) (width :=
     width)
     h_c h_h h_w x gamma beta
 
@@ -825,7 +831,7 @@ Batch-aware attention primitive.
 
 Backends must implement the same leading-axis map as `multiHeadAttention`. The separate operation
 lets an eager runtime fold `(batch, head)` into one batched contraction without weakening the
-compiled or specification semantics.
+typed graph or specification semantics.
 -/
 def batchedMultiHeadAttention {batch n numHeads dModel headDim : Nat}
   (hBatch : batch ≠ 0) (h1 : n ≠ 0)

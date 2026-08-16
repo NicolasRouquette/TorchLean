@@ -12,8 +12,8 @@ public import NN.Verification.ODE
 public import NN.Verification.PINN
 public import NN.Verification.Robustness
 public import NN.Verification.Splines
-public import NN.Verification.TorchLean.Compile
-public import NN.Verification.TorchLean.CompileExec
+public import NN.Verification.TorchLean.Lowering
+public import NN.Verification.TorchLean.ExecutableLowering
 public import NN.Verification.TorchLean.Proved
 public import NN.Verification.Util.Json
 public import NN.Verification.Util.TextCursor
@@ -24,14 +24,14 @@ public import NN.MLTheory.CROWN.Proofs.Overview
 # Verification
 
 Import this file for TorchLean’s verification infrastructure: JSON utilities, certificate formats,
-ODE/PINN-style checkers, proof-backed certificate soundness, and the proof-backed TorchLean-to-IR
-forward compiler bridge.
+ODE/PINN-style checkers, proof-backed certificate soundness, and proof-backed TorchLean-to-IR
+forward lowering.
 
 Their expression parsers share the fuel-bounded byte cursor and decimal scanners from
 `NN.Verification.Util.TextCursor`; each verifier keeps only its grammar and AST-specific logic.
 
-The compiler bridge is imported through `NN.Verification.TorchLean.Proved`, which contains both the
-compiler and its correctness theorems.
+The lowering API is imported through `NN.Verification.TorchLean.Proved`, which contains both the
+lowering functions and their correctness theorems.
 
 Runnable CLIs stay out of this umbrella. If you want a command-line tool, import
 the registry explicitly (for example `NN.Verification.CLI`).

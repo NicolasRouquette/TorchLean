@@ -48,12 +48,12 @@ This is the binary32 specialization used by TorchLean's runtime and numerical pr
   particular hardware/libm.) This gives a concrete meaning to “float32 execution” inside Lean,
   independent of a particular platform’s runtime/libm.
 
-The intent is to let the rest of the codebase depend on a single *name* (`Float32`/`F32`) while
-keeping the boundary easy to see and easy to swap:
+The three types deliberately have different names:
 
 - theorem statements and error bounds typically use `FP32`,
-- runnable examples typically use `IEEE32Exec`,
-- ordinary Lean `Float32` proofs unfold through `Float32.Model`, while compiled execution is
+- ordinary native runs use Lean's `Float32`,
+- reference executions use `IEEE32Exec`,
+- ordinary Lean `Float32` proofs unfold through `Float32.Model`, while native execution is
   covered by a separate provider contract.
 
 This design is described in the TorchLean paper appendix ("Appendix C (Numerical Semantics)"):
@@ -65,21 +65,6 @@ This design is described in the TorchLean paper appendix ("Appendix C (Numerical
 
 namespace TorchLean.Floats
 
-/-! ## Backend selection -/
-
-/--
-Selects which float32 semantics TorchLean should use.
-
-`.fp32` is the proof-oriented rounding-on-`ℝ` model.
-`.ieee754Exec` is the executable, bit-level IEEE-754 binary32 model.
--/
-inductive Float32Mode where
-  /-- Finite float32 rounding model (`FP32`). -/
-  | fp32
-  /-- Executable IEEE754 binary32 kernel (`IEEE32Exec`): bit-level float32 with NaN/Inf. -/
-  | ieee754Exec
-  deriving DecidableEq, Repr
-
 /--
 Executable float32 backend (bit-level IEEE-754 binary32).
 
@@ -87,32 +72,5 @@ This is the scalar type you pick when you want runs inside Lean to have an expli
 (including NaN/Inf and signed-zero behavior), rather than depending on the platform runtime.
 -/
 abbrev IEEE32Exec : Type := TorchLean.Floats.IEEE754.IEEE32Exec
-
-/--
-TorchLean’s “float32” surface with selectable semantics.
-
-Default is `.ieee754Exec` because it is the closest to real float32 execution you can *define*
-inside Lean. For theorem statements and compositional error reasoning, prefer `.fp32`.
--/
-abbrev Float32 (mode : Float32Mode := .ieee754Exec) : Type :=
-  match mode with
-  | .fp32 => FP32
-  | .ieee754Exec => IEEE32Exec
-
-/-- Short alias used in examples/docs. -/
-abbrev F32 (mode : Float32Mode := .ieee754Exec) : Type := Float32 mode
-
-/-! ## CLI and Example Logging -/
-
-/-- Short summary of the selected Float32 semantics. -/
-def float32ModeSummary : Float32Mode → String
-  | .fp32 =>
-      "FP32: proof semantics (round-on-ℝ), finite-only; no NaN/Inf"
-  | .ieee754Exec =>
-      "IEEE32Exec: executable IEEE-754 binary32 kernel (bit-level; includes NaN/Inf)"
-
-/-- Print a one-line summary of the selected float32 semantics. -/
-def logFloat32Mode (mode : Float32Mode) : IO Unit :=
-  IO.println s!"[TorchLean] Float32 mode: {float32ModeSummary mode}"
 
 end TorchLean.Floats

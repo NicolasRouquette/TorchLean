@@ -63,16 +63,16 @@ def meanGradients {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task)
     (batch : List (_root_.Runtime.Autograd.Torch.TList α [σ, τ])) :
-    IO (_root_.Runtime.Autograd.Torch.TList α (paramShapes task)) := do
+    IO (_root_.Runtime.Autograd.Torch.TList α (stateShapes task)) := do
   match batch with
   | [] =>
       throw <| IO.userError "Supervised.meanGradients: empty batch"
   | first :: rest =>
       for sample in batch do
-        updateRunnerBuffers runner sample
-      let mut gradSum ← TorchLean.Module.backward runner.module first .nil
+        Runner.updateBuffers runner sample
+      let mut gradSum ← TorchLean.Module.gradState runner.module first .nil
       for sample in rest do
-        let grads ← TorchLean.Module.backward runner.module sample .nil
+        let grads ← TorchLean.Module.gradState runner.module sample .nil
         gradSum := addGradientPacks gradSum grads
       let invCount : α := 1 / (batch.length : α)
       pure (scaleGradientPack invCount gradSum)
@@ -87,7 +87,7 @@ def meanLossAndGradients {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task)
     (batch : List (_root_.Runtime.Autograd.Torch.TList α [σ, τ])) :
-    IO (α × _root_.Runtime.Autograd.Torch.TList α (paramShapes task)) := do
+    IO (α × _root_.Runtime.Autograd.Torch.TList α (stateShapes task)) := do
   match batch with
   | [] =>
       throw <| IO.userError "Supervised.meanLossAndGradients: empty batch"
@@ -95,13 +95,13 @@ def meanLossAndGradients {σ τ : Spec.Shape} {task : SeqTask σ τ}
       -- Buffer updates are state transitions, not optimizer steps. Apply them once before taking
       -- derivatives so every sample sees the same trainable parameter values and buffer state.
       for sample in batch do
-        updateRunnerBuffers runner sample
+        Runner.updateBuffers runner sample
       let (firstLoss, firstGrads) ←
-        TorchLean.Module.lossAndBackward runner.module first .nil
+        TorchLean.Module.lossAndGradState runner.module first .nil
       let mut lossSum := Spec.Tensor.toScalar firstLoss
       let mut gradSum := firstGrads
       for sample in rest do
-        let (loss, grads) ← TorchLean.Module.lossAndBackward runner.module sample .nil
+        let (loss, grads) ← TorchLean.Module.lossAndGradState runner.module sample .nil
         lossSum := lossSum + Spec.Tensor.toScalar loss
         gradSum := addGradientPacks gradSum grads
       let invCount : α := 1 / (batch.length : α)
@@ -116,7 +116,7 @@ partial loader batch from switching between device-resident and host optimizer s
 def stepBatch {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task)
-    (opt : _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α (paramShapes task))
+    (opt : _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α (stateShapes task))
     (state : opt.State)
     (useNativeSingleton : Bool)
     (batch : List (_root_.Runtime.Autograd.Torch.TList α [σ, τ])) :
@@ -126,22 +126,22 @@ def stepBatch {σ τ : Spec.Shape} {task : SeqTask σ τ}
       throw <| IO.userError "Supervised.stepBatch: empty batch"
   | [sample] =>
       if useNativeSingleton then
-        updateRunnerBuffers runner sample
-        TorchLean.Module.stepWith runner.module opt state sample .nil
+        Runner.updateBuffers runner sample
+        TorchLean.Module.optimizerStep runner.module opt state sample .nil
       else
         let meanGrads ← meanGradients runner batch
-        let _ ← runner.module.trainer.getParams
-        opt.step state runner.module.trainer.params meanGrads
+        let _ ← runner.module.trainer.getState
+        opt.step state runner.module.trainer.state meanGrads
   | _ =>
       let meanGrads ← meanGradients runner batch
-      let _ ← runner.module.trainer.getParams
-      opt.step state runner.module.trainer.params meanGrads
+      let _ ← runner.module.trainer.getState
+      opt.step state runner.module.trainer.state meanGrads
 
 /-- Apply one optimizer update and return the loss from the gradient-producing tapes. -/
 def stepBatchAndLoss {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task)
-    (opt : _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α (paramShapes task))
+    (opt : _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α (stateShapes task))
     (state : opt.State)
     (useNativeSingleton : Bool)
     (batch : List (_root_.Runtime.Autograd.Torch.TList α [σ, τ])) :
@@ -151,19 +151,19 @@ def stepBatchAndLoss {σ τ : Spec.Shape} {task : SeqTask σ τ}
       throw <| IO.userError "Supervised.stepBatchAndLoss: empty batch"
   | [sample] =>
       if useNativeSingleton then
-        updateRunnerBuffers runner sample
+        Runner.updateBuffers runner sample
         let (state', loss) ←
-          TorchLean.Module.stepWithOptimizerAndLoss runner.module opt state sample .nil
+          TorchLean.Module.optimizerStepWithLoss runner.module opt state sample .nil
         pure (state', Spec.Tensor.toScalar loss)
       else
         let (meanLoss, meanGrads) ← meanLossAndGradients runner batch
-        let _ ← runner.module.trainer.getParams
-        let state' ← opt.step state runner.module.trainer.params meanGrads
+        let _ ← runner.module.trainer.getState
+        let state' ← opt.step state runner.module.trainer.state meanGrads
         pure (state', meanLoss)
   | _ =>
       let (meanLoss, meanGrads) ← meanLossAndGradients runner batch
-      let _ ← runner.module.trainer.getParams
-      let state' ← opt.step state runner.module.trainer.params meanGrads
+      let _ ← runner.module.trainer.getState
+      let state' ← opt.step state runner.module.trainer.state meanGrads
       pure (state', meanLoss)
 
 /-- Run the fixed-step in-memory loop for one concrete optimizer state type. -/
@@ -173,7 +173,7 @@ def runSampleSteps {σ τ : Spec.Shape} {task : SeqTask σ τ}
     (cfg : TrainConfig)
     (nextBatch : IO (List (_root_.Runtime.Autograd.Torch.TList α [σ, τ])))
     (watchMemory : Nat → IO Unit)
-    (opt : _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α (paramShapes task))
+    (opt : _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α (stateShapes task))
     (initialState : opt.State)
     (scheduleState : Nat → opt.State → opt.State) :
     IO Unit := do
@@ -209,13 +209,13 @@ def trainSamples {σ τ : Spec.Shape} {task : SeqTask σ τ}
     (cfg : TrainConfig)
     (samples : List (_root_.Runtime.Autograd.Torch.TList α [σ, τ])) :
     IO (TrainReport α) := do
-  trainMode runner
-  let before ← meanLoss runner samples
-  let watchEvery := effectiveCudaMemWatch runner.module.opts cfg.steps cfg.cudaMemWatch
-  let memWatchRef ← IO.mkRef (none : Option CudaMemWatchState)
+  Runner.train runner
+  let before ← Runner.meanLoss runner samples
+  let watchEvery := CUDAMemory.cadence runner.module.opts cfg.steps cfg.cudaMemWatch
+  let memWatchRef ← IO.mkRef (none : Option CUDAMemory.State)
   let watchMemory (done : Nat) : IO Unit := do
     let state ← memWatchRef.get
-    let state ← reportCudaMemWatch runner.module.opts watchEvery cfg.steps done state
+    let state ← CUDAMemory.sample runner.module.opts watchEvery cfg.steps done state
     memWatchRef.set state
   watchMemory 0
   unless samples.isEmpty do
@@ -227,62 +227,62 @@ def trainSamples {σ τ : Spec.Shape} {task : SeqTask σ τ}
     | .sgd lr momentum =>
         if momentum == 0.0 then
           let opt := _root_.Runtime.Autograd.TorchLean.Optim.sgd
-            (α := α) (paramShapes := paramShapes task) (_root_.TorchLean.Runtime.ofFloat lr)
-          let state ← TorchLean.Module.initOptim runner.module opt
+            (α := α) (paramShapes := stateShapes task) (_root_.TorchLean.Runtime.ofFloat lr)
+          let state ← TorchLean.Module.initOptimizer runner.module opt
           Internal.runSampleSteps runner cfg nextBatch watchMemory opt state (fun step state =>
-            sgdStateWithLR (paramShapes := paramShapes task)
+            sgdStateWithLR (paramShapes := stateShapes task)
               (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
         else
           let opt := _root_.Runtime.Autograd.TorchLean.Optim.momentumSGD
-            (α := α) (paramShapes := paramShapes task)
+            (α := α) (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat momentum)
-          let state ← TorchLean.Module.initOptim runner.module opt
+          let state ← TorchLean.Module.initOptimizer runner.module opt
           Internal.runSampleSteps runner cfg nextBatch watchMemory opt state (fun step state =>
-            momentumSGDStateWithLR (paramShapes := paramShapes task)
+            momentumSGDStateWithLR (paramShapes := stateShapes task)
               (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
     | .adagrad lr epsilon =>
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.adagrad
-          (α := α) (paramShapes := paramShapes task)
+          (α := α) (paramShapes := stateShapes task)
           (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat epsilon)
-        let state ← TorchLean.Module.initOptim runner.module opt
+        let state ← TorchLean.Module.initOptimizer runner.module opt
         Internal.runSampleSteps runner cfg nextBatch watchMemory opt state (fun step state =>
-          adagradStateWithLR (paramShapes := paramShapes task)
+          adagradStateWithLR (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
     | .rmsprop lr decay epsilon =>
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.rmsprop
-          (α := α) (paramShapes := paramShapes task)
+          (α := α) (paramShapes := stateShapes task)
           (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat decay) (_root_.TorchLean.Runtime.ofFloat epsilon)
-        let state ← TorchLean.Module.initOptim runner.module opt
+        let state ← TorchLean.Module.initOptimizer runner.module opt
         Internal.runSampleSteps runner cfg nextBatch watchMemory opt state (fun step state =>
-          rmspropStateWithLR (paramShapes := paramShapes task)
+          rmspropStateWithLR (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
     | .adam lr beta1 beta2 epsilon =>
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.adam
-          (α := α) (paramShapes := paramShapes task)
+          (α := α) (paramShapes := stateShapes task)
           (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat beta1) (_root_.TorchLean.Runtime.ofFloat beta2)
           (_root_.TorchLean.Runtime.ofFloat epsilon)
-        let state ← TorchLean.Module.initOptim runner.module opt
+        let state ← TorchLean.Module.initOptimizer runner.module opt
         Internal.runSampleSteps runner cfg nextBatch watchMemory opt state (fun step state =>
-          adamStateWithLR (paramShapes := paramShapes task)
+          adamStateWithLR (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
     | .adamw lr weightDecay beta1 beta2 epsilon =>
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.adamw
-          (α := α) (paramShapes := paramShapes task)
+          (α := α) (paramShapes := stateShapes task)
           (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat weightDecay)
           (_root_.TorchLean.Runtime.ofFloat beta1) (_root_.TorchLean.Runtime.ofFloat beta2) (_root_.TorchLean.Runtime.ofFloat epsilon)
-        let state ← TorchLean.Module.initOptim runner.module opt
+        let state ← TorchLean.Module.initOptimizer runner.module opt
         Internal.runSampleSteps runner cfg nextBatch watchMemory opt state (fun step state =>
-          adamwStateWithLR (paramShapes := paramShapes task)
+          adamwStateWithLR (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
     | .adadelta lr rho epsilon =>
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.adadelta
-          (α := α) (paramShapes := paramShapes task)
+          (α := α) (paramShapes := stateShapes task)
           (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat rho) (_root_.TorchLean.Runtime.ofFloat epsilon)
-        let state ← TorchLean.Module.initOptim runner.module opt
+        let state ← TorchLean.Module.initOptimizer runner.module opt
         Internal.runSampleSteps runner cfg nextBatch watchMemory opt state (fun step state =>
-          adadeltaStateWithLR (paramShapes := paramShapes task)
+          adadeltaStateWithLR (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
-  let after ← meanLoss runner samples
+  let after ← Runner.meanLoss runner samples
   pure { before := before, after := after }
 
 /-- Train over a dataset by materializing its sample list. -/
@@ -307,7 +307,7 @@ def runLoaderEpochs {σ τ : Spec.Shape} {task : SeqTask σ τ}
     (cfg : LoaderTrainConfig)
     (initialLoader : _root_.Runtime.Autograd.Train.DataLoader
       (_root_.Runtime.Autograd.Torch.TList α [σ, τ]))
-    (opt : _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α (paramShapes task))
+    (opt : _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α (stateShapes task))
     (initialState : opt.State)
     (scheduleState : Nat → opt.State → opt.State) :
     IO (_root_.Runtime.Autograd.Train.DataLoader
@@ -366,69 +366,69 @@ def trainLoader {σ τ : Spec.Shape} {task : SeqTask σ τ}
     IO (TrainReport α ×
       _root_.Runtime.Autograd.Train.DataLoader
         (_root_.Runtime.Autograd.Torch.TList α [σ, τ])) := do
-  trainMode runner
-  let before ← meanLossDataset runner dl.dataset
+  Runner.train runner
+  let before ← Runner.meanLossDataset runner dl.dataset
   let dl' ←
     match cfg.optimizer with
     | .sgd lr momentum =>
         if momentum == 0.0 then
           let opt := _root_.Runtime.Autograd.TorchLean.Optim.sgd
-            (α := α) (paramShapes := paramShapes task) (_root_.TorchLean.Runtime.ofFloat lr)
-          let state ← TorchLean.Module.initOptim runner.module opt
+            (α := α) (paramShapes := stateShapes task) (_root_.TorchLean.Runtime.ofFloat lr)
+          let state ← TorchLean.Module.initOptimizer runner.module opt
           Internal.runLoaderEpochs runner cfg dl opt state (fun step state =>
-            sgdStateWithLR (paramShapes := paramShapes task)
+            sgdStateWithLR (paramShapes := stateShapes task)
               (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
         else
           let opt := _root_.Runtime.Autograd.TorchLean.Optim.momentumSGD
-            (α := α) (paramShapes := paramShapes task)
+            (α := α) (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat momentum)
-          let state ← TorchLean.Module.initOptim runner.module opt
+          let state ← TorchLean.Module.initOptimizer runner.module opt
           Internal.runLoaderEpochs runner cfg dl opt state (fun step state =>
-            momentumSGDStateWithLR (paramShapes := paramShapes task)
+            momentumSGDStateWithLR (paramShapes := stateShapes task)
               (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
     | .adagrad lr epsilon =>
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.adagrad
-          (α := α) (paramShapes := paramShapes task)
+          (α := α) (paramShapes := stateShapes task)
           (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat epsilon)
-        let state ← TorchLean.Module.initOptim runner.module opt
+        let state ← TorchLean.Module.initOptimizer runner.module opt
         Internal.runLoaderEpochs runner cfg dl opt state (fun step state =>
-          adagradStateWithLR (paramShapes := paramShapes task)
+          adagradStateWithLR (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
     | .rmsprop lr decay epsilon =>
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.rmsprop
-          (α := α) (paramShapes := paramShapes task)
+          (α := α) (paramShapes := stateShapes task)
           (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat decay) (_root_.TorchLean.Runtime.ofFloat epsilon)
-        let state ← TorchLean.Module.initOptim runner.module opt
+        let state ← TorchLean.Module.initOptimizer runner.module opt
         Internal.runLoaderEpochs runner cfg dl opt state (fun step state =>
-          rmspropStateWithLR (paramShapes := paramShapes task)
+          rmspropStateWithLR (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
     | .adam lr beta1 beta2 epsilon =>
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.adam
-          (α := α) (paramShapes := paramShapes task)
+          (α := α) (paramShapes := stateShapes task)
           (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat beta1) (_root_.TorchLean.Runtime.ofFloat beta2)
           (_root_.TorchLean.Runtime.ofFloat epsilon)
-        let state ← TorchLean.Module.initOptim runner.module opt
+        let state ← TorchLean.Module.initOptimizer runner.module opt
         Internal.runLoaderEpochs runner cfg dl opt state (fun step state =>
-          adamStateWithLR (paramShapes := paramShapes task)
+          adamStateWithLR (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
     | .adamw lr weightDecay beta1 beta2 epsilon =>
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.adamw
-          (α := α) (paramShapes := paramShapes task)
+          (α := α) (paramShapes := stateShapes task)
           (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat weightDecay)
           (_root_.TorchLean.Runtime.ofFloat beta1) (_root_.TorchLean.Runtime.ofFloat beta2) (_root_.TorchLean.Runtime.ofFloat epsilon)
-        let state ← TorchLean.Module.initOptim runner.module opt
+        let state ← TorchLean.Module.initOptimizer runner.module opt
         Internal.runLoaderEpochs runner cfg dl opt state (fun step state =>
-          adamwStateWithLR (paramShapes := paramShapes task)
+          adamwStateWithLR (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
     | .adadelta lr rho epsilon =>
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.adadelta
-          (α := α) (paramShapes := paramShapes task)
+          (α := α) (paramShapes := stateShapes task)
           (_root_.TorchLean.Runtime.ofFloat lr) (_root_.TorchLean.Runtime.ofFloat rho) (_root_.TorchLean.Runtime.ofFloat epsilon)
-        let state ← TorchLean.Module.initOptim runner.module opt
+        let state ← TorchLean.Module.initOptimizer runner.module opt
         Internal.runLoaderEpochs runner cfg dl opt state (fun step state =>
-          adadeltaStateWithLR (paramShapes := paramShapes task)
+          adadeltaStateWithLR (paramShapes := stateShapes task)
             (_root_.TorchLean.Runtime.ofFloat (stepLR cfg.scheduler cfg.optimizer step)) state)
-  let after ← meanLossDataset runner dl'.dataset
+  let after ← Runner.meanLossDataset runner dl'.dataset
   pure ({ before := before, after := after }, dl')
 
 end Manual

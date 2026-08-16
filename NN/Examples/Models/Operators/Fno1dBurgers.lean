@@ -147,8 +147,8 @@ def parse (args : List String) :
   pure (cfg, args)
 
 /-- Effective CUDA-memory-watch cadence for this run. -/
-def effectiveCudaMemWatch (cfg : BurgersOptions) (opts : Options) : Nat :=
-  ModelZoo.effectiveCudaMemWatch opts cfg.steps cfg.cudaMemWatch
+def cudaMemoryCadence (cfg : BurgersOptions) (opts : Options) : Nat :=
+  Trainer.Manual.CUDAMemory.cadence opts cfg.steps cfg.cudaMemWatch
 
 /-- TrainLog note fields for the fused CUDA execution path. -/
 def logNotes (cfg : BurgersOptions) (spectralPath : String) (device : String) : Array String :=
@@ -166,7 +166,7 @@ def logNotes (cfg : BurgersOptions) (spectralPath : String) (device : String) : 
 
 end BurgersOptions
 
-def mkModel : nn.M (nn.Sequential σ τ) :=
+def mkModel : nn.Builder (nn.Sequential σ τ) :=
   by
     simpa [σ, τ, nn.models.fnoInShape, nn.models.fnoOutShape, modelCfg,
       Vector.replicate, Spec.Shape.ofList] using nn.models.fno modelCfg
@@ -176,12 +176,12 @@ def loadDataset
     (xPath yPath : System.FilePath) (n : Nat) :
     IO (Data.Dataset (SupervisedSample Float σ τ)) := do
   let samples ← ModelZoo.orThrow exeName =<<
-    Data.loadSupervisedNpyFloatSamples xPath yPath n [grid] [grid]
+    Data.loadSupervisedNpy xPath yPath n [grid] [grid]
   pure <| Data.fromList samples.toList
 
 /-- Write one FNO prediction row to CSV for the companion plotting script. -/
 def writePredictionProbe (plotCsv : System.FilePath)
-    (x target prediction : Tensor Float σ) : IO Unit := do
+    (x target prediction : Spec.Tensor Float σ) : IO Unit := do
   Data.writeVectorPredictionCsv plotCsv x target prediction
   IO.println s!"  wrote prediction CSV: {plotCsv}"
   IO.println s!"  plot with: python3 NN/Examples/Data/plot_fno1d_burgers.py --csv {plotCsv}"
@@ -217,12 +217,12 @@ def loadData (cfg : BurgersOptions) :
 structure EvalData where
   trainDatasetSamples : List (SupervisedSample Float σ τ)
   testDatasetSamples : List (SupervisedSample Float σ τ)
-  trainSamples : List (Tensor Float σ × Tensor Float τ)
-  testSamples : List (Tensor Float σ × Tensor Float τ)
+  trainSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
+  testSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
   reportTrainDatasetSamples : List (SupervisedSample Float σ τ)
   reportTestDatasetSamples : List (SupervisedSample Float σ τ)
-  reportTrainSamples : List (Tensor Float σ × Tensor Float τ)
-  reportTestSamples : List (Tensor Float σ × Tensor Float τ)
+  reportTrainSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
+  reportTestSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
   trainCycle : Nat → SupervisedSample Float σ τ
 
 /--
@@ -267,7 +267,7 @@ namespace FusedCuda
 abbrev Param := _root_.Runtime.Autograd.Cuda.Fno1dRfftFused.Param
 
 /-- Mean MSE over a finite evaluation prefix using the fused CUDA FNO implementation. -/
-def meanLoss (ps : Array Param) (samples : List (Tensor Float σ × Tensor Float τ)) :
+def meanLoss (ps : Array Param) (samples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)) :
     IO Float := do
   let result ←
     _root_.Runtime.Autograd.Cuda.Fno1dRfftFused.meanLoss
@@ -275,21 +275,21 @@ def meanLoss (ps : Array Param) (samples : List (Tensor Float σ × Tensor Float
   _root_.Runtime.Autograd.okOrThrow result
 
 /-- Train/test MSE pair for the current fused CUDA parameters. -/
-def evalLosses (trainEval testEval : List (Tensor Float σ × Tensor Float τ))
+def evalLosses (trainEval testEval : List (Spec.Tensor Float σ × Spec.Tensor Float τ))
     (ps : Array Param) : IO (Float × Float) := do
   let trainLoss ← meanLoss ps trainEval
   let testLoss ← meanLoss ps testEval
   pure (trainLoss, testLoss)
 
 /-- Append one fused-CUDA evaluation point to the metric history. -/
-def recordEval (trainEval testEval : List (Tensor Float σ × Tensor Float τ))
+def recordEval (trainEval testEval : List (Spec.Tensor Float σ × Spec.Tensor Float τ))
     (hist : Training.MetricHistory) (step : Nat) (ps : Array Param) (tag : String) :
     IO Training.MetricHistory := do
   let (trainLoss, testLoss) ← evalLosses trainEval testEval ps
   pushLossPoint hist step tag trainLoss testLoss
 
 /-- Predict one Burgers terminal field through the fused CUDA spectral path. -/
-def predict (ps : Array Param) (x : Tensor Float σ) : IO (Tensor Float τ) := do
+def predict (ps : Array Param) (x : Spec.Tensor Float σ) : IO (Spec.Tensor Float τ) := do
   let result ←
     _root_.Runtime.Autograd.Cuda.Fno1dRfftFused.forward
       (grid := grid) (width := width) (modes := modes) (blocks := blocks) ps x none
@@ -303,7 +303,7 @@ def predict (ps : Array Param) (x : Tensor Float σ) : IO (Tensor Float τ) := d
 def trainStep (lr : Float)
     (ps : Array Param)
     (adamSt : _root_.Runtime.Autograd.Cuda.Fno1dRfftFused.AdamState)
-    (sample : Tensor Float σ × Tensor Float τ) :
+    (sample : Spec.Tensor Float σ × Spec.Tensor Float τ) :
     IO (Array Param × _root_.Runtime.Autograd.Cuda.Fno1dRfftFused.AdamState) := do
   let (x, y) := sample
   let forwardResult ←
@@ -324,9 +324,9 @@ def run (cfg : BurgersOptions) : IO Unit := do
   let mut adamSt : _root_.Runtime.Autograd.Cuda.Fno1dRfftFused.AdamState := {}
   let mut hist ← recordEval eval.reportTrainSamples eval.reportTestSamples metricHistory 0 ps "before"
   let cudaOpts : _root_.Runtime.Autograd.Torch.Options :=
-    { executionProfile := NN.Backend.BackendProfile.checkedCuda }
-  let cudaMemWatch := cfg.effectiveCudaMemWatch cudaOpts
-  let mut memWatch? ← ModelZoo.reportCudaMemWatch cudaOpts cudaMemWatch cfg.steps 0 none
+    { device := .cuda }
+  let cudaMemWatch := cfg.cudaMemoryCadence cudaOpts
+  let mut memWatch? ← Trainer.Manual.CUDAMemory.sample cudaOpts cudaMemWatch cfg.steps 0 none
   let progressEvery : Nat := Nat.max 1 (cfg.steps / 10)
   for step in [0:cfg.steps] do
     let s := eval.trainCycle (cfg.seed + step)
@@ -334,7 +334,9 @@ def run (cfg : BurgersOptions) : IO Unit := do
     let (ps', adamSt') ← trainStep cfg.lr ps adamSt sample
     ps := ps'
     adamSt := adamSt'
-    memWatch? ← ModelZoo.reportCudaMemWatch cudaOpts cudaMemWatch cfg.steps (step + 1) memWatch?
+    memWatch? ←
+      Trainer.Manual.CUDAMemory.sample
+        cudaOpts cudaMemWatch cfg.steps (step + 1) memWatch?
     if ModelZoo.shouldLogStep progressEvery (step + 1) then
       hist ← recordEval eval.reportTrainSamples eval.reportTestSamples hist (step + 1) ps s!"step {step + 1}"
   hist ← recordEval eval.reportTrainSamples eval.reportTestSamples hist cfg.steps ps "after"
@@ -358,13 +360,13 @@ def runPortableDense
   let trainer :=
     Trainer.new mkModel <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := cfg.lr } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := cfg.lr } })
         .regression
         (seed := cfg.seed)
   trainer.printInfo
   let histRef ← IO.mkRef metricHistory
-  let meanPredMse (predict : Tensor Float σ → IO (Tensor Float τ))
-      (samples : List (Tensor Float σ × Tensor Float τ)) : IO Float := do
+  let meanPredMse (predict : Spec.Tensor Float σ → IO (Spec.Tensor Float τ))
+      (samples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)) : IO Float := do
     match samples with
     | [] => pure 0.0
     | xs =>
@@ -375,7 +377,7 @@ def runPortableDense
         pure (total / Float.ofNat xs.length)
   let recordEval
       (step : Nat) (tag : String)
-      (predict : Tensor Float σ → IO (Tensor Float τ)) : IO Unit := do
+      (predict : Spec.Tensor Float σ → IO (Spec.Tensor Float τ)) : IO Unit := do
     let trainLoss ← meanPredMse predict eval.reportTrainSamples
     let testLoss ← meanPredMse predict eval.reportTestSamples
     let hist ← histRef.get
@@ -385,7 +387,7 @@ def runPortableDense
     | sample :: _ => pure sample
     | [] => throw <| IO.userError s!"{exeName}: empty Burgers training evaluation prefix"
   let progressEvery : Nat := Nat.max 1 (cfg.steps / 10)
-  let trained ← trainer.trainStreamFloat opts
+  let trained ← trainer.trainStream opts
     (fun step => eval.trainCycle (cfg.seed + step))
     evalSample
     { steps := cfg.steps, log := .disabled }
@@ -406,29 +408,30 @@ def runPortableDense
 
 def logRunHeader (opts : Options) (cfg : BurgersOptions) : IO Unit := do
   IO.println s!"{exeName}: native real-split FNO1D Burgers"
-  let backendName :=
-    match opts.backend with
+  let executionName :=
+    match opts.execution with
     | .eager => "eager"
-    | .compiled => "compiled"
-  IO.println s!"  {ModelZoo.deviceNote opts} backend={backendName}"
+    | .typedGraph => "typed-graph"
+  IO.println s!"  {ModelZoo.deviceNote opts} execution={executionName}"
   IO.println s!"  grid={grid} width={width} modes={modes} blocks={blocks}"
   IO.println s!"  rows train={cfg.trainRows} test={cfg.testRows} eval_prefix={cfg.evalRows}"
-  IO.println s!"  cuda_mem_watch={cfg.effectiveCudaMemWatch opts}"
+  IO.println s!"  cuda_mem_watch={cfg.cudaMemoryCadence opts}"
   IO.println s!"  train={cfg.trainX} / {cfg.trainY}"
   IO.println s!"  test ={cfg.testX} / {cfg.testY}"
   IO.println s!"  log  ={cfg.logPath}"
 
 def main (args : List String) : IO UInt32 := do
-  Runtime.runFloat exeName args
+  Module.Command.runFloat32 exeName args
     (banner := ModelZoo.bannerWithDevice exeName "native FNO1D Burgers")
     (k := fun opts rest => do
       let (cfg, rest) ← ModelZoo.orThrow exeName <| BurgersOptions.parse rest
       CLI.requireNoArgs exeName rest
       logRunHeader opts cfg
       if opts.usesCuda then
+        if opts.execution != .eager then
+          throw <| IO.userError
+            "fno1d_burgers: fused CUDA execution currently requires --execution eager"
         IO.println "  spectral path=fused cuFFT RFFT autograd op"
-        if opts.backend != .eager then
-          IO.println "  note: fused CUDA path uses the eager CUDA tape (ignoring --backend compiled)"
         FusedCuda.run cfg
       else
         IO.println "  spectral path=portable dense multidimensional DFT"

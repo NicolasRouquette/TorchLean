@@ -31,5 +31,5 @@ lake build NN.Examples.Optimization
 
 For the surrounding theory, read `NN/MLTheory/Optimization/OptimizerLaws.lean` and
 `NN/MLTheory/Optimization/Muon.lean`. Runtime users configure Muon through
-`TorchLean.optim.runtimeMuon`, because the orthogonalizer backend is part of the update. Proof
+`TorchLean.optim.muon.optimizer`, because the orthogonalizer backend is part of the update. Proof
 examples and theorem statements use the canonical `Optim.Muon` namespace.

@@ -22,7 +22,7 @@ representation. The runtime code is free to:
 
 - cache intermediates (PyTorch-style `ctx.save_for_backward`), or
 - recompute them, or
-- compile to a graph,
+- lower to a graph,
 
 as long as it implements the same mathematical VJP behavior.
 

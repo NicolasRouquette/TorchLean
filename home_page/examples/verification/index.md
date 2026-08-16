@@ -22,7 +22,7 @@ Most neural-network verification examples begin with a robustness question:
 TorchLean represents that question with four concrete objects:
 
 - a model, written in the same API used for training examples;
-- a compiled `NN.IR.Graph`, so verifier code can traverse named nodes;
+- a lowered `NN.IR.Graph`, so verifier code can traverse named nodes;
 - an input box, with lower and upper bounds for every input coordinate;
 - an output property, usually a margin such as
   $\operatorname{logit}\_{\mathrm{true}}-\operatorname{logit}\_{\mathrm{other}}\geq 0$.
@@ -30,7 +30,7 @@ TorchLean represents that question with four concrete objects:
 The common path is therefore:
 
 1. write or import a TorchLean model,
-2. compile it to `NN.IR.Graph`,
+2. lower it to `NN.IR.Graph`,
 3. attach an input box,
 4. run a bound engine,
 5. inspect or check the output bounds.
@@ -44,7 +44,7 @@ more than the size of the network. Once the objects are named clearly, the same 
 for generated graphs, imported weights, or external verifier leaves.
 
 The seed box is built explicitly. For the small MLP example, `inputCenter` is the center point,
-`eps` is the radius, and `inputBox` is the flattened input box inserted at the compiled input node:
+`eps` is the radius, and `inputBox` is the flattened input box inserted at the lowered input node:
 
 ```lean
 let inputCenter : Tensor α xShape :=
@@ -58,15 +58,15 @@ let inputBox : FlatBox α :=
     hi := Tensor.addSpec inputCenter rad }
 
 let ps : ParamStore α :=
-  { compiled.ps with inputBoxes := compiled.ps.inputBoxes.insert compiled.inputId inputBox }
+  { lowered.ps with inputBoxes := lowered.ps.inputBoxes.insert lowered.inputId inputBox }
 ```
 
 The verifier checks every input in the box
 $[\mathtt{inputCenter}-\mathtt{eps},\mathtt{inputCenter}+\mathtt{eps}]$.
 
 ```lean
-let ibp := runIBP (α := α) compiled.graph ps
-let some outB := ibp[compiled.outputId]! |
+let ibp := runIBP (α := α) lowered.graph ps
+let some outB := ibp[lowered.outputId]! |
   throw <| IO.userError "IBP produced no output box"
 ```
 
@@ -161,9 +161,9 @@ The example builds a context for the input node and runs CROWN after IBP:
 
 ```lean
 let ctx : AffineCtx :=
-  { inputId := compiled.inputId, inputDim := softmaxInDim }
+  { inputId := lowered.inputId, inputDim := softmaxInDim }
 
-let crown := runCROWN (α := α) compiled.graph ps ctx ibp
+let crown := runCROWN (α := α) lowered.graph ps ctx ibp
 ```
 
 For a margin objective, the backward pass asks for a bound on one scalar expression, such as
@@ -179,7 +179,7 @@ let objV : Tensor α (.dim softmaxOutDim .scalar) :=
 let obj : FlatVec α := { n := softmaxOutDim, v := objV }
 
 match runCROWNBackwardObjective
-    (α := α) compiled.graph ps ctx ibp compiled.outputId obj with
+    (α := α) lowered.graph ps ctx ibp lowered.outputId obj with
 | none => IO.println "[CROWN-backward] no affine bounds"
 | some objAff => IO.println s!"[CROWN-backward] objective dim = {objAff.outDim}"
 ```
@@ -191,9 +191,9 @@ The model, graph, bounds, and certificate checks all refer to the same node ids 
 Run the small TorchLean-native examples first:
 
 ```bash
-lake exe verify -- torchlean-ibp --dtype float
-lake exe verify -- torchlean-crown-ops --dtype float
-lake exe verify -- torchlean-robustness --dtype float
+lake exe verify -- torchlean-ibp --scalar float32
+lake exe verify -- torchlean-crown-ops --scalar float32
+lake exe verify -- torchlean-robustness --scalar float32
 lake exe verify -- torchlean-mlp-workflow
 lake exe verify -- digits-train-certify --epochs=50 --eps=0.02 --max=100
 lake exe verify -- margin-cert
@@ -201,16 +201,16 @@ lake exe verify -- vnncomp-mnistfc
 lake exe verify -- camera-box3d-cert
 ```
 
-`torchlean-ibp` is the smallest graph-bound check: compile a TorchLean model, attach an input
+`torchlean-ibp` is the smallest graph-bound check: lower a TorchLean model, attach an input
 box, and propagate interval bounds to the output. `torchlean-crown-ops` uses the same graph style
 but adds forward and backward CROWN-style affine passes over supported operations.
 `torchlean-robustness` prints IBP, CROWN, and backward-CROWN certification booleans for a compact
-robustness example. `torchlean-mlp-workflow` trains an MLP through the compiled backend and then
+robustness example. `torchlean-mlp-workflow` trains an MLP through the lowered backend and then
 runs IBP/CROWN on the resulting graph-shaped artifact.
 
 The remaining commands show artifact boundaries. `digits-train-certify` trains a small
 sklearn-digits classifier with Python, exports weights and test examples, then immediately
-recompiles and certifies those artifacts in Lean. `margin-cert` checks an exported margin JSON
+loads and certifies those artifacts in Lean. `margin-cert` checks an exported margin JSON
 artifact by recomputing the margin predicate. `vnncomp-mnistfc` exercises a compact
 VNN-COMP-style fully connected MNIST network/property pair. `camera-box3d-cert` checks a camera
 projection certificate for a 3D box artifact by recomputing the projected corners and the claimed
@@ -306,7 +306,7 @@ predicate replayed by the checker.
 
 The native and external examples produce different kinds of evidence:
 
-- IBP and CROWN commands compile a TorchLean model, attach an input box, propagate bounds over the
+- IBP and CROWN commands lower a TorchLean model, attach an input box, propagate bounds over the
   supported graph operations, and report the resulting margin predicate.
 - Margin certificates are replayable JSON claims: the file names a graph-shaped predicate and Lean
   recomputes the margin condition.

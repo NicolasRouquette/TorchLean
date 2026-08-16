@@ -26,7 +26,7 @@ public import NN.MLTheory.CROWN.Models.Mlp
 public import NN.MLTheory.CROWN.Operators
 public import NN.MLTheory.CROWN.Operators.Activations
 public import NN.MLTheory.CROWN.Operators.Arithmetic
-public import NN.MLTheory.CROWN.Operators.Batchnorm
+public import NN.MLTheory.CROWN.Operators.BatchNorm
 public import NN.MLTheory.CROWN.Operators.Conv
 public import NN.MLTheory.CROWN.Operators.Slice
 public import NN.MLTheory.CROWN.Operators.Trigonometric

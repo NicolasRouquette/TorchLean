@@ -6,12 +6,12 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Trainer.Handle
+public import NN.API.Trainer.Core
 
 /-!
 # Trainer Construction
 
-Constructors for the trainer handle.
+Constructors for `TorchLean.Trainer`.
 -/
 
 @[expose] public section
@@ -42,27 +42,24 @@ class ToModel (model : Type u) (σ τ : outParam Shape) where
 instance {σ τ : Shape} : ToModel (TorchLean.nn.Sequential σ τ) σ τ where
   build _ model := model
 
-instance {σ τ : Shape} : ToModel (TorchLean.nn.M (TorchLean.nn.Sequential σ τ)) σ τ where
-  build seed model := TorchLean.nn.run seed model
+instance {σ τ : Shape} : ToModel (TorchLean.nn.Builder (TorchLean.nn.Sequential σ τ)) σ τ where
+  build seed model := TorchLean.nn.build seed model
 
 /-- Build a trainer from a sequential model or seedable model builder. -/
 def new {model : Type u} {σ τ : Shape} [ToModel model σ τ] (m : model)
-    (cfg : Config σ τ := {}) : Handle σ τ :=
+    (cfg : Config σ τ := {}) : TorchLean.Trainer σ τ :=
   let built := ToModel.build cfg.seed m
   { model := built
     task := cfg.task
     runtime :=
       { optimizer := cfg.optimizer
-        dtype := cfg.dtype
-        backend := cfg.backend
-        executionProfile := cfg.executionProfile
+        scalar := cfg.scalar
+        execution := cfg.execution
+        device := cfg.device
+        backendProfile? := cfg.backendProfile?
         showBackend := cfg.showBackend }
     seed := cfg.seed }
 
 end Trainer
-
-/-- Trainer type carrying a model, task, runtime configuration, and seed. -/
-abbrev Trainer (σ τ : Shape) :=
-  Trainer.Handle σ τ
 
 end TorchLean

@@ -12,7 +12,7 @@ public import NN.MLTheory.Optimization.Muon
 # Muon Certificate Examples
 
 These examples show how to obtain and consume the exact and approximate certificates attached to
-Muon steps. Runtime code configures Muon through `TorchLean.optim.runtimeMuon`; proofs about the
+Muon steps. Runtime code configures Muon through `TorchLean.optim.muon.optimizer`; proofs about the
 algorithm use the canonical `Optim.Muon` namespace.
 -/
 

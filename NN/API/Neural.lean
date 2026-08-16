@@ -17,6 +17,6 @@ public import NN.API.Neural.Summary
 /-!
 # Neural Networks
 
-Shape-typed layers, model builders, parameter packs, summaries, compiled execution, and automatic
+Shape-typed layers, model builders, parameter packs, summaries, typed graph execution, and automatic
 differentiation.
 -/

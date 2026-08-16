@@ -1,7 +1,7 @@
 # `NN/IR`
 
 `NN.IR` is TorchLean's op tagged SSA/DAG intermediate representation. It is the small shared graph
-language that model compilers, verification passes, exporters, widgets, and compiled-runtime
+language that model lowering passes, verification passes, exporters, widgets, and typed-graph
 correctness proofs can all point at without each inventing a private graph format.
 
 For public use, prefer the broad library import or the IR entrypoint. Internal code that only needs
@@ -36,7 +36,7 @@ smallest `NN.IR.*` dependency they need.
 
 `NN.GraphSpec` is a typed authoring DSL for model architectures, with a pure semantics and lowering
 to TorchLean runtime programs. `NN.IR` is the lower-level op tagged graph target that
-verification/export/runtime tooling can consume after a model has been compiled or traced.
+verification/export/runtime tooling can consume after a model has been lowered or traced.
 
 In PyTorch terms, `NN.GraphSpec` is closer to a typed model construction DSL; `NN.IR` is closer to
 an FX/TorchScript-style graph with explicit shapes and external parameter payloads.
@@ -47,7 +47,7 @@ There are several routes into the same graph language:
 
 - TorchLean model code can lower supported fragments into IR for execution, inspection, or
   verification.
-- GraphSpec models can be compiled or lowered when the architecture needs explicit sharing and
+- GraphSpec models can be lowered when the architecture needs explicit sharing and
   named parameter layouts.
 - PyTorch `torch.export` and ONNX adapters can write `torchlean.ir.v1` JSON, which Lean then parses
   and validates.
@@ -61,20 +61,20 @@ the graph have in the spec layer?
 
 ## Role And Scope
 
-The IR gives the runtime, checkers, exporters, and compiler passes one graph object to share. Write
+The IR gives the runtime, checkers, exporters, and future compiler passes one graph object to share. Write
 ordinary models through `TorchLean.nn`, `Trainer`, or `GraphSpec`, then lower them. Construct `Node`
 arrays directly only when testing an IR consumer.
 
 Each runtime backend retains its own proof status. Proofs, tests, and trust-boundary statements say
-how a particular runtime, compiler fragment, or certificate checker relates to the shared graph.
+how a particular runtime, lowering fragment, or certificate checker relates to the shared graph.
 
 ## Current Consumers
 
 | Consumer | How it uses IR |
 | --- | --- |
-| Compiled runtime | Executes graph-shaped programs through runtime tensor values. |
+| Typed graph execution | Executes graph-shaped programs through runtime tensor values. |
 | Verification | Runs IBP/CROWN-style passes, margin checks, and certificate replay over node ids and payloads. |
-| TorchLean compiler fragments | Prove that supported source fragments compile to IR with the same denotation. |
+| TorchLean lowering fragments | Prove that supported source fragments lower to IR with the same denotation. |
 | PyTorch/ONNX/export paths | Use a small graph format to make parameter order and tensor shapes explicit at the boundary. |
 | Widgets and graph pages | Render graphs, inferred shapes, execution traces, and dependency structure for debugging. |
 
@@ -82,7 +82,7 @@ how a particular runtime, compiler fragment, or certificate checker relates to t
 
 The IR is the object shared by proofs and runtime code, but proof coverage is still named
 fragment-by-fragment. Current theorem work covers supported evaluator bridges, graph well-formedness
-conditions, selected compiled-runtime fragments, and verification-oriented bound propagation. A new
+conditions, selected typed-graph fragments, and verification-oriented bound propagation. A new
 operator should therefore add three things in the right places:
 
 - its shape contract in `OpContracts`/`Infer`;

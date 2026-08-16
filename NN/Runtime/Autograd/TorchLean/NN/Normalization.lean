@@ -35,7 +35,7 @@ def layerNorm
     (batch seqLen embedDim : Nat)
     {h_seq_pos : seqLen > 0} {h_embed_pos : embedDim > 0}
     (seedGamma seedBeta : Nat := 0) :
-    LayerDef (.dim batch (.dim seqLen (.dim embedDim .scalar)))
+    Layer (.dim batch (.dim seqLen (.dim embedDim .scalar)))
       (.dim batch (.dim seqLen (.dim embedDim .scalar))) :=
   let gammaShape : Shape := .dim embedDim .scalar
   let betaShape : Shape := .dim embedDim .scalar
@@ -44,10 +44,10 @@ def layerNorm
   let beta0 : Tensor Float betaShape := Torch.Init.tensor (s := betaShape) (sch := .zeros) (seed :=
     seedBeta)
   { kind := "LayerNorm"
-    paramShapes := [gammaShape, betaShape]
-    initParams := Torch.tlistPair gamma0 beta0
+    stateShapes := [gammaShape, betaShape]
+    initState := Torch.tlistPair gamma0 beta0
     runtimeInit := some (.cons .ones (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun gamma beta x =>
@@ -69,16 +69,16 @@ def rmsNorm
     (batch seqLen embedDim : Nat)
     {h_seq_pos : seqLen > 0} {h_embed_pos : embedDim > 0}
     (seedGamma : Nat := 0) :
-    LayerDef (.dim batch (.dim seqLen (.dim embedDim .scalar)))
+    Layer (.dim batch (.dim seqLen (.dim embedDim .scalar)))
       (.dim batch (.dim seqLen (.dim embedDim .scalar))) :=
   let gammaShape : Shape := .dim embedDim .scalar
   let gamma0 : Tensor Float gammaShape := Torch.Init.tensor (s := gammaShape) (sch := .ones) (seed
     := seedGamma)
   { kind := "RMSNorm"
-    paramShapes := [gammaShape]
-    initParams := Torch.tlistSingleton gamma0
+    stateShapes := [gammaShape]
+    initState := Torch.tlistSingleton gamma0
     runtimeInit := some (.cons .ones .nil)
-    paramRequiresGrad := [true]
+    requiresGrad := [true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun gamma x =>
@@ -96,11 +96,11 @@ affine parameters `gamma`/`beta`.
 
 PyTorch analogy: `torch.nn.BatchNorm2d(channels)` in training mode (applied to a single sample).
 -/
-def batchnormChannelFirst
+def batchNormChannelFirst
     (channels height width : Nat)
     {h_c : channels > 0} {h_h : height > 0} {h_w : width > 0}
     (seedGamma seedBeta : Nat := 0) :
-    LayerDef (.dim channels (.dim height (.dim width .scalar))) (.dim channels (.dim height (.dim width .scalar)))
+    Layer (.dim channels (.dim height (.dim width .scalar))) (.dim channels (.dim height (.dim width .scalar)))
       :=
   let gammaShape : Shape := .dim channels .scalar
   let betaShape : Shape := .dim channels .scalar
@@ -109,14 +109,14 @@ def batchnormChannelFirst
   let beta0 : Tensor Float betaShape := Torch.Init.tensor (s := betaShape) (sch := .zeros) (seed :=
     seedBeta)
   { kind := "BatchNorm2d"
-    paramShapes := [gammaShape, betaShape]
-    initParams := Torch.tlistPair gamma0 beta0
+    stateShapes := [gammaShape, betaShape]
+    initState := Torch.tlistPair gamma0 beta0
     runtimeInit := some (.cons .ones (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun gamma beta x =>
-          TorchLean.batchnormChannelFirst (m := m) (α := α)
+          TorchLean.batchNormChannelFirst (m := m) (α := α)
             (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h)
               (h_w := h_w)
             x gamma beta
@@ -129,11 +129,11 @@ Parameters include `gamma`/`beta` plus fixed `mean`/`var` buffers.
 
 PyTorch analogy: `torch.nn.BatchNorm2d` in eval mode (uses `running_mean` / `running_var`).
 -/
-def batchnormChannelFirstEval
+def batchNormChannelFirstEval
     (channels height width : Nat)
     {h_c : channels > 0} {h_h : height > 0} {h_w : width > 0}
     (seedGamma seedBeta seedMean seedVar : Nat := 0) :
-    LayerDef (.dim channels (.dim height (.dim width .scalar))) (.dim channels (.dim height (.dim width .scalar)))
+    Layer (.dim channels (.dim height (.dim width .scalar))) (.dim channels (.dim height (.dim width .scalar)))
       :=
   let gammaShape : Shape := .dim channels .scalar
   let betaShape : Shape := .dim channels .scalar
@@ -148,10 +148,10 @@ def batchnormChannelFirstEval
   let var0 : Tensor Float varShape := Torch.Init.tensor (s := varShape) (sch := .ones) (seed :=
     seedVar)
   { kind := "BatchNorm2d(eval)"
-    paramShapes := [gammaShape, betaShape, meanShape, varShape]
-    initParams := Torch.tlistQuad gamma0 beta0 mean0 var0
+    stateShapes := [gammaShape, betaShape, meanShape, varShape]
+    initState := Torch.tlistQuad gamma0 beta0 mean0 var0
     runtimeInit := some (.cons .ones (.cons .zeros (.cons .zeros (.cons .ones .nil))))
-    paramRequiresGrad := [true, true, false, false]
+    requiresGrad := [true, true, false, false]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun gamma beta mean var x =>
@@ -170,12 +170,12 @@ Batch normalization for `C×H×W` with explicit `Mode` and running-statistics bu
 PyTorch analogy: `torch.nn.BatchNorm2d(channels, momentum=...)` with `.train()` / `.eval()`
   behavior.
 -/
-def batchnormChannelFirstMode
+def batchNormChannelFirstMode
     (channels height width : Nat)
     {h_c : channels > 0} {h_h : height > 0} {h_w : width > 0}
     (seedGamma seedBeta seedMean seedVar : Nat := 0)
     (momentum : Float := 0.1) :
-    LayerDef (.dim channels (.dim height (.dim width .scalar))) (.dim channels (.dim height (.dim width .scalar)))
+    Layer (.dim channels (.dim height (.dim width .scalar))) (.dim channels (.dim height (.dim width .scalar)))
       :=
   let gammaShape : Shape := .dim channels .scalar
   let betaShape : Shape := .dim channels .scalar
@@ -192,11 +192,11 @@ def batchnormChannelFirstMode
     seedVar)
   let momentum0 : Tensor Float momentumShape := Tensor.scalar momentum
   { kind := "BatchNorm2d"
-    paramShapes := [gammaShape, betaShape, meanShape, varShape, momentumShape]
-    initParams := .cons gamma0 (.cons beta0 (.cons mean0 (.cons var0 (.cons momentum0 .nil))))
+    stateShapes := [gammaShape, betaShape, meanShape, varShape, momentumShape]
+    initState := .cons gamma0 (.cons beta0 (.cons mean0 (.cons var0 (.cons momentum0 .nil))))
     runtimeInit := some (.cons .ones (.cons .zeros (.cons .zeros (.cons .ones
       (.cons (.flat (FloatArray.mk #[momentum])) .nil)))))
-    paramRequiresGrad := [true, true, false, false, false]
+    requiresGrad := [true, true, false, false, false]
     updateBuffers := some (fun mode {_α} _ _ ps x => do
       match mode, ps with
       | .eval, _ => pure ps
@@ -213,7 +213,7 @@ def batchnormChannelFirstMode
         fun gamma beta mean var _momentum x =>
           match mode with
           | .train =>
-              TorchLean.batchnormChannelFirst (m := m) (α := α)
+              TorchLean.batchNormChannelFirst (m := m) (α := α)
                 (channels := channels) (height := height) (width := width)
                 (h_c := h_c) (h_h := h_h) (h_w := h_w) x gamma beta
           | .eval =>
@@ -234,7 +234,7 @@ def instanceNorm2dNchw
     (n c h w : Nat)
     {h_n_pos : n > 0} {h_c_pos : c > 0} {h_h_pos : h > 0} {h_w_pos : w > 0}
     (seedGamma seedBeta : Nat := 0) :
-    LayerDef (.dim n (.dim c (.dim h (.dim w .scalar)))) (.dim n (.dim c (.dim h (.dim w .scalar)))) :=
+    Layer (.dim n (.dim c (.dim h (.dim w .scalar)))) (.dim n (.dim c (.dim h (.dim w .scalar)))) :=
   let gammaShape : Shape := .dim c .scalar
   let betaShape : Shape := .dim c .scalar
   let gamma0 : Tensor Float gammaShape := Torch.Init.tensor (s := gammaShape) (sch := .ones) (seed
@@ -242,10 +242,10 @@ def instanceNorm2dNchw
   let beta0 : Tensor Float betaShape := Torch.Init.tensor (s := betaShape) (sch := .zeros) (seed :=
     seedBeta)
   { kind := "InstanceNorm2d"
-    paramShapes := [gammaShape, betaShape]
-    initParams := Torch.tlistPair gamma0 beta0
+    stateShapes := [gammaShape, betaShape]
+    initState := Torch.tlistPair gamma0 beta0
     runtimeInit := some (.cons .ones (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun gamma beta x =>
@@ -268,7 +268,7 @@ def groupNorm2dNchw
     {h_n_pos : n > 0} {h_c_pos : c > 0} {h_h_pos : h > 0} {h_w_pos : w > 0} {h_g_pos : groups > 0}
     (h_ge : c ≥ groups) (h_div : c % groups = 0)
     (seedGamma seedBeta : Nat := 0) :
-    LayerDef (.dim n (.dim c (.dim h (.dim w .scalar)))) (.dim n (.dim c (.dim h (.dim w .scalar)))) :=
+    Layer (.dim n (.dim c (.dim h (.dim w .scalar)))) (.dim n (.dim c (.dim h (.dim w .scalar)))) :=
   let gammaShape : Shape := .dim c .scalar
   let betaShape : Shape := .dim c .scalar
   let gamma0 : Tensor Float gammaShape := Torch.Init.tensor (s := gammaShape) (sch := .ones) (seed
@@ -276,10 +276,10 @@ def groupNorm2dNchw
   let beta0 : Tensor Float betaShape := Torch.Init.tensor (s := betaShape) (sch := .zeros) (seed :=
     seedBeta)
   { kind := s!"GroupNorm2d(groups={groups})"
-    paramShapes := [gammaShape, betaShape]
-    initParams := Torch.tlistPair gamma0 beta0
+    stateShapes := [gammaShape, betaShape]
+    initState := Torch.tlistPair gamma0 beta0
     runtimeInit := some (.cons .ones (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun gamma beta x =>
@@ -301,7 +301,7 @@ def batchNorm2dNchw
     (n c h w : Nat)
     {h_n_pos : n > 0} {h_c_pos : c > 0} {h_h_pos : h > 0} {h_w_pos : w > 0}
     (seedGamma seedBeta : Nat := 0) :
-    LayerDef (.dim n (.dim c (.dim h (.dim w .scalar)))) (.dim n (.dim c (.dim h (.dim w .scalar)))) :=
+    Layer (.dim n (.dim c (.dim h (.dim w .scalar)))) (.dim n (.dim c (.dim h (.dim w .scalar)))) :=
   let gammaShape : Shape := .dim c .scalar
   let betaShape : Shape := .dim c .scalar
   let gamma0 : Tensor Float gammaShape := Torch.Init.tensor (s := gammaShape) (sch := .ones) (seed
@@ -309,10 +309,10 @@ def batchNorm2dNchw
   let beta0 : Tensor Float betaShape := Torch.Init.tensor (s := betaShape) (sch := .zeros) (seed :=
     seedBeta)
   { kind := "BatchNorm2d"
-    paramShapes := [gammaShape, betaShape]
-    initParams := Torch.tlistPair gamma0 beta0
+    stateShapes := [gammaShape, betaShape]
+    initState := Torch.tlistPair gamma0 beta0
     runtimeInit := some (.cons .ones (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun gamma beta x =>
@@ -336,7 +336,7 @@ def batchNorm2dNchwMode
     {h_n_pos : n > 0} {h_c_pos : c > 0} {h_h_pos : h > 0} {h_w_pos : w > 0}
     (seedGamma seedBeta seedMean seedVar : Nat := 0)
     (momentum : Float := 0.1) :
-    LayerDef (.dim n (.dim c (.dim h (.dim w .scalar)))) (.dim n (.dim c (.dim h (.dim w .scalar)))) :=
+    Layer (.dim n (.dim c (.dim h (.dim w .scalar)))) (.dim n (.dim c (.dim h (.dim w .scalar)))) :=
   let gammaShape : Shape := .dim c .scalar
   let betaShape : Shape := .dim c .scalar
   let meanShape : Shape := .dim c .scalar
@@ -352,11 +352,11 @@ def batchNorm2dNchwMode
     seedVar)
   let momentum0 : Tensor Float momentumShape := Tensor.scalar momentum
   { kind := "BatchNorm2d"
-    paramShapes := [gammaShape, betaShape, meanShape, varShape, momentumShape]
-    initParams := .cons gamma0 (.cons beta0 (.cons mean0 (.cons var0 (.cons momentum0 .nil))))
+    stateShapes := [gammaShape, betaShape, meanShape, varShape, momentumShape]
+    initState := .cons gamma0 (.cons beta0 (.cons mean0 (.cons var0 (.cons momentum0 .nil))))
     runtimeInit := some (.cons .ones (.cons .zeros (.cons .zeros (.cons .ones
       (.cons (.flat (FloatArray.mk #[momentum])) .nil)))))
-    paramRequiresGrad := [true, true, false, false, false]
+    requiresGrad := [true, true, false, false, false]
     updateBuffers := some (fun mode {_α} _ _ ps x => do
       match mode, ps with
       | .eval, _ => pure ps

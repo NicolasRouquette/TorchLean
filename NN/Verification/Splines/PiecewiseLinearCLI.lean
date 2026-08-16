@@ -65,7 +65,7 @@ def usage : String :=
     "Arguments:",
     s!"  <path>            certificate JSON path (default: {defaultCertPath})",
     "  --regen            call Julia to regenerate the JSON and check the stdout payload",
-    "  --ieee32           additionally check the same equalities under IEEE32Exec semantics",
+    "  --ieee32-exec      additionally check the same equalities under IEEE32Exec semantics",
     s!"  --script=PATH     override Julia script path (default: {defaultJuliaScript})",
   ]
 
@@ -86,8 +86,8 @@ def main (args : List String) : IO Unit := do
     match TorchLean.CLI.takeBoolFlagOnce args "regen" with
     | .ok result => pure result
     | .error e => throw <| IO.userError s!"{e}\n\n{usage}"
-  let (ieee32, args) ←
-    match TorchLean.CLI.takeBoolFlagOnce args "ieee32" with
+  let (ieee32Exec, args) ←
+    match TorchLean.CLI.takeBoolFlagOnce args "ieee32-exec" with
     | .ok result => pure result
     | .error e => throw <| IO.userError s!"{e}\n\n{usage}"
   let (scriptPath, args) ←
@@ -102,7 +102,7 @@ def main (args : List String) : IO Unit := do
   | .ok () => pure ()
   | .error e => throw <| IO.userError s!"{e}\n\n{usage}"
   let check :=
-    if ieee32 then
+    if ieee32Exec then
       NN.Verification.Splines.PiecewisePolyCert.checkJsonIEEE32ExecExact
     else
       NN.Verification.Splines.PiecewisePolyCert.checkJson

@@ -7,12 +7,12 @@ Authors: TorchLean Team
 module
 
 public import NN.Backend.Recheck
-public import NN.Backend.Lowering
+public import NN.Backend.Grouping
 
 /-!
 # Backend Acceptance Gates
 
-Policy gates for contract-carrying backend plans.
+Policy gates for contract-carrying kernel plans.
 
 The planner can select a backend capsule and the audit/recheck layers can report its obligations.
 The gate layer turns those reports into an explicit yes/no decision before a plan is accepted for a
@@ -67,20 +67,20 @@ def isTested (r : ObligationReport) : Bool :=
 
 end ObligationReport
 
-namespace ExecutionAudit
+namespace KernelPlanAudit
 
-def guardedReports (a : ExecutionAudit) : List ObligationReport :=
+def guardedReports (a : KernelPlanAudit) : List ObligationReport :=
   a.obligationReports.filter ObligationReport.isGuarded
 
-def testedReports (a : ExecutionAudit) : List ObligationReport :=
+def testedReports (a : KernelPlanAudit) : List ObligationReport :=
   a.obligationReports.filter ObligationReport.isTested
 
 /-- Fuzz-backed recheck obligations. -/
-def fuzzReports (a : ExecutionAudit) : List ObligationReport :=
+def fuzzReports (a : KernelPlanAudit) : List ObligationReport :=
   a.obligationReports.filter ObligationReport.isFuzzed
 
 /-- Gate failures induced by an acceptance policy. -/
-def gateFailures (policy : AssurancePolicy) (a : ExecutionAudit) : List GateFailure :=
+def gateFailures (policy : AssurancePolicy) (a : KernelPlanAudit) : List GateFailure :=
   let missing :=
     if policy.requireEvidence then
       match a.missingReports with
@@ -115,40 +115,40 @@ def gateFailures (policy : AssurancePolicy) (a : ExecutionAudit) : List GateFail
   missing ++ guarded ++ tested ++ trusted ++ fuzzed
 
 /-- Apply an acceptance policy to an execution audit. -/
-def gate (policy : AssurancePolicy) (a : ExecutionAudit) : GateResult :=
+def gate (policy : AssurancePolicy) (a : KernelPlanAudit) : GateResult :=
   match a.gateFailures policy with
   | [] => .accepted
   | failures => .rejected failures
 
 /-- An audit is accepted by a policy exactly when the policy reports no gate failures. -/
 theorem gate_eq_accepted_iff_gateFailures_eq_nil
-    (policy : AssurancePolicy) (a : ExecutionAudit) :
+    (policy : AssurancePolicy) (a : KernelPlanAudit) :
     a.gate policy = .accepted ↔ a.gateFailures policy = [] := by
   unfold gate
   cases a.gateFailures policy <;> simp
 
-end ExecutionAudit
+end KernelPlanAudit
 
-namespace ExecutionPlan
+namespace KernelPlan
 
 /-- Apply an acceptance policy to a selected execution plan. -/
-def gate (policy : AssurancePolicy) (p : ExecutionPlan) : GateResult :=
+def gate (policy : AssurancePolicy) (p : KernelPlan) : GateResult :=
   p.audit.gate policy
 
 /-- Whether a selected execution plan is accepted by a policy. -/
-def acceptedBy (policy : AssurancePolicy) (p : ExecutionPlan) : Bool :=
+def acceptedBy (policy : AssurancePolicy) (p : KernelPlan) : Bool :=
   match p.gate policy with
   | .accepted => true
   | .rejected _ => false
 
-end ExecutionPlan
+end KernelPlan
 
 /-- One planned operation whose capsule has passed an acceptance policy. -/
 structure AcceptedKernel where
   op : BackendOp
   capsule : KernelCapsule
   policy : AssurancePolicy
-  gateProof : ({ kernels := [{ op, capsule }] } : ExecutionPlan).gate policy = .accepted
+  gateProof : ({ kernels := [{ op, capsule }] } : KernelPlan).gate policy = .accepted
 
 instance : Repr AcceptedKernel where
   reprPrec k _ := Std.Format.text s!"AcceptedKernel({k.op.name}, {k.capsule.name})"
@@ -156,22 +156,22 @@ instance : Repr AcceptedKernel where
 /-- Gate a planned kernel and return a value that an executor can consume only on success. -/
 def PlannedKernel.accept (policy : AssurancePolicy) (k : PlannedKernel) :
     Except (List GateFailure) AcceptedKernel :=
-  let plan : ExecutionPlan := { kernels := [k] }
+  let plan : KernelPlan := { kernels := [k] }
   match h : plan.gate policy with
   | .accepted => .ok { op := k.op, capsule := k.capsule, policy, gateProof := h }
   | .rejected failures => .error failures
 
-namespace GraphLoweringPlan
+namespace GroupedKernelPlan
 
-/-- Apply an acceptance policy to a lowered backend plan. -/
-def gate (policy : AssurancePolicy) (p : GraphLoweringPlan) : GateResult :=
-  p.toExecutionPlan.gate policy
+/-- Apply an acceptance policy to a grouped kernel plan. -/
+def gate (policy : AssurancePolicy) (p : GroupedKernelPlan) : GateResult :=
+  p.toKernelPlan.gate policy
 
-/-- Whether a lowered backend plan is accepted by a policy. -/
-def acceptedBy (policy : AssurancePolicy) (p : GraphLoweringPlan) : Bool :=
-  p.toExecutionPlan.acceptedBy policy
+/-- Whether a grouped kernel plan is accepted by a policy. -/
+def acceptedBy (policy : AssurancePolicy) (p : GroupedKernelPlan) : Bool :=
+  p.toKernelPlan.acceptedBy policy
 
-end GraphLoweringPlan
+end GroupedKernelPlan
 
 end Backend
 end NN

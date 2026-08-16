@@ -199,8 +199,8 @@ y_t=C_t h_t+D_t x_t.`
 [`NN.API.Models.Mamba`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Mamba.lean)
 contains two related objects:
 
-- `mambaTextLm`, the trainable recurrent model used by the text command;
-- `selectiveMambaFloat`, a deterministic full selective block used for reference evaluation.
+- `Mamba.textLM`, the trainable recurrent model used by the text command;
+- `Mamba.Reference.selective`, a deterministic full selective block used for reference evaluation.
 
 The trainable path uses TorchLean autograd operations on CPU or CUDA. The repository also has a
 selective-scan CUDA operation for supported float execution. That runtime kernel is not thereby

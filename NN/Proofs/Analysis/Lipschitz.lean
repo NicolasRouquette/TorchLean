@@ -39,7 +39,7 @@ derive Lipschitz-style bounds for common neural-network building blocks.
   `torch.linalg.norm` APIs.
   https://pytorch.org/docs/stable/generated/torch.linalg.vector_norm.html
   https://pytorch.org/docs/stable/generated/torch.linalg.norm.html
-- ReLU corresponds to `torch.nn.functional.relu` (and `torch.nn.relu`).
+- ReLU corresponds to `torch.nn.functional.relu` (and the `torch.nn.ReLU` module).
   https://pytorch.org/docs/stable/generated/torch.nn.functional.relu.html
 
 ## Typical downstream use
@@ -257,9 +257,7 @@ theorem dot_zero_right {s : Shape} (x : Tensor ℝ s) :
     induction h_ind : n - k generalizing k with
     | zero =>
       -- Base case: n - k = 0, so k = n
-      have k_eq_n : k = n := by
-        have : n ≤ k := Nat.sub_eq_zero_iff_le.mp h_ind
-        exact Nat.le_antisymm hk this
+      have k_eq_n : k = n := by grind
       subst k
       -- Since `k = n`, the `k < n` loop condition is false and `go` returns the accumulator.
       have hgo :
@@ -271,9 +269,7 @@ theorem dot_zero_right {s : Shape} (x : Tensor ℝ s) :
               (by simp))
       simp [hgo]
     | succ m ih =>
-      have hlt : k < n := by
-        have : 0 < n - k := by rw [h_ind]; exact Nat.succ_pos m
-        exact Nat.sub_pos_iff_lt.mp this
+      have hlt : k < n := by grind
       rw [Spec.tensor_foldl_spec_go_of_lt (f := (· + ·))
         (values := fun i => mulSpec (fx i) (fill (0 : ℝ) s)) (k := k) (acc := (0 : ℝ)) hlt]
       have sum_zero : tensorFoldlSpec (· + ·) (0 : ℝ) (mulSpec (fx ⟨k, hlt⟩) (fill (0 : ℝ) s)) =
@@ -281,10 +277,7 @@ theorem dot_zero_right {s : Shape} (x : Tensor ℝ s) :
         rw [← sumSpec]
         exact component_sum_zero ⟨k, hlt⟩
       rw [sum_zero]
-      have h_next : n - (k + 1) = m := by
-        rw [Nat.sub_succ]
-        rw [h_ind]
-        exact Nat.add_sub_cancel m 1
+      have h_next : n - (k + 1) = m := by grind
       have k_plus_one_le : k + 1 ≤ n := Nat.succ_le_of_lt hlt
       exact ih (k + 1) k_plus_one_le h_next
 
@@ -753,9 +746,7 @@ theorem relu_lipschitz_general {s : Shape} (x y : Tensor ℝ s) :
     intro k acc_relu acc_orig hk hacc
     induction hn : n - k generalizing k acc_relu acc_orig with
     | zero =>
-      have k_eq_n : k = n := by
-        have : n ≤ k := Nat.sub_eq_zero_iff_le.mp hn
-        exact Nat.le_antisymm hk this
+      have k_eq_n : k = n := by grind
       subst k
       have hgo_relu :
           tensorFoldlSpec.go (· + ·) n s'
@@ -783,9 +774,7 @@ theorem relu_lipschitz_general {s : Shape} (x y : Tensor ℝ s) :
               (k := n) (acc := acc_orig) (by simp))
       simpa [hgo_relu, hgo_orig] using hacc
     | succ m ih_fold =>
-      have hlt : k < n := by
-        have : 0 < n - k := by rw [hn]; exact Nat.succ_pos m
-        exact Nat.sub_pos_iff_lt.mp this
+      have hlt : k < n := by grind
       -- Peel one `go` step on both sides.
       rw [Spec.tensor_foldl_spec_go_of_lt (f := (· + ·))
         (values := fun i =>
@@ -797,9 +786,7 @@ theorem relu_lipschitz_general {s : Shape} (x y : Tensor ℝ s) :
         (values := fun i =>
           mulSpec (subSpec (fx i) (fy i)) (subSpec (fx i) (fy i)))
         (k := k) (acc := acc_orig) hlt]
-      have h_next : n - (k + 1) = m := by
-        rw [Nat.sub_succ, hn]
-        rfl
+      have h_next : n - (k + 1) = m := by grind
       have k_plus_one_le : k + 1 ≤ n := Nat.succ_le_of_lt hlt
       -- Need to show the accumulated inequality is preserved first
       have component_ineq :

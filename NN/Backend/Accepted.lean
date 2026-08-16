@@ -9,14 +9,14 @@ module
 public import NN.Backend.Gate
 
 /-!
-# Accepted Backend Plans
+# Accepted Kernel Plans
 
 One entry point for the backend-contract pipeline.
 
-This module ties together target availability, graph planning, conservative lowering, recheck, and
-acceptance gates. It is intentionally still data-level: it produces a lowered plan that has passed a
-policy gate, or it returns the gate failures. Execution backends can consume the accepted lowered
-plan without manually repeating the trust-boundary checks.
+This module ties together target availability, graph planning, conservative grouping, recheck, and
+acceptance gates. It is intentionally still data-level: it produces a grouped plan that has passed
+a policy gate, or it returns the gate failures. Grouping is audit and scheduling metadata; it does
+not claim semantic lowering, kernel fusion, or execution.
 -/
 
 @[expose] public section
@@ -24,62 +24,62 @@ plan without manually repeating the trust-boundary checks.
 namespace NN
 namespace Backend
 
-/-- A graph backend plan after planning, lowering, and acceptance-gate checking. -/
-structure AcceptedGraphPlan where
-  graphPlan : IR.GraphExecutionPlan
-  loweringPlan : GraphLoweringPlan
+/-- A graph kernel plan after grouping and assurance-gate checking. -/
+structure AcceptedGraphKernelPlan where
+  graphPlan : IR.GraphKernelPlan
+  groupedPlan : GroupedKernelPlan
   policy : AssurancePolicy
-  gateProof : loweringPlan.gate policy = .accepted
+  gateProof : groupedPlan.gate policy = .accepted
 
-instance : Repr AcceptedGraphPlan where
-  reprPrec p _ := Std.Format.text s!"AcceptedGraphPlan({repr p.loweringPlan})"
+instance : Repr AcceptedGraphKernelPlan where
+  reprPrec p _ := Std.Format.text s!"AcceptedGraphKernelPlan({repr p.groupedPlan})"
 
-namespace AcceptedGraphPlan
+namespace AcceptedGraphKernelPlan
 
-/-- Source IR node ids covered by the accepted lowering. -/
-def nodeIds (p : AcceptedGraphPlan) : List Nat :=
-  p.loweringPlan.nodeIds
+/-- Source IR node ids covered by the accepted grouped plan. -/
+def nodeIds (p : AcceptedGraphKernelPlan) : List Nat :=
+  p.groupedPlan.nodeIds
 
-/-- Selected capsule names in accepted lowering order. -/
-def capsuleNames (p : AcceptedGraphPlan) : List String :=
-  p.loweringPlan.capsuleNames
+/-- Selected capsule names in accepted group order. -/
+def capsuleNames (p : AcceptedGraphKernelPlan) : List String :=
+  p.groupedPlan.capsuleNames
 
-/-- Audit for the accepted lowering. -/
-def audit (p : AcceptedGraphPlan) : ExecutionAudit :=
-  p.loweringPlan.audit
+/-- Audit for the accepted grouped plan. -/
+def audit (p : AcceptedGraphKernelPlan) : KernelPlanAudit :=
+  p.groupedPlan.audit
 
-/-- Recheck reports for the accepted lowering. -/
-def obligationReports (p : AcceptedGraphPlan) : List ObligationReport :=
+/-- Recheck reports for the accepted grouped plan. -/
+def obligationReports (p : AcceptedGraphKernelPlan) : List ObligationReport :=
   p.audit.obligationReports
 
-end AcceptedGraphPlan
+end AcceptedGraphKernelPlan
 
-/-- Result of planning/lowering/gating a graph. -/
-inductive AcceptedPlanResult where
-  | accepted (plan : AcceptedGraphPlan)
-  | rejected (loweringPlan : GraphLoweringPlan) (failures : List GateFailure)
+/-- Result of planning, grouping, and gating a graph. -/
+inductive GraphKernelPlanResult where
+  | accepted (plan : AcceptedGraphKernelPlan)
+  | rejected (groupedPlan : GroupedKernelPlan) (failures : List GateFailure)
   deriving Repr
 
-namespace AcceptedPlanResult
+namespace GraphKernelPlanResult
 
 /-- Whether the pipeline returned an accepted plan. -/
-def isAccepted : AcceptedPlanResult → Bool
+def isAccepted : GraphKernelPlanResult → Bool
   | .accepted _ => true
   | .rejected .. => false
 
 /-- Gate failures when the pipeline rejected the plan. -/
-def failures : AcceptedPlanResult → List GateFailure
+def failures : GraphKernelPlanResult → List GateFailure
   | .accepted _ => []
   | .rejected _ failures => failures
 
-end AcceptedPlanResult
+end GraphKernelPlanResult
 
-/-- Gate a graph lowering and expose an accepted plan only when every obligation passes policy. -/
-def acceptGraphPlan (graphPlan : IR.GraphExecutionPlan) (loweringPlan : GraphLoweringPlan)
-    (policy : AssurancePolicy) : AcceptedPlanResult :=
-  match h : loweringPlan.gate policy with
-  | .accepted => .accepted { graphPlan, loweringPlan, policy, gateProof := h }
-  | .rejected failures => .rejected loweringPlan failures
+/-- Gate a grouped graph plan and expose it only when every obligation passes policy. -/
+def acceptGraphKernelPlan (graphPlan : IR.GraphKernelPlan) (groupedPlan : GroupedKernelPlan)
+    (policy : AssurancePolicy) : GraphKernelPlanResult :=
+  match h : groupedPlan.gate policy with
+  | .accepted => .accepted { graphPlan, groupedPlan, policy, gateProof := h }
+  | .rejected failures => .rejected groupedPlan failures
 
 end Backend
 end NN

@@ -20,11 +20,11 @@ This does not duplicate TorchLean's executable MLP helper. That constructor live
 through `TorchLean.nn.models`.
 The point here is narrower and proof-oriented:
 
-- show the sequential `Graph` DSL in its simplest useful form;
+- show the sequential `Chain` DSL in its simplest useful form;
 - make the parameter ABI visible in the type;
 - provide a stable target for GraphSpec equivalence and deterministic-init proofs.
 
-Because this is a pure sequential chain, it is authored with `Graph` and `>>>`. The companion
+Because this is a pure sequential chain, it is authored with `Chain` and `>>>`. The companion
 `mlpDAGModelZeroInit` lowers the same chain to the general DAG model representation so DAG-only
 tooling can consume it.
 -/
@@ -51,22 +51,22 @@ So the overall parameter list is exactly:
 `[Mat hid in, Vec hid, Mat out hid, Vec out]`.
 -/
 def mlp (inDim hidDim outDim : Nat) :
-    Graph
+    Chain
       [ .dim hidDim (.dim inDim .scalar), .dim hidDim .scalar
       , .dim outDim (.dim hidDim .scalar), .dim outDim .scalar ]
       (.dim inDim .scalar) (.dim outDim .scalar) :=
-  Graph.linear inDim hidDim >>>
-  Graph.relu (.dim hidDim .scalar) >>>
-  Graph.linear hidDim outDim
+  Chain.linear inDim hidDim >>>
+  Chain.relu (.dim hidDim .scalar) >>>
+  Chain.linear hidDim outDim
 
 /--
 The same 2-layer MLP, but exposed as a DAG `Model` via the structural lowering
-`LowerToDAG.Graph.toDAGModelZeroInit`.
+`LowerToDAG.Chain.toDAGModelZeroInit`.
 
 This is mainly for GraphSpec example ergonomics: downstream tooling that expects DAG terms can
 consume this even though it was authored using the sequential `>>>` syntax.
 
-Initialization: all-zero parameters (see `LowerToDAG.Graph.toDAGModelZeroInit`).
+Initialization: all-zero parameters (see `LowerToDAG.Chain.toDAGModelZeroInit`).
 -/
 def mlpDAGModelZeroInit (inDim hidDim outDim : Nat) :
     DAG.Model
@@ -74,7 +74,7 @@ def mlpDAGModelZeroInit (inDim hidDim outDim : Nat) :
       , .dim outDim (.dim hidDim .scalar), .dim outDim .scalar ]
       [.dim inDim .scalar]
       (.dim outDim .scalar) :=
-  LowerToDAG.Graph.toDAGModelZeroInit (mlp (inDim := inDim) (hidDim := hidDim) (outDim := outDim))
+  LowerToDAG.Chain.toDAGModelZeroInit (mlp (inDim := inDim) (hidDim := hidDim) (outDim := outDim))
 
 /-!
 ## Example Usage
@@ -83,17 +83,17 @@ You can build a simple classifier head by appending a softmax:
 
 ```lean
 def g (inDim hidDim outDim : Nat) :
-    Graph
+    Chain
       [ .dim hidDim (.dim inDim .scalar), .dim hidDim .scalar
       , .dim outDim (.dim hidDim .scalar), .dim outDim .scalar ]
       (.dim inDim .scalar) (.dim outDim .scalar) :=
-  Models.mlp inDim hidDim outDim >>> Graph.softmax (.dim outDim .scalar)
+  Models.mlp inDim hidDim outDim >>> Chain.softmaxLast (.dim outDim .scalar)
 ```
 
 Then:
 
 - `Interp.spec (g …)` is a pure function `Params → Spec.Tensor → Spec.Tensor`;
-- `Compile.torchProgram (g …)` is an executable TorchLean `Program` with arguments
+- `Chain.toProgram (g …)` is an executable TorchLean `Program` with arguments
   `params ++ [input]`.
 -/
 

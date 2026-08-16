@@ -80,7 +80,7 @@ Once that path feels familiar, the larger examples are variations on the same th
 add token and attention structure; ResNets add spatial layouts and skip connections; Fourier neural
 operators work with sampled functions; diffusion and reinforcement learning make randomness and
 state explicit. The numerical chapters supply generic formats, executable binary32 arithmetic, and
-error bounds. The verification chapters build interval, affine, compiler, autograd, and certificate
+error bounds. The verification chapters build interval, affine, lowering, autograd, and certificate
 arguments on top of those definitions.
 
 One reading habit matters throughout: ask what kind of evidence is attached to a claim. An
@@ -142,7 +142,7 @@ optimizer buffers accumulate history. None of that appears in the clean equation
 
 $$`f_\theta(x)=W_2\,\operatorname{ReLU}(W_1x+b_1)+b_2`.
 
-We will follow one step through the runtime, then move the same operation to compiled execution,
+We will follow one step through the runtime, then move the same operation to typed graph execution,
 CUDA, and LibTorch.
 
 {include 2 TorchLeanBlueprint.Guide.Ch2_Frontend.ExecutionModes}
@@ -197,7 +197,7 @@ This gives a precise verification question:
 
 $$`\forall x\in B,\qquad P(\operatorname{denote}(g,\theta,x))`.
 
-This part develops several ways to answer it: interval and affine bounds, compiler-correctness
+This part develops several ways to answer it: interval and affine bounds, lowering-correctness
 proofs, autograd theorems, numerical error bounds, optimizer laws, and replayed certificates. We
 will also feed bad artifacts to the checkers and see exactly where they fail.
 

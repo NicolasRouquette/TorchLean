@@ -82,14 +82,14 @@ def readNpyTensorPrefix (path : System.FilePath) (dims : List Nat) :
               pure (.error s!"npy: shape mismatch, expected {dims}, got {data.shape}")
 
 /-- Parse a float-encoded class label as a `Nat` in `[0, classes)`. -/
-def natLabelOfFloat (tag : String) (classes : Nat) (x : Float) : Except String Nat := do
+def finLabelOfFloat (tag : String) (classes : Nat) (x : Float) : Except String (Fin classes) := do
   let n : Nat := x.toUInt64.toNat
   if (n : Float) != x then
     throw s!"{tag}: expected an integer class label, got {x}"
-  else if n >= classes then
-    throw s!"{tag}: class label {n} out of range (classes={classes})"
+  else if h : n < classes then
+    pure ⟨n, h⟩
   else
-    pure n
+    throw s!"{tag}: class label {n} out of range (classes={classes})"
 
 /--
 Labeled dataset from a batched tensor `X : (n, σ)` and a label vector `y : (n,)`.
@@ -103,11 +103,11 @@ def labeledFromLeadingAxis {α : Type} [_root_.Context α] [_root_.TorchLean.Run
     (X : Spec.Tensor Float (.dim n σ))
     (y : Spec.Tensor Float (.dim n .scalar)) :
     Except String (Dataset (_root_.TorchLean.TensorPack α [σ, .dim classes .scalar])) := do
-  let samples : List (Spec.Tensor Float σ × Nat) ←
+  let samples : List (Spec.Tensor Float σ × Fin classes) ←
     (List.finRange n).mapM (fun i => do
       let x := Spec.getAtSpec X i
       let labelF : Float := Spec.Tensor.toScalar (Spec.getAtSpec y i)
-      let label ← natLabelOfFloat tag classes labelF
+      let label ← finLabelOfFloat tag classes labelF
       pure (x, label))
   pure <| labeled (α := α) (σ := σ) classes samples
 
@@ -194,7 +194,7 @@ Supported shapes:
 - `[rows, cols]`: ordinary numeric table,
 - `[n]`: either one column with `n` rows or one row with `n` columns.
 -/
-def loadCsvTensorND (path : System.FilePath) (dims : List Nat) (opts : CsvOptions := {}) :
+def loadCsvTensor (path : System.FilePath) (dims : List Nat) (opts : CsvOptions := {}) :
     IO (Except String (Spec.Tensor Float (NN.Tensor.shapeOfDims dims))) := do
   match hDims : dims with
   | [rowsExpected, colsExpected] =>
@@ -244,7 +244,7 @@ def loadFloatAs (format : TensorFormat) (path : System.FilePath)
     IO (Except String (Spec.Tensor Float (NN.Tensor.shapeOfDims dims))) := do
   match format with
   | .npy => readNpyTensor path dims
-  | .csv => loadCsvTensorND path dims opts
+  | .csv => loadCsvTensor path dims opts
 
 /--
 Load a Float tensor, allowing NPY files to contain more rows than requested on the leading axis.
@@ -259,7 +259,7 @@ def loadFloatLeadingPrefixAs (format : TensorFormat) (path : System.FilePath)
     IO (Except String (Spec.Tensor Float (NN.Tensor.shapeOfDims dims))) := do
   match format with
   | .npy => readNpyTensorPrefix path dims
-  | .csv => loadCsvTensorND path dims opts
+  | .csv => loadCsvTensor path dims opts
 
 /-- Load a `TensorSource` as a Float tensor with the statically reflected `shapeOfDims src.dims`. -/
 def loadFloat (src : TensorSource) :
@@ -314,7 +314,7 @@ def load {α : Type} [_root_.TorchLean.Runtime.FromFloat α] (src : SupervisedSo
   | .ok X =>
       match yRes with
       | .error e => pure (.error e)
-      | .ok Y => pure (.ok (supervisedFromLeadingAxisFloat (α := α) X Y))
+      | .ok Y => pure (.ok (TensorDataset.supervisedFloat (α := α) X Y))
 
 end SupervisedSource
 
@@ -330,7 +330,7 @@ Load paired `.npy` files as concrete `Float` supervised samples.
 This is useful for reporting, custom evaluation loops, and native kernels that need concrete
 `Float` tensors outside the high-level trainer API.
 -/
-def loadSupervisedNpyFloatSamples
+def loadSupervisedNpy
     (xPath yPath : System.FilePath) (n : Nat)
     (xDims yDims : List Nat) :
     IO (Except String (Array (TorchLean.Sample.Supervised Float (NN.Tensor.shapeOfDims xDims)

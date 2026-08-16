@@ -3,7 +3,7 @@
 `NN/Runtime` is the part of TorchLean that actually runs a model.
 
 The files here turn typed tensors and parameter lists into executable training loops, prediction
-calls, autograd tapes, compiled graph executions, CUDA launches, PyTorch round trips, and
+calls, autograd tapes, typed graph executions, CUDA launches, PyTorch round trips, and
 reinforcement-learning rollouts. The runtime is deliberately tied back to the spec and proof layers:
 the same model should be runnable as ordinary Lean code, lowerable into the graph IR, and usable as
 the object of a later verification statement.
@@ -22,7 +22,8 @@ Most downstream code should not import modules from this directory directly. Pre
 An ordinary training command follows this shape.
 
 1. A model is built from typed tensors, layers, parameters, and a loss.
-2. The public trainer chooses a scalar mode and backend, such as eager Float32, compiled Float32, or
+2. The public trainer chooses a scalar mode and execution path, such as eager Float32, typed graph
+   Float32, or
    a CUDA-backed run.
 3. The autograd engine records the operations that need gradients and stores enough local data for
    the backward pass.
@@ -41,9 +42,9 @@ updates, and verification checkers.
 | Area | Role |
 | --- | --- |
 | `Autograd/Engine` | The small eager reverse-mode tape, closest to the local backward rules for primitive tensor operations. |
-| `Autograd/Compiled` | Graph/IR execution that runs through the same runtime values instead of becoming a detached interpreter. |
+| `Autograd/TypedGraph` | Typed SSA graph execution that runs through the same runtime values instead of becoming a detached interpreter. |
 | `Autograd/TorchLean` | The TorchLean-native runtime used by the trainer, layer functions, tensor packs, backend options, and scalar modes. |
-| `Autograd/Torch` | Lower-level imperative sessions and linked-session machinery used for PyTorch interop and compiled sessions. |
+| `Autograd/Torch` | Lower-level imperative sessions used for PyTorch interop and typed graph recording. |
 | `Autograd/Train` | Deterministic datasets, step streams, loaders, losses, training loops, evaluation helpers, and optimizer integration. |
 | `Optim` | Executable optimizer equations and scheduler utilities. Public optimizer names are re-exported through `TorchLean.optim`. |
 | `PyTorch` | State-dict, Torch export, ONNX, and IR-to-PyTorch bridges used for round-trip checks and external model exchange. |
@@ -51,17 +52,18 @@ updates, and verification checkers.
 | `External` | Small process helpers for executable integrations that deliberately leave Lean's kernel. |
 | `Training` | Training-log records shared by examples, plots, widgets, and command-line runs. |
 
-## Backend Choices
+## Execution Choices
 
 The public API should read like one model with different execution choices, not like several
-competing APIs. In ordinary code the user builds a trainer once and then selects the backend:
+competing APIs. In ordinary code the user builds a trainer once and then selects the execution
+strategy, scalar semantics, and device:
 
 ```lean
 let trainer :=
   Trainer.new model
     { task := .regression
-      backend := .compiled
-      dtype := .float32
+      execution := .typedGraph
+      scalar := .ieee32Exec
       optimizer := optim.adam { lr := 0.001 } }
 let trained ← trainer.train data { steps := 200 }
 let prediction ← trained.predict input
@@ -72,12 +74,12 @@ The names separate intent from implementation.
 | Choice | Meaning |
 | --- | --- |
 | Eager TorchLean | Execute operations directly through the TorchLean-native tape; this is the most direct path to inspect. |
-| Compiled TorchLean | Lower the model into the graph/IR path and execute that representation while keeping TorchLean as the owner of the model and graph. |
+| Typed graph TorchLean | Lower the model into a typed SSA graph and reuse that representation while keeping TorchLean as the owner of the model and graph. |
 | CUDA TorchLean | Use native CUDA kernels for supported operations while keeping TorchLean's runtime and tape contract at the boundary. |
 | ATen/libtorch provider | Use selected PyTorch/ATen kernels as fast numeric providers only when TorchLean still records the corresponding graph/tape node and owns the backward rule. |
 | PyTorch/Julia/Gymnasium bridges | Exchange data with external systems when the example needs a comparison target, imported weights, a simulator, or a runtime environment. |
 
-The compiled path runs the same TorchLean model through its graph/IR representation. Compiled/eager
+The typed graph path runs the same TorchLean model through its graph representation. Typed graph/eager
 equivalence checks and graph-correctness modules connect that execution path to the original object.
 
 For no-grad inference, an ATen/libtorch provider can return a value under an explicit agreement

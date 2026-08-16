@@ -42,7 +42,7 @@ layout: null
     "title": "Backend Selection and Trust",
     "url": "{{ '/blueprint/Runtime___-Autograd___-and-Interop/Choosing-How-A-Model-Runs/' | relative_url }}",
     "section": "Guide",
-    "text": "backend eager compiled CUDA ATen PyTorch runtime provider graph tape backward trust boundary"
+    "text": "backend eager typed graph lowering CUDA ATen PyTorch runtime provider tape backward trust boundary"
   },
   {
     "title": "Floating-Point Semantics",

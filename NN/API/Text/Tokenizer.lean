@@ -121,133 +121,21 @@ end Tokenizer
 
 /-! ## One-Hot Token Tensors -/
 
-/-- One-hot vector for a single token id (`Vec vocab`). Out-of-range ids map to all-zeros. -/
-def oneHotTokenFloat (vocab tokenId : Nat) : Spec.Tensor Float (.dim vocab .scalar) :=
-  NN.Tensor.oneHotNat (α := Float) vocab tokenId
+/-- One-hot vector for a token id, or the zero vector when the id is outside the vocabulary. -/
+def oneHotTokenOrZero {α : Type} [Zero α] [One α] (vocab tokenId : Nat) :
+    Spec.Tensor α (.dim vocab .scalar) :=
+  NN.Tensor.oneHotNatOrZero (α := α) vocab tokenId
 
-/-- One-hot encode a fixed-length token sequence as a matrix `(seqLen × vocab)`. -/
-def tokensToOneHotMatFloat {seqLen vocab : Nat} (tokens : Vector Nat seqLen) :
-    Spec.Tensor Float (.dim seqLen (.dim vocab .scalar)) :=
-  Spec.Tensor.dim (fun t => oneHotTokenFloat vocab (tokens.get t))
+/-- One-hot encode a token sequence, mapping out-of-vocabulary ids to zero rows. -/
+def oneHotSequenceOrZero {α : Type} [Zero α] [One α] {seqLen vocab : Nat}
+    (tokens : Vector Nat seqLen) : Spec.Tensor α (.dim seqLen (.dim vocab .scalar)) :=
+  Spec.Tensor.dim (fun t => oneHotTokenOrZero (α := α) vocab (tokens.get t))
 
-/-- One-hot encode a fixed-size batch of token sequences as `(batch × seqLen × vocab)`. -/
-def tokensToOneHotBatchFloat {batch seqLen vocab : Nat} (tokens : Vector (Vector Nat seqLen) batch) :
-    Spec.Tensor Float (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-  Spec.Tensor.dim (fun bi => tokensToOneHotMatFloat (tokens := tokens.get bi))
-
-/-! ## Causal LM Samples -/
-
-/--
-Build a `(x, y)` pair for next-token prediction from a token stream.
-
-$$
-x[t] = \operatorname{oneHot}(\mathrm{tokens}[t]),
-\qquad
-y[t] = \operatorname{oneHot}(\mathrm{tokens}[t+1]).
-$$
-
-If the stream is too short, we pad with `padId`.
--/
-def causalLmXYOneHotMatFloat (seqLen vocab : Nat) (tokens : List Nat) (padId : Nat := 0) :
-    Spec.Tensor Float (.dim seqLen (.dim vocab .scalar)) × Spec.Tensor Float (.dim seqLen (.dim vocab .scalar)) :=
-  let x : Spec.Tensor Float (.dim seqLen (.dim vocab .scalar)) :=
-    Spec.Tensor.dim (fun t => oneHotTokenFloat vocab (tokens.getD t.val padId))
-  let y : Spec.Tensor Float (.dim seqLen (.dim vocab .scalar)) :=
-    Spec.Tensor.dim (fun t => oneHotTokenFloat vocab (tokens.getD (t.val + 1) padId))
-  (x, y)
-
-/--
-Build a batched causal-LM `(x, y)` pair from one token window per batch row.
-
-This is the text analogue of image/tabular minibatching:
-
-- row $i$ receives its own token window `tokensAt i`;
-- $x[i,t]$ is $\mathrm{tokensAt}(i)[t]$;
-- $y[i,t]$ is $\mathrm{tokensAt}(i)[t+1]$;
-- short rows are padded with `padId`.
-
-GPT-style examples share this batching logic. The contract is explicit: a text batch is a typed
-tensor of shape `(batch, seqLen, vocab)`, just like the vision loader collates rows into
-`(batch, C, H, W)`.
--/
-def causalLmXYOneHotBatchRowsFloat (batch seqLen vocab : Nat)
-    (tokensAt : Fin batch → List Nat) (padId : Nat := 0) :
-    Spec.Tensor Float (.dim batch (.dim seqLen (.dim vocab .scalar))) ×
-      Spec.Tensor Float (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-  let x : Spec.Tensor Float (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-    Spec.Tensor.dim (fun bi => (causalLmXYOneHotMatFloat seqLen vocab (tokensAt bi) padId).1)
-  let y : Spec.Tensor Float (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-    Spec.Tensor.dim (fun bi => (causalLmXYOneHotMatFloat seqLen vocab (tokensAt bi) padId).2)
-  (x, y)
-
-/--
-One-hot encode a causal-LM input window as a batched tensor.
-
-Token ids are read from `tokens`, missing positions use `padId`, and every batch row receives the
-same window. Use `causalLmSampleOneHotBatchRows` when rows should come from different corpus
-offsets.
--/
-def causalLmXOneHotBatch {α : Type} [Context α] [Runtime.FromFloat α]
-    (batch seqLen vocab : Nat) (tokens : List Nat) (padId : Nat := 0) :
+/-- One-hot encode a token batch, mapping out-of-vocabulary ids to zero rows. -/
+def oneHotBatchOrZero {α : Type} [Zero α] [One α] {batch seqLen vocab : Nat}
+    (tokens : Vector (Vector Nat seqLen) batch) :
     Spec.Tensor α (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-  let x2DF : Spec.Tensor Float (.dim seqLen (.dim vocab .scalar)) :=
-    Spec.Tensor.dim (fun t => oneHotTokenFloat vocab (tokens.getD t.val padId))
-  let x2D : Spec.Tensor α (.dim seqLen (.dim vocab .scalar)) :=
-    TorchLean.Tensor.castFloat Runtime.ofFloat x2DF
-  Spec.Tensor.dim (fun _bi => x2D)
-
-/--
-One-hot encode one causal-LM input window per batch row.
-
-This is the input-only companion to `causalLmSampleOneHotBatchRows`, used by generation code that
-has prefixes but no shifted training targets.
--/
-def causalLmXOneHotBatchRows {α : Type} [Context α] [Runtime.FromFloat α]
-    (batch seqLen vocab : Nat) (tokensAt : Fin batch → List Nat) (padId : Nat := 0) :
-    Spec.Tensor α (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-  let xF : Spec.Tensor Float (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-    Spec.Tensor.dim (fun bi =>
-      Spec.Tensor.dim (fun t => oneHotTokenFloat vocab ((tokensAt bi).getD t.val padId)))
-  TorchLean.Tensor.castFloat Runtime.ofFloat xF
-
-/--
-Build a batched supervised next-token sample from a token stream.
-
-The target is shifted by one position:
-$x[t]=\mathrm{tokens}[t]$ and $y[t]=\mathrm{tokens}[t+1]$. Every batch row
-receives the same window, which is useful for prompt evaluation, deterministic checks, and synthetic
-sequence tasks.
--/
-def causalLmSampleOneHotBatch {α : Type} [Context α] [Runtime.FromFloat α]
-    (batch seqLen vocab : Nat) (tokens : List Nat) (padId : Nat := 0) :
-    TorchLean.Sample.Supervised α (.dim batch (.dim seqLen (.dim vocab .scalar)))
-      (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-  let (x2DF, y2DF) := causalLmXYOneHotMatFloat (seqLen := seqLen) (vocab := vocab)
-    tokens (padId := padId)
-  let x2D : Spec.Tensor α (.dim seqLen (.dim vocab .scalar)) :=
-    TorchLean.Tensor.castFloat Runtime.ofFloat x2DF
-  let y2D : Spec.Tensor α (.dim seqLen (.dim vocab .scalar)) :=
-    TorchLean.Tensor.castFloat Runtime.ofFloat y2DF
-  let x : Spec.Tensor α (.dim batch (.dim seqLen (.dim vocab .scalar))) := Spec.Tensor.dim (fun _bi => x2D)
-  let y : Spec.Tensor α (.dim batch (.dim seqLen (.dim vocab .scalar))) := Spec.Tensor.dim (fun _bi => y2D)
-  TorchLean.Sample.mk x y
-
-/--
-Build a batched supervised causal-LM sample from one token window per batch row.
-
-Use this for GPT-style minibatches with distinct corpus windows. `causalLmSampleOneHotBatch` remains
-useful when every batch row should repeat a fixed prompt or synthetic sequence.
--/
-def causalLmSampleOneHotBatchRows {α : Type} [Context α] [Runtime.FromFloat α]
-    (batch seqLen vocab : Nat) (tokensAt : Fin batch → List Nat) (padId : Nat := 0) :
-    TorchLean.Sample.Supervised α (.dim batch (.dim seqLen (.dim vocab .scalar)))
-      (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-  let (xF, yF) := causalLmXYOneHotBatchRowsFloat batch seqLen vocab tokensAt padId
-  let x : Spec.Tensor α (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-    TorchLean.Tensor.castFloat Runtime.ofFloat xF
-  let y : Spec.Tensor α (.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-    TorchLean.Tensor.castFloat Runtime.ofFloat yF
-  TorchLean.Sample.mk x y
+  Spec.Tensor.dim (fun bi => oneHotSequenceOrZero (α := α) (tokens := tokens.get bi))
 
 /-! ## Byte-Corpus Windows -/
 

@@ -96,6 +96,7 @@ import NN.API
 open TorchLean
 
 #check TorchLean.nn.linear
+#check TorchLean.nn.lowerToTypedGraph
 #check TorchLean.optim.adam
 #check TorchLean.Trainer.new
 #check TorchLean.Data.tensorDataset
@@ -160,24 +161,24 @@ if [[ "$run_default" == true ]]; then
   run "$LAKE" exe torchlean quickstart_tensors
   run "$LAKE" exe torchlean quickstart_autograd
   run "$LAKE" exe torchlean quickstart_mlp \
-    --steps 1 --dtype float --backend eager --log "$tmp_dir/quickstart_mlp.json"
+    --steps 1 --scalar float32 --execution eager --log "$tmp_dir/quickstart_mlp.json"
   run "$LAKE" exe torchlean quickstart_minibatch_mlp \
-    --steps 1 --batch 5 --dtype float --backend eager --log "$tmp_dir/minibatch_mlp.json"
+    --steps 1 --batch 5 --scalar float32 --execution eager --log "$tmp_dir/minibatch_mlp.json"
   run "$LAKE" exe torchlean quickstart_cnn \
-    --steps 1 --batch 2 --dtype float --backend eager --log "$tmp_dir/quickstart_cnn.json"
+    --steps 1 --batch 2 --scalar float32 --execution eager --log "$tmp_dir/quickstart_cnn.json"
   run "$LAKE" exe torchlean data_csv \
-    --steps 1 --batch 5 --dtype float --backend eager
+    --steps 1 --batch 5 --scalar float32 --execution eager
   run "$LAKE" exe torchlean data_npy \
-    --steps 1 --batch 5 --dtype float --backend eager
+    --steps 1 --batch 5 --scalar float32 --execution eager
   run "$LAKE" exe torchlean data_cifar10 \
     --check-only --epochs 1 --batch 4 --train-size 8 --n-total 20
   run "$LAKE" exe torchlean pytorch_roundtrip --model mlp --action import
   run "$LAKE" exe torchlean pytorch_export_check
   run "$LAKE" exe torchlean floats_arb_ieee_compare
-  run "$LAKE" exe torchlean float32_modes
+  run "$LAKE" exe torchlean float32_semantics
   run "$LAKE" exe torchlean numerical_certificate
-  run "$LAKE" exe torchlean graphspec --backend eager
-  run "$LAKE" exe torchlean ir_axis_ops --dtype float --backend eager
+  run "$LAKE" exe torchlean graphspec --execution eager
+  run "$LAKE" exe torchlean ir_axis_ops --scalar float32 --execution eager
   run "$LAKE" exe torchlean one_semantic_universe --samples 3
   run "$LAKE" exe torchlean torch_ir_pytorch
   run "$LAKE" exe torchlean dqn_replay
@@ -240,10 +241,10 @@ if [[ "$run_extended_cuda" == true ]]; then
     --log "$tmp_dir/chargpt_cuda.json"
   run "$LAKE" exe -K cuda=true torchlean gpt2 \
     --device cuda --tiny-shakespeare --steps 1 --windows 1 --generate 0 \
-    --save-params "$tmp_dir/gpt2_saved.params.json" \
+    --save-checkpoint "$tmp_dir/gpt2_saved.state.json" \
     --log "$tmp_dir/gpt2_extended_cuda.json"
   run "$LAKE" exe -K cuda=true torchlean gpt2_saved \
-    --device cuda --params "$tmp_dir/gpt2_saved.params.json" \
+    --device cuda --checkpoint "$tmp_dir/gpt2_saved.state.json" \
     --prompt "First Citizen:" --generate 0
   run "$LAKE" exe -K cuda=true torchlean text_gpt2 \
     --device cuda --data-file data/real/text/tinystories_valid.txt \

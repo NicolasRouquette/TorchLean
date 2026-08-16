@@ -9,9 +9,9 @@ module
 public import NN.Backend.Profile
 
 /-!
-# Backend Reports
+# Kernel Selection Reports
 
-Small human-readable reports for contract-carrying backend plans.
+Small human-readable reports for contract-carrying kernel plans.
 
 The planner data is intentionally precise; these helpers are the user-facing explanation layer. They
 are useful in examples, command-line choosers, docs, and debugging output.
@@ -139,36 +139,36 @@ def detailedReportLines (a : KernelAudit) : List String :=
 
 end KernelAudit
 
-namespace ExecutionAudit
+namespace KernelPlanAudit
 
 /-- Human-readable lines for all selected capsules. -/
-def reportLines (a : ExecutionAudit) : List String :=
+def reportLines (a : KernelPlanAudit) : List String :=
   a.kernels.map KernelAudit.reportLine
 
 /-- Human-readable contract details for all selected capsules. -/
-def detailedReportLines (a : ExecutionAudit) : List String :=
+def detailedReportLines (a : KernelPlanAudit) : List String :=
   a.kernels.flatMap KernelAudit.detailedReportLines
 
-end ExecutionAudit
+end KernelPlanAudit
 
-namespace ExecutionPlan
+namespace KernelPlan
 
-/-- Human-readable lines for a selected backend plan. -/
-def reportLines (p : ExecutionPlan) : List String :=
+/-- Human-readable lines for a selected kernel plan. -/
+def reportLines (p : KernelPlan) : List String :=
   p.audit.reportLines
 
-/-- Human-readable contract details for a selected backend plan. -/
-def detailedReportLines (p : ExecutionPlan) : List String :=
+/-- Human-readable contract details for a selected kernel plan. -/
+def detailedReportLines (p : KernelPlan) : List String :=
   p.audit.detailedReportLines
 
-end ExecutionPlan
+end KernelPlan
 
 namespace BackendProfile
 
 /-- One-line profile description for logs and interactive choosers. -/
 def summary (p : BackendProfile) : String :=
-  s!"profile={p.name} device={p.config.device.cliName} assurance={p.config.assurance.label} " ++
-  s!"vjp={p.config.vjpMode.label}"
+  s!"profile={p.name} device={p.policy.device.cliName} assurance={p.policy.assurance.label} " ++
+  s!"vjp={p.policy.vjpMode.label}"
 
 /-- Plan a list of backend ops and format the selected capsules. -/
 def planReport (p : BackendProfile) (ops : List BackendOp) : Except String String := do

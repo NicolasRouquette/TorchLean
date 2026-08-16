@@ -13,8 +13,9 @@ public import NN.Backend.Availability
 
 Cross-platform target descriptions for backend planning.
 
-`ExecutionConfig` says what a run wants. `Availability` says which devices and providers a planner
-may consider. `Target` describes declared platform/build capabilities: CPU-only Linux, CUDA Linux,
+`KernelPolicy` states the requested device, provider preference, VJP mode, and assurance level.
+`Availability` says which devices and providers a planner may consider. `Target` describes declared
+platform/build capabilities: CPU-only Linux, CUDA Linux,
 Apple Metal, TPU/XLA, AWS Trainium/Neuron, WASM, or a caller-supplied accelerator all map into the
 same capsule planner. A target declaration is not runtime discovery; executable paths must still
 probe the linked runtime before launching work.

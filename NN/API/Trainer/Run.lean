@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API.Data.Synthetic
-public import NN.API.Trainer.Handle
+public import NN.API.Trainer.Core
 public import NN.API.CLI
 
 /-!
@@ -22,8 +22,8 @@ namespace TorchLean
 
 namespace Trainer
 
-/-- Supervised dataset that can be materialized at the trainer's selected scalar type. -/
-structure Dataset (σ τ : Shape) where
+/-- Supervised data source that can be materialized at the trainer's selected scalar type. -/
+structure DataSource (σ τ : Shape) where
   /-- Materialize the dataset at the runtime-selected scalar type. -/
   build :
     {α : Type} →
@@ -38,7 +38,7 @@ structure Probe (σ : Shape) where
   /-- Human-facing input description. -/
   inputText : String := ""
   /-- Runtime-polymorphic input tensor. -/
-  input : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → Tensor.T α σ
+  input : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → Tensor α σ
   /-- Optional expected value shown beside the prediction. -/
   expected : Option String := none
 
@@ -54,7 +54,7 @@ def point (name : String) (x y : Float) (expected : Option String := none) :
     expected := expected }
 
 /-- Probe built from a concrete `Float` tensor. -/
-def ofFloatTensor {σ : Shape} (name : String) (x : Tensor.T Float σ)
+def ofFloatTensor {σ : Shape} (name : String) (x : Tensor Float σ)
     (inputText : String := "") (expected : Option String := none) :
     Probe σ :=
   { name := name
@@ -69,18 +69,18 @@ structure RunConfig extends RuntimeSettings where
 
 namespace RunConfig
 
-/-- Override the scalar dtype for this run configuration. -/
-def withDType (run : RunConfig) (dtype : Runtime.DType) : RunConfig :=
-  { run with dtype := dtype }
+/-- Override the scalar semantics for this run configuration. -/
+def withScalar (run : RunConfig) (scalar : Runtime.ScalarMode) : RunConfig :=
+  { run with scalar := scalar }
 
-/-- Override the execution backend for this run configuration. -/
-def withBackend (run : RunConfig) (backend : Runtime.Backend) : RunConfig :=
-  { run with backend := backend }
+/-- Override the execution mode for this run configuration. -/
+def withExecution (run : RunConfig) (execution : Runtime.ExecutionMode) : RunConfig :=
+  { run with execution := execution }
 
 /-- Override the execution device using a maintained backend profile. -/
 def withDevice (run : RunConfig) (device : Runtime.Device) : Except String RunConfig := do
   match _root_.NN.Backend.BackendProfile.maintainedForDevice? device with
-  | some profile => pure { run with executionProfile := profile }
+  | some _ => pure { run with device := device, backendProfile? := none }
   | none =>
       throw s!"device `{device.cliName}` has no maintained runtime profile; provide an explicit backend profile"
 
@@ -92,61 +92,57 @@ registry together. It can select, for example, LibTorch forward execution with a
 backward pass.
 -/
 def withBackendProfile (run : RunConfig) (profile : _root_.NN.Backend.BackendProfile) : RunConfig :=
-  { run with executionProfile := profile }
+  { run with device := profile.policy.device, backendProfile? := some profile }
 
 /-- Enable or disable first-use backend capsule reporting. -/
 def withBackendReport (run : RunConfig) (enabled : Bool := true) : RunConfig :=
   { run with showBackend := enabled }
 
-/-- Use the eager runtime backend. -/
+/-- Execute operations eagerly while building a dynamic tape. -/
 def eager (run : RunConfig) : RunConfig :=
-  run.withBackend .eager
+  run.withExecution .eager
 
-/-- Use the proof-compiled runtime backend. -/
-def compiled (run : RunConfig) : RunConfig :=
-  run.withBackend .compiled
+/-- Record once and reuse the shape-indexed typed SSA graph. -/
+def typedGraph (run : RunConfig) : RunConfig :=
+  run.withExecution .typedGraph
 
 /-- Run on CPU. -/
 def cpu (run : RunConfig) : RunConfig :=
-  run.withBackendProfile _root_.NN.Backend.BackendProfile.checkedCpu
+  { run with device := .cpu, backendProfile? := none }
 
 /-- Run on CUDA. -/
 def cuda (run : RunConfig) : RunConfig :=
-  run.withBackendProfile _root_.NN.Backend.BackendProfile.checkedCuda
+  { run with device := .cuda, backendProfile? := none }
 
 /-- Apply parsed runtime/device options to a persistent trainer run configuration. -/
-def withOptions (run : RunConfig) (opts : Options) : RunConfig :=
+def withRuntimeOptions (run : RunConfig) (opts : Options) : RunConfig :=
   { run with
-      backend := opts.backend
-      executionProfile := opts.executionProfile
+      execution := opts.execution
+      device := opts.device
+      backendProfile? := opts.backendProfile?
       showBackend := opts.showBackend }
 
 /-- Build a run configuration from parsed runtime flags and trainer choices. -/
-def fromOptions (opts : Options) (base : RunConfig := {}) : RunConfig :=
-  base.withOptions opts
+def ofRuntimeOptions (opts : Options) (base : RunConfig := {}) : RunConfig :=
+  base.withRuntimeOptions opts
 
 /-- Convert a run configuration to the runtime `Options` record. -/
-def toOptions (run : RunConfig) : Options :=
-  { backend := run.backend
-    executionProfile := run.executionProfile
+def toRuntimeOptions (run : RunConfig) : Options :=
+  { execution := run.execution
+    device := run.device
+    backendProfile? := run.backendProfile?
     showBackend := run.showBackend }
 
-/-- CLI spelling for a Float32 runtime mode. -/
-def float32ModeArg : TorchLean.Floats.Float32Mode → String
-  | .fp32 => "fp32"
-  | .ieee754Exec => "ieee754exec"
+/-- CLI arguments that reproduce a scalar-semantics choice. -/
+def scalarArgs : Runtime.ScalarMode → List String
+  | .float32 => ["--scalar", "float32"]
+  | .ieee32Exec => ["--scalar", "ieee32-exec"]
+  | .complex64 => ["--scalar", "complex64"]
 
-/-- CLI arguments that reproduce a dtype choice. -/
-def dtypeArgs : Runtime.DType → List String
-  | .float => ["--dtype", "float"]
-  | .real => ["--dtype", "real"]
-  | .float32 cfg => ["--dtype", float32ModeArg cfg.mode]
-  | .complex cfg => ["--dtype", "c32:" ++ float32ModeArg cfg.mode]
-
-/-- CLI arguments that reproduce a backend choice. -/
-def backendArgs : Runtime.Backend → List String
-  | .eager => ["--backend", "eager"]
-  | .compiled => ["--backend", "compiled"]
+/-- CLI arguments that reproduce an execution-mode choice. -/
+def executionArgs : Runtime.ExecutionMode → List String
+  | .eager => ["--execution", "eager"]
+  | .typedGraph => ["--execution", "typed-graph"]
 
 /-- CLI arguments that reproduce a device choice. -/
 def deviceArgs : Runtime.Device → List String
@@ -164,16 +160,17 @@ def deviceArgs : Runtime.Device → List String
 def parseRuntimeArgs (args : List String) (base : RunConfig := {}) :
     Except String (RunConfig × List String) := do
   let (exec, rest) ←
-    TorchLean.Module.ExecConfig.parseAndStripWithDefaultDType args base.dtype
-  let profile ← match _root_.NN.Backend.BackendProfile.maintainedForDevice? exec.device with
+    TorchLean.Module.ExecConfig.parseWithScalar args base.scalar
+  let _ ← match _root_.NN.Backend.BackendProfile.maintainedForDevice? exec.device with
     | some profile => pure profile
     | none =>
         throw s!"device `{exec.device.cliName}` has no maintained runtime profile; use a programmatic backend profile"
   pure
     ({ base with
-        dtype := exec.dtype
-        backend := exec.backend
-        executionProfile := profile
+        scalar := exec.scalar
+        execution := exec.execution
+        device := exec.device
+        backendProfile? := none
         showBackend := exec.showBackend },
       rest)
 
@@ -188,11 +185,11 @@ def parseRuntimeArgsOrThrow
   CLI.requireNoArgs exeName rest
   pure cfg
 
-/-- Lower this persistent run configuration to the standard runtime CLI flags. -/
+/-- Render this persistent run configuration as standard runtime CLI flags. -/
 def toArgs (run : RunConfig) : List String :=
-  dtypeArgs run.dtype ++
-  backendArgs run.backend ++
-  deviceArgs run.executionProfile.config.device ++
+  scalarArgs run.scalar ++
+  executionArgs run.execution ++
+  deviceArgs run.device ++
   (if run.showBackend then ["--show-backend"] else [])
 
 end RunConfig
@@ -206,46 +203,37 @@ def fromRunConfig {σ τ : Shape}
   { task := task
     seed := seed
     optimizer := run.optimizer
-    dtype := run.dtype
-    backend := run.backend
-    executionProfile := run.executionProfile
+    scalar := run.scalar
+    execution := run.execution
+    device := run.device
+    backendProfile? := run.backendProfile?
     showBackend := run.showBackend }
 
 end Config
 
-/-- Build a run configuration from parsed runtime options. -/
-def runConfig (opts : Options) (base : RunConfig := {}) : RunConfig :=
-  RunConfig.fromOptions opts base
-
 namespace Implementation
 
 /--
-Run a callback under a runtime dtype that can also be read back to host `Float` tensors.
+Run a callback under runtime scalar semantics that can also be read back to host `Float` tensors.
 
 Trainer methods return ordinary `Float` predictions for display and downstream scripts, even
 when the model itself runs under an executable scalar such as `IEEE32Exec`. This dispatcher carries
-the extra scalar-readback evidence that `DType.withRuntime` intentionally does not require.
+the extra scalar-readback evidence that `ScalarMode.withRuntime` intentionally does not require.
 -/
 def withReadableRuntime {β : Type}
-    (dtype : Runtime.DType)
+    (scalar : Runtime.ScalarMode)
     (k : ∀ {α : Type}, [_root_.Context α] → [DecidableEq Shape] → [ToString α] →
       [Runtime.FromFloat α] →
       [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α] → IO β) :
     IO (Except String β) := do
-  match dtype with
-  | .float =>
-      let out ← k (α := Float)
+  match scalar with
+  | .float32 =>
+      let out ← k (α := Float32)
       pure (.ok out)
-  | .real =>
-      pure (.error
-        "dtype=real is proof-only (noncomputable); use it in theorems, not in executables")
-  | .float32 { mode := .fp32 } =>
-      pure (.error
-        "float32-mode=fp32 is proof-only (noncomputable); use it in theorems/verification proofs")
-  | .float32 { mode := .ieee754Exec } =>
-      let out ← k (α := TorchLean.Floats.F32 .ieee754Exec)
+  | .ieee32Exec =>
+      let out ← k (α := TorchLean.Floats.IEEE32Exec)
       pure (.ok out)
-  | .complex _ =>
+  | .complex64 =>
       pure (.error
         "complex runtime trainer predictions do not yet have a public Float readback path")
 
@@ -257,13 +245,13 @@ def runConfig {σ τ : Shape} (trainer : Regression σ τ) : Trainer.RunConfig :
 
 end Regression
 
-namespace CrossEntropy
+namespace OneHotCrossEntropy
 
 /-- Runtime configuration carried by this trainer. -/
-def runConfig {σ τ : Shape} (trainer : CrossEntropy σ τ) : Trainer.RunConfig :=
+def runConfig {σ τ : Shape} (trainer : OneHotCrossEntropy σ τ) : Trainer.RunConfig :=
   { toRuntimeSettings := trainer.runtime }
 
-end CrossEntropy
+end OneHotCrossEntropy
 
 namespace Custom
 
@@ -300,10 +288,10 @@ structure TrainOptions where
   title : String := "Training"
   /-- Free-form notes attached to the TrainLog artifact. -/
   notes : Array String := #[]
-  /-- Optional exact-bits parameter checkpoint loaded before training. -/
-  loadParams? : Option System.FilePath := none
-  /-- Optional exact-bits parameter checkpoint written after training. -/
-  saveParams? : Option System.FilePath := none
+  /-- Optional model-state checkpoint loaded before training. -/
+  loadCheckpoint? : Option System.FilePath := none
+  /-- Optional model-state checkpoint written after training. -/
+  saveCheckpoint? : Option System.FilePath := none
 
 namespace TrainOptions
 
@@ -348,13 +336,13 @@ def withTitle (opts : TrainOptions) (title : String) : TrainOptions :=
 def withNotes (opts : TrainOptions) (notes : Array String) : TrainOptions :=
   { opts with notes := notes }
 
-/-- Load an exact-bits parameter checkpoint before training. -/
-def withLoadParams (opts : TrainOptions) (path : System.FilePath) : TrainOptions :=
-  { opts with loadParams? := some path }
+/-- Load a model-state checkpoint before training. -/
+def withLoadCheckpoint (opts : TrainOptions) (path : System.FilePath) : TrainOptions :=
+  { opts with loadCheckpoint? := some path }
 
-/-- Save an exact-bits parameter checkpoint after training. -/
-def withSaveParams (opts : TrainOptions) (path : System.FilePath) : TrainOptions :=
-  { opts with saveParams? := some path }
+/-- Save a model-state checkpoint after training. -/
+def withSaveCheckpoint (opts : TrainOptions) (path : System.FilePath) : TrainOptions :=
+  { opts with saveCheckpoint? := some path }
 
 /-- Lower the public training options to the manual runtime training config. -/
 def toTrainConfig (opts : TrainOptions) (optimizer : optim.Optimizer) :
@@ -373,7 +361,7 @@ structure ClassProbe (σ : Shape) where
   /-- Human-facing probe name. -/
   name : String
   /-- Runtime-polymorphic input tensor. -/
-  input : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → Tensor.T α σ
+  input : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → Tensor α σ
   /-- Expected class index, printed beside the prediction. -/
   expected : Nat
 

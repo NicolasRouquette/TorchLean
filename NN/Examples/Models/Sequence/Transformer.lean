@@ -74,12 +74,12 @@ abbrev τ :=
   σ
 
 /-- One reusable transformer encoder block from the public model API. -/
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.transformerEncoder cfg (by decide) (by decide)
 
 /-- Build one reconstruction sample from the loaded corpus prefix. -/
 def sample (corpus : String) : SupervisedSample Float σ τ :=
-  let s := Data.textCausalBatchSample (α := Float) batch seqLen dModel
+  let s := Data.CausalLM.byteBatch (α := Float) batch seqLen dModel
     (corpus.take (seqLen + 1)).toString
   Sample.mk (Spec.Tensor.materialize (Sample.x s)) (Spec.Tensor.materialize (Sample.y s))
 
@@ -90,7 +90,7 @@ def train (opts : Options) (corpusFlags : RealData.TextCorpusFlags)
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.sgd { lr := 1e-4 } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.sgd { lr := 1e-4 } })
         .regression
   let trainData := Data.floatSamples [sample corpus]
   let trained ← trainer.train

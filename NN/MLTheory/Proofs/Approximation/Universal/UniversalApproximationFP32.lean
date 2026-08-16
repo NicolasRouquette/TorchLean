@@ -656,8 +656,10 @@ the hinge parameters.
           simp [List.foldl, hingeSumStateStep, ih]
     simpa [hingeSumReal, hingeSumState] using
       (this (xs := List.finRange n) (acc32 := (0 : FP32)) (accR := (0 : ℝ)) (err := (0 : ℝ)))
-  -- Then use the existing `finRange_foldl_add` lemma.
-  simpa [hfold] using (finRange_foldl_add n (fun i : Fin n => hingeTermReal c t x i))
+  -- Rewrite the executable fold as the corresponding finite sum.
+  simpa [hfold] using
+    (List.finRange_foldl_add_eq_finset_sum (n := n)
+      (fun i : Fin n => hingeTermReal c t x i))
 
 /--
 1D ReLU approximation with a pointwise FP32 rounding bound.

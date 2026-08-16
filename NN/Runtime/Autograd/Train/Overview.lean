@@ -15,7 +15,7 @@ TorchLean's runtime autograd tape.
 The utilities keep a recognizable workflow while remaining:
 - deterministic (pure shuffles; explicit seeds),
 - easy to audit,
-- and compatible with both eager and compiled backends (via the shared tape/`TorchLean.Session`).
+- and compatible with eager and typed graph execution through the shared tape and `TorchLean.Session`.
 
 The modules here are narrow in scope: they provide the reusable training infrastructure, while
 architecture-specific math and constructors stay in `NN.GraphSpec.Models.*`, `NN.API.Models.*`, or

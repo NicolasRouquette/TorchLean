@@ -19,7 +19,7 @@ namespace Internal
 `nn.functional` mirrors `torch.nn.functional`: pure, stateless building blocks.
 
 In TorchLean these are derived ops over the small primitive `Ops` API, so the same code works on
-both the eager backend and the compiled backend.
+both eager and typed graph execution.
 -/
 namespace functional
 
@@ -62,13 +62,13 @@ shape. The adapter changes only the view of the input and output; parameters, bu
 the underlying forward program are preserved.
 -/
 def adaptFlatBatch (leading : Spec.Shape) {σ τ : Spec.Shape}
-    (l : LayerDef (.dim (Spec.Shape.size leading) σ) (.dim (Spec.Shape.size leading) τ)) :
-    LayerDef (leading.concat σ) (leading.concat τ) :=
+    (l : Layer (.dim (Spec.Shape.size leading) σ) (.dim (Spec.Shape.size leading) τ)) :
+    Layer (leading.concat σ) (leading.concat τ) :=
   { kind := l.kind
-    paramShapes := l.paramShapes
-    initParams := l.initParams
+    stateShapes := l.stateShapes
+    initState := l.initState
     runtimeInit := l.runtimeInit
-    paramRequiresGrad := l.paramRequiresGrad
+    requiresGrad := l.requiresGrad
     updateBuffers := l.updateBuffers.map fun update mode {α} _ _ ps x =>
       update mode ps <| Spec.Tensor.reshapeSpec x (by
         simp [Spec.Shape.size_concat, Spec.Shape.size])
@@ -76,13 +76,13 @@ def adaptFlatBatch (leading : Spec.Shape) {σ τ : Spec.Shape}
       fun {m} _ _ =>
         _root_.Runtime.Autograd.Torch.CurriedRef.curry
           (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
-          (ss := l.paramShapes ++ [leading.concat σ])
+          (ss := l.stateShapes ++ [leading.concat σ])
           (β := m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (leading.concat τ)))
           (fun args => do
             let (ps, x) :=
               _root_.Runtime.Autograd.Torch.RefList.splitLast
                 (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
-                (ss := l.paramShapes) (τ := leading.concat σ) args
+                (ss := l.stateShapes) (τ := leading.concat σ) args
             let xBatch ←
               _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := leading.concat σ) (s₂ := .dim (Spec.Shape.size leading) σ)
@@ -90,7 +90,7 @@ def adaptFlatBatch (leading : Spec.Shape) {σ τ : Spec.Shape}
             let yBatch ←
               _root_.Runtime.Autograd.Torch.CurriedRef.uncurry
                 (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
-                (ss := l.paramShapes ++ [.dim (Spec.Shape.size leading) σ])
+                (ss := l.stateShapes ++ [.dim (Spec.Shape.size leading) σ])
                 (β := m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
                   (.dim (Spec.Shape.size leading) τ)))
                 (l.forward mode (α := α) (m := m))
@@ -101,18 +101,18 @@ def adaptFlatBatch (leading : Spec.Shape) {σ τ : Spec.Shape}
   }
 
 /--
-Lift a single-example `LayerDef σ τ` to operate on a leading batch axis.
+Lift a single-example `Layer σ τ` to operate on a leading batch axis.
 
 This is a correctness-first batch lift: it runs the underlying layer independently on each batch
 element. Prefer a primitive batched layer when one exists.
 -/
-def mapLayerOverAxis (n : Nat) {σ τ : Spec.Shape} (l : LayerDef σ τ) :
-    LayerDef (.dim n σ) (.dim n τ) :=
+def mapLayerOverAxis (n : Nat) {σ τ : Spec.Shape} (l : Layer σ τ) :
+    Layer (.dim n σ) (.dim n τ) :=
   { kind := l.kind
-    paramShapes := l.paramShapes
-    initParams := l.initParams
+    stateShapes := l.stateShapes
+    initState := l.initState
     runtimeInit := l.runtimeInit
-    paramRequiresGrad := l.paramRequiresGrad
+    requiresGrad := l.requiresGrad
     updateBuffers := l.updateBuffers.map fun update mode {_α} _ _ ps x =>
       match x with
       | Spec.Tensor.dim rows =>
@@ -121,13 +121,13 @@ def mapLayerOverAxis (n : Nat) {σ τ : Spec.Shape} (l : LayerDef σ τ) :
       fun {m} _ _ =>
         _root_.Runtime.Autograd.Torch.CurriedRef.curry
           (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
-          (ss := l.paramShapes ++ [.dim n σ])
+          (ss := l.stateShapes ++ [.dim n σ])
           (β := m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim n τ)))
           (fun args => do
             let (ps, xBatch) :=
               _root_.Runtime.Autograd.Torch.RefList.splitLast
                 (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
-                (ss := l.paramShapes) (τ := .dim n σ) args
+                (ss := l.stateShapes) (τ := .dim n σ) args
             _root_.Runtime.Autograd.Torch.mapLeadingAxis (m := m) (α := α)
               (fun xSample => l.forwardRef (α := α) (m := m) mode ps xSample)
               xBatch)

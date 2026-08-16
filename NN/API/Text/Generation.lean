@@ -73,10 +73,14 @@ This is mainly used by byte-level examples to optionally restrict output to prin
 def restrictScores (scores : Array Float) (allowId : Nat → Bool) : Array Float :=
   scores.mapIdx (fun i s => if allowId i then s else (-1.0e30))
 
+namespace Internal
+
 /-- Apply repeat penalty and an allow-list mask before sampling. -/
-def prepareScoresForGeneration (scores : Array Float) (recent : List Nat)
+def prepareScores (scores : Array Float) (recent : List Nat)
     (repeatPenalty : Float) (allowId : Nat → Bool := fun _ => true) : Array Float :=
   restrictScores (penalizeRepeats scores recent repeatPenalty) allowId
+
+end Internal
 
 /-- Printable ASCII bytes plus newline. -/
 def printableAsciiByte (i : Nat) : Bool :=
@@ -136,7 +140,7 @@ def sampleTopKIndex (scores : Array Float) (temperature : Float) (topK seed coun
 /-- Select the next token from prepared logits using greedy or temperature/top-k sampling. -/
 def chooseNextToken (scores : Array Float) (opts : GenerationOptions) (counter : Nat)
     (recent : List Nat := []) (allowId : Nat → Bool := fun _ => true) : Nat :=
-  let scores := prepareScoresForGeneration scores recent opts.repeatPenalty allowId
+  let scores := Internal.prepareScores scores recent opts.repeatPenalty allowId
   if opts.topK = 1 then
     greedyIndex scores
   else
@@ -179,8 +183,8 @@ partial def autoregressiveTokenIds
     loop promptIds opts.generate
 
 /-- Extract the vocabulary-score row at one sequence position. -/
-def logitScoresAt {seqLen vocab : Nat}
-    (logits : Spec.Tensor Float (.dim seqLen (.dim vocab .scalar))) (pos : Nat) : Array Float :=
+def logitScoresAt {α : Type} {seqLen vocab : Nat}
+    (logits : Spec.Tensor α (.dim seqLen (.dim vocab .scalar))) (pos : Nat) : Array α :=
   if h : seqLen = 0 then
     #[]
   else
@@ -198,9 +202,9 @@ def logitScoresAt {seqLen vocab : Nat}
               | Spec.Tensor.scalar x => x)
 
 /-- Extract a vocabulary-score row from batched logits. -/
-def batchLogitScoresAt {batch seqLen vocab : Nat}
-    (logits : Spec.Tensor Float (.dim batch (.dim seqLen (.dim vocab .scalar))))
-    (batchIdx : Fin batch) (pos : Nat) : Array Float :=
+def batchLogitScoresAt {α : Type} {batch seqLen vocab : Nat}
+    (logits : Spec.Tensor α (.dim batch (.dim seqLen (.dim vocab .scalar))))
+    (batchIdx : Fin batch) (pos : Nat) : Array α :=
   match logits with
   | Spec.Tensor.dim batches =>
       logitScoresAt (batches batchIdx) pos
@@ -211,7 +215,7 @@ Decode a matrix of token logits by taking `argmax` independently at each sequenc
 The shape is `(seqLen × vocab)`, i.e. one logits vector per token position. This helper is for
 inspection/debugging and is not differentiable.
 -/
-def argmaxTokenIdsFromLogits {α : Type} [LT α]
+def argmaxTokens {α : Type} [LT α]
     [DecidableRel ((· > ·) : α → α → Prop)]
     {seqLen vocab : Nat} (logits : Spec.Tensor α (.dim seqLen (.dim vocab .scalar))) : List Nat :=
   match logits with
@@ -226,17 +230,17 @@ def decodeArgmaxLogits {α : Type} [LT α]
     [DecidableRel ((· > ·) : α → α → Prop)]
     (t : Tokenizer) {seqLen vocab : Nat} (logits : Spec.Tensor α (.dim seqLen (.dim vocab .scalar))) :
     String :=
-  t.decode (argmaxTokenIdsFromLogits (α := α) logits)
+  t.decode (argmaxTokens (α := α) logits)
 
 /-- Extract `batchIdx` from batched logits and return the per-position argmax token ids. -/
-def argmaxTokenIdsFromBatchLogits {α : Type} [LT α]
+def argmaxBatchTokens {α : Type} [LT α]
     [DecidableRel ((· > ·) : α → α → Prop)]
     {batch seqLen vocab : Nat}
     (logits : Spec.Tensor α (.dim batch (.dim seqLen (.dim vocab .scalar)))) (batchIdx : Fin batch) :
     List Nat :=
   match logits with
   | Spec.Tensor.dim batches =>
-      argmaxTokenIdsFromLogits (α := α) (batches batchIdx)
+      argmaxTokens (α := α) (batches batchIdx)
 
 /-- Decode one batch row of `(batch × seqLen × vocab)` logits as text. -/
 def decodeArgmaxBatchLogits {α : Type} [LT α]
@@ -244,7 +248,7 @@ def decodeArgmaxBatchLogits {α : Type} [LT α]
     (t : Tokenizer) {batch seqLen vocab : Nat}
     (logits : Spec.Tensor α (.dim batch (.dim seqLen (.dim vocab .scalar)))) (batchIdx : Fin batch) :
     String :=
-  t.decode (argmaxTokenIdsFromBatchLogits (α := α) logits batchIdx)
+  t.decode (argmaxBatchTokens (α := α) logits batchIdx)
 
 /--
 Causal (autoregressive) attention mask of shape `(seqLen × seqLen)`.

@@ -6,16 +6,16 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Seeded
+public import NN.API.Neural.Execution
 public import NN.API.Tensor
 public import NN.MLTheory.CROWN.Flatbox
 public import NN.MLTheory.CROWN.Graph
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 
 /-!
 # Verification
 
-Convenience names for compiling TorchLean models into IBP/CROWN checks.
+Convenience names for lowering TorchLean models into IBP/CROWN checks.
 -/
 
 @[expose] public section
@@ -24,37 +24,43 @@ namespace TorchLean
 
 namespace Verification
 
-export NN.Verification.TorchLean (CompiledIR)
+export NN.Verification.TorchLean (LoweredIR)
 export NN.MLTheory.CROWN (FlatBox)
 export NN.MLTheory.CROWN.Graph (ParamStore AffineCtx FlatAffine FlatAffineBounds)
 
 /--
-Compile a sequential TorchLean model into verifier IR with one distinguished input.
+Lower a sequential TorchLean model into verifier IR with one distinguished input.
 
 Usual "train a model, then run IBP/CROWN on its forward pass" path.
+
+This is the broad executable lowering. It checks the resulting graph but does not attach the
+source-evaluation theorem from `NN.Verification.TorchLean.Proved`.
 -/
-def compileForward {α : Type} [_root_.Context α] [DecidableEq Shape]
+def lowerForwardToIR {α : Type} [_root_.Context α] [DecidableEq Shape]
     {σ τ : Shape}
     (model : TorchLean.nn.Sequential σ τ)
-    (params : TensorPack α (TorchLean.nn.paramShapes model)) :
-    Except String (CompiledIR α) :=
-  NN.Verification.TorchLean.compileForward
-    (α := α) (paramShapes := TorchLean.nn.paramShapes model)
+    (params : TensorPack α (TorchLean.nn.stateShapes model)) :
+    Except String (LoweredIR α) :=
+  NN.Verification.TorchLean.lowerForwardToIR
+    (α := α) (paramShapes := TorchLean.nn.stateShapes model)
     (inShape := σ) (outShape := τ)
-    (TorchLean.nn.forwardProgram (model := model) (α := α)) params
+    (TorchLean.nn.forward model (α := α)) params
 
 /--
-Compile a custom TorchLean forward program into verifier IR with one distinguished input.
+Lower a custom TorchLean forward program into verifier IR with one distinguished input.
 
 Use this when the target is not a plain `TorchLean.nn.Sequential`, for example a hand-written loss program or
 an attention fragment built directly from `TorchLean.Ops`.
+
+Successful lowering validates the produced IR. It is not an end-to-end proof that every accepted
+custom program agrees with IR denotation.
 -/
-def compileProgram {α : Type} [_root_.Context α] [DecidableEq Shape]
+def lowerProgramToIR {α : Type} [_root_.Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {σ τ : Shape}
     (forwardProgram : _root_.Runtime.Autograd.TorchLean.Program α (paramShapes ++ [σ]) τ)
     (params : TensorPack α paramShapes) :
-    Except String (CompiledIR α) :=
-  NN.Verification.TorchLean.compileForward
+    Except String (LoweredIR α) :=
+  NN.Verification.TorchLean.lowerForwardToIR
     (α := α) (paramShapes := paramShapes)
     (inShape := σ) (outShape := τ)
     forwardProgram params
@@ -62,11 +68,11 @@ def compileProgram {α : Type} [_root_.Context α] [DecidableEq Shape]
 /--
 Seed the verifier input with an explicit input box.
 
-Call this after `compileForward`, then hand the returned store to IBP/CROWN passes.
+Call this after `lowerForwardToIR`, then hand the returned store to IBP/CROWN passes.
 -/
 def seedInputBox {α : Type} [_root_.Context α]
-    (compiled : CompiledIR α) (xB : FlatBox α) : ParamStore α :=
-  compiled.seedInputBox xB
+    (lowered : LoweredIR α) (xB : FlatBox α) : ParamStore α :=
+  lowered.seedInputBox xB
 
 /--
 Flatten a center tensor and radius tensor into the `FlatBox` expected by IBP/CROWN.
@@ -87,92 +93,92 @@ def lInfBall {α : Type} [_root_.Context α] {s : Shape}
   NN.Verification.TorchLean.lInfBall (α := α) center eps
 
 /--
-Seed the compiled verifier input with a uniform $\ell^\infty$ box around a shaped TorchLean input
+Seed the lowered verifier input with a uniform $\ell^\infty$ box around a shaped TorchLean input
 tensor.
 -/
 def seedLInfBall {α : Type} [_root_.Context α] {s : Shape}
-    (compiled : CompiledIR α) (center : _root_.Spec.Tensor α s) (eps : α) : ParamStore α :=
-  compiled.seedLInfBall center eps
+    (lowered : LoweredIR α) (center : _root_.Spec.Tensor α s) (eps : α) : ParamStore α :=
+  lowered.seedLInfBall center eps
 
 /-- Shape of the distinguished verifier input node. -/
-def inputShape? {α : Type} [Context α] (compiled : CompiledIR α) : Except String Shape :=
-  compiled.inputShape?
+def inputShape? {α : Type} [Context α] (lowered : LoweredIR α) : Except String Shape :=
+  lowered.inputShape?
 
 /-- Flattened dimension of the distinguished verifier input node. -/
-def inputDim? {α : Type} [Context α] (compiled : CompiledIR α) : Except String Nat :=
-  compiled.inputDim?
+def inputDim? {α : Type} [Context α] (lowered : LoweredIR α) : Except String Nat :=
+  lowered.inputDim?
 
 /-- Affine context for the distinguished verifier input. -/
-def affineCtx? {α : Type} [Context α] (compiled : CompiledIR α) :
+def affineCtx? {α : Type} [Context α] (lowered : LoweredIR α) :
     Except String AffineCtx :=
-  compiled.affineCtx?
+  lowered.affineCtx?
 
-/-- Run IBP on a compiled verifier graph. -/
+/-- Run IBP on a lowered verifier graph. -/
 def runIBP {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
     [NN.MLTheory.CROWN.NonlinearBoundOps α]
-    (compiled : CompiledIR α) (ps : ParamStore α) : Array (Option (FlatBox α)) :=
-  compiled.runIBP ps
+    (lowered : LoweredIR α) (ps : ParamStore α) : Array (Option (FlatBox α)) :=
+  lowered.runIBP ps
 
 /-- Read the verifier output box from an IBP result array. -/
-def outputBox? {α : Type} [Context α] (compiled : CompiledIR α)
+def outputBox? {α : Type} [Context α] (lowered : LoweredIR α)
     (boxes : Array (Option (FlatBox α))) : Except String (FlatBox α) := do
-  compiled.outputBox? boxes
+  lowered.outputBox? boxes
 
 /-- Read the verifier output box, throwing an `IO.userError` if it is missing. -/
-def outputBoxOrThrow {α : Type} [Context α] (compiled : CompiledIR α)
+def outputBoxOrThrow {α : Type} [Context α] (lowered : LoweredIR α)
     (boxes : Array (Option (FlatBox α))) : IO (FlatBox α) :=
-  compiled.outputBoxOrThrow boxes
+  lowered.outputBoxOrThrow boxes
 
-/-- Run the forward affine pass after validating the compiled verifier input. -/
+/-- Run the forward affine pass after validating the lowered verifier input. -/
 def runAffine {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
-    (compiled : CompiledIR α) (ps : ParamStore α) (ibp : Array (Option (FlatBox α))) :
+    (lowered : LoweredIR α) (ps : ParamStore α) (ibp : Array (Option (FlatBox α))) :
     Except String (Array (Option (FlatAffine α))) := do
-  let ctx ← affineCtx? compiled
-  pure <| NN.MLTheory.CROWN.Graph.runAffine (α := α) compiled.graph ps ctx ibp
+  let ctx ← affineCtx? lowered
+  pure <| NN.MLTheory.CROWN.Graph.runAffine (α := α) lowered.graph ps ctx ibp
 
 /-- Read the verifier output affine form from a forward affine result array. -/
-def outputAffine? {α : Type} [Context α] (compiled : CompiledIR α)
+def outputAffine? {α : Type} [Context α] (lowered : LoweredIR α)
     (affs : Array (Option (FlatAffine α))) : Except String (FlatAffine α) := do
-  compiled.outputAffine? affs
+  lowered.outputAffine? affs
 
-/-- Run CROWN after validating the compiled verifier input. -/
+/-- Run CROWN after validating the lowered verifier input. -/
 def runCROWN {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
     [NN.MLTheory.CROWN.NonlinearBoundOps α]
-    (compiled : CompiledIR α) (ps : ParamStore α) (ibp : Array (Option (FlatBox α))) :
+    (lowered : LoweredIR α) (ps : ParamStore α) (ibp : Array (Option (FlatBox α))) :
     Except String (Array (Option (FlatAffineBounds α))) := do
-  let ctx ← affineCtx? compiled
-  pure <| NN.MLTheory.CROWN.Graph.runCROWN (α := α) compiled.graph ps ctx ibp
+  let ctx ← affineCtx? lowered
+  pure <| NN.MLTheory.CROWN.Graph.runCROWN (α := α) lowered.graph ps ctx ibp
 
 /-- Read the verifier output CROWN bounds from a CROWN result array. -/
-def outputCROWN? {α : Type} [Context α] (compiled : CompiledIR α)
+def outputCROWN? {α : Type} [Context α] (lowered : LoweredIR α)
     (bounds : Array (Option (FlatAffineBounds α))) : Except String (FlatAffineBounds α) := do
-  compiled.outputCROWN? bounds
+  lowered.outputCROWN? bounds
 
-/-- Run forward CROWN and evaluate the verifier output bounds on the compiled input box. -/
+/-- Run forward CROWN and evaluate the verifier output bounds on the lowered input box. -/
 def outputBoxCROWN? {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
     [NN.MLTheory.CROWN.NonlinearBoundOps α]
-    (compiled : CompiledIR α) (ps : ParamStore α) (xB : FlatBox α) :
+    (lowered : LoweredIR α) (ps : ParamStore α) (xB : FlatBox α) :
     Except String (FlatBox α) :=
-  compiled.outputBoxCROWN? ps xB
+  lowered.outputBoxCROWN? ps xB
 
 /-- Run forward CROWN and return the evaluated verifier output box, throwing on failure. -/
 def outputBoxCROWNOrThrow {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
     [NN.MLTheory.CROWN.NonlinearBoundOps α]
-    (compiled : CompiledIR α) (ps : ParamStore α) (xB : FlatBox α) : IO (FlatBox α) :=
-  compiled.outputBoxCROWNOrThrow ps xB
+    (lowered : LoweredIR α) (ps : ParamStore α) (xB : FlatBox α) : IO (FlatBox α) :=
+  lowered.outputBoxCROWNOrThrow ps xB
 
-/-- Run backward CROWN for a scalar objective and evaluate it on the compiled input box. -/
+/-- Run backward CROWN for a scalar objective and evaluate it on the lowered input box. -/
 def backwardObjectiveBox? {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
-    (compiled : CompiledIR α) (ps : ParamStore α) (ibp : Array (Option (FlatBox α)))
+    (lowered : LoweredIR α) (ps : ParamStore α) (ibp : Array (Option (FlatBox α)))
     (xB : FlatBox α) (obj : NN.MLTheory.CROWN.Graph.FlatVec α) :
     Except String (FlatBox α) :=
-  compiled.backwardObjectiveBox? ps ibp xB obj
+  lowered.backwardObjectiveBox? ps ibp xB obj
 
 /-- `IO` version of `backwardObjectiveBox?`. -/
 def backwardObjectiveBoxOrThrow {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
-    (compiled : CompiledIR α) (ps : ParamStore α) (ibp : Array (Option (FlatBox α)))
+    (lowered : LoweredIR α) (ps : ParamStore α) (ibp : Array (Option (FlatBox α)))
     (xB : FlatBox α) (obj : NN.MLTheory.CROWN.Graph.FlatVec α) : IO (FlatBox α) :=
-  compiled.backwardObjectiveBoxOrThrow ps ibp xB obj
+  lowered.backwardObjectiveBoxOrThrow ps ibp xB obj
 
 /--
 Compute the conservative two-class margin lower bound

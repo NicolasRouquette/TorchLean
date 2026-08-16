@@ -114,7 +114,7 @@ followed by a time-distributed `nn.linear hiddenSize 1`.
 So every timestep emits a scalar forecast. We are not using only the final hidden state here; the loss
 checks the whole output sequence.
 -/
-def mkModel : nn.M (nn.Sequential σ τ) :=
+def mkModel : nn.Builder (nn.Sequential σ τ) :=
   nn.models.lstmWithLinearHead cfg
 
 /-- Data source tags for terminal logs and JSON metadata. -/
@@ -129,11 +129,11 @@ def availableWindows (xPath : System.FilePath) :
 /-- Load the Float version once for reporting probes and short training. -/
 def loadReportSamples (xPath yPath : System.FilePath) (windows : Nat) :
     IO (Except String (Array (SupervisedSample Float rawσ rawτ))) := do
-  Data.loadSupervisedNpyFloatSamples xPath yPath windows
+  Data.loadSupervisedNpy xPath yPath windows
     [rawSeqLen, inputSize] [rawSeqLen, inputSize]
 
 /-- Keep the first `seqLen` rows of a prepared `rawSeqLen × 1` tensor. -/
-def takePrefix (t : Tensor.T Float rawσ) : Tensor.T Float σ :=
+def takePrefix (t : Tensor Float rawσ) : Tensor Float σ :=
   match t with
   | Spec.Tensor.dim rows =>
       Spec.Tensor.dim fun i =>
@@ -149,7 +149,7 @@ Read `t[row,0]` from a `seqLen × 1` forecast tensor.
 The row is clamped so the reporting loop remains valid if `seqLen` is changed without also updating
 the number of displayed rows.
 -/
-def readSeriesAt (t : Tensor.T Float τ) (i : Nat) : Float :=
+def readSeriesAt (t : Tensor Float τ) (i : Nat) : Float :=
   let i : Fin seqLen :=
     ⟨Nat.min i (seqLen - 1),
       Nat.lt_of_le_of_lt (Nat.min_le_right i (seqLen - 1)) (by decide)⟩
@@ -203,7 +203,7 @@ def trainForecast (opts : Options) (train : RealData.HouseholdPowerModelTrainFla
   let trainer :=
     Trainer.new mkModel <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := train.lr } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := train.lr } })
         .regression
         (seed := train.seed)
   trainer.train

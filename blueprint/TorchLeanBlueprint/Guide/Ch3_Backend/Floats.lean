@@ -503,12 +503,12 @@ The resulting interfaces have three separate scopes:
   * Proved for comparison, addition, subtraction, multiplication, division, square root, negation,
     and absolute value.
 *
-  * Compiled CPU, CUDA, or library code computes the logical result.
+  * Native CPU, CUDA, or library code computes the logical result.
   * A provider-specific backend contract, checked separately.
 :::
 
 The bridge makes `IEEE32Exec` error, interval, and reduction results available to logical
-`Float32` proofs. Compiled execution uses the contract attached to its runtime provider.
+`Float32` proofs. Runtime execution uses the contract attached to its selected provider.
 
 # Following One Addition Through The Layers
 
@@ -543,7 +543,7 @@ exact real expression
   -> FP32 finite specialization
   -> IEEE32Exec bit-level operation
   <-> Lean Float32.Model
-  -> compiled CPU, CUDA, or external provider
+  -> Lean CPU runtime, native CUDA, or external provider
 ```
 
 The mathematical layers and both bit-level models are Lean definitions. The last arrow is supplied

@@ -27,12 +27,12 @@ namespace NN
 /--
 ReLU activation layer (no parameters).
 
-PyTorch analogy: `torch.nn.relu` / `torch.nn.functional.relu`.
+PyTorch analogues: `torch.nn.ReLU` / `torch.nn.functional.relu`.
 -/
-def relu {s : Shape} : LayerDef s s :=
+def relu {s : Shape} : Layer s s :=
   { kind := "ReLU"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.relu (m := m) (α := α) (s := s) x
@@ -41,12 +41,12 @@ def relu {s : Shape} : LayerDef s s :=
 /--
 SiLU (a.k.a. swish) activation layer (no parameters).
 
-PyTorch analogy: `torch.nn.silu` / `torch.nn.functional.silu`.
+PyTorch analogues: `torch.nn.SiLU` / `torch.nn.functional.silu`.
 -/
-def silu {s : Shape} : LayerDef s s :=
+def silu {s : Shape} : Layer s s :=
   { kind := "SiLU"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => _root_.Runtime.Autograd.Torch.silu (m := m) (α := α) (s := s) x
@@ -55,12 +55,12 @@ def silu {s : Shape} : LayerDef s s :=
 /--
 GELU activation layer (no parameters).
 
-PyTorch analogy: `torch.nn.gelu` / `torch.nn.functional.gelu`.
+PyTorch analogues: `torch.nn.GELU` / `torch.nn.functional.gelu`.
 -/
-def gelu {s : Shape} : LayerDef s s :=
+def gelu {s : Shape} : Layer s s :=
   { kind := "GELU"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => _root_.Runtime.Autograd.Torch.gelu (m := m) (α := α) (s := s) x
@@ -71,10 +71,10 @@ Sigmoid activation layer (no parameters).
 
 PyTorch analogy: `torch.sigmoid`.
 -/
-def sigmoid {s : Shape} : LayerDef s s :=
+def sigmoid {s : Shape} : Layer s s :=
   { kind := "Sigmoid"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.sigmoid (m := m) (α := α) (s := s) x
@@ -85,10 +85,10 @@ Hyperbolic tangent activation layer (no parameters).
 
 PyTorch analogy: `torch.tanh`.
 -/
-def tanh {s : Shape} : LayerDef s s :=
+def tanh {s : Shape} : Layer s s :=
   { kind := "Tanh"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.tanh (m := m) (α := α) (s := s) x
@@ -99,10 +99,10 @@ Softmax layer along the last axis (shape-preserving, no parameters).
 
 PyTorch analogy: `torch.softmax(x, dim=-1)`.
 -/
-def softmax {s : Shape} : LayerDef s s :=
+def softmaxLast {s : Shape} : Layer s s :=
   { kind := "Softmax"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.softmax (m := m) (α := α) (s := s) x
@@ -113,10 +113,10 @@ Pointwise square `x ↦ x^2` (no parameters).
 
 PyTorch analogy: `torch.square(x)` / `x.square()`.
 -/
-def square {s : Shape} : LayerDef s s :=
+def square {s : Shape} : Layer s s :=
   { kind := "Square"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.F.square (m := m) (α := α) (s := s) x
@@ -127,10 +127,10 @@ Sum-reduce all elements of the input to a scalar (no parameters).
 
 PyTorch analogy: `x.sum()`.
 -/
-def sum {s : Shape} : LayerDef s Shape.scalar :=
+def sum {s : Shape} : Layer s Shape.scalar :=
   { kind := "Sum"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.sum (m := m) (α := α) (s := s) x
@@ -141,30 +141,13 @@ Flatten any tensor to a 1D vector of length `Spec.Shape.size s` (no parameters).
 
 PyTorch analogy: `torch.flatten(x)` or `x.reshape(-1)`.
 -/
-def flatten {s : Shape} : LayerDef s (.dim (Spec.Shape.size s) .scalar) :=
+def flatten {s : Shape} : Layer s (.dim (Spec.Shape.size s) .scalar) :=
   { kind := "Flatten"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.flatten (m := m) (α := α) (s := s) x
-  }
-
-/--
-Flatten everything except the leading batch axis.
-
-Input shape: `N × s`. Output shape: `N × (size s)`.
-
-PyTorch analogy: `torch.flatten(x, start_dim=1)` for an `N×…` tensor.
--/
-def flattenKeep0 {batch : Nat} {s : Shape} :
-    LayerDef (.dim batch s) (.dim batch (.dim (Spec.Shape.size s) .scalar)) :=
-  { kind := "FlattenBatch"
-    paramShapes := []
-    initParams := .nil
-    forward := fun _ {α} _ _ =>
-      fun {m} _ _ =>
-        fun x => TorchLean.flattenKeep0 (m := m) (α := α) (batch := batch) (s := s) x
   }
 
 /--
@@ -178,14 +161,14 @@ through the unified parameter list without being optimized.
 
 PyTorch analogy: `torch.nn.Dropout(p)` / `torch.nn.functional.dropout(x, p, training=...)`.
 -/
-def dropout {s : Shape} (p : Float) (seed : Nat := 0) : LayerDef s s :=
+def dropout {s : Shape} (p : Float) (seed : Nat := 0) : Layer s s :=
   let pShape : Shape := Shape.scalar
   let p0 : Tensor Float pShape := Tensor.scalar p
   { kind := s!"Dropout(p={p})"
-    paramShapes := [pShape]
-    initParams := Torch.tlistSingleton p0
+    stateShapes := [pShape]
+    initState := Torch.tlistSingleton p0
     runtimeInit := some (.cons (.flat (FloatArray.mk #[p])) .nil)
-    paramRequiresGrad := [false]
+    requiresGrad := [false]
     forward := fun mode {α} _ _ =>
       fun {m} _ _ =>
         fun pRef x =>

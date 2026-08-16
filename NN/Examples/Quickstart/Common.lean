@@ -29,7 +29,7 @@ open TorchLean
 structure RuntimeTrain where
   /-- Logged training flags parsed from `--steps`, `--log`, and related options. -/
   train : CLI.Training.RunOptions
-  /-- Runtime settings parsed from dtype/backend/device flags. -/
+  /-- Runtime settings parsed from scalar, execution-mode, and device flags. -/
   run : Trainer.RunConfig
   /-- Public trainer training options derived from the parsed flags. -/
   trainOptions : Trainer.TrainOptions
@@ -37,7 +37,7 @@ structure RuntimeTrain where
 /--
 Parse the common quickstart tail:
 
-`--steps`, optional logging flags, and runtime flags such as `--dtype`, `--backend`, or `--device`.
+`--steps`, optional logging flags, and runtime flags such as `--scalar`, `--execution`, or `--device`.
 
 Each quickstart still owns its model, dataset, task, and any tutorial-specific flags.
 -/

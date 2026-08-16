@@ -55,7 +55,7 @@ namespace Internal
 def sameSpatialConv {d batch : Nat} (spatial : Vector Nat d)
     (spatialNonzero : ∀ i : Fin d, spatial.get i ≠ 0)
     (inChannels outChannels : Nat) [NeZero inChannels] :
-    M (Sequential
+    Builder (Sequential
       (.dim batch (Spec.Shape.ofList (inChannels :: spatial.toList)))
       (.dim batch (Spec.Shape.ofList (outChannels :: spatial.toList)))) :=
   let layer := conv (leading := .dim batch .scalar)
@@ -75,7 +75,7 @@ end Internal
 def resnet {d : Nat} (cfg : ResNetConfig d)
     (hInChannels : cfg.inChannels ≠ 0 := by decide)
     (hHiddenChannels : cfg.hiddenChannels ≠ 0 := by decide) :
-    M (Sequential (resnetInShape cfg) (resnetOutShape cfg)) :=
+    Builder (Sequential (resnetInShape cfg) (resnetOutShape cfg)) :=
   letI : NeZero cfg.inChannels := ⟨hInChannels⟩
   letI : NeZero cfg.hiddenChannels := ⟨hHiddenChannels⟩
   let stem :=

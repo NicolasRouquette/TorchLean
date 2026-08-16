@@ -23,22 +23,27 @@ Layer constructors draw deterministic initialization seeds from an explicit seed
 
 namespace nn
 
+universe u
+
+/-- Deterministic model builder that threads an explicit initialization seed stream. -/
+abbrev Builder := rand.SeedM
+
 /-!
 ## Model Builders and Seeding
 
 TorchLean keeps initialization randomness explicit so examples are reproducible.
 
-Layer constructors return `nn.M`, a deterministic state computation over the initialization seed
-stream. Call `nn.run seed` to construct a model reproducibly.
+Layer constructors return `nn.Builder`, a deterministic state computation over the initialization
+seed stream. Call `nn.build seed` to construct a model reproducibly.
 
 Note: `nn.Sequential` lives in `Type 2`, so it cannot be returned directly from `IO`. We keep
-model building pure by drawing a base seed in `IO` and then calling `nn.run`.
+model building pure by drawing a base seed in `IO` and then calling `nn.build`.
 -/
 
 /--
-Set the global seed used by `nn.runGlobal` and `nn.nextSeed`.
+Set the global seed used by `nn.runGlobal` and `nn.freshSeed`.
 
-Prefer `nn.run seed` when the seed belongs in the model definition itself.
+Prefer `nn.build seed` when the seed belongs in the model definition itself.
 -/
 def manualSeed (seed : Nat) : IO Unit :=
   rand.manualSeed seed
@@ -49,13 +54,13 @@ under `nn.Internal`.
 -/
 
 export Internal
-  (Linear Embedding LearnedPositionalEmbedding SinusoidalPositionalEncoding RoPE
+  (Linear LearnedPositionalEmbedding SinusoidalPositionalEncoding RoPE
    Conv Pool LayerNorm RMSNorm ChannelNorm MultiheadAttention)
 
 /-- Build global average pooling over the supplied nonempty spatial dimensions without consuming a seed. -/
 def globalAvgPool (leading : Spec.Shape := .scalar) {d channels : Nat}
     (spatial : Vector Nat d) (spatialNonzero : ∀ i : Fin d, spatial.get i ≠ 0) :
-    rand.SeedM (Sequential
+    Builder (Sequential
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))
       (leading.concat (.dim channels .scalar))) :=
   fun state =>
@@ -77,91 +82,94 @@ export Internal.blocks
    MLP mlp
    ConvAct convAct ConvActPool convActPool
    residualBlock
-   TransformerEncoderBlock transformerEncoderBlockWithMask transformerEncoderBlock
-   TransformerEncoderStack transformerEncoderStackWithMask transformerEncoderStack
+   TransformerEncoderBlock transformerEncoderBlock
+   TransformerEncoderStack transformerEncoderStack
    transformerEncoderClassifier
    residual residualLayer
    addBranches addBranchesLayer)
 end blocks
 
 namespace heads
-export Internal.heads (classifier regressor classifierBatch regressorBatch)
+export Internal.heads (classifier regressor)
 end heads
 
 /-!
 ## Default Builders
 
-The `nn.*` constructors allocate initialization seeds through `nn.M`.
+The `nn.*` constructors allocate initialization seeds through `nn.Builder`.
 
 -/
 
 open Spec
 
-/-- Seeded builder monad: a state monad over `TorchLean.rand.SeedStream`. -/
-abbrev M := rand.SeedM
-
-/-- Run a seeded builder starting from a base seed. -/
-def run {α : Type 2} (seed : Nat) (x : M α) : α :=
+/-- Build a value from a deterministic initialization seed. -/
+def build {α : Type u} (seed : Nat) (x : Builder α) : α :=
   (x (rand.SeedStream.init seed)).1
 
 /-- Lift a pure value into the seeded builder (consumes no seeds). -/
-def lift {α : Type 2} (x : α) : M α :=
+def lift {α : Type u} (x : α) : Builder α :=
   pure x
 
 /-- Apply a model independently over an arbitrary collection of leading dimensions. -/
 def mapLeading (leading : Spec.Shape) {σ τ : Spec.Shape} (model : Sequential σ τ) :
-    M (Sequential (leading.concat σ) (leading.concat τ)) :=
+    Builder (Sequential (leading.concat σ) (leading.concat τ)) :=
   lift (Internal.mapLeading leading model)
 
 /-- Consume one fresh seed and pass it to `k`. -/
-def withSeed {α : Type 2} (k : Nat → α) : M α :=
+def withSeed {α : Type u} (k : Nat → α) : Builder α :=
   fun st =>
     let (seed, st') := rand.SeedStream.next st
     (k seed, st')
 
 /-- Consume two fresh seeds and pass them to `k` (in order). -/
-def withSeedPair {α : Type 2} (k : Nat → Nat → α) : M α :=
+def withSeedPair {α : Type u} (k : Nat → Nat → α) : Builder α :=
   fun st =>
     let (a, st') := rand.SeedStream.next st
     let (b, st'') := rand.SeedStream.next st'
     (k a b, st'')
 
 /-- Build an elementwise ReLU layer without consuming an initialization seed. -/
-def relu {s : Spec.Shape} : M (Sequential s s) :=
+def relu {s : Spec.Shape} : Builder (Sequential s s) :=
   lift (Internal.relu (s := s))
 
 /-- Build an elementwise SiLU layer without consuming an initialization seed. -/
-def silu {s : Spec.Shape} : M (Sequential s s) :=
+def silu {s : Spec.Shape} : Builder (Sequential s s) :=
   lift (Internal.silu (s := s))
 
 /-- Build an elementwise GELU layer without consuming an initialization seed. -/
-def gelu {s : Spec.Shape} : M (Sequential s s) :=
+def gelu {s : Spec.Shape} : Builder (Sequential s s) :=
   lift (Internal.gelu (s := s))
 
 /-- Build an elementwise sigmoid layer without consuming an initialization seed. -/
-def sigmoid {s : Spec.Shape} : M (Sequential s s) :=
+def sigmoid {s : Spec.Shape} : Builder (Sequential s s) :=
   lift (Internal.sigmoid (s := s))
 
 /-- Build an elementwise hyperbolic-tangent layer without consuming an initialization seed. -/
-def tanh {s : Spec.Shape} : M (Sequential s s) :=
+def tanh {s : Spec.Shape} : Builder (Sequential s s) :=
   lift (Internal.tanh (s := s))
 
-/-- Build a softmax layer over a tensor shape without consuming an initialization seed. -/
-def softmax {s : Spec.Shape} : M (Sequential s s) :=
-  lift (Internal.softmax (s := s))
+/-- Build a final-axis softmax layer without consuming an initialization seed. -/
+def softmaxLast {s : Spec.Shape} : Builder (Sequential s s) :=
+  lift (Internal.softmaxLast (s := s))
 
 /-- Build a reduction that sums every tensor entry to a scalar. -/
-def sum {s : Spec.Shape} : M (Sequential s Spec.Shape.scalar) :=
+def sum {s : Spec.Shape} : Builder (Sequential s Spec.Shape.scalar) :=
   lift (Internal.sum (s := s))
 
 /-- Build a layer that flattens the entire input shape into one vector. -/
-def flatten {s : Spec.Shape} : M (Sequential s (.dim (Spec.Shape.size s) .scalar)) :=
+def flatten {s : Spec.Shape} : Builder (Sequential s (.dim (Spec.Shape.size s) .scalar)) :=
   lift (Internal.flatten (s := s))
 
-/-- Build a layer that preserves the batch axis while flattening each example. -/
-def flattenBatch {n : Nat} {s : Spec.Shape} :
-    M (Sequential (.dim n s) (.dim n (.dim (Spec.Shape.size s) .scalar))) :=
-  lift (Internal.flattenBatch (n := n) (s := s))
+/-- Build a checked reshape without consuming an initialization seed. -/
+def reshape (source target : Spec.Shape)
+    (sameSize : Spec.Shape.size source = Spec.Shape.size target) :
+    Builder (Sequential source target) :=
+  lift (Internal.reshape source target sameSize)
+
+/-- Flatten each tensor after an arbitrary collection of leading dimensions. -/
+def flattenLeading (leading : Spec.Shape := .scalar) {s : Spec.Shape} :
+    Builder (Sequential (leading.concat s) (leading.appendDim (Spec.Shape.size s))) :=
+  lift (Internal.flattenLeading leading (s := s))
 
 /-- Build max pooling over arbitrary spatial rank using the supplied pooling configuration. -/
 def maxPool (leading : Spec.Shape := .scalar) {d channels : Nat} (spatial : Vector Nat d)
@@ -175,20 +183,15 @@ def avgPool (leading : Spec.Shape := .scalar) {d channels : Nat} (spatial : Vect
 
 /-- Build an affine layer, consuming independent seeds for its weight and bias initializers. -/
 def linear (inDim outDim : Nat) (pfx : Spec.Shape := Spec.Shape.scalar) :
-    M (Sequential (pfx.appendDim inDim) (pfx.appendDim outDim)) :=
+    Builder (Sequential (pfx.appendDim inDim) (pfx.appendDim outDim)) :=
   withSeedPair (fun seedW seedB =>
     Internal.linear inDim outDim seedW seedB (pfx := pfx))
 
 /-- Seeded affine layer with an explicit initialization policy. -/
 def linearWith (inDim outDim : Nat) (cfg : Linear) (pfx : Spec.Shape := Spec.Shape.scalar) :
-    M (Sequential (pfx.appendDim inDim) (pfx.appendDim outDim)) :=
+    Builder (Sequential (pfx.appendDim inDim) (pfx.appendDim outDim)) :=
   withSeedPair (fun seedW seedB =>
     Internal.linearWith inDim outDim cfg seedW seedB (pfx := pfx))
-
-/-- Vector-only linear layer, specialized to the scalar prefix shape. -/
-def linearV (inDim outDim : Nat) : M (Sequential (.dim inDim .scalar)
-    (.dim outDim .scalar)) :=
-  linear inDim outDim
 
 namespace deterministic
 
@@ -202,7 +205,7 @@ end deterministic
 
 /-- Build a seeded recurrent neural network over a fixed sequence length. -/
 def rnn (seqLen inputSize hiddenSize : Nat) :
-    M (Sequential
+    Builder (Sequential
       (.dim seqLen (.dim inputSize .scalar))
       (.dim seqLen (.dim hiddenSize .scalar))) :=
   withSeedPair (fun seedW seedB =>
@@ -210,7 +213,7 @@ def rnn (seqLen inputSize hiddenSize : Nat) :
 
 /-- Build a seeded gated recurrent unit over a fixed sequence length. -/
 def gru (seqLen inputSize hiddenSize : Nat) :
-    M (Sequential
+    Builder (Sequential
       (.dim seqLen (.dim inputSize .scalar))
       (.dim seqLen (.dim hiddenSize .scalar))) :=
   withSeedPair (fun seedW seedB =>
@@ -218,7 +221,7 @@ def gru (seqLen inputSize hiddenSize : Nat) :
 
 /-- Build a seeded Mamba-style state-space sequence layer. -/
 def mamba (seqLen inputSize hiddenSize : Nat) :
-    M (Sequential
+    Builder (Sequential
       (.dim seqLen (.dim inputSize .scalar))
       (.dim seqLen (.dim hiddenSize .scalar))) :=
   withSeedPair (fun seedW seedB =>
@@ -226,7 +229,7 @@ def mamba (seqLen inputSize hiddenSize : Nat) :
 
 /-- Build a seeded long short-term memory layer over a fixed sequence length. -/
 def lstm (seqLen inputSize hiddenSize : Nat) :
-    M (Sequential
+    Builder (Sequential
       (.dim seqLen (.dim inputSize .scalar))
       (.dim seqLen (.dim hiddenSize .scalar))) :=
   withSeedPair (fun seedW seedB =>
@@ -235,7 +238,7 @@ def lstm (seqLen inputSize hiddenSize : Nat) :
 /-- Build an arbitrary-rank convolution, allocating separate kernel and bias seeds. -/
 def conv (leading : Spec.Shape := .scalar) {d inChannels : Nat} (spatial : Vector Nat d)
     (cfg : Conv d) [NeZero inChannels] :
-    M (Sequential
+    Builder (Sequential
       (leading.concat (Spec.Shape.ofList (inChannels :: spatial.toList)))
       (leading.concat (Spec.Shape.ofList
         (cfg.outChannels ::
@@ -250,7 +253,7 @@ def batchNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
     (spatial : Vector Nat d) (cfg : ChannelNorm := {})
     [NeZero (Spec.Shape.size leading)] [NeZero channels]
     [NeZero (Spec.Shape.size (Spec.Shape.ofList spatial.toList))] :
-    M (Sequential
+    Builder (Sequential
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))) :=
   withSeedPair (fun seedGamma seedBeta =>
@@ -262,7 +265,7 @@ def instanceNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
     (spatial : Vector Nat d) (cfg : ChannelNorm := {})
     [NeZero (Spec.Shape.size leading)] [NeZero channels]
     [NeZero (Spec.Shape.size (Spec.Shape.ofList spatial.toList))] :
-    M (Sequential
+    Builder (Sequential
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))) :=
   withSeedPair (fun seedGamma seedBeta =>
@@ -275,7 +278,7 @@ def groupNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
     (hGroupsLe : channels >= groups) (hDiv : channels % groups = 0)
     (cfg : ChannelNorm := {}) [NeZero (Spec.Shape.size leading)] [NeZero channels]
     [NeZero (Spec.Shape.size (Spec.Shape.ofList spatial.toList))] :
-    M (Sequential
+    Builder (Sequential
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))) :=
   withSeedPair (fun seedGamma seedBeta =>
@@ -283,15 +286,21 @@ def groupNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
       { cfg with seedGamma := seedGamma, seedBeta := seedBeta })
 
 /-- Build an embedding lookup layer from a freshly seeded embedding table. -/
-def embedding (vocab embedDim : Nat) (cfg : Embedding := {}) {pfx : Spec.Shape} :
-    M (Sequential (pfx.appendDim vocab) (pfx.appendDim embedDim)) :=
-  withSeed (fun seedW =>
-    Internal.embedding vocab embedDim { cfg with seedW := seedW } (pfx := pfx))
+def oneHotEmbedding (vocab embedDim : Nat) (cfg : Embedding.Config := {}) {pfx : Spec.Shape} :
+    Builder (Sequential (pfx.appendDim vocab) (pfx.appendDim embedDim)) :=
+  withSeed (fun seed =>
+    Internal.oneHotEmbedding vocab embedDim { cfg with seed := seed } (pfx := pfx))
+
+/-- Build a trainable lookup table for a tensor of natural-number indices. -/
+def embedding (vocab embedDim : Nat) (cfg : Embedding.Config := {}) :
+    Builder (Embedding vocab embedDim) :=
+  withSeed (fun seed =>
+    Internal.embedding vocab embedDim { cfg with seed := seed })
 
 /-- Build deterministic sinusoidal positional encoding for a batched sequence. -/
 def sinusoidalPositionalEncoding {batch seqLen embedDim : Nat}
     (cfg : SinusoidalPositionalEncoding := {}) :
-    M (Sequential
+    Builder (Sequential
       (.dim batch (.dim seqLen (.dim embedDim .scalar)))
       (.dim batch (.dim seqLen (.dim embedDim .scalar)))) :=
   lift <|
@@ -299,7 +308,7 @@ def sinusoidalPositionalEncoding {batch seqLen embedDim : Nat}
 
 /-- Build deterministic rotary positional encoding for multi-head sequence features. -/
 def rope {batch numHeads seqLen headDim : Nat} (cfg : RoPE := {}) :
-    M (Sequential
+    Builder (Sequential
       (.dim batch (.dim numHeads (.dim seqLen (.dim headDim .scalar))))
       (.dim batch (.dim numHeads (.dim seqLen (.dim headDim .scalar))))) :=
   lift <|
@@ -307,7 +316,7 @@ def rope {batch numHeads seqLen headDim : Nat} (cfg : RoPE := {}) :
 
 /-- Build learned positional embeddings from a freshly allocated parameter seed. -/
 def learnedPositionalEmbedding {batch seqLen embedDim : Nat} (cfg : LearnedPositionalEmbedding := {}) :
-    M (Sequential
+    Builder (Sequential
       (.dim batch (.dim seqLen (.dim embedDim .scalar)))
       (.dim batch (.dim seqLen (.dim embedDim .scalar)))) :=
   withSeed (fun seedPos =>
@@ -316,7 +325,7 @@ def learnedPositionalEmbedding {batch seqLen embedDim : Nat} (cfg : LearnedPosit
 
 /-- Build layer normalization with independently seeded scale and offset parameters. -/
 def layerNorm {batch seqLen embedDim : Nat} [NeZero seqLen] [NeZero embedDim] :
-    M (Sequential
+    Builder (Sequential
       (.dim batch (.dim seqLen (.dim embedDim .scalar)))
       (.dim batch (.dim seqLen (.dim embedDim .scalar)))) :=
   withSeedPair (fun seedGamma seedBeta =>
@@ -327,7 +336,7 @@ def layerNorm {batch seqLen embedDim : Nat} [NeZero seqLen] [NeZero embedDim] :
 def multiheadAttention {batch n dModel : Nat} [NeZero n]
     (cfg : MultiheadAttention)
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    M (Sequential
+    Builder (Sequential
       (.dim batch (.dim n (.dim dModel .scalar)))
       (.dim batch (.dim n (.dim dModel .scalar)))) :=
   withSeed (fun seedW =>
@@ -338,7 +347,7 @@ def multiheadAttention {batch n dModel : Nat} [NeZero n]
 def transformerEncoderBlock {batch n dModel : Nat} [NeZero n] [NeZero dModel]
     (cfg : blocks.TransformerEncoderBlock)
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    M (Sequential
+    Builder (Sequential
       (.dim batch (.dim n (.dim dModel .scalar)))
       (.dim batch (.dim n (.dim dModel .scalar)))) :=
   withSeed (fun seedBase =>
@@ -350,7 +359,7 @@ def transformerEncoderBlock {batch n dModel : Nat} [NeZero n] [NeZero dModel]
 def transformerEncoderStack {batch n dModel : Nat} [NeZero n] [NeZero dModel]
     (cfg : blocks.TransformerEncoderStack)
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    M (Sequential
+    Builder (Sequential
       (.dim batch (.dim n (.dim dModel .scalar)))
       (.dim batch (.dim n (.dim dModel .scalar)))) :=
   withSeed (fun seedBase =>
@@ -359,7 +368,7 @@ def transformerEncoderStack {batch n dModel : Nat} [NeZero n] [NeZero dModel]
       (mask := mask))
 
 /-- Build dropout with a fresh deterministic mask seed from the builder stream. -/
-def dropout {s : Spec.Shape} (p : Float) : M (Sequential s s) :=
+def dropout {s : Spec.Shape} (p : Float) : Builder (Sequential s s) :=
   withSeed (fun seed =>
     Internal.dropout (s := s) p (seed := seed))
 
@@ -367,31 +376,18 @@ def dropout {s : Spec.Shape} (p : Float) : M (Sequential s s) :=
 Run a seeded builder using the global seed stream set by `nn.manualSeed` (results in `Type`).
 
 Note: model values like `nn.Sequential` live in `Type 2`, so they cannot be returned from `IO`.
-For models, use `nn.run` with an explicit base seed (obtained from `nn.nextSeed`).
+For models, use `nn.build` with an explicit base seed (obtained from `nn.freshSeed`).
 -/
-def runGlobal {α : Type} (x : M α) : IO α :=
+def runGlobal {α : Type} (x : Builder α) : IO α :=
   rand.runGlobal x
 
 /-- Draw a fresh base seed from the global seed stream set by `nn.manualSeed`. -/
-def nextSeed : IO Nat :=
+def freshSeed : IO Nat :=
   rand.nextSeedGlobal
 
 /-- Draw `n` fresh base seeds from the global seed stream. -/
-def nextSeeds (n : Nat) : IO (List Nat) :=
+def freshSeeds (n : Nat) : IO (List Nat) :=
   rand.nextSeedsGlobal n
-
-/-!
-### Naming Convenience
-
-`nn.run` / `nn.nextSeed` are the core primitives, but in user code it is often clearer to read:
-- “build a model from this seed” (`nn.run`)
-- “draw a fresh init seed” (`nn.freshSeed`)
-- “build a model using the next global init seed” (`nn.withModel`)
--/
-
-/-- Draw a fresh base seed from the global seed stream. -/
-def freshSeed : IO Nat :=
-  nextSeed
 
 /--
 Build a model using the next global seed, then run a continuation.
@@ -400,9 +396,9 @@ Build a model using the next global seed, then run a continuation.
 returning it directly from `IO`.
 -/
 def withModel {σ τ : Spec.Shape} {β : Type}
-    (mk : M (Sequential σ τ)) (k : Sequential σ τ → IO β) : IO β := do
-  let seed ← nextSeed
-  let model := run seed mk
+    (mk : Builder (Sequential σ τ)) (k : Sequential σ τ → IO β) : IO β := do
+  let seed ← freshSeed
+  let model := build seed mk
   k model
 
 end nn

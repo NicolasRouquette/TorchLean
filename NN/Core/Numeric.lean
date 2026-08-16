@@ -84,6 +84,19 @@ instance : MathFunctions Float where
   sin := Float.sin
   sinh := Float.sinh
 
+/-- Native binary32 implementations of the scalar transcendental interface. -/
+instance : MathFunctions Float32 where
+  exp := Float32.exp
+  tanh := Float32.tanh
+  cosh := Float32.cosh
+  sqrt := Float32.sqrt
+  abs := Float32.abs
+  log := Float32.log
+  pi := (3.14159265358979323846 : Float).toFloat32
+  cos := Float32.cos
+  sin := Float32.sin
+  sinh := Float32.sinh
+
 /-- Exact-real interpretations of the scalar transcendental interface. -/
 noncomputable instance : MathFunctions ℝ where
   exp := Real.exp
@@ -114,6 +127,23 @@ instance : Numbers Float where
   log10000 := Float.log 10000
   epsilon := 1e-6
 
+/-- Constants rounded once to native binary32. -/
+instance : Numbers Float32 where
+  neg_point_five := (-0.5 : Float).toFloat32
+  neg_one := (-1.0 : Float).toFloat32
+  pointone := (0.1 : Float).toFloat32
+  pointfive := (0.5 : Float).toFloat32
+  zero := 0
+  one := 1
+  two := 2
+  three := 3
+  four := 4
+  five := 5
+  ten := 10
+  log10 := Float32.log 10
+  log10000 := Float32.log 10000
+  epsilon := (1e-6 : Float).toFloat32
+
 /-- Constants for exact-real specifications. -/
 noncomputable instance : Numbers ℝ where
   neg_point_five := -0.5
@@ -134,6 +164,10 @@ noncomputable instance : Numbers ℝ where
 /-- Coerce naturals into Lean's host `Float`. -/
 instance : Coe Nat Float where
   coe := Float.ofNat
+
+/-- Coerce naturals into native binary32. -/
+instance : Coe Nat Float32 where
+  coe n := (Float.ofNat n).toFloat32
 
 /-- Coerce naturals into `ℝ`. -/
 instance : Coe Nat ℝ where

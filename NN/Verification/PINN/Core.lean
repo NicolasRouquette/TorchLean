@@ -227,7 +227,7 @@ def hessian2D (g : Graph) (ps : ParamStore Float)
     | none => 1
   -- X direction
   let d2x : Option (Float × Float) :=
-    let seedX := FlatBox.ofTensor (NN.Tensor.oneHotNat (α := Float) inDim 0)
+    let seedX := FlatBox.ofTensor (NN.Tensor.oneHotNatOrZero (α := Float) inDim 0)
     let d1x := NN.MLTheory.CROWN.Graph.runDirectionalDerivative (α:=Float) g ps ibp seedX
     let d2x := NN.MLTheory.CROWN.Graph.runSecondDerivative1D (α:=Float) g ps ibp d1x
     match d2x[5]? with
@@ -236,7 +236,7 @@ def hessian2D (g : Graph) (ps : ParamStore Float)
   -- Y direction (only if inDim ≥ 2)
   let d2y : Option (Float × Float) :=
     if inDim ≥ 2 then
-      let seedY := FlatBox.ofTensor (NN.Tensor.oneHotNat (α := Float) inDim 1)
+      let seedY := FlatBox.ofTensor (NN.Tensor.oneHotNatOrZero (α := Float) inDim 1)
       let d1y := NN.MLTheory.CROWN.Graph.runDirectionalDerivative (α:=Float) g ps ibp seedY
       let d2y := NN.MLTheory.CROWN.Graph.runSecondDerivative1D (α:=Float) g ps ibp d1y
       match d2y[5]? with

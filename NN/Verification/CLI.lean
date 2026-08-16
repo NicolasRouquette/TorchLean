@@ -190,7 +190,7 @@ def otherTools : List Tool :=
       run := fun args =>
         NN.Verification.TorchLean.CrownOpsWorkflow.main args }
   , { name := "torchlean-mlp-workflow"
-      description := "TorchLean MLP: train with compiled backend, then run IBP+CROWN"
+      description := "TorchLean MLP: train with typed graph execution, then run IBP+CROWN"
       includeInAll := false
       run := fun args =>
         NN.Verification.TorchLean.MlpTrainVerifyWorkflow.main args }
@@ -211,7 +211,7 @@ def otherTools : List Tool :=
       run := fun args =>
         NN.Verification.Robustness.Digits.main args }
   , { name := "digits-train-certify"
-      description := "train sklearn-digits classifier, compile to IR, then run IBP/CROWN report"
+      description := "train sklearn-digits classifier, lower to IR, then run IBP/CROWN report"
       includeInAll := false
       run := fun args =>
         NN.Verification.Robustness.Digits.mainTrainThenCertify args }

@@ -50,7 +50,7 @@ In PyTorch, the default runtime model is approximately:
 4. tests, numerical checks, and framework maintenance give confidence that the result is right.
 
 JAX moves the same idea into a functional transformation pipeline: `grad`, `vjp`, `jvp`, `jit`, and
-lowering passes cooperate to produce differentiated and compiled programs. See the PyTorch autograd
+lowering passes cooperate to produce differentiated programs and typed graphs. See the PyTorch autograd
 overview at https://pytorch.org/docs/stable/autograd.html and JAX's autodiff guide at
 https://jax.readthedocs.io/en/latest/automatic-differentiation.html for the user facing version of
 that workflow.
@@ -128,12 +128,12 @@ states those conditions explicitly instead of using a blanket "autograd works" s
 can demand exactly the local smoothness or nonzero hypotheses needed by the graph being
 differentiated.
 
-# Connecting The Compiled Tape To The Derivative
+# Connecting The Lowered Tape To The Derivative
 
-The derivative theorem above is stated for the real analytic graph. The compiler correctness
+The derivative theorem above is stated for the real analytic graph. The tape-lowering correctness
 theorem was originally stated for a more general algebraic graph: its scalar type is abstract, and
 each node may read a non-differentiable environment. Those are useful abstractions, but leaving the
-two results side by side would not prove that the compiled tape computes the Fréchet derivative.
+two results side by side would not prove that the lowered tape computes the Fréchet derivative.
 
 [NN.Proofs.Autograd.Runtime.Link.FDeriv](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Runtime/Link/FDeriv.lean)
 closes that gap. At scalar type `Real` and environment `Unit`, the algebraic and analytic node types
@@ -150,8 +150,8 @@ The two public endpoints can be inspected directly:
 ```
 import NN.Proofs.Autograd.Runtime.Link.FDeriv
 
-#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_adjoint_fderiv
-#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_adjoint_fderiv_at
+#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphToTape_adjoint_fderiv
+#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphToTape_adjoint_fderiv_at
 ```
 
 Suppose `g` is an algebraic graph over `Real`, `x` is its typed input context, `d` is its fixed
@@ -166,7 +166,7 @@ The `_at` theorem asks for differentiability only at `x`. It is the useful form 
 containing piecewise-smooth operators, provided the execution point avoids their non-differentiable
 or invalid cases.
 
-These are theorems about the exact tape instantiated over `Real`. A native `Float` or CUDA run needs
+These are theorems about the exact tape instantiated over `Real`. A Lean `Float` or CUDA run needs
 an additional numerical-refinement argument; the rounded-runtime chapter develops that separate
 layer rather than folding it into the exact derivative claim.
 

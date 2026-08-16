@@ -7,19 +7,19 @@ Authors: TorchLean Team
 module
 
 public import NN.API
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 
 /-!
 # TorchLean IBP Workflow
 
 Small end-to-end workflow:
 
-TorchLean forward model → compile to `NN.IR.Graph` → run Lean IBP (`runIBP`).
+TorchLean forward model → lower to `NN.IR.Graph` → run Lean IBP (`runIBP`).
 
 Run:
   `lake exe verify -- torchlean-ibp`
-  `lake exe verify -- torchlean-ibp --dtype ieee754exec`
-  `lake exe verify -- torchlean-ibp --dtype float32`
+  `lake exe verify -- torchlean-ibp --scalar ieee32-exec`
+  `lake exe verify -- torchlean-ibp --scalar ieee32-exec`
 -/
 
 @[expose] public section
@@ -47,7 +47,7 @@ def xShape : Spec.Shape := .dim inDim .scalar
 def yShape : Spec.Shape := .dim outDim .scalar
 
 /-- TorchLean model used in the workflow (a 2-layer ReLU MLP). -/
-def mkModel : nn.M (nn.Sequential xShape yShape) :=
+def mkModel : nn.Builder (nn.Sequential xShape yShape) :=
   nn.Sequential![
     nn.linear inDim hidDim,
     nn.relu,
@@ -56,10 +56,10 @@ def mkModel : nn.M (nn.Sequential xShape yShape) :=
 
 /-- Deterministically instantiate `mkModel` from initialization seed zero. -/
 def model : nn.Sequential xShape yShape :=
-  nn.run 0 mkModel
+  nn.build 0 mkModel
 
 /-- Parameter shapes for `model`. -/
-def paramShapes : List Spec.Shape := nn.paramShapes model
+def paramShapes : List Spec.Shape := nn.stateShapes model
 
 /-- Runtime-selected typed runner used by the CLI entrypoint. -/
 def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
@@ -76,21 +76,21 @@ def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
       (NN.Tensor.ofListOfLength (α := α) [1]
         [cast 0.4] (by rfl))
 
-  let compiled ←
-    match Verification.compileForward (α := α) model params with
+  let lowered ←
+    match Verification.lowerForwardToIR (α := α) model params with
     | .ok c => pure c
     | .error e => throw <| IO.userError e
 
-  IO.println s!"compiled IR nodes: {compiled.graph.nodes.size}"
+  IO.println s!"lowered IR nodes: {lowered.graph.nodes.size}"
 
-  let x0 : Tensor α xShape :=
+  let x0 : Spec.Tensor α xShape :=
     NN.Tensor.ofListOfLength (α := α) [2] [cast 0.5, cast 0.8] (by rfl)
   let eps : α := Runtime.ofFloat 0.1
   let xB : FlatBox α := Verification.lInfBall (α := α) x0 eps
-  let ps : ParamStore α := compiled.seedInputBox xB
+  let ps : ParamStore α := lowered.seedInputBox xB
 
-  let boxes := compiled.runIBP ps
-  let outB ← compiled.outputBoxOrThrow boxes
+  let boxes := lowered.runIBP ps
+  let outB ← lowered.outputBoxOrThrow boxes
   IO.println s!"output box lo: {pretty outB.lo}"
   IO.println s!"output box hi: {pretty outB.hi}"
 
@@ -100,7 +100,7 @@ CLI entry point for the TorchLean → IR → IBP workflow.
 This is wired into `lake exe verify -- torchlean-ibp`.
 -/
 def main (args : List String) : IO Unit := do
-  NN.Verification.TorchLean.runWithBoundDType "TorchLean → IR → IBP (small MLP)" args
+  NN.Verification.TorchLean.runWithBoundScalar "TorchLean → IR → IBP (small MLP)" args
     (@runMain)
 
 end NN.Verification.TorchLean.IBPWorkflow

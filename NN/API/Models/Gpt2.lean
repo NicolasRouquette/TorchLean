@@ -28,6 +28,7 @@ open Spec Tensor
 
 namespace nn
 namespace models
+namespace CausalTransformer
 
 /--
 Configuration shared by TorchLean's GPT-style causal language models.
@@ -39,7 +40,7 @@ The model has the common GPT-2 “shape”:
 The configuration is independent of how token ids enter the model. One-hot, integer-token, and
 pre-embedded constructors reuse the same Transformer width, depth, and output vocabulary.
 -/
-structure CausalTransformerConfig where
+structure Config where
   batch : Nat
   seqLen : Nat
   vocab : Nat
@@ -69,15 +70,15 @@ structure CausalTransformerConfig where
 deriving Repr
 
 /-- Transformer width implied by `numHeads * headDim`. -/
-def CausalTransformerConfig.dModel (cfg : CausalTransformerConfig) : Nat :=
+def Config.dModel (cfg : Config) : Nat :=
   cfg.numHeads * cfg.headDim
 
 /-- Vocabulary-grid shape `(batch × seqLen × vocab)` used by one-hot inputs and output logits. -/
-abbrev causalVocabularyShape (cfg : CausalTransformerConfig) : Spec.Shape :=
+abbrev vocabularyShape (cfg : Config) : Spec.Shape :=
   shape![cfg.batch, cfg.seqLen, cfg.vocab]
 
 /-- Embedded-token tensor shape `(batch × seqLen × dModel)`. -/
-abbrev causalEmbeddingShape (cfg : CausalTransformerConfig) : Spec.Shape :=
+abbrev embeddingShape (cfg : Config) : Spec.Shape :=
   shape![cfg.batch, cfg.seqLen, cfg.dModel]
 
 /--
@@ -87,10 +88,10 @@ The stack adds learned positions, applies causally masked Transformer blocks, an
 LayerNorm. It deliberately has no vocabulary projection. Language models can therefore choose an
 independent output head or reuse their token-embedding matrix.
 -/
-def causalTransformerHiddenFromEmbeddings (cfg : CausalTransformerConfig)
+def hidden (cfg : Config)
     (h_seqLen : cfg.seqLen ≠ 0 := by decide)
     (h_dModel : cfg.dModel ≠ 0 := by decide) :
-    nn.M (nn.Sequential (causalEmbeddingShape cfg) (causalEmbeddingShape cfg)) :=
+    nn.Builder (nn.Sequential (embeddingShape cfg) (embeddingShape cfg)) :=
   letI : NeZero cfg.seqLen := ⟨h_seqLen⟩
   letI : NeZero cfg.dModel := ⟨h_dModel⟩
   let dModel := cfg.dModel
@@ -119,14 +120,14 @@ def causalTransformerHiddenFromEmbeddings (cfg : CausalTransformerConfig)
 /--
 GPT-style causal Transformer body with an independent affine vocabulary head.
 
-Use `causalTransformerHiddenFromEmbeddings` when the caller needs hidden states or a tied
+Use `hidden` when the caller needs hidden states or a tied
 token-embedding/output matrix.
 -/
-def causalTransformerFromEmbeddings (cfg : CausalTransformerConfig)
+def fromEmbeddings (cfg : Config)
     (h_seqLen : cfg.seqLen ≠ 0 := by decide)
     (h_dModel : cfg.dModel ≠ 0 := by decide) :
-    nn.M (nn.Sequential (causalEmbeddingShape cfg) (causalVocabularyShape cfg)) := do
-  let hidden ← causalTransformerHiddenFromEmbeddings cfg h_seqLen h_dModel
+    nn.Builder (nn.Sequential (embeddingShape cfg) (vocabularyShape cfg)) := do
+  let hidden ← hidden cfg h_seqLen h_dModel
   let head ← nn.linearWith cfg.dModel cfg.vocab { weightInit? := cfg.parameterInit? }
     (pfx := .dim cfg.batch (.dim cfg.seqLen .scalar))
   pure (hidden >>> head)
@@ -134,31 +135,46 @@ def causalTransformerFromEmbeddings (cfg : CausalTransformerConfig)
 /--
 Build a GPT-2-style causal language model over one-hot tokens.
 
-This is the shared constructor used by the runnable GPT-2 examples. It stays in `nn.M` so it
+This is the shared constructor used by the runnable GPT-2 examples. It stays in `nn.Builder` so it
 composes with the rest of the API-layer model-building interface.
 -/
-def causalTransformerOneHot (cfg : CausalTransformerConfig)
+def oneHot (cfg : Config)
     (h_seqLen : cfg.seqLen ≠ 0 := by decide)
     (h_dModel : cfg.dModel ≠ 0 := by decide) :
-    nn.M (nn.Sequential (causalVocabularyShape cfg) (causalVocabularyShape cfg)) :=
+    nn.Builder (nn.Sequential (vocabularyShape cfg) (vocabularyShape cfg)) :=
   letI : NeZero cfg.seqLen := ⟨h_seqLen⟩
   letI : NeZero cfg.dModel := ⟨h_dModel⟩
   let dModel := cfg.dModel
   let embeddingInit := cfg.parameterInit?.getD (.uniform (-0.02) 0.02)
-  nn.embedding cfg.vocab dModel { wInit := embeddingInit }
+  nn.oneHotEmbedding cfg.vocab dModel { weightInit := embeddingInit }
     (pfx := .dim cfg.batch (.dim cfg.seqLen .scalar)) >>= fun embed =>
-  causalTransformerFromEmbeddings cfg (h_seqLen := h_seqLen) (h_dModel := h_dModel) >>= fun body =>
+  fromEmbeddings cfg (h_seqLen := h_seqLen) (h_dModel := h_dModel) >>= fun body =>
   pure (embed >>> body)
 
 /-- Flattened shape of one batch of token ids or row weights. -/
-abbrev causalTokenShape (cfg : CausalTransformerConfig) : Spec.Shape :=
+abbrev tokenShape (cfg : Config) : Spec.Shape :=
   .dim (cfg.batch * cfg.seqLen) .scalar
 
-/-- Parameter shapes for an indexed-token model with an independent vocabulary head. -/
-abbrev causalTransformerTokenParamShapes (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalVocabularyShape cfg)) :
+/-- Indexed-token causal Transformer with an independent vocabulary head. -/
+def Indexed.model (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (vocabularyShape cfg)) :
+    nn.IndexedModel (tokenShape cfg) (vocabularyShape cfg) :=
+  let embeddingInit := cfg.parameterInit?.getD (.uniform (-0.02) 0.02)
+  let embedding :=
+    (nn.Internal.embedding cfg.vocab cfg.dModel { weightInit := embeddingInit }).model
+      (tokenShape cfg)
+  let restoreAxes := nn.Internal.reshape
+    ((tokenShape cfg).appendDim cfg.dModel) (embeddingShape cfg)
+    (by
+      simpa [tokenShape, embeddingShape, Spec.Shape.size_appendDim,
+        Spec.Shape.size] using Nat.mul_assoc cfg.batch cfg.seqLen cfg.dModel)
+  embedding.andThen (restoreAxes >>> body)
+
+/-- Model-state shapes for an indexed-token model with an independent vocabulary head. -/
+abbrev Indexed.stateShapes (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (vocabularyShape cfg)) :
     List Spec.Shape :=
-  (.dim cfg.vocab (.dim cfg.dModel .scalar)) :: paramShapes body
+  (Indexed.model cfg body).stateShapes
 
 /--
 Run indexed-token embedding and a causal Transformer body in any TorchLean backend.
@@ -167,63 +183,58 @@ Tokens remain `Nat` tensors throughout the call. Only the embedding table and Tr
 parameters use the model scalar type, so the program cannot differentiate with respect to token ids
 or reinterpret them as floating-point data.
 -/
-def causalTransformerTokenForward
+def Indexed.forward
     {α : Type} [Context α] [DecidableEq Spec.Shape]
     {m : Type → Type} [Monad m]
     [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)]
     (mode : _root_.Runtime.Autograd.TorchLean.NN.Mode)
-    (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalVocabularyShape cfg))
-    (params : _root_.Runtime.Autograd.Torch.RefList
+    (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (vocabularyShape cfg))
+    (state : _root_.Runtime.Autograd.Torch.RefList
       (_root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α))
-      (causalTransformerTokenParamShapes cfg body))
+      (Indexed.stateShapes cfg body))
     (tokens : _root_.Runtime.Autograd.Torch.NatTensorRef
-      (m := m) (α := α) (causalTokenShape cfg)) :
+      (m := m) (α := α) (tokenShape cfg)) :
     m (_root_.Runtime.Autograd.TorchLean.NN.Seq.RefT
-      (m := m) (α := α) (causalVocabularyShape cfg)) := do
-  let .cons tokenEmbedding bodyParams := params
-  let embeddings ← _root_.Runtime.Autograd.TorchLean.F.embeddingBatchSeqNat
-    (m := m) (α := α) (vocab := cfg.vocab) (dim := cfg.dModel)
-    (batch := cfg.batch) (seqLen := cfg.seqLen) tokenEmbedding tokens
-  _root_.Runtime.Autograd.TorchLean.NN.Seq.forwardParams
-    (model := body) (α := α) (m := m) mode bodyParams embeddings
+      (m := m) (α := α) (vocabularyShape cfg)) := do
+  let model := Indexed.model cfg body
+  let withInputs := _root_.Runtime.Autograd.Torch.CurriedRef.uncurry
+    (Ref := _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α))
+    (ss := model.stateShapes)
+    (β := _root_.Runtime.Autograd.Torch.CurriedRef
+      (fun s => _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) s)
+      [tokenShape cfg]
+      (m (_root_.Runtime.Autograd.TorchLean.NN.Seq.RefT
+        (m := m) (α := α) (vocabularyShape cfg))))
+    (model.forward mode (α := α)) state
+  withInputs tokens
 
-/-- Backend-polymorphic indexed-token forward program. -/
-def causalTransformerTokenProgramWithMode
+/-- Execution-polymorphic indexed-token forward program. -/
+def Indexed.programWithMode
     (mode : _root_.Runtime.Autograd.TorchLean.NN.Mode)
-    (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalVocabularyShape cfg))
+    (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (vocabularyShape cfg))
     {α : Type} [Context α] [DecidableEq Spec.Shape] :
     _root_.Runtime.Autograd.TorchLean.ProgramWithNatInputs α
-      (causalTransformerTokenParamShapes cfg body) [causalTokenShape cfg]
-      (causalVocabularyShape cfg) :=
-  fun {m} _ _ =>
-    _root_.Runtime.Autograd.Torch.CurriedRef.curry
-      (Ref := _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α))
-      (ss := causalTransformerTokenParamShapes cfg body)
-      (β := _root_.Runtime.Autograd.Torch.CurriedRef
-        (fun s => _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) s)
-        [causalTokenShape cfg]
-        (m (_root_.Runtime.Autograd.TorchLean.NN.Seq.RefT
-          (m := m) (α := α) (causalVocabularyShape cfg))))
-      (fun params => fun tokens =>
-        causalTransformerTokenForward (m := m) (α := α) mode cfg body params tokens)
+      (Indexed.stateShapes cfg body) [tokenShape cfg]
+      (vocabularyShape cfg) :=
+  (Indexed.model cfg body).forward mode (α := α)
 
 /-- Evaluation-mode indexed-token forward program. -/
-def causalTransformerTokenProgram
-    (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalVocabularyShape cfg))
+def Indexed.program
+    (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (vocabularyShape cfg))
     {α : Type} [Context α] [DecidableEq Spec.Shape] :
     _root_.Runtime.Autograd.TorchLean.ProgramWithNatInputs α
-      (causalTransformerTokenParamShapes cfg body) [causalTokenShape cfg]
-      (causalVocabularyShape cfg) :=
-  causalTransformerTokenProgramWithMode .eval cfg body
+      (Indexed.stateShapes cfg body) [tokenShape cfg]
+      (vocabularyShape cfg) :=
+  Indexed.programWithMode .eval cfg body
 
-/-- Parameter shapes for an indexed-token model whose embedding and output projection are tied. -/
-abbrev causalTransformerTiedTokenParamShapes (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalEmbeddingShape cfg)) :
+/-- Model-state shapes for a model whose embedding and output projection are tied. -/
+abbrev Tied.stateShapes (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (embeddingShape cfg)) :
     List Spec.Shape :=
-  (.dim cfg.vocab (.dim cfg.dModel .scalar)) :: paramShapes body
+  (.dim cfg.vocab (.dim cfg.dModel .scalar)) :: nn.stateShapes body
 
 /--
 Run a causal Transformer whose token lookup and vocabulary projection share one matrix.
@@ -233,110 +244,104 @@ embeddings, runs the hidden-state Transformer, and multiplies the final hidden s
 transpose. Consequently, gradients from both lookup and prediction accumulate into the same
 parameter.
 -/
-def causalTransformerTiedTokenForward
+def Tied.forward
     {α : Type} [Context α] [DecidableEq Spec.Shape]
     {m : Type → Type} [Monad m]
     [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)]
     (mode : _root_.Runtime.Autograd.TorchLean.NN.Mode)
-    (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalEmbeddingShape cfg))
+    (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (embeddingShape cfg))
     (params : _root_.Runtime.Autograd.Torch.RefList
       (_root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α))
-      (causalTransformerTiedTokenParamShapes cfg body))
+      (Tied.stateShapes cfg body))
     (tokens : _root_.Runtime.Autograd.Torch.NatTensorRef
-      (m := m) (α := α) (causalTokenShape cfg)) :
+      (m := m) (α := α) (tokenShape cfg)) :
     m (_root_.Runtime.Autograd.TorchLean.NN.Seq.RefT
-      (m := m) (α := α) (causalVocabularyShape cfg)) := do
+      (m := m) (α := α) (vocabularyShape cfg)) := do
   let .cons tokenEmbedding bodyParams := params
   let embeddings ← _root_.Runtime.Autograd.TorchLean.F.embeddingBatchSeqNat
     (m := m) (α := α) (vocab := cfg.vocab) (dim := cfg.dModel)
     (batch := cfg.batch) (seqLen := cfg.seqLen) tokenEmbedding tokens
-  let hidden ← _root_.Runtime.Autograd.TorchLean.NN.Seq.forwardParams
+  let hidden ← _root_.Runtime.Autograd.TorchLean.NN.Seq.forwardState
     (model := body) (α := α) (m := m) mode bodyParams embeddings
   let hiddenRows ← _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-    (s₁ := causalEmbeddingShape cfg)
+    (s₁ := embeddingShape cfg)
     (s₂ := .dim (cfg.batch * cfg.seqLen) (.dim cfg.dModel .scalar))
     hidden (by simp [_root_.Spec.Shape.size, Nat.mul_assoc])
   let projection ← _root_.Runtime.Autograd.Torch.transpose2d (m := m) (α := α)
     (mDim := cfg.vocab) (nDim := cfg.dModel) tokenEmbedding
-  let logitsRows ← _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+  let logitsRows ← _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
     (mDim := cfg.batch * cfg.seqLen) (nDim := cfg.dModel) (pDim := cfg.vocab)
     hiddenRows projection
   _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
     (s₁ := .dim (cfg.batch * cfg.seqLen) (.dim cfg.vocab .scalar))
-    (s₂ := causalVocabularyShape cfg) logitsRows
+    (s₂ := vocabularyShape cfg) logitsRows
     (by simp [_root_.Spec.Shape.size, Nat.mul_assoc])
 
-/-- Backend-polymorphic tied-token forward program. -/
-def causalTransformerTiedTokenProgramWithMode
+/-- Execution-polymorphic tied-token forward program. -/
+def Tied.programWithMode
     (mode : _root_.Runtime.Autograd.TorchLean.NN.Mode)
-    (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalEmbeddingShape cfg))
+    (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (embeddingShape cfg))
     {α : Type} [Context α] [DecidableEq Spec.Shape] :
     _root_.Runtime.Autograd.TorchLean.ProgramWithNatInputs α
-      (causalTransformerTiedTokenParamShapes cfg body) [causalTokenShape cfg]
-      (causalVocabularyShape cfg) :=
+      (Tied.stateShapes cfg body) [tokenShape cfg]
+      (vocabularyShape cfg) :=
   fun {m} _ _ =>
     _root_.Runtime.Autograd.Torch.CurriedRef.curry
       (Ref := _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α))
-      (ss := causalTransformerTiedTokenParamShapes cfg body)
+      (ss := Tied.stateShapes cfg body)
       (β := _root_.Runtime.Autograd.Torch.CurriedRef
         (fun s => _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) s)
-        [causalTokenShape cfg]
+        [tokenShape cfg]
         (m (_root_.Runtime.Autograd.TorchLean.NN.Seq.RefT
-          (m := m) (α := α) (causalVocabularyShape cfg))))
+          (m := m) (α := α) (vocabularyShape cfg))))
       (fun params => fun tokens =>
-        causalTransformerTiedTokenForward (m := m) (α := α) mode cfg body params tokens)
+        Tied.forward (m := m) (α := α) mode cfg body params tokens)
 
 /-- Evaluation-mode tied-token forward program. -/
-def causalTransformerTiedTokenProgram
-    (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalEmbeddingShape cfg))
+def Tied.program
+    (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (embeddingShape cfg))
     {α : Type} [Context α] [DecidableEq Spec.Shape] :
     _root_.Runtime.Autograd.TorchLean.ProgramWithNatInputs α
-      (causalTransformerTiedTokenParamShapes cfg body) [causalTokenShape cfg]
-      (causalVocabularyShape cfg) :=
-  causalTransformerTiedTokenProgramWithMode .eval cfg body
+      (Tied.stateShapes cfg body) [tokenShape cfg]
+      (vocabularyShape cfg) :=
+  Tied.programWithMode .eval cfg body
 
 /--
 Scalar loss for causal language modeling with integer token ids.
 
 The public one-hot constructor above is useful for small teaching examples because the input is an
-ordinary Float tensor.  File-backed tokenized datasets use the representation found in
-language-model training systems: token ids are `Nat`s, the embedding table is a trainable Float
-parameter, and the loss gathers the target classes directly instead of building one-hot targets.
+ordinary scalar tensor. File-backed tokenized datasets use the representation found in
+language-model training systems: token ids are `Nat`s, the embedding table uses the selected model
+scalar, and the loss gathers target classes directly instead of building one-hot targets.
 
 `tokens` and `targets` are flattened `(batch * seqLen)` vectors.  This matches the backend gather
 ops and keeps dataset storage simple; the embedding helper reshapes gathered rows back to
 `(batch, seqLen, dModel)` before running the Transformer body.
 -/
-def causalTransformerTokenScalarModuleDefWithMode
+def Indexed.objectiveWithMode
     (mode : _root_.Runtime.Autograd.TorchLean.NN.Mode)
-    (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalVocabularyShape cfg))
+    (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (vocabularyShape cfg))
     (reduction : _root_.TorchLean.Loss.Reduction := .mean) :
-    TorchLean.Module.ScalarModuleDef
-      (causalTransformerTokenParamShapes cfg body) []
-      [causalTokenShape cfg, causalTokenShape cfg] :=
-  let embeddingInit := cfg.parameterInit?.getD (.uniform (-0.02) 0.02)
-  { initParams := .cons
-      (_root_.Runtime.Autograd.Torch.Init.tensor embeddingInit (seed := 0)) (initParams body)
-    runtimeInit :=
-      match _root_.Runtime.Autograd.TorchLean.NN.Seq.runtimeInit? body with
-      | some bodyPlan => some (.cons
-          (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.FloatInit.ofScheme
-            embeddingInit 0) bodyPlan)
-      | none => none
-    initRequiresGrad := true :: paramRequiresGrad body
+    TorchLean.Module.ObjectiveDef
+      (Indexed.stateShapes cfg body) []
+      [tokenShape cfg, tokenShape cfg] :=
+  let model := Indexed.model cfg body
+  { initState := model.initState
+    runtimeInit := model.runtimeInit
+    requiresGrad := model.requiresGrad
     loss := fun {α} => by
       intro _ _
       exact fun {m} _ _ =>
         _root_.Runtime.Autograd.Torch.CurriedRef.curry
           (Ref := _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α))
-          (ss := causalTransformerTokenParamShapes cfg body ++ ([] : List Spec.Shape))
+          (ss := Indexed.stateShapes cfg body ++ ([] : List Spec.Shape))
           (β := _root_.Runtime.Autograd.Torch.CurriedRef
             (fun s => _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) s)
-            [causalTokenShape cfg, causalTokenShape cfg]
+            [tokenShape cfg, tokenShape cfg]
             (m (_root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α)
               Spec.Shape.scalar)))
           (fun args => fun tokens => fun targets =>
@@ -344,10 +349,10 @@ def causalTransformerTokenScalarModuleDefWithMode
             let (params, empty) :=
               _root_.Runtime.Autograd.Torch.RefList.split
                 (Ref := _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α))
-                (ss₁ := causalTransformerTokenParamShapes cfg body)
+                (ss₁ := Indexed.stateShapes cfg body)
                 (ss₂ := ([] : List Spec.Shape)) args
             let .nil := empty
-            let logits ← causalTransformerTokenForward
+            let logits ← Indexed.forward
               (m := m) (α := α) mode cfg body params tokens
             let logitsRows ← _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
               (s₁ := .dim cfg.batch (.dim cfg.seqLen (.dim cfg.vocab .scalar)))
@@ -361,55 +366,55 @@ def causalTransformerTokenScalarModuleDefWithMode
                 (m := m) (α := α) Spec.Shape.scalar))) }
 
 /-- Training-mode wrapper for integer-token causal language modeling. -/
-def causalTransformerTokenScalarModuleDef (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalVocabularyShape cfg))
+def Indexed.objective (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (vocabularyShape cfg))
     (reduction : _root_.TorchLean.Loss.Reduction := .mean) :
-    TorchLean.Module.ScalarModuleDef
-      (causalTransformerTokenParamShapes cfg body) []
-      [causalTokenShape cfg, causalTokenShape cfg] :=
-  causalTransformerTokenScalarModuleDefWithMode .train cfg body (reduction := reduction)
+    TorchLean.Module.ObjectiveDef
+      (Indexed.stateShapes cfg body) []
+      [tokenShape cfg, tokenShape cfg] :=
+  Indexed.objectiveWithMode .train cfg body (reduction := reduction)
 
 /-- Scalar causal-language-model loss for a tied token embedding and output projection. -/
-def causalTransformerTiedTokenScalarModuleDefWithMode
+def Tied.objectiveWithMode
     (mode : _root_.Runtime.Autograd.TorchLean.NN.Mode)
-    (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalEmbeddingShape cfg))
+    (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (embeddingShape cfg))
     (reduction : _root_.TorchLean.Loss.Reduction := .mean) :
-    TorchLean.Module.ScalarModuleDef
-      (causalTransformerTiedTokenParamShapes cfg body) []
-      [causalTokenShape cfg, causalTokenShape cfg] :=
+    TorchLean.Module.ObjectiveDef
+      (Tied.stateShapes cfg body) []
+      [tokenShape cfg, tokenShape cfg] :=
   let embeddingInit := cfg.parameterInit?.getD (.uniform (-0.02) 0.02)
-  { initParams := .cons
-      (_root_.Runtime.Autograd.Torch.Init.tensor embeddingInit (seed := 0)) (initParams body)
+  { initState := .cons
+      (_root_.Runtime.Autograd.Torch.Init.tensor embeddingInit (seed := 0)) (initState body)
     runtimeInit :=
       match _root_.Runtime.Autograd.TorchLean.NN.Seq.runtimeInit? body with
       | some bodyPlan => some (.cons
           (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.FloatInit.ofScheme
             embeddingInit 0) bodyPlan)
       | none => none
-    initRequiresGrad := true :: paramRequiresGrad body
+    requiresGrad := true :: requiresGrad body
     loss := fun {α} => by
       intro _ _
       exact fun {m} _ _ =>
         _root_.Runtime.Autograd.Torch.CurriedRef.curry
           (Ref := _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α))
-          (ss := causalTransformerTiedTokenParamShapes cfg body ++ ([] : List Spec.Shape))
+          (ss := Tied.stateShapes cfg body ++ ([] : List Spec.Shape))
           (β := _root_.Runtime.Autograd.Torch.CurriedRef
             (fun s => _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) s)
-            [causalTokenShape cfg, causalTokenShape cfg]
+            [tokenShape cfg, tokenShape cfg]
             (m (_root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α)
               Spec.Shape.scalar)))
           (fun args => fun tokens => fun targets => (do
             let (params, empty) :=
               _root_.Runtime.Autograd.Torch.RefList.split
                 (Ref := _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α))
-                (ss₁ := causalTransformerTiedTokenParamShapes cfg body)
+                (ss₁ := Tied.stateShapes cfg body)
                 (ss₂ := ([] : List Spec.Shape)) args
             let .nil := empty
-            let logits ← causalTransformerTiedTokenForward
+            let logits ← Tied.forward
               (m := m) (α := α) mode cfg body params tokens
             let logitsRows ← _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-              (s₁ := causalVocabularyShape cfg)
+              (s₁ := vocabularyShape cfg)
               (s₂ := .dim (cfg.batch * cfg.seqLen) (.dim cfg.vocab .scalar))
               logits (by simp [_root_.Spec.Shape.size, Nat.mul_assoc])
             _root_.TorchLean.Loss.crossEntropyRowsNat (m := m) (α := α)
@@ -419,15 +424,16 @@ def causalTransformerTiedTokenScalarModuleDefWithMode
                 (m := m) (α := α) Spec.Shape.scalar))) }
 
 /-- Training-mode wrapper for tied-token causal language modeling. -/
-def causalTransformerTiedTokenScalarModuleDef
-    (cfg : CausalTransformerConfig)
-    (body : nn.Sequential (causalEmbeddingShape cfg) (causalEmbeddingShape cfg))
+def Tied.objective
+    (cfg : Config)
+    (body : nn.Sequential (embeddingShape cfg) (embeddingShape cfg))
     (reduction : _root_.TorchLean.Loss.Reduction := .mean) :
-    TorchLean.Module.ScalarModuleDef
-      (causalTransformerTiedTokenParamShapes cfg body) []
-      [causalTokenShape cfg, causalTokenShape cfg] :=
-  causalTransformerTiedTokenScalarModuleDefWithMode .train cfg body (reduction := reduction)
+    TorchLean.Module.ObjectiveDef
+      (Tied.stateShapes cfg body) []
+      [tokenShape cfg, tokenShape cfg] :=
+  Tied.objectiveWithMode .train cfg body (reduction := reduction)
 
+end CausalTransformer
 end models
 end nn
 

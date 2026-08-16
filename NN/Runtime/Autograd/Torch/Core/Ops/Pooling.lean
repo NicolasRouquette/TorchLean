@@ -204,7 +204,7 @@ def maxPool2dPad {α : Type} (s : EagerSession α) [Context α] [DecidableEq Sha
 
 /--
 Smooth max-pooling (softmax pooling). Not a standard PyTorch primitive; see
-`Torch.LinkedSession.smooth_max_pool2d`. Executable backends require finite, nonzero `beta` and
+`Torch.TypedGraphSession.smooth_max_pool2d`. Executable backends require finite, nonzero `beta` and
 use max/min-shifted exponential weights.
 -/
 def smoothMaxPool2d {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Context α]

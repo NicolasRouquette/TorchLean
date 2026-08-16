@@ -17,7 +17,7 @@ open Informal
 #doc (Manual) "Tensors and Graphs" =>
 
 TorchLean starts with shape-indexed tensors and then offers three ways to describe a computation.
-`GraphSpec` is a typed sequential architecture, `GraphSpec.DAG` adds sharing, and `NN.IR.Graph` is
+`GraphSpec.Chain` is typed sequential syntax, `GraphSpec.DAG` adds sharing, and `NN.IR.Graph` is
 the ordinary op-tagged graph used at runtime boundaries. Keeping those representations distinct
 makes the claims attached to each one easier to read.
 
@@ -75,7 +75,7 @@ rearranges those sums.
 Typed architecture descriptions and the shared runtime graph.
 :::
 
-:::definition "graphspec_syntax" (parent := "graph_representations") (lean := "NN.GraphSpec.Graph")
+:::definition "graphspec_syntax" (parent := "graph_representations") (lean := "NN.GraphSpec.Chain")
 A sequential `GraphSpec` records its parameter shapes, input shape, and output shape in its type.
 Graphs are built from identity, primitive, and sequential-composition nodes.
 :::
@@ -86,9 +86,9 @@ The pure interpreter evaluates {uses "graphspec_syntax"}[a sequential graph] on
 {uses "scalar_context"}[scalar-polymorphic operations].
 :::
 
-:::definition "graphspec_runtime_translation" (parent := "graph_representations") (lean := "NN.GraphSpec.Compile.torchProgram")
+:::definition "graphspec_runtime_translation" (parent := "graph_representations") (lean := "NN.GraphSpec.Chain.toProgram")
 The runtime translation turns {uses "graphspec_syntax"}[a sequential graph] into a
-backend-polymorphic TorchLean program over {uses "scalar_context"}[the same scalar operations].
+execution-polymorphic TorchLean program over {uses "scalar_context"}[the same scalar operations].
 :::
 
 :::definition "typed_dag_syntax" (parent := "graph_representations") (lean := "NN.GraphSpec.DAG.Model")
@@ -101,8 +101,8 @@ The DAG interpreter evaluates {uses "typed_dag_syntax"}[the model body] from typ
 input lists under {uses "scalar_context"}[the scalar context].
 :::
 
-:::definition "typed_dag_runtime_translation" (parent := "graph_representations") (lean := "NN.GraphSpec.DAG.Model.torchProgram")
-The DAG compiler turns {uses "typed_dag_syntax"}[the same model body] into a backend-polymorphic
+:::definition "typed_dag_runtime_translation" (parent := "graph_representations") (lean := "NN.GraphSpec.DAG.Model.toProgram")
+The DAG lowering pass turns {uses "typed_dag_syntax"}[the same model body] into an execution-polymorphic
 TorchLean program over {uses "scalar_context"}[the same scalar operations].
 :::
 

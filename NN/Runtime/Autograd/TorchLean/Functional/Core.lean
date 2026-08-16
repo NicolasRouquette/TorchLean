@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.TorchLean.Backend
+public import NN.Runtime.Autograd.TorchLean.Program
 
 import Mathlib.Algebra.Order.Algebra
 
@@ -27,7 +27,7 @@ namespace F
 
 Small functional helpers built from the primitive `TorchLean.Ops` API.
 
-These definitions are shared by eager and compiled execution, so they stay close to the primitive
+These definitions are shared by eager and typed graph execution, so they stay close to the primitive
 operation names: elementwise helpers, broadcasting, embedding lookup, reductions, and seeded RNG.
 -/
 
@@ -70,7 +70,7 @@ def exp {α : Type} [Context α] [DecidableEq Shape]
 
 Domain: for real-valued reasoning, assume positive inputs. This is the real
 natural log only on $x>0$. TorchLean's eager CPU tape, IR evaluator, and proved
-forward-fragment evaluator reject nonpositive inputs explicitly; compiled pure
+forward-fragment evaluator reject nonpositive inputs explicitly; typed graph
 closures hit a runtime panic on a bad raw-log domain, and CUDA follows the native
 buffer operation. Use `safeLog` when the model needs a total epsilon-protected
 log-like operation. -/

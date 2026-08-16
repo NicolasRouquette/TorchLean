@@ -166,7 +166,7 @@ Correctness of a linear layer’s backward rule (matrix–vector multiply), stat
 
 This is purely algebraic: it relies only on semiring laws and the adjointness lemma for matrix
 multiplication in `TensorAlgebra`.
-PyTorch analogue: `torch.nn.linear`’s linear map.
+PyTorch analogue: the affine map implemented by `torch.nn.Linear`.
 -/
 def linearCorrect {α : Type} [CommSemiring α]
   {inDim outDim : Nat} (m : Spec.LinearSpec α inDim outDim) :

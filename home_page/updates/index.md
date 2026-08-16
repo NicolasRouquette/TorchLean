@@ -27,6 +27,40 @@ TorchLean now builds on Lean and mathlib 4.33. The migration touched dependent t
 autograd derivative proofs, graph evaluation, CROWN certificates, and the documentation toolchain.
 The full library builds without compiler warnings on the new toolchain.
 
+The execution API now separates execution mode from device selection:
+
+```lean
+{ execution := .typedGraph
+  device := .cpu }
+```
+
+Eager execution runs each operation immediately and builds a dynamic tape. Typed graph execution
+records a shape-indexed executable graph once and reuses its forward, JVP, and VJP programs. The
+graph stores an exact typed output reference, so a model may return an input or intermediate rather
+than only its final recorded node. Call `nn.lowerToTypedGraph model` when the graph itself is needed.
+The executable graph stores derivative rules; the separate proof-carrying graph establishes when
+those rules are mathematically correct. TorchLean now uses *lowering* for this conversion and
+reserves *compilation* for future optimization, fusion, scheduling, and native code generation. The
+previous misleading execution terminology was removed rather than retained as aliases.
+
+The model API also distinguishes definitions from live state. `nn.Sequential` and `nn.Layer` are
+immutable values used by lowering and proofs. Instantiating a checked model produces an
+`nn.Module` with mutable parameters, persistent buffers, and train/eval mode. A lower-level
+`Module.Objective` pairs that state with a scalar training objective. Its name makes clear that the
+object owns model state as well as the loss calculation.
+
+Indexed embeddings now accept `Tensor Nat` token IDs and append the embedding dimension to the
+input shape. Forward execution gathers rows, backward execution scatter-adds repeated IDs, and
+`freeze := true` keeps the table in state without requesting its gradient. The causal-transformer
+example uses this path directly rather than expanding tokens to one-hot vectors. The public
+rank-two matrix product is likewise named `mm`, matching `torch.mm`; the name `matmul` remains
+reserved until TorchLean supports PyTorch's rank-polymorphic broadcasting semantics.
+
+Batch-specific flattening and task-head names were removed as well. `flattenLeading` and the
+classifier/regressor heads preserve an arbitrary leading shape, so the same definitions cover one
+example, a batch, or several outer axes. Dimension-list random constructors now end in `Dims`,
+which distinguishes a runtime list of dimensions from the shape-indexed constructors.
+
 Lean's `Float32.Model` exposes the logical definitions of core binary32 operations. TorchLean now
 proves agreement between that model and its independent raw-bit `IEEE32Exec` implementation for
 classification, comparison, addition, subtraction, multiplication, division, square root,
@@ -34,7 +68,7 @@ negation, and absolute value. The arithmetic proofs cover normal and subnormal i
 infinities, NaNs, underflow, overflow, and nearest-even rounding. NaN results are canonicalized
 before their bits are compared because the models retain different payload information.
 
-Compiler lowering, processors, CUDA, cuBLAS, and LibTorch retain their own backend contracts.
+Native compiler output, processors, CUDA, cuBLAS, and LibTorch retain their own backend contracts.
 Transcendental `Float32` functions also remain outside the core logical model.
 
 The logical model is part of
@@ -51,7 +85,7 @@ implementation is available in
 
 ## Exact Tape Derivatives and CUDA Cache Limits
 
-The exact autograd proof reaches the compiled tape. For a real algebraic graph, dense reverse
+The exact autograd proof reaches the lowered tape. For a real algebraic graph, dense reverse
 accumulation returns the graph's full cotangent context, and its input block is the adjoint Fréchet
 derivative of forward evaluation applied to the output seed. The pointwise theorem permits
 piecewise-smooth operators when the chosen execution point satisfies their differentiability and
@@ -65,11 +99,11 @@ an executable backend:
 ```lean
 import NN.Proofs.Autograd.Runtime.Link.FDeriv
 
-#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_adjoint_fderiv
-#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_adjoint_fderiv_at
+#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphToTape_adjoint_fderiv
+#check Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphToTape_adjoint_fderiv_at
 ```
 
-This result concerns the exact tape over `Real`. Native `Float` and CUDA executions still require
+This result concerns the exact tape over `Real`. Native `Float32` and CUDA executions still require
 the numerical-refinement assumptions described in the runtime-approximation chapter.
 
 The CUDA allocator also has an optional byte limit for released buffers retained for reuse:
@@ -112,7 +146,7 @@ modules are gone. Focused imports such as `NN.Spec`, `NN.Runtime`, `NN.Floats`, 
 TorchLean.
 
 We also broke up several files that had become difficult to navigate. Training, data handling,
-schedulers, CROWN propagation, graph compilation, runtime operations, normalization, Muon, and
+schedulers, CROWN propagation, graph lowering, runtime operations, normalization, Muon, and
 floating-point semantics moved into smaller modules with narrower imports. The API tree is about
 300 lines smaller and the guide is more than 5,000 lines shorter. The proof tree grew to include
 numerical certificates, rounded backpropagation, optimizer contracts, and new floating-point
@@ -160,8 +194,8 @@ gradients; training no longer runs a second forward pass just for logging.
 Transformer batches use one batch-aware attention tape node instead of asking the host to run
 the attention layer once per sample. The eager CUDA path folds batch and head axes into batched
 matrix multiplications, applies TorchLean's hard-masked softmax, and computes the local VJP in
-TorchLean. The specification and proof-compiled graph still define the operation as a leading-axis
-map of ordinary attention. A regression compares the vectorized forward value, input gradient, and
+TorchLean. The specification and typed graph path still define the operation as a leading-axis map
+of ordinary attention. A regression compares the vectorized forward value, input gradient, and
 shared weight gradients with repeated single-sample execution.
 
 Layer normalization and tanh-approximate GELU follow the same rule: one TorchLean operation,
@@ -179,7 +213,7 @@ projection weights, and ordinary `matmul`. Focused traces confirm that these tem
 kernels disappear, and parity tests compare the resulting forward values and gradients with the
 existing path.
 
-CUDA Adam and AdamW state can be saved independently of parameter checkpoints. The binary
+CUDA Adam and AdamW state can be saved independently of model checkpoints. The binary
 format records optimizer hyperparameters, parameter shapes, mutability flags, moment tensors, and
 step counters using explicit little-endian fields. Loading rejects mismatched models, changed
 moment parameters, duplicate state entries, truncation, and trailing data. Writes close and flush a
@@ -237,7 +271,7 @@ lowering. Before propagation, a coverage pass lists
 the exact nodes whose primitives lack a range contract. Custom registries are named and the name is
 stored in the certificate, so an artifact cannot be replayed under a different set of rules.
 
-The same certificate contains the backend planning audit. Rounding mode, subnormal behavior,
+The same certificate contains the kernel-selection audit. Rounding mode, subnormal behavior,
 FMA/contraction, and reduction order are recorded by each kernel capsule. Portable accumulations
 use the fixed left fold from the tensor semantics. CUDA and LibTorch accumulations are marked
 implementation-dependent, so their matrix products, convolutions, normalizations, FFT/FNO paths,
@@ -268,7 +302,7 @@ subtraction; explicit margins keep the rounded denominator away from zero. The e
 therefore works unchanged for all three optimizers and for every model represented by a `RevGraph`.
 A model-wide update applies it at each typed parameter index.
 
-The canonical `NN.IR.Graph` certificate remains a forward certificate. Its current compiler does not
+The canonical `NN.IR.Graph` certificate remains a forward certificate. Its current lowering does not
 attach proved VJPs, so backward claims use the proof-bearing reverse graph path instead of silently
 attributing autograd semantics to a forward-only lowering.
 
@@ -410,7 +444,7 @@ numbers. A stability theorem additionally requires `LyapunovCert.ValidFor`, whos
 the reported intervals enclose the named Lyapunov function and orbital derivative throughout that
 region.
 
-The graph evaluator and verifier compiler are split by operation. Their coverage theorems still
+The graph evaluator and verifier lowering are split by operation. Their coverage theorems still
 range over the full operation vocabulary, so adding a new file does not weaken the statement being
 proved. We removed theorems tied to incidental list lengths and retained small definitional lemmas
 only when later correctness proofs actually use them.
@@ -732,7 +766,7 @@ can be released after the step finishes.
 - `lake build`
 - `lake -R -K cuda=true build`
 - `lake exe torchlean mlp --device cpu --steps 10 --log false`
-- `lake exe torchlean mlp --steps 10 --dtype float --backend eager --log false`
+- `lake exe torchlean mlp --steps 10 --scalar float32 --execution eager --log false`
 - `lake -R -K cuda=true exe torchlean mlp --device cuda --steps 1000 --log false`
 - `lake -R -K cuda=true exe torchlean cnn --device cuda --steps 1000 --log false`
 - `lake -R -K cuda=true exe torchlean gpt2 --device cuda --steps 1200 --generate 0 --log false`

@@ -43,7 +43,8 @@ Shared vector-image configuration.
 The runtime example uses the same flattened CIFAR data boundary as the other vector generative
 commands, while the VAE-specific output shape adds latent mean/log-variance proxy channels.
 -/
-def cfg : nn.models.VectorGenerativeConfig := nn.models.compactImageConfig
+def cfg : nn.models.VectorGenerativeConfig :=
+  nn.models.vectorGenerativeConfig 1 16 8 4
 
 /-- Input shape: a batch of flattened CIFAR image vectors. -/
 abbrev σ := nn.models.vectorDataShape cfg
@@ -57,11 +58,11 @@ Trainable VAE-style vector model.
 The executable target is still an MSE-style supervised sample; the imported spec/theory files state
 the VAE objective separately.
 -/
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.vectorVae cfg
 
 /-- Public singleton dataset for compact CIFAR reconstruction plus latent-stat targets. -/
-def data (flags : RealData.CifarModelTrainFlags) : Trainer.Dataset σ τ :=
+def data (flags : RealData.CifarModelTrainFlags) : Trainer.DataSource σ τ :=
   RealData.cifarVectorDataset cfg (by decide) exeName (nn.models.vaeSample cfg)
     flags.xPath flags.yPath flags.nRows flags.seed
 
@@ -75,7 +76,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := flags.lr } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := flags.lr } })
         .regression
         (seed := flags.seed)
   trainer.train

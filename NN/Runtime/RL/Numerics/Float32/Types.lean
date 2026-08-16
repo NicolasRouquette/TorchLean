@@ -60,7 +60,7 @@ Cast a host `Float` to `IEEE32Exec`, rejecting NaN/Inf *and* binary64→binary32
 
 This is intended as a “second boundary check” after `Runtime.RL.Boundary` validation.
 -/
-def ofFloatIEEE32ExecChecked (x : Float) : Except String Float32Exec :=
+def ofFloatChecked (x : Float) : Except String Float32Exec :=
   let y : Float32Exec := TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat x
   if TorchLean.Floats.IEEE754.IEEE32Exec.isFinite y = true then
     .ok y
@@ -71,7 +71,7 @@ def ofFloatIEEE32ExecChecked (x : Float) : Except String Float32Exec :=
 Cast a tensor of host `Float`s to `IEEE32Exec`, rejecting the cast if any entry becomes
 non-finite.
 -/
-def castTensorIEEE32ExecChecked {s : Shape} (t : Tensor Float s) :
+def castTensorChecked {s : Shape} (t : Tensor Float s) :
     Except String (Tensor Float32Exec s) :=
   let t32 : Tensor Float32Exec s := Spec.mapTensor (TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat) t
   if Boundary.tensorAll (α := Float32Exec) (s := s) (fun x => TorchLean.Floats.IEEE754.IEEE32Exec.isFinite x) t32 then
@@ -83,12 +83,12 @@ def castTensorIEEE32ExecChecked {s : Shape} (t : Tensor Float s) :
 Cast a validated boundary transition (`Float`) to `IEEE32Exec`, rejecting the cast if any scalar
 becomes non-finite.
 -/
-def castTransitionIEEE32ExecChecked {obsShape : Shape} {nActions : Nat}
+def castTransitionChecked {obsShape : Shape} {nActions : Nat}
     (t : Boundary.Transition obsShape nActions) :
     Except String (Spec.RL.ObservedTransition (Tensor Float32Exec obsShape) (Fin nActions) Float32Exec) := do
-  let obs ← castTensorIEEE32ExecChecked (s := obsShape) t.observation
-  let nextObs ← castTensorIEEE32ExecChecked (s := obsShape) t.nextObservation
-  let r ← ofFloatIEEE32ExecChecked t.reward
+  let obs ← castTensorChecked (s := obsShape) t.observation
+  let nextObs ← castTensorChecked (s := obsShape) t.nextObservation
+  let r ← ofFloatChecked t.reward
   pure
     { observation := obs
       action := t.action

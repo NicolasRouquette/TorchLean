@@ -15,7 +15,7 @@ public import NN.Proofs.Autograd.Tape.Algebra.Soundness
 Convenience constructors for algebraic tape nodes/graphs.
 
 This is the "approach (a)" authoring layer: you build an SSA/DAG graph out of local nodes,
-then compile it to a runtime tape via `NN/Proofs/Autograd/Runtime/Link.lean`.
+then lower it to a runtime tape via `NN/Proofs/Autograd/Runtime/Link.lean`.
 
 This file focuses on *unary* nodes that depend on a single context entry (an `Idx`).
 That is enough to build many fixed-parameter inference graphs (e.g. MLP forward + input gradients).
@@ -41,8 +41,8 @@ namespace NodeData
 def ofOpSpec {α : Type} {Δ : Type} [Zero α] {Γ : List Shape} {σ τ : Shape}
     (idx : Idx Γ σ) (op : Spec.OpSpec α σ τ) : NodeData α Δ Γ τ :=
   { forward := fun ctx _d => op.forward (getIdx (xs := ctx) idx)
-    -- JVP is unused by the proof-compiled runtime path; the zero tangent keeps this executable
-    -- node total while VJP carries the proof-compiled runtime behavior.
+    -- This executable node uses only its stored VJP. The zero tangent keeps the unused JVP field
+    -- total; `NodeData` does not claim that either map is a derivative of `forward`.
     jvp := fun _ctx _dctx _d => Spec.fill (0 : α) τ
     vjp := fun ctx _d δ => TList.single (α := α) (Γ := Γ) idx (op.backward (getIdx (xs := ctx) idx)
       δ) }

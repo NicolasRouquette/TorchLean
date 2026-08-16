@@ -66,7 +66,7 @@ PyTorch analogue:
 - `torch.nn.TransformerEncoderLayer`
   (`https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html`)
 -/
-def transformerEncoderBlockWithMask {batch n dModel : Nat} [NeZero n] [NeZero dModel]
+def transformerEncoderBlock {batch n dModel : Nat} [NeZero n] [NeZero dModel]
     (cfg : TransformerEncoderBlock)
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
     Sequential (.dim batch (.dim n (.dim dModel .scalar)))
@@ -132,19 +132,6 @@ def transformerEncoderBlockWithMask {batch n dModel : Nat} [NeZero n] [NeZero dM
       norm2
 
 /--
-Transformer encoder block.
-
-This is `transformerEncoderBlockWithMask`; pass `mask := ...` to enable causal masking (or other
-attention masks).
--/
-def transformerEncoderBlock {batch n dModel : Nat} [NeZero n] [NeZero dModel]
-    (cfg : TransformerEncoderBlock)
-    (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    Sequential (.dim batch (.dim n (.dim dModel .scalar)))
-      (.dim batch (.dim n (.dim dModel .scalar))) :=
-  transformerEncoderBlockWithMask (batch := batch) (n := n) (dModel := dModel) cfg (mask := mask)
-
-/--
 Config record for `transformerEncoderStack`.
 
 This builds `layers` copies of `transformerEncoderBlock`, allocating seeds in a fixed stride.
@@ -165,7 +152,7 @@ Internal recursion for `transformerEncoderStack`.
 Builds `remaining` blocks starting at `layerIdx`, allocating each block's `seedBase` as
 `seedBase + layerIdx * seedStride`.
 -/
-def transformerStackGoWithMask {batch n dModel : Nat} [NeZero n] [NeZero dModel]
+def encoderStackGo {batch n dModel : Nat} [NeZero n] [NeZero dModel]
     (template : TransformerEncoderBlock) (seedBase seedStride : Nat)
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
     (layerIdx : Nat) → (remaining : Nat) →
@@ -175,25 +162,13 @@ def transformerStackGoWithMask {batch n dModel : Nat} [NeZero n] [NeZero dModel]
   | layerIdx, remaining + 1 =>
       let seed := seedBase + layerIdx * seedStride
       let blockCfg : TransformerEncoderBlock := { template with seedBase := seed }
-      let here := transformerEncoderBlockWithMask (batch := batch) (n := n) (dModel := dModel) blockCfg
+      let here := transformerEncoderBlock (batch := batch) (n := n) (dModel := dModel) blockCfg
         (mask := mask)
       let rest :=
-        transformerStackGoWithMask (batch := batch) (n := n) (dModel := dModel)
+        encoderStackGo (batch := batch) (n := n) (dModel := dModel)
           template seedBase seedStride (mask := mask)
           (layerIdx + 1) remaining
       seq! here, rest
-
-/--
-Internal recursion for `transformerEncoderStack` (unmasked).
-
-This is `transformerStackGoWithMask` with `mask := none`.
--/
-def transformerStackGo {batch n dModel : Nat} [NeZero n] [NeZero dModel]
-    (template : TransformerEncoderBlock) (seedBase seedStride : Nat) :
-    (layerIdx : Nat) → (remaining : Nat) →
-      Sequential (.dim batch (.dim n (.dim dModel .scalar))) (.dim batch (.dim n (.dim dModel .scalar))) :=
-  transformerStackGoWithMask (batch := batch) (n := n) (dModel := dModel)
-    template seedBase seedStride (mask := none)
 
 /--
 Stack `cfg.layers` copies of `blocks.transformerEncoderBlock`.
@@ -201,29 +176,18 @@ Stack `cfg.layers` copies of `blocks.transformerEncoderBlock`.
 TorchLean analogue of composing `torch.nn.TransformerEncoderLayer` into a
 `torch.nn.TransformerEncoder`, using `Seq` composition for the typed model.
 -/
-def transformerEncoderStackWithMask {batch n dModel : Nat} [NeZero n] [NeZero dModel]
-    (cfg : TransformerEncoderStack)
-    (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    Sequential (.dim batch (.dim n (.dim dModel .scalar))) (.dim batch (.dim n (.dim dModel .scalar))) :=
-  transformerStackGoWithMask (batch := batch) (n := n) (dModel := dModel)
-    cfg.block cfg.seedBase cfg.seedStride (mask := mask) 0 cfg.layers
-
-/--
-Stack `cfg.layers` copies of `blocks.transformerEncoderBlock`.
-
-This is `transformerEncoderStackWithMask`; pass `mask := ...` to enable causal masking (or other
-attention masks).
--/
 def transformerEncoderStack {batch n dModel : Nat} [NeZero n] [NeZero dModel]
     (cfg : TransformerEncoderStack)
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
     Sequential (.dim batch (.dim n (.dim dModel .scalar))) (.dim batch (.dim n (.dim dModel .scalar))) :=
-  transformerEncoderStackWithMask (batch := batch) (n := n) (dModel := dModel) cfg (mask := mask)
+  encoderStackGo (batch := batch) (n := n) (dModel := dModel)
+    cfg.block cfg.seedBase cfg.seedStride (mask := mask) 0 cfg.layers
 
 /--
 Transformer encoder followed by a flatten+linear classification head.
 
-PyTorch analogue (approximately): `nn.TransformerEncoder(...)` + pooling/flattening + `nn.linear`.
+PyTorch analogue (approximately): `nn.TransformerEncoder(...)` followed by pooling or flattening
+and `nn.Linear`.
 -/
 def transformerEncoderClassifier {batch n dModel : Nat} [NeZero n] [NeZero dModel]
     (classes : Nat) (cfg : TransformerEncoderStack) :
@@ -233,7 +197,7 @@ def transformerEncoderClassifier {batch n dModel : Nat} [NeZero n] [NeZero dMode
   let seedHeadB := seedHeadW + 1
   let flat : Sequential (.dim batch (.dim n (.dim dModel .scalar)))
       (.dim batch (.dim (Spec.Shape.size (.dim n (.dim dModel .scalar))) .scalar)) :=
-    flattenBatch (n := batch) (s := .dim n (.dim dModel .scalar))
+    flattenLeading (.dim batch .scalar) (s := .dim n (.dim dModel .scalar))
   let head : Sequential (.dim batch (.dim (Spec.Shape.size (.dim n (.dim dModel .scalar))) .scalar))
       (.dim batch (.dim classes .scalar)) :=
     linear (Spec.Shape.size (.dim n (.dim dModel .scalar))) classes

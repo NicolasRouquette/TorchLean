@@ -8,7 +8,7 @@ module
 
 public import NN.API
 public import NN.GraphSpec.Models
-public import NN.GraphSpec.ToTorchLean
+public import NN.GraphSpec.ToSequential
 
 /-!
 # GraphSpec tutorial
@@ -17,7 +17,7 @@ GraphSpec is TorchLean's architecture-facing graph language. It is useful when y
 exist first as a typed graph that can later be interpreted in several ways:
 
 - as a pure specification (`Interp.spec`) for theorem statements,
-- as an executable TorchLean program (`Compile.torchProgram`) for direct execution,
+- as an executable TorchLean program (`Chain.toProgram`) for direct execution,
 - as a sequential `nn.Sequential` view when the graph is just a layer stack, and
 - as a DAG model when the architecture has sharing, skip connections, or multi-input nodes.
 
@@ -29,7 +29,7 @@ That is why this folder is not a duplicate of `NN.Spec.Models` or `NN.Examples.M
 
 This tutorial does two things:
 
-1. It runs the smallest complete lowering path: `GraphSpec.Models.mlp → ToTorchLean.toSeq →
+1. It runs the smallest complete sequential-model path: `GraphSpec.Models.mlp → ToSequential.toSeq →
   Trainer.new → trainer.train`.
 2. It typechecks the broader GraphSpec model ladder: MLP, CNN, and a residual linear block.
 
@@ -39,12 +39,12 @@ residual block remain architecture terms that graph passes, exporters, and proof
 Run:
 
 ```bash
-lake exe torchlean graphspec --backend eager
-lake exe torchlean graphspec --backend compiled
+lake exe torchlean graphspec --execution eager
+lake exe torchlean graphspec --execution typed-graph
 ```
 
-You can also pass the standard TorchLean runtime flags such as `--dtype ieee32`, `--backend eager`,
-or `--backend compiled`.
+You can also pass the standard TorchLean runtime flags such as `--scalar ieee32-exec`, `--execution eager`,
+or `--execution typed-graph`.
 -/
 
 @[expose] public section
@@ -66,8 +66,8 @@ def usage : String :=
     , "  lake exe torchlean graphspec [options]"
     , ""
     , "Options:"
-    , "  --dtype float|float32|ieee32"
-    , "  --backend eager|compiled"
+    , "  --scalar float32|ieee32-exec|complex64"
+    , "  --execution eager|typed-graph"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "  --show-backend                    print backend capsules as they execute"
     ]
@@ -81,7 +81,7 @@ Parameter ABI:
 `[Mat 3 2, Vec 3, Mat 1 3, Vec 1]`.
 -/
 def tutorialMlp :
-    NN.GraphSpec.Graph
+    NN.GraphSpec.Chain
       [ .dim 3 (.dim 2 .scalar), .dim 3 .scalar
       , .dim 1 (.dim 3 .scalar), .dim 1 .scalar ]
       (.dim 2 .scalar) (.dim 1 .scalar) :=
@@ -128,7 +128,7 @@ def printCatalog : IO Unit := do
   IO.println ""
 
 /-- Tiny one-sample dataset for the lowered GraphSpec MLP training path. -/
-def tutorialDataset : Trainer.Dataset (.dim 2 .scalar) (.dim 1 .scalar) :=
+def tutorialDataset : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
   let xF : Spec.Tensor Float (.dim 2 .scalar) := tensorF! id [2] [0.5, 0.8]
   let yF : Spec.Tensor Float (.dim 1 .scalar) := tensorF! id [1] [1.0]
   let XFloat : Spec.Tensor Float (shape![1, 2]) := Spec.Tensor.dim (fun _ => xF)
@@ -148,9 +148,9 @@ def runMlpTrainingPath (args : List String) : IO Unit := do
   -- executable program view; here we ask for the additional `nn.Sequential` training view.
   let g := NN.GraphSpec.Models.mlp (inDim := inDim) (hidDim := hidDim) (outDim := outDim)
 
-  match NN.GraphSpec.ToTorchLean.toSeq (σ := xShape) (τ := yShape) g with
+  match NN.GraphSpec.ToSequential.toSeq (σ := xShape) (τ := yShape) g with
   | .error msg =>
-      throw <| IO.userError s!"GraphSpec.ToTorchLean.toSeq failed: {msg}"
+      throw <| IO.userError s!"GraphSpec.ToSequential.toSeq failed: {msg}"
   | .ok seqR =>
       let seq : nn.Sequential xShape yShape := by
         -- `nn.Sequential` is the public API name for the same runtime `Seq` type.

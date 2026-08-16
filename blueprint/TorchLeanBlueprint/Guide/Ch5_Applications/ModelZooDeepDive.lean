@@ -33,7 +33,7 @@ Then run the two-update smoke configuration:
 ```
 lake -R -K cuda=true exe torchlean chargpt --device cuda \
   --tiny-shakespeare --preset smoke \
-  --save-params /tmp/chargpt-params.json \
+  --save-checkpoint /tmp/chargpt.state.json \
   --log /tmp/chargpt-trainlog.json
 ```
 
@@ -45,7 +45,7 @@ torchlean chargpt: char-level GPT training
   step 0: val loss=4.207507
   step 1: val loss=4.195092
   step 2: val loss=4.174880
-  wrote params: /tmp/chargpt-params.json
+  wrote checkpoint: /tmp/chargpt.state.json
   vocab=65 (unique chars)
   architecture=width 32, heads 4, layers 2, dropout 0.000000
   sampled="First Citizen:ITJ?P,bduOc$Eaf'yjhYXGLHkR3vQq;V"
@@ -64,7 +64,7 @@ facts are elsewhere in the trace:
 
 ## The Architecture
 
-The command constructs a `CausalTransformerConfig` from the runtime options:
+The command constructs a `CausalTransformer.Config` from the runtime options:
 
 $$`D=32,\qquad H=4,\qquad D_h=D/H=8,\qquad L=2.`
 
@@ -263,7 +263,7 @@ The current output identifies the numerical path before reporting the loss:
 
 ```
 torchlean fno1d_burgers: native real-split FNO1D Burgers
-  device=cuda backend=eager
+  device=cuda execution=eager
   grid=32 width=8 modes=8 blocks=1
   rows train=4 test=2 eval_prefix=2
   spectral path=fused cuFFT RFFT autograd op

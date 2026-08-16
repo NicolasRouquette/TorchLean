@@ -50,7 +50,7 @@ behind it.
     <img class="showcase-media" src="{{ '/assets/media/examples/showcase/gpt-text-new.png' | relative_url }}" alt="GPT-2 style text example"/>
     <span class="showcase-body">
       <span class="showcase-title">GPT-Style Text</span>
-      <span class="showcase-text">Tokenize bytes, build next-token examples, train a small causal transformer, save parameters, and sample continuations.</span>
+      <span class="showcase-text">Tokenize bytes, build next-token examples, train a small causal transformer, save a checkpoint, and sample continuations.</span>
       <span class="showcase-link">Open text walkthrough</span>
     </span>
   </a>

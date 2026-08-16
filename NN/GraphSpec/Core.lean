@@ -13,92 +13,25 @@ import Mathlib.Algebra.Order.Algebra
 /-!
 # Sequential GraphSpec
 
-This file defines GraphSpec's **sequential syntax**.
-
-The important design decision is:
-
-- `DAG.Model` is the canonical general GraphSpec model representation.
-- `Graph ps σ τ` is compact syntax for the common special case where the model is just a chain
-  of layers.
-
-`Graph` is compact chain syntax over the canonical DAG representation:
+`DAG.Model` is GraphSpec's general model representation. `Chain ps σ τ` is compact syntax for the
+common case of a sequential composition:
 
 ```lean
 Linear >>> ReLU >>> Linear
 Conv >>> ReLU >>> Pool >>> Flatten >>> Linear
 ```
 
-and then lower that chain to the general DAG representation when downstream tooling wants one
-model shape for everything.
-
-GraphSpec as a whole is a *typed* DSL for describing neural-network computations, with the explicit
-goal of being usable in two complementary ways:
-
-1. **Reference / proof semantics**: interpret the graph as a *pure* Lean function on tensors
-   (`Interp.spec`). This is the semantics we want to reason about: shape safety, algebraic
-   identities, equivalence of model refactorings, etc.
-2. **Executable semantics**: compile the same graph into a backend-generic `TorchLean.Program`
-   (`Compile.torchProgram`) so it can run on the TorchLean runtime (which can target eager or
-   compiled execution backends).
-
-Shapes and parameter shapes are part of the graph type.
-Concretely, a graph is indexed by:
+The chain's type records:
 
 - `σ τ : Shape` — input/output tensor shapes, and
 - `ps : List Shape` — the ordered list of parameter tensor shapes the graph expects.
 
-That “parameter interface” is not a convention (like “whatever `state_dict()` happens to return”);
-it is baked into the model type. Sequential composition concatenates parameter lists, and
-evaluation splits them canonically.
+Sequential composition concatenates parameter lists, and both interpreters split those lists at
+the same structural boundary.
 
-## Why do this if PyTorch already exists?
+## Semantics and lowering
 
-PyTorch is excellent at *running* and *training* neural networks:
-
-- `nn.Module` packages parameters and a `forward` method.
-- Autograd records an operation tape during execution and provides gradients.
-- Modern tooling can capture/transform graphs (`torch.fx`, `torch.export`) and compile them
-  (`torch.compile`).
-
-GraphSpec is not trying to replace any of that. Instead, it focuses on the pieces PyTorch does not
-give us *inside Lean*:
-
-- A machine-checkable **mathematical semantics** we can use for proofs.
-- **Static shape discipline**: shapes appear in the type, not as runtime asserts.
-- A **typed parameter interface**: parameter shapes and ordering are explicit, so “which tensor is
-  weight #2?” is not an out-of-band convention.
-
-In practice, the expected workflow is:
-
-- use GraphSpec to write down a model architecture in a shape-typed way,
-- run it via TorchLean for concrete execution/training experiments, and
-- use `Interp.spec` and proof libraries to prove properties of the same architecture.
-
-## Why do this if TorchLean already exists?
-
-TorchLean is the **runtime and operator** layer: it gives us typed tensors, a backend interface,
-and executable programs (`TorchLean.Program`) that can run under the autograd/training runtime.
-
-GraphSpec is the **architecture/specification** layer: it gives us a small typed syntax for model
-structure that comes with *two linked meanings*:
-
-- a **pure** semantics (`Interp.spec`) that is amenable to proofs in Lean, and
-- a **compiler** (`Compile.torchProgram`) that turns the same description into something runnable.
-
-You *can* write models directly in TorchLean, but then the “thing you reason about” is already in
-the executable world (monadic references + backend ops). For many proofs, it is much cleaner to
-reason about a pure function `Params → Spec.Tensor → Spec.Tensor` and separately prove that compilation to
-the runtime preserves that meaning.
-
-In other words:
-
-- TorchLean answers: “Given ops, how do we run/train them?”
-- GraphSpec answers: “How do we describe models so we can both run them and prove things about
-  them?”
-
-## Mathematical View For Sequential Chains
-
-For `g : Graph ps σ τ`, think of `g` as denoting a function
+For `g : Chain ps σ τ`, think of `g` as denoting a function
 
 `⟦g⟧ : Params(ps) → Spec.Tensor σ → Spec.Tensor τ`.
 
@@ -110,37 +43,29 @@ In this file, that semantics is implemented by `Interp.spec`, and it is defined 
   split `params : Params(ps₁ ++ ps₂)` into `(params₁ : Params ps₁, params₂ : Params ps₂)`, then
   compute `⟦g₂⟧ params₂ (⟦g₁⟧ params₁ x)`.
 
-The compiler `Compile.torchProgram` follows the same structure, but targets a monadic Torch
-interface and expects arguments as `params ++ [input]` (matching `TorchLean.NN.Seq.forwardProgram`).
+`Chain.toProgram` follows the same recursive structure and expects arguments as
+`params ++ [input]`. Its result is an operation-polymorphic `TorchLean.Program`, not stored graph
+data. Eager and typed-graph interpreters give that program its runtime representation.
+
+`LowerToDAG.Chain.toDAGTerm` is the structural bridge to the general DAG language. Conversion to
+the canonical operation-tagged `NN.IR.Graph` is a separate verification lowering; this module does
+not claim a universal Chain-to-IR theorem.
 
 ## Scope of `Core.lean`
 
 This file defines only the sequential core:
 
 - `Primitive` — a single typed operation with both a pure spec and a TorchLean implementation.
-- `Graph` — sequential composition (`>>>`) of primitives with a typed parameter list.
+- `Chain` — sequential composition (`>>>`) of primitives with a typed parameter list.
 - `Interp.spec` — pure interpreter.
-- `Compile.torchProgram` — compiler to `TorchLean.Program`.
-- `LowerToDAG.Graph.toDAGTerm` / `toDAGModelZeroInit` — the bridge from chain syntax to the
+- `Chain.toProgram` — translation to `TorchLean.Program`.
+- `LowerToDAG.Chain.toDAGTerm` / `toDAGModelZeroInit` — the bridge from chain syntax to the
   canonical DAG representation.
 
 For skip connections, shared intermediates, residual adds, or other multi-input nodes, use
 `NN.GraphSpec.DAG` directly.
 
-## Direction
-
-GraphSpec is intended to grow into a hygienic “write once, run/prove many” layer:
-
-- richer primitive packs (vision, language, classical ML, …),
-- richer DAG structure (limited control flow where it can be compiled),
-- verified compilation passes (fusion, constant folding, layout transforms) with proofs that they
-  preserve `Interp.spec`,
-- a better parameter/initialization interface (explicit RNG threading, serialization, interop with
-  PyTorch/ONNX exports),
-- and a library of reusable theorems about common architectures (e.g. invariants of residual
-  blocks, bounds for Lipschitz constants, etc.).
-
-## References / citations
+## References
 
 - PyTorch `nn.Module` and graph tooling (`torch.fx`, `torch.export`, `torch.compile`) for the
   practical “execution/training first” baseline.
@@ -159,7 +84,7 @@ open _root_.NN.Spec
 open Spec.Tensor
 open NN.Tensor
 
-/-! ## Core graph language -/
+/-! ## Core chain language -/
 
 /--
 A *primitive node* in the GraphSpec language.
@@ -167,9 +92,9 @@ A *primitive node* in the GraphSpec language.
 GraphSpec primitives package both sides of the “spec vs runtime” interface:
 
 - a **pure spec forward** function (`specFwd`) used by the reference interpreter, and
-- a **TorchLean forwardProgram** (`torchProgram`) used by the compiler.
+- an executable TorchLean program (`program`) used by lowering.
 
-Optionally, a primitive may also provide a lowering to a TorchLean `LayerDef` (used to build a
+Optionally, a primitive may also provide a lowering to a TorchLean `Layer` (used to build a
 `TorchLean.NN.Seq` for training ergonomics + deterministic parameter initialization). Not every
 primitive needs this (e.g. control-flow-ish nodes kept outside the sequential layer).
 
@@ -203,48 +128,48 @@ structure Primitive (ps : List Shape) (σ τ : Shape) where
   This convention aligns with how sequential TorchLean models (`TorchLean.NN.Seq`) expose their
   forward-program interfaces.
   -/
-  torchProgram :
+  program :
     ∀ {α : Type 0}, [Context α] → [DecidableEq Shape] →
       Runtime.Autograd.TorchLean.Program α (ps ++ [σ]) τ
   /--
-  Optional lowering to a TorchLean `LayerDef`.
+  Optional lowering to a TorchLean `Layer`.
 
   We thread an occurrence index (`Nat`) so primitives can implement deterministic “per-layer”
   initialization (for example, $\mathrm{seed}=f(\mathrm{index})$).
   -/
-  toLayerDefM? :
-    Option (Nat → { l : Runtime.Autograd.TorchLean.NN.LayerDef σ τ // l.paramShapes = ps }) := none
+  toLayerM? :
+    Option (Nat → { l : Runtime.Autograd.TorchLean.NN.Layer σ τ // l.stateShapes = ps }) := none
   /-- Whether encountering this primitive should increment the layer-occurrence counter. -/
   countsAsLayer : Bool := false
 
 /--
-`Graph ps σ τ` is a (restricted) model that:
+`Chain ps σ τ` is a model chain that:
 - takes an input tensor of shape `σ`,
 - produces an output tensor of shape `τ`,
 - and uses parameters whose shapes are listed in `ps` (in order).
 
-This is a *sequential* (chain) graph language: the only composition operator is `seq` (`>>>`).
+This is sequential chain syntax: the only composition operator is `seq` (`>>>`).
 For sharing/skip connections, use `NN.GraphSpec.DAG`.
 
 Implementation note:
 - We encode the parameter list at the type level so composition automatically concatenates
   parameter lists (`ps := ps₁ ++ ps₂`).
 - This means every graph has a canonical “ABI” for parameters: a single typed list `TList α ps`.
-  When composing `g₁ : Graph ps₁ σ τ` and `g₂ : Graph ps₂ τ υ`, the composite graph expects
+  When composing `g₁ : Chain ps₁ σ τ` and `g₂ : Chain ps₂ τ υ`, the composite chain expects
   parameters of shape list `ps₁ ++ ps₂`, and evaluation splits that list into the pieces needed by
   each subgraph.
 -/
-inductive Graph : List Shape → Shape → Shape → Type 2 where
-  /-- Identity graph: passes the input through unchanged and requires no parameters. -/
-  | id (s : Shape) : Graph [] s s
+inductive Chain : List Shape → Shape → Shape → Type 2 where
+  /-- Identity chain: passes the input through unchanged and requires no parameters. -/
+  | id (s : Shape) : Chain [] s s
   /-- Sequential composition. Parameter lists concatenate. -/
   | seq {ps₁ ps₂ : List Shape} {σ τ υ : Shape} :
-      Graph ps₁ σ τ → Graph ps₂ τ υ → Graph (ps₁ ++ ps₂) σ υ
-  /-- Embed a single primitive node as a graph. -/
+      Chain ps₁ σ τ → Chain ps₂ τ υ → Chain (ps₁ ++ ps₂) σ υ
+  /-- Embed a single primitive node in a chain. -/
   | prim {ps : List Shape} {σ τ : Shape} :
-      Primitive ps σ τ → Graph ps σ τ
+      Primitive ps σ τ → Chain ps σ τ
 
-infixr:80 " >>> " => Graph.seq
+infixr:80 " >>> " => Chain.seq
 
 /-! ## Standard primitives (initial op set) -/
 
@@ -259,7 +184,7 @@ Let `x : Vec inDim`, `W : Mat outDim inDim`, and `b : Vec outDim`. Then:
 
 $\operatorname{linear}(W,b,x)=Wx+b$.
 
-This matches the standard dense layer as in PyTorch `torch.nn.linear` / `torch.nn.functional.linear`
+This matches the standard dense layer as in PyTorch `torch.nn.Linear` / `torch.nn.functional.linear`
 (up to the usual row/column convention; here the shape indices make the intended dimensions
 explicit).
 
@@ -273,11 +198,11 @@ So a graph containing a `linear` node *forces* you to supply exactly a weight ma
 vector of the right shapes, and it fixes their ordering in the model’s parameter list.
 
 References:
-- Dense layers are standard; for PyTorch behavior see `torch.nn.linear` documentation.
+- Dense layers are standard; for PyTorch behavior see `torch.nn.Linear` documentation.
 - For the semantics used by the spec interpreter, see `NN.Spec.Module.Linear` (`Spec.linear_spec`).
 
 Initialization semantics:
-- we attach a TorchLean `LayerDef` so graphs can be lowered to `TorchLean.NN.Seq`,
+- we attach a TorchLean `Layer` so graphs can be lowered to `TorchLean.NN.Seq`,
 - and we seed `W,b` deterministically from the layer-occurrence index:
   - `seedW = 2*i`, `seedB = 2*i + 1`.
 
@@ -294,13 +219,13 @@ def linear (inDim outDim : Nat) :
       | .cons w (.cons b .nil) =>
           let lin : Spec.LinearSpec α inDim outDim := { weights := w, bias := b }
           Spec.linearSpec (α := α) lin x
-    torchProgram := fun {α} _ctx _deq =>
+    program := fun {α} _ctx _deq =>
       -- Program takes args as `W → b → x → ...`.
       fun {m} _instM _instOps =>
         fun w b x =>
           Runtime.Autograd.TorchLean.linear (m := m) (α := α)
             (inDim := inDim) (outDim := outDim) w b x
-    toLayerDefM? := some (fun i =>
+    toLayerM? := some (fun i =>
       ⟨ Runtime.Autograd.TorchLean.NN.linear inDim outDim (seedW := 2 * i) (seedB := 2 * i + 1)
       , by rfl ⟩)
     countsAsLayer := true
@@ -321,10 +246,10 @@ References:
 def relu (s : Shape) : Primitive [] s s :=
   { name := "relu"
     specFwd := fun {α} _ctx _params x => Activation.reluSpec (α := α) x
-    torchProgram := fun {α} _ctx _deq =>
+    program := fun {α} _ctx _deq =>
       fun {m} _ _ =>
         fun x => Runtime.Autograd.TorchLean.relu (m := m) (α := α) (s := s) x
-    toLayerDefM? := some (fun _i => ⟨Runtime.Autograd.TorchLean.NN.relu (s := s), by rfl⟩)
+    toLayerM? := some (fun _i => ⟨Runtime.Autograd.TorchLean.NN.relu (s := s), by rfl⟩)
     countsAsLayer := false
   }
 
@@ -351,57 +276,51 @@ References:
 - Spec definition: `Activation.softmax_spec` in `NN.Spec.Layers.Activation`.
 - PyTorch API analogy: `torch.softmax(x, dim=-1)`.
 -/
-def softmax (s : Shape) : Primitive [] s s :=
+def softmaxLast (s : Shape) : Primitive [] s s :=
   { name := "softmax"
     specFwd := fun {α} _ctx _params x => Activation.softmaxSpec (α := α) (s := s) x
-    torchProgram := fun {α} _ctx _deq =>
+    program := fun {α} _ctx _deq =>
       fun {m} _ _ =>
         fun x => Runtime.Autograd.TorchLean.softmax (m := m) (α := α) (s := s) x
-    -- TorchLean has the op; treat it as a parameter-free layer for Seq lowering.
-    toLayerDefM? := some (fun _i =>
-      ⟨ { paramShapes := []
-          initParams := .nil
-          forward := fun _ {α} _ _ =>
-            fun {m} _ _ =>
-              fun x => Runtime.Autograd.TorchLean.softmax (m := m) (α := α) (s := s) x }
-      , by rfl ⟩)
+    toLayerM? := some (fun _i =>
+      ⟨Runtime.Autograd.TorchLean.NN.softmaxLast (s := s), by rfl⟩)
     countsAsLayer := false
   }
 
 end Primitive
 
-namespace Graph
+namespace Chain
 
-/-- Graph constructor for `Primitive.linear`. -/
+/-- Chain constructor for `Primitive.linear`. -/
 def linear (inDim outDim : Nat) :
-    Graph [.dim outDim (.dim inDim .scalar), .dim outDim .scalar]
+    Chain [.dim outDim (.dim inDim .scalar), .dim outDim .scalar]
       (.dim inDim .scalar) (.dim outDim .scalar) :=
   .prim (Primitive.linear inDim outDim)
 
-/-- Graph constructor for `Primitive.relu`. -/
-def relu (s : Shape) : Graph [] s s :=
+/-- Chain constructor for `Primitive.relu`. -/
+def relu (s : Shape) : Chain [] s s :=
   .prim (Primitive.relu s)
 
-/-- Graph constructor for `Primitive.softmax`. -/
-def softmax (s : Shape) : Graph [] s s :=
-  .prim (Primitive.softmax s)
+/-- Chain constructor for `Primitive.softmaxLast`. -/
+def softmaxLast (s : Shape) : Chain [] s s :=
+  .prim (Primitive.softmaxLast s)
 
-end Graph
+end Chain
 
-/-! ## Lowering: sequential Graph → DAG term/model -/
+/-! ## Lowering: sequential chain → DAG term/model -/
 
 /-!
 GraphSpec has two surface syntaxes:
 
-- `NN.GraphSpec.Core`: a *sequential* DSL (`Graph` + `>>>`), ideal for pure pipelines.
+- `NN.GraphSpec.Core`: a *sequential* DSL (`Chain` + `>>>`), ideal for pure pipelines.
 - `NN.GraphSpec.DAG.Core`: a *general* SSA/A-normal-form term language, ideal for sharing/skip
   connections.
 
 The DAG term/model language is GraphSpec’s “general graph” core: it is the representation that can
 express sharing and skip connections.
 
-Sequential `Graph` exists because it is the clearest way to write pipelines, and it has its own
-direct Spec semantics (`Interp.spec`) and compiler (`Compile.torchProgram`).
+`Chain` exists because it is the clearest way to write pipelines, and it has its own
+direct Spec semantics (`Interp.spec`) and program translation (`Chain.toProgram`).
 
 This lowering is still useful whenever you want to *embed* a sequential pipeline into the DAG world
 (e.g. to reuse DAG-only tooling, or to keep a single GraphSpec example surface that can export DAG
@@ -409,9 +328,9 @@ models).
 
 The declarations below provide a structural lowering:
 
-- `Graph.toDAGTerm` produces a `DAG.Term (ps ++ [σ]) τ`, i.e. a DAG term whose environment starts
+- `Chain.toDAGTerm` produces a `DAG.Term (ps ++ [σ]) τ`, i.e. a DAG term whose environment starts
   with the parameter list `ps` and ends with the (single) data input `σ`.
-- `Graph.toDAGModelZeroInit` wraps that term into a `DAG.Model ps [σ] τ` with a simple default
+- `Chain.toDAGModelZeroInit` wraps that term into a `DAG.Model ps [σ] τ` with a simple default
   parameter initialization (all zeros).
 
 Notes:
@@ -430,7 +349,7 @@ open Runtime.Autograd.Torch (TList)
 ### Lowering internals
 
 The definitions below (`castTerm`, `toTerm`, …) are internal adapters for the structural
-lowering. The intended public API is `Graph.toDAGTerm` / `Graph.toDAGModelZeroInit`.
+lowering. The intended public API is `Chain.toDAGTerm` / `Chain.toDAGModelZeroInit`.
 -/
 
 /-- Cast a `DAG.Term` across a proven equality of output shapes. -/
@@ -542,7 +461,7 @@ def Primitive.toDAGPrimOp {ps : List Shape} {σ τ : Shape} (p : Primitive ps σ
           (α := α) (ss₁ := ps) (ss₂ := [σ]) xs
       match xs' with
       | .cons x .nil => p.specFwd (α := α) params x
-    torchProgram := fun {α} _ctx _deq => p.torchProgram (α := α)
+    program := fun {α} _ctx _deq => p.program (α := α)
   }
 
 /-! ### Building well-typed DAG arguments for a primitive call -/
@@ -694,13 +613,13 @@ def primCall
     -- Discharge the local `Γ` abbreviation.
     simpa [Γ] using (DAG.Term.op (Γ := Γ) op args))
 
-/-! ### Graph lowering -/
+/-! ### Chain lowering -/
 
-/-- Lower a sequential `Graph` to an SSA-style `DAG.Term`, with parameters read from the
+/-- Lower a sequential `Chain` to an SSA-style `DAG.Term`, with parameters read from the
   environment. -/
 def toTerm
     {pre ps post extra : List Shape} {σ τ : Shape}
-    (g : Graph ps σ τ)
+    (g : Chain ps σ τ)
     (x : DAG.Term ((pre ++ ps ++ post) ++ extra) σ) :
     DAG.Term ((pre ++ ps ++ post) ++ extra) τ := by
   let Γ : List Shape := (pre ++ ps ++ post) ++ extra
@@ -771,51 +690,51 @@ def zeroInitParams : (ps : List Shape) → TList Float ps
   | s :: ss => .cons (Spec.zeros (α := Float) s) (zeroInitParams ss)
 
 /-!
-### Deterministic initialization for sequential graphs
+### Deterministic initialization for chains
 
-`Graph.toDAGModelZeroInit` is total, but its parameters are all-zero tensors, which is convenient
+`Chain.toDAGModelZeroInit` is total, but its parameters are all-zero tensors, which is convenient
 for proofs and shape-only examples but not representative of training setups.
 
-For graphs whose primitives provide `Primitive.toLayerDefM?`, we can reuse TorchLean’s deterministic
-initializers (e.g. Xavier init for linear weights) in a way that matches `ToTorchLean.toSeq`:
+For graphs whose primitives provide `Primitive.toLayerM?`, we can reuse TorchLean’s deterministic
+initializers (e.g. Xavier init for linear weights) in a way that matches `ToSequential.toSeq`:
 
 - we thread an occurrence index `i : Nat`,
 - primitives with `countsAsLayer = true` increment it,
-- and each primitive’s `LayerDef.initParams` uses seeds derived from `i`.
+- and each primitive’s `Layer.initState` uses seeds derived from `i`.
 
-We expose this as `Graph.toDAGModelDetInit? : Except String (DAG.Model ...)`:
-it fails if any primitive lacks a `toLayerDefM?` lowering.
+We expose this as `Chain.toDAGModelDetInit? : Except String (DAG.Model ...)`:
+it fails if any primitive lacks a `toLayerM?` lowering.
 -/
 
 /--
-Compute deterministic initialization tensors for a sequential `Graph`, threading a “layer
+Compute deterministic initialization tensors for a sequential `Chain`, threading a “layer
 occurrence index”.
 
-This matches `ToTorchLean.toSeq`’s notion of “occurrence”: only primitives with
+This matches `ToSequential.toSeq`’s notion of “occurrence”: only primitives with
 `countsAsLayer = true` advance the counter.
 -/
-def Graph.detInitParamsAux
+def Chain.detInitParamsAux
     {ps : List Shape} {σ τ : Shape}
-    (g : Graph ps σ τ) (i : Nat) :
+    (g : Chain ps σ τ) (i : Nat) :
     Except String (Runtime.Autograd.Torch.TList Float ps × Nat) :=
   match g with
   | .id _ => .ok (.nil, i)
   | .prim p =>
-      match p.toLayerDefM? with
+      match p.toLayerM? with
       | none =>
           .error <|
             (s!"graphspec.detInit: primitive `{p.name}` has no deterministic init " ++
-              s!"(missing toLayerDefM?)")
+              s!"(missing toLayerM?)")
       | some mk =>
           let ⟨l, hps⟩ := mk i
           let i' := if p.countsAsLayer then i + 1 else i
           match hps with
-          | rfl => .ok (l.initParams, i')
+          | rfl => .ok (l.initState, i')
   | .seq (ps₁ := ps₁) (ps₂ := ps₂) (σ := σ) g₁ g₂ =>
-      match Graph.detInitParamsAux (ps := ps₁) (σ := σ) g₁ i with
+      match Chain.detInitParamsAux (ps := ps₁) (σ := σ) g₁ i with
       | .error e => .error e
       | .ok (xs, i') =>
-          match Graph.detInitParamsAux (ps := ps₂) (σ := _) g₂ i' with
+          match Chain.detInitParamsAux (ps := ps₂) (σ := _) g₂ i' with
           | .error e => .error e
           | .ok (ys, i'') =>
               .ok
@@ -824,18 +743,18 @@ def Graph.detInitParamsAux
                 , i'')
 
 /-- Deterministically initialize all graph parameters, starting the occurrence index at `0`. -/
-def Graph.detInitParams?
+def Chain.detInitParams?
     {ps : List Shape} {σ τ : Shape}
-    (g : Graph ps σ τ) :
+    (g : Chain ps σ τ) :
     Except String (Runtime.Autograd.Torch.TList Float ps) :=
-  match Graph.detInitParamsAux (ps := ps) (σ := σ) (τ := τ) g 0 with
+  match Chain.detInitParamsAux (ps := ps) (σ := σ) (τ := τ) g 0 with
   | .error e => .error e
   | .ok (xs, _i) => .ok xs
 
 /--
-Lower a sequential `Graph` to a DAG term with environment `ps ++ [σ]`.
+Lower a sequential `Chain` to a DAG term with environment `ps ++ [σ]`.
  -/
-def Graph.toDAGTerm {ps : List Shape} {σ τ : Shape} (g : Graph ps σ τ) :
+def Chain.toDAGTerm {ps : List Shape} {σ τ : Shape} (g : Chain ps σ τ) :
     DAG.Term (ps ++ [σ]) τ :=
   let x :
       let Γ : List Shape := ([] ++ ps ++ []) ++ [σ]
@@ -860,46 +779,46 @@ def Graph.toDAGTerm {ps : List Shape} {σ τ : Shape} (g : Graph ps σ τ) :
       (toTerm (pre := []) (ps := ps) (post := []) (extra := [σ]) g x)
 
 /--
-Lower a sequential `Graph` to a DAG `Model` with a simple default init (all zeros).
+Lower a sequential `Chain` to a DAG `Model` with a simple default init (all zeros).
 
 This is mainly a convenience for GraphSpec example organization; for training-oriented init,
-see `NN.GraphSpec.ToTorchLean` (Seq lowering) and/or provide your own initializer.
+see `NN.GraphSpec.ToSequential` (sequential-model conversion) and/or provide your own initializer.
  -/
-def Graph.toDAGModelZeroInit {ps : List Shape} {σ τ : Shape} (g : Graph ps σ τ) :
+def Chain.toDAGModelZeroInit {ps : List Shape} {σ τ : Shape} (g : Chain ps σ τ) :
     DAG.Model ps [σ] τ :=
   { initParams := zeroInitParams ps
-    body := Graph.toDAGTerm (ps := ps) (σ := σ) (τ := τ) g
+    body := Chain.toDAGTerm (ps := ps) (σ := σ) (τ := τ) g
   }
 
 /--
-Lower a sequential `Graph` to a DAG `Model`, using deterministic initialization.
+Lower a sequential `Chain` to a DAG `Model`, using deterministic initialization.
 
-This is the DAG analogue of `ToTorchLean.toSeq`’s initialization semantics: it uses each primitive’s
-`toLayerDefM?` to obtain a TorchLean `LayerDef`, then reuses the `LayerDef.initParams`.
+This is the DAG analogue of `ToSequential.toSeq`’s initialization semantics: it uses each primitive’s
+`toLayerM?` to obtain a TorchLean `Layer`, then reuses the `Layer.initState`.
 
-This returns `Except String` because not every primitive necessarily admits a `LayerDef` lowering.
+This returns `Except String` because not every primitive necessarily admits a `Layer` lowering.
 -/
-def Graph.toDAGModelDetInit?
-    {ps : List Shape} {σ τ : Shape} (g : Graph ps σ τ) :
+def Chain.toDAGModelDetInit?
+    {ps : List Shape} {σ τ : Shape} (g : Chain ps σ τ) :
     Except String (DAG.Model ps [σ] τ) :=
-  match Graph.detInitParams? (ps := ps) (σ := σ) (τ := τ) g with
+  match Chain.detInitParams? (ps := ps) (σ := σ) (τ := τ) g with
   | .error e => .error e
   | .ok params =>
       .ok { initParams := params
-            body := Graph.toDAGTerm (ps := ps) (σ := σ) (τ := τ) g }
+            body := Chain.toDAGTerm (ps := ps) (σ := σ) (τ := τ) g }
 
 end LowerToDAG
 
 /-! ## Semantics (sequential core) -/
 
 /-!
-The sequential DSL (`Graph` with `>>>`) has *direct* semantics:
+The sequential DSL (`Chain` with `>>>`) has *direct* semantics:
 
-- `Interp.spec` evaluates a sequential graph as a pure function on tensors, and
-- `Compile.torchProgram` compiles it to a backend-generic `TorchLean.Program`.
+- `Interp.spec` evaluates a chain as a pure function on tensors, and
+- `Chain.toProgram` translates it to an execution-polymorphic `TorchLean.Program`.
 
-Even though a sequential graph is semantically a path-shaped DAG, we keep the sequential
-interpreter/compiler direct for two pragmatic reasons:
+Even though a chain is semantically a path-shaped DAG, we keep the sequential
+semantics and lowering direct for two pragmatic reasons:
 
 1. **Proof ergonomics.** For chain graphs, definitional reduction is much simpler when we evaluate
    directly rather than going through an SSA lowering.
@@ -907,7 +826,7 @@ interpreter/compiler direct for two pragmatic reasons:
    concatenation vs explicit `let1` sharing). Keeping each semantics close to its syntax makes the
    code easier to audit.
 
-We still provide a structural lowering `LowerToDAG.Graph.toDAGModelZeroInit` so that DAG-only
+We still provide a structural lowering `LowerToDAG.Chain.toDAGModelZeroInit` so that DAG-only
   tooling
 can consume sequential models. The DAG path becomes the canonical execution route when a caller
 wants explicit sharing together with the corresponding simp lemmas / proof infrastructure.
@@ -935,11 +854,11 @@ def splitParams {α : Type 0} :
        (.cons x l, r)
 
 /--
-Pure Spec semantics of a sequential `Graph`.
+Pure Spec semantics of a sequential `Chain`.
  -/
 def spec
     {ps : List Shape} {σ τ : Shape}
-    (g : Graph ps σ τ)
+    (g : Chain ps σ τ)
     {α : Type 0} [Context α] :
     Params α ps → Spec.Tensor α σ → Spec.Tensor α τ :=
   fun params x =>
@@ -953,14 +872,14 @@ def spec
 
 end Interp
 
-namespace Compile
+namespace Chain
 
 /--
-Compile a sequential `Graph` to a backend-generic TorchLean `Program`.
+Lower a sequential `Chain` to an execution-polymorphic TorchLean `Program`.
  -/
-def torchProgram
+def toProgram
     {ps : List Shape} {σ τ : Shape}
-    (g : Graph ps σ τ)
+    (g : Chain ps σ τ)
     {α : Type 0} [Context α] [DecidableEq Shape] :
     Runtime.Autograd.TorchLean.Program α (ps ++ [σ]) τ :=
   fun {m} _instM _instOps =>
@@ -975,9 +894,9 @@ def torchProgram
           let (l, r) := splitParamsRef (ps₁ := ps₁) (ps₂ := ps₂) xs
           (.cons x l, r)
 
-    let rec compileRefList
+    let rec lowerRefList
         {ps : List Shape} {σ τ : Shape}
-        (g : Graph ps σ τ)
+        (g : Chain ps σ τ)
         (rs : Runtime.Autograd.Torch.RefList Ref (ps ++ [σ])) :
         m (Ref τ) :=
       match g with
@@ -986,7 +905,7 @@ def torchProgram
           | .cons x .nil => pure x
       | .prim p =>
           Runtime.Autograd.Torch.CurriedRef.uncurry (ss := ps ++ [σ]) (Ref := Ref)
-            (p.torchProgram (α := α)) rs
+            (p.program (α := α)) rs
       | .seq (ps₁ := ps₁) (ps₂ := ps₂) (τ := τm) g₁ g₂ => do
           let (params12, x) :=
             Runtime.Autograd.Torch.RefList.splitLast (Ref := Ref) (ss := ps₁ ++ ps₂) (τ := σ) rs
@@ -994,16 +913,16 @@ def torchProgram
           let rs₁ :=
             Runtime.Autograd.Torch.RefList.append (Ref := Ref) (ss₁ := ps₁) (ss₂ := [σ])
               params₁ (.cons x .nil)
-          let y ← compileRefList (ps := ps₁) (σ := σ) (τ := τm) g₁ rs₁
+          let y ← lowerRefList (ps := ps₁) (σ := σ) (τ := τm) g₁ rs₁
           let rs₂ :=
             Runtime.Autograd.Torch.RefList.append (Ref := Ref) (ss₁ := ps₂) (ss₂ := [τm])
               params₂ (.cons y .nil)
-          compileRefList (ps := ps₂) (σ := τm) (τ := τ) g₂ rs₂
+          lowerRefList (ps := ps₂) (σ := τm) (τ := τ) g₂ rs₂
 
     Runtime.Autograd.Torch.CurriedRef.curry (ss := ps ++ [σ]) (Ref := Ref)
-      (fun rs => compileRefList (ps := ps) (σ := σ) (τ := τ) g rs)
+      (fun rs => lowerRefList (ps := ps) (σ := σ) (τ := τ) g rs)
 
-end Compile
+end Chain
 
 end GraphSpec
 end NN

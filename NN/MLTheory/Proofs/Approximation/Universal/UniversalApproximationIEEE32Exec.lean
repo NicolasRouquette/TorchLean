@@ -106,7 +106,7 @@ inductive HingeSumFinite {n : ℕ} (t c : Fin n → IEEE32Exec) (x : IEEE32Exec)
 ### Discharging `HingeSumFinite` for *concrete* networks by computation
 
 For typical verification workflows, `t`, `c`, and `x` are *concrete* IEEE32Exec constants
-coming from a compiled model artifact. In that setting, the easiest way to satisfy the
+coming from a lowered model artifact. In that setting, the easiest way to satisfy the
 `HingeSumFinite …` hypotheses is to compute the IEEE32Exec kernel and check finiteness at
 every intermediate.
 

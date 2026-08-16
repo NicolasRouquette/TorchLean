@@ -107,7 +107,7 @@ noncomputable def neuralTanh (rnd : ℝ → ℤ) [NeuralValidRnd rnd] (x : ℝ) 
 /--
 SiLU / Swish (rounded).
 
-PyTorch analogies: `torch.nn.functional.silu` / `torch.nn.silu`.
+PyTorch analogues: `torch.nn.functional.silu` / `torch.nn.SiLU`.
 
 Definition:
 $\operatorname{SiLU}(x)=x\,\operatorname{sigmoid}(x)$. We use the same piecewise sigmoid expression

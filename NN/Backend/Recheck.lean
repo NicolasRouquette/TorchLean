@@ -125,41 +125,41 @@ def trustedBoundaryObligations (a : KernelAudit) : List ContractObligation :=
 
 end KernelAudit
 
-namespace ExecutionAudit
+namespace KernelPlanAudit
 
 /-- All recheck obligations for all selected kernels. -/
-def obligationReports (a : ExecutionAudit) : List ObligationReport :=
+def obligationReports (a : KernelPlanAudit) : List ObligationReport :=
   a.kernels.foldr (fun k acc => k.obligationReports ++ acc) []
 
 /-- Recheck obligations with no recorded evidence. -/
-def missingReports (a : ExecutionAudit) : List ObligationReport :=
+def missingReports (a : KernelPlanAudit) : List ObligationReport :=
   a.obligationReports.filter ObligationReport.isMissing
 
 /-- Recheck obligations discharged by trusted external boundaries. -/
-def trustedBoundaryReports (a : ExecutionAudit) : List ObligationReport :=
+def trustedBoundaryReports (a : KernelPlanAudit) : List ObligationReport :=
   a.obligationReports.filter ObligationReport.isTrusted
 
 /-- Whether every obligation has a non-missing audit classification. -/
-def hasNoMissingEvidence (a : ExecutionAudit) : Bool :=
+def hasNoMissingEvidence (a : KernelPlanAudit) : Bool :=
   a.missingReports.isEmpty
 
-end ExecutionAudit
+end KernelPlanAudit
 
-namespace ExecutionPlan
+namespace KernelPlan
 
 /-- Whether every selected backend contract obligation has a non-missing audit classification. -/
-def hasNoMissingEvidence (p : ExecutionPlan) : Bool :=
+def hasNoMissingEvidence (p : KernelPlan) : Bool :=
   p.audit.hasNoMissingEvidence
 
 /-- Missing recheck obligations for a selected plan. -/
-def missingReports (p : ExecutionPlan) : List ObligationReport :=
+def missingReports (p : KernelPlan) : List ObligationReport :=
   p.audit.missingReports
 
 /-- Trusted-boundary recheck obligations for a selected plan. -/
-def trustedBoundaryReports (p : ExecutionPlan) : List ObligationReport :=
+def trustedBoundaryReports (p : KernelPlan) : List ObligationReport :=
   p.audit.trustedBoundaryReports
 
-end ExecutionPlan
+end KernelPlan
 
 end Backend
 end NN

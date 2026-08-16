@@ -35,7 +35,7 @@ def zero (s : Shape) : PrimOp [] s :=
     specFwd := fun {_α} _ xs =>
       match xs with
       | .nil => _root_.Spec.fill 0 s
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ =>
         Runtime.Autograd.TorchLean.const (m := m) (α := α) (_root_.Spec.fill 0 s) }
 
@@ -50,7 +50,7 @@ def one (s : Shape) : PrimOp [] s :=
     specFwd := fun {_α} _ xs =>
       match xs with
       | .nil => _root_.Spec.fill 1 s
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ =>
         Runtime.Autograd.TorchLean.const (m := m) (α := α) (_root_.Spec.fill 1 s) }
 
@@ -64,7 +64,7 @@ Inputs are ordered as `[W, b, x]`:
 - `x : Vec inDim`.
 
 The output is `Vec outDim`. This is the DAG embedding of `Primitive.linear`, so the DAG and
-sequential authoring surfaces share the same Spec semantics and TorchLean compiler path.
+sequential authoring surfaces share the same Spec semantics and TorchLean lowering path.
 -/
 def linear (inDim outDim : Nat) :
     PrimOp [.dim outDim (.dim inDim .scalar), .dim outDim .scalar, .dim inDim .scalar] (.dim outDim .scalar) :=
@@ -110,7 +110,7 @@ def add (s : Shape) : PrimOp [s, s] s :=
     specFwd := fun {α} _ctx xs =>
       match xs with
       | .cons a (.cons b .nil) => _root_.Spec.Tensor.addSpec (α := α) a b
-    torchProgram := fun {α} _ctx _deq =>
+    program := fun {α} _ctx _deq =>
       fun {m} _ _ =>
         fun a b => Runtime.Autograd.TorchLean.add (m := m) (α := α) (s := s) a b
   }
@@ -128,7 +128,7 @@ def sub (s : Shape) : PrimOp [s, s] s :=
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons a (.cons b .nil) => _root_.Spec.Tensor.subSpec (α := α) a b
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun a b =>
         Runtime.Autograd.TorchLean.sub (m := m) (α := α) a b }
 
@@ -145,7 +145,7 @@ def mul (s : Shape) : PrimOp [s, s] s :=
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons a (.cons b .nil) => _root_.Spec.Tensor.mulSpec (α := α) a b
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun a b =>
         Runtime.Autograd.TorchLean.mul (m := m) (α := α) a b }
 
@@ -213,14 +213,14 @@ in the graph; stateful training statistics belong in an explicit runtime/state m
 
 Reference: Ioffe and Szegedy (2015), "Batch Normalization: Accelerating Deep Network Training...".
 -/
-def batchnormChw
+def batchNormChw
     (channels height width : Nat)
     (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0) :
     PrimOp
       [.dim channels .scalar, .dim channels .scalar, .dim channels (.dim height (.dim width .scalar))]
       (.dim channels (.dim height (.dim width .scalar))) :=
   (LowerToDAG.Primitive.toDAGPrimOp
-      (Primitive.batchnormChw (channels := channels) (height := height) (width := width)
+      (Primitive.batchNormChw (channels := channels) (height := height) (width := width)
         (h_c := h_c) (h_h := h_h) (h_w := h_w)) : PrimOp _ _)
 
 end PrimOp

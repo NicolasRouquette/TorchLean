@@ -11,17 +11,13 @@ Start with the same MLP:
 
 $$`F_\theta:[2]\to[1]`
 
-Its type stays `[2] → [1]` whether it runs eagerly on the CPU, through a compiled graph, or with
+Its type stays `[2] → [1]` whether it runs eagerly on the CPU, through a typed graph, or with
 native CUDA kernels. We can therefore keep the architecture, seed, and data fixed while changing
 one runtime choice at a time.
 
-There are four independent questions. Which scalar operations give meaning to the numbers? Is the
-forward/loss program recorded once or rebuilt eagerly? Which device and providers carry out its
-primitive operations? Is the runner training or evaluating? Treating these as separate questions
-is useful: moving to CUDA should not silently turn dropout from training behavior into evaluation
-behavior, and selecting binary32 should not secretly choose another model architecture.
-
-The experiments below answer each question by asking the runner what it actually did.
+There are four independent choices: scalar semantics, execution mode, device and providers, and
+training or evaluation mode. Moving to CUDA should not silently turn dropout from training behavior
+into evaluation behavior, and selecting binary32 should not change the model architecture.
 
 # Ask The Runner
 
@@ -40,15 +36,15 @@ lake exe torchlean quickstart_mlp --help
 The quickstart's common flags are:
 
 ```
---dtype float|ieee754exec
---backend eager|compiled
+--scalar float32|ieee32-exec|complex64
+--execution eager|typed-graph
 --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external
 --seed N
 --show-backend
 ```
 
-The canonical executable names are `float` and `ieee754exec`; the shared parser also accepts the
-older `float32` and `ieee32` aliases. Individual commands may support only one of these choices.
+`float32` is the native binary32 runtime. `ieee32-exec` selects the independent bit-level reference
+implementation. Individual commands may support only a subset of these choices.
 
 The parser knows more device names than the current runtime implements. CPU and CUDA have maintained
 profiles today; the other names reserve a clean place for future providers. Asking for one of them
@@ -66,8 +62,8 @@ The prompt is opt-in so scripts and CI never block waiting for input.
 
 ```
 lake exe torchlean quickstart_mlp \
-  --dtype float \
-  --backend eager \
+  --scalar float32 \
+  --execution eager \
   --device cpu \
   --steps 20 \
   --seed 2026 \
@@ -83,28 +79,38 @@ the requested CPU path actually ran.
 
 Eager mode is the natural starting point when operation structure depends on runtime values, when
 you want to inspect the tape or provider choices, or when you are using the maintained CUDA
-runtime. It also accepts more dynamic frontend programs than the fixed compiled recorder.
+runtime. It also accepts more dynamic frontend programs than the fixed typed graph recorder.
 
-# Experiment 2: CPU Compiled
+# Experiment 2: CPU Typed Graph
 
 ```
 lake exe torchlean quickstart_mlp \
-  --dtype float \
-  --backend compiled \
+  --scalar float32 \
+  --execution typed-graph \
   --device cpu \
   --steps 20 \
   --seed 2026
 ```
 
-Compiled execution records the fixed scalar-loss program once, including forward, JVP, and VJP
-behavior, and replays it with current parameters and data.
+For this trainer path, typed graph execution records the fixed scalar-loss program once as a typed
+SSA graph, including forward, JVP, and VJP behavior, then reuses it with current parameters and
+data. The graph stores its output as a typed reference to an input or recorded node, rather than
+assuming that the final node is the result. The shape-indexed builder rejects ill-shaped
+connections and ill-shaped output references.
 
-Compare the initial loss between eager and compiled using the same seed. It should agree for the
-supported deterministic program. Then compare final parameters or predictions, not only
-six-decimal loss summaries, because different execution orders can hide small discrepancies.
+The graph stores executable derivative rules. Selecting this mode does not prove those rules
+correct. A derivative theorem additionally needs the corresponding proof-carrying nodes from the
+autograd proof layer. TorchLean proves that lowering `GraphData` to a runtime tape preserves its
+stored backpropagation program; that implementation theorem is separate from mathematical
+derivative correctness.
 
-The current compiled trainer is CPU-only. It does not consume an accepted backend graph plan and it
-does not mean CUDA Graph capture. A CUDA plus compiled request fails explicitly.
+Compare the initial loss between eager and typed graph execution using the same seed. It should
+agree for the supported deterministic program. Then compare final parameters or predictions, not
+only six-decimal loss summaries, because different execution orders can hide small discrepancies.
+
+The current typed graph trainer is CPU-only. It does not consume an `AcceptedGraphKernelPlan`,
+perform native code generation, or mean CUDA Graph capture. A CUDA plus typed graph request fails
+explicitly.
 
 # Experiment 3: Native CUDA
 
@@ -112,8 +118,8 @@ Build and run:
 
 ```
 lake -R -K cuda=true exe torchlean quickstart_mlp \
-  --dtype float \
-  --backend eager \
+  --scalar float32 \
+  --execution eager \
   --device cuda \
   --steps 20 \
   --seed 2026 \
@@ -124,9 +130,9 @@ The CUDA profile selects native capsules for supported operations. The report na
 permutation, matrix multiplication, broadcasting, addition, ReLU, and MSE providers as they are
 first used.
 
-CUDA currently requires host `Float` at the TorchLean module boundary. The native tensors use
-device-side Float32 storage and operations according to their capsules. This is a runtime boundary,
-not an identification of Lean `Float`, mathematical `FP32`, and CUDA `float`.
+The same native `Float32` scalar is used at the TorchLean module boundary and in CUDA tensor
+storage. Kernel capsules still record the native boundary: selecting `Float32` does not by itself
+prove a CUDA kernel, compiler, driver, or device correct.
 
 If the project is built without CUDA support, requesting CUDA fails. The stub archives permit the
 repository to build on CPU-only systems; they do not pretend to execute GPU code.
@@ -135,8 +141,8 @@ repository to build on CPU-only systems; they do not pretend to execute GPU code
 
 ```
 lake exe torchlean quickstart_mlp \
-  --dtype ieee754exec \
-  --backend eager \
+  --scalar ieee32-exec \
+  --execution eager \
   --device cpu \
   --steps 2 \
   --seed 2026
@@ -150,24 +156,54 @@ trainer. `FP32` rounds on reals using binary32 precision and gradual-underflow p
 does not model overflow, NaN, infinity, or signed zero. The floating-point chapter shows how the
 finite/no-overflow bridge to `IEEE32Exec` is stated.
 
-The lower dtype dispatcher also recognizes executable complex binary32. The high-level trainer
+The lower scalar dispatcher also recognizes executable complex binary32. The high-level trainer
 currently rejects it because prediction has no Float readback path. All supported selections follow
 the one-scalar-per-run contract from *Tensors And Shapes*.
 
 # The Same Choices In Lean
 
 ```
+def typedGraphOptions : Runtime.Autograd.Torch.Options :=
+  { execution := .typedGraph
+    device := .cpu }
+
 def eagerCpu : Trainer.RunConfig :=
-  { dtype := .float
-    backend := .eager
+  { scalar := .float32
+    execution := .eager
+    device := .cpu
     optimizer := optim.adam { lr := 0.03 } }
 
-def compiledCpu : Trainer.RunConfig :=
-  eagerCpu.compiled.cpu
+def typedGraphCpu : Trainer.RunConfig :=
+  { eagerCpu with execution := .typedGraph }
 
 def eagerCuda : Trainer.RunConfig :=
-  eagerCpu.cuda
+  { eagerCpu with device := .cuda }
 ```
+
+`ExecutionMode` has exactly two constructors: `.eager` and `.typedGraph`. The record syntax keeps
+execution and device visibly separate. Convenience methods are available for interactive code, but
+they do not introduce another execution mode.
+
+Lowering is also available directly when a program needs to keep and reuse the graph itself:
+
+```
+let graph ← nn.lowerToTypedGraph model (α := Float)
+let output := graph.forward params input
+let directionalDerivative := graph.jvp params parameterTangents input inputTangent
+let (parameterCotangents, inputCotangent) := graph.vjpWithSeed params input outputCotangent
+```
+
+`nn.lowerToTypedGraph` returns an `nn.TypedGraphModel`. This is a transparent model-facing view of
+`Runtime.Autograd.Torch.TypedGraph`, not a second graph representation. Its type separates the
+parameter layout from the model input, so forward and differentiation calls do not expose a raw
+list of all graph leaves.
+
+This lowering records a typed SSA graph. It does not optimize, fuse, schedule, or generate native
+code; those are compiler responsibilities rather than properties of `.typedGraph` execution.
+
+The imperative `Session` API has a different lifetime. Its typed-graph mode records one graph per
+recording phase, and `resetTape` begins a fresh graph. Use `nn.lowerToTypedGraph` or the high-level
+trainer when the graph itself must survive across calls.
 
 Attach a run configuration to a task and seed:
 
@@ -182,34 +218,36 @@ def trainerFromRun (run : Trainer.RunConfig) :=
 `trainWithRun` can apply a temporary per-call runtime override without rebuilding the model
 declaration.
 
-# Why Device Is Part Of A Profile
+# Device And Provider Profiles
 
 A device choice affects more than memory location. The associated profile says which providers the
 planner should prefer, which evidence policy a capsule must satisfy, and whether TorchLean or the
 provider owns each VJP. It also records the target operating system and architecture together with
 the capsule modules available in this build.
 
-Selecting only `.cuda` while retaining CPU provider assumptions would be an inconsistent
-configuration. `RunConfig.withDevice` therefore installs a maintained profile as one value or
-returns an error.
+Ordinary code selects a device directly. When the run starts, TorchLean resolves the maintained
+profile for that device and rejects the request if the build does not provide one. Calling
+`RunConfig.withDevice` also clears any earlier advanced profile override, so a stale CPU provider
+policy cannot survive a later CUDA selection.
 
-Custom and optional LibTorch paths use `withBackendProfile`, making the larger boundary explicit.
+Custom and optional LibTorch paths use `withBackendProfile`. That method sets both the profile and
+its device, making the larger boundary explicit.
 
 # Train And Evaluation Mode
 
 Mode-sensitive layers include dropout and normalization:
 
 ```
-Trainer.Manual.trainMode runner
-Trainer.Manual.evalMode runner
-Trainer.Manual.isTraining runner
+Trainer.Manual.Runner.train runner
+Trainer.Manual.Runner.eval runner
+Trainer.Manual.Runner.isTraining runner
 ```
 
 Training mode may sample masks or update running statistics. Evaluation mode uses the corresponding
 inference behavior. The high-level trainer enters training mode for updates and evaluation mode for
-summary predictions and retained prediction handles.
+summary predictions and later calls to `TrainResult.predict`.
 
-Mode is independent of device and eager/compiled choice. A CUDA runner can switch mode without
+Mode is independent of device and execution choice. A CUDA runner can switch mode without
 changing model architecture or provider profile.
 
 # A Small Dropout Thought Experiment
@@ -224,30 +262,29 @@ newly sampled mask would not differentiate the forward value that was computed.
 
 This is why RNG and mode belong to runtime state and to reproducible checkpoints.
 
-# Dynamic Operations And Compilation
+# Dynamic Operations And Typed Graphs
 
-A fixed compiled graph needs operation structure and shapes known when recording. If a program
-reads token values and changes the graph structure while constructing it, the current `GraphM`
-compiler cannot represent that program as one fixed replay.
+A fixed typed graph needs operation structure and shapes known when recording. If a program
+reads token values and changes the graph structure while constructing it, the typed graph recorder
+cannot represent that program as one fixed graph.
 
 The correct response is not to coerce the values into a graph and hope. Keep genuinely dynamic
-control flow in eager mode, represent the choice as a supported tensor operation, or compile
+control flow in eager mode, represent the choice as a supported tensor operation, or record
 separate static branches and choose between them explicitly at runtime.
 
-Unsupported compiled operations are rejected.
+Unsupported typed graph operations are rejected.
 
 # Selecting A LibTorch Provider
 
-LibTorch is an optional provider inside an eager backend profile. The maintained bridge currently
+LibTorch is an optional provider in the backend profile used by eager execution. The maintained bridge currently
 accelerates scaled-dot-product attention forward while TorchLean retains its tape and local
 backward ownership.
 
 Surrounding operations may still use native CUDA or reference capsules. Provider selection is
 per semantic operation.
 
-The next backend chapter opens the capsule and its evidence fields. At runtime, one rule matters
-immediately: training cannot choose a forward-only capsule unless the profile also supplies an
-admissible VJP path.
+The next chapter opens the capsule and its evidence fields. At runtime, training cannot choose a
+forward-only capsule unless the profile also supplies an admissible VJP path.
 
 # Unsupported Means Failure
 
@@ -261,7 +298,7 @@ lake exe torchlean quickstart_mlp \
 on the current checkout. The target name is parsed, but profile selection rejects it. This confirms
 that a future platform vocabulary is not reported as working implementation.
 
-The same rule covers other unsupported combinations. CUDA in a CPU-only build, compiled mode with a
+The same rule covers other unsupported combinations. CUDA in a CPU-only build, typed graph execution with a
 non-CPU profile, proof-only scalar semantics in `IO`, and an operation with no admissible capsule
 all fail rather than changing the requested configuration behind the caller's back.
 
@@ -278,17 +315,17 @@ run.
   * Profile
 *
   * inspect ordinary training
-  * `Float`
+  * native `Float32`
   * eager
   * CPU
 *
   * replay a supported fixed graph
-  * `Float`
-  * compiled
+  * native `Float32`
+  * typed graph
   * CPU
 *
   * run native GPU training
-  * `Float`
+  * native `Float32`
   * eager
   * CUDA
 *
@@ -298,7 +335,7 @@ run.
   * CPU
 *
   * use external attention forward
-  * `Float`
+  * native `Float32`
   * eager
   * LibTorch-enabled CUDA
 *
@@ -320,7 +357,7 @@ model architecture and parameter count
 dataset identity and preprocessing
 seed and optimizer
 scalar semantics
-eager or compiled mode
+eager or typed graph execution
 device and provider capsules
 train/eval mode
 checkpoint and code revision

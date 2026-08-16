@@ -11,7 +11,7 @@ public import NN.Verification.TorchLean.Proved.Correctness.Eval.PayloadBridge
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.Elementwise
 
 /-!
-# Compiled Forward Evaluation: SSA Denotation Agreement
+# Lowered Forward Evaluation: SSA Denotation Agreement
 -/
 
 @[expose] public section
@@ -28,54 +28,54 @@ open NN.Verification.TorchLean
 
 
 /--
-`denoteAllFrom` for the compiled IR agrees with the forward-fragment evaluator that returns all
-intermediate values. Compilation preserves the full SSA value vector up to the current
-compilation point, not only the final output.
+`denoteAllFrom` for the lowered IR agrees with the forward-fragment evaluator that returns all
+intermediate values. Lowering preserves the full SSA value vector up to the current
+lowering point, not only the final output.
 -/
-theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
+theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
-    (g : FGraph α paramShapes inShape ss out)
+    (g : ForwardLetChain α paramShapes inShape ss out)
     (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (c : NN.Verification.TorchLean.CompiledIR α)
+    (c : NN.Verification.TorchLean.LoweredIR α)
     (x : Tensor α inShape)
     (vals : Array (DVal α))
     (hSize : vals.size = c.graph.nodes.size)
     (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
     (NN.IR.Graph.denoteAllFrom (α := α)
-      (g := (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape)
+      (g := (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape)
         (ss := ss) (out := out) g params c).graph)
       (payload := payloadOfParamStore (α := α)
-        (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape)
+        (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape)
           (ss := ss) (out := out) g params c).ps)
       (input := DVal.mk (α := α) inShape x)
       (i := c.graph.nodes.size)
       (vals := vals)
         =
-    evalFGraphVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss)
+    evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss)
       (out := out) g params vals) := by
     classical
     induction g generalizing c vals with
     | ret y =>
-        -- No more nodes: the compiled graph doesn't add nodes, so `denoteAllFrom` returns `vals`.
-        simp [compileFGraph, evalFGraphVals, NN.IR.Graph.denoteAllFrom]
+        -- No more nodes: the lowered graph doesn't add nodes, so `denoteAllFrom` returns `vals`.
+        simp [lowerForwardLetChain, evalForwardLetChainVals, NN.IR.Graph.denoteAllFrom]
     | @let1 ss₀ mid₀ out₀ node gNext ih =>
       let id := c.graph.nodes.size
       let res :=
-        compileNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out :=
+        lowerNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out :=
           mid₀)
           id node params c.ps
       let n : NN.IR.Node := res.1
       let ps' : NN.MLTheory.CROWN.Graph.ParamStore α := res.2
-      let c' : NN.Verification.TorchLean.CompiledIR α :=
+      let c' : NN.Verification.TorchLean.LoweredIR α :=
         { c with graph := { nodes := c.graph.nodes.push n }, ps := ps', outputId := id }
       let cOut :=
-        compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀ ++
+        lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀ ++
           [mid₀]) (out := out₀)
           gNext params c'
       have hLt : id < cOut.graph.nodes.size := by
         have hmono :=
-          compileFGraph_nodesSize_le (α := α) (paramShapes := paramShapes) (inShape := inShape)
+          lowerForwardLetChain_nodesSize_le (α := α) (paramShapes := paramShapes) (inShape := inShape)
             (ss := ss₀ ++ [mid₀]) (out := out₀) (g := gNext) (params := params) (c := c')
         have : id + 1 ≤ cOut.graph.nodes.size := by
           simpa [cOut, c', id, Array.size_push] using hmono
@@ -84,27 +84,27 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
       -- The only nontrivial work is showing `evalAt` matches `evalNode` at the fresh id.
       have hConst :
           cOut.ps.constVals.get? id = c'.ps.constVals.get? id :=
-        compileFGraph_ps_constVals_get?_lt (α := α) (paramShapes := paramShapes) (inShape :=
+        lowerForwardLetChain_ps_constVals_get?_lt (α := α) (paramShapes := paramShapes) (inShape :=
           inShape)
           (ss := ss₀ ++ [mid₀]) (out := out₀) (g := gNext) (params := params) (c := c') (hk := by
             simp [c', id, Array.size_push])
       have hLin :
           cOut.ps.linearWB.get? id = c'.ps.linearWB.get? id :=
-        compileFGraph_ps_linearWB_get?_lt (α := α) (paramShapes := paramShapes) (inShape := inShape)
+        lowerForwardLetChain_ps_linearWB_get?_lt (α := α) (paramShapes := paramShapes) (inShape := inShape)
           (ss := ss₀ ++ [mid₀]) (out := out₀) (g := gNext) (params := params) (c := c') (hk := by
             simp [c', id, Array.size_push])
       have hConv :
           cOut.ps.conv2dCfg.get? id = c'.ps.conv2dCfg.get? id :=
-        compileFGraph_ps_conv2dCfg_get?_lt (α := α) (paramShapes := paramShapes)
+        lowerForwardLetChain_ps_conv2dCfg_get?_lt (α := α) (paramShapes := paramShapes)
           (inShape := inShape) (ss := ss₀ ++ [mid₀]) (out := out₀) (g := gNext)
           (params := params) (c := c') (hk := by
             simp [c', id, Array.size_push])
       -- `getNode` at the fresh index is exactly the freshly pushed node.
       have hnId : n.id = id := by
-        cases node <;> simp [n, res, compileNode, id]
+        cases node <;> simp [n, res, lowerNode, id]
       have hGetNode : NN.IR.Graph.getNode (g := cOut.graph) id = pure n := by
         have hPres :=
-          compileFGraph_getNode_lt (α := α) (paramShapes := paramShapes) (inShape := inShape)
+          lowerForwardLetChain_getNode_lt (α := α) (paramShapes := paramShapes) (inShape := inShape)
             (ss := ss₀ ++ [mid₀]) (out := out₀) (g := gNext) (params := params) (c := c')
             (i := id) (hi := by simp [c', id, Array.size_push])
         have hAtPush : NN.IR.Graph.getNode (g := c'.graph) id = pure n := by
@@ -131,17 +131,17 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             let flat : NN.MLTheory.CROWN.Graph.FlatVec α :=
               flatOfTensor (α := α) (s := mid₀) wf t
             have hnKind : n.kind = .const mid₀ := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hGet' : c'.ps.constVals.get? id = some flat := by
               have hIns : (c.ps.constVals.insert id flat).get? id = some flat := by
                 -- Use the `m[k]?` lemma; it is definitionaly `m.get? k`.
                 simp
               -- `c'.ps.constVals = c.ps.constVals.insert id flat`.
-              simp [c', res, compileNode, ps', flat]
+              simp [c', res, lowerNode, ps', flat]
             have hGet : cOut.ps.constVals.get? id = some flat :=
               hConst.trans hGet'
             have hStoreConst :
@@ -153,7 +153,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               simpa using (Spec.Tensor.flatten_unflatten_inverse_wf (α := α) (s := mid₀) (t := t))
             have hn :
                 n = { id := id, parents := [], kind := .const mid₀, outShape := mid₀ } := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             have hGetNodeConst :
                 NN.IR.Graph.getNode (g := cOut.graph) id =
                   pure ({ id := id, parents := [], kind := .const mid₀, outShape := mid₀ } :
@@ -189,7 +189,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             let flat : NN.MLTheory.CROWN.Graph.FlatVec α :=
               flatOfTensor (α := α) (s := mid₀) wf tp
             have hGet' : c'.ps.constVals.get? id = some flat := by
-              simp [c', res, compileNode, ps', flat, tp]
+              simp [c', res, lowerNode, ps', flat, tp]
             have hGet : cOut.ps.constVals.get? id = some flat :=
               hConst.trans hGet'
             have hStoreConst :
@@ -201,11 +201,11 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
               simpa using (Spec.Tensor.flatten_unflatten_inverse_wf (α := α) (s := mid₀) (t :=
                 tp))
             have hnKind : n.kind = .const mid₀ := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
@@ -216,7 +216,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 Except.ok (DVal.mk (α := α) mid₀ tp) := by
               have hn :
                   n = { id := id, parents := [], kind := .const mid₀, outShape := mid₀ } := by
-                simp [n, res, compileNode]
+                simp [n, res, lowerNode]
               have hGetNodeConst :
                   NN.IR.Graph.getNode (g := cOut.graph) id =
                     pure ({ id := id, parents := [], kind := .const mid₀, outShape := mid₀ } :
@@ -242,61 +242,61 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .add a b cOut.graph
               (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
               hShapes hGetNode
-                (by simp [compileNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
-                (by simp [compileNode, res, n])
-                (by simp [compileNode, res, n])
+                (by simp [lowerNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
+                (by simp [lowerNode, res, n])
+                (by simp [lowerNode, res, n])
         | sub a b =>
             simpa [evalNode, IRStep.BinaryElementwiseOp.denote] using
               IRStep.evalAt_binaryElementwise_of_getNode
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .sub a b cOut.graph
               (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
               hShapes hGetNode
-                (by simp [compileNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
-                (by simp [compileNode, res, n])
-                (by simp [compileNode, res, n])
+                (by simp [lowerNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
+                (by simp [lowerNode, res, n])
+                (by simp [lowerNode, res, n])
         | mulElem a b =>
             simpa [evalNode, IRStep.BinaryElementwiseOp.denote] using
               IRStep.evalAt_binaryElementwise_of_getNode
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .mul a b cOut.graph
               (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
               hShapes hGetNode
-                (by simp [compileNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
-                (by simp [compileNode, res, n])
-                (by simp [compileNode, res, n])
+                (by simp [lowerNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
+                (by simp [lowerNode, res, n])
+                (by simp [lowerNode, res, n])
         | relu xIdx =>
             simpa [evalNode, IRStep.UnaryElementwiseOp.denote] using
               IRStep.evalAt_unaryElementwise_of_getNode
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .relu xIdx cOut.graph
                 (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
                 hShapes hGetNode
-                (by simp [compileNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
-                (by simp [compileNode, res, n]) (by simp [compileNode, res, n])
+                (by simp [lowerNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
+                (by simp [lowerNode, res, n]) (by simp [lowerNode, res, n])
         | exp xIdx =>
             simpa [evalNode, IRStep.UnaryElementwiseOp.denote] using
               IRStep.evalAt_unaryElementwise_of_getNode
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .exp xIdx cOut.graph
                 (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
                 hShapes hGetNode
-                (by simp [compileNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
-                (by simp [compileNode, res, n]) (by simp [compileNode, res, n])
+                (by simp [lowerNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
+                (by simp [lowerNode, res, n]) (by simp [lowerNode, res, n])
         | log xIdx =>
             have hx : (vals[xIdx.id]!).1 = mid₀ := by
               simpa [DVal.shape] using
                 shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx := xIdx)
                   (s := mid₀)
             have hnKind : n.kind = .log := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [xIdx.id] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
                      parents := [xIdx.id]
                      kind := .log
                      outShape := mid₀ } : NN.IR.Node) := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             let tx : Tensor α mid₀ := hx ▸ (vals[xIdx.id]!).snd
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[xIdx.id]!) = Except.ok tx
@@ -331,8 +331,8 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .inv xIdx cOut.graph
                 (payloadOfParamStore (α := α) cOut.ps) (DVal.mk (α := α) inShape x) vals id n
                 hShapes hGetNode
-                (by simp [compileNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
-                (by simp [compileNode, res, n]) (by simp [compileNode, res, n])
+                (by simp [lowerNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
+                (by simp [lowerNode, res, n]) (by simp [lowerNode, res, n])
         | matmul2d m nDim p a b =>
             have ha : (vals[a.id]!).1 = .dim m (.dim nDim .scalar) := by
               simpa [DVal.shape] using
@@ -347,18 +347,18 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             have hbF : (vals[b.id]!).fst = .dim nDim (.dim p .scalar) := by
               simpa using hb
             have hnKind : n.kind = .matmul := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [a.id, b.id] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = .dim m (.dim p .scalar) := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
                      parents := [a.id, b.id]
                      kind := .matmul
                      outShape := .dim m (.dim p .scalar) } : NN.IR.Node) := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             let ta : Tensor α (.dim m (.dim nDim .scalar)) := haF ▸ (vals[a.id]!).snd
             let tb : Tensor α (.dim nDim (.dim p .scalar)) := hbF ▸ (vals[b.id]!).snd
             have hExpectA :
@@ -416,18 +416,18 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             have hbF : (vals[b.id]!).fst = .dim batch (.dim nDim (.dim p .scalar)) := by
               simpa using hb
             have hnKind : n.kind = .matmul := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [a.id, b.id] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = .dim batch (.dim m (.dim p .scalar)) := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
                      parents := [a.id, b.id]
                      kind := .matmul
                      outShape := .dim batch (.dim m (.dim p .scalar)) } : NN.IR.Node) := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             let ta : Tensor α (.dim batch (.dim m (.dim nDim .scalar))) := haF ▸ (vals[a.id]!).snd
             let tb : Tensor α (.dim batch (.dim nDim (.dim p .scalar))) := hbF ▸ (vals[b.id]!).snd
             have hExpectA :
@@ -480,18 +480,18 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             have hxF : (vals[xIdx.id]!).fst = inS := by
               simpa using hx
             have hnKind : n.kind = .reshape inS mid₀ := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [xIdx.id] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
                      parents := [xIdx.id]
                      kind := .reshape inS mid₀
                      outShape := mid₀ } : NN.IR.Node) := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             let tx : Tensor α inS := hxF ▸ (vals[xIdx.id]!).snd
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α) (expected := inS) (vals[xIdx.id]!) = Except.ok tx
@@ -526,18 +526,18 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             have hxF : (vals[xIdx.id]!).fst = .dim m (.dim nDim rest) := by
               simpa using hx
             have hnKind : n.kind = .swap_first_two := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [xIdx.id] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = .dim nDim (.dim m rest) := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
                      parents := [xIdx.id]
                      kind := .swap_first_two
                      outShape := .dim nDim (.dim m rest) } : NN.IR.Node) := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             let tx : Tensor α (.dim m (.dim nDim rest)) := hxF ▸ (vals[xIdx.id]!).snd
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α) (expected := .dim m (.dim nDim rest))
@@ -575,18 +575,18 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             have hxF : (vals[xIdx.id]!).fst = .dim a (.dim b (.dim c .scalar)) := by
               simpa using hx
             have hnKind : n.kind = .transpose3dLastTwo := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [xIdx.id] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = .dim a (.dim c (.dim b .scalar)) := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
                      parents := [xIdx.id]
                      kind := .transpose3dLastTwo
                      outShape := .dim a (.dim c (.dim b .scalar)) } : NN.IR.Node) := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             let tx : Tensor α (.dim a (.dim b (.dim c .scalar))) := hxF ▸ (vals[xIdx.id]!).snd
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α)
@@ -637,18 +637,18 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             have hxF : (vals[xIdx.id]!).fst = mid₀ := by
               simpa using hx
             have hnKind : n.kind = .softmax (Spec.Shape.rank mid₀ - 1) := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [xIdx.id] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = mid₀ := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
                      parents := [xIdx.id]
                      kind := .softmax (Spec.Shape.rank mid₀ - 1)
                      outShape := mid₀ } : NN.IR.Node) := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             let tx : Tensor α mid₀ := hxF ▸ (vals[xIdx.id]!).snd
             have hExpectX :
                 NN.IR.Graph.expectShape (α := α) (expected := mid₀) (vals[xIdx.id]!) = Except.ok tx
@@ -696,18 +696,18 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             have hxF : (vals[xIdx.id]!).fst = .dim seqLen (.dim embedDim .scalar) := by
               simpa using hx
             have hnKind : n.kind = .layernorm 1 := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [xIdx.id] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = .dim seqLen (.dim embedDim .scalar) := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
                      parents := [xIdx.id]
                      kind := .layernorm 1
                      outShape := .dim seqLen (.dim embedDim .scalar) } : NN.IR.Node) := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             have hGetNodeLN :
                 NN.IR.Graph.getNode (g := cOut.graph) id =
                   pure
@@ -809,7 +809,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                      parents := [xIdx.id]
                      kind := .linear
                      outShape := .dim outDim .scalar } : NN.IR.Node) := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             have hGetNodeLinear :
                 NN.IR.Graph.getNode (g := cOut.graph) id =
                   pure
@@ -837,7 +837,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                   some ({ m := outDim, n := inDim, w := wT, b := bT } :
                     NN.MLTheory.CROWN.Graph.LinParams α) := by
               rw [hLin]
-              simp [c', res, compileNode, ps', wT, bT]
+              simp [c', res, lowerNode, ps', wT, bT]
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
@@ -879,7 +879,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                      parents := [xIdx.id]
                      kind := .conv2d inC outC kH kW stride padding
                      outShape := outShape } : NN.IR.Node) := by
-              simp [n, res, compileNode, outShape]
+              simp [n, res, lowerNode, outShape]
             have hGetNodeConv :
                 NN.IR.Graph.getNode (g := cOut.graph) id =
                   pure
@@ -914,7 +914,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
             have hConvStore :
                 cOut.ps.conv2dCfg.get? id = some cfg := by
               rw [hConv]
-              simp [c', res, compileNode, ps', cfg, spec, kT, bT]
+              simp [c', res, lowerNode, ps', cfg, spec, kT, bT]
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
@@ -954,18 +954,18 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
                 shape_of_vals_of_hShapes (α := α) (vals := vals) (hShapes := hShapes) (idx :=
                   target) (s := s)
             have hnKind : n.kind = .mseLoss := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnParents : n.parents = [yhat.id, target.id] := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hnOut : n.outShape = .scalar := by
-              simp [compileNode, res, n]
+              simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
                      parents := [yhat.id, target.id]
                      kind := .mseLoss
                      outShape := .scalar } : NN.IR.Node) := by
-              simp [n, res, compileNode]
+              simp [n, res, lowerNode]
             have hValsSameShape :
                 (vals[yhat.id]!).fst = (vals[target.id]!).fst :=
               hy.trans ht.symm
@@ -1053,10 +1053,10 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
           node params vals with
         | error e =>
             -- If the next DSL node fails, both evaluators stop immediately with the same error.
-            -- First unfold compilation/evaluation one step so the goal is stated in terms of
+            -- First unfold lowering/evaluation one step so the goal is stated in terms of
             -- `cOut`.
-            simp [compileFGraph, evalFGraphVals]
-            -- The simp step above rewrites the compiled graph to `cOut.graph`, but may unfold
+            simp [lowerForwardLetChain, evalForwardLetChainVals]
+            -- The simp step above rewrites the lowered graph to `cOut.graph`, but may unfold
             -- `DVal.mk` to `⟨_,_⟩`. Normalize before rewriting with `hStart'`.
             have hStart'' :
                 cOut.graph.denoteAllFrom
@@ -1088,7 +1088,7 @@ theorem denoteAllFrom_compileFGraph_eq_evalFGraphVals
           have hIH :=
             ih (c := c') (vals := vals.push vOut) (hSize := hSize') (hShapes := hShapes')
           -- Rewrite the overall goal to the suffix goal (start at `id+1`), then discharge with IH.
-          simp [compileFGraph, evalFGraphVals]
+          simp [lowerForwardLetChain, evalForwardLetChainVals]
           have hStart'' :
               cOut.graph.denoteAllFrom
                   (payloadOfParamStore (α := α) cOut.ps) (⟨inShape, x⟩) id vals

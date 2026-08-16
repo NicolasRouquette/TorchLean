@@ -16,8 +16,8 @@ public import NN.Spec.Models.CommonHelpers
 This file defines:
 
 - fixed-horizon PPO rollout records stored as typed tensors / arrays, and
-- a conversion to the minibatch format expected by the PPO autograd loss module
-  (`Runtime.RL.PolicyGradient.Autograd.ppoActorCriticScalarModuleDef`).
+- a conversion to the minibatch format expected by the PPO autograd objective
+  (`Runtime.RL.PolicyGradient.Autograd.ppoActorCriticObjectiveDef`).
 
 PPO’s math remains explicit: the GAE/return definitions live in `NN.Spec.RL.Core`, and the
 tensor-shaped analogues live in `NN.Runtime.RL.Core`. This file supplies the typed rollout layer
@@ -109,7 +109,7 @@ namespace Rollout
 
 /--
 Convert a fixed-horizon rollout into the PPO minibatch expected by
-`Autograd.ppoActorCriticScalarModuleDef`.
+`Autograd.ppoActorCriticObjectiveDef`.
 
 Notes:
 

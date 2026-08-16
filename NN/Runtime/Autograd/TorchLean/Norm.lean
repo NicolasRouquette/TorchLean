@@ -15,11 +15,11 @@ import Mathlib.Algebra.Order.Algebra
 
 TorchLean normalization helpers.
 
-These are backend-generic (eager tape + compiled GraphM), built out of the small `Ops` surface.
+These are execution-generic (eager tape and typed `GraphM`), built from the small `Ops` surface.
 
 PyTorch analogy: these correspond to the functional/core math behind `InstanceNorm2d`, `GroupNorm`,
 `BatchNorm2d`, and common transformer norms (RMSNorm-style), but exposed as plain functions so they
-can run eagerly or be compiled into the verifier IR.
+can run eagerly or be lowered into the verifier IR.
 
 Conventions:
 - CNN operators use PyTorch's `N×C×H×W` axis convention on ordinary rank-four tensors.
@@ -42,63 +42,34 @@ open Tensor
 
 namespace Norm
 
-/-- Proof helper: if `a > 0` and `b > 0`, then `a * b > 0`. -/
-theorem natMulPos (a b : Nat) (ha : a > 0) (hb : b > 0) : a * b > 0 :=
-  Nat.mul_pos ha hb
+namespace Internal
 
 /--
 Size lemma for flattening spatial dimensions in `N×C×H×W`.
 
 This is used to justify `reshape` from `N×C×H×W` to `N×C×(H*W)` (a common trick in normalization).
 -/
-theorem reshapeNCHWToNCHWFlatSize {n c h w : Nat} :
-    Spec.Shape.size (.dim n (.dim c (.dim h (.dim w .scalar)))) = Spec.Shape.size (.dim n (.dim c (.dim (h * w) .scalar)))
-      := by
+theorem reshape_nchw_flat_size {n c h w : Nat} :
+    Spec.Shape.size (.dim n (.dim c (.dim h (.dim w .scalar)))) =
+      Spec.Shape.size (.dim n (.dim c (.dim (h * w) .scalar))) := by
   simp [Spec.Shape.size]
-
-/-- Inverse of `reshapeNCHW_to_NC_HW` (same equality, reversed). -/
-theorem reshapeNCHWFlatToNCHWSize {n c h w : Nat} :
-    Spec.Shape.size (.dim n (.dim c (.dim (h * w) .scalar))) = Spec.Shape.size (.dim n (.dim c (.dim h (.dim w .scalar))))
-      := by
-  simpa using (reshapeNCHWToNCHWFlatSize (n := n) (c := c) (h := h) (w := w)).symm
 
 /-- Size lemma for flattening spatial dimensions in `C×H×W` to `C×(H*W)`. -/
-theorem reshapeCHWToCHWFlatSize {c h w : Nat} :
-    Spec.Shape.size (.dim c (.dim h (.dim w .scalar))) = Spec.Shape.size (.dim c (.dim (h * w) .scalar)) := by
+theorem reshape_chw_flat_size {c h w : Nat} :
+    Spec.Shape.size (.dim c (.dim h (.dim w .scalar))) =
+      Spec.Shape.size (.dim c (.dim (h * w) .scalar)) := by
   simp [Spec.Shape.size]
-
-/-- Inverse of `reshapeCHW_to_C_HW` (same equality, reversed). -/
-theorem reshapeCHWFlatToCHWSize {c h w : Nat} :
-    Spec.Shape.size (.dim c (.dim (h * w) .scalar)) = Spec.Shape.size (.dim c (.dim h (.dim w .scalar))) := by
-  simpa using (reshapeCHWToCHWFlatSize (c := c) (h := h) (w := w)).symm
-
-/--
-Broadcast proof used to apply per-channel parameters over `N×C×HW`.
-
-This is the shape-level counterpart of broadcasting a `(C)` vector over `(N×C×HW)` in PyTorch.
--/
-def broadcastVecToNCHW (n c hw : Nat) :
-    Shape.CanBroadcastTo (.dim c .scalar) (.dim n (.dim c (.dim hw .scalar))) := by
-  -- `c` matches, and the scalar inner broadcasts to `hw`; then add leading `n`.
-  apply Shape.CanBroadcastTo.expand_dims
-  apply Shape.CanBroadcastTo.dim_eq
-  exact Shape.CanBroadcastTo.scalar_to_any (.dim hw .scalar)
-
-/-- Broadcast proof: `(N×C)` can broadcast to `(N×C×HW)` by expanding the trailing dimension. -/
-def broadcastNCToNCHW (n c hw : Nat) :
-    Shape.CanBroadcastTo (.dim n (.dim c .scalar)) (.dim n (.dim c (.dim hw .scalar))) := by
-  apply Shape.CanBroadcastTo.dim_eq
-  apply Shape.CanBroadcastTo.dim_eq
-  exact Shape.CanBroadcastTo.scalar_to_any (.dim hw .scalar)
 
 /--
 Broadcast proof: `(C)` broadcasts to `(N×C×HW)`.
 
-This is just `broadcastVec_to_NC_HW` with a clearer name at use sites.
+This is the shape-level counterpart of broadcasting a `(C)` vector over `(N×C×HW)` in PyTorch.
 -/
 def broadcastCToNCHW (n c hw : Nat) :
-    Shape.CanBroadcastTo (.dim c .scalar) (.dim n (.dim c (.dim hw .scalar))) :=
-  broadcastVecToNCHW (n := n) (c := c) (hw := hw)
+    Shape.CanBroadcastTo (.dim c .scalar) (.dim n (.dim c (.dim hw .scalar))) := by
+  apply Shape.CanBroadcastTo.expand_dims
+  apply Shape.CanBroadcastTo.dim_eq
+  exact Shape.CanBroadcastTo.scalar_to_any (.dim hw .scalar)
 
 /-- Broadcast proof: `(C)` broadcasts to `(C×HW)`. -/
 def broadcastCToCHW (c hw : Nat) :
@@ -113,6 +84,8 @@ def broadcastCToSeqEmbed (seqLen embedDim : Nat) :
   apply Shape.CanBroadcastTo.expand_dims
   apply Shape.CanBroadcastTo.dim_eq
   exact Shape.CanBroadcastTo.scalar_to_any .scalar
+
+end Internal
 
 /-- RMSNorm on `seqLen×embedDim` (normalize across the last axis, scale by `gamma`). -/
 def rmsNormLast {α : Type} [Context α] [DecidableEq Shape]
@@ -141,7 +114,7 @@ def rmsNormLast {α : Type} [Context α] [DecidableEq Shape]
   let invDenomB ← broadcastTo (m := m) (α := α) (s₁ := meanSqShape) (s₂ := s) cbBack invDenom
   let normalized ← mul (m := m) (α := α) (s := s) x invDenomB
   let gammaB ← broadcastTo (m := m) (α := α) (s₁ := .dim embedDim .scalar) (s₂ := s)
-    (broadcastCToSeqEmbed seqLen embedDim) gamma
+    (Internal.broadcastCToSeqEmbed seqLen embedDim) gamma
   mul (m := m) (α := α) (s := s) normalized gammaB
 
 /--
@@ -179,8 +152,8 @@ def instanceNorm2dNchw {α : Type} [Context α] [DecidableEq Shape]
   let sNCHWFlat : Shape := .dim n (.dim c (.dim hw .scalar))
   let _ : Shape.WellFormed sNCHW := ⟨⟨h_n_pos, ⟨h_c_pos, ⟨h_h_pos, ⟨h_w_pos, trivial⟩⟩⟩⟩⟩
   let _ : Shape.WellFormed sNCHWFlat :=
-    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨natMulPos h w h_h_pos h_w_pos, trivial⟩⟩⟩⟩
-  let xFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) x (reshapeNCHWToNCHWFlatSize (n
+    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨Nat.mul_pos h_h_pos h_w_pos, trivial⟩⟩⟩⟩
+  let xFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) x (Internal.reshape_nchw_flat_size (n
     := n) (c := c) (h := h) (w := w))
   -- mean over last axis (HW)
   let axisHW : Nat := Spec.Shape.rank sNCHWFlat - 1
@@ -203,13 +176,13 @@ def instanceNorm2dNchw {α : Type} [Context α] [DecidableEq Shape]
   let invDenomB ← broadcastTo (m := m) (α := α) (s₁ := meanShape) (s₂ := sNCHWFlat) cbBack invDenom
   let normalized ← mul (m := m) (α := α) (s := sNCHWFlat) centered invDenomB
   let gammaB ← broadcastTo (m := m) (α := α) (s₁ := .dim c .scalar) (s₂ := sNCHWFlat)
-    (broadcastCToNCHW (n := n) (c := c) (hw := hw)) gamma
+    (Internal.broadcastCToNCHW (n := n) (c := c) (hw := hw)) gamma
   let betaB ← broadcastTo (m := m) (α := α) (s₁ := .dim c .scalar) (s₂ := sNCHWFlat)
-    (broadcastCToNCHW (n := n) (c := c) (hw := hw)) beta
+    (Internal.broadcastCToNCHW (n := n) (c := c) (hw := hw)) beta
   let yFlat ← add (m := m) (α := α) (s := sNCHWFlat)
     (← mul (m := m) (α := α) (s := sNCHWFlat) normalized gammaB) betaB
-  reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat (reshapeNCHWFlatToNCHWSize (n := n) (c
-    := c) (h := h) (w := w))
+  reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat
+    (Internal.reshape_nchw_flat_size (n := n) (c := c) (h := h) (w := w)).symm
 
 /--
 GroupNorm on `N×C×H×W` with `groups`, affine.
@@ -295,17 +268,17 @@ def groupNorm2dNchw {α : Type} [Context α] [DecidableEq Shape]
   let hw : Nat := h * w
   let sNCHWFlat : Shape := .dim n (.dim c (.dim hw .scalar))
   let _ : Shape.WellFormed sNCHWFlat :=
-    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨natMulPos h w h_h_pos h_w_pos, trivial⟩⟩⟩⟩
+    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨Nat.mul_pos h_h_pos h_w_pos, trivial⟩⟩⟩⟩
   let yFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) yNCHW
-    (reshapeNCHWToNCHWFlatSize (n := n) (c := c) (h := h) (w := w))
+    (Internal.reshape_nchw_flat_size (n := n) (c := c) (h := h) (w := w))
   let cbC : Shape.CanBroadcastTo (.dim c .scalar) sNCHWFlat :=
-    broadcastCToNCHW (n := n) (c := c) (hw := hw)
+    Internal.broadcastCToNCHW (n := n) (c := c) (hw := hw)
   let gammaB ← broadcastTo (m := m) (α := α) (s₁ := .dim c .scalar) (s₂ := sNCHWFlat) cbC gamma
   let betaB ← broadcastTo (m := m) (α := α) (s₁ := .dim c .scalar) (s₂ := sNCHWFlat) cbC beta
   let yFlat' ← add (m := m) (α := α) (s := sNCHWFlat)
     (← mul (m := m) (α := α) (s := sNCHWFlat) yFlat gammaB) betaB
   reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat'
-    (reshapeNCHWFlatToNCHWSize (n := n) (c := c) (h := h) (w := w))
+    (Internal.reshape_nchw_flat_size (n := n) (c := c) (h := h) (w := w)).symm
 
 /-- BatchNorm2d (training) returning the batch mean/var (per-channel) as additional refs. -/
 def batchNorm2dNchwTrainStats {α : Type} [Context α] [DecidableEq Shape]
@@ -323,8 +296,8 @@ def batchNorm2dNchwTrainStats {α : Type} [Context α] [DecidableEq Shape]
   let sNCHWFlat : Shape := .dim n (.dim c (.dim hw .scalar))
   let _ : Shape.WellFormed sNCHW := ⟨⟨h_n_pos, ⟨h_c_pos, ⟨h_h_pos, ⟨h_w_pos, trivial⟩⟩⟩⟩⟩
   let _ : Shape.WellFormed sNCHWFlat :=
-    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨natMulPos h w h_h_pos h_w_pos, trivial⟩⟩⟩⟩
-  let xFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) x (reshapeNCHWToNCHWFlatSize (n
+    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨Nat.mul_pos h_h_pos h_w_pos, trivial⟩⟩⟩⟩
+  let xFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) x (Internal.reshape_nchw_flat_size (n
     := n) (c := c) (h := h) (w := w))
   -- mean over HW then mean over batch
   let axisHW : Nat := Spec.Shape.rank sNCHWFlat - 1
@@ -343,7 +316,7 @@ def batchNorm2dNchwTrainStats {α : Type} [Context α] [DecidableEq Shape]
   let mean ← reduceMean (m := m) (α := α) (s := sNC) axisN meanHW -- `C`
   -- broadcast mean back to `N×C×HW`
   let cbMean : Shape.CanBroadcastTo (.dim c .scalar) sNCHWFlat :=
-    broadcastCToNCHW (n := n) (c := c) (hw := hw)
+    Internal.broadcastCToNCHW (n := n) (c := c) (hw := hw)
   let meanB ← broadcastTo (m := m) (α := α) (s₁ := .dim c .scalar) (s₂ := sNCHWFlat) cbMean mean
   let centered ← sub (m := m) (α := α) (s := sNCHWFlat) xFlat meanB
   let sq ← F.square (m := m) (α := α) (s := sNCHWFlat) centered
@@ -362,8 +335,8 @@ def batchNorm2dNchwTrainStats {α : Type} [Context α] [DecidableEq Shape]
   let betaB ← broadcastTo (m := m) (α := α) (s₁ := .dim c .scalar) (s₂ := sNCHWFlat) cbMean beta
   let yFlat ← add (m := m) (α := α) (s := sNCHWFlat) (← mul (m := m) (α := α) (s := sNCHWFlat)
     normalized gammaB) betaB
-  let y ← reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat (reshapeNCHWFlatToNCHWSize (n
-    := n) (c := c) (h := h) (w := w))
+  let y ← reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat
+    (Internal.reshape_nchw_flat_size (n := n) (c := c) (h := h) (w := w)).symm
   pure (y, mean, varClamped)
 
 /--
@@ -428,11 +401,11 @@ def batchNorm2dNchwEval {α : Type} [Context α] [DecidableEq Shape]
   let sNCHWFlat : Shape := .dim n (.dim c (.dim hw .scalar))
   let _ : Shape.WellFormed sNCHW := ⟨⟨h_n_pos, ⟨h_c_pos, ⟨h_h_pos, ⟨h_w_pos, trivial⟩⟩⟩⟩⟩
   let _ : Shape.WellFormed sNCHWFlat :=
-    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨natMulPos h w h_h_pos h_w_pos, trivial⟩⟩⟩⟩
-  let xFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) x (reshapeNCHWToNCHWFlatSize (n
+    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨Nat.mul_pos h_h_pos h_w_pos, trivial⟩⟩⟩⟩
+  let xFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) x (Internal.reshape_nchw_flat_size (n
     := n) (c := c) (h := h) (w := w))
   let cbC : Shape.CanBroadcastTo (.dim c .scalar) sNCHWFlat :=
-    broadcastCToNCHW (n := n) (c := c) (hw := hw)
+    Internal.broadcastCToNCHW (n := n) (c := c) (hw := hw)
   let meanB ← broadcastTo (m := m) (α := α) (s₁ := .dim c .scalar) (s₂ := sNCHWFlat) cbC mean
   let centered ← sub (m := m) (α := α) (s := sNCHWFlat) xFlat meanB
   let zero ← const (m := m) (α := α) (s := .dim c .scalar) (Spec.fill (0 : α) (.dim c .scalar))
@@ -448,8 +421,8 @@ def batchNorm2dNchwEval {α : Type} [Context α] [DecidableEq Shape]
   let betaB ← broadcastTo (m := m) (α := α) (s₁ := .dim c .scalar) (s₂ := sNCHWFlat) cbC beta
   let yFlat ← add (m := m) (α := α) (s := sNCHWFlat) (← mul (m := m) (α := α) (s := sNCHWFlat)
     normalized gammaB) betaB
-  reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat (reshapeNCHWFlatToNCHWSize (n := n) (c
-    := c) (h := h) (w := w))
+  reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat
+    (Internal.reshape_nchw_flat_size (n := n) (c := c) (h := h) (w := w)).symm
 
 /-- BatchNorm2d evaluation on `C×H×W`: use provided per-channel mean/var (e.g. running stats). -/
 def batchNorm2dChwEval {α : Type} [Context α] [DecidableEq Shape]
@@ -464,11 +437,11 @@ def batchNorm2dChwEval {α : Type} [Context α] [DecidableEq Shape]
   let sCHW : Shape := .dim c (.dim h (.dim w .scalar))
   let sC_HW : Shape := .dim c (.dim hw .scalar)
   let _ : Shape.WellFormed sCHW := ⟨⟨h_c_pos, ⟨h_h_pos, ⟨h_w_pos, trivial⟩⟩⟩⟩
-  let _ : Shape.WellFormed sC_HW := ⟨⟨h_c_pos, ⟨natMulPos h w h_h_pos h_w_pos, trivial⟩⟩⟩
-  let xFlat ← reshape (m := m) (α := α) (s₁ := sCHW) (s₂ := sC_HW) x (reshapeCHWToCHWFlatSize (c := c) (h
+  let _ : Shape.WellFormed sC_HW := ⟨⟨h_c_pos, ⟨Nat.mul_pos h_h_pos h_w_pos, trivial⟩⟩⟩
+  let xFlat ← reshape (m := m) (α := α) (s₁ := sCHW) (s₂ := sC_HW) x (Internal.reshape_chw_flat_size (c := c) (h
     := h) (w := w))
   let cbC : Shape.CanBroadcastTo (.dim c .scalar) sC_HW :=
-    broadcastCToCHW (c := c) (hw := hw)
+    Internal.broadcastCToCHW (c := c) (hw := hw)
   let meanB ← broadcastTo (m := m) (α := α) (s₁ := .dim c .scalar) (s₂ := sC_HW) cbC mean
   let centered ← sub (m := m) (α := α) (s := sC_HW) xFlat meanB
   let zero ← const (m := m) (α := α) (s := .dim c .scalar) (Spec.fill (0 : α) (.dim c .scalar))
@@ -483,8 +456,8 @@ def batchNorm2dChwEval {α : Type} [Context α] [DecidableEq Shape]
   let betaB ← broadcastTo (m := m) (α := α) (s₁ := .dim c .scalar) (s₂ := sC_HW) cbC beta
   let yFlat ← add (m := m) (α := α) (s := sC_HW)
     (← mul (m := m) (α := α) (s := sC_HW) normalized gammaB) betaB
-  reshape (m := m) (α := α) (s₁ := sC_HW) (s₂ := sCHW) yFlat (reshapeCHWFlatToCHWSize (c := c) (h := h)
-    (w := w))
+  reshape (m := m) (α := α) (s₁ := sC_HW) (s₂ := sCHW) yFlat
+    (Internal.reshape_chw_flat_size (c := c) (h := h) (w := w)).symm
 
 end Norm
 

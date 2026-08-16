@@ -234,25 +234,29 @@ def unicodeNumberRanges : Array (Nat × Nat) := #[
   (130032, 130041)
 ]
 
+namespace Internal
+
 /-- Binary search over sorted inclusive ranges. -/
-def inSortedRangesAux (ranges : Array (Nat × Nat)) (n lo hi : Nat) : Nat → Bool
+def inSortedRanges (ranges : Array (Nat × Nat)) (n lo hi : Nat) : Nat → Bool
   | 0 => false
   | fuel + 1 =>
       if lo < hi then
         let mid := (lo + hi) / 2
         let r := ranges.getD mid (0, 0)
         if n < r.1 then
-          inSortedRangesAux ranges n lo mid fuel
+          inSortedRanges ranges n lo mid fuel
         else if n ≤ r.2 then
           true
         else
-          inSortedRangesAux ranges n (mid + 1) hi fuel
+          inSortedRanges ranges n (mid + 1) hi fuel
       else
         false
 
+end Internal
+
 /-- Test membership in a sorted inclusive range table. -/
 def inSortedRanges (ranges : Array (Nat × Nat)) (n : Nat) : Bool :=
-  inSortedRangesAux ranges n 0 ranges.size (ranges.size + 1)
+  Internal.inSortedRanges ranges n 0 ranges.size (ranges.size + 1)
 
 /-- Unicode `\p{L}` predicate used by GPT-2's regex pre-tokenizer. -/
 def isLetter (c : Char) : Bool :=

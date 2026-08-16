@@ -146,7 +146,7 @@ initializers:
 
 ```lean
 def epsResidualConvNet (cfg : EpsConvNetConfig) :
-    nn.M (nn.Sequential (epsConvNetInShape cfg) (epsConvNetOutShape cfg)) :=
+    nn.Builder (nn.Sequential (epsConvNetInShape cfg) (epsConvNetOutShape cfg)) :=
   nn.sequential![
     conv3x3SameImages,
     nn.relu,

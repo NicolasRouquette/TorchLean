@@ -65,11 +65,11 @@ abbrev σ := nn.models.kanInShape cfg
 abbrev τ := nn.models.kanOutShape cfg
 
 /-- Generic KAN model. Regression/classification is selected by `Trainer`, not by the model name. -/
-def model : nn.M (nn.Sequential σ τ) :=
-  nn.models.KAN cfg
+def model : nn.Builder (nn.Sequential σ τ) :=
+  nn.models.kan cfg
 
 /-- Prepared Auto MPG CSV as a public trainer dataset. -/
-def data (path : System.FilePath) (seed : Nat) : Trainer.Dataset σ τ :=
+def data (path : System.FilePath) (seed : Nat) : Trainer.DataSource σ τ :=
   Data.tabularCsvDataset path batch inDim outDim
     (csvOptions := { skipHeader := true }) (shuffle := true) (seed := seed)
 
@@ -80,7 +80,7 @@ def train (opts : Options) (flags : ModelZoo.CsvTrainFlags) :
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := flags.lr } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := flags.lr } })
         .regression
         (seed := flags.seed)
   trainer.train

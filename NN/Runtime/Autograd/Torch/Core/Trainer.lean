@@ -160,8 +160,8 @@ instance {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [Decidable
   layerNorm := fun {seqLen embedDim} hSeq hEmb x gamma beta => fun sess =>
     Internal.EagerSession.layerNorm (α := α) sess (seqLen := seqLen) (embedDim := embedDim)
       (h_seq_pos := hSeq) (h_embed_pos := hEmb) x gamma beta
-  batchnormChannelFirst := fun {channels height width} hC hH hW x gamma beta => fun sess =>
-    Internal.EagerSession.batchnormChannelFirst (α := α) sess
+  batchNormChannelFirst := fun {channels height width} hC hH hW x gamma beta => fun sess =>
+    Internal.EagerSession.batchNormChannelFirst (α := α) sess
       (channels := channels) (height := height) (width := width) (h_c := hC) (h_h := hH) (h_w := hW)
       x gamma beta
   multiHeadAttention := fun {n numHeads dModel headDim} h1 wq wk wv wo x mask => fun sess =>
@@ -203,185 +203,186 @@ instance {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [Decidable
     Internal.EagerSession.bernoulliMask (α := α) sess (sh := s) keepProb seed
 
 /--
-`Ops` instance for the compiled graph-building monad `GraphM`.
+`Ops` instance for the typed graph builder monad `GraphM`.
 
-This interprets `Ops` primitives by *recording* typed IR nodes (rather than executing immediately).
-See `Runtime.Autograd.Compiled.GraphM` and `Torch.LinkedSession` for how these graphs are later run.
+This interprets `Ops` primitives by recording typed SSA nodes rather than executing them
+immediately. `Runtime.Autograd.TypedGraph.GraphM` builds the graph data;
+`Runtime.Autograd.Torch.TypedGraph` packages it for repeated execution.
 -/
 instance {α Δ : Type} [Context α] [DecidableEq Shape] {Γ : List Shape} :
-    Ops (Runtime.Autograd.Compiled.GraphM.MWith α Δ Γ) α where
-  Ref := fun s => Runtime.Autograd.Compiled.GraphM.Var s
+    Ops (Runtime.Autograd.TypedGraph.GraphM.MWith α Δ Γ) α where
+  Ref := fun s => Runtime.Autograd.TypedGraph.GraphM.Var s
   NatTensorRef := fun s => Δ → Tensor Nat s
   natTensorConst := fun x _ => x
   mapNatTensor := fun f x d => f (x d)
-  const := fun {s} t => Runtime.Autograd.Compiled.GraphM.const (α := α) (Γ := Γ) (s := s) t
-  add := fun {s} a b => Runtime.Autograd.Compiled.GraphM.add (α := α) (Γ := Γ) (s := s) a b
-  sub := fun {s} a b => Runtime.Autograd.Compiled.GraphM.sub (α := α) (Γ := Γ) (s := s) a b
-  mul := fun {s} a b => Runtime.Autograd.Compiled.GraphM.mul (α := α) (Γ := Γ) (s := s) a b
-  scale := fun {s} x c => Runtime.Autograd.Compiled.GraphM.scale (α := α) (Γ := Γ) (s := s) x c
-  abs := fun {s} x => Runtime.Autograd.Compiled.GraphM.abs (α := α) (Γ := Γ) (s := s) x
-  sqrt := fun {s} x => Runtime.Autograd.Compiled.GraphM.sqrt (α := α) (Γ := Γ) (s := s) x
+  const := fun {s} t => Runtime.Autograd.TypedGraph.GraphM.const (α := α) (Γ := Γ) (s := s) t
+  add := fun {s} a b => Runtime.Autograd.TypedGraph.GraphM.add (α := α) (Γ := Γ) (s := s) a b
+  sub := fun {s} a b => Runtime.Autograd.TypedGraph.GraphM.sub (α := α) (Γ := Γ) (s := s) a b
+  mul := fun {s} a b => Runtime.Autograd.TypedGraph.GraphM.mul (α := α) (Γ := Γ) (s := s) a b
+  scale := fun {s} x c => Runtime.Autograd.TypedGraph.GraphM.scale (α := α) (Γ := Γ) (s := s) x c
+  abs := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.abs (α := α) (Γ := Γ) (s := s) x
+  sqrt := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.sqrt (α := α) (Γ := Γ) (s := s) x
   clamp := fun {s} x minVal maxVal =>
-    Runtime.Autograd.Compiled.GraphM.clamp (α := α) (Γ := Γ) (s := s) x minVal maxVal
-  max := fun {s} a b => Runtime.Autograd.Compiled.GraphM.max (α := α) (Γ := Γ) (s := s) a b
-  min := fun {s} a b => Runtime.Autograd.Compiled.GraphM.min (α := α) (Γ := Γ) (s := s) a b
+    Runtime.Autograd.TypedGraph.GraphM.clamp (α := α) (Γ := Γ) (s := s) x minVal maxVal
+  max := fun {s} a b => Runtime.Autograd.TypedGraph.GraphM.max (α := α) (Γ := Γ) (s := s) a b
+  min := fun {s} a b => Runtime.Autograd.TypedGraph.GraphM.min (α := α) (Γ := Γ) (s := s) a b
   broadcastTo := fun {s₁ s₂} cb x =>
-    Runtime.Autograd.Compiled.GraphM.broadcastTo (α := α) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) cb x
+    Runtime.Autograd.TypedGraph.GraphM.broadcastTo (α := α) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) cb x
   reshape := fun {s₁ s₂} x h =>
-    Runtime.Autograd.Compiled.GraphM.reshape (α := α) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) x h
+    Runtime.Autograd.TypedGraph.GraphM.reshape (α := α) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) x h
   transpose2d := fun {mDim nDim} x =>
-    Runtime.Autograd.Compiled.GraphM.transpose2d (α := α) (Γ := Γ) (m := mDim) (n := nDim) x
+    Runtime.Autograd.TypedGraph.GraphM.transpose2d (α := α) (Γ := Γ) (m := mDim) (n := nDim) x
   transpose3dFirstToLast := fun {a b c} x =>
-    Runtime.Autograd.Compiled.GraphM.transpose3dFirstToLast (α := α) (Γ := Γ) (a := a) (b := b)
+    Runtime.Autograd.TypedGraph.GraphM.transpose3dFirstToLast (α := α) (Γ := Γ) (a := a) (b := b)
       (c := c) x
   transpose3dLastToFirst := fun {a b c} x =>
-    Runtime.Autograd.Compiled.GraphM.transpose3dLastToFirst (α := α) (Γ := Γ) (a := a) (b := b)
+    Runtime.Autograd.TypedGraph.GraphM.transpose3dLastToFirst (α := α) (Γ := Γ) (a := a) (b := b)
       (c := c) x
   transpose3dLastTwo := fun {a b c} x =>
-    Runtime.Autograd.Compiled.GraphM.transpose3dLastTwo (α := α) (Γ := Γ) (a := a) (b := b) (c :=
+    Runtime.Autograd.TypedGraph.GraphM.transpose3dLastTwo (α := α) (Γ := Γ) (a := a) (b := b) (c :=
       c) x
   swapAdjacentAtDepth := fun {s} depth x =>
-    Runtime.Autograd.Compiled.GraphM.swapAdjacentAtDepth (α := α) (Γ := Γ) (s := s) depth x
+    Runtime.Autograd.TypedGraph.GraphM.swapAdjacentAtDepth (α := α) (Γ := Γ) (s := s) depth x
   reduceSum := fun {s} axis => fun x =>
-    Runtime.Autograd.Compiled.GraphM.reduceSum (α := α) (Γ := Γ) (s := s) axis x
+    Runtime.Autograd.TypedGraph.GraphM.reduceSum (α := α) (Γ := Γ) (s := s) axis x
   reduceMean := fun {s} axis => fun x =>
-    Runtime.Autograd.Compiled.GraphM.reduceMean (α := α) (Γ := Γ) (s := s) axis x
+    Runtime.Autograd.TypedGraph.GraphM.reduceMean (α := α) (Γ := Γ) (s := s) axis x
   gatherScalar := fun {n} x i =>
-    Runtime.Autograd.Compiled.GraphM.gatherScalar (α := α) (Γ := Γ) (n := n) x i
+    Runtime.Autograd.TypedGraph.GraphM.gatherScalar (α := α) (Γ := Γ) (n := n) x i
   gatherRow := fun {rows cols} x i =>
-    Runtime.Autograd.Compiled.GraphM.gatherRow (α := α) (Γ := Γ) (rows := rows) (cols := cols) x i
+    Runtime.Autograd.TypedGraph.GraphM.gatherRow (α := α) (Γ := Γ) (rows := rows) (cols := cols) x i
   gatherScalarNat := fun {n} x i =>
-    Runtime.Autograd.Compiled.GraphM.gatherScalarNat (α := α) (Γ := Γ) (n := n) x i
+    Runtime.Autograd.TypedGraph.GraphM.gatherScalarNat (α := α) (Γ := Γ) (n := n) x i
   gatherVecNat := fun {n k} x idx =>
-    Runtime.Autograd.Compiled.GraphM.gatherVecNat (α := α) (Γ := Γ) (n := n) (k := k) x idx
+    Runtime.Autograd.TypedGraph.GraphM.gatherVecNat (α := α) (Γ := Γ) (n := n) (k := k) x idx
   gatherRowsNat := fun {rows cols k} x idx =>
-    Runtime.Autograd.Compiled.GraphM.gatherRowsNat (α := α) (Γ := Γ) (rows := rows) (cols := cols)
+    Runtime.Autograd.TypedGraph.GraphM.gatherRowsNat (α := α) (Γ := Γ) (rows := rows) (cols := cols)
       (k := k) x idx
   scatterAddVec := fun {n} x v i =>
-    Runtime.Autograd.Compiled.GraphM.scatterAddVec (α := α) (Γ := Γ) (n := n) x v i
+    Runtime.Autograd.TypedGraph.GraphM.scatterAddVec (α := α) (Γ := Γ) (n := n) x v i
   scatterAddRow := fun {rows cols} x v i =>
-    Runtime.Autograd.Compiled.GraphM.scatterAddRow (α := α) (Γ := Γ) (rows := rows) (cols := cols)
+    Runtime.Autograd.TypedGraph.GraphM.scatterAddRow (α := α) (Γ := Γ) (rows := rows) (cols := cols)
       x v i
   matmul := fun {mDim nDim pDim} a b =>
-    Runtime.Autograd.Compiled.GraphM.matmul (α := α) (Γ := Γ) (m := mDim) (n := nDim) (p := pDim) a
+    Runtime.Autograd.TypedGraph.GraphM.matmul (α := α) (Γ := Γ) (m := mDim) (n := nDim) (p := pDim) a
       b
   bmm := fun {batch mDim nDim pDim} a b =>
-    Runtime.Autograd.Compiled.GraphM.bmm (α := α) (Γ := Γ) (batch := batch) (m := mDim) (n := nDim)
+    Runtime.Autograd.TypedGraph.GraphM.bmm (α := α) (Γ := Γ) (batch := batch) (m := mDim) (n := nDim)
       (p := pDim) a b
   concatVectors := fun {nDim mDim} a b =>
-    Runtime.Autograd.Compiled.GraphM.concatVectors (α := α) (Γ := Γ) (n := nDim) (m := mDim) a b
+    Runtime.Autograd.TypedGraph.GraphM.concatVectors (α := α) (Γ := Γ) (n := nDim) (m := mDim) a b
   concatLeadingAxis := fun {nDim mDim} {s} a b =>
-    Runtime.Autograd.Compiled.GraphM.concatLeadingAxis (α := α) (Γ := Γ) (n := nDim) (m := mDim) (s := s)
+    Runtime.Autograd.TypedGraph.GraphM.concatLeadingAxis (α := α) (Γ := Γ) (n := nDim) (m := mDim) (s := s)
       a b
   sliceLeadingAxisRange := fun {nDim} {s} start len h x =>
-    Runtime.Autograd.Compiled.GraphM.sliceLeadingAxisRange (α := α) (Γ := Γ) (n := nDim) (s := s) x start len
+    Runtime.Autograd.TypedGraph.GraphM.sliceLeadingAxisRange (α := α) (Γ := Γ) (n := nDim) (s := s) x start len
       h
   maxPool := fun {d C} {inSpatial kernel stride padding} {hKernel} x =>
-    Runtime.Autograd.Compiled.GraphM.maxPool (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.maxPool (α := α) (Γ := Γ)
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
       (hKernel := hKernel)
       x
   avgPool := fun {d C} {inSpatial kernel stride padding} hKernel x =>
-    Runtime.Autograd.Compiled.GraphM.avgPool (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.avgPool (α := α) (Γ := Γ)
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
       (hKernel := hKernel)
       x
   smoothMaxPool := fun {d C} {inSpatial kernel stride padding} {hKernel} x beta =>
-    Runtime.Autograd.Compiled.GraphM.smoothMaxPool (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.smoothMaxPool (α := α) (Γ := Γ)
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
       (hKernel := hKernel)
       x beta
   maxPool2d := fun {kH kW inH inW inC stride} {h1 h2} x =>
-    Runtime.Autograd.Compiled.GraphM.maxPool2d (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.maxPool2d (α := α) (Γ := Γ)
       (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
       (h1 := h1) (h2 := h2) x
   maxPool2dPad := fun {kH kW inH inW inC stride padding} {h1 h2} x =>
-    Runtime.Autograd.Compiled.GraphM.maxPool2dPad (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.maxPool2dPad (α := α) (Γ := Γ)
       (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
         padding)
       (h1 := h1) (h2 := h2) x
   smoothMaxPool2d := fun {kH kW inH inW inC stride} {h1 h2} x beta =>
-    Runtime.Autograd.Compiled.GraphM.smoothMaxPool2d (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.smoothMaxPool2d (α := α) (Γ := Γ)
       (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
       (h1 := h1) (h2 := h2) x beta
   avgPool2d := fun {kH kW inH inW inC stride} h1 h2 x =>
-    Runtime.Autograd.Compiled.GraphM.avgPool2d (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.avgPool2d (α := α) (Γ := Γ)
       (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
       h1 h2 x
   avgPool2dPad := fun {kH kW inH inW inC stride padding} h1 h2 x =>
-    Runtime.Autograd.Compiled.GraphM.avgPool2dPad (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.avgPool2dPad (α := α) (Γ := Γ)
       (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
         padding)
       h1 h2 x
-  relu := fun {s} x => Runtime.Autograd.Compiled.GraphM.relu (α := α) (Γ := Γ) (s := s) x
-  sigmoid := fun {s} x => Runtime.Autograd.Compiled.GraphM.sigmoid (α := α) (Γ := Γ) (s := s) x
-  tanh := fun {s} x => Runtime.Autograd.Compiled.GraphM.tanh (α := α) (Γ := Γ) (s := s) x
-  gelu := fun {s} x => Runtime.Autograd.Compiled.GraphM.gelu (α := α) (Γ := Γ) (s := s) x
-  softmax := fun {s} x => Runtime.Autograd.Compiled.GraphM.softmax (α := α) (Γ := Γ) (s := s) x
-  logSoftmax := fun {s} x => Runtime.Autograd.Compiled.GraphM.logSoftmax (α := α) (Γ := Γ) (s := s)
+  relu := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.relu (α := α) (Γ := Γ) (s := s) x
+  sigmoid := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.sigmoid (α := α) (Γ := Γ) (s := s) x
+  tanh := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.tanh (α := α) (Γ := Γ) (s := s) x
+  gelu := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.gelu (α := α) (Γ := Γ) (s := s) x
+  softmax := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.softmax (α := α) (Γ := Γ) (s := s) x
+  logSoftmax := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.logSoftmax (α := α) (Γ := Γ) (s := s)
     x
-  softplus := fun {s} x => Runtime.Autograd.Compiled.GraphM.softplus (α := α) (Γ := Γ) (s := s) x
-  exp := fun {s} x => Runtime.Autograd.Compiled.GraphM.exp (α := α) (Γ := Γ) (s := s) x
-  log := fun {s} x => Runtime.Autograd.Compiled.GraphM.log (α := α) (Γ := Γ) (s := s) x
-  inv := fun {s} x => Runtime.Autograd.Compiled.GraphM.inv (α := α) (Γ := Γ) (s := s) x
-  detach := fun {s} x => Runtime.Autograd.Compiled.GraphM.detach (α := α) (Γ := Γ) (s := s) x
-  safeLog := fun {s} x ε => Runtime.Autograd.Compiled.GraphM.safeLog (α := α) (Γ := Γ) (s := s) x
+  softplus := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.softplus (α := α) (Γ := Γ) (s := s) x
+  exp := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.exp (α := α) (Γ := Γ) (s := s) x
+  log := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.log (α := α) (Γ := Γ) (s := s) x
+  inv := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.inv (α := α) (Γ := Γ) (s := s) x
+  detach := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.detach (α := α) (Γ := Γ) (s := s) x
+  safeLog := fun {s} x ε => Runtime.Autograd.TypedGraph.GraphM.safeLog (α := α) (Γ := Γ) (s := s) x
     (ε := ε)
-  sum := fun {s} x => Runtime.Autograd.Compiled.GraphM.sum (α := α) (Γ := Γ) (s := s) x
-  flatten := fun {s} x => Runtime.Autograd.Compiled.GraphM.flatten (α := α) (Γ := Γ) (s := s) x
+  sum := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.sum (α := α) (Γ := Γ) (s := s) x
+  flatten := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.flatten (α := α) (Γ := Γ) (s := s) x
   linear := fun {inDim outDim} w b x =>
-    Runtime.Autograd.Compiled.GraphM.linear (α := α) (Γ := Γ) (inDim := inDim) (outDim := outDim) w
+    Runtime.Autograd.TypedGraph.GraphM.linear (α := α) (Γ := Γ) (inDim := inDim) (outDim := outDim) w
       b x
   mseLoss := fun {s} yhat target =>
-    Runtime.Autograd.Compiled.GraphM.mseLoss (α := α) (Γ := Γ) (s := s) yhat target
+    Runtime.Autograd.TypedGraph.GraphM.mseLoss (α := α) (Γ := Γ) (s := s) yhat target
   layerNorm := fun {seqLen embedDim} hSeq hEmb x gamma beta =>
-    Runtime.Autograd.Compiled.GraphM.layerNorm (α := α) (Γ := Γ) (seqLen := seqLen) (embedDim :=
+    Runtime.Autograd.TypedGraph.GraphM.layerNorm (α := α) (Γ := Γ) (seqLen := seqLen) (embedDim :=
       embedDim)
       (h_seq_pos := hSeq) (h_embed_pos := hEmb) x gamma beta
-  batchnormChannelFirst := fun {channels height width} hC hH hW x gamma beta =>
-    Runtime.Autograd.Compiled.GraphM.batchnormChannelFirst (α := α) (Γ := Γ)
+  batchNormChannelFirst := fun {channels height width} hC hH hW x gamma beta =>
+    Runtime.Autograd.TypedGraph.GraphM.batchNormChannelFirst (α := α) (Γ := Γ)
       (channels := channels) (height := height) (width := width) (h_c := hC) (h_h := hH) (h_w := hW)
       x gamma beta
   multiHeadAttention := fun {n numHeads dModel headDim} h1 wq wk wv wo x mask =>
-    Runtime.Autograd.Compiled.GraphM.multiHeadAttention (α := α) (Γ := Γ) (n := n) (numHeads :=
+    Runtime.Autograd.TypedGraph.GraphM.multiHeadAttention (α := α) (Γ := Γ) (n := n) (numHeads :=
       numHeads)
       (dModel := dModel) (headDim := headDim) h1 wq wk wv wo x (mask := mask)
   batchedMultiHeadAttention :=
     fun {batch n numHeads dModel headDim} _hBatch h1 wq wk wv wo x mask =>
-      Runtime.Autograd.Compiled.GraphM.batchedMultiHeadAttention (α := α) (Γ := Γ)
+      Runtime.Autograd.TypedGraph.GraphM.batchedMultiHeadAttention (α := α) (Γ := Γ)
         (batch := batch) (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
         h1 wq wk wv wo x (mask := mask)
   conv := fun {d inC outC} {kernel stride padding} {inSpatial} {hInC hKernel} w b x =>
-    Runtime.Autograd.Compiled.GraphM.conv (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.conv (α := α) (Γ := Γ)
       (d := d) (inC := inC) (outC := outC)
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
       (hInC := hInC) (hKernel := hKernel)
       w b x
   convTranspose := fun {d inC outC} {kernel stride padding} {inSpatial} {hInC hKernel} w b x =>
-    Runtime.Autograd.Compiled.GraphM.convTranspose (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.convTranspose (α := α) (Γ := Γ)
       (d := d) (inC := inC) (outC := outC)
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
       (hInC := hInC) (hKernel := hKernel)
       w b x
   conv2d := fun {inC outC kH kW stride padding inH inW} {h1 h2 h3} kernel bias input =>
-    Runtime.Autograd.Compiled.GraphM.conv2d (α := α) (Γ := Γ) (inC := inC) (outC := outC) (kH := kH)
+    Runtime.Autograd.TypedGraph.GraphM.conv2d (α := α) (Γ := Γ) (inC := inC) (outC := outC) (kH := kH)
       (kW := kW)
       (stride := stride) (padding := padding) (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 :=
         h3)
       kernel bias input
   convTranspose2d := fun {inC outC kH kW stride padding inH inW} {h1 h2 h3} kernel bias input =>
-    Runtime.Autograd.Compiled.GraphM.convTranspose2d (α := α) (Γ := Γ)
+    Runtime.Autograd.TypedGraph.GraphM.convTranspose2d (α := α) (Γ := Γ)
       (inC := inC) (outC := outC) (kH := kH) (kW := kW)
       (stride := stride) (padding := padding) (inH := inH) (inW := inW)
       (h1 := h1) (h2 := h2) (h3 := h3)
       kernel bias input
   randUniform := fun {s} seed => do
-    Runtime.Autograd.Compiled.GraphM.randUniform (α := α) (Γ := Γ) (s := s) (seed := seed)
+    Runtime.Autograd.TypedGraph.GraphM.randUniform (α := α) (Γ := Γ) (s := s) (seed := seed)
   bernoulliMask := fun {s} keepProb seed => do
-    Runtime.Autograd.Compiled.GraphM.bernoulliMask (α := α) (Γ := Γ) (s := s) keepProb (seed :=
+    Runtime.Autograd.TypedGraph.GraphM.bernoulliMask (α := α) (Γ := Γ) (s := s) keepProb (seed :=
       seed)
 
 /--
@@ -398,31 +399,31 @@ structure OptimizerStateCheckpoint where
   load : System.FilePath → IO Unit
 
 /--
-Bundle a scalar-loss training loop for a fixed parameter pack and input signature.
+Bundle a scalar-loss training loop for fixed module state and an input signature.
 
 This is the low-level trainer object used by module-backed execution:
-- `forward` computes a scalar loss,
-- `lossAndBackward` computes that loss and its parameter gradients from one tape,
-- `backward` exposes just the gradients when the loss is not needed,
+- `loss` computes the scalar objective,
+- `lossAndGradState` computes that loss and its state-shaped gradients from one tape,
+- `gradState` exposes just the gradients when the loss is not needed,
 - `stepWithLoss` applies an SGD update and returns the loss from the same tape,
 - `step` applies the update without requiring callers to read the loss,
-- `getParams` reads current parameter values.
+- `getState` reads the current parameters and persistent buffers.
 -/
 structure ScalarTrainer (α : Type) (paramShapes inputShapes : List Shape)
     (natInputShapes : List Shape := []) where
-  /-- Mutable trainable parameter pack. -/
-  params : ParamList α paramShapes
+  /-- Mutable module state. Entries marked `requiresGrad = false` are persistent buffers. -/
+  state : ParamList α paramShapes
   /-- Compute the scalar loss for a curried input pack. -/
-  forward :
+  loss :
     Curried.Fn α inputShapes
       (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar)))
   /-- Compute the scalar loss and parameter gradients from one forward tape. -/
-  lossAndBackward :
+  lossAndGradState :
     Curried.Fn α inputShapes
       (Curried.Fn Nat natInputShapes
         (IO (Tensor α Shape.scalar × TList α paramShapes)))
   /-- Compute gradients aligned with `paramShapes` for a curried input pack. -/
-  backward :
+  gradState :
     Curried.Fn α inputShapes
       (Curried.Fn Nat natInputShapes (IO (TList α paramShapes)))
   /-- Apply one SGD-style update and return the loss used to compute that update. -/
@@ -459,8 +460,8 @@ structure ScalarTrainer (α : Type) (paramShapes inputShapes : List Shape)
         (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar)))) := none
   /-- Save and restore optimizer state retained inside the selected runtime backend. -/
   optimizerStateCheckpoint? : Option OptimizerStateCheckpoint := none
-  /-- Read current parameter values, synchronizing device mirrors if needed. -/
-  getParams : IO (TList α paramShapes)
+  /-- Read current module state, synchronizing device mirrors if needed. -/
+  getState : IO (TList α paramShapes)
 
 namespace Internal
 
@@ -504,12 +505,11 @@ def useInputs {α : Type} [CudaBridge.TensorConv α] [DecidableEq Shape] :
 end Internal
 
 /--
-Build a `ScalarTrainer` from an initial parameter pack and a backend-generic loss definition.
+Build a `ScalarTrainer` from an initial parameter pack and an operation-generic loss definition.
 
 `loss` is written once against the `Ops` interface over a concatenated context
-`paramShapes ++ inputShapes`. Depending on `opts.backend`, we either:
-- compile the loss once (compiled backend), or
-- execute it eagerly by building a runtime tape each step (eager backend).
+`paramShapes ++ inputShapes`. Depending on `opts.execution`, TorchLean either records the loss once
+as a typed SSA graph or executes it immediately while building a dynamic tape.
 -/
 def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [DecidableEq Shape]
     {paramShapes inputShapes natInputShapes : List Shape}
@@ -526,39 +526,39 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
       (β := IO (ScalarTrainer α paramShapes inputShapes natInputShapes))
     (fun initParams => do
     let ps ← ParamList.ofTListWithRequiresGrad (α := α) initParams initRequiresGrad
-    match opts.backend with
-    | .compiled =>
+    match opts.execution with
+    | .typedGraph =>
         if opts.device != .cpu then
           throw <| IO.userError
-            s!"torch compiled backend currently supports device `cpu`; requested `{opts.deviceName}`"
+            s!"typed graph execution currently supports device `cpu`; requested `{opts.deviceName}`"
         let Γ : List Shape := paramShapes ++ inputShapes
         let Δ : Type := TList Nat natInputShapes
-        let build : Runtime.Autograd.Compiled.GraphM.MWith α Δ Γ
-            (Runtime.Autograd.Compiled.GraphM.Var Shape.scalar) := do
-          let vs ← Runtime.Autograd.Compiled.GraphM.args (α := α) (Γ := Γ)
+        let build : Runtime.Autograd.TypedGraph.GraphM.MWith α Δ Γ
+            (Runtime.Autograd.TypedGraph.GraphM.Var Shape.scalar) := do
+          let vs ← Runtime.Autograd.TypedGraph.GraphM.args (α := α) (Γ := Γ)
           let withNatInputs :=
             CurriedRef.applyVarList (Γ := Γ)
               (β := CurriedRef (fun s => Δ → Tensor Nat s) natInputShapes
-                (Runtime.Autograd.Compiled.GraphM.MWith α Δ Γ
-                  (Runtime.Autograd.Compiled.GraphM.Var Shape.scalar)))
-              (loss (m := Runtime.Autograd.Compiled.GraphM.MWith α Δ Γ)) vs
+                (Runtime.Autograd.TypedGraph.GraphM.MWith α Δ Γ
+                  (Runtime.Autograd.TypedGraph.GraphM.Var Shape.scalar)))
+              (loss (m := Runtime.Autograd.TypedGraph.GraphM.MWith α Δ Γ)) vs
           CurriedRef.applyTListProjections (full := natInputShapes) id withNatInputs
-        let compiled ← okOrThrow
-          (compileScalarWith (α := α) (Δ := Δ) (Γ := Γ) build)
-        let ssFull : List Shape := compiled.ssPrev ++ [Shape.scalar]
+        let graph ← okOrThrow
+          (lowerToTypedGraphWithAux (α := α) (Δ := Δ) (Γ := Γ) (τ := Shape.scalar) build)
+        let ssFull : List Shape := graph.nodeShapes
         let fullGraph : Proofs.Autograd.Algebra.GraphData α Δ Γ ssFull :=
-          .snoc (ss := compiled.ssPrev) (τ := Shape.scalar) compiled.gPrev compiled.node
-        let outId : Nat := Runtime.Autograd.Compiled.outId (Γ := Γ) (ss := ssFull)
+          graph.data
+        let outId : Nat := graph.output.i.val
 
         let getScalarFromTape (t : Runtime.Autograd.Tape α) : IO (Tensor α Shape.scalar) := do
           let any ← match t.getValue? outId with
             | some v => pure v
-            | none => throw <| IO.userError "torch.compile: missing output value in compiled tape"
+            | none => throw <| IO.userError "typed graph execution: missing output value in tape"
           if h : any.s = Shape.scalar then
             pure (Tensor.castShape any.t h)
           else
             throw <| IO.userError
-              s!"torch.compile: output shape mismatch (expected scalar, got {Shape.pretty any.s})"
+              s!"typed graph execution: output shape mismatch (expected scalar, got {Shape.pretty any.s})"
 
         let rec gradsPrefix :
             {ss : List Shape} → Array (Runtime.AnyTensor α) → Nat → IO (TList α ss)
@@ -566,14 +566,14 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
           | s :: ss, grads, off => do
               let any ← match grads[off]? with
                 | some v => pure v
-                | none => throw <| IO.userError "torch.compile: gradient array too small"
+                | none => throw <| IO.userError "typed graph execution: gradient array too small"
               if h : any.s = s then
                 let g : Tensor α s := Tensor.castShape any.t h
                 let gs ← gradsPrefix (ss := ss) grads (off + 1)
                 pure (.cons g gs)
               else
                 throw <| IO.userError <|
-                  s!"torch.compile: gradient shape mismatch at idx={off} (expected "
+                  s!"typed graph execution: gradient shape mismatch at idx={off} (expected "
                     ++ s!"{Shape.pretty s}, got "
                     ++ s!"{Shape.pretty any.s})"
 
@@ -583,10 +583,10 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
           let args := Proofs.Autograd.Algebra.TList.append (α := α) (ss₁ := paramShapes)
             (ss₂ := inputShapes) pv xs
           let (tape, _ctx) :=
-            Proofs.Autograd.Algebra.Graph.compileAuxData
+            Proofs.Autograd.Algebra.Graph.lowerGraphDataToTape
               (α := α) (Δ := Δ) (Γ := Γ) (ss := ssFull) fullGraph args natInputs
           pure tape
-        let forward :
+        let lossFn :
             Curried.Fn α inputShapes
               (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) :=
           Curried.curry (α := α) (ss := inputShapes)
@@ -594,7 +594,7 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
               Curried.curry (α := Nat) (ss := natInputShapes)
                 (β := IO (Tensor α Shape.scalar)) (fun natInputs =>
                   runTape xs natInputs >>= getScalarFromTape))
-        let lossAndBackward :
+        let lossAndGradState :
             Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes
               (IO (Tensor α Shape.scalar × TList α paramShapes))) :=
           Curried.curry (α := α) (ss := inputShapes)
@@ -605,11 +605,12 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
                   let tape ← runTape xs natInputs
                   let lossValue ← getScalarFromTape tape
                   let grads ← okOrThrow
-                    (Runtime.Autograd.Compiled.backwardDenseAllFromOutput
-                      (α := α) (Γ := Γ) (ss := ssFull) tape)
+                    (Runtime.Autograd.TypedGraph.backwardDenseAllFrom
+                      (α := α) (Γ := Γ) (ss := ssFull) tape graph.output
+                      (Tensor.scalar (1 : α)))
                   let paramGrads ← gradsPrefix (ss := paramShapes) grads 0
                   pure (lossValue, paramGrads)))
-        let backward :
+        let gradState :
             Curried.Fn α inputShapes
               (Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) :=
           Curried.curry (α := α) (ss := inputShapes)
@@ -618,8 +619,9 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
                 (β := IO (TList α paramShapes)) (fun natInputs => do
                   let tape ← runTape xs natInputs
                   let grads ← okOrThrow
-                    (Runtime.Autograd.Compiled.backwardDenseAllFromOutput
-                      (α := α) (Γ := Γ) (ss := ssFull) tape)
+                    (Runtime.Autograd.TypedGraph.backwardDenseAllFrom
+                      (α := α) (Γ := Γ) (ss := ssFull) tape graph.output
+                      (Tensor.scalar (1 : α)))
                   gradsPrefix (ss := paramShapes) grads 0))
         let stepWithLoss (lr : α) :
             Curried.Fn α inputShapes
@@ -628,15 +630,15 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
             (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) (fun xs =>
               Curried.curry (α := Nat) (ss := natInputShapes)
                 (β := IO (Tensor α Shape.scalar)) (fun natInputs => do
-                  let lossAndBackwardForNat :=
+                  let lossAndGradStateForNat :=
                     Curried.uncurry (α := α) (ss := inputShapes)
                       (β := Curried.Fn Nat natInputShapes
                         (IO (Tensor α Shape.scalar × TList α paramShapes)))
-                      lossAndBackward xs
+                      lossAndGradState xs
                   let (lossValue, grads) ←
                     Curried.uncurry (α := Nat) (ss := natInputShapes)
                       (β := IO (Tensor α Shape.scalar × TList α paramShapes))
-                      lossAndBackwardForNat natInputs
+                      lossAndGradStateForNat natInputs
                   ParamList.sgdStep (α := α) (ss := paramShapes) ps lr grads
                   pure lossValue))
         let step (lr : α) :
@@ -653,10 +655,10 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
                     (β := IO (Tensor α Shape.scalar)) stepForNat natInputs
                   pure ()))
         pure
-          { params := ps
-            forward := forward
-            lossAndBackward := lossAndBackward
-            backward := backward
+          { state := ps
+            loss := lossFn
+            lossAndGradState := lossAndGradState
+            gradState := gradState
             stepWithLoss := stepWithLoss
             step := step
             adamStep? := none
@@ -664,7 +666,7 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
             adamWStep? := none
             adamWStepWithLoss? := none
             optimizerStateCheckpoint? := none
-            getParams := ParamList.values (α := α) (ss := paramShapes) ps }
+            getState := ParamList.values (α := α) (ss := paramShapes) ps }
     | .eager =>
         let sess ← Internal.EagerSession.new (α := α) opts
         let adamStateRef ← IO.mkRef (Std.HashMap.emptyWithCapacity : Internal.EagerSession.CudaAdamState)
@@ -690,7 +692,7 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
           sess.paramsByLeaf.set (Std.HashMap.emptyWithCapacity)
           sess.nats.set #[]
           Internal.EagerSession.collectCudaAllocator
-        let forward :
+        let lossFn :
             Curried.Fn α inputShapes
               (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) :=
           Curried.curry (α := α) (ss := inputShapes)
@@ -699,7 +701,7 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
                 (β := IO (Tensor α Shape.scalar)) (fun natInputs => do
                   let (lossRef, _) ← recordLoss xs natInputs
                   Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef))
-        let lossAndBackward :
+        let lossAndGradState :
             Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes
               (IO (Tensor α Shape.scalar × TList α paramShapes))) :=
           Curried.curry (α := α) (ss := inputShapes)
@@ -713,7 +715,7 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
                   let grads ← Internal.EagerSession.backwardScalarDenseAll (α := α) sess lossRef
                   let paramGrads ← Internal.gradsOfRefs (α := α) (ss := paramShapes) grads pRefs
                   pure (lossValue, paramGrads)))
-        let backward :
+        let gradState :
             Curried.Fn α inputShapes
               (Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) :=
           Curried.curry (α := α) (ss := inputShapes)
@@ -741,15 +743,15 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
                     finishCudaStep
                     pure lossValue
                   else
-                    let lossAndBackwardForNat :=
+                    let lossAndGradStateForNat :=
                       Curried.uncurry (α := α) (ss := inputShapes)
                         (β := Curried.Fn Nat natInputShapes
                           (IO (Tensor α Shape.scalar × TList α paramShapes)))
-                        lossAndBackward xs
+                        lossAndGradState xs
                     let (lossValue, grads) ←
                       Curried.uncurry (α := Nat) (ss := natInputShapes)
                         (β := IO (Tensor α Shape.scalar × TList α paramShapes))
-                        lossAndBackwardForNat natInputs
+                        lossAndGradStateForNat natInputs
                     ParamList.sgdStep (α := α) (ss := paramShapes) ps lr grads
                     pure lossValue))
         let step (lr : α) :
@@ -766,11 +768,11 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
                       Internal.EagerSession.sgdStepAllCudaMap (α := α) sess lr gradsDev
                     finishCudaStep
                   else
-                    let backwardForNat :=
+                    let gradStateForNat :=
                       Curried.uncurry (α := α) (ss := inputShapes)
-                        (β := Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) backward xs
+                        (β := Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) gradState xs
                     let g ← Curried.uncurry (α := Nat) (ss := natInputShapes)
-                      (β := IO (TList α paramShapes)) backwardForNat natInputs
+                      (β := IO (TList α paramShapes)) gradStateForNat natInputs
                     ParamList.sgdStep (α := α) (ss := paramShapes) ps lr g))
         let adamStep? : Option (α → α → α → α →
             Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes (IO Unit))) :=
@@ -864,10 +866,10 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
           else
             none
         pure
-          { params := ps
-            forward := forward
-            lossAndBackward := lossAndBackward
-            backward := backward
+          { state := ps
+            loss := lossFn
+            lossAndGradState := lossAndGradState
+            gradState := gradState
             stepWithLoss := stepWithLoss
             step := step
             adamStep? := adamStep?
@@ -875,7 +877,7 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
             adamWStep? := adamWStep?
             adamWStepWithLoss? := adamWStepWithLoss?
             optimizerStateCheckpoint? := optimizerStateCheckpoint?
-            getParams := ParamList.valuesSynced (α := α) (ss := paramShapes) ps })
+            getState := ParamList.valuesSynced (α := α) (ss := paramShapes) ps })
 end Torch
 end Autograd
 end Runtime

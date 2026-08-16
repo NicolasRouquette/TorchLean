@@ -60,7 +60,7 @@ def hidDim : Nat := 32
 def outDim : Nat := 1
 
 /-- Shared MLP configuration used by shapes and the constructor. -/
-def cfg : nn.models.MlpConfig :=
+def cfg : nn.models.MLPConfig :=
   { batch := batch, inDim := inDim, hidDim := hidDim, outDim := outDim }
 
 /-- Input shape: a minibatch of Auto MPG feature vectors. -/
@@ -70,7 +70,7 @@ abbrev σ : Shape := .dim batch (.dim inDim .scalar)
 abbrev τ : Shape := .dim batch (.dim outDim .scalar)
 
 /-- One-hidden-layer ReLU MLP from the public model API. -/
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.mlpRelu cfg
 
 /--
@@ -78,10 +78,10 @@ Auto MPG as a public TorchLean dataset.
 
 The only dataset-specific details here are the CSV path, header convention, batch size, and feature
 count. Runtime scalar selection stays inside `Trainer`, so the same dataset works for CPU, CUDA,
-compiled, eager, and checked scalar modes.
+typed graph, eager, and checked scalar modes.
 -/
 def data (path : System.FilePath) (seed : Nat) :
-    Trainer.Dataset σ τ :=
+    Trainer.DataSource σ τ :=
   Data.tabularCsvDataset path batch inDim outDim
     (csvOptions := { skipHeader := true }) (shuffle := true) (seed := seed)
 
@@ -92,7 +92,7 @@ def train (opts : Options) (flags : ModelZoo.CsvTrainFlags) :
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := flags.lr } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := flags.lr } })
         .regression
         (seed := flags.seed)
   trainer.train

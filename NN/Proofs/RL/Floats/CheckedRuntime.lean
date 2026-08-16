@@ -45,16 +45,16 @@ open TorchLean.Floats.IEEE754
 open IEEE32Exec
 
 /--
-If `Runtime.RL.Numerics.Float32.discountedBackupIEEE32ExecChecked` returns `.ok`, then the decoded real
+If `Runtime.RL.Numerics.Float32.discountedBackupChecked` returns `.ok`, then the decoded real
 meaning of the result agrees with the standard “real-op + round-to-float32” model (`fp32Round`)
 at each primitive operation.
 
 This is the direct `checked boundary ⇒ semantics theorem applies` wrapper.
 -/
-theorem toReal_discountedBackupIEEE32ExecChecked_eq_fp32Round_chain
+theorem toReal_discountedBackupChecked_eq_fp32Round_chain
     (reward gamma bootstrap : TorchLean.Floats.IEEE754.IEEE32Exec) (done : Bool)
     (out : TorchLean.Floats.IEEE754.IEEE32Exec)
-    (h : Runtime.RL.Numerics.Float32.discountedBackupIEEE32ExecChecked reward gamma bootstrap done = .ok out) :
+    (h : Runtime.RL.Numerics.Float32.discountedBackupChecked reward gamma bootstrap done = .ok out) :
     toReal out =
       fp32Round
         (toReal reward +
@@ -64,7 +64,7 @@ theorem toReal_discountedBackupIEEE32ExecChecked_eq_fp32Round_chain
                   toReal (continueMask (α := TorchLean.Floats.IEEE754.IEEE32Exec) done)) *
               toReal bootstrap)) := by
   obtain ⟨h₁, h₂, h₃, hout⟩ :=
-    Runtime.RL.Numerics.Float32.discountedBackupIEEE32ExecChecked_eq_ok
+    Runtime.RL.Numerics.Float32.discountedBackup_eq_ok
       (reward := reward) (gamma := gamma) (bootstrap := bootstrap) (done := done) (out := out) h
   -- Reduce to the spec-layer refinement theorem.
   rw [hout]
@@ -74,16 +74,16 @@ theorem toReal_discountedBackupIEEE32ExecChecked_eq_fp32Round_chain
       (h₁ := h₁) (h₂ := h₂) (h₃ := h₃))
 
 /--
-If `Runtime.RL.Numerics.Float32.tdResidualIEEE32ExecChecked` returns `.ok`, then the decoded real meaning of
+If `Runtime.RL.Numerics.Float32.tdResidualChecked` returns `.ok`, then the decoded real meaning of
 the result agrees with the standard “real-op + round-to-float32” model (`fp32Round`) at each
 primitive operation.
 
 This is the `checked boundary ⇒ semantics theorem applies` wrapper for TD residuals.
 -/
-theorem toReal_tdResidualIEEE32ExecChecked_eq_fp32Round_chain
+theorem toReal_tdResidualChecked_eq_fp32Round_chain
     (value reward gamma nextValue : TorchLean.Floats.IEEE754.IEEE32Exec) (done : Bool)
     (out : TorchLean.Floats.IEEE754.IEEE32Exec)
-    (h : Runtime.RL.Numerics.Float32.tdResidualIEEE32ExecChecked value reward gamma nextValue done = .ok out) :
+    (h : Runtime.RL.Numerics.Float32.tdResidualChecked value reward gamma nextValue done = .ok out) :
     toReal out =
       fp32Round
         (fp32Round
@@ -93,7 +93,7 @@ theorem toReal_tdResidualIEEE32ExecChecked_eq_fp32Round_chain
                   toReal nextValue)) -
           toReal value) := by
   obtain ⟨h₁, h₂, h₃, hval, hsub, hout⟩ :=
-    Runtime.RL.Numerics.Float32.tdResidualIEEE32ExecChecked_eq_ok
+    Runtime.RL.Numerics.Float32.tdResidual_eq_ok
       (value := value) (reward := reward) (gamma := gamma) (nextValue := nextValue) (done := done)
       (out := out)
       h

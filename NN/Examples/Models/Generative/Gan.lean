@@ -48,7 +48,8 @@ Shared vector-image configuration.
 The generator, discriminator, latent batch, score batch, and CIFAR vector batch all derive from this
 record, so shape changes stay centralized.
 -/
-def cfg : nn.models.VectorGenerativeConfig := nn.models.compactImageConfig
+def cfg : nn.models.VectorGenerativeConfig :=
+  nn.models.vectorGenerativeConfig 1 16 8 4
 
 /-- Latent-noise batch shape for the generator input. -/
 abbrev Z := nn.models.vectorLatentShape cfg
@@ -60,16 +61,16 @@ abbrev X := nn.models.vectorDataShape cfg
 abbrev S : Shape := .dim cfg.batch (.dim 1 .scalar)
 
 /-- Generator network mapping latent vectors to flattened image vectors. -/
-def mkGenerator : nn.M (nn.Sequential Z X) :=
+def mkGenerator : nn.Builder (nn.Sequential Z X) :=
   nn.models.vectorGanGenerator cfg
 
 /-- Discriminator network mapping flattened image vectors to scalar real/fake scores. -/
-def mkDiscriminator : nn.M (nn.Sequential X S) :=
+def mkDiscriminator : nn.Builder (nn.Sequential X S) :=
   nn.models.vectorGanDiscriminator cfg
 
 /-- Mean-squared error for one supervised sample evaluated through a public prediction closure. -/
 def sampleMse {σ τ : Shape}
-    (predict : Tensor.T Float σ → IO (Tensor.T Float τ))
+    (predict : Tensor Float σ → IO (Tensor Float τ))
     (sample : SupervisedSample Float σ τ) : IO Float := do
   let yhat ← predict (Sample.x sample)
   pure (_root_.Spec.mseSpec yhat (Sample.y sample))
@@ -79,11 +80,11 @@ Aggregate generator and discriminator scalar losses for one LSGAN reporting step
 
 The metric receives public prediction functions rather than raw modules.  That is the whole point of
 this example after the trainer cleanup: the GAN-specific code still defines the task objective, but
-the model state, optimizer stepping, and backend details stay inside `trainer.trainPairStreamFloat`.
+the model state, optimizer stepping, and backend details stay inside `trainer.trainPairStreams`.
 -/
 def totalLoss
-    (predictGen : Tensor.T Float Z → IO (Tensor.T Float X))
-    (predictDisc : Tensor.T Float X → IO (Tensor.T Float S))
+    (predictGen : Tensor Float Z → IO (Tensor Float X))
+    (predictDisc : Tensor Float X → IO (Tensor Float S))
     (genSample : SupervisedSample Float Z X)
     (discReal discFake : SupervisedSample Float X S) : IO Float := do
   let g ← sampleMse predictGen genSample
@@ -110,18 +111,18 @@ def trainCurve (opts : Options) (xPath yPath : System.FilePath)
   let genTrainer :=
     Trainer.new mkGenerator <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := 1e-3 } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := 1e-3 } })
         .regression
         (seed := seed)
   let discTrainer :=
     Trainer.new mkDiscriminator <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := 1e-3 } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := 1e-3 } })
         .regression
         (seed := seed + 1)
   genTrainer.printInfoAs "generator"
   discTrainer.printInfoAs "discriminator"
-  let trained ← genTrainer.trainPairStreamFloat discTrainer opts
+  let trained ← genTrainer.trainPairStreams discTrainer opts
     (fun _ => genSample)
     (fun _ => [discReal, discFake])
     (fun predictGen predictDisc =>

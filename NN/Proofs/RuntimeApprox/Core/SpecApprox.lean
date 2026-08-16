@@ -26,7 +26,7 @@ Trust boundary:
 - This file is purely about *stating* approximation predicates. Turning it into an end-to-end
   theorem requires per-op approximation lemmas and a composition argument.
 - Lean supplies a logical model for `Float`, but this file does not yet provide per-operation
-  approximation lemmas for that model. Compiled native execution also requires a separate provider
+  approximation lemmas for that model. Native execution also requires a separate provider
   agreement. Neither connection is assumed here.
 - The intended proof-relevant path is to use rounding-model backends (`NeuralFloat` / `NF`) where
   rounding error bounds are explicit and can be composed.

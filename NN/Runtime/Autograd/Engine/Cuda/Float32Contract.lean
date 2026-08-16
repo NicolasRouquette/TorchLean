@@ -12,7 +12,7 @@ public import NN.Floats.IEEEExec.Bridge.LeanFloat32
 /-!
 # CUDA float32 contract
 
-TorchLean's CUDA eager backend stores native `float` values in an opaque FFI buffer. Lean cannot
+TorchLean's eager CUDA runtime stores native `float` values in an opaque FFI buffer. Lean cannot
 look inside CUDA kernels, C casts, libdevice calls, or cuBLAS, so the native backend is necessarily a
 trusted/validated implementation boundary.
 

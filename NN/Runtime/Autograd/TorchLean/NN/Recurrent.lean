@@ -36,17 +36,17 @@ Parameters:
 PyTorch analogy: `torch.nn.Linear(inDim, outDim)`.
 -/
 def linear (inDim outDim : Nat) (seedW seedB : Nat := 0) :
-    LayerDef (.dim inDim .scalar) (.dim outDim .scalar) :=
+    Layer (.dim inDim .scalar) (.dim outDim .scalar) :=
   let WShape : Shape := .dim outDim (.dim inDim .scalar)
   let bShape : Shape := .dim outDim .scalar
   let w0 : Tensor Float WShape := Torch.Init.xavierW (outDim := outDim) (inDim := inDim) (seed :=
     seedW)
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"Linear({inDim}, {outDim})"
-    paramShapes := [WShape, bShape]
-    initParams := Torch.tlistPair w0 b0
+    stateShapes := [WShape, bShape]
+    initState := Torch.tlistPair w0 b0
     runtimeInit := some (.cons (.xavierUniform inDim outDim seedW) (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun w b x =>
@@ -61,17 +61,17 @@ Input shape: `(batch × inDim)`. Output shape: `(batch × outDim)`.
 PyTorch analogy: `torch.nn.Linear(inDim, outDim)` applied to a 2D tensor.
 -/
 def linear2d (batch inDim outDim : Nat) (seedW seedB : Nat := 0) :
-    LayerDef (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar)) :=
+    Layer (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar)) :=
   let WShape : Shape := .dim outDim (.dim inDim .scalar)
   let bShape : Shape := .dim outDim .scalar
   let w0 : Tensor Float WShape := Torch.Init.xavierW (outDim := outDim) (inDim := inDim) (seed :=
     seedW)
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"Linear2d({inDim}, {outDim})"
-    paramShapes := [WShape, bShape]
-    initParams := Torch.tlistPair w0 b0
+    stateShapes := [WShape, bShape]
+    initState := Torch.tlistPair w0 b0
     runtimeInit := some (.cons (.xavierUniform inDim outDim seedW) (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun w b x =>
@@ -97,18 +97,18 @@ PyTorch analogy: `torch.nn.RNN(inputSize, hiddenSize, nonlinearity="tanh")` with
 Docs: https://docs.pytorch.org/docs/stable/generated/torch.nn.RNN.html
 -/
 def rnn (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
-    LayerDef (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim hiddenSize .scalar)) :=
+    Layer (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim hiddenSize .scalar)) :=
   let WShape : Shape := .dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)
   let bShape : Shape := .dim hiddenSize .scalar
   let w0 : Tensor Float WShape := Torch.Init.xavierW (outDim := hiddenSize) (inDim := inputSize +
     hiddenSize) (seed := seedW)
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"RNN({inputSize}, {hiddenSize})"
-    paramShapes := [WShape, bShape]
-    initParams := Torch.tlistPair w0 b0
+    stateShapes := [WShape, bShape]
+    initState := Torch.tlistPair w0 b0
     runtimeInit := some (.cons (.xavierUniform (inputSize + hiddenSize) hiddenSize seedW)
       (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun w b xs => show m (Ref (.dim seqLen (.dim hiddenSize .scalar))) from do
@@ -145,7 +145,7 @@ single batch element.
 Docs: https://docs.pytorch.org/docs/stable/generated/torch.nn.GRU.html
 -/
 def gru (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
-    LayerDef (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim hiddenSize .scalar)) :=
+    Layer (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim hiddenSize .scalar)) :=
   let WShape : Shape := .dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)
   let bShape : Shape := .dim hiddenSize .scalar
   let wReset0 : Tensor Float WShape := Torch.Init.xavierW (outDim := hiddenSize) (inDim := inputSize +
@@ -161,13 +161,13 @@ def gru (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
   let bNew0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed :=
     seedB + 2)
   { kind := s!"GRU({inputSize}, {hiddenSize})"
-    paramShapes := [WShape, bShape, WShape, bShape, WShape, bShape]
-    initParams := .cons wReset0 (.cons bReset0 (.cons wUpdate0 (.cons bUpdate0 (.cons wNew0 (.cons bNew0 .nil)))))
+    stateShapes := [WShape, bShape, WShape, bShape, WShape, bShape]
+    initState := .cons wReset0 (.cons bReset0 (.cons wUpdate0 (.cons bUpdate0 (.cons wNew0 (.cons bNew0 .nil)))))
     runtimeInit := some <| .cons (.xavierUniform (inputSize + hiddenSize) hiddenSize (seedW + 0)) <|
       .cons .zeros <| .cons (.xavierUniform (inputSize + hiddenSize) hiddenSize (seedW + 1)) <|
       .cons .zeros <| .cons (.xavierUniform (inputSize + hiddenSize) hiddenSize (seedW + 2)) <|
       .cons .zeros .nil
-    paramRequiresGrad := [true, true, true, true, true, true]
+    requiresGrad := [true, true, true, true, true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun wReset bReset wUpdate bUpdate wNew bNew xs =>
@@ -233,7 +233,7 @@ available for forward experiments, but this layer is built from autograd-covered
 all projections and gates train correctly.
 -/
 def mamba (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
-    LayerDef (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim hiddenSize .scalar)) :=
+    Layer (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim hiddenSize .scalar)) :=
   let WInShape : Shape := .dim hiddenSize (.dim inputSize .scalar)
   let WDeltaShape : Shape := .dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)
   let bShape : Shape := .dim hiddenSize .scalar
@@ -250,14 +250,14 @@ def mamba (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
   let bGate0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros)
     (seed := seedB + 2)
   { kind := s!"Mamba({inputSize}, {hiddenSize})"
-    paramShapes := [WInShape, bShape, WDeltaShape, bShape, WInShape, bShape]
-    initParams := .cons wIn0 (.cons bIn0 (.cons wDelta0 (.cons bDelta0
+    stateShapes := [WInShape, bShape, WDeltaShape, bShape, WInShape, bShape]
+    initState := .cons wIn0 (.cons bIn0 (.cons wDelta0 (.cons bDelta0
       (.cons wGate0 (.cons bGate0 .nil)))))
     runtimeInit := some <| .cons (.xavierUniform inputSize hiddenSize (seedW + 0)) <|
       .cons .zeros <| .cons (.xavierUniform (inputSize + hiddenSize) hiddenSize (seedW + 1)) <|
       .cons .zeros <| .cons (.xavierUniform inputSize hiddenSize (seedW + 2)) <|
       .cons .zeros .nil
-    paramRequiresGrad := [true, true, true, true, true, true]
+    requiresGrad := [true, true, true, true, true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun wIn bIn wDelta bDelta wGate bGate xs =>
@@ -316,7 +316,7 @@ single batch element.
 Docs: https://docs.pytorch.org/docs/stable/generated/torch.nn.LSTM.html
 -/
 def lstm (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
-    LayerDef (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim hiddenSize .scalar)) :=
+    Layer (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim hiddenSize .scalar)) :=
   let WShape : Shape := .dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)
   let bShape : Shape := .dim hiddenSize .scalar
   let wF0 : Tensor Float WShape := Torch.Init.xavierW (outDim := hiddenSize) (inDim := inputSize +
@@ -332,15 +332,15 @@ def lstm (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
     hiddenSize) (seed := seedW + 3)
   let bO0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB + 3)
   { kind := s!"LSTM({inputSize}, {hiddenSize})"
-    paramShapes := [WShape, bShape, WShape, bShape, WShape, bShape, WShape, bShape]
-    initParams :=
+    stateShapes := [WShape, bShape, WShape, bShape, WShape, bShape, WShape, bShape]
+    initState :=
       .cons wF0 (.cons bF0 (.cons wI0 (.cons bI0 (.cons wC0 (.cons bC0 (.cons wO0 (.cons bO0 .nil)))))))
     runtimeInit := some <| .cons (.xavierUniform (inputSize + hiddenSize) hiddenSize (seedW + 0)) <|
       .cons .zeros <| .cons (.xavierUniform (inputSize + hiddenSize) hiddenSize (seedW + 1)) <|
       .cons .zeros <| .cons (.xavierUniform (inputSize + hiddenSize) hiddenSize (seedW + 2)) <|
       .cons .zeros <| .cons (.xavierUniform (inputSize + hiddenSize) hiddenSize (seedW + 3)) <|
       .cons .zeros .nil
-    paramRequiresGrad := [true, true, true, true, true, true, true, true]
+    requiresGrad := [true, true, true, true, true, true, true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun wF bF wI bI wC bC wO bO xs =>

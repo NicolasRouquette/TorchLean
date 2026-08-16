@@ -11,27 +11,30 @@ public import NN.Proofs.Autograd.Runtime.Any
 /-!
 # Link
 
-Link the executable runtime tape (`Runtime.Autograd.Tape`) to the proved SSA/DAG tape model
-(`Proofs.Autograd.Algebra.Graph`).
+Link the executable runtime tape (`Runtime.Autograd.Tape`) to the shape-indexed SSA/DAG models in
+`Proofs.Autograd.Algebra`.
 
-This file provides a small compiler from proved graphs to runtime tapes. The compiler bakes the
-proved `vjp` into each runtime node's `backward` closure.
+`GraphData` stores executable forward, JVP, and VJP functions without derivative laws. `Graph`
+extends that representation with the local adjointness law used by its global backpropagation
+theorem. Lowering places the stored VJP into each runtime node's `backward` closure.
 
 ## What is proved here
 
-- Forward-pass correspondence: `compileAux{,Data}` produces the same values as the proved
+- Forward-pass correspondence: `lowerGraphToTape{,Data}` produces the same values as
   `Graph{,Data}.eval`, and the runtime tape stores those values in the same order
-  (`compileAux{,Data}_ctx_eq_eval`, `compileAux{,Data}_values_eq`).
+  (`lowerGraphToTape{,Data}_ctx_eq_eval`, `lowerGraphToTape{,Data}_values_eq`).
 - Backward-pass correspondence: running the runtime dense reverse loop
-  `Tape.backwardDenseFrom` on a compiled tape matches the proved “full backpropagation”
-  `backpropAllCtx` (`backwardDenseFrom_compileAux_eq_backpropAllCtx` and its `GraphData` variant).
+  `Tape.backwardDenseFrom` on a lowered tape matches the graph's stored reverse program
+  `backpropAllCtx` (`backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx` and its `GraphData`
+  variant). For `GraphData`, this is an implementation-equivalence result. For `Graph`, it can be
+  combined with `Graph.backprop_correct` to obtain derivative correctness.
 
-The core invariant making the runtime reverse loop well-founded is that compiled nodes only emit
+The core invariant making the runtime reverse loop well-founded is that lowered nodes only emit
 contributions to earlier node ids (`pid < id`).
 
 ## PyTorch correspondence / citations
-This is analogous to taking a proven “graph IR” and compiling it to an executable autograd tape
-whose nodes carry a backward closure (PyTorch does this internally for the eager autograd engine).
+This is analogous to lowering a graph representation to an executable autograd tape whose nodes
+carry backward closures (PyTorch does this internally for the eager autograd engine).
 https://pytorch.org/docs/stable/autograd.html
 -/
 
@@ -113,14 +116,14 @@ theorem addLeaves_values {α : Type} (t : Tape α) :
         TList.toAnyArray, TList.toAnyList]
 
 /--
-Compile an executable graph (`GraphData`) to a runtime tape by evaluating forward nodes and baking
-in each node’s proved `vjp` into its runtime `backward` closure.
+Lower an executable graph (`GraphData`) to a runtime tape by evaluating forward nodes and storing
+each node's `vjp` program in its runtime `backward` closure.
 
 PyTorch analogy: this corresponds to building a tape of autograd nodes during the forward pass,
 where each node stores enough information to compute parent contributions when given an upstream
 cotangent.
 -/
-def compileAuxData {α : Type} {Δ : Type} [DecidableEq Shape]
+def lowerGraphDataToTape {α : Type} {Δ : Type} [DecidableEq Shape]
   {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d : Δ) :
   Tape α × TList α (Γ ++ ss) :=
   match g with
@@ -128,10 +131,10 @@ def compileAuxData {α : Type} {Δ : Type} [DecidableEq Shape]
       let t := addLeaves (α := α) (t := Tape.empty) (Γ := Γ) x
       (t, TList.cast (α := α) (h := (List.append_nil Γ).symm) x)
   | .snoc (ss := ssPrev) (τ := τ) g node =>
-      let (tPrev, ctxPrev) := compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d
+      let (tPrev, ctxPrev) := lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d
       let y := node.forward ctxPrev d
       let runtimeNode : Runtime.Autograd.Node α :=
-        { name := some "proof-compiled"
+        { name := some "typed-graph"
           value := Runtime.Autograd.AnyTensor.mk y
           requires_grad := true
           parents := []
@@ -152,59 +155,59 @@ def compileAuxData {α : Type} {Δ : Type} [DecidableEq Shape]
 /-!
 ### Forward-pass correspondence
 
-The next lemmas show that `compileAuxData` preserves the proved forward semantics, and that the
+The next lemmas show that `lowerGraphDataToTape` preserves executable forward semantics, and that the
 resulting runtime tape contains exactly the evaluated context (erased to `AnyTensor`) in order.
 -/
 
-/-- The context returned by `compileAuxData` agrees with the proved `GraphData.eval`. -/
-theorem compileAuxData_ctx_eq_eval {α : Type} {Δ : Type} [DecidableEq Shape]
+/-- The context returned by `lowerGraphDataToTape` agrees with `GraphData.eval`. -/
+theorem lowerGraphDataToTape_ctx_eq_eval {α : Type} {Δ : Type} [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d : Δ) :
-    (compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).2 =
+    (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).2 =
       GraphData.eval (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d := by
   induction g with
   | nil =>
-      simp [compileAuxData, GraphData.eval]
+      simp [lowerGraphDataToTape, GraphData.eval]
   | snoc g node ih =>
       rename_i ssPrev τ
-      simp [compileAuxData, GraphData.eval, ih]
+      simp [lowerGraphDataToTape, GraphData.eval, ih]
 
-/-- The compiled tape’s `.value` array is `GraphData.eval` erased to `AnyTensor`, in the same order.
+/-- The lowered tape's `.value` array is `GraphData.eval` erased to `AnyTensor`, in the same order.
   -/
-theorem compileAuxData_values_eq {α : Type} {Δ : Type} [DecidableEq Shape]
+theorem lowerGraphDataToTape_values_eq {α : Type} {Δ : Type} [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d : Δ) :
-    (compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.map (fun node =>
+    (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.map (fun node =>
       node.value) =
-      TList.toAnyArray (α := α) (ss := Γ ++ ss) (compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss :=
+      TList.toAnyArray (α := α) (ss := Γ ++ ss) (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss :=
         ss) g x d).2 := by
   induction g with
   | nil =>
       -- only leaves
-      simp [compileAuxData, addLeaves_values, Runtime.Autograd.Tape.empty]
+      simp [lowerGraphDataToTape, addLeaves_values, Runtime.Autograd.Tape.empty]
   | snoc g _node ih =>
       rename_i ssPrev τ
-      simp [compileAuxData, Runtime.Autograd.Tape.addNode, ih]
+      simp [lowerGraphDataToTape, Runtime.Autograd.Tape.addNode, ih]
 
-/-- Size bookkeeping: the compiled tape contains one runtime node for each element of `Γ ++ ss`. -/
-theorem compileAuxData_nodes_size {α : Type} {Δ : Type} [DecidableEq Shape]
+/-- Size bookkeeping: the lowered tape contains one runtime node for each element of `Γ ++ ss`. -/
+theorem lowerGraphDataToTape_nodes_size {α : Type} {Δ : Type} [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d : Δ) :
-    (compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.size = Γ.length + ss.length
+    (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.size = Γ.length + ss.length
       := by
   induction g with
   | nil =>
       -- only leaves
-      simp [compileAuxData, size_addLeaves, Runtime.Autograd.Tape.empty]
+      simp [lowerGraphDataToTape, size_addLeaves, Runtime.Autograd.Tape.empty]
   | snoc g _node ih =>
       rename_i ssPrev τ
-      simp [compileAuxData, Runtime.Autograd.Tape.addNode, ih, Array.size_push, Nat.add_assoc,
+      simp [lowerGraphDataToTape, Runtime.Autograd.Tape.addNode, ih, Array.size_push, Nat.add_assoc,
         ]
 
 /--
-Compile a proved graph (`Graph`) to a runtime tape by evaluating forward nodes and baking in each
+Lower a proved graph (`Graph`) to a runtime tape by evaluating forward nodes and storing each
 node’s proved `vjp`.
 
-Compared to `compileAuxData`, this uses the pure graph interface (no explicit `GraphData` payload).
+Compared to `lowerGraphDataToTape`, this uses the pure graph interface (no explicit `GraphData` payload).
 -/
-def compileAux {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
+def lowerGraphToTape {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
   {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d : Δ) :
   Tape α × TList α (Γ ++ ss) :=
   match g with
@@ -212,10 +215,10 @@ def compileAux {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
       let t := addLeaves (α := α) (t := Tape.empty) (Γ := Γ) x
       (t, TList.cast (α := α) (h := (List.append_nil Γ).symm) x)
   | .snoc (ss := ssPrev) (τ := τ) g node =>
-      let (tPrev, ctxPrev) := compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d
+      let (tPrev, ctxPrev) := lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d
       let y := node.forward ctxPrev d
       let runtimeNode : Runtime.Autograd.Node α :=
-        { name := some "proof-compiled"
+        { name := some "proof-carrying-graph"
           value := Runtime.Autograd.AnyTensor.mk y
           requires_grad := true
           parents := []
@@ -233,43 +236,43 @@ def compileAux {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
           (TList.snoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) ctxPrev y)
       (tNext, ctxNext)
 
-/-- The context returned by `compileAux` agrees with the proved `Graph.eval`. -/
-theorem compileAux_ctx_eq_eval {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
+/-- The context returned by `lowerGraphToTape` agrees with the proved `Graph.eval`. -/
+theorem lowerGraphToTape_ctx_eq_eval {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d : Δ) :
-    (compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).2 =
+    (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).2 =
       Graph.eval (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d := by
   induction g with
   | nil =>
-      simp [compileAux, Graph.eval]
+      simp [lowerGraphToTape, Graph.eval]
   | snoc g node ih =>
       rename_i ssPrev τ
-      simp [compileAux, Graph.eval, ih]
+      simp [lowerGraphToTape, Graph.eval, ih]
 
-/-- The compiled tape’s `.value` array is `Graph.eval` erased to `AnyTensor`, in the same order. -/
-theorem compileAux_values_eq {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
+/-- The lowered tape's `.value` array is `Graph.eval` erased to `AnyTensor`, in the same order. -/
+theorem lowerGraphToTape_values_eq {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d : Δ) :
-    (compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.map (fun node => node.value) =
-      TList.toAnyArray (α := α) (ss := Γ ++ ss) (compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g
+    (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.map (fun node => node.value) =
+      TList.toAnyArray (α := α) (ss := Γ ++ ss) (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g
         x d).2 := by
   induction g with
   | nil =>
       -- only leaves
-      simp [compileAux, addLeaves_values, Runtime.Autograd.Tape.empty]
+      simp [lowerGraphToTape, addLeaves_values, Runtime.Autograd.Tape.empty]
   | snoc g node ih =>
       rename_i ssPrev τ
-      simp [compileAux, Runtime.Autograd.Tape.addNode, ih]
+      simp [lowerGraphToTape, Runtime.Autograd.Tape.addNode, ih]
 
-/-- Size bookkeeping: `compileAux` produces `Γ.length + ss.length` runtime nodes. -/
-theorem compileAux_nodes_size {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
+/-- Size bookkeeping: `lowerGraphToTape` produces `Γ.length + ss.length` runtime nodes. -/
+theorem lowerGraphToTape_nodes_size {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d : Δ) :
-    (compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.size = Γ.length + ss.length :=
+    (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.size = Γ.length + ss.length :=
       by
   induction g with
   | nil =>
-      simp [compileAux, size_addLeaves, Runtime.Autograd.Tape.empty]
+      simp [lowerGraphToTape, size_addLeaves, Runtime.Autograd.Tape.empty]
   | snoc g node ih =>
       rename_i ssPrev τ
-      simp [compileAux, Runtime.Autograd.Tape.addNode, ih, Array.size_push, Nat.add_assoc]
+      simp [lowerGraphToTape, Runtime.Autograd.Tape.addNode, ih, Array.size_push, Nat.add_assoc]
 
 /-!
 ### Full backpropagation (dense) for proofs and runtime

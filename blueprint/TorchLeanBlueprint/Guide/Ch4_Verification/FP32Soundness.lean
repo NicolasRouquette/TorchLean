@@ -48,29 +48,30 @@ value are not paths that the rounded-real theorem silently absorbs.
 
 # Run The Two Float32 Views
 
-TorchLean includes a small forward-and-backward comparison using the same MLP parameters in host
-`Float` arithmetic and in the executable `IEEE32Exec` semantics:
+TorchLean includes a small forward-and-backward comparison using the same MLP parameters in native
+`Float32` arithmetic and in the independent `IEEE32Exec` semantics:
 
 ```
-lake exe torchlean float32_modes
+lake exe torchlean float32_semantics
 ```
 
-The command first names the available meanings:
+The command first names the mathematical and executable objects involved:
 
 ```
-Float32 mode: FP32: proof semantics (round-on-ℝ), finite-only; no NaN/Inf
-Float32 mode: IEEE32Exec: executable IEEE-754 binary32 kernel (bit-level; includes NaN/Inf)
+== Float32 semantics tutorial ==
+Note: rounded-real binary32 is proof-only and is selected directly in theorem statements.
+[TorchLean] FP32: finite rounded-real proof model
+[TorchLean] IEEE32Exec: bit-level binary32 reference
 ```
 
 It then prints the output, parameter gradients, and input gradient for both executable paths. The
-final comparison on the bundled example is:
+bundled example currently ends with:
 
 ```
-max_abs_diff(Float vs IEEE32Exec) =
-  0.0000000762939453835542735760100185871124267578125
+max_abs_diff(Float32 vs IEEE32Exec) = 0
 ```
 
-This number is an observation about one input and one network. It is not a uniform error theorem.
+This equality is an observation about one input and one network. It is not a uniform error theorem.
 The proof task is to derive a bound $`\varepsilon` from input ranges, parameter ranges, and the sequence of
 rounded operations, then prove that every execution covered by those hypotheses differs from the
 real specification by at most $`\varepsilon`.
@@ -176,7 +177,7 @@ To cite either result for Lean's host `Float32`, CUDA, cuBLAS, or LibTorch, one 
 statement must connect that provider to the executable or rounded model and must account for
 reduction order, contraction, and exceptional behavior.
 
-The `float32_modes` difference printed earlier is valuable regression evidence for one execution;
+The `float32_semantics` difference printed earlier is valuable regression evidence for one execution;
 it is not that provider agreement theorem. A complete deployment claim therefore has a visible
 chain:
 

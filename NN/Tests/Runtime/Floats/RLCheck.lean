@@ -52,15 +52,15 @@ def run : IO Unit := do
   -- 1) a checked Float→float32 cast (catches binary64→binary32 overflow), and
   -- 2) a simple interval enclosure (`Interval32`) as a diagnostic.
   let gamma32 : Runtime.RL.Numerics.Float32.Float32Exec ←
-    match Runtime.RL.Numerics.Float32.ofFloatIEEE32ExecChecked 0.5 with
+    match Runtime.RL.Numerics.Float32.ofFloatChecked 0.5 with
     | .ok g => pure g
     | .error e => throw <| IO.userError e
   let rewards32 : Tensor Runtime.RL.Numerics.Float32.Float32Exec (.dim 3 .scalar) ←
-    match Runtime.RL.Numerics.Float32.castTensorIEEE32ExecChecked (s := .dim 3 .scalar) rewardsVec with
+    match Runtime.RL.Numerics.Float32.castTensorChecked (s := .dim 3 .scalar) rewardsVec with
     | .ok t => pure t
     | .error e => throw <| IO.userError e
   let returns32 : Tensor Runtime.RL.Numerics.Float32.Float32Exec (.dim 3 .scalar) ←
-    match Runtime.RL.Numerics.Float32.discountedReturnsVecFromIEEE32ExecChecked (n := 3) gamma32 rewards32 with
+    match Runtime.RL.Numerics.Float32.discountedReturnsChecked (n := 3) gamma32 rewards32 with
     | .ok t => pure t
     | .error e => throw <| IO.userError e
   assertApprox "discountedReturnsVec IEEE32Exec[0]"
@@ -70,13 +70,13 @@ def run : IO Unit := do
   assertApprox "discountedReturnsVec IEEE32Exec[2]"
     (TorchLean.Floats.IEEE754.IEEE32Exec.toFloat (Tensor.vecGet returns32 ⟨2, by decide⟩)) 3.0 1e-5
   let intervals32 : Tensor Runtime.RL.Numerics.Float32.Interval32 (.dim 3 .scalar) :=
-    Runtime.RL.Numerics.Float32.discountedReturnsIntervals32 (n := 3) gamma32 rewards32
+    Runtime.RL.Numerics.Float32.discountedReturnsIntervals (n := 3) gamma32 rewards32
   assertBool "interval enclosure should contain IEEE32Exec returns"
-    (Runtime.RL.Numerics.Float32.returnsWithinIntervals32 (n := 3) returns32 intervals32)
+    (Runtime.RL.Numerics.Float32.returnsWithinIntervals (n := 3) returns32 intervals32)
 
   -- A huge binary64 value should be rejected by the checked Float→float32 cast.
   let huge : Float := 1e100
-  match Runtime.RL.Numerics.Float32.ofFloatIEEE32ExecChecked huge with
+  match Runtime.RL.Numerics.Float32.ofFloatChecked huge with
   | .ok _ => throw <| IO.userError "expected Float→IEEE32Exec cast to reject huge value"
   | .error _ => pure ()
 
@@ -87,15 +87,15 @@ def run : IO Unit := do
 
   -- Run PPO-relevant transforms (TD residual, GAE, z-score normalization, PPO clip objective).
   let one32 : Runtime.RL.Numerics.Float32.Float32Exec ←
-    match Runtime.RL.Numerics.Float32.ofFloatIEEE32ExecChecked 1.0 with
+    match Runtime.RL.Numerics.Float32.ofFloatChecked 1.0 with
     | .ok x => pure x
     | .error e => throw <| IO.userError e
   let lam32 : Runtime.RL.Numerics.Float32.Float32Exec ←
-    match Runtime.RL.Numerics.Float32.ofFloatIEEE32ExecChecked 1.0 with
+    match Runtime.RL.Numerics.Float32.ofFloatChecked 1.0 with
     | .ok x => pure x
     | .error e => throw <| IO.userError e
   let tdRes32 : Runtime.RL.Numerics.Float32.Float32Exec ←
-    match Runtime.RL.Numerics.Float32.tdResidualIEEE32ExecChecked (value := 0) (reward := one32) (gamma := gamma32)
+    match Runtime.RL.Numerics.Float32.tdResidualChecked (value := 0) (reward := one32) (gamma := gamma32)
         (nextValue := 0) (done := false) with
     | .ok x => pure x
     | .error e => throw <| IO.userError e
@@ -103,20 +103,20 @@ def run : IO Unit := do
     (TorchLean.Floats.IEEE754.IEEE32Exec.toFloat tdRes32) 1.0 1e-5
 
   let gaeRewards32 : Tensor Runtime.RL.Numerics.Float32.Float32Exec (.dim 3 .scalar) ←
-    match Runtime.RL.Numerics.Float32.castTensorIEEE32ExecChecked (s := .dim 3 .scalar) gaeRewards with
+    match Runtime.RL.Numerics.Float32.castTensorChecked (s := .dim 3 .scalar) gaeRewards with
     | .ok t => pure t
     | .error e => throw <| IO.userError e
   let gaeValues32 : Tensor Runtime.RL.Numerics.Float32.Float32Exec (.dim 3 .scalar) ←
-    match Runtime.RL.Numerics.Float32.castTensorIEEE32ExecChecked (s := .dim 3 .scalar) gaeValues with
+    match Runtime.RL.Numerics.Float32.castTensorChecked (s := .dim 3 .scalar) gaeValues with
     | .ok t => pure t
     | .error e => throw <| IO.userError e
   let gaeNext32 : Tensor Runtime.RL.Numerics.Float32.Float32Exec (.dim 3 .scalar) ←
-    match Runtime.RL.Numerics.Float32.castTensorIEEE32ExecChecked (s := .dim 3 .scalar) gaeNext with
+    match Runtime.RL.Numerics.Float32.castTensorChecked (s := .dim 3 .scalar) gaeNext with
     | .ok t => pure t
     | .error e => throw <| IO.userError e
 
   let advantages32 : Tensor Runtime.RL.Numerics.Float32.Float32Exec (.dim 3 .scalar) ←
-    match Runtime.RL.Numerics.Float32.generalizedAdvantageEstimationVecIEEE32ExecChecked (n := 3)
+    match Runtime.RL.Numerics.Float32.generalizedAdvantageEstimationChecked (n := 3)
         (gamma := gamma32) (lam := lam32) gaeRewards32 gaeValues32 gaeNext32 gaeDones with
     | .ok t => pure t
     | .error e => throw <| IO.userError e
@@ -128,11 +128,11 @@ def run : IO Unit := do
     (TorchLean.Floats.IEEE754.IEEE32Exec.toFloat (Tensor.vecGet advantages32 ⟨2, by decide⟩)) 1.0 1e-4
 
   let normIn32 : Tensor Runtime.RL.Numerics.Float32.Float32Exec (.dim 3 .scalar) ←
-    match Runtime.RL.Numerics.Float32.castTensorIEEE32ExecChecked (s := .dim 3 .scalar) rewardsVec with
+    match Runtime.RL.Numerics.Float32.castTensorChecked (s := .dim 3 .scalar) rewardsVec with
     | .ok t => pure t
     | .error e => throw <| IO.userError e
   let normed32 : Tensor Runtime.RL.Numerics.Float32.Float32Exec (.dim 3 .scalar) ←
-    match Runtime.RL.Numerics.Float32.normalizeZScoreIEEE32ExecChecked (n := 3) normIn32 with
+    match Runtime.RL.Numerics.Float32.normalizeZScoreChecked (n := 3) normIn32 with
     | .ok t => pure t
     | .error e => throw <| IO.userError e
   -- Mean-centered input has a 0 entry; after z-score it should remain 0 (finite).
@@ -140,15 +140,15 @@ def run : IO Unit := do
     (TorchLean.Floats.IEEE754.IEEE32Exec.toFloat (Tensor.vecGet normed32 ⟨1, by decide⟩)) 0.0 1e-6
 
   let ratio32 : Runtime.RL.Numerics.Float32.Float32Exec ←
-    match Runtime.RL.Numerics.Float32.ofFloatIEEE32ExecChecked 1.5 with
+    match Runtime.RL.Numerics.Float32.ofFloatChecked 1.5 with
     | .ok x => pure x
     | .error e => throw <| IO.userError e
   let clipEps32 : Runtime.RL.Numerics.Float32.Float32Exec ←
-    match Runtime.RL.Numerics.Float32.ofFloatIEEE32ExecChecked 0.2 with
+    match Runtime.RL.Numerics.Float32.ofFloatChecked 0.2 with
     | .ok x => pure x
     | .error e => throw <| IO.userError e
   let ppoObj32 : Runtime.RL.Numerics.Float32.Float32Exec ←
-    match Runtime.RL.Numerics.Float32.ppoClippedObjectiveFromRatioIEEE32ExecChecked ratio32 one32 clipEps32 with
+    match Runtime.RL.Numerics.Float32.ppoClippedObjectiveFromRatioChecked ratio32 one32 clipEps32 with
     | .ok x => pure x
     | .error e => throw <| IO.userError e
   assertApprox "ppoClipFromRatio IEEE32Exec"

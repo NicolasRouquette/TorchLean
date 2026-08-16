@@ -33,7 +33,7 @@ def sigmoid (s : Shape) : PrimOp [s] s :=
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Activation.sigmoidSpec (α := α) input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.sigmoid (m := m) (α := α) input }
 
@@ -49,7 +49,7 @@ def silu (s : Shape) : PrimOp [s] s :=
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Activation.swishSpec (α := α) input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.silu (m := m) (α := α) input }
 
@@ -65,7 +65,7 @@ def gelu (s : Shape) : PrimOp [s] s :=
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Activation.geluSpec (α := α) input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.gelu (m := m) (α := α) input }
 
@@ -97,7 +97,7 @@ def multiHeadAttention (batch n numHeads dModel headDim : Nat) (hN : 0 < n) :
           let attention : _root_.Spec.MultiHeadAttention α numHeads dModel headDim :=
             { Wq := wq, Wk := wk, Wv := wv, Wo := wo }
           .dim fun i => attention.forward n (Nat.ne_of_gt hN) (inputs i) none
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun wq wk wv wo input =>
         Runtime.Autograd.TorchLean.multiHeadAttention (m := m) (α := α)
           (Nat.ne_of_gt hN) wq wk wv wo input none }
@@ -127,7 +127,7 @@ def exp (s : Shape) : PrimOp [s] s :=
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Spec.Tensor.expSpec (α := α) input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.exp (m := m) (α := α) input }
 
@@ -137,7 +137,7 @@ def inv (s : Shape) : PrimOp [s] s :=
     specFwd := fun {_α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Spec.Tensor.mapSpec (fun value => 1 / value) input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.inv (m := m) (α := α) input }
 
@@ -154,7 +154,7 @@ def tanh (s : Shape) : PrimOp [s] s :=
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Activation.tanhSpec (α := α) input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.tanh (m := m) (α := α) input }
 
@@ -164,7 +164,7 @@ def softmax (s : Shape) : PrimOp [s] s :=
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Activation.softmaxSpec (α := α) input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.softmax (m := m) (α := α) input }
 

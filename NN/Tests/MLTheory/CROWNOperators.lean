@@ -8,7 +8,7 @@ module
 
 public import NN.MLTheory.CROWN.Operators.Arithmetic
 public import NN.MLTheory.CROWN.Operators.Activations
-public import NN.MLTheory.CROWN.Operators.Batchnorm
+public import NN.MLTheory.CROWN.Operators.BatchNorm
 public import NN.MLTheory.CROWN.Operators.Trigonometric
 
 /-!
@@ -63,7 +63,7 @@ def run : IO Unit := do
   expectApprox "degenerate leaky ReLU upper slope" aHi 0.0
   expectApprox "degenerate leaky ReLU upper bias" bHi 0.0
 
-  let bnParams : Batchnorm.BatchNormParams Float :=
+  let bnParams : BatchNorm.BatchNormParams Float :=
     { dim := 1
       running_mean := singletonVector 1.0
       running_var := singletonVector (-4.0)
@@ -71,9 +71,9 @@ def run : IO Unit := do
       beta := singletonVector 3.0
       eps := 1.0 }
   expectApprox "BatchNorm CROWN scale uses spec variance totalization"
-    (singletonValue (Batchnorm.computeScale bnParams)) 2.0
+    (singletonValue (BatchNorm.computeScale bnParams)) 2.0
   expectApprox "BatchNorm CROWN offset uses spec variance totalization"
-    (singletonValue (Batchnorm.computeOffset bnParams)) 1.0
+    (singletonValue (BatchNorm.computeOffset bnParams)) 1.0
 
   let product := Trigonometric.scalarIntervalMul (-1.0 : Float) 1.0 (-2.0) 3.0
   expectApprox "signed interval product lower" product.1 (-3.0)

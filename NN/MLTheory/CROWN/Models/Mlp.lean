@@ -49,8 +49,8 @@ References:
   NeurIPS 2020, arXiv:2002.12920.
 
 PyTorch analogues:
-- `torch.nn.linear`: https://pytorch.org/docs/stable/generated/torch.nn.linear.html
-- `torch.nn.relu`: https://pytorch.org/docs/stable/generated/torch.nn.relu.html
+- `torch.nn.Linear`: https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
+- `torch.nn.ReLU`: https://pytorch.org/docs/stable/generated/torch.nn.ReLU.html
 -/
 
 @[expose] public section

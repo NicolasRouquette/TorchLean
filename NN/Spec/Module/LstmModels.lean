@@ -60,7 +60,7 @@ gate-aware BPTT implementation in `NN/Spec/Layers/Lstm.lean`.
 /--
 Gradients for a linear layer `y = W x + b`.
 
-This is the natural gradient bundle for `Spec.LinearSpec` (PyTorch analogue: `torch.nn.linear`),
+This is the natural gradient bundle for `Spec.LinearSpec` (PyTorch analogue: `torch.nn.Linear`),
 with `dW` matching the weight shape `[outDim, inDim]` and `db` matching `[outDim]`.
 -/
 structure LinearGrads (α : Type) (inDim outDim : Nat) where

@@ -122,8 +122,8 @@ SGD. A future low-rank projector or refresh policy can optimize memory and matri
 has to state its own projection contract instead of being hidden inside the word "optimizer."
 
 This naming is reflected in the trainer API. Standard trainer configs use names such as
-`optim.sgd`, `optim.adamw`, and `optim.adadelta`. Runtime-level extension points use more explicit
-names such as `optim.runtimeMuon` and `optim.galore.projectedSGD`, because those calls must record
+`optim.sgd`, `optim.adamW`, and `optim.adadelta`. Runtime-level extension points use more explicit
+names such as `optim.muon.optimizer` and `optim.galore.sgd`, because those calls must record
 their backend or projection as part of the mathematical object.
 
 # Gradient Descent As A Contractive Map

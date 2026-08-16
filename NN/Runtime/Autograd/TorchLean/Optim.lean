@@ -22,7 +22,7 @@ training structures (`Torch.ParamList` + gradient `TList`).
 Design notes:
 - Optimizer state is stored in a shape-indexed list aligned with the parameter shapes.
 - Updates run on *plain tensors* (not via the autograd tape), so they work the same for eager and
-  compiled training loops.
+  typed graph training loops.
 - Parameters marked `requiresGrad := false` are left unchanged (state is preserved).
 
 ### PyTorch references

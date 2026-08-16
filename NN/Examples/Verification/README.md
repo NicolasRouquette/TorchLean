@@ -13,19 +13,19 @@ reproducible without pulling in large benchmark dumps.
   Runs the fast certificate checkers that are safe for routine regression checks.
 
 - `lake exe verify -- digits --eps=0.02 --max=360`
-  Loads the bundled sklearn digits weights and test set, compiles the linear classifier through the
+  Loads the bundled sklearn digits weights and test set, lowers the linear classifier through the
   TorchLean verifier bridge, and reports IBP/CROWN certified accuracy.
 
 - `lake exe verify -- digits-train-certify --epochs=50 --eps=0.02 --max=100`
   Trains a fresh sklearn digits linear classifier with the local Python producer, exports weights
-  and a test split, then immediately recompiles and certifies those artifacts inside Lean.
+  and a test split, then immediately lowers and certifies those artifacts inside Lean.
 
 - `lake exe verify -- margin-cert`
   Checks the exported digits logit margin certificate. This recomputes the margin predicate from
   the JSON bounds and checks the summary fields.
 
 - `lake exe verify -- torchlean-robustness`
-  Builds a small TorchLean classifier, compiles it to verifier IR, and checks the margin with
+  Builds a small TorchLean classifier, lowers it to verifier IR, and checks the margin with
   IBP, forward affine CROWN, and backward objective CROWN.
 
 - `lake exe verify -- torchlean-crown-ops`
@@ -50,7 +50,7 @@ reproducible without pulling in large benchmark dumps.
 ## Workflow Tiers
 
 - Native TorchLean verification: `NN.Verification.Robustness.TorchLean` and
-  `NN.Verification.TorchLean.*` build models in TorchLean, compile them to verifier IR, and run
+  `NN.Verification.TorchLean.*` build models in TorchLean, lower them to verifier IR, and run
   bound propagation directly.
 
 - Exporter-backed verification: `LiRPA/*`, `VNNComp/*`, `AbCrown/*`, `Geometry3D/*`, `ODE/*`, and
@@ -67,7 +67,7 @@ reproducible without pulling in large benchmark dumps.
 - Data-backed robustness: `lake exe verify -- digits` runs `NN.Verification.Robustness.Digits`,
   which loads the exported sklearn digits weights and test data stored in `Robustness/`.
   `lake exe verify -- digits-train-certify` runs the producer first and then checks the newly
-  exported artifacts through the same Lean compiler and bound engines.
+  exported artifacts through the same Lean lowering and bound engines.
 
 - ODE/PINN workflows: `ODE/*` and `PINN/*` hold small certificate/dataset assets. The checker
   implementations live under `NN.Verification.ODE` and `NN.Verification.PINN`, with Python scripts

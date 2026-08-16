@@ -19,7 +19,7 @@ adds the missing batch-facing layer used by replay-buffer training loops:
 - average DQN or Double-DQN losses over an `Array` minibatch;
 - soft-update scalar parameters for target networks.
 
-The functions are intentionally higher-order: TorchLean examples can pass compiled/eager model
+The functions are intentionally higher-order: TorchLean examples can pass typed-graph/eager model
 closures without this module knowing anything about parameters, optimizers, or autograd sessions.
 
 References:

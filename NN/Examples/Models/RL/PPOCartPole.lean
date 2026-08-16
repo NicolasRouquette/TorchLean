@@ -156,11 +156,11 @@ def modelCfg : nn.models.PPOActorCriticConfig :=
   { obsDim := stateDim, hiddenDim := hiddenDim, nActions := nActions }
 
 /-- Construct the actor network as an MLP mapping observations to action logits. -/
-def actorMk (pfx : Shape) : nn.M (nn.Sequential (pfx.appendDim stateDim) (pfx.appendDim nActions)) :=
+def actorMk (pfx : Shape) : nn.Builder (nn.Sequential (pfx.appendDim stateDim) (pfx.appendDim nActions)) :=
   nn.models.ppoActor modelCfg pfx
 
 /-- Construct the critic network as an MLP mapping observations to a scalar value estimate. -/
-def criticMk (pfx : Shape) : nn.M (nn.Sequential (pfx.appendDim stateDim) (pfx.appendDim 1)) :=
+def criticMk (pfx : Shape) : nn.Builder (nn.Sequential (pfx.appendDim stateDim) (pfx.appendDim 1)) :=
   nn.models.ppoCritic modelCfg pfx
 
 /-!
@@ -191,7 +191,7 @@ This executable:
 - writes a widget-friendly training curve JSON (default: `data/rl/ppo_cartpole_trainlog.json`).
 -/
 def main (args : List String) : IO UInt32 := do
-  Runtime.runFloat exeName args
+  Module.Command.runFloat32 exeName args
     (banner := ModelZoo.bannerWithDeviceDetails
       exeName
       s!"PPO on {envId} (horizon={horizon})"
@@ -220,16 +220,16 @@ def main (args : List String) : IO UInt32 := do
         let seedActor ← nn.freshSeed
         let seedCritic ← nn.freshSeed
         let actorObs : nn.Sequential stateShape logitsShape :=
-          nn.run seedActor (actorMk .scalar)
+          nn.build seedActor (actorMk .scalar)
         let criticObs : nn.Sequential stateShape valueShape :=
-          nn.run seedCritic (criticMk .scalar)
+          nn.build seedCritic (criticMk .scalar)
         let actorRollout : nn.Sequential sStateBatch sLogitsBatch :=
-          nn.run seedActor (actorMk pfxBatch)
+          nn.build seedActor (actorMk pfxBatch)
         let criticRollout : nn.Sequential sStateBatch sValueBatch :=
-          nn.run seedCritic (criticMk pfxBatch)
+          nn.build seedCritic (criticMk pfxBatch)
 
-        let actorC ← actorObs.compile
-        let criticC ← criticObs.compile
+        let actorGraph ← nn.lowerToTypedGraph actorObs
+        let criticGraph ← nn.lowerToTypedGraph criticObs
 
         let m ← rl.ppo.instantiateActorCritic
           (α := Float) (opts := opts)
@@ -237,7 +237,7 @@ def main (args : List String) : IO UInt32 := do
           actorRollout criticRollout
 
         let stepSample ←
-          rl.ppo.optimizerInputs m (.adam lr 0.9 0.999 1e-8 : optim.Optimizer)
+          rl.ppo.makeOptimizerStep m (.adam lr 0.9 0.999 1e-8 : optim.Optimizer)
 
         let mut rngSeed : Nat := opts.seed
         let mut rngCounter : Nat := 0
@@ -254,9 +254,9 @@ def main (args : List String) : IO UInt32 := do
 
         -- Evaluate the untrained policy once (step=0).
         do
-          let psAll0 ← rl.ppo.params (α := Float) m
-          let policyLogits0 : Tensor.T Float obsShape → Tensor.T Float logitsShape :=
-            rl.ppo.actorPolicyFromParams actorC actorRollout criticRollout psAll0
+          let psAll0 ← rl.ppo.state (α := Float) m
+          let policyLogits0 : Tensor Float obsShape → Tensor Float logitsShape :=
+            rl.ppo.actorPolicy actorGraph actorRollout criticRollout psAll0
           let avg0 ←
             rl.eval.averageEpisodeTotalReward (obsShape := obsShape) (nActions := nActions)
               mkSession policyLogits0 (baseSeed := 1000) (episodes := evalEpisodes)
@@ -265,11 +265,11 @@ def main (args : List String) : IO UInt32 := do
           IO.println s!"  eval(step=0) avg_return={avg0}"
 
         for update in [0:updatesLimit] do
-          let psAll ← rl.ppo.params (α := Float) m
-          let predictLogits : Tensor.T Float obsShape → Tensor.T Float logitsShape :=
-            rl.ppo.actorPolicyFromParams actorC actorRollout criticRollout psAll
-          let predictValue : Tensor.T Float obsShape → Float :=
-            rl.ppo.criticValueFromParams criticC actorRollout criticRollout psAll
+          let psAll ← rl.ppo.state (α := Float) m
+          let predictLogits : Tensor Float obsShape → Tensor Float logitsShape :=
+            rl.ppo.actorPolicy actorGraph actorRollout criticRollout psAll
+          let predictValue : Tensor Float obsShape → Float :=
+            rl.ppo.criticValue criticGraph actorRollout criticRollout psAll
           let (rollout, rngCounter') ←
             rl.ppo.collectRolloutWith (α := Float) (obsShape := obsShape) (nActions := nActions)
               (horizon := horizon) (castObs := id) (castReward := id) gym predictLogits predictValue
@@ -283,9 +283,9 @@ def main (args : List String) : IO UInt32 := do
             stepSample sample
 
           if update % evalEvery == 0 then
-            let psAll' ← rl.ppo.params (α := Float) m
-            let policyLogits : Tensor.T Float obsShape → Tensor.T Float logitsShape :=
-              rl.ppo.actorPolicyFromParams actorC actorRollout criticRollout psAll'
+            let psAll' ← rl.ppo.state (α := Float) m
+            let policyLogits : Tensor Float obsShape → Tensor Float logitsShape :=
+              rl.ppo.actorPolicy actorGraph actorRollout criticRollout psAll'
             let avg ←
               rl.eval.averageEpisodeTotalReward (obsShape := obsShape) (nActions := nActions)
                 mkSession policyLogits (baseSeed := 1000 + update) (episodes := evalEpisodes)

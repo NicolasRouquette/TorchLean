@@ -9,7 +9,7 @@ module
 public import NN.API.CLI
 public import NN.Verification.PINN.PyTorch
 public import NN.Verification.ODE.Parse
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 public import NN.Verification.Util.Json
 
 /-!
@@ -463,8 +463,8 @@ private def boundsOn {α : Type} [Context α] [BoundOps α] [DecidableEq Shape]
 /--
 How to load the corridor network weights.
 
-`direct` uses the PyTorch-import graph builder directly. `torchlean` goes through the TorchLean
-compiler path (useful for testing the compilation pipeline).
+`direct` uses the PyTorch-import graph builder directly. `torchlean` goes through TorchLean
+lowering.
 -/
 inductive ModelBackend where
   | direct
@@ -519,7 +519,7 @@ private structure LinLayer (inDim outDim : Nat) where
 /--
 Simple representation of an MLP as a chain of linear layers.
 
-This is used when lowering imported PINN weights into the TorchLean compilation pipeline.
+This is used when lowering imported PINN weights into the TorchLean lowering pipeline.
 -/
 private inductive LayerChain : Nat → Nat → Type where
   | last {inDim outDim : Nat} : LinLayer inDim outDim → LayerChain inDim outDim
@@ -549,10 +549,10 @@ private def chainOfPinnLayers :
         .error s!"layer dim mismatch: {l.outDim} ≠ {inTail}"
 
 /--
-Load a corridor model via the TorchLean compilation pipeline.
+Load a corridor model via the TorchLean lowering pipeline.
 
-This path reconstructs a small TorchLean program from the imported weights, compiles it to a CROWN
-graph, and then builds the derivative graph from that compiled graph.
+This path reconstructs a small TorchLean program from the imported weights, lowers it to a CROWN
+graph, and then builds the derivative graph from that lowered graph.
 -/
 private def loadModelTorchLean (path : String) : IO (Model Float) := do
   let sd ← loadPinnState path
@@ -593,15 +593,15 @@ private def loadModelTorchLean (path : String) : IO (Model Float) := do
                   z
                 evalT tail a
             evalT chain x
-      let compiled ←
-        match NN.Verification.TorchLean.compileForward
+      let lowered ←
+        match NN.Verification.TorchLean.lowerForwardToIR
               (α := Float) (paramShapes := []) (inShape := xShape) (outShape := yShape)
               model (.nil) with
         | .ok c => pure c
         | .error e => throw <| IO.userError e
-      let (dg, paramsWithDerivative, dOutId) ← buildDerivativeGraph1D (α := Float) compiled.graph compiled.ps
-        compiled.outputId
-      pure { g := compiled.graph, dg := dg, baseParams := paramsWithDerivative, outId := compiled.outputId, dOutId :=
+      let (dg, paramsWithDerivative, dOutId) ← buildDerivativeGraph1D (α := Float) lowered.graph lowered.ps
+        lowered.outputId
+      pure { g := lowered.graph, dg := dg, baseParams := paramsWithDerivative, outId := lowered.outputId, dOutId :=
         dOutId, inDim := inDim }
     | .relu =>
       let model : Runtime.Autograd.TorchLean.Program Float [xShape] yShape :=
@@ -631,15 +631,15 @@ private def loadModelTorchLean (path : String) : IO (Model Float) := do
                   z
                 evalR tail a
             evalR chain x
-      let compiled ←
-        match NN.Verification.TorchLean.compileForward
+      let lowered ←
+        match NN.Verification.TorchLean.lowerForwardToIR
               (α := Float) (paramShapes := []) (inShape := xShape) (outShape := yShape)
               model (.nil) with
         | .ok c => pure c
         | .error e => throw <| IO.userError e
-      let (dg, paramsWithDerivative, dOutId) ← buildDerivativeGraph1D (α := Float) compiled.graph compiled.ps
-        compiled.outputId
-      pure { g := compiled.graph, dg := dg, baseParams := paramsWithDerivative, outId := compiled.outputId, dOutId :=
+      let (dg, paramsWithDerivative, dOutId) ← buildDerivativeGraph1D (α := Float) lowered.graph lowered.ps
+        lowered.outputId
+      pure { g := lowered.graph, dg := dg, baseParams := paramsWithDerivative, outId := lowered.outputId, dOutId :=
         dOutId, inDim := inDim }
     | .sin =>
       throw <| IO.userError
@@ -658,29 +658,29 @@ private def loadModelNonFloat {α : Type} [Context α] (ofFloat : Float → α)
   match backend with
   | .direct => loadModelDirectWith (α := α) ofFloat path
   | .torchlean =>
-    throw <| IO.userError "ODE verifier: --model=torchlean is only supported with --scalar=float"
+    throw <| IO.userError "ODE verifier: --model=torchlean is only supported with --scalar=float64"
 
 /-- Choice of scalar backend for the verifier. -/
 inductive ScalarBackend where
-  | float
-  | ieee32exec
+  | float64
+  | ieee32Exec
   deriving DecidableEq, Repr
 
 /-- Pretty-print the scalar backend choice for CLI logs. -/
 instance : ToString ScalarBackend :=
-  ⟨fun b => match b with | .float => "float" | .ieee32exec => "ieee32exec"⟩
+  ⟨fun b => match b with | .float64 => "float64" | .ieee32Exec => "ieee32-exec"⟩
 
 /-- Parse a scalar backend name as used in CLI flags and certificate settings. -/
 private def parseScalarName (s : String) : Option ScalarBackend :=
-  if s = "float" then some .float
-  else if s = "ieee32exec" then some .ieee32exec
+  if s = "float64" then some .float64
+  else if s = "ieee32-exec" then some .ieee32Exec
   else none
 
 /-- Parse a scalar backend name and report a CLI-friendly error on failure. -/
 private def parseScalarNameE (s : String) : Except String ScalarBackend :=
   match parseScalarName s with
   | some sc => pure sc
-  | none => throw s!"--scalar: expected float or ieee32exec; got `{s}`"
+  | none => throw s!"--scalar: expected float64 or ieee32-exec; got `{s}`"
 
 /--
 Verification settings controlling domain splitting and slack.
@@ -700,7 +700,7 @@ structure ODEVerifierSettings where
   /-- How to import the corridor networks. -/
   modelBackend : ModelBackend := .direct
   /-- Which scalar backend to run the checks in. -/
-  scalar : ScalarBackend := .float
+  scalar : ScalarBackend := .float64
   deriving Repr
 
 /--
@@ -801,9 +801,9 @@ private def parseSettings (j : Json) : Except String ODEVerifierSettings := do
       | some (.str name) =>
           match parseScalarName name with
           | some backend => pure backend
-          | none => throw s!"settings.scalar: expected float or ieee32exec; got `{name}`"
+          | none => throw s!"settings.scalar: expected float64 or ieee32-exec; got `{name}`"
       | some _ => throw "settings.scalar: expected string"
-      | none => pure ScalarBackend.float
+      | none => pure ScalarBackend.float64
     let cfg := { maxDepth := maxDepth, minWidth := minWidth, slack := slack, verbose := verbose
                  modelBackend := modelBackend, scalar := scalar }
     validateSettings cfg
@@ -1006,7 +1006,7 @@ def runCertificate (path : String) (backendOverride : Option ModelBackend) (scal
     | .error msg => throw <| IO.userError s!"Invalid ODE certificate segment: {msg}"
     | .ok () => pure ()
   match cfg.scalar with
-  | .float =>
+  | .float64 =>
     let mut allOk := true
     for seg in cert.segments do
       let ok ← verifySegmentWith (α := Float) (fun x => x) (fun mb p => loadModelFloat mb p) rhsAst
@@ -1016,7 +1016,7 @@ def runCertificate (path : String) (backendOverride : Option ModelBackend) (scal
       IO.println "[ODE] certificate verified: all segments succeeded."
     else
       throw <| IO.userError "[ODE] certificate verification failed."
-  | .ieee32exec =>
+  | .ieee32Exec =>
     let αI := TorchLean.Floats.IEEE754.IEEE32Exec
     let ofF := TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat
     let mut allOk := true
@@ -1040,7 +1040,7 @@ def runArgs (args : List String) : IO Unit := do
     TorchLean.CLI.takeParsedFlagDefault args "model" "direct" parseModelBackendNameE
   let (backend, args) ← TorchLean.CLI.orThrowIO backendParsed
   let scalarParsed :=
-    TorchLean.CLI.takeParsedFlagDefault args "scalar" "float" parseScalarNameE
+    TorchLean.CLI.takeParsedFlagDefault args "scalar" "float64" parseScalarNameE
   let (scalarBackend, args) ← TorchLean.CLI.orThrowIO scalarParsed
   let (cert?, args) ← TorchLean.CLI.orThrowIO <| TorchLean.CLI.takeFlagValueOnce args "cert"
   match cert? with
@@ -1086,12 +1086,12 @@ def runArgs (args : List String) : IO Unit := do
     | .error msg => throw <| IO.userError s!"Invalid ODE certificate segment: {msg}"
     | .ok () => pure ()
     match cfg.scalar with
-    | .float =>
+    | .float64 =>
       let ok ← verifySegmentWith (α := Float) (fun x => x) (fun mb p => loadModelFloat mb p) rhsAst
         seg cfg
       if ok then IO.println "[ODE] verification succeeded."
       else throw <| IO.userError "[ODE] verification failed."
-    | .ieee32exec =>
+    | .ieee32Exec =>
       let αI := TorchLean.Floats.IEEE754.IEEE32Exec
       let ofF := TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat
       let ok ← verifySegmentWith (α := αI) ofF (fun mb p => loadModelNonFloat (α := αI) ofF mb p)
@@ -1113,15 +1113,15 @@ public def main (args : List String) : IO Unit := do
     IO.println
       ("Usage:\n" ++
        ("  lake exe verify -- ode [--model=direct|torchlean] " ++
-         "[--scalar=float|ieee32exec] --cert=<cert.json>\n") ++
+         "[--scalar=float64|ieee32-exec] --cert=<cert.json>\n") ++
        ("  lake exe verify -- ode [--model=direct|torchlean] " ++
-         "[--scalar=float|ieee32exec] --rhs=\"<expr>\" --t0=<float> " ++
+         "[--scalar=float64|ieee32-exec] --rhs=\"<expr>\" --t0=<float> " ++
          "--t1=<float> --init=<float> --lower=<wL.json> --upper=<wU.json>\n") ++
        "Options:\n" ++
        "  --maxDepth=<nat>   (default 18)\n" ++
        "  --minWidth=<nonnegative finite float> (default 1e-3)\n" ++
        "  --slack=<nonnegative finite float>    (default 0)\n" ++
-       "  --scalar=float|ieee32exec\n" ++
+       "  --scalar=float64|ieee32-exec\n" ++
        "  --verbose=true|false\n")
   else
     runArgs args

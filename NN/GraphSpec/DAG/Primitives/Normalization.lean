@@ -38,7 +38,7 @@ def rmsNorm (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
       match xs with
       | .cons input (.cons gamma .nil) =>
           _root_.Spec.rmsNorm (α := α) input gamma hRows hWidth
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input gamma =>
         Runtime.Autograd.TorchLean.Norm.rmsNormLast (m := m) (α := α)
           hRows hWidth input gamma }
@@ -82,7 +82,7 @@ def rmsNormVector (width : Nat) (hWidth : 0 < width) :
       match xs with
       | .cons input (.cons gamma .nil) =>
           rmsNormVectorSemantics hWidth input gamma
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input gamma =>
         (do
           let row ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
@@ -119,7 +119,7 @@ def rmsNormRows (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
       | .cons input (.cons gamma .nil) =>
           .dim fun row => rmsNormVectorSemantics hWidth
             (_root_.Spec.get input row) (_root_.Spec.get gamma row)
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input gamma =>
         (do
           let ones ← Runtime.Autograd.TorchLean.const (m := m) (α := α)
@@ -162,7 +162,7 @@ def l2Normalize (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
       | .cons input (.cons (.scalar epsilon) .nil) =>
           _root_.Spec.Tensor.dim fun row =>
             _root_.Spec.normalizeL2RegularizedSpec (_root_.Spec.get input row) epsilon
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input epsilon =>
         (do
           let squared ← Runtime.Autograd.TorchLean.mul (m := m) (α := α)

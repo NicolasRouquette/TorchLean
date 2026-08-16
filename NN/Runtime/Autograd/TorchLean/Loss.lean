@@ -22,7 +22,7 @@ loss = Loss.mse yhat y
 loss = Loss.mse yhat y (reduction := .sum)
 ```
 
-They are backend-generic: eager tape and compiled SSA/DAG both work.
+They are execution-mode generic: eager tape and typed SSA/DAG both work.
 
 ### PyTorch references
 
@@ -122,7 +122,7 @@ Cross-entropy (one-hot targets), computed as `-sum(y * log(softmax(logits)))`.
 Note: this is one-hot only. If your label is an integer class index, use `crossEntropyIndex`
 (`Fin n`) or `crossEntropyNat` (`Nat`).
 -/
-def crossEntropyOneHot {α : Type} [Context α] [DecidableEq Shape]
+def oneHotCrossEntropy {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {s : Shape}
     (logits targetOneHot : RefTy (m := m) (α := α) s)

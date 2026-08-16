@@ -40,7 +40,7 @@ Backend-compatible KAN edge family.
 
 An edge family turns each scalar input coordinate into `basisDim` features. A KAN layer then applies
 a learned linear map to all expanded features. The basis is a TorchLean model fragment, not an
-arbitrary Lean callback, so the resulting KAN can run in eager, compiled, CPU, and CUDA training
+arbitrary Lean callback, so the resulting KAN can run in eager, typed graph, CPU, and CUDA training
 paths supported by the underlying operations.
 -/
 structure KANEdgeFamily where
@@ -84,9 +84,9 @@ def basisLayer (cfg : KANPiecewiseLinear) (inDim : Nat) :
     nn.Sequential (.dim inDim .scalar) (.dim (inDim * cfg.gridSize) .scalar) :=
   nn.of
     { kind := s!"KANPiecewiseLinear(grid={cfg.gridSize},scale={cfg.inputScale})"
-      paramShapes := []
-      initParams := .nil
-      paramRequiresGrad := []
+      stateShapes := []
+      initState := .nil
+      requiresGrad := []
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun x =>
@@ -161,7 +161,7 @@ The layer first applies the selected edge basis to every input coordinate, then 
 with an ordinary linear map from the expanded features to `outDim`.
 -/
 def kanLayer (inDim outDim : Nat) (edge : KANEdgeFamily) :
-    nn.M (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
+    nn.Builder (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
   nn.Sequential![
     nn.lift (edge.basis inDim),
     nn.linear (inDim * edge.basisDim) outDim
@@ -170,7 +170,7 @@ def kanLayer (inDim outDim : Nat) (edge : KANEdgeFamily) :
 /-- Recursive unbatched KAN stack. Hidden layers use `tanh`; the final layer is linear in bases. -/
 def kanGo (edge : KANEdgeFamily) :
     (inDim : Nat) → (hidden : List Nat) → (outDim : Nat) →
-      nn.M (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar))
+      nn.Builder (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar))
   | inDim, [], outDim => kanLayer inDim outDim edge
   | inDim, h :: hs, outDim =>
       nn.Sequential![kanLayer inDim h edge, nn.tanh, kanGo edge h hs outDim]
@@ -179,11 +179,11 @@ def kanGo (edge : KANEdgeFamily) :
 Build a batched KAN model.
 
 Task semantics are deliberately not baked into the model name: use `Trainer.new` with
-`task := .regression`, `.classification`, `.crossEntropy`, or `.custom ...` with the same `KAN`
+`task := .regression`, `.oneHotCrossEntropy`, or `.custom ...` with the same KAN
 constructor.
 -/
-def KAN (cfg : KANConfig) :
-    nn.M (nn.Sequential (kanInShape cfg) (kanOutShape cfg)) :=
+def kan (cfg : KANConfig) :
+    nn.Builder (nn.Sequential (kanInShape cfg) (kanOutShape cfg)) :=
   do
     let sample ← kanGo cfg.edge cfg.inDim cfg.hidden cfg.outDim
     nn.mapLeading (.dim cfg.batch .scalar) sample

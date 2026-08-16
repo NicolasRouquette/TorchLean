@@ -15,22 +15,30 @@ It is less convenient for a tool that wants to enumerate layers, export paramete
 one operation, or lower the same architecture to several targets. For those tasks TorchLean uses
 GraphSpec, a small typed language in which the architecture itself is data.
 
-GraphSpec sits between two other layers:
+GraphSpec has a pure interpretation and an executable interpretation:
 
 ```
-application model builders
-        ↓
-GraphSpec architecture and parameter ABI
-        ↓
-pure interpretation / TorchLean program / sequential model / DAG tools
-        ↓
-canonical NN.IR.Graph and runtime-specific lowering
+                         ┌── Interp.spec ──> pure tensor function
+GraphSpec Chain / DAG ──┤
+                         └── toProgram ────> TorchLean.Program
+                                                │
+                                                ├── eager execution
+                                                ├── typed graph lowering
+                                                └── broad verification lowering
+                                                    ──> NN.IR.Graph
+                                                         ──> IRExec.ForwardGraph
 ```
 
 GraphSpec preserves model structure and makes every input, output, and parameter shape explicit.
-The tensor runtime sits above it, while the low-level backend IR sits below it.
+The optional `toSeq` adapter supplies initialized sequential layers for the supported subset. It is
+not required by the pure interpretation or by `toProgram`.
 
-# Write The Running MLP As A Graph
+The broad verification lowering validates the IR it produces, but that success is not an
+end-to-end semantic theorem for every GraphSpec primitive. The smaller
+`NN.Verification.TorchLean.Proved.ForwardProgram` language has the corresponding source-to-IR
+correctness theorem.
+
+# Write The Running MLP As A Chain
 
 The complete architecture is:
 
@@ -43,19 +51,19 @@ open NN.GraphSpec.Models
 open Spec
 
 def mlpGraph (input hidden output : Nat) :
-    Graph
+    Chain
       [ shape![hidden, input], shape![hidden],
         shape![output, hidden], shape![output] ]
       (shape![input])
       (shape![output]) :=
-  Graph.linear input hidden >>>
-  Graph.relu (shape![hidden]) >>>
-  Graph.linear hidden output
+  Chain.linear input hidden >>>
+  Chain.relu (shape![hidden]) >>>
+  Chain.linear hidden output
 ```
 
 Read the type from right to left:
 
-- the graph consumes one tensor of shape `[input]`;
+- the chain consumes one tensor of shape `[input]`;
 - it produces one tensor of shape `[output]`;
 - its parameter environment contains exactly four tensors;
 - the order is $`W_1`, $`b_1`, $`W_2`, $`b_2`.
@@ -70,25 +78,25 @@ b₂ : [1]      one value
 ```
 
 There are thirteen trainable scalars. That count is not recovered from strings such as
-`"layer1.weight"`. It follows from the graph's type.
+`"layer1.weight"`. It follows from the chain's type.
 
 # Composition Computes The ABI
 
 The composition operator `>>>` does more than connect two arrows. If
 
 ```
-g₁ : Graph ps₁ σ τ
-g₂ : Graph ps₂ τ υ
+g₁ : Chain ps₁ σ τ
+g₂ : Chain ps₂ τ υ
 ```
 
 then
 
 ```
-g₁ >>> g₂ : Graph (ps₁ ++ ps₂) σ υ.
+g₁ >>> g₂ : Chain (ps₁ ++ ps₂) σ υ.
 ```
 
 The intermediate shape must be the same $`\tau`, and the parameter lists are concatenated in
-construction order. Replacing the first linear layer by `Graph.linear input 5` changes its output
+construction order. Replacing the first linear layer by `Chain.linear input 5` changes its output
 shape to `[5]`; the existing ReLU can still consume it, but the second linear layer must accept
 five inputs. Lean reports the mismatch at the architecture definition.
 
@@ -108,12 +116,12 @@ A sequential GraphSpec primitive stores:
 
 ```
 specFwd      : pure shape-indexed tensor function
-torchProgram : executable TorchLean frontend program
+program      : executable TorchLean program
 ```
 
-For a linear primitive, `specFwd` calls the mathematical `linearSpec`; `torchProgram` constructs the
-runtime operation with the same input and parameter shapes. Composition builds both interpretations
-in parallel.
+For a linear primitive, `specFwd` calls the mathematical `linearSpec`, while `program` describes
+the corresponding runtime operation with the same input and parameter shapes. The recursive pass
+`Chain.toProgram` assembles primitive `program` fields across a complete chain.
 
 The record does not prove that the two fields agree merely by storing them together. The important
 difference is:
@@ -137,11 +145,11 @@ There are two more fields that matter when a primitive enters the model API:
   * `specFwd`
   * the pure tensor function used by `Interp.spec`
 *
-  * `torchProgram`
-  * the backend-polymorphic executable program
+  * `program`
+  * the execution-polymorphic tensor program
 *
-  * `toLayerDefM?`
-  * an optional lowering to an initialized `nn.LayerDef`
+  * `toLayerM?`
+  * an optional lowering to an initialized `nn.Layer`
 *
   * `countsAsLayer`
   * whether deterministic layer indexing advances at this primitive
@@ -153,7 +161,7 @@ graph operation without defining parameter initialization, buffer behavior, or t
 expected by the high-level trainer.
 
 When I review a new primitive, I check the parameter order in all three places: `ps`, `specFwd`,
-and `torchProgram`. Shape typing proves that each slot has the right shape. It does not prove that
+and `program`. Shape typing proves that each slot has the right shape. It does not prove that
 two same-shaped parameters, such as two biases, have not been exchanged. That agreement belongs in
 the primitive's correctness theorem.
 
@@ -165,11 +173,11 @@ BatchNorm. Each of these adapters supplies the same three pieces of information:
 
 - the exact parameter-shape list;
 - a pure `specFwd` meaning;
-- an executable `torchProgram` meaning.
+- an executable `program` meaning.
 
 The MLP and two-convolution CNN compose the sequential adapters. `residualLinear` demonstrates the
 DAG language and an explicit skip connection. These are implemented examples, not a claim that
-every layer under `NN.Spec` already has a GraphSpec adapter. `GraphSpec.ToTorchLean.toSeq` is also
+every layer under `NN.Spec` already has a GraphSpec adapter. `GraphSpec.ToSequential.toSeq` is also
 deliberately partial: it succeeds only when every primitive provides a corresponding layer
 constructor.
 
@@ -178,7 +186,7 @@ constructor.
 The repository contains an executable GraphSpec tutorial:
 
 ```
-lake exe torchlean graphspec --device cpu --backend eager
+lake exe torchlean graphspec --device cpu --execution eager
 ```
 
 The current checkout prints:
@@ -205,9 +213,9 @@ The execution path is:
 
 ```
 Models.mlp
-   │ Graph ps [2] [1]
+   │ Chain ps [2] [1]
    ▼
-GraphSpec.ToTorchLean.toSeq
+GraphSpec.ToSequential.toSeq
    │ Except String (nn.Sequential [2] [1])
    ▼
 Trainer.new
@@ -217,13 +225,13 @@ eager runtime and autograd tape
 
 `toSeq` is intentionally partial. A sequential linear/ReLU stack has an `nn` layer counterpart, so
 the conversion succeeds. An arbitrary custom primitive may have a pure and program interpretation
-without having an `nn.LayerDef` constructor; in that case the conversion returns an error rather
+without having an `nn.Layer` constructor; in that case the conversion returns an error rather
 than inventing a layer.
 
-Try the compiled frontend as a second run:
+Try typed graph execution as a second run:
 
 ```
-lake exe torchlean graphspec --device cpu --backend compiled
+lake exe torchlean graphspec --device cpu --execution typed-graph
 ```
 
 The architecture and parameter ABI are unchanged. Only the execution path selected after lowering
@@ -299,7 +307,7 @@ Run the tutorial command again and notice the third architecture in its printed 
 `residualLinear` is checked as a DAG model even though the short tutorial trains only the sequential
 MLP.
 
-# Sequential Graph Versus DAG Model
+# Chain Versus DAG Model
 
 The two GraphSpec syntaxes are related but not identical:
 
@@ -310,7 +318,7 @@ The two GraphSpec syntaxes are related but not identical:
   * Sharing
   * Parameter representation
 *
-  * `Graph ps σ τ`
+  * `Chain ps σ τ`
   * readable layer chains
   * no explicit fan-out
   * type-indexed list `ps`
@@ -321,7 +329,7 @@ The two GraphSpec syntaxes are related but not identical:
   * typed model environment
 :::
 
-A sequential graph can be lowered structurally into a DAG model. This does not require a numerical
+A chain can be lowered structurally into a DAG model. This does not require a numerical
 theorem because the conversion also comes with a theorem relating the relevant pure interpretation.
 The reverse direction is not generally possible: a DAG with fan-out has no faithful representation
 as a plain chain without adding duplication or a special combinator.
@@ -349,16 +357,16 @@ Architecture correctness cannot authenticate training provenance.
 
 # GraphSpec Is Not The Backend IR
 
-It is tempting to call every graph representation “the graph,” but GraphSpec and `NN.IR.Graph`
-have different jobs.
+TorchLean uses several graph representations because they carry different information.
 
-GraphSpec is intrinsically typed. A model that connects incompatible shapes does not elaborate.
-Its primitives carry pure and TorchLean-program interpretations.
+`GraphSpec.Chain` is typed sequential architecture syntax. `GraphSpec.DAG.Model` adds explicit
+sharing. A model that connects incompatible shapes does not elaborate, and each primitive carries
+both a pure interpretation and a TorchLean-program interpretation.
 
 `NN.IR.Graph` is a serializable op-tagged DAG. Nodes carry numeric IDs, parent IDs, output shapes,
 and attributes; tensors and parameters live in an external payload. This form is better for
-importers, validators, generic passes, verification, and backend planning.
+importers, validators, generic passes, verification, and kernel selection.
 
-There is not currently a universal compiler from every GraphSpec model to canonical IR. Selected
-frontend and model paths lower to IR, and selected semantic theorems cover those paths. The next
-chapter builds and inspects that lower-level representation directly.
+There is not currently a universal lowering pass from every GraphSpec model to `NN.IR.Graph`.
+Selected frontend and model paths lower to IR, and their semantic theorems state which meaning is
+preserved. The next chapter builds and inspects that lower-level representation directly.

@@ -77,12 +77,13 @@ abbrev τ :=
   nn.models.recurrentOutShape cfg
 
 /-- LSTM followed by a time-distributed linear output head. -/
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.lstmWithLinearHead cfg
 
 /-- Build one next-token training sample from the loaded corpus prefix. -/
 def sample (corpus : String) : SupervisedSample Float σ τ :=
-  let s := Data.textCausalSample (α := Float) seqLen inputSize (corpus.take (seqLen + 1)).toString
+  let s := Data.CausalLM.byteSample
+    (α := Float) seqLen inputSize (corpus.take (seqLen + 1)).toString
   Sample.mk (Spec.Tensor.materialize (Sample.x s)) (Spec.Tensor.materialize (Sample.y s))
 
 /-- Train the LSTM with the public `Trainer` surface. -/
@@ -92,7 +93,7 @@ def train (opts : Options) (corpusFlags : RealData.TextCorpusFlags)
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.sgd { lr := 1e-2 } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.sgd { lr := 1e-2 } })
         .regression
   let trainData := Data.floatSamples [sample corpus]
   let trained ← trainer.train

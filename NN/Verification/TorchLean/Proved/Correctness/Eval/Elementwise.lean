@@ -168,7 +168,7 @@ theorem evalAt_unaryElementwise_eq
     (evalNode_unaryElementwise_eq op x ({} : Payload α) (DVal.mk (α := α) s x)
       #[DVal.mk (α := α) s x] 1 1 0 hx)
 
-/-- Evaluate a binary elementwise node in an arbitrary graph from the compiler's shape invariant. -/
+/-- Evaluate a binary elementwise node in an arbitrary graph from the lowering pass's shape invariant. -/
 theorem evalAt_binaryElementwise_of_getNode
     {α : Type} [Context α] [DecidableEq Shape]
     {inShape s : Shape} {ss : List Shape}
@@ -219,7 +219,7 @@ theorem evalAt_binaryElementwise_of_getNode
         pure (DVal.mk (α := α) s (op.denote ta tb))) := by
       simp [hGetA, hGetB, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
-/-- Evaluate a unary elementwise node in an arbitrary graph from the compiler's shape invariant. -/
+/-- Evaluate a unary elementwise node in an arbitrary graph from the lowering pass's shape invariant. -/
 theorem evalAt_unaryElementwise_of_getNode
     {α : Type} [Context α] [DecidableEq Shape]
     {inShape s : Shape} {ss : List Shape}

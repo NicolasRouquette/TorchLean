@@ -13,10 +13,9 @@ public import NN.Backend.Capsule
 
 Machine- and build-dependent availability for backend capsules.
 
-`ExecutionConfig` says what a run is allowed to use. `Availability` says what this checkout/machine
-can actually provide. This separation supports CPU-only builds, CUDA
-builds, and optional LibTorch builds all use the same semantic registry, but expose different
-available capsule subsets to the planner.
+`KernelPolicy` says which capsules selection may use. `Availability` says what this checkout or
+machine can provide. CPU-only, CUDA, and optional LibTorch builds therefore share one semantic
+registry while exposing different capsule subsets to the planner.
 -/
 
 @[expose] public section

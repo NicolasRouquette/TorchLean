@@ -41,7 +41,7 @@ model builder
   + trainer configuration
   + dataset
   + train options
-  -> trained handle
+  -> trained result
 ```
 
 The loss values are measurements from this run. The model and optimizer definitions, by contrast,
@@ -54,7 +54,7 @@ import NN.API
 open TorchLean
 
 def model :
-    nn.M (nn.Sequential (shape![2]) (shape![1])) :=
+    nn.Builder (nn.Sequential (shape![2]) (shape![1])) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -78,8 +78,8 @@ def trainer (seed : Nat) :=
   Trainer.new model
     { task := .regression
       optimizer := optim.adam { lr := 0.03 }
-      dtype := .float
-      backend := .eager
+      scalar := .float32
+      execution := .eager
       seed := seed }
 ```
 
@@ -96,7 +96,7 @@ L(\theta;x,y)
 \left(F_\theta(x)_i-y_i\right)^2.
 `
 
-Changing `.regression` to `.crossEntropy` changes the objective and target convention without
+Changing `.regression` to `.oneHotCrossEntropy` changes the objective and target convention without
 changing the architecture. A custom task supplies a checked scalar loss program.
 
 # Build The Dataset
@@ -104,7 +104,7 @@ changing the architecture. A custom task supplies a checked scalar loss program.
 The quickstart uses a deterministic grid. A four-point example can be written directly:
 
 ```
-def xs : Tensor.T Float (shape![4, 2]) :=
+def xs : Tensor Float (shape![4, 2]) :=
   tensor! [
     [0.0, 0.0],
     [0.0, 1.0],
@@ -112,10 +112,10 @@ def xs : Tensor.T Float (shape![4, 2]) :=
     [1.0, 1.0]
   ]
 
-def ys : Tensor.T Float (shape![4, 1]) :=
+def ys : Tensor Float (shape![4, 1]) :=
   tensor! [[0.0], [1.0], [1.0], [0.0]]
 
-def data : Trainer.Dataset (shape![2]) (shape![1]) :=
+def data : Trainer.DataSource (shape![2]) (shape![1]) :=
   Data.tensorDataset xs ys
 ```
 
@@ -133,13 +133,13 @@ def run : IO Unit := do
 
   trained.printSummary
 
-  let heldout : Tensor.T Float (shape![2]) :=
+  let heldout : Tensor Float (shape![2]) :=
     tensor! [0.25, -0.75]
   let yhat ← trained.predict heldout
   IO.println s!"prediction={Tensor.pretty yhat}"
 ```
 
-The returned handle retains:
+The returned `TrainResult` retains:
 
 - final parameters;
 - runtime model state;
@@ -201,9 +201,10 @@ update to the next is larger than a gradient. For a reproducible run we need to 
   * it fixes the providers and backward ownership used by the executable step
 :::
 
-The high-level trainer retains these pieces behind one handle. The manual API exposes them when an
-experiment needs a custom loop or a checkpoint must record more than parameter tensors. Saving
-only weights is enough for inference, but it is not enough to resume Adam at the same update.
+The high-level API keeps these pieces in its trainer and result values. The manual API exposes them
+when an experiment needs a custom loop or a checkpoint must record more than parameter tensors.
+Saving only weights is enough for inference, but it is not enough to resume Adam at the same
+update.
 
 # Adam's Hidden State Is Explicit
 
@@ -263,7 +264,7 @@ For a true vectorized minibatch, define:
 
 ```
 def batchedModel :
-    nn.M
+    nn.Builder
       (nn.Sequential
         (shape![2, 2])
         (shape![2, 1])) :=
@@ -274,7 +275,7 @@ def batchedModel :
   ]
 
 def batchedData :
-    Trainer.Dataset (shape![2, 2]) (shape![2, 1]) :=
+    Trainer.DataSource (shape![2, 2]) (shape![2, 1]) :=
   Data.batchDataset 2 data
     (shuffle := true)
     (seed := 2026)
@@ -304,26 +305,25 @@ Sequential: [5, 2] -> [5, 1], layers=3, params=33
 The parameter count remains 33 because linear layers preserve the batch prefix; the batch axis does
 not create separate weights per sample.
 
-# Eager And Compiled Are Execution Choices
+# Eager And Typed Graph Are Execution Choices
 
 Compare:
 
 ```
 lake exe torchlean quickstart_mlp \
-  --device cpu --backend eager --steps 20 --seed 2026
+  --device cpu --execution eager --steps 20 --seed 2026
 
 lake exe torchlean quickstart_mlp \
-  --device cpu --backend compiled --steps 20 --seed 2026
+  --device cpu --execution typed-graph --steps 20 --seed 2026
 ```
 
-Eager mode records operations and local reverse rules as they execute. Compiled mode builds a typed
-forward/derivative graph and replays it with current parameters and inputs.
+Eager execution records operations and local reverse rules as they execute. Typed graph execution
+records a typed forward/derivative graph once and reuses it with current parameters and inputs.
 
-The trainer method remains `train`; compilation is a property of the configured runner, analogous to
-wrapping a PyTorch model with an execution transform rather than renaming the model's `forward`
-method.
+The trainer method remains `train`; `execution := .typedGraph` changes how that method runs without
+changing the model's `forward` definition.
 
-Compiled trainer execution is currently CPU-only. A non-CPU compiled request is rejected rather
+Typed graph trainer execution is currently CPU-only. A non-CPU typed graph request is rejected rather
 than silently falling back to a different semantics.
 
 # Device Selection Is A Profile
@@ -341,8 +341,8 @@ Programmatically:
 ```
 def cudaRun : Trainer.RunConfig :=
   ({ optimizer := optim.adam { lr := 0.03 }
-     dtype := .float
-     backend := .eager } :
+     scalar := .float32
+     execution := .eager } :
     Trainer.RunConfig).cuda
 
 def cudaTrainer :=
@@ -371,51 +371,52 @@ implementation.
 The common executable selections are:
 
 ```
---dtype float
---dtype ieee754exec
+--scalar float32
+--scalar ieee32-exec
 ```
 
-Host `Float` is fast and relies on the platform runtime. `IEEE32Exec` is TorchLean's bit-level
-binary32 reference and is much slower, but exposes precise finite and exceptional behavior.
+Native `Float32` uses Lean's builtin binary32 operations. `IEEE32Exec` is TorchLean's independent
+raw-bit binary32 reference and is much slower, but exposes precise finite and exceptional behavior.
 Proof-level `Real` and rounded-real `FP32` are not executable trainer choices. `FP32` has binary32
 precision and gradual-underflow parameters, but no upper exponent bound, NaN, infinity, or signed
 zero; bridge theorems therefore require finite/no-overflow hypotheses when relating it to
 `IEEE32Exec`.
 
 A loss curve without its scalar semantics is incomplete. The same architecture and seed may round
-differently in binary32, binary64, a fused CUDA kernel, or an external provider.
+differently in native binary32, the bit-level reference, a fused CUDA kernel, or an external
+provider.
 
 # A Checkpoint Is A Particular Slice Of State
 
-TorchLean's JSON parameter checkpoint records each host `Float` with `Float.toBits`, so saving and
-loading does not pass through a decimal approximation. The expected parameter shapes come from the
-model. Each expected tensor must be present with the right shape and scalar count before it becomes
-a parameter pack:
+Native `Float32` modules use an exact binary32 checkpoint on CPU and CUDA. The compatibility
+binary64 `Float` path retains its exact-bit JSON format on CPU. Neither representation passes
+through decimal text. The expected state shapes come from the model, and every tensor must have the
+right shape and scalar count before the checkpoint is accepted:
 
 ```
 def loadForThisModel (path : System.FilePath) :=
-  Checkpoint.loadModelParamBits (nn.run 2026 model) path
+  Checkpoint.loadModelState (nn.build 2026 model) path
 ```
 
 The result is an `IO` action returning tensors whose dependent shape list is exactly
-`nn.paramShapes (nn.run 2026 model)`. `Checkpoint.toRuntimeParams` turns such a checked pack into
-runtime parameter handles, while `Checkpoint.loadModuleParams` and
-`Checkpoint.saveModuleParams` work with an already instantiated runtime module.
+`nn.stateShapes (nn.build 2026 model)`. `Checkpoint.toRuntimeState` turns such a checked pack into
+runtime state handles, while `Checkpoint.loadModule` and
+`Checkpoint.saveModule` work with an already instantiated runtime module.
 
 The loader requires an exact tensor manifest. Missing tensors, extra tensors, shape mismatches, and
-malformed scalar payloads are rejected before any parameter is installed. This matters when two
-models share an initial parameter prefix: a checkpoint for the larger model cannot be accepted as a
-checkpoint for the smaller one merely because the first few shapes agree.
+malformed scalar payloads are rejected before any state is installed. This matters when two models
+share an initial state prefix: a checkpoint for the larger model cannot be accepted as a checkpoint
+for the smaller one merely because the first few shapes agree.
 
-Classification and cross-entropy training also wire the `loadParams?` and `saveParams?` fields of
-`Trainer.TrainOptions` into this exact-bits format. For example, the following options ask that path
-to save parameters after 200 updates:
+Classification and cross-entropy training also wire the `loadCheckpoint?` and `saveCheckpoint?`
+fields of `Trainer.TrainOptions` into the checkpoint path selected by the runtime scalar. For
+example:
 
 ```
-def saveClassifierParams : Trainer.TrainOptions :=
+def saveClassifier : Trainer.TrainOptions :=
   { steps := 200
     logEvery := 25
-    saveParams? := some "artifacts/classifier.params.json" }
+    saveCheckpoint? := some "artifacts/classifier.state.json" }
 ```
 
 The current high-level regression and custom-loss training paths do not consume those two fields;
@@ -423,7 +424,7 @@ use the direct `Checkpoint`/`TorchLean.Checkpoint` helpers with a manual module 
 This limitation is worth spelling out because accepting a shared options record is not evidence
 that every task dispatch implements every optional field.
 
-Even on the classification path, this is a *parameter* checkpoint, not a complete training
+Even on the classification path, this is a *model-state* checkpoint, not a complete training
 snapshot. The eager CUDA runtime can save Adam or AdamW moments and step counters separately with
 `Checkpoint.saveOptimizerState`, then restore them with
 `Checkpoint.loadOptimizerState`. That binary file records the optimizer kind, the
@@ -446,8 +447,8 @@ The high-level trainer is intended for common runs. `Trainer.Manual` exposes:
 ```
 stepper
 step
-trainMode
-evalMode
+Runner.train
+Runner.eval
 callbacks
 loader loops
 prediction
@@ -504,7 +505,7 @@ def pretrainingSchedule :=
 
 def scheduledPretraining :=
   Trainer.warmupCosineLR
-    (Trainer.steps 162761 (optim.adamw { lr := 0.0006 }))
+    (Trainer.steps 162761 (optim.adamW { lr := 0.0006 }))
     0.0006 0.00006 2000 162761
 ```
 
@@ -561,7 +562,7 @@ It does not automatically prove:
 - convergence for all initializations;
 - generalization to unseen data;
 - robustness to an input region;
-- equality of eager, compiled, CUDA, and LibTorch paths;
+- equality of eager, typed graph, CUDA, and LibTorch paths;
 - correctness of every native instruction.
 
 TorchLean gives the run enough structure for a theorem, numerical bound, backend contract, or

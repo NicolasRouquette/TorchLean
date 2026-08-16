@@ -227,7 +227,7 @@ inductive TrustLevel where
   deriving DecidableEq, Repr
 
 /--
-One policy for the complete assurance boundary of a backend plan.
+One policy for the complete assurance boundary of a kernel plan.
 
 The first three fields control which implementation trust levels the planner may select. The
 remaining fields control which kinds of evidence may discharge the selected capsule's shape,
@@ -291,17 +291,17 @@ inductive VJPMode where
   | backendVJP
   deriving DecidableEq, Repr
 
-/-- Backend preference requested by a runtime configuration. -/
-inductive BackendPreference where
+/-- Provider preference used when selecting an implementation for an operation. -/
+inductive ProviderPreference where
   | auto
   | prefer (provider : Provider)
   | only (provider : Provider)
   deriving DecidableEq, Repr
 
-/-- Runtime-level backend configuration. Public APIs can wrap this with friendlier defaults. -/
-structure ExecutionConfig where
+/-- Policy used to select kernel capsules for a device and assurance boundary. -/
+structure KernelPolicy where
   device : Device := .cpu
-  backend : BackendPreference := .auto
+  provider : ProviderPreference := .auto
   assurance : AssurancePolicy := .checked
   vjpMode : VJPMode := .torchLeanTape
   deriving Repr

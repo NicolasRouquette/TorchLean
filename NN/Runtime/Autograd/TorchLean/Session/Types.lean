@@ -27,20 +27,19 @@ open Tensor
 /--
 Implementation choice for a `Session`.
 
-This is an internal sum type used to dispatch each operation to either:
-- the eager tape-backed runtime (`.eager`), or
-- the proof-linked compiled runtime (`.compiled`).
+This internal sum type dispatches each operation to either the dynamic eager tape or the
+shape-indexed typed graph recorder.
 -/
 inductive SessionImpl (α : Type) where
   | eager (s : EagerSession α)
-  | compiled (s : _root_.Runtime.Autograd.Torch.Internal.SessionIR α)
+  | typedGraph (s : _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession α)
 
 /--
-Unified imperative session: choose `.eager` vs `.compiled` at construction via `opts.backend`.
+Unified session selected by `opts.execution`.
 
 This is the recommended "one interface" for:
 - training/debugging (eager),
-- verification-friendly execution (compiled/proof-linked),
+- shape-indexed typed graph recording and execution,
 without users having to learn two different Session APIs.
 -/
 structure Session (α : Type) where
@@ -54,24 +53,23 @@ namespace Session
 /--
 Create a new unified session.
 
-The backend is selected by `opts.backend`:
-- `.eager` builds a tape-backed runtime session, and
-- `.compiled` builds a proof-linked compiled session.
+The execution mode is selected by `opts.execution`: `.eager` builds a dynamic tape, while
+`.typedGraph` records a shape-indexed typed SSA graph.
 -/
 def new {α : Type} (opts : _root_.Runtime.Autograd.Torch.Options := {}) : IO (Session α) := do
-  match opts.backend with
+  match opts.execution with
   | .eager =>
       let s ← EagerSession.new (α := α) (opts := opts)
       pure { opts := opts, impl := .eager s }
-  | .compiled =>
-      let s ← _root_.Runtime.Autograd.Torch.Internal.SessionIR.new (α := α) (opts := opts)
-      pure { opts := opts, impl := .compiled s }
+  | .typedGraph =>
+      let s ← _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.new (α := α) (opts := opts)
+      pure { opts := opts, impl := .typedGraph s }
 
-/-- Reset the autograd tape / graph-building state. -/
+/-- Reset the autograd tape or begin a fresh typed-graph recording phase. -/
 def resetTape {α : Type} (s : Session α) : IO Unit := do
   match s.impl with
   | .eager sess => EagerSession.resetTape (α := α) sess
-  | .compiled sess => _root_.Runtime.Autograd.Torch.Internal.SessionIR.resetTape (α := α) sess
+  | .typedGraph sess => _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.resetTape (α := α) sess
 
 /--
 Create a learnable parameter (a leaf tensor) owned by the session.
@@ -86,14 +84,15 @@ def param {α : Type} (s : Session α) {sh : Shape}
   | .eager sess =>
       EagerSession.param (α := α) sess (sh := sh)
         init (name := name) (requiresGrad := requiresGrad)
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.param (α := α) sess (sh := sh)
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.param (α := α) sess (sh := sh)
         init (name := name) (requiresGrad := requiresGrad)
 
 /--
-Use a parameter inside the current tape/graph.
+Use a parameter in the current recording phase.
 
-This returns a `TensorRef` that can be passed to ops to build a forward graph.
+This returns a `TensorRef` that can be passed to operations. Eager execution records the operation
+on its tape; typed-graph execution records it in the current typed SSA graph.
 -/
 def use {α : Type} (s : Session α) {sh : Shape} [DecidableEq Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
@@ -101,11 +100,11 @@ def use {α : Type} (s : Session α) {sh : Shape} [DecidableEq Shape]
     := do
   match s.impl with
   | .eager sess => EagerSession.use (α := α) sess (sh := sh) p
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.use (α := α) sess (sh := sh) p
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.use (α := α) sess (sh := sh) p
 
 /--
-Add an input tensor to the current tape/graph.
+Add an input tensor to the current recording phase.
 
 Inputs are leaf tensors that may or may not require gradients (controlled by `requiresGrad`).
 -/
@@ -116,8 +115,8 @@ def input {α : Type} (s : Session α) {sh : Shape} [DecidableEq Shape]
   match s.impl with
   | .eager sess =>
       EagerSession.input (α := α) sess (sh := sh) v (name := name) (requiresGrad := requiresGrad)
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.input (α := α) sess (sh := sh)
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.input (α := α) sess (sh := sh)
         v (name := name) (requiresGrad := requiresGrad)
 
 /--
@@ -129,20 +128,20 @@ numeric embedding into `α`.
 def inputNat {α : Type} (s : Session α) (v : Nat) : IO (_root_.Runtime.Autograd.Torch.NatRef) := do
   match s.impl with
   | .eager sess => EagerSession.inputNat (α := α) sess v
-  | .compiled sess => _root_.Runtime.Autograd.Torch.Internal.SessionIR.inputNat (α := α) sess v
+  | .typedGraph sess => _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.inputNat (α := α) sess v
 
 /-- Read back a `NatRef` value. -/
 def getNat {α : Type} (s : Session α) (r : _root_.Runtime.Autograd.Torch.NatRef) : IO Nat := do
   match s.impl with
   | .eager sess => EagerSession.getNat (α := α) sess r
-  | .compiled sess => _root_.Runtime.Autograd.Torch.Internal.SessionIR.getNat (α := α) sess r
+  | .typedGraph sess => _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.getNat (α := α) sess r
 
 /-- Mutate a `NatRef` value. -/
 def setNat {α : Type} (s : Session α) (r : _root_.Runtime.Autograd.Torch.NatRef) (v : Nat) : IO Unit
   := do
   match s.impl with
   | .eager sess => EagerSession.setNat (α := α) sess r v
-  | .compiled sess => _root_.Runtime.Autograd.Torch.Internal.SessionIR.setNat (α := α) sess r v
+  | .typedGraph sess => _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.setNat (α := α) sess r v
 
 /--
 Add a non-differentiable vector-of-`Nat` input leaf.
@@ -154,24 +153,24 @@ def inputNatVec {α : Type} {k : Nat} (s : Session α) (v : Tensor Nat (.dim k .
     IO (_root_.Runtime.Autograd.Torch.NatVecRef k) := do
   match s.impl with
   | .eager sess => EagerSession.inputNatVec (α := α) (k := k) sess v
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.inputNatVec (α := α) (k := k) sess v
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.inputNatVec (α := α) (k := k) sess v
 
 /-- Read back a `NatVecRef` value. -/
 def getNatVec {α : Type} {k : Nat} (s : Session α) (r : _root_.Runtime.Autograd.Torch.NatVecRef k) :
     IO (Tensor Nat (.dim k .scalar)) := do
   match s.impl with
   | .eager sess => EagerSession.getNatVec (α := α) (k := k) sess r
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.getNatVec (α := α) (k := k) sess r
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.getNatVec (α := α) (k := k) sess r
 
 /-- Mutate a `NatVecRef` value. -/
 def setNatVec {α : Type} {k : Nat} (s : Session α) (r : _root_.Runtime.Autograd.Torch.NatVecRef k)
     (v : Tensor Nat (.dim k .scalar)) : IO Unit := do
   match s.impl with
   | .eager sess => EagerSession.setNatVec (α := α) (k := k) sess r v
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.setNatVec (α := α) (k := k) sess r v
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.setNatVec (α := α) (k := k) sess r v
 
 /-! ### Deterministic RNG state (Session-level) -/
 
@@ -217,7 +216,7 @@ def initRngFromIO {α : Type} (s : Session α) : IO RngState := do
   initRng (α := α) s (← freshSeedIO)
 
 /-!
-Practical note: in the proof-linked `.compiled` backend, the current session implementation
+Practical note: in `.typedGraph` execution, the current session implementation
 requires that all leaves (tensor inputs/parameters and `NatRef`s) are created before any op nodes.
 So for maximum portability, initialize and split RNG states *up-front* before building a graph.
 -/
@@ -248,8 +247,8 @@ def const {α : Type} (s : Session α) {sh : Shape} [Zero α] [DecidableEq Shape
     sh) := do
   match s.impl with
   | .eager sess => EagerSession.const (α := α) sess (sh := sh) v (name := name)
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.const (α := α) sess (sh := sh) v
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.const (α := α) sess (sh := sh) v
         (name := name)
 
 /-- Read the concrete value for a tensor ref (for logging/debugging). -/
@@ -258,8 +257,8 @@ def getValue {α : Type} (s : Session α) {sh : Shape} [DecidableEq Shape]
   (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) : IO (Tensor α sh) := do
   match s.impl with
   | .eager sess => EagerSession.getValue (α := α) sess (sh := sh) x
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.getValue (α := α) sess (sh := sh) x
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.getValue (α := α) sess (sh := sh) x
 
 /--
 Detach a tensor ref from the graph (stop gradient flow through it).
@@ -272,8 +271,8 @@ def detach {α : Type} (s : Session α) [Context α] {sh : Shape} [DecidableEq S
     IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.impl with
   | .eager sess => EagerSession.detach (α := α) sess (sh := sh) x
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.detach (α := α) sess (sh := sh) x
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.detach (α := α) sess (sh := sh) x
 
 
 end Session

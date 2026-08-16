@@ -11,7 +11,7 @@ public import Init.Data.List.FinRange
 public import Init.Data.List.Lemmas
 public import Init.Data.Range.Lemmas
 public import NN.Spec.Core.TensorReductionShape
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 public import NN.Verification.TorchLean.Correctness
 public import Std.Data.HashMap.Lemmas
 
@@ -115,7 +115,7 @@ A well-typed SSA node in the verified forward fragment.
 Each `Node` can only reference earlier values (via `Idx (Ctx inShape ss) _`), ensuring the DAG/SSA
 discipline by construction.
 
-The constructors match the operator subset for which this file proves compiler correctness into the
+The constructors match the operator subset for which this file proves lowering correctness into the
 verifier IR (`NN.IR.Graph`).  Adding a new operator means extending both this syntax and the
 correctness proof, which keeps the trusted fragment explicit.
 -/
@@ -182,7 +182,7 @@ inductive Node
   | mseLoss {s : Shape} (yhat target : Idx (Ctx inShape ss) s) :
       Node α paramShapes inShape ss .scalar
 
-/-! ## Programs (forward let-chains) -/
+/-! ## Forward programs (closed let-chains) -/
 
 /--
 Well-typed first-order programs, represented as a forward “let chain”.
@@ -190,18 +190,18 @@ Well-typed first-order programs, represented as a forward “let chain”.
 The type parameter `ss` tracks the list of already-produced node output shapes, so every node
 can only reference earlier values (including the distinguished input at index `0`).
 -/
-inductive FGraph (α : Type) (paramShapes : List Shape) (inShape : Shape) :
+inductive ForwardLetChain (α : Type) (paramShapes : List Shape) (inShape : Shape) :
     List Shape → Shape → Type where
   | ret {ss : List Shape} {out : Shape} (y : Idx (Ctx inShape ss) out) :
-      FGraph α paramShapes inShape ss out
+      ForwardLetChain α paramShapes inShape ss out
   | let1 {ss : List Shape} {mid out : Shape} :
       Node α paramShapes inShape ss mid →
-      FGraph α paramShapes inShape (ss ++ [mid]) out →
-      FGraph α paramShapes inShape ss out
+      ForwardLetChain α paramShapes inShape (ss ++ [mid]) out →
+      ForwardLetChain α paramShapes inShape ss out
 
-/-- A closed forward program from input `inShape` to output `outShape`. -/
-abbrev Program (α : Type) (paramShapes : List Shape) (inShape outShape : Shape) : Type :=
-  FGraph α paramShapes inShape [] outShape
+/-- A closed program in the proved forward fragment, from `inShape` to `outShape`. -/
+abbrev ForwardProgram (α : Type) (paramShapes : List Shape) (inShape outShape : Shape) : Type :=
+  ForwardLetChain α paramShapes inShape [] outShape
 
 /-! ## Evaluation -/
 
@@ -359,10 +359,10 @@ Evaluate a forward let-chain program, threading an array of dynamic values.
 The `vals` array stores the input and all previously-computed node outputs, so that node evaluation
 can do simple array lookups by `Idx.id`.
 -/
-def evalFGraph
+def evalForwardLetChain
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
-    (g : FGraph α paramShapes inShape ss out)
+    (g : ForwardLetChain α paramShapes inShape ss out)
     (params : Runtime.Autograd.Torch.TList α paramShapes)
     (vals : Array (DVal α)) : Except String (Tensor α out) :=
   match g with
@@ -376,24 +376,24 @@ def evalFGraph
       let vOut ←
         evalNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out := mid)
           node params vals
-      evalFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss ++ [mid]) (out
+      evalForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss ++ [mid]) (out
         := out)
         gNext params (vals.push vOut)
 
 /--
 Evaluate a verified forward fragment program.
 
-This is the top-level evaluator for `Program`: it initializes the context with the input value and
-then interprets the SSA let-chain.
+This is the top-level evaluator for `ForwardProgram`: it initializes the context with the input
+value and then interprets the SSA let-chain.
 -/
 def evalForward
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape outShape : Shape}
-    (p : Program α paramShapes inShape outShape)
+    (p : ForwardProgram α paramShapes inShape outShape)
     (params : Runtime.Autograd.Torch.TList α paramShapes)
     (x : Tensor α inShape) : Except String (Tensor α outShape) := do
   let vals0 : Array (DVal α) := #[DVal.mk (α := α) inShape x]
-  evalFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out := outShape)
+  evalForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out := outShape)
     p params vals0
 
 end NN.Verification.TorchLean.Proved

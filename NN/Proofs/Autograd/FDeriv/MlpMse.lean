@@ -30,8 +30,8 @@ Notes:
   obtained by choosing `δ = 1` (equivalently `VJP[loss, y] 1 = ∇ loss y`).
 
 ## PyTorch correspondence / citations
-- MLP building blocks: `torch.nn.linear`, `torch.nn.functional.relu`.
-  https://pytorch.org/docs/stable/generated/torch.nn.linear.html
+- MLP building blocks: `torch.nn.Linear`, `torch.nn.functional.relu`.
+  https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
   https://pytorch.org/docs/stable/generated/torch.nn.functional.relu.html
 - MSE loss reference behavior:
   https://pytorch.org/docs/stable/generated/torch.nn.MSELoss.html

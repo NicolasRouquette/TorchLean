@@ -10,7 +10,7 @@ public import NN.Backend.Registry
 public import NN.IR.Graph
 
 /-!
-# Backend Planning for IR Graphs
+# Kernel Selection for IR Graphs
 
 Adapter from TorchLean's op-tagged IR to backend capsules.
 
@@ -87,31 +87,31 @@ structure PlannedNodeKernel where
   capsule : KernelCapsule
   deriving Repr
 
-/-- Graph-aware execution plan that preserves the IR node identity for every backend choice. -/
-structure GraphExecutionPlan where
+/-- Selected kernel capsules with the source IR node identity preserved. -/
+structure GraphKernelPlan where
   kernels : List PlannedNodeKernel
   deriving Repr
 
-namespace GraphExecutionPlan
+namespace GraphKernelPlan
 
 /-- Node ids covered by backend kernels, in graph order. -/
-def nodeIds (p : GraphExecutionPlan) : List Nat :=
+def nodeIds (p : GraphKernelPlan) : List Nat :=
   p.kernels.map (·.nodeId)
 
 /-- Selected capsule names, in graph order. -/
-def capsuleNames (p : GraphExecutionPlan) : List String :=
+def capsuleNames (p : GraphKernelPlan) : List String :=
   p.kernels.map fun k => k.capsule.name
 
-end GraphExecutionPlan
+end GraphKernelPlan
 
 /-- Plan a single IR node when it corresponds to runtime work. -/
-def planNode? (cfg : ExecutionConfig) (availability : Availability)
+def planNode? (policy : KernelPolicy) (availability : Availability)
     (registry : List KernelCapsule) (n : NN.IR.Node) :
     Except String (Option PlannedNodeKernel) := do
   match nodeOp? n with
   | none => pure none
   | some op =>
-      let k ← planOp cfg (availability.filterCapsules registry) op
+      let k ← planOp policy (availability.filterCapsules registry) op
       pure <| some
         { nodeId := n.id
           kind := n.kind
@@ -119,20 +119,20 @@ def planNode? (cfg : ExecutionConfig) (availability : Availability)
           capsule := k.capsule }
 
 /-- Plan every runtime-relevant node in graph order. -/
-def planGraphNodesWithRegistry (cfg : ExecutionConfig) (availability : Availability)
-    (registry : List KernelCapsule) (g : NN.IR.Graph) : Except String GraphExecutionPlan := do
+def planGraph (policy : KernelPolicy) (availability : Availability)
+    (registry : List KernelCapsule) (g : NN.IR.Graph) : Except String GraphKernelPlan := do
   let mut kernels : List PlannedNodeKernel := []
   for n in g.nodes do
-    match (← planNode? cfg availability registry n) with
+    match (← planNode? policy availability registry n) with
     | none => pure ()
     | some k => kernels := k :: kernels
   pure { kernels := kernels.reverse }
 
 /-- Check graph well-formedness, then plan every runtime-relevant node. -/
-def checkedPlanGraphNodesWithRegistry (cfg : ExecutionConfig) (availability : Availability)
-    (registry : List KernelCapsule) (g : NN.IR.Graph) : Except String GraphExecutionPlan := do
+def checkedPlanGraph (policy : KernelPolicy) (availability : Availability)
+    (registry : List KernelCapsule) (g : NN.IR.Graph) : Except String GraphKernelPlan := do
   g.checkWellFormed
-  planGraphNodesWithRegistry cfg availability registry g
+  planGraph policy availability registry g
 
 end IR
 end Backend

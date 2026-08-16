@@ -35,8 +35,8 @@ def Seq2SeqModuleSpec {srcVocabSize tgtVocabSize embedDim hiddenDim srcSeqLen tg
   NNModuleSpec α (.dim srcSeqLen (.dim srcVocabSize .scalar)) (.dim tgtSeqLen (.dim tgtVocabSize
     .scalar)) :=
 {
-  forward := fun src_onehot =>
-    let src_embeds := Seq2SeqEmbeddingSpec.forwardOnehot m.src_embedding src_onehot
+  forward := fun srcOneHot =>
+    let src_embeds := Seq2SeqEmbeddingSpec.forwardOneHot m.src_embedding srcOneHot
     let (_encoder_outputs, encoder_hidden) := Seq2SeqRNNEncoderSpec.forward m.encoder src_embeds
       none
 

@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.TorchLean.Backend
+public import NN.Runtime.Autograd.TorchLean.Program
 public import NN.Spec.Core.TensorReductionShape
 public import NN.Spec.Layers.Activation
 public import NN.Spec.Layers.Attention
@@ -27,8 +27,8 @@ This file gives the TorchLean `Program` interface a pure *spec semantics* backen
 - the monad is `Except String`, so unsupported verifier-fragment cases report explicit errors
   instead of silently choosing a meaningless semantics.
 
-This backend is meant as the “reference” semantics when stating compiler-correctness theorems
-for `NN.Verification.TorchLean.compileForward`.
+This interpretation supplies the reference semantics for lowering-correctness theorems
+for `NN.Verification.TorchLean.lowerForwardToIR`.
 -/
 
 @[expose] public section
@@ -194,7 +194,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
     pure (Spec.layerNorm (α := α) (seqLen := seqLen) (embedDim := embedDim)
       (x := x) (gamma := gamma) (beta := beta) (h_seq_pos := hSeq) (h_embed_pos := hEmb))
 
-  batchnormChannelFirst := fun {channels height width} hC hH hW x gamma beta =>
+  batchNormChannelFirst := fun {channels height width} hC hH hW x gamma beta =>
     pure (Spec.batchNorm2d (α := α)
       (channels := channels) (height := height) (width := width)
       (x := x) (gamma := gamma) (beta := beta) (h_c := hC) (h_h := hH) (h_w := hW))
@@ -259,7 +259,7 @@ def refListOfTList {α : Type} [Context α] :
   | [], .nil => .nil
   | _s :: ss, .cons t ts => .cons t (refListOfTList (ss := ss) ts)
 
-/-- Spec semantics for `compileForward`-style models (one distinguished input, last argument). -/
+/-- Spec semantics for forward models with one distinguished input in the last argument. -/
 def evalForwardSpec
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape outShape : Shape}

@@ -20,7 +20,7 @@ Pointwise analytic correctness for a **LayerNorm** graph.
 This is spec-level over `ℝ`. It is the proof-tape counterpart of the runtime/spec LayerNorm in
 `Spec.layerNorm`: a `seqLen × embedDim` tensor is normalized across the last axis, the row-wise
 normalizer is broadcast back over each token, and affine parameters `gamma`/`beta` are broadcast
-over the sequence dimension. The runtime API and compiled IR path both route through that spec
+over the sequence dimension. The runtime API and typed graph path both route through that spec
 definition; this file proves the corresponding reverse-mode graph rule.
 
 Because the proof graph uses the differentiable scalar nodes `sqrt (max x 0)` and `inv`, the main

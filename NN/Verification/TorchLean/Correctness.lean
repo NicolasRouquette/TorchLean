@@ -7,19 +7,19 @@ Authors: TorchLean Team
 module
 
 public import NN.IR.Semantics
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 
 /-!
 # Correctness
 
 TorchLean→IR correctness helpers.
 
-This file does **not** (yet) contain a full compiler-correctness theorem for arbitrary
+This file does **not** (yet) contain a full lowering-correctness theorem for arbitrary
 `TorchLean.Program`s (the current embedding is higher-order). It provides the small, reusable
 bridges needed by concrete model-correctness theorems:
 
 - convert a verifier `ParamStore` into an IR `Payload` for `NN.IR.Graph.denote`;
-- evaluate a `CompiledIR` graph on a concrete input.
+- evaluate a `LoweredIR` graph on a concrete input.
 -/
 
 @[expose] public section
@@ -58,11 +58,11 @@ def castTensor {α : Type} [Context α] {s s' : Spec.Shape} (h : s = s')
     (t : Spec.Tensor α s) : Spec.Tensor α s' :=
   cast (congrArg (fun s : Spec.Shape => Spec.Tensor α s) h) t
 
-/-- Evaluate a `CompiledIR` forward graph on an input tensor, returning a shape-checked tensor. -/
+/-- Evaluate a `LoweredIR` forward graph on an input tensor, returning a shape-checked tensor. -/
 def runForwardIR
     {α : Type} [Context α] [DecidableEq Spec.Shape]
     {inShape outShape : Spec.Shape}
-    (c : CompiledIR α) (x : Spec.Tensor α inShape) : Except String (Spec.Tensor α outShape) := do
+    (c : LoweredIR α) (x : Spec.Tensor α inShape) : Except String (Spec.Tensor α outShape) := do
   let input : DVal α := DVal.mk (α := α) inShape x
   let out ←
     Graph.denote (α := α) (g := c.graph) (payload := payloadOfParamStore (α := α) c.ps)

@@ -36,14 +36,14 @@ open TorchLean
 `import NN.API` loads the focused application interface: tensors, model builders, datasets,
 optimizers, and the high-level trainer. It does not import every proof or backend-internal module.
 
-Most application-facing names live in the `TorchLean` namespace. `open TorchLean` lets us write `Tensor.T`,
+Most application-facing names live in the `TorchLean` namespace. `open TorchLean` lets us write `Tensor`,
 `nn.linear`, and `Trainer.new` instead of prefixing each name with `TorchLean.`. Lower-case `nn` and
 `optim` are namespaces, not Python objects.
 
 Lean's editor can show the type of any known name. Add:
 
 ```
-#check Tensor.T
+#check Tensor
 #check nn.linear 2 4
 #check Trainer.new
 ```
@@ -51,9 +51,9 @@ Lean's editor can show the type of any known name. Add:
 The relevant parts of the output are:
 
 ```
-TorchLean.Tensor.T (α : Type) : Spec.Shape → Type
-nn.linear 2 4 : nn.M (nn.Sequential ...2... ...4...)
-Trainer.new ... : Trainer.Handle σ τ
+TorchLean.Tensor (α : Type) : Spec.Shape → Type
+nn.linear 2 4 : nn.Builder (nn.Sequential ...2... ...4...)
+Trainer.new ... : TorchLean.Trainer σ τ
 ```
 
 The full output contains qualified internal names and implicit arguments. That detail is useful when
@@ -154,7 +154,7 @@ codebase keeps option sets synchronized.
 The type of a TorchLean tensor has two arguments:
 
 ```
-Tensor.T α s
+Tensor α s
 ```
 
 `α` is the scalar type and `s` is the shape. Because the result type depends on the *value* `s`,
@@ -163,7 +163,7 @@ this is a dependent type.
 Add a vector to `Primer.lean`:
 
 ```
-def point : Tensor.T Float (shape![2]) :=
+def point : Tensor Float (shape![2]) :=
   tensorOfList! [2] [0.25, -0.75]
 
 #check point
@@ -173,7 +173,7 @@ def point : Tensor.T Float (shape![2]) :=
 The output is:
 
 ```
-point : Tensor.T Float (NN.Tensor.shapeOfDims [2])
+point : Tensor Float (NN.Tensor.shapeOfDims [2])
 "[0.250000, -0.750000]"
 ```
 
@@ -203,7 +203,7 @@ tensors share exactly the same shape.
 Add a valid model:
 
 ```
-def model : nn.M (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+def model : nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -211,7 +211,7 @@ def model : nn.M (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
   ]
 
 #check model
-#check nn.run 2026 model
+#check nn.build 2026 model
 ```
 
 The first linear layer maps a length-two vector to length eight. ReLU preserves that shape. The
@@ -237,7 +237,7 @@ Curly braces mark an implicit argument:
 
 ```
 def requireSameShape {s : Shape}
-    (_left _right : Tensor.T Float s) : Unit :=
+    (_left _right : Tensor Float s) : Unit :=
   ()
 ```
 
@@ -263,13 +263,12 @@ printing behavior without fixing every program to one scalar type.
 A declaration such as
 
 ```
-def preserveShape {α : Type} (x : Tensor.T α (shape![2])) := x
+def preserveShape {α : Type} (x : Tensor α (shape![2])) := x
 ```
 
 can be instantiated once with `Float`, once with `Rat`, and once with
 `TorchLean.Floats.IEEE32Exec`. Within any one instantiation, both the input and output use the same
-`α`. *Tensors And Shapes* develops the consequence for a whole run, while *TorchLean And PyTorch*
-discusses mixed precision directly.
+`α`. *Tensors And Shapes* develops the consequence for a whole run.
 
 # Programs And Propositions Are Different Values
 
@@ -343,19 +342,19 @@ Long TorchLean types become easier when read from the result backward. For examp
 
 ```
 nn.linear 2 4 :
-  nn.M (nn.Sequential (.dim 2 .scalar) (.dim 4 .scalar))
+  nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 4 .scalar))
 ```
 
 Read it as:
 
 1. after initialization, the result is an `nn.Sequential`;
 2. that sequence maps a length-two vector to a length-four vector;
-3. constructing it lives in `nn.M` because initialization consumes deterministic seeds.
+3. constructing it lives in `nn.Builder` because initialization consumes deterministic seeds.
 
 Similarly:
 
 ```
-Trainer.new model ... : Trainer.Handle σ τ
+Trainer.new model ... : TorchLean.Trainer σ τ
 ```
 
 says that construction returns a trainer whose model input is `σ` and output is `τ`. Later method

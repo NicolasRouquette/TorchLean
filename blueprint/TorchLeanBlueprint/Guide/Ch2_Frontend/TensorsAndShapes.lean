@@ -30,18 +30,20 @@ The output is:
 [Float] [0.100000, 0.200000, 0.300000, 0.400000]
 [ℚ] [1/10, 1/5, 3/10, 2/5]
 [Int] [1, 2, 3, 4]
+[Float32] [0.100000, 0.200000, 0.300000, 0.400000]
 [IEEE32Exec] [0.100000, 0.200000, 0.300000, 0.400000]
 [Float] [[[1.000000, 2.000000], [3.000000, 4.000000]],
          [[5.000000, 6.000000], [7.000000, 8.000000]]]
 Expected failure printing Tensor ℝ:
   Refusing to print `Tensor ℝ` (proof-level);
-  cast to `Float`/`IEEE32Exec`/`ℚ` to display.
+  cast to `Float`/`Float32`/`IEEE32Exec`/`ℚ` to display.
 ```
 
-The first four lines have the same shape but different scalar meanings. `ℚ` displays exact
-fractions. `IEEE32Exec` stores and executes explicit binary32 bit patterns. `Float` uses Lean's host
-runtime. The final attempted tensor over `ℝ` is a mathematical object; arbitrary real numbers are
-not executable data, so printing it is rejected rather than pretending to approximate it.
+The first five vectors have the same shape but different scalar meanings. `ℚ` displays exact
+fractions. `Float32` uses Lean's native binary32 operations, while `IEEE32Exec` stores and executes
+explicit binary32 bit patterns. `Float` is Lean's host binary64 type. The final attempted tensor
+over `ℝ` is a mathematical object; arbitrary real numbers are not executable data, so printing it
+is rejected rather than pretending to approximate it.
 
 The complete program is in
 [`TensorBasics.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Quickstart/TensorBasics.lean),
@@ -53,7 +55,7 @@ The canonical specification type is:
 
 $$`\operatorname{Spec.Tensor}\;\alpha\;s`.
 
-The application-facing spelling is `Tensor.T α s`. The first parameter is the scalar type and the second is the
+The application-facing spelling is `Tensor α s`. The first parameter is the scalar type and the second is the
 shape. A shape is recursively built from:
 
 ```
@@ -123,13 +125,13 @@ every rank.
 The `tensor!` macro reads a rectangular nested literal and infers its shape:
 
 ```
-def x : Tensor.T Float (shape![2, 2]) :=
+def x : Tensor Float (shape![2, 2]) :=
   tensor! [[1.0, 2.0], [3.0, 4.0]]
 
-def y : Tensor.T Float (shape![2, 2]) :=
+def y : Tensor Float (shape![2, 2]) :=
   tensor! [[0.2, -0.1], [0.0, 0.3]]
 
-def z : Tensor.T Float (shape![2, 2]) :=
+def z : Tensor Float (shape![2, 2]) :=
   x + y
 ```
 
@@ -142,7 +144,7 @@ Try either of these deliberate mistakes in a scratch Lean file:
 def ragged :=
   tensor! [[1.0, 2.0], [3.0]]
 
-def wrongAnnotation : Tensor.T Float (shape![4]) :=
+def wrongAnnotation : Tensor Float (shape![4]) :=
   tensor! [[1.0, 2.0], [3.0, 4.0]]
 ```
 
@@ -153,14 +155,14 @@ shape.
 When the scalar type is ambiguous, make it explicit:
 
 ```
-def q : Tensor.T Rat (shape![2, 2]) :=
+def q : Tensor Rat (shape![2, 2]) :=
   tensor! (ty := Rat) [[1, 2], [3, 4]]
 ```
 
 For a flat literal, `tensorOfList!` proves the length obligation:
 
 ```
-def v : Tensor.T Float (shape![4]) :=
+def v : Tensor Float (shape![4]) :=
   tensorOfList! [4] [0.0, 1.0, 2.0, 3.0]
 ```
 
@@ -184,7 +186,7 @@ false proof.
 For the matrix above, the first row can be written:
 
 ```
-def firstRow : Tensor.T Float (shape![2]) :=
+def firstRow : Tensor Float (shape![2]) :=
   match x with
   | .dim rows => rows ⟨0, by decide⟩
 ```
@@ -203,7 +205,7 @@ before reading it. The correct boundary is therefore a checked constructor:
 
 ```
 def loadVector4 (xs : List Float) :
-    Except String (Tensor.T Float (shape![4])) :=
+    Except String (Tensor Float (shape![4])) :=
   Tensor.ofList [4] xs
 ```
 
@@ -234,7 +236,7 @@ untyped external payload
 The check proves something about the accepted payload. It does not prove that every future file is
 valid, and it does not certify the code that produced the file.
 
-# Scalar Type Is More Than A DType Label
+# Scalar Types Carry Semantics
 
 These tensors have the same shape and different semantics:
 
@@ -252,41 +254,37 @@ These tensors have the same shape and different semantics:
   * `Real` or `ℝ`
   * proof-level exact reals
 *
-  * `TorchLean.Floats.F32 .ieee754Exec`
+  * `TorchLean.Floats.IEEE32Exec`
   * executable bit-level binary32
 *
-  * `TorchLean.Floats.F32 .fp32`
+  * `TorchLean.Floats.FP32`
   * rounded-real binary32-precision proof model; no upper exponent bound or IEEE special values
 *
-  * `TorchLean.Complex (TorchLean.Floats.F32 .ieee754Exec)`
+  * `TorchLean.Complex TorchLean.Floats.IEEE32Exec`
   * executable complex scalar with binary32 real and imaginary components
 :::
 
-The trainer has a `dtype` option, but it is selecting a scalar interpretation, not adding a
-decorative field to an untyped buffer. Executable trainer paths reject `.real` and the
-noncomputable `.fp32` proof mode; the high-level trainer also currently rejects complex execution
-because prediction has no host-`Float` readback path. The executable binary32 constructor is:
+The trainer's `scalar` field selects executable arithmetic for the run. Proofs instantiate tensors
+over `ℝ` or `.fp32` directly; those noncomputable types do not appear as command-line runtime
+choices. The high-level trainer currently rejects complex prediction because it has no public
+host-`Float` readback path. The executable binary32 constructor is:
 
 ```
 def x32 :
-    Tensor.T (TorchLean.Floats.F32 .ieee754Exec) (shape![3]) :=
+    Tensor TorchLean.Floats.IEEE32Exec (shape![3]) :=
   tensor32! [0.1, 0.2, 0.3]
 ```
 
 The decimal source literal `0.1` is converted to a binary32 bit pattern. The floating-point chapter
 explains why the printed decimal and the stored mathematical value are not identical.
 
-# One Scalar Type Per Tensor And Run
+# Scalar Types
 
-`Tensor.T α s` is homogeneous: it cannot place an `Int`, FP16 value, and FP32 value in different
+`Tensor α s` is homogeneous: it cannot place an `Int`, FP16 value, and FP32 value in different
 entries. Current model programs and `NN.IR.Semantics` likewise select one numeric `α` for learned
-parameters, activations, and outputs. Scalar polymorphism means the same definition can be run
-again at another `α`; it does not provide per-node promotion or autocast.
-
-The executable complex choice is also one scalar type, not a mixed pair of tensor dtypes. Integer
-indices and boolean masks have dedicated operation interfaces, but a PyTorch-style graph mixing
-FP8/BF16/FP16/FP32 numeric tensors will need an explicitly dtype-indexed graph and cast rules that
-the current API does not yet claim to implement.
+parameters, activations, and outputs. Scalar polymorphism means the same definition can be
+interpreted again at another `α`. Integer indices and boolean masks use dedicated operation
+interfaces so they are not silently treated as differentiable numeric tensors.
 
 # Linear Layers Preserve Prefix Dimensions
 
@@ -476,7 +474,7 @@ because the editor evaluates them for display. Ordinary model code continues to 
 
 # What Shape Safety Proves
 
-If a model accepts `Tensor.T α inputShape`, Lean checks that every statically represented layer
+If a model accepts `Tensor α inputShape`, Lean checks that every statically represented layer
 composes and that the final result has the declared output shape. It can also check that a parsed
 runtime payload has the length promised by its dimensions.
 

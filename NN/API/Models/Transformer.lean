@@ -43,7 +43,7 @@ abbrev transformerEncoderShape (cfg : TransformerEncoderConfig) : Spec.Shape :=
 def transformerEncoder (cfg : TransformerEncoderConfig)
     (h_seqLen : cfg.seqLen ≠ 0 := by decide)
     (h_dModel : cfg.dModel ≠ 0 := by decide) :
-    nn.M (nn.Sequential (transformerEncoderShape cfg) (transformerEncoderShape cfg)) :=
+    nn.Builder (nn.Sequential (transformerEncoderShape cfg) (transformerEncoderShape cfg)) :=
   letI : NeZero cfg.seqLen := ⟨h_seqLen⟩
   letI : NeZero cfg.dModel := ⟨h_dModel⟩
   nn.transformerEncoderBlock

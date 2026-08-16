@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.TorchLean.Backend
+public import NN.Runtime.Autograd.TorchLean.Program
 import Mathlib.Algebra.Order.Algebra
 
 /-!
@@ -14,7 +14,7 @@ import Mathlib.Algebra.Order.Algebra
 
 This file defines the canonical general GraphSpec representation: typed SSA/DAG terms.
 
-`NN.GraphSpec.Core` gives a *sequential* authoring language (`Graph` with `>>>`) for chain-like
+`NN.GraphSpec.Core` gives a sequential authoring language (`Chain` with `>>>`) for chain-like
 architectures. That syntax lowers into this DAG language. Many modern architectures are not purely
 sequential:
 
@@ -51,7 +51,7 @@ For a fixed scalar type `α` with `[Context α]`, we interpret an environment as
 tensors `TList α Γ`. Then:
 
 - `Term.eval : TList α Γ → Term Γ τ → Spec.Tensor α τ` is the *pure* reference semantics.
-- `Term.compile` produces a backend-generic TorchLean program that computes the same graph, but in
+- `Term.lower` produces an execution-polymorphic TorchLean program that computes the same graph, but in
   the executable (monadic, reference-based) runtime world.
 
 ## Small example (residual add)
@@ -111,7 +111,7 @@ structure PrimOp (ins : List Shape) (τ : Shape) where
   /-- Pure reference semantics (`ins` arguments packed as a typed list). -/
   specFwd : ∀ {α : Type 0}, [Context α] → Runtime.Autograd.Torch.TList α ins → Spec.Tensor α τ
   /-- Executable TorchLean program with arguments of shapes `ins`. -/
-  torchProgram :
+  program :
     ∀ {α : Type 0}, [Context α] → [DecidableEq Shape] →
       Runtime.Autograd.TorchLean.Program α ins τ
 
@@ -537,7 +537,7 @@ def tget {α : Type} : {Γ : List Shape} → {s : Shape} → TList α Γ → Var
 /--
 Typed environment lookup for backend references.
 
-This is the underlying “variable semantics” for `Term.compile`.
+This is the underlying “variable semantics” for `Term.lower`.
  -/
 def rget {Ref : Shape → Type} : {Γ : List Shape} → {s : Shape} →
     Runtime.Autograd.Torch.RefList Ref Γ → Var Γ s → Ref s
@@ -1026,10 +1026,10 @@ decreasing_by simp [argsComplexity]
           simp only [Args.vars, evalArgs, eval, Env.tget, evalArgs_weakenLeft]
           rw [ih rest]
 
-/-! ### TorchLean compiler -/
+/-! ### Lowering to TorchLean programs -/
 
 /--
-`RefT` is the backend’s reference type for tensors of a given shape.
+`RefT` is the runtime's reference type for tensors of a given shape.
 
 In the executable runtime, primitives operate on *references* (allocated tensors) inside a monad.
 This matches how typical deep-learning runtimes model device placement, mutation, and autograd.
@@ -1039,8 +1039,8 @@ abbrev RefT (m : Type → Type) (α : Type 0) [Context α] [DecidableEq Shape]
   Runtime.Autograd.Torch.Ops.Ref (m := m) (α := α) s
 
 mutual
-  /-- Compile a typed argument list by compiling each component term under the same environment. -/
-  def compileArgs
+  /-- Lower a typed argument list by lowering each component term under the same environment. -/
+  def lowerArgs
       {Γ ins : List Shape}
       {α : Type 0} [Context α] [DecidableEq Shape]
       {m : Type → Type} [Monad m] [Runtime.Autograd.Torch.Ops (m := m) (α := α)]
@@ -1048,18 +1048,18 @@ mutual
       Args Γ ins → m (Runtime.Autograd.Torch.RefList (RefT (m := m) (α := α)) ins)
     | .nil => pure .nil
     | .cons t ts => do
-        let r ← compile (Γ := Γ) (α := α) (m := m) env t
-        let rs ← compileArgs (Γ := Γ) (ins := _) (α := α) (m := m) env ts
+        let r ← lower (Γ := Γ) (α := α) (m := m) env t
+        let rs ← lowerArgs (Γ := Γ) (ins := _) (α := α) (m := m) env ts
         pure (.cons r rs)
 
   /--
-  Compile a typed `Term Γ τ` into the backend monad `m`, producing a reference to a tensor of shape
+  Lower a typed `Term Γ τ` into the execution monad `m`, producing a reference to a tensor of shape
     `τ`.
 
   This is the "executable" counterpart of `Term.eval`: instead of returning a pure `Spec.Tensor`, we
-  emit backend ops (`Runtime.Autograd.Torch.Ops`) that allocate tensors and apply primitives.
+  emit runtime operations (`Runtime.Autograd.Torch.Ops`) that allocate tensors and apply primitives.
   -/
-  def compile
+  def lower
       {Γ : List Shape} {τ : Shape}
       {α : Type 0} [Context α] [DecidableEq Shape]
       {m : Type → Type} [Monad m] [Runtime.Autograd.Torch.Ops (m := m) (α := α)]
@@ -1068,23 +1068,23 @@ mutual
     | .var i => pure (Env.rget (Ref := RefT (m := m) (α := α)) env i)
     | .cast t h =>
         match h with
-        | rfl => compile (Γ := Γ) (α := α) (m := m) env t
+        | rfl => lower (Γ := Γ) (α := α) (m := m) env t
     | .castEnv t h =>
         -- Same structure as `eval`: rewrite the term to the current environment.
         match h.symm with
-        | rfl => compile (Γ := Γ) (α := α) (m := m) env t
+        | rfl => lower (Γ := Γ) (α := α) (m := m) env t
     | .op (ins := ins) p args => do
-        let rs ← compileArgs (Γ := Γ) (ins := ins) (α := α) (m := m) env args
+        let rs ← lowerArgs (Γ := Γ) (ins := ins) (α := α) (m := m) env args
         Runtime.Autograd.Torch.CurriedRef.uncurry (ss := ins)
           (Ref := RefT (m := m) (α := α))
-          (p.torchProgram (α := α)) rs
+          (p.program (α := α)) rs
     | .let1 (σ := σ) t body => do
-        let v ← compile (Γ := Γ) (α := α) (m := m) env t
+        let v ← lower (Γ := Γ) (α := α) (m := m) env t
         let env' :=
           Runtime.Autograd.Torch.RefList.append
             (Ref := RefT (m := m) (α := α))
             (ss₁ := Γ) (ss₂ := [σ]) env (.cons v .nil)
-        compile (Γ := Γ ++ [σ]) (α := α) (m := m) env' body
+        lower (Γ := Γ ++ [σ]) (α := α) (m := m) env' body
 end
 
 end Term
@@ -1178,18 +1178,18 @@ theorem eval_andThen {Γ middle outputs : List Shape} {α : Type 0} [Context α]
   intro shape v
   rfl
 
-/-- Compile a multi-output block for an arbitrary TorchLean backend. -/
-def compile {Γ outs : List Shape} {α : Type 0} [Context α] [DecidableEq Shape]
+/-- Lower a multi-output block for an arbitrary TorchLean execution target. -/
+def lower {Γ outs : List Shape} {α : Type 0} [Context α] [DecidableEq Shape]
     {μ : Type → Type} [Monad μ] [Runtime.Autograd.Torch.Ops (m := μ) (α := α)]
     (env : RefList (Term.RefT (m := μ) (α := α)) Γ) :
     Block Γ outs → μ (RefList (Term.RefT (m := μ) (α := α)) outs)
-  | .ret results => Term.compileArgs (Γ := Γ) (α := α) (m := μ) env results
+  | .ret results => Term.lowerArgs (Γ := Γ) (α := α) (m := μ) env results
   | .let1 (σ := σ) value body => do
-      let result ← Term.compile (Γ := Γ) (α := α) (m := μ) env value
+      let result ← Term.lower (Γ := Γ) (α := α) (m := μ) env value
       let env' := RefList.append
         (Ref := Term.RefT (m := μ) (α := α))
         (ss₁ := Γ) (ss₂ := [σ]) env (.cons result .nil)
-      compile (Γ := Γ ++ [σ]) (α := α) (μ := μ) env' body
+      lower (Γ := Γ ++ [σ]) (α := α) (μ := μ) env' body
 
 end Block
 
@@ -1198,7 +1198,7 @@ end Block
 /--
 A small “model” wrapper around DAG terms.
 
-This mirrors the sequential `Graph` surface:
+This mirrors the sequential `Chain` surface:
 
 - `ps` are parameter tensor shapes (tracked at the type level),
 - `ins` are the shapes of *non-parameter inputs* (e.g. data tensors),
@@ -1220,7 +1220,7 @@ open Runtime.Autograd.Torch
 /-- Inline a model body into a larger graph using explicit parameter and input terms.
 
 The result is still an ordinary DAG term: no primitive boundary is introduced, and subsequent
-compilation, differentiation, or numerical analysis can inspect every operation of the model.
+lowering, differentiation, or numerical analysis can inspect every operation of the model.
 -/
 def inline {Γ ps ins : List Shape} {τ : Shape} (model : Model ps ins τ)
     (params : Args Γ ps) (inputs : Args Γ ins) : Term Γ τ :=
@@ -1248,12 +1248,12 @@ theorem eval_inline {Γ ps ins : List Shape} {τ : Shape}
   rfl
 
 /--
-Compile a DAG model to a backend-generic TorchLean program.
+Lower a DAG model to an execution-polymorphic TorchLean program.
 
 The resulting program expects arguments in the order `ps ++ ins` (parameters first, then inputs),
 matching the environment discipline used by `specFwd`.
  -/
-def torchProgram {ps ins : List Shape} {τ : Shape} (m : Model ps ins τ)
+def toProgram {ps ins : List Shape} {τ : Shape} (m : Model ps ins τ)
     {α : Type 0} [Context α] [DecidableEq Shape] :
     Runtime.Autograd.TorchLean.Program α (ps ++ ins) τ :=
   fun {μ} _ _ =>
@@ -1261,7 +1261,7 @@ def torchProgram {ps ins : List Shape} {τ : Shape} (m : Model ps ins τ)
       (Ref := Term.RefT (m := μ) (α := α))
       (ss := ps ++ ins)
       (β := μ (Term.RefT (m := μ) (α := α) τ))
-      (fun args => Term.compile (Γ := ps ++ ins) (α := α) (m := μ) args m.body)
+      (fun args => Term.lower (Γ := ps ++ ins) (α := α) (m := μ) args m.body)
 
 end Model
 
@@ -1310,22 +1310,22 @@ theorem eval_inline {Γ ps ins outs : List Shape} (model : MultiModel ps ins out
   rw [inline, Block.eval_instantiate, Term.evalArgs_append]
   rfl
 
-/-- A backend-polymorphic program returning a typed list of tensor references. -/
-abbrev Program (α : Type 0) [Context α] [DecidableEq Shape]
+/-- An execution-polymorphic program returning several shape-indexed tensor references. -/
+abbrev MultiOutputProgram (α : Type 0) [Context α] [DecidableEq Shape]
     (ins outs : List Shape) : Type 1 :=
   ∀ {μ : Type → Type}, [Monad μ] → [Runtime.Autograd.Torch.Ops (m := μ) (α := α)] →
     CurriedRef (fun s => Term.RefT (m := μ) (α := α) s) ins
       (μ (RefList (Term.RefT (m := μ) (α := α)) outs))
 
-/-- Compile every result of a multi-output model for the selected TorchLean backend. -/
-def torchProgram {ps ins outs : List Shape} (m : MultiModel ps ins outs)
-    {α : Type 0} [Context α] [DecidableEq Shape] : Program α (ps ++ ins) outs :=
+/-- Lower every result of a multi-output model for the selected TorchLean execution target. -/
+def toProgram {ps ins outs : List Shape} (m : MultiModel ps ins outs)
+    {α : Type 0} [Context α] [DecidableEq Shape] : MultiOutputProgram α (ps ++ ins) outs :=
   fun {μ} _ _ =>
     CurriedRef.curry
       (Ref := Term.RefT (m := μ) (α := α))
       (ss := ps ++ ins)
       (β := μ (RefList (Term.RefT (m := μ) (α := α)) outs))
-      (fun args => Block.compile (Γ := ps ++ ins) (α := α) (μ := μ) args m.body)
+      (fun args => Block.lower (Γ := ps ++ ins) (α := α) (μ := μ) args m.body)
 
 end MultiModel
 

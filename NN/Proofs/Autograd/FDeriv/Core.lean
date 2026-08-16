@@ -42,7 +42,7 @@ Notes:
 - Reverse-mode VJPs and Jacobian-transpose products are exactly what PyTorch’s backward computes.
   https://pytorch.org/docs/stable/autograd.html
 - Linear layers and ReLU as used in the example are standard PyTorch building blocks.
-  https://pytorch.org/docs/stable/generated/torch.nn.linear.html
+  https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
   https://pytorch.org/docs/stable/generated/torch.nn.functional.relu.html
 -/
 

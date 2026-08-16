@@ -49,7 +49,7 @@ def epsConvNetOutShape {d : Nat} (cfg : EpsConvNetConfig d) : Spec.Shape :=
 /-- Seeded shape-preserving convolution over an arbitrary spatial rank. -/
 def EpsConvNetConfig.sameConv {d : Nat} (cfg : EpsConvNetConfig d)
     (inChannels outChannels : Nat) [NeZero inChannels] :
-    nn.M (nn.Sequential
+    nn.Builder (nn.Sequential
       (.dim cfg.batch (Spec.Shape.ofList (inChannels :: cfg.spatial.toList)))
       (.dim cfg.batch (Spec.Shape.ofList (outChannels :: cfg.spatial.toList)))) :=
   let layer := nn.conv (leading := .dim cfg.batch .scalar)
@@ -75,7 +75,7 @@ def epsConvNet {d : Nat} (cfg : EpsConvNetConfig d)
     (h_dataC : cfg.dataChannels ≠ 0 := by decide)
     (h_inC : (cfg.dataChannels + 1) ≠ 0 := by decide)
     (h_hiddenC : cfg.hiddenChannels ≠ 0 := by decide) :
-    nn.M (nn.Sequential (epsConvNetInShape cfg) (epsConvNetOutShape cfg)) :=
+    nn.Builder (nn.Sequential (epsConvNetInShape cfg) (epsConvNetOutShape cfg)) :=
   letI : NeZero cfg.batch := ⟨h_batch⟩
   letI : NeZero cfg.dataChannels := ⟨h_dataC⟩
   letI : NeZero (cfg.dataChannels + 1) := ⟨h_inC⟩
@@ -109,7 +109,7 @@ def epsResidualConvNet {d : Nat} (cfg : EpsConvNetConfig d)
     (h_dataC : cfg.dataChannels ≠ 0 := by decide)
     (h_inC : (cfg.dataChannels + 1) ≠ 0 := by decide)
     (h_hiddenC : cfg.hiddenChannels ≠ 0 := by decide) :
-    nn.M (nn.Sequential (epsConvNetInShape cfg) (epsConvNetOutShape cfg)) :=
+    nn.Builder (nn.Sequential (epsConvNetInShape cfg) (epsConvNetOutShape cfg)) :=
   letI : NeZero cfg.batch := ⟨h_batch⟩
   letI : NeZero cfg.dataChannels := ⟨h_dataC⟩
   letI : NeZero (cfg.dataChannels + 1) := ⟨h_inC⟩

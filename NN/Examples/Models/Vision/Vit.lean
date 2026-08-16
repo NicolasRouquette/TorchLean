@@ -106,7 +106,7 @@ def headDim : Nat := 1
 def ffnHidden : Nat := 2
 
 /-- Shared ViT configuration used by shapes and the reusable public model constructor. -/
-def cfg : nn.models.VitConfig 2 :=
+def cfg : nn.models.ViTConfig 2 :=
   { batch := batch
     inChannels := inC
     spatial := #v[inH, inW]
@@ -131,11 +131,11 @@ Compact ViT-style classifier from the public model API.
 
 The constructor builds patch embedding, token reshape, one encoder block, and the classifier head.
 -/
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.vit cfg
     (hInChannels := by decide)
     (hSeqLen := by
-      norm_num [nn.models.VitConfig.seqLen, nn.models.VitConfig.patchSpatial, cfg,
+      norm_num [nn.models.ViTConfig.seqLen, nn.models.ViTConfig.patchSpatial, cfg,
         inH, inW, patchH, patchW, stride, padding,
         Spec.convOutSpatial, Spec.Shape.slidingWindowOutDim, Spec.Shape.ofList, Spec.Shape.size,
         Vector.get, Vector.toList, Vector.ofFn])
@@ -150,8 +150,8 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := flags.lr } })
-        .classification
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := flags.lr } })
+        .oneHotCrossEntropy
         (seed := flags.seed)
   let trained ← trainer.train
     (Data.floatSamples batches)

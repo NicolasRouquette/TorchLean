@@ -49,10 +49,10 @@ Checked TD residual / Bellman error:
 
 `r + γ * (1-done) * nextValue - value`.
 -/
-def tdResidualIEEE32ExecChecked
+def tdResidualChecked
     (value reward gamma nextValue : Float32Exec) (done : Bool) :
     Except String Float32Exec :=
-  match discountedBackupIEEE32ExecChecked (reward := reward) (gamma := gamma)
+  match discountedBackupChecked (reward := reward) (gamma := gamma)
       (bootstrap := nextValue) (done := done) with
   | .error e => .error e
   | .ok target =>
@@ -62,17 +62,17 @@ def tdResidualIEEE32ExecChecked
           checkedSub "tdResidual/sub(target,value)" target value
 
 /--
-If `tdResidualIEEE32ExecChecked` returns `.ok out`, then:
+If `tdResidualChecked` returns `.ok out`, then:
 
 - the checked discounted-backup intermediates are finite,
 - the final subtraction intermediate is finite, and
 - `out` agrees with the spec-layer `tdResidual` formula.
 
-This is the runtime-checker analogue of `discountedBackupIEEE32ExecChecked_eq_ok`.
+This is the runtime-checker analogue of `discountedBackup_eq_ok`.
 -/
-theorem tdResidualIEEE32ExecChecked_eq_ok
+theorem tdResidual_eq_ok
     (value reward gamma nextValue : Float32Exec) (done : Bool) (out : Float32Exec)
-    (h : tdResidualIEEE32ExecChecked value reward gamma nextValue done = .ok out) :
+    (h : tdResidualChecked value reward gamma nextValue done = .ok out) :
     TorchLean.Floats.IEEE754.IEEE32Exec.isFinite
         (TorchLean.Floats.IEEE754.IEEE32Exec.mul gamma (continueMask (α := Float32Exec) done)) =
       true ∧
@@ -95,13 +95,13 @@ theorem tdResidualIEEE32ExecChecked_eq_ok
             true ∧
             out = tdResidual (α := Float32Exec) value reward gamma nextValue done := by
   -- First, extract the checked discounted-backup call.
-  cases htarget : discountedBackupIEEE32ExecChecked (reward := reward) (gamma := gamma)
+  cases htarget : discountedBackupChecked (reward := reward) (gamma := gamma)
       (bootstrap := nextValue) (done := done) with
   | error e =>
       -- Contradiction: the TD residual is an `.error` in this branch.
       have : False := by
         have h' := h
-        simp [tdResidualIEEE32ExecChecked, htarget] at h'
+        simp [tdResidualChecked, htarget] at h'
       exact this.elim
   | ok target =>
       -- The `.ok` TD residual means the value finiteness check and subsequent checked subtraction succeeded.
@@ -112,16 +112,16 @@ theorem tdResidualIEEE32ExecChecked_eq_ok
         | false =>
             have : False := by
               have h' := h
-              simp [tdResidualIEEE32ExecChecked, htarget, requireFinite, hf] at h'
+              simp [tdResidualChecked, htarget, requireFinite, hf] at h'
             exact this.elim
 
       have hsub :
           checkedSub "tdResidual/sub(target,value)" target value = .ok out := by
-        simpa [tdResidualIEEE32ExecChecked, htarget, requireFinite, hval] using h
+        simpa [tdResidualChecked, htarget, requireFinite, hval] using h
 
       -- Pull out the discounted-backup finiteness hypotheses and spec equality.
       obtain ⟨h₁, h₂, h₃, htargetEq⟩ :=
-        discountedBackupIEEE32ExecChecked_eq_ok
+        discountedBackup_eq_ok
           (reward := reward) (gamma := gamma) (bootstrap := nextValue) (done := done) (out := target)
           htarget
 
@@ -166,7 +166,7 @@ Reference:
 - Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation"
   (2015): https://arxiv.org/abs/1506.02438
 -/
-def generalizedAdvantageEstimationVecIEEE32ExecChecked {n : Nat}
+def generalizedAdvantageEstimationChecked {n : Nat}
     (gamma lam : Float32Exec)
     (rewards values nextValues : Tensor Float32Exec (.dim n .scalar))
     (dones : Tensor Bool (.dim n .scalar)) :
@@ -212,7 +212,7 @@ we reuse `Spec.normalize_zscore_spec` for the math, but additionally enforce tha
 finite. If the computed standard deviation is zero, `normalize_zscore_spec` returns the centered
 vector, which is still validated for finiteness here.
 -/
-def normalizeZScoreIEEE32ExecChecked {n : Nat}
+def normalizeZScoreChecked {n : Nat}
     (x : Tensor Float32Exec (.dim n .scalar)) :
     Except String (Tensor Float32Exec (.dim n .scalar)) := do
   let y : Tensor Float32Exec (.dim n .scalar) :=

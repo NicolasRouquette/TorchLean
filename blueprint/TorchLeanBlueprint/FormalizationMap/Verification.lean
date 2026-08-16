@@ -7,7 +7,7 @@ import NN.Proofs.Autograd.Tape.Algebra.Nodes
 import NN.Proofs.Autograd.Tape.Core.FDeriv
 import NN.Proofs.Autograd.Runtime.Link.BackwardGraph
 import NN.Proofs.Autograd.Runtime.Link.FDeriv
-import NN.Verification.TorchLean.Proved.Public
+import NN.Verification.TorchLean.Proved.Correctness
 import NN.MLTheory.CROWN.Proofs.GraphCertSoundness.Main
 import NN.MLTheory.CROWN.Proofs.GraphRunibpEndToEnd
 import NN.MLTheory.CROWN.Proofs.GraphCrownCertSoundness
@@ -82,15 +82,15 @@ semiring. Its correctness field applies
 product.
 :::
 
-:::theorem "autograd_runtime_backward_link" (parent := "autograd_correctness") (lean := "Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_eq_backpropAllCtx")
-Compiling an {uses "algebraic_autograd_graph"}[algebraic graph] to
+:::theorem "autograd_runtime_backward_link" (parent := "autograd_correctness") (lean := "Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx")
+Lowering an {uses "algebraic_autograd_graph"}[algebraic graph] to
 {uses "runtime_autograd_tape"}[the runtime tape] and running dense backward returns the graph's
 proved reverse accumulator after its typed tensor context is converted to the runtime array
 representation.
 :::
 
 :::proof "autograd_runtime_backward_link"
-Induction over {uses "algebraic_autograd_graph"}[the compiled graph] maintains the index and
+Induction over {uses "algebraic_autograd_graph"}[the graph] maintains the index and
 context correspondence of {uses "runtime_autograd_tape"}[the runtime tape] through reverse
 accumulation.
 :::
@@ -116,53 +116,53 @@ The analytic hypotheses identify the graph JVP with a Fréchet derivative, and t
 characterized by its inner products.
 :::
 
-:::theorem "autograd_compiled_tape_fderiv" (parent := "autograd_correctness") (lean := "Proofs.Autograd.Algebra.Graph.backwardDenseFrom_compileAux_adjoint_fderiv_at")
-For a real algebraic graph at a differentiable execution point, compiling the graph and running the
+:::theorem "autograd_lowered_tape_fderiv" (parent := "autograd_correctness") (lean := "Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphToTape_adjoint_fderiv_at")
+For a real algebraic graph at a differentiable execution point, lowering the graph and running the
 exact dense tape returns the full algebraic reverse context. Its input prefix is the adjoint
 Fréchet derivative of graph evaluation applied to the output seed.
 :::
 
-:::proof "autograd_compiled_tape_fderiv"
+:::proof "autograd_lowered_tape_fderiv"
 The real, environment-free algebraic graph and the analytic graph convert in both directions while
-preserving evaluation, JVPs, and reverse accumulation. The compiled-tape correctness theorem gives
+preserving evaluation, JVPs, and reverse accumulation. The tape-lowering correctness theorem gives
 the full cotangent context; prefix extraction identifies its input block with analytic backprop,
 and {uses "autograd_real_graph_adjoint"}[the analytic graph theorem] identifies that value with the
 adjoint Fréchet derivative.
 :::
 
-:::group "verified_compiler"
-The proved forward compiler from typed TorchLean programs to verifier IR.
+:::group "verified_lowering"
+The proved lowering from typed TorchLean programs to verifier IR.
 :::
 
-:::definition "verified_program_language" (parent := "verified_compiler") (lean := "NN.Verification.TorchLean.Proved.Program")
+:::definition "verified_program_language" (parent := "verified_lowering") (lean := "NN.Verification.TorchLean.Proved.ForwardProgram")
 The verified source language is a typed sequence of supported tensor operations with one input and
 shape-indexed intermediate values.
 :::
 
-:::definition "verified_forward_compiler" (parent := "verified_compiler") (lean := "NN.Verification.TorchLean.Proved.compileForward")
-`compileForward` lowers {uses "verified_program_language"}[the verified source program] to the
+:::definition "verified_forward_lowering" (parent := "verified_lowering") (lean := "NN.Verification.TorchLean.Proved.lowerForwardProgramToIR")
+`lowerForwardProgramToIR` lowers {uses "verified_program_language"}[the verified source program] to the
 shared IR while preserving its typed node order.
 :::
 
-:::theorem "verified_forward_well_formed" (parent := "verified_compiler") (lean := "NN.Verification.TorchLean.Proved.compileForward_wellFormed")
-Every graph produced by {uses "verified_forward_compiler"}[the verified forward compiler] passes
+:::theorem "verified_forward_well_formed" (parent := "verified_lowering") (lean := "NN.Verification.TorchLean.Proved.Correctness.lowerForwardProgramToIR_wellFormed")
+Every graph produced by {uses "verified_forward_lowering"}[the verified forward lowering] passes
 {uses "ir_structural_predicate"}[the IR structural well-formedness predicate].
 :::
 
 :::proof "verified_forward_well_formed"
 Induction over {uses "verified_program_language"}[the source program] shows that
-{uses "verified_forward_compiler"}[the compiler] preserves the node-index invariant at every
+{uses "verified_forward_lowering"}[the lowering] preserves the node-index invariant at every
 append.
 :::
 
-:::theorem "verified_forward_correct" (parent := "verified_compiler") (lean := "NN.Verification.TorchLean.Proved.runForwardIR_eq_evalForward")
-Running the output of {uses "verified_forward_compiler"}[the verified forward compiler] with
+:::theorem "verified_forward_correct" (parent := "verified_lowering") (lean := "NN.Verification.TorchLean.Proved.Correctness.runForwardIR_eq_evalForward")
+Running the output of {uses "verified_forward_lowering"}[the verified forward lowering] with
 {uses "ir_denotation"}[the IR semantics] gives the same result as evaluating the source forward
 program.
 :::
 
 :::proof "verified_forward_correct"
-Induction over {uses "verified_program_language"}[the source program] relates each compiled step to
+Induction over {uses "verified_program_language"}[the source program] relates each lowered step to
 its matching {uses "ir_denotation"}[IR denotation rule].
 :::
 

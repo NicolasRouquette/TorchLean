@@ -30,19 +30,21 @@ The current output is:
 [Float] [0.100000, 0.200000, 0.300000, 0.400000]
 [ℚ] [1/10, 1/5, 3/10, 2/5]
 [Int] [1, 2, 3, 4]
+[Float32] [0.100000, 0.200000, 0.300000, 0.400000]
 [IEEE32Exec] [0.100000, 0.200000, 0.300000, 0.400000]
 [Float] [[[1.000000, 2.000000], [3.000000, 4.000000]],
          [[5.000000, 6.000000], [7.000000, 8.000000]]]
 Expected failure printing Tensor ℝ: Refusing to print `Tensor ℝ` (proof-level);
-cast to `Float`/`IEEE32Exec`/`ℚ` to display.
+cast to `Float`/`Float32`/`IEEE32Exec`/`ℚ` to display.
 ```
 
-The first four tensors have the same vector shape and superficially similar entries, but their
+The first five tensors have the same vector shape and superficially similar entries, but their
 scalar meanings differ:
 
-- `Float` is Lean's native executable floating-point value;
+- `Float` is Lean's host binary64 floating-point type;
 - `ℚ` is exact rational arithmetic;
 - `Int` is exact integer arithmetic;
+- `Float32` is Lean's native binary32 type;
 - `IEEE32Exec` is TorchLean's explicit executable IEEE-754 binary32 model;
 - `ℝ` is suitable for proofs but is not an object the runtime should pretend to print.
 
@@ -95,10 +97,10 @@ detach check is especially useful:
 
 ```
 loss(mse ∘ detach) = 0.165133
-gradParams (mse ∘ detach) gW = [[0.000000, 0.000000],
+gradState (mse ∘ detach) gW = [[0.000000, 0.000000],
                                 [0.000000, 0.000000],
                                 [0.000000, 0.000000]]
-gradParams (mse ∘ detach) gb = [0.000000, 0.000000, 0.000000]
+gradState (mse ∘ detach) gb = [0.000000, 0.000000, 0.000000]
 ```
 
 The value is unchanged while the gradient path is cut. This is an executable check against a
@@ -147,13 +149,13 @@ The quickstart is scalar-polymorphic enough to run with the executable binary32 
 
 ```
 lake exe torchlean quickstart_mlp \
-  --device cpu --dtype ieee754exec \
+  --device cpu --scalar ieee32-exec \
   --steps 2 --seed 2026
 ```
 
-This selects `IEEE32Exec` for the covered path. The general model-zoo trainers are mostly native
-`Float` applications, so do not assume that every subcommand accepts this dtype. Command-specific
-validation rejects unsupported combinations.
+This selects `IEEE32Exec` for the covered path. Not every model-zoo command is scalar-polymorphic;
+command-specific validation rejects unsupported combinations instead of silently selecting another
+arithmetic.
 
 ## Train Longer
 
@@ -241,7 +243,7 @@ Current output:
 ```
 === TorchLean → IR → IBP (small MLP) workflow ===
 [TorchLean] Float32 mode: IEEE32Exec: executable IEEE-754 binary32 kernel
-compiled IR nodes: 20
+lowered IR nodes: 20
 output box lo: [1.904000]
 output box hi: [2.256000]
 ```
@@ -334,7 +336,7 @@ appropriate backend evidence.
 To inspect the scalar boundary behind that certificate, also run:
 
 ```
-lake exe torchlean float32_modes
+lake exe torchlean float32_semantics
 ```
 
 It contrasts proof-level rounding, executable IEEE binary32 behavior, and native-runtime agreement

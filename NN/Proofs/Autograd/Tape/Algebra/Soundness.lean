@@ -43,7 +43,7 @@ noncomputable section
 /--
 A heterogeneous list of tensors indexed by a list of shapes.
 
-`TList α Γ` is the algebraic (backend-generic) version of the typed tape context:
+`TList α Γ` is the algebraic, representation-independent version of the typed tape context:
 it stores one tensor of each shape in `Γ`.
 
 PyTorch analogue: the engine carries a runtime list of saved tensors for backward; here `Γ`

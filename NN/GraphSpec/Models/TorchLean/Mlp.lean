@@ -29,7 +29,7 @@ TorchLean exposes two related layers:
 1. `NN.Spec.Models.*`: proof-friendly specifications, evaluated as functions on `Spec.Tensor α s`.
 
 2. `NN.GraphSpec.Models.TorchLean.*`: executable architecture constructors used by runtime
-   training/evaluation utilities (with `.eager` / `.compiled` backends).
+   training/evaluation utilities (with `.eager` / `.typedGraph` execution modes).
 
 In `NN.Tests.Runtime.Floats.TorchLeanSpecMlpEquivCheck` we assert that (for the same
 initialized parameters) TorchLean’s forward pass agrees with the Spec forward pass.

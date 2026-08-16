@@ -18,7 +18,7 @@ This file provides the rollout-collection loop used by executable PPO workflows.
 
 - keep data collection typed and total (no “parallel arrays” that can desync),
 - enforce the trust-boundary contract on every step (external Gymnasium or Lean-native env), and
-- keep the API usable: callers should not need to thread a dozen actor/critic compilation details
+- keep the API usable: callers should not need to thread a dozen actor/critic lowering details
   through every function call.
 
 The unified session interface lives in `NN.Runtime.RL.Session` (`Session.CheckedSession`).
@@ -60,7 +60,7 @@ The caller provides:
 - `predictLogits` for the current actor,
 - `predictValue` for the current critic (returns a scalar `α`).
 
-The API supports the “compiled model + parameters” calling convention used throughout TorchLean.
+The API supports the “typed graph + parameters” calling convention used throughout TorchLean.
 -/
 def collectRolloutSessionWith {obsShape : Shape} {nActions horizon : Nat} {Sess : Type}
     [Fact (0 < horizon)] [Fact (0 < nActions)]

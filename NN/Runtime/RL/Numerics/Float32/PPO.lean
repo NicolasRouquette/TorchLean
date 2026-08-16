@@ -38,7 +38,7 @@ Checked importance ratio `exp(newLogProb - oldLogProb)`, specialized to `IEEE32E
 
 This is the float32-semantics variant of `Runtime.RL.PolicyGradient.importanceRatio`.
 -/
-def importanceRatioIEEE32ExecChecked (newLogProb oldLogProb : Float32Exec) :
+def importanceRatioChecked (newLogProb oldLogProb : Float32Exec) :
     Except String Float32Exec := do
   let diff ← checkedSub "importanceRatio/sub(newLogProb,oldLogProb)" newLogProb oldLogProb
   checkedExp "importanceRatio/exp(diff)" diff
@@ -53,7 +53,7 @@ This avoids re-doing the softmax/log-prob computation when you already have rati
 Reference:
 - Schulman et al., "Proximal Policy Optimization Algorithms" (2017): https://arxiv.org/abs/1707.06347
 -/
-def ppoClippedObjectiveFromRatioIEEE32ExecChecked
+def ppoClippedObjectiveFromRatioChecked
     (ratio advantage clipEps : Float32Exec) :
     Except String Float32Exec := do
   let one : Float32Exec := (1 : Float32Exec)

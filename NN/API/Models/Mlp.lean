@@ -31,19 +31,19 @@ namespace nn
 namespace models
 
 /-- Configuration for a single-hidden-layer MLP over batched row vectors. -/
-structure MlpConfig where
+structure MLPConfig where
   batch : Nat
   inDim : Nat
   hidDim : Nat
   outDim : Nat
 deriving Repr
 
-/-- Input shape `(batch × inDim)` for an `MlpConfig`. -/
-abbrev mlpInShape (cfg : MlpConfig) : Spec.Shape :=
+/-- Input shape `(batch × inDim)` for an `MLPConfig`. -/
+abbrev mlpInShape (cfg : MLPConfig) : Spec.Shape :=
   .dim cfg.batch (.dim cfg.inDim .scalar)
 
-/-- Output shape `(batch × outDim)` for an `MlpConfig`. -/
-abbrev mlpOutShape (cfg : MlpConfig) : Spec.Shape :=
+/-- Output shape `(batch × outDim)` for an `MLPConfig`. -/
+abbrev mlpOutShape (cfg : MLPConfig) : Spec.Shape :=
   .dim cfg.batch (.dim cfg.outDim .scalar)
 
 /--
@@ -51,8 +51,8 @@ Build a single-hidden-layer MLP with relu activation:
 
 `linear(inDim → hidDim) → relu → linear(hidDim → outDim)`.
 -/
-def mlpRelu (cfg : MlpConfig) :
-    nn.M (nn.Sequential (mlpInShape cfg) (mlpOutShape cfg)) :=
+def mlpRelu (cfg : MLPConfig) :
+    nn.Builder (nn.Sequential (mlpInShape cfg) (mlpOutShape cfg)) :=
   nn.Sequential![
     linear cfg.inDim cfg.hidDim (pfx := .dim cfg.batch .scalar),
     relu,

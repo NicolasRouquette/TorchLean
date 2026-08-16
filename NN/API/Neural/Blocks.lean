@@ -28,12 +28,12 @@ namespace blocks
 /--
 Small set of activation choices for block builders.
 
-PyTorch analogues:
-- `relu`    <-> `torch.nn.relu`
-- `gelu`    <-> `torch.nn.gelu`
-- `silu`    <-> `torch.nn.silu`
-- `tanh`    <-> `torch.nn.tanh`
-- `sigmoid` <-> `torch.nn.sigmoid`
+PyTorch module analogues:
+- `relu`    <-> `torch.nn.ReLU`
+- `gelu`    <-> `torch.nn.GELU`
+- `silu`    <-> `torch.nn.SiLU`
+- `tanh`    <-> `torch.nn.Tanh`
+- `sigmoid` <-> `torch.nn.Sigmoid`
 -/
 inductive Activation where
   | relu
@@ -152,20 +152,20 @@ def convActPool (leading : Spec.Shape := .scalar) {d inChannels : Nat}
     maxPool leading afterConv cfg.pool
 
 /--
-Residual/skip-connection layer as a single `LayerDef`.
+Residual/skip-connection layer as a single `Layer`.
 
 Given `inner : Seq s s`, this builds a layer that computes
 $x \mapsto \operatorname{inner}(x) + x$.
 
 PyTorch analogue: $x + f(x)$ blocks used throughout ResNets and Transformers.
 -/
-def residualLayer {s : Spec.Shape} (inner : Sequential s s) : LayerDef s s :=
-  let ps := _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes inner
+def residualLayer {s : Spec.Shape} (inner : Sequential s s) : Layer s s :=
+  let ps := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes inner
   { kind := "Residual"
-    paramShapes := ps
-    initParams := _root_.Runtime.Autograd.TorchLean.NN.Seq.initParams inner
+    stateShapes := ps
+    initState := _root_.Runtime.Autograd.TorchLean.NN.Seq.initState inner
     runtimeInit := _root_.Runtime.Autograd.TorchLean.NN.Seq.runtimeInit? inner
-    paramRequiresGrad := _root_.Runtime.Autograd.TorchLean.NN.Seq.paramRequiresGrad inner
+    requiresGrad := _root_.Runtime.Autograd.TorchLean.NN.Seq.requiresGrad inner
     updateBuffers := some (fun mode {α} _ _ ps x =>
       _root_.Runtime.Autograd.TorchLean.NN.Seq.updateBuffers (α := α) (model := inner) mode ps x)
     forward := fun mode {α} _ _ =>
@@ -184,7 +184,7 @@ def residualLayer {s : Spec.Shape} (inner : Sequential s s) : LayerDef s s :=
                 (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
                 (ss := ps ++ [s])
                 (β := m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s))
-                (_root_.Runtime.Autograd.TorchLean.NN.Seq.programWithMode (mode := mode) (model := inner) (α := α))
+                (_root_.Runtime.Autograd.TorchLean.NN.Seq.forward inner (mode := mode) (α := α))
                 args
             _root_.Runtime.Autograd.Torch.add (m := m) (α := α) (s := s) y xRef)
   }
@@ -198,7 +198,7 @@ def residual {s : Spec.Shape} (inner : Sequential s s) : Sequential s s :=
 
 `Seq` is linear, but we sometimes want a PyTorch-like $x \mapsto f(x) + g(x)$ block.
 
-We expose this as a single `LayerDef` whose parameter list is `params(f) ++ params(g)` and whose
+We expose this as a single `Layer` whose parameter list is `params(f) ++ params(g)` and whose
 forward pass runs both programs and adds their outputs.
 -/
 
@@ -208,19 +208,19 @@ Combine two sequential branches into a single layer that adds their outputs.
 The resulting layer runs both `f` and `g` on the same input $x$ and returns $f(x) + g(x)$.
 Parameters are concatenated as `params(f) ++ params(g)`.
 -/
-def addBranchesLayer {σ τ : Spec.Shape} (f g : Sequential σ τ) : LayerDef σ τ :=
-  let psF := _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes f
-  let psG := _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes g
+def addBranchesLayer {σ τ : Spec.Shape} (f g : Sequential σ τ) : Layer σ τ :=
+  let psF := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes f
+  let psG := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes g
   { kind := "AddBranches"
-    paramShapes := psF ++ psG
-    initParams :=
+    stateShapes := psF ++ psG
+    initState :=
       _root_.TorchLean.tensorpack.append (α := Float) (ss₁ := psF) (ss₂ := psG)
-        (_root_.Runtime.Autograd.TorchLean.NN.Seq.initParams f) (_root_.Runtime.Autograd.TorchLean.NN.Seq.initParams g)
+        (_root_.Runtime.Autograd.TorchLean.NN.Seq.initState f) (_root_.Runtime.Autograd.TorchLean.NN.Seq.initState g)
     runtimeInit :=
       match _root_.Runtime.Autograd.TorchLean.NN.Seq.runtimeInit? f, _root_.Runtime.Autograd.TorchLean.NN.Seq.runtimeInit? g with
       | some fPlan, some gPlan => some (fPlan.append gPlan)
       | _, _ => none
-    paramRequiresGrad := _root_.Runtime.Autograd.TorchLean.NN.Seq.paramRequiresGrad f ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.paramRequiresGrad
+    requiresGrad := _root_.Runtime.Autograd.TorchLean.NN.Seq.requiresGrad f ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.requiresGrad
       g
     updateBuffers := some (fun mode {α} _ _ ps x => do
       let (psFv, psGv) := _root_.TorchLean.tensorpack.split (α := α) (ss₁ := psF) (ss₂ := psG) ps
@@ -248,14 +248,14 @@ def addBranchesLayer {σ τ : Spec.Shape} (f g : Sequential σ τ) : LayerDef σ
                 (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
                 (ss := psF ++ [σ])
                 (β := m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) τ))
-                (_root_.Runtime.Autograd.TorchLean.NN.Seq.programWithMode (mode := mode) (model := f) (α := α))
+                (_root_.Runtime.Autograd.TorchLean.NN.Seq.forward f (mode := mode) (α := α))
                 (_root_.Runtime.Autograd.Torch.RefList.append psFrefs (.cons xRef .nil))
             let yG ←
               _root_.Runtime.Autograd.Torch.CurriedRef.uncurry
                 (Ref := fun sh => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sh)
                 (ss := psG ++ [σ])
                 (β := m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) τ))
-                (_root_.Runtime.Autograd.TorchLean.NN.Seq.programWithMode (mode := mode) (model := g) (α := α))
+                (_root_.Runtime.Autograd.TorchLean.NN.Seq.forward g (mode := mode) (α := α))
                 (_root_.Runtime.Autograd.Torch.RefList.append psGrefs (.cons xRef .nil))
             _root_.Runtime.Autograd.Torch.add (m := m) (α := α) (s := τ) yF yG)
   }

@@ -9,7 +9,7 @@ module
 public import NN.IR.Check
 public import NN.IR.Semantics
 public import NN.MLTheory.CROWN.Graph.Engine
-public import NN.Runtime.Autograd.Compiled.IRExec
+public import NN.Runtime.Autograd.IRExec
 public import NN.Runtime.PyTorch.Export.IRPyTorch
 public import NN.Tests.Runtime.Floats.Utils
 
@@ -124,21 +124,21 @@ def run : IO Unit := do
   checkTensor "ir_batchnorm denote" yDenote
 
   let exec ←
-    match Runtime.Autograd.Compiled.execGraphOfIR (α := Float) graph payload with
+    match Runtime.Autograd.IRExec.lowerToForwardGraph (α := Float) graph payload with
     | Except.ok e => pure e
-    | Except.error e => throw (IO.userError s!"ir_batchnorm: compile failed: {e}")
+    | Except.error e => throw (IO.userError s!"ir_batchnorm: lowering failed: {e}")
   let inputExec : Tensor Float exec.inShape ←
     if hIn : exec.inShape = sNCHW then
       pure (hIn.symm ▸ input)
     else
-      throw (IO.userError s!"ir_batchnorm: compiled input shape mismatch: {repr exec.inShape}")
-  let vals := Runtime.Autograd.Compiled.ExecGraphData.denoteAll (α := Float) exec inputExec
+      throw (IO.userError s!"ir_batchnorm: typed graph input shape mismatch: {repr exec.inShape}")
+  let vals := Runtime.Autograd.IRExec.ForwardGraph.denoteAll (α := Float) exec inputExec
   match vals[1]? with
   | some v =>
-      let y ← expectNCHW "ir_batchnorm compiled" v
-      checkTensor "ir_batchnorm compiled" y
+      let y ← expectNCHW "ir_batchnorm typed graph" v
+      checkTensor "ir_batchnorm typed graph" y
   | none =>
-      throw (IO.userError "ir_batchnorm: compiled output node missing")
+      throw (IO.userError "ir_batchnorm: typed graph output node missing")
 
   let ibp := runIBP (α := Float) graph verifierParams
   let yB ← expectSome "IBP BatchNorm box" ibp[1]!

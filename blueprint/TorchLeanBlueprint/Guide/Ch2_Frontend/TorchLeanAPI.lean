@@ -52,10 +52,10 @@ question:
   * function and model derivatives
 *
   * `Runtime`
-  * dtype, execution mode, device, and backend-contract selection
+  * scalar semantics, execution mode, device, and backend-contract selection
 *
   * `Verification`
-  * model-to-IR compilation and IBP/CROWN helpers
+  * model-to-IR lowering and IBP/CROWN helpers
 *
   * `Spec`
   * mathematical definitions for classical and statistical models
@@ -76,14 +76,14 @@ import NN.API
 open TorchLean
 
 def model :
-    nn.M (nn.Sequential (shape![2]) (shape![1])) :=
+    nn.Builder (nn.Sequential (shape![2]) (shape![1])) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
     nn.linear 8 1
   ]
 
-def xs : Tensor.T Float (shape![4, 2]) :=
+def xs : Tensor Float (shape![4, 2]) :=
   tensor! [
     [0.0, 0.0],
     [0.0, 1.0],
@@ -91,18 +91,18 @@ def xs : Tensor.T Float (shape![4, 2]) :=
     [1.0, 1.0]
   ]
 
-def ys : Tensor.T Float (shape![4, 1]) :=
+def ys : Tensor Float (shape![4, 1]) :=
   tensor! [[0.0], [1.0], [1.0], [0.0]]
 
-def data : Trainer.Dataset (shape![2]) (shape![1]) :=
+def data : Trainer.DataSource (shape![2]) (shape![1]) :=
   Data.tensorDataset xs ys
 
 def trainer :=
   Trainer.new model
     { task := .regression
       optimizer := optim.adam { lr := 0.03 }
-      dtype := .float
-      backend := .eager
+      scalar := .float32
+      execution := .eager
       seed := 2026 }
 
 def main : IO Unit := do
@@ -112,7 +112,7 @@ def main : IO Unit := do
       logEvery := 5 }
   trained.printSummary
 
-  let heldout : Tensor.T Float (shape![2]) :=
+  let heldout : Tensor Float (shape![2]) :=
     tensor! [0.25, -0.75]
   let yhat ← trained.predict heldout
   IO.println s!"prediction={Tensor.pretty yhat}"
@@ -155,24 +155,24 @@ be built and invoked by name.
 Place the cursor on `model`. The infoview should show:
 
 ```
-nn.M (nn.Sequential (shape![2]) (shape![1]))
+nn.Builder (nn.Sequential (shape![2]) (shape![1]))
 ```
 
 Then change the final layer from `nn.linear 8 1` to `nn.linear 7 1`. The error is attached to model
 construction rather than the training call.
 
-Place the cursor on `trained.predict`. Its input and output are trainer-facing Float tensors with the model's
-checked shapes. The retained runner handles conversion to the scalar selected by the training
-configuration.
+Place the cursor on `trained.predict`. Its input and output are trainer-facing host-`Float` tensors
+with the model's checked shapes. The retained runner handles conversion to the scalar semantics
+selected by the training configuration.
 
-# Builder, Trainer, And Trained Handle
+# Builder, Trainer, And Training Result
 
 These three values have different lifetimes:
 
 ## Model builder
 
 ```
-model : nn.M (nn.Sequential inputShape outputShape)
+model : nn.Builder (nn.Sequential inputShape outputShape)
 ```
 
 describes architecture and seeded initialization.
@@ -186,13 +186,13 @@ Trainer.new model config
 materializes the builder at the selected seed and attaches task, optimizer, and runtime choices. It
 has not consumed data.
 
-## Trained handle
+## Training Result
 
 ```
 trainer.train data options
 ```
 
-executes updates and retains final parameters and prediction closures.
+executes updates and returns a `TrainResult` with the final parameters and prediction operations.
 
 Keeping these objects separate permits the same architecture to be initialized with several seeds,
 trained on several datasets, or interpreted by another runtime without redefining its layers.
@@ -204,52 +204,52 @@ Persistent choices can be expressed as `Trainer.RunConfig`:
 ```
 def eagerCpu : Trainer.RunConfig :=
   { optimizer := optim.adam { lr := 0.03 }
-    dtype := .float
-    backend := .eager }
+    scalar := .float32
+    execution := .eager }
 
-def compiledCpu : Trainer.RunConfig :=
-  eagerCpu.compiled.cpu
+def typedGraphCpu : Trainer.RunConfig :=
+  eagerCpu.typedGraph.cpu
 
 def configuredTrainer :=
   Trainer.new model
     (Trainer.Config.fromRunConfig
-      compiledCpu .regression
+      typedGraphCpu .regression
       (seed := 2026))
 ```
 
-`RunConfig` contains the optimizer, scalar implementation, execution mode, and complete backend
-profile. The profile keeps device, providers, evidence policy, and VJP ownership consistent.
+`RunConfig` contains the optimizer, scalar semantics, execution mode, and complete backend profile.
+The profile keeps device, providers, evidence policy, and VJP ownership consistent.
 
 Per-call `TrainOptions` controls step count, sample grouping, logging cadence, and artifact fields.
-Not every task dispatch consumes every optional field: exact-bits `loadParams?` and `saveParams?`
-are currently wired through classification/cross-entropy training, while regression and custom-loss
+Not every task dispatch consumes every optional field: exact-bits `loadCheckpoint?` and `saveCheckpoint?`
+are currently wired through one-hot cross-entropy training, while regression and custom-loss
 code should use the direct checkpoint helpers described in the training chapter. `trainWithRun`
 applies a temporary runtime configuration for one call.
 
-# DType Means Scalar Semantics
+# Scalar Semantics
 
-For an ordinary executable trainer, `.float` selects Lean's host `Float`, while `.float32` selects
-the bit-level `IEEE32Exec` implementation by default. These are not two labels on the same
-untyped buffer: the choice changes the implementation of `+`, `*`, `exp`, reductions, and the other
-scalar operations used by the run.
+`Runtime.ScalarMode` is not a storage dtype. It chooses the arithmetic for an executable run.
+`.float32` selects Lean's native binary32 `Float32`; `.ieee32Exec` selects TorchLean's independent
+raw-bit `IEEE32Exec` implementation; `.complex64` selects complex numbers over that reference
+binary32 implementation. The choice changes the meaning of scalar operations rather than
+attaching a label to an untyped buffer.
 
-The dtype language also names proof-oriented interpretations. `.real` denotes mathematical reals,
-and `.float32 { mode := .fp32 }` denotes the rounded-real binary32-precision model with gradual
-underflow but without an upper exponent bound or IEEE special values. They can appear in common
-configuration and theorem-facing code, but an IO trainer rejects them because they are
-noncomputable. The generic dispatcher can construct executable complex binary32 as well; the
-high-level trainer currently rejects complex training and prediction because it has no host-Float
-readback path.
+Trainer-facing datasets are commonly authored as `Tensor Float ...`, where `Float` is Lean's host
+binary64 type. The dataset builder converts those values once the trainer selects its scalar
+semantics. This is an input boundary, not a claim that training itself uses binary64.
 
-One run follows the scalar contract from *Tensors And Shapes*. The comparison with PyTorch explains
-the present mixed-precision boundary.
+Proofs choose `ℝ` or `TorchLean.Floats.FP32` directly. They are not runtime modes because
+they are noncomputable. The high-level trainer also rejects complex prediction until it has a
+public host readback path.
+
+One run follows the scalar contract from *Tensors And Shapes*.
 
 For theorem work, instantiate specification tensors directly over `ℝ` or `FP32`. For a runtime run,
 choose an executable scalar and record the provider boundary.
 
 # Data Is Runtime-Polymorphic
 
-`Trainer.Dataset σ τ` knows how to materialize samples after the trainer selects a scalar:
+`Trainer.DataSource σ τ` knows how to materialize samples after the trainer selects a scalar:
 
 ```
 Data.tensorDataset
@@ -284,16 +284,16 @@ autograd.func.hessian
 For a checked model:
 
 ```
-autograd.model.gradParams
+autograd.model.gradState
 autograd.model.gradInputs
-autograd.model.valueAndGradParamsScalar
-autograd.model.vjpParams
-autograd.model.jvpParams
-autograd.model.hvpParams
+autograd.model.valueAndGradStateScalar
+autograd.model.vjpState
+autograd.model.jvpState
+autograd.model.hvpState
 ```
 
 Derivatives are returned as values. Parameter derivatives have the same dependent tensor-pack
-structure as the parameters; there is no mutable `.grad` field on `Tensor.T` values.
+structure as the parameters; there is no mutable `.grad` field on `Tensor` values.
 
 # Functional Tensor Operations
 
@@ -333,7 +333,7 @@ import NN.API
 open TorchLean
 open Spec
 
-def point (x y : Float) : Tensor.T Float (shape![2]) :=
+def point (x y : Float) : Tensor Float (shape![2]) :=
   tensor! [x, y]
 
 def labels : KNN Float String 2 :=
@@ -398,7 +398,7 @@ The exported families deliberately expose different amounts of fitting and infer
 :::
 
 These definitions execute directly when their scalar `Context` is executable, as `Float` is in the
-example. They are pure tensor/reference algorithms rather than automatic `Trainer.new`, compiled
+example. They are pure tensor/reference algorithms rather than automatic `Trainer.new`, typed
 graph, LibTorch, or CUDA routes. Shape indices rule out dimensional mismatches, but they do not by
 themselves prove statistical assumptions, optimizer convergence, or a family-wide correctness
 claim; consult each declaration's hypotheses and result type, especially `Option`-returning GMM and
@@ -470,7 +470,7 @@ Use the generated API search:
 The path works on the published site and on a local site preview. For source search:
 
 ```
-rg -n "def valueAndGradParamsScalar|theorem .*sound" NN
+rg -n "def valueAndGradStateScalar|theorem .*sound" NN
 ```
 
 The API reference answers “what is the exact declaration?” The surrounding chapters explain why

@@ -21,7 +21,7 @@ public import NN.Runtime.Autograd.Engine.Cuda.Tape
 public import NN.Runtime.Autograd.Engine.Cuda.Trusted
 
 /-!
-# CUDA eager-engine backend
+# CUDA engine for eager execution
 
 This umbrella collects the CUDA side of TorchLean's eager autograd engine.
 

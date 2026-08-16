@@ -76,7 +76,7 @@ import NN.API
 
 open TorchLean
 
-def model : nn.M (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+def model : nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
   nn.Sequential![
     nn.linear 2 4,
     nn.relu,
@@ -84,9 +84,9 @@ def model : nn.M (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
   ]
 
 def initialized :=
-  nn.run 2026 model
+  nn.build 2026 model
 
-#eval (nn.paramShapes initialized).map Shape.toList
+#eval (nn.stateShapes initialized).map Shape.toList
 ```
 
 Lean prints:
@@ -96,7 +96,7 @@ Lean prints:
 ```
 
 These are the first weight matrix, first bias, second weight matrix, and second bias. Their order is
-part of the forward program's type. `nn.initParams initialized` returns the corresponding initial
+part of the forward program's type. `nn.initState initialized` returns the corresponding initial
 payload; a trained runtime owns a later payload with the same shape list.
 
 The model is polymorphic in its scalar type, while one execution uses a single `α` for the parameter
@@ -116,12 +116,12 @@ composition and the dependent shape type catch the disagreement at the model bou
 # Initialization Is A Pure State Computation
 
 The linear layers need random initial weights. Rather than reading an unnamed global generator,
-layer constructors return `nn.M`, a deterministic state computation over a seed stream.
+layer constructors return `nn.Builder`, a deterministic state computation over a seed stream.
 
 ```
-def firstBuild := nn.run 2026 model
-def secondBuild := nn.run 2026 model
-def anotherBuild := nn.run 7 model
+def firstBuild := nn.build 2026 model
+def secondBuild := nn.build 2026 model
+def anotherBuild := nn.build 7 model
 ```
 
 `firstBuild` and `secondBuild` consume the same sequence of initialization seeds. `anotherBuild`
@@ -227,7 +227,7 @@ def normalizeSketch
 ```
 
 The example shows the dependency shape rather than TorchLean's BatchNorm formula. The actual
-`LayerDef.forward` receives a `Mode`, and `LayerDef.updateBuffers` optionally returns updated
+`Layer.forward` receives a `Mode`, and `Layer.updateBuffers` optionally returns updated
 parameter or buffer tensors. `nn.programWithMode` and `nn.updateBuffers` compose that behavior
 through a sequential model.
 
@@ -276,7 +276,7 @@ rewriting the model around a different collection of hidden fields.
 When you encounter a TorchLean definition, ask three questions:
 
 1. Which values determine the result?
-2. Is the definition pure, a deterministic state computation such as `nn.M`, or an `IO` action?
+2. Is the definition pure, a deterministic state computation such as `nn.Builder`, or an `IO` action?
 3. If state changes, where is the old state and where is the new state named?
 
 These questions are more useful than trying to label the whole repository “functional.” Training
@@ -291,7 +291,7 @@ The types make the difference visible.
   [Functions](https://lean-lang.org/doc/reference/latest/Terms/Functions/) and
   [Do notation](https://lean-lang.org/doc/reference/latest/Terms/do--Notation/).
 - TorchLean's
-  [`LayerDef`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/TorchLean/NN/Core.lean)
+  [`Layer`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/TorchLean/NN/Core.lean)
   and
   [`Seq`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/TorchLean/NN/Seq.lean)
   definitions.

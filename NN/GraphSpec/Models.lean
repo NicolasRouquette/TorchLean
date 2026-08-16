@@ -26,7 +26,7 @@ We still keep the source files split by semantic layer:
 - `NN.Spec.Models.*` contains pure mathematical/reference specifications such as Transformer, ViT,
   Mamba, S4, UNet, VAE/VQ-VAE/GAN, and classical baselines.
 - `NN.GraphSpec.Models.*` contains graph-authored models whose structure is itself a typed
-  `Graph`/`DAG.Model`, so we can compile the same architecture to TorchLean and reason about the
+  `Chain`/`DAG.Model`, so we can lower the same architecture to TorchLean and reason about the
   graph shape.
 - `NN.GraphSpec.Models.TorchLean.*` contains executable TorchLean constructors for models that are
   already useful as reusable autograd programs.
@@ -44,7 +44,7 @@ The current set is intentionally a coverage ladder, not an exhaustive catalog:
 The examples intentionally mix two authoring styles, but they have one conceptual endpoint:
 `DAG.Model`.
 
-- sequential `Graph` models for simple pipelines,
+- sequential `Chain` models for simple pipelines,
 - DAG-native `Model` terms for residual / shared-structure examples.
 
 `NN.GraphSpec.Models` is the single import for these GraphSpec-specific examples, regardless of

@@ -23,24 +23,24 @@ open Runtime
 open Runtime.Autograd
 
 /-!
-## Runtime link: `compileAux` + `Tape.backwardDenseFrom`
+## Runtime link: `lowerGraphToTape` + `Tape.backwardDenseFrom`
 
-`compileAux` produces a runtime tape whose node ids correspond to positions in the proof context
+`lowerGraphToTape` produces a runtime tape whose node ids correspond to positions in the proof context
 `Γ ++ ss`, and bakes the proved `vjp` into each node’s runtime `backward` closure.
 
-The theorem `backwardDenseFrom_compileAux_eq_backpropAllCtx` states that executing the runtime
-reverse-mode loop on this compiled tape matches the proved `backpropAllCtx`.
+The theorem `backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx` states that executing the runtime
+reverse-mode loop on this lowered tape matches the proved `backpropAllCtx`.
 -/
 
 /--
-All nodes produced by `compileAuxData` have `requires_grad = true`.
+All nodes produced by `lowerGraphDataToTape` have `requires_grad = true`.
 
-This is a simplifying invariant: the compiled tape is meant for correctness proofs, so we mark
+This is a simplifying invariant: the lowered tape is meant for correctness proofs, so we mark
 every node as eligible for gradient accumulation (including leaves for inputs).
 -/
-theorem compileAuxData_all_requires_grad_true {α : Type} {Δ : Type} [DecidableEq Shape]
+theorem lowerGraphDataToTape_all_requires_grad_true {α : Type} {Δ : Type} [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d : Δ) :
-    ((compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.all (fun n =>
+    ((lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.all (fun n =>
       n.requires_grad)) = true := by
   -- Helper: if the current tape has `.all requires_grad = true`, `addLeaves` preserves it.
   have addLeaves_all :
@@ -67,41 +67,41 @@ theorem compileAuxData_all_requires_grad_true {α : Type} {Δ : Type} [Decidable
       have h0 : (Runtime.Autograd.Tape.empty (α := α)).nodes.all (fun n => n.requires_grad) = true
         := by
         simp [Runtime.Autograd.Tape.empty]
-      simpa [compileAuxData] using addLeaves_all (t := Runtime.Autograd.Tape.empty (α := α)) h0 (Γ
+      simpa [lowerGraphDataToTape] using addLeaves_all (t := Runtime.Autograd.Tape.empty (α := α)) h0 (Γ
         := Γ) x
   | snoc g node ih =>
       rename_i ssPrev τ
-      simp [compileAuxData, Runtime.Autograd.Tape.addNode, ih]
+      simp [lowerGraphDataToTape, Runtime.Autograd.Tape.addNode, ih]
 
 /--
-Pointwise form of `compileAuxData_all_requires_grad_true`: every node index is `requires_grad =
+Pointwise form of `lowerGraphDataToTape_all_requires_grad_true`: every node index is `requires_grad =
   true`.
 
 This is often more convenient than the `.all` formulation when reasoning about array indexing.
 -/
-theorem compileAuxData_requires_grad_true {α : Type} {Δ : Type} [DecidableEq Shape]
+theorem lowerGraphDataToTape_requires_grad_true {α : Type} {Δ : Type} [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d : Δ) :
-    let t := (compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1
+    let t := (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1
     ∀ i (hi : i < t.nodes.size), (t.nodes[i]'hi).requires_grad = true := by
   intro t i hi
   have hall :
       t.nodes.all (fun n => n.requires_grad) = true := by
-    simpa [t] using compileAuxData_all_requires_grad_true (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x
+    simpa [t] using lowerGraphDataToTape_all_requires_grad_true (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x
       d
   have := (Array.all_eq_true).1 hall i hi
   simpa using this
 
 /--
-Backward closure safety for `compileAuxData`: parent ids produced by any node are strictly smaller
+Backward closure safety for `lowerGraphDataToTape`: parent ids produced by any node are strictly smaller
   than the node id.
 
 This is the “edges point backwards” invariant required by the runtime reverse loop: when processing
 node `id`, every contribution targets an earlier node (`pid < id`), so accumulation is well-founded.
 -/
-theorem compileAuxData_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq Shape]
+theorem lowerGraphDataToTape_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d0 : Δ) :
     ∀ id (n : Runtime.Autograd.Node α),
-      (Runtime.Autograd.Tape.getNode? (t := (compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g
+      (Runtime.Autograd.Tape.getNode? (t := (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g
         x d0).1) id = some n) →
       ∀ (d : Runtime.AnyTensor α) (contribs : List (Nat × Runtime.AnyTensor α)),
         n.backward d = .ok contribs →
@@ -109,10 +109,10 @@ theorem compileAuxData_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq 
   induction g with
   | nil =>
       intro id n hn d contribs hback pid pg hmem
-      -- `compileAuxData nil` produces only leaves with `backward = ok []`.
+      -- `lowerGraphDataToTape nil` produces only leaves with `backward = ok []`.
       have hn' :
           ((TList.toAnyArray (α := α) (ss := Γ) x).map (leafNodeOfAny (α := α)))[id]? = some n := by
-        simpa [compileAuxData, Runtime.Autograd.Tape.getNode?, nodes_addLeaves,
+        simpa [lowerGraphDataToTape, Runtime.Autograd.Tape.getNode?, nodes_addLeaves,
           Runtime.Autograd.Tape.empty] using hn
       cases hx : (TList.toAnyArray (α := α) (ss := Γ) x)[id]? with
       | none =>
@@ -130,12 +130,12 @@ theorem compileAuxData_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq 
   | snoc g node ih =>
       rename_i ssPrev τ
       intro id n hn d contribs hback pid pg hmem
-      let prev := compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0
+      let prev := lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0
       let tPrev := prev.1
       let ctxPrev := prev.2
       let y := node.forward ctxPrev d0
       let runtimeNode : Runtime.Autograd.Node α :=
-        { name := some "proof-compiled"
+        { name := some "typed-graph"
           value := Runtime.Autograd.AnyTensor.mk y
           requires_grad := true
           parents := []
@@ -149,7 +149,7 @@ theorem compileAuxData_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq 
         }
       have hnNodes :
           (tPrev.nodes.push runtimeNode)[id]? = some n := by
-        simpa [compileAuxData, prev, tPrev, ctxPrev, y, runtimeNode, Runtime.Autograd.Tape.getNode?,
+        simpa [lowerGraphDataToTape, prev, tPrev, ctxPrev, y, runtimeNode, Runtime.Autograd.Tape.getNode?,
           Runtime.Autograd.Tape.addNode] using hn
       by_cases hlast : id = tPrev.nodes.size
       · subst hlast
@@ -188,9 +188,9 @@ theorem compileAuxData_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq 
         -- `0 + (Γ ++ ssPrev).length = tPrev.nodes.size`
         have htPrev :
             tPrev.nodes.size = (Γ ++ ssPrev).length := by
-          -- by the size lemma for compiled GraphData prefix
+          -- by the size lemma for the lowered `GraphData` prefix
           simpa [prev] using
-            compileAuxData_nodes_size (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0
+            lowerGraphDataToTape_nodes_size (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0
         simpa [htPrev] using hpidlt
       · have hidPrev : id < tPrev.nodes.size := by
           have hidPush : id < (tPrev.nodes.push runtimeNode).size := by
@@ -208,14 +208,14 @@ theorem compileAuxData_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq 
         exact ih id n (by simpa [prev, tPrev] using hnPrev) d contribs hback hmem
 
 /--
-All nodes produced by `compileAux` have `requires_grad = true`.
+All nodes produced by `lowerGraphToTape` have `requires_grad = true`.
 
-This mirrors `compileAuxData_all_requires_grad_true` for the `Graph` interface.
+This mirrors `lowerGraphDataToTape_all_requires_grad_true` for the `Graph` interface.
 -/
-theorem compileAux_all_requires_grad_true {α : Type} {Δ : Type} [DecidableEq Shape]
+theorem lowerGraphToTape_all_requires_grad_true {α : Type} {Δ : Type} [DecidableEq Shape]
   [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d0 : Δ) :
-    ((compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1.nodes.all (fun n =>
+    ((lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1.nodes.all (fun n =>
       n.requires_grad)) = true := by
   -- Helper: if the current tape has `.all requires_grad = true`, `addLeaves` preserves it.
   have addLeaves_all :
@@ -244,38 +244,38 @@ theorem compileAux_all_requires_grad_true {α : Type} {Δ : Type} [DecidableEq S
       have h0 : (Runtime.Autograd.Tape.empty (α := α)).nodes.all (fun n => n.requires_grad) = true
         := by
         simp [Runtime.Autograd.Tape.empty]
-      simpa [compileAux] using addLeaves_all (t := Runtime.Autograd.Tape.empty (α := α)) h0 (Γ := Γ)
+      simpa [lowerGraphToTape] using addLeaves_all (t := Runtime.Autograd.Tape.empty (α := α)) h0 (Γ := Γ)
         x
   | snoc g node ih =>
       rename_i ssPrev τ
-      -- `compileAux` appends a node with `requires_grad = true`.
-      simp [compileAux, Runtime.Autograd.Tape.addNode, ih]
+      -- `lowerGraphToTape` appends a node with `requires_grad = true`.
+      simp [lowerGraphToTape, Runtime.Autograd.Tape.addNode, ih]
 
-/-- Pointwise form of `compileAux_all_requires_grad_true`. -/
-theorem compileAux_requires_grad_true {α : Type} {Δ : Type} [DecidableEq Shape]
+/-- Pointwise form of `lowerGraphToTape_all_requires_grad_true`. -/
+theorem lowerGraphToTape_requires_grad_true {α : Type} {Δ : Type} [DecidableEq Shape]
   [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d0 : Δ) :
-    let t := (compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1
+    let t := (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1
     ∀ i (hi : i < t.nodes.size), (t.nodes[i]'hi).requires_grad = true := by
   intro t i hi
   have hall :
       t.nodes.all (fun n => n.requires_grad) = true := by
-    simpa [t] using compileAux_all_requires_grad_true (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0
+    simpa [t] using lowerGraphToTape_all_requires_grad_true (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0
   -- `Array.all_eq_true` gives the pointwise result.
   have := (Array.all_eq_true).1 hall i hi
   simpa using this
 
 /--
-Backward closure safety for `compileAux`: parent ids produced by any node are strictly smaller than
+Backward closure safety for `lowerGraphToTape`: parent ids produced by any node are strictly smaller than
   the node id.
 
-This mirrors `compileAuxData_backward_pids_lt_id` for the `Graph` interface.
+This mirrors `lowerGraphDataToTape_backward_pids_lt_id` for the `Graph` interface.
 -/
-theorem compileAux_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq Shape]
+theorem lowerGraphToTape_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq Shape]
   [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d0 : Δ) :
     ∀ id (n : Runtime.Autograd.Node α),
-      (Runtime.Autograd.Tape.getNode? (t := (compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x
+      (Runtime.Autograd.Tape.getNode? (t := (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x
         d0).1) id = some n) →
       ∀ (d : Runtime.AnyTensor α) (contribs : List (Nat × Runtime.AnyTensor α)),
         n.backward d = .ok contribs →
@@ -283,10 +283,10 @@ theorem compileAux_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq Shap
   induction g with
   | nil =>
       intro id n hn d contribs hback pid pg hmem
-      -- `compileAux nil` produces only leaves with `backward = ok []`.
+      -- `lowerGraphToTape nil` produces only leaves with `backward = ok []`.
       have hn' :
           ((TList.toAnyArray (α := α) (ss := Γ) x).map (leafNodeOfAny (α := α)))[id]? = some n := by
-        simpa [compileAux, Runtime.Autograd.Tape.getNode?, nodes_addLeaves,
+        simpa [lowerGraphToTape, Runtime.Autograd.Tape.getNode?, nodes_addLeaves,
           Runtime.Autograd.Tape.empty] using hn
       cases hx : (TList.toAnyArray (α := α) (ss := Γ) x)[id]? with
       | none =>
@@ -306,12 +306,12 @@ theorem compileAux_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq Shap
   | snoc g node ih =>
       rename_i ssPrev τ
       intro id n hn d contribs hback pid pg hmem
-      let prev := compileAux (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0
+      let prev := lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0
       let tPrev := prev.1
       let ctxPrev := prev.2
       let y := node.forward ctxPrev d0
       let runtimeNode : Runtime.Autograd.Node α :=
-        { name := some "proof-compiled"
+        { name := some "proof-carrying-graph"
           value := Runtime.Autograd.AnyTensor.mk y
           requires_grad := true
           parents := []
@@ -325,7 +325,7 @@ theorem compileAux_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq Shap
         }
       have hnNodes :
           (tPrev.nodes.push runtimeNode)[id]? = some n := by
-        simpa [compileAux, prev, tPrev, ctxPrev, y, runtimeNode, Runtime.Autograd.Tape.getNode?,
+        simpa [lowerGraphToTape, prev, tPrev, ctxPrev, y, runtimeNode, Runtime.Autograd.Tape.getNode?,
           Runtime.Autograd.Tape.addNode] using hn
       by_cases hlast : id = tPrev.nodes.size
       · subst hlast
@@ -365,7 +365,7 @@ theorem compileAux_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableEq Shap
         have hlen : (Γ ++ ssPrev).length = tPrev.nodes.size := by
           have : tPrev.nodes.size = Γ.length + ssPrev.length := by
             simpa [tPrev, prev] using
-              (compileAux_nodes_size (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
+              (lowerGraphToTape_nodes_size (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
           simp [List.length_append, this]
         simpa [Nat.zero_add, hlen] using hpidlt
       · have hnPrev : Runtime.Autograd.Tape.getNode? (t := tPrev) id = some n := by

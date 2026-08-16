@@ -32,7 +32,7 @@ technical, or easy to get lost in:
 
 - Long Lean proofs and proof searches, including parts of the autograd proof
   layer, runtime approximation proofs, CROWN style verification explanations,
-  and compiled IR execution correctness work.
+  and IR lowering correctness work.
 - Proof engineering around large goals: finding useful intermediate lemmas,
   suggesting tactic structure, proposing ways to split cases, and helping make
   proof scripts more maintainable.

@@ -60,7 +60,7 @@ lake exe torchlean floats_arb_ieee_compare
 For a lower-level runtime comparison without the Arb oracle, use:
 
 ```bash
-lake exe torchlean float32_modes
+lake exe torchlean float32_semantics
 ```
 
 ## References

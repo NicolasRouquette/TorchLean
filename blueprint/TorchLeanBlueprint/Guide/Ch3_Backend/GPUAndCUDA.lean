@@ -189,7 +189,7 @@ executed operation
   the native symbol actually called
 ```
 
-`BackendProfile.acceptGraph` exposes an `AcceptedGraphPlan` only after planning, lowering, and the
+`BackendProfile.acceptGraph` exposes an `AcceptedGraphKernelPlan` only after planning, grouping, and the
 assurance gate accept every obligation. This is still not a hardware probe: a profile target
 declares build capabilities, while CUDA session creation separately calls
 `Cuda.Buffer.requireNativeRuntime` to distinguish native CUDA, a native build with no visible GPU,
@@ -274,7 +274,7 @@ Lean declarations and corresponding files under `csrc/cuda`.
 
 A transformer block receives a tensor of shape `(batch, tokens, modelDim)`. The mathematical
 operation applies the same attention layer to every batch entry, with shared projection matrices.
-TorchLean keeps that description in the specification and compiled graph. Each sample is expressed
+TorchLean keeps that description in the specification and typed graph. Each sample is expressed
 through the existing attention node, so its forward map, JVP, and VJP are the same definitions used
 for unbatched attention.
 

@@ -393,7 +393,7 @@ def logCorrect {s : Shape} :
 /--
 Correctness of a linear layer’s backward rule (matrix–vector multiply).
 
-PyTorch analogue: `torch.nn.linear` (restricted here to the “weights only” linear map).
+PyTorch analogue: `torch.nn.functional.linear` restricted to the weight-only map.
 -/
 def linearCorrect {inDim outDim : Nat}
   (m : Spec.LinearSpec ℝ inDim outDim) :

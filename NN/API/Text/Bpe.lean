@@ -32,7 +32,7 @@ than Lean's ASCII-oriented `Char.isAlpha` / `Char.isDigit` helpers.
 
 namespace TorchLean
 namespace text
-namespace Gpt2Bpe
+namespace GPT2BPE
 
 open Lean
 
@@ -87,9 +87,13 @@ def bytesLatin1B : List Nat :=
 def baseBytes : List Nat :=
   bytesVisible ++ bytesLatin1A ++ bytesLatin1B
 
+namespace Internal
+
 /-- Boolean membership test used while constructing the byte escape table. -/
 def containsNat (xs : List Nat) (x : Nat) : Bool :=
   xs.any (fun y => y == x)
+
+end Internal
 
 /-- GPT-2 byte-to-Unicode code-point table for all 256 byte values. -/
 def byteCodeTable : Array Nat := Id.run do
@@ -98,7 +102,7 @@ def byteCodeTable : Array Nat := Id.run do
     codes := codes.set! b b
   let mut next := 0
   for b in List.range 256 do
-    if !containsNat baseBytes b then
+    if !Internal.containsNat baseBytes b then
       codes := codes.set! b (256 + next)
       next := next + 1
   return codes
@@ -130,6 +134,8 @@ def byteDecode? (s : String) : Option String := do
   String.fromUTF8? bytes
 
 /-! ## Pre-tokenization -/
+
+namespace Internal
 
 /-- Character classes used by the GPT-2 pre-tokenizer branches. -/
 inductive RegexClass where
@@ -194,7 +200,8 @@ sees either end-of-input or another whitespace character.  For a whitespace run 
 token, this consumes all but the final whitespace; the final ASCII space can then attach to the next
 letter/number/punctuation branch, matching GPT-2's standard token boundaries.
 -/
-def consumeWhitespaceNotFollowedByNonspace? (xs : List Char) : Option (String × List Char) :=
+def consumeLookaheadWhitespace?
+    (xs : List Char) : Option (String × List Char) :=
   let (run, rest) := takeWhileChars Unicode.isRegexWhitespace xs
   match run, rest with
   | [], _ => none
@@ -234,17 +241,19 @@ def pretokenizeAux : Nat → List Char → List String
                   match consumeClassRun? .other xs with
                   | some (tok, rest) => tok :: pretokenizeAux fuel rest
                   | none =>
-                      match consumeWhitespaceNotFollowedByNonspace? xs with
+                      match consumeLookaheadWhitespace? xs with
                       | some (tok, rest) => tok :: pretokenizeAux fuel rest
                       | none =>
                           match consumeWhitespaceRun? xs with
                           | some (tok, rest) => tok :: pretokenizeAux fuel rest
                           | none => []
 
+end Internal
+
 /-- Split a string into GPT-2-style pre-token fragments. -/
 def pretokenize (s : String) : List String :=
   let cs := s.toList
-  pretokenizeAux (cs.length + 1) cs
+  Internal.pretokenizeAux (cs.length + 1) cs
 
 /-! ## BPE Merging -/
 
@@ -259,6 +268,8 @@ def tokenString? (tok : Tokenizer) (id : Nat) : Option String :=
 /-- Look up the merge rank for an adjacent pair of BPE symbols. -/
 def mergeRank? (tok : Tokenizer) (a b : String) : Option Nat :=
   tok.mergeMap[(a, b)]?
+
+namespace Internal
 
 /-- Find the lowest-ranked merge currently available in a symbol list. -/
 def bestMerge? (tok : Tokenizer) : List String → Option (String × String × Nat)
@@ -288,10 +299,12 @@ def bpeLoop (tok : Tokenizer) : Nat → List String → List String
       | none => symbols
       | some (a, b, _) => bpeLoop tok fuel (applyMerge (a, b) symbols)
 
+end Internal
+
 /-- Apply BPE to one pre-tokenized fragment. -/
 def encodeFragment (tok : Tokenizer) (fragment : String) : Except String (List Nat) := do
   let escaped := byteEncode fragment
-  let pieces := bpeLoop tok escaped.length (escaped.toList.map String.singleton)
+  let pieces := Internal.bpeLoop tok escaped.length (escaped.toList.map String.singleton)
   List.mapM (fun p =>
     match vocabId? tok p with
     | some id => pure id
@@ -313,7 +326,7 @@ def decode? (tok : Tokenizer) (ids : List Nat) : Except String String := do
   | none => TorchLean.Json.fail "BPE decoded bytes were not valid UTF-8"
 
 /-- Total display-oriented decoder: invalid ids/UTF-8 decode to an empty string. -/
-def decodeD (tok : Tokenizer) (ids : List Nat) : String :=
+def decodeOrEmpty (tok : Tokenizer) (ids : List Nat) : String :=
   match decode? tok ids with
   | .ok s => s
   | .error _ => ""
@@ -325,7 +338,7 @@ def asTextTokenizer (tok : Tokenizer) : TorchLean.text.Tokenizer where
     match encode tok s with
     | .ok ids => ids
     | .error _ => []
-  decode := decodeD tok
+  decode := decodeOrEmpty tok
 
 /-! ## File Loading -/
 
@@ -344,6 +357,8 @@ because it builds a 50k-entry tree before we immediately flatten it again.  The 
 recognizes exactly the JSON shape used by GPT-2 vocab files and decodes JSON string escapes,
 including `\uXXXX` escapes for byte-to-unicode code points.
 -/
+
+namespace Internal
 
 /-- Safe character lookup used by the specialized `vocab.json` parser. -/
 def charAtD (cs : Array Char) (i : Nat) : Char :=
@@ -481,13 +496,17 @@ def parseVocabTextLoop (cs : Array Char) : Nat → Nat → Array VocabEntry →
           else
             TorchLean.Json.fail "vocab.json: expected ',' or '}'"
 
+end Internal
+
 /-- Parse GPT-2 `vocab.json` directly from text. -/
 def parseVocabText (s : String) : Except String (Array VocabEntry) := do
   let cs := s.toList.toArray
-  let i := skipJsonWs cs 0
-  if charAtD cs i != '{' then
+  let i := Internal.skipJsonWs cs 0
+  if Internal.charAtD cs i != '{' then
     TorchLean.Json.fail "vocab.json: expected top-level object"
-  parseVocabTextLoop cs (cs.size + 1) (i + 1) #[]
+  Internal.parseVocabTextLoop cs (cs.size + 1) (i + 1) #[]
+
+namespace Internal
 
 /-- Build the token-to-id lookup table stored in a loaded GPT-2 BPE tokenizer. -/
 def vocabMapOf (vocab : Array VocabEntry) : Std.HashMap String Nat :=
@@ -501,13 +520,17 @@ def idMapOf (vocab : Array VocabEntry) : Std.HashMap Nat String :=
 def mergeMapOf (merges : Array MergeRank) : Std.HashMap (String × String) Nat :=
   merges.foldl (fun acc m => acc.insert (m.left, m.right) m.rank) Std.HashMap.emptyWithCapacity
 
+end Internal
+
 /-- Assemble a tokenizer and its lookup maps from parsed GPT-2 vocabulary and merge tables. -/
 def mkTokenizer (vocab : Array VocabEntry) (merges : Array MergeRank) : Tokenizer :=
   { vocab := vocab
     merges := merges
-    vocabMap := vocabMapOf vocab
-    idMap := idMapOf vocab
-    mergeMap := mergeMapOf merges }
+    vocabMap := Internal.vocabMapOf vocab
+    idMap := Internal.idMapOf vocab
+    mergeMap := Internal.mergeMapOf merges }
+
+namespace Internal
 
 /-- Parse one non-comment `merges.txt` line with its rank. -/
 def parseMergeLine? (rank : Nat) (line : String) : Option MergeRank :=
@@ -519,12 +542,14 @@ def parseMergeLine? (rank : Nat) (line : String) : Option MergeRank :=
     | [a, b] => some { left := a, right := b, rank := rank }
     | _ => none
 
+end Internal
+
 /-- Parse GPT-2 `merges.txt`. Invalid non-comment lines are ignored conservatively. -/
 def parseMerges (s : String) : Array MergeRank :=
   let lines := s.splitOn "\n"
   (List.zip (List.range lines.length) lines).foldl
     (fun acc p =>
-      match parseMergeLine? p.1 p.2 with
+      match Internal.parseMergeLine? p.1 p.2 with
       | some m => acc.push m
       | none => acc)
     #[]
@@ -558,63 +583,7 @@ def loadWithProgress (tag : String) (vocabJson mergesTxt : System.FilePath) : IO
   IO.eprintln s!"{tag}: loaded BPE tokenizer vocab={tok.vocab.size} merges={tok.merges.size}"
   pure tok
 
-end Gpt2Bpe
-
-/-! ## Compact vocabulary projections -/
-
-/--
-Projection from original tokenizer ids to a compact working vocabulary.
-
-Small runnable language-model examples can keep a real tokenizer while restricting the model head to
-ids observed in the local corpus or prompt.
--/
-structure LocalBpeVocab where
-  /-- Original tokenizer id for each local id. -/
-  originals : Array Nat
-  /-- Reverse lookup from original tokenizer id to local id. -/
-  toLocalMap : Std.HashMap Nat Nat
-
-namespace LocalBpeVocab
-
-/-- Number of live entries in a compact BPE projection. -/
-def size (lv : LocalBpeVocab) : Nat :=
-  lv.originals.size
-
-/-- Map an original tokenizer id into the compact local vocabulary, using local id `0` as OOV. -/
-def toLocal (lv : LocalBpeVocab) (id : Nat) : Nat :=
-  (lv.toLocalMap[id]?).getD 0
-
-/-- Map a compact local id back to its original tokenizer id. -/
-def toOriginal (lv : LocalBpeVocab) (localId : Nat) : Nat :=
-  lv.originals.getD localId (lv.originals.getD 0 0)
-
-end LocalBpeVocab
-
-/-- Build a compact working vocabulary from corpus ids and prompt ids. -/
-def buildLocalBpeVocab (maxVocab : Nat) (corpusIds promptIds : Array Nat) : LocalBpeVocab :=
-  Id.run do
-    let mut originals : Array Nat := #[0]
-    let mut map : Std.HashMap Nat Nat := (Std.HashMap.emptyWithCapacity).insert 0 0
-    let addId (originals : Array Nat) (map : Std.HashMap Nat Nat) (id : Nat) :
-        Array Nat × Std.HashMap Nat Nat :=
-      if map.contains id || originals.size ≥ maxVocab then
-        (originals, map)
-      else
-        let localId := originals.size
-        (originals.push id, map.insert id localId)
-    for id in corpusIds do
-      let p := addId originals map id
-      originals := p.1
-      map := p.2
-    for id in promptIds do
-      let p := addId originals map id
-      originals := p.1
-      map := p.2
-    return { originals := originals, toLocalMap := map }
-
-/-- Apply a compact BPE projection to an array of original tokenizer ids. -/
-def localizeBpeTokens (lv : LocalBpeVocab) (tokens : Array Nat) : Array Nat :=
-  tokens.map (fun id => lv.toLocal id)
+end GPT2BPE
 
 end text
 end TorchLean

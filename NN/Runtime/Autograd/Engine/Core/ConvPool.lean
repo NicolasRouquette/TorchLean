@@ -14,7 +14,7 @@ public import NN.Runtime.Autograd.Engine.Core.Linear
 
 This file implements the pure tape nodes for convolution, transposed convolution, and pooling. These
 nodes are backend-independent: they record forward values, parents, and backward closures using the
-spec-layer definitions before CUDA or compiled backends enter the picture.
+spec-layer definitions before CUDA or typed graph execution enters the picture.
 -/
 
 @[expose] public section

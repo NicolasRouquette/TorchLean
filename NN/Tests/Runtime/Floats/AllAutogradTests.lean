@@ -6,8 +6,9 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Compiled.GraphM
-public import NN.Runtime.Autograd.Torch.Core.Compiled
+public import NN.Runtime.Autograd.TypedGraph.GraphM
+public import NN.Runtime.Autograd.Torch.Core.TypedGraph
+public import NN.API.Neural.Execution
 public import NN.Runtime.Autograd.Utils
 public import NN.Spec.Core.Tensor
 public import NN.Spec.Core.Utils
@@ -216,7 +217,7 @@ def lrScheduler : Train.LRScheduler Float :=
   .linearWarmup (Optim.linearWarmupScheduler (initialLr := 0.2) (warmupSteps := 2)
     (startLr := 0.05))
 
-def initOptim : Train.OptimizerState Float :=
+def initialOptimizerState : Train.OptimizerState Float :=
   { kind := .adamw
   , groups :=
       [ { params := [0, 1]
@@ -233,7 +234,7 @@ structure TrainState where
   /-- opt. -/
   opt : Train.OptimizerState Float
 
-def initState : TrainState := { params := initParams, opt := initOptim }
+def initState : TrainState := { params := initParams, opt := initialOptimizerState }
 
 -- Single-sample loss using the tape.
 def sampleLoss (WId bId : Nat) (sample : Sample) :
@@ -592,71 +593,155 @@ end AutogradConv2d
 end Floats
 end Tests
 
-/-! ## Compiled log-softmax JVP -/
+/-! ## Typed graph log-softmax JVP -/
 
 namespace Tests
 namespace Floats
-namespace CompiledLogSoftmaxJvp
+namespace TypedGraphLogSoftmaxJvp
 
 open _root_.Spec
 open _root_.Spec.Tensor
 
-/-- Check that compiled log-softmax uses its JVP rather than its distinct reverse-mode VJP. -/
+/-- Check that typed graph log-softmax uses its JVP rather than its distinct reverse-mode VJP. -/
 def run : IO Unit := do
   let vectorShape : Shape := .dim 2 .scalar
   let build :
-      Runtime.Autograd.Compiled.GraphM.M Float [vectorShape]
-        (Runtime.Autograd.Compiled.GraphM.Var vectorShape) := do
-    let x ← Runtime.Autograd.Compiled.GraphM.arg
+      Runtime.Autograd.TypedGraph.GraphM.M Float [vectorShape]
+        (Runtime.Autograd.TypedGraph.GraphM.Var vectorShape) := do
+    let x ← Runtime.Autograd.TypedGraph.GraphM.arg
       (α := Float) (Γ := [vectorShape]) 0 vectorShape
-    Runtime.Autograd.Compiled.GraphM.logSoftmax x
-  let compiled ←
-    match Runtime.Autograd.Torch.compileGraph
+    Runtime.Autograd.TypedGraph.GraphM.logSoftmax x
+  let graph ←
+    match Runtime.Autograd.Torch.lowerToTypedGraph
         (α := Float) (Γ := [vectorShape]) (τ := vectorShape) build with
     | .ok c => pure c
-    | .error e => throw <| IO.userError s!"compiled log-softmax JVP: compile failed: {e}"
+    | .error e => throw <| IO.userError s!"typed graph log-softmax JVP: lowering failed: {e}"
   let logits : Tensor Float vectorShape := tensorOfList! [2] [0.0, Float.log 2.0]
   let tangent : Tensor Float vectorShape := tensorOfList! [2] [1.0, 0.0]
   let inputs : Proofs.Autograd.Algebra.TList Float [vectorShape] := .cons logits .nil
   let tangents : Proofs.Autograd.Algebra.TList Float [vectorShape] := .cons tangent .nil
-  let got := Runtime.Autograd.Torch.CompiledGraph.jvp compiled inputs tangents
+  let got := Runtime.Autograd.Torch.TypedGraph.jvp graph inputs tangents
   let got0 := Tensor.vecGet got ⟨0, by decide⟩
   let got1 := Tensor.vecGet got ⟨1, by decide⟩
   unless Float.abs (got0 - 2.0 / 3.0) ≤ 1e-5 &&
       Float.abs (got1 - (-1.0 / 3.0)) ≤ 1e-5 do
-    throw <| IO.userError s!"compiled log-softmax JVP: got {pretty got}, expected [2/3, -1/3]"
-  IO.println "compiled_log_softmax_jvp_test (Float): OK"
+    throw <| IO.userError s!"typed graph log-softmax JVP: got {pretty got}, expected [2/3, -1/3]"
+  IO.println "typed_graph_log_softmax_jvp_test (Float): OK"
 
-end CompiledLogSoftmaxJvp
+end TypedGraphLogSoftmaxJvp
 end Floats
 end Tests
 
-/-! ## Compiled smooth-max parameter checks -/
+/-! ## Typed graph output references -/
 
 namespace Tests
 namespace Floats
-namespace CompiledSmoothMaxDomain
+namespace TypedGraphOutputReference
+
+open _root_.Spec
+open _root_.Spec.Tensor
+
+/--
+Typed graph lowering accepts an input as the output, even when no node is recorded or later nodes
+are not selected as the result. Forward, JVP, and VJP must all follow that same output reference.
+-/
+def run : IO Unit := do
+  let identityBuild :
+      Runtime.Autograd.TypedGraph.GraphM.M Float [Shape.scalar]
+        (Runtime.Autograd.TypedGraph.GraphM.Var Shape.scalar) := do
+    Runtime.Autograd.TypedGraph.GraphM.arg
+      (α := Float) (Γ := [Shape.scalar]) 0 Shape.scalar
+  let identity ←
+    match Runtime.Autograd.Torch.lowerToTypedGraph
+        (α := Float) (Γ := [Shape.scalar]) (τ := Shape.scalar) identityBuild with
+    | .ok graph => pure graph
+    | .error e => throw <| IO.userError s!"typed graph identity lowering failed: {e}"
+  unless identity.nodeShapes.isEmpty do
+    throw <| IO.userError "typed graph identity lowering unexpectedly recorded a node"
+
+  let earlierOutputBuild :
+      Runtime.Autograd.TypedGraph.GraphM.M Float [Shape.scalar]
+        (Runtime.Autograd.TypedGraph.GraphM.Var Shape.scalar) := do
+    let x ← Runtime.Autograd.TypedGraph.GraphM.arg
+      (α := Float) (Γ := [Shape.scalar]) 0 Shape.scalar
+    let _unused ← Runtime.Autograd.TypedGraph.GraphM.add x x
+    pure x
+  let earlierOutput ←
+    match Runtime.Autograd.Torch.lowerToTypedGraph
+        (α := Float) (Γ := [Shape.scalar]) (τ := Shape.scalar) earlierOutputBuild with
+    | .ok graph => pure graph
+    | .error e => throw <| IO.userError s!"typed graph earlier-output lowering failed: {e}"
+  unless earlierOutput.nodeShapes.length == 1 do
+    throw <| IO.userError "typed graph earlier-output lowering lost the unused recorded node"
+
+  let inputs : Proofs.Autograd.Algebra.TList Float [Shape.scalar] :=
+    .cons (Tensor.scalar 3.0) .nil
+  let tangents : Proofs.Autograd.Algebra.TList Float [Shape.scalar] :=
+    .cons (Tensor.scalar 2.0) .nil
+  let checkGraph (label : String)
+      (graph : Runtime.Autograd.Torch.TypedGraph Float [Shape.scalar] Shape.scalar) : IO Unit := do
+    let output := Tensor.toScalar (Runtime.Autograd.Torch.TypedGraph.forward graph inputs)
+    let tangent := Tensor.toScalar (Runtime.Autograd.Torch.TypedGraph.jvp graph inputs tangents)
+    let gradients := Runtime.Autograd.Torch.TypedGraph.vjpWithSeed
+      graph inputs (Tensor.scalar 5.0)
+    let gradient := match gradients with
+      | .cons grad .nil => Tensor.toScalar grad
+    unless output == 3.0 && tangent == 2.0 && gradient == 5.0 do
+      throw <| IO.userError
+        s!"{label}: got forward={output}, jvp={tangent}, vjp={gradient}; expected 3, 2, 5"
+  checkGraph "typed graph identity output" identity
+  checkGraph "typed graph earlier output" earlierOutput
+
+  let publicModel : TorchLean.nn.TypedGraphModel [] Shape.scalar Shape.scalar Float := identity
+  let noParams : TorchLean.TensorPack Float [] := .nil
+  let publicOutput := Tensor.toScalar <|
+    TorchLean.nn.TypedGraphModel.forward publicModel noParams (Tensor.scalar 3.0)
+  let publicTangent := Tensor.toScalar <|
+    TorchLean.nn.TypedGraphModel.jvp publicModel noParams noParams
+      (Tensor.scalar 3.0) (Tensor.scalar 2.0)
+  let (publicParamGrads, publicInputGrad) :=
+    TorchLean.nn.TypedGraphModel.vjpWithSeed publicModel noParams
+      (Tensor.scalar 3.0) (Tensor.scalar 5.0)
+  let publicInputGradient := Tensor.toScalar publicInputGrad
+  let noPublicParamGrads := match publicParamGrads with
+    | .nil => true
+  unless noPublicParamGrads && publicOutput == 3.0 && publicTangent == 2.0 &&
+      publicInputGradient == 5.0 do
+    throw <| IO.userError <|
+      s!"typed graph public API: got forward={publicOutput}, jvp={publicTangent}, " ++
+      s!"vjp={publicInputGradient}; expected 3, 2, 5"
+  IO.println "typed_graph_output_reference_test (Float): OK"
+
+end TypedGraphOutputReference
+end Floats
+end Tests
+
+/-! ## Typed graph smooth-max parameter checks -/
+
+namespace Tests
+namespace Floats
+namespace TypedGraphSmoothMaxDomain
 
 open _root_.Spec
 
-/-- Compiled GraphM rejects an undefined zero inverse temperature while building the graph. -/
+/-- Typed `GraphM` rejects an undefined zero inverse temperature while building the graph. -/
 def run : IO Unit := do
   let inputShape : Shape := shape![1, 1, 2]
   let outputShape : Shape := shape![1, 1, 1]
   let build :
-      Runtime.Autograd.Compiled.GraphM.M Float [inputShape]
-        (Runtime.Autograd.Compiled.GraphM.Var outputShape) := do
-    let x ← Runtime.Autograd.Compiled.GraphM.arg
+      Runtime.Autograd.TypedGraph.GraphM.M Float [inputShape]
+        (Runtime.Autograd.TypedGraph.GraphM.Var outputShape) := do
+    let x ← Runtime.Autograd.TypedGraph.GraphM.arg
       (α := Float) (Γ := [inputShape]) 0 inputShape
-    Runtime.Autograd.Compiled.GraphM.smoothMaxPool2d
+    Runtime.Autograd.TypedGraph.GraphM.smoothMaxPool2d
       (kH := 1) (kW := 2) (inH := 1) (inW := 2) (inC := 1) (stride := 1)
       (h1 := by decide) (h2 := by decide) x 0.0
-  match Runtime.Autograd.Torch.compileGraph
+  match Runtime.Autograd.Torch.lowerToTypedGraph
       (α := Float) (Γ := [inputShape]) (τ := outputShape) build with
-  | .error _ => IO.println "compiled_smooth_max_domain_test (Float): OK"
-  | .ok _ => throw <| IO.userError "compiled smooth-max accepted zero beta"
+  | .error _ => IO.println "typed_graph_smooth_max_domain_test (Float): OK"
+  | .ok _ => throw <| IO.userError "typed graph smooth-max accepted zero beta"
 
-end CompiledSmoothMaxDomain
+end TypedGraphSmoothMaxDomain
 end Floats
 end Tests
 
@@ -793,8 +878,9 @@ def runAllAutogradTests : IO Unit := do
   AutogradTrain.run
   AutogradLayerNorm.run
   AutogradConv2d.run
-  CompiledLogSoftmaxJvp.run
-  CompiledSmoothMaxDomain.run
+  TypedGraphLogSoftmaxJvp.run
+  TypedGraphOutputReference.run
+  TypedGraphSmoothMaxDomain.run
   DisconnectedDenseGradient.run
   OptimizerNumerics.run
   IO.println "=== Autograd test suite completed ==="

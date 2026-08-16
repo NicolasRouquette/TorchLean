@@ -28,9 +28,10 @@ open Spec Tensor
 
 namespace nn
 namespace models
+namespace Mamba
 
 /-- Configuration for byte-level Mamba-style language models. -/
-structure MambaTextConfig where
+structure Config where
   vocab : Nat
   stateDim : Nat
   ssmStateDim : Nat
@@ -38,11 +39,11 @@ structure MambaTextConfig where
 deriving Repr
 
 /-- Sequence-major one-hot token matrix shape. -/
-abbrev mambaTokenMat (cfg : MambaTextConfig) (seqLen : Nat) : Spec.Shape :=
+abbrev inputShape (cfg : Config) (seqLen : Nat) : Spec.Shape :=
   .dim seqLen (.dim cfg.vocab .scalar)
 
 /-- Output logits shape for byte-level causal language modeling. -/
-abbrev mambaLogitMat (cfg : MambaTextConfig) (seqLen : Nat) : Spec.Shape :=
+abbrev outputShape (cfg : Config) (seqLen : Nat) : Spec.Shape :=
   .dim seqLen (.dim cfg.vocab .scalar)
 
 /--
@@ -56,79 +57,87 @@ The recurrent core is a gated diagonal state-space update implemented with autog
 TorchLean ops. Passing `--device cuda` to a runner that instantiates this model trains the same
 parameters on the CUDA backend.
 -/
-def mambaTextLm (cfg : MambaTextConfig) (seqLen : Nat) :
-    nn.M (nn.Sequential (mambaTokenMat cfg seqLen) (mambaLogitMat cfg seqLen)) :=
+def textLM (cfg : Config) (seqLen : Nat) :
+    nn.Builder (nn.Sequential (inputShape cfg seqLen) (outputShape cfg seqLen)) :=
   nn.Sequential![
     nn.mamba seqLen cfg.vocab cfg.stateDim,
     linear cfg.stateDim cfg.vocab (pfx := .dim seqLen .scalar)
   ]
 
+namespace Reference
+namespace Internal
+
 /-- Small deterministic initializer for spec-level reference blocks. -/
-def mambaCenteredHash (seed modulus : Nat) : Float :=
+def centeredHash (seed modulus : Nat) : Float :=
   (Float.ofNat (seed % modulus) - Float.ofNat (modulus / 2)) / Float.ofNat modulus
 
 /-- Build a vector tensor from an index function. -/
-def mambaVectorFloat {n : Nat} (f : Fin n → Float) : _root_.Spec.Tensor Float (shape![n]) :=
+def vector {n : Nat} (f : Fin n → Float) : _root_.Spec.Tensor Float (shape![n]) :=
   _root_.Spec.Tensor.dim (fun i => _root_.Spec.Tensor.scalar (f i))
 
 /-- Build a matrix tensor from an index function. -/
-def mambaMatrixFloat {m n : Nat} (f : Fin m → Fin n → Float) :
+def matrix {m n : Nat} (f : Fin m → Fin n → Float) :
     _root_.Spec.Tensor Float (shape![m, n]) :=
   _root_.Spec.Tensor.dim (fun i =>
     _root_.Spec.Tensor.dim (fun j => _root_.Spec.Tensor.scalar (f i j)))
 
+end Internal
+
 /-- Compact diagonal Mamba-style block for spec-level reference evaluation. -/
-def compactMambaFloat (cfg : MambaTextConfig) :
+def compact (cfg : Config) :
     _root_.Models.MambaBlockSpec Float cfg.vocab cfg.stateDim cfg.vocab :=
-  { inProj := mambaMatrixFloat
-      (fun i j => mambaCenteredHash (i.val * 17 + j.val * 31 + 3) 47 / 4.0)
-    gateProj := mambaMatrixFloat
-      (fun i j => mambaCenteredHash (i.val * 13 + j.val * 19 + 7) 43 / 5.0)
-    outProj := mambaMatrixFloat
-      (fun i j => mambaCenteredHash (i.val * 29 + j.val * 11 + 5) 53 / 3.0)
+  { inProj := Internal.matrix
+      (fun i j => Internal.centeredHash (i.val * 17 + j.val * 31 + 3) 47 / 4.0)
+    gateProj := Internal.matrix
+      (fun i j => Internal.centeredHash (i.val * 13 + j.val * 19 + 7) 43 / 5.0)
+    outProj := Internal.matrix
+      (fun i j => Internal.centeredHash (i.val * 29 + j.val * 11 + 5) 53 / 3.0)
     ssm :=
-      { A := mambaVectorFloat (fun i => 0.82 + Float.ofNat (i.val % 5) * 0.025)
-        B := mambaVectorFloat (fun i => 0.12 + Float.ofNat (i.val % 3) * 0.015)
-        C := mambaVectorFloat (fun i => 0.90 - Float.ofNat (i.val % 4) * 0.03)
-        D := mambaVectorFloat (fun i => 0.08 + Float.ofNat (i.val % 2) * 0.02) } }
+      { A := Internal.vector (fun i => 0.82 + Float.ofNat (i.val % 5) * 0.025)
+        B := Internal.vector (fun i => 0.12 + Float.ofNat (i.val % 3) * 0.015)
+        C := Internal.vector (fun i => 0.90 - Float.ofNat (i.val % 4) * 0.03)
+        D := Internal.vector (fun i => 0.08 + Float.ofNat (i.val % 2) * 0.02) } }
 
 /--
 Full selective Mamba-style block with causal depthwise convolution and token-dependent scan
 parameters.  This deterministic initializer is meant for reference evaluation rather than
 checkpoint-quality training.
 -/
-def selectiveMambaFloat (cfg : MambaTextConfig) :
+def selective (cfg : Config) :
     _root_.Models.SelectiveMambaBlockSpec Float
       cfg.vocab cfg.stateDim cfg.ssmStateDim cfg.vocab cfg.convWidth :=
-  { xProj := mambaMatrixFloat
-      (fun i j => mambaCenteredHash (i.val * 17 + j.val * 31 + 3) 47 * 2.0)
-    zProj := mambaMatrixFloat
-      (fun i j => mambaCenteredHash (i.val * 13 + j.val * 19 + 7) 43 * 2.0)
-    convKernel := mambaMatrixFloat
-      (fun tap i => 0.4 + mambaCenteredHash (tap.val * 23 + i.val * 7 + 11) 41 * 0.2)
-    convBias := mambaVectorFloat
-      (fun i => mambaCenteredHash (i.val * 5 + 3) 37 * 0.2)
-    dtProj := mambaMatrixFloat
-      (fun i j => mambaCenteredHash (i.val * 19 + j.val * 17 + 5) 47 * 0.2)
-    dtBias := mambaVectorFloat
+  { xProj := Internal.matrix
+      (fun i j => Internal.centeredHash (i.val * 17 + j.val * 31 + 3) 47 * 2.0)
+    zProj := Internal.matrix
+      (fun i j => Internal.centeredHash (i.val * 13 + j.val * 19 + 7) 43 * 2.0)
+    convKernel := Internal.matrix
+      (fun tap i => 0.4 + Internal.centeredHash (tap.val * 23 + i.val * 7 + 11) 41 * 0.2)
+    convBias := Internal.vector
+      (fun i => Internal.centeredHash (i.val * 5 + 3) 37 * 0.2)
+    dtProj := Internal.matrix
+      (fun i j => Internal.centeredHash (i.val * 19 + j.val * 17 + 5) 47 * 0.2)
+    dtBias := Internal.vector
       (fun i => -1.5 + Float.ofNat (i.val % 5) * 0.1)
-    A := mambaMatrixFloat
+    A := Internal.matrix
       (fun i n => 0.2 + Float.ofNat ((i.val + n.val) % 7) * 0.03)
-    bProj := mambaMatrixFloat
-      (fun i n => mambaCenteredHash (i.val * 11 + n.val * 29 + 13) 53)
-    cProj := mambaMatrixFloat
-      (fun i n => mambaCenteredHash (i.val * 31 + n.val * 7 + 17) 59)
-    dSkip := mambaVectorFloat
+    bProj := Internal.matrix
+      (fun i n => Internal.centeredHash (i.val * 11 + n.val * 29 + 13) 53)
+    cProj := Internal.matrix
+      (fun i n => Internal.centeredHash (i.val * 31 + n.val * 7 + 17) 59)
+    dSkip := Internal.vector
       (fun i => 0.35 + Float.ofNat (i.val % 3) * 0.03)
-    outProj := mambaMatrixFloat
-      (fun i j => mambaCenteredHash (i.val * 29 + j.val * 11 + 5) 53 / 3.0) }
+    outProj := Internal.matrix
+      (fun i j => Internal.centeredHash (i.val * 29 + j.val * 11 + 5) 53 / 3.0) }
+
+end Reference
 
 /-- Deterministic starting offsets for fixed-width language-model training windows. -/
-def mambaTrainingOffsets (tokenCount seqLen windows : Nat) : List Nat :=
+def trainingOffsets (tokenCount seqLen windows : Nat) : List Nat :=
   let usable := if tokenCount > seqLen + 1 then tokenCount - seqLen - 1 else 1
   let stride := Nat.max 1 (usable / Nat.max 1 windows)
   (List.range windows).map (fun i => (i * stride) % usable)
 
+end Mamba
 end models
 end nn
 

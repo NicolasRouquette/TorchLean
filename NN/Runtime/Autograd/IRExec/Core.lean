@@ -1,0 +1,176 @@
+/-
+Copyright (c) 2026 TorchLean
+Released under MIT license as described in the file LICENSE.
+Authors: TorchLean Team
+-/
+
+module
+
+public import NN.IR.Semantics
+public import NN.Proofs.Autograd.Runtime.Link
+
+/-!
+# Forward IR Execution
+
+This module validates an op-tagged `NN.IR.Graph` and translates its nodes into the shape-indexed
+`ForwardData` representation used for evaluation. `ForwardGraph` packages that result with its
+input and intermediate shapes.
+
+The translation is forward-only. It neither supplies derivative rules nor performs optimization,
+fusion, scheduling, or native code generation. The semantic-equivalence theorem for the supported
+IR fragment lives in `NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence` so ordinary
+runtime imports do not pull in that proof.
+
+## Main declarations
+
+- `ForwardGraph` packages a forward-only graph lowered from `NN.IR.Graph`.
+- `Internal.dValsOfCtx` converts typed runtime contexts back into IR-style value arrays.
+- `Internal.buildFrom` is the lowering pass from `NN.IR.Graph` to executable graph data.
+- `lowerToForwardGraph` is the public lowering entry point.
+
+Numeric IR node identifiers are converted through checked typed indices (`Idx`). The resulting
+types contain no derivative operations: lowering to `ForwardGraph` cannot be mistaken for an
+autograd lowering.
+-/
+
+@[expose] public section
+
+
+namespace Runtime
+namespace Autograd
+namespace IRExec
+
+open Spec
+open Tensor
+open Proofs.Autograd.Algebra
+open NN.IR
+
+/--
+`simp` rule for `Except`-`do` chains: binding an `.ok` value is just function application.
+-/
+@[simp] theorem Except.ok_bind {ε α β : Type} (a : α) (f : α → Except ε β) :
+    (Except.ok a >>= f) = f a := by
+  simp [Bind.bind, Except.bind]
+
+/--
+`simp` rule for `Except`-`do` chains: binding an `.error` short-circuits.
+
+Used heavily when discharging impossible branches in lowering correctness proofs.
+-/
+@[simp] theorem Except.error_bind {ε α β : Type} (e : ε) (f : α → Except ε β) :
+    (Except.error e >>= f) = Except.error e := by
+  simp [Bind.bind, Except.bind]
+
+
+/-- One forward-only SSA node over the typed context `Γ`. -/
+structure ForwardNode (α : Type) (Γ : List Shape) (τ : Shape) where
+  /-- Evaluate the node from the graph input and all preceding node values. -/
+  eval : TList α Γ → Tensor α τ
+
+/--
+A shape-indexed forward SSA graph.
+
+Unlike autograd `GraphData`, this representation has no JVP or VJP fields. It is therefore
+impossible to request derivatives from an artifact produced by the forward IR lowering pass.
+-/
+inductive ForwardData (α : Type) (Γ : List Shape) : List Shape → Type where
+  /-- A graph with no computed nodes. -/
+  | nil : ForwardData α Γ []
+  /-- Append a node that may read the graph input and every preceding result. -/
+  | snoc {ss : List Shape} {τ : Shape} :
+      ForwardData α Γ ss → ForwardNode α (Γ ++ ss) τ → ForwardData α Γ (ss ++ [τ])
+
+namespace ForwardData
+
+/-- Evaluate every node and return the input followed by all intermediate values. -/
+def eval {α : Type} {Γ ss : List Shape}
+    (g : ForwardData α Γ ss) (x : TList α Γ) : TList α (Γ ++ ss) :=
+  match g with
+  | .nil => TList.cast (α := α) (h := (List.append_nil Γ).symm) x
+  | .snoc (ss := ss) (τ := τ) g node =>
+      let ctx := eval g x
+      let y := Tensor.materialize (node.eval ctx)
+      TList.cast (α := α) (h := List.append_assoc Γ ss [τ])
+        (TList.snoc (α := α) (ss := Γ ++ ss) (τ := τ) ctx y)
+
+end ForwardData
+
+/--
+A forward-executable SSA graph derived from an `NN.IR.Graph`.
+
+The lowered graph stores:
+- one distinguished input shape (`inShape`),
+- one shape per lowered node (`ss`, corresponding to IR node ids `1..n-1`),
+- and forward-only node closures (`body`) consumed by `ForwardData.eval`.
+-/
+structure ForwardGraph (α : Type) where
+  /-- The distinguished IR input node’s shape (node id 0). -/
+  inShape : Shape
+  /-- Shapes of the IR nodes 1..(n-1) (one per executable SSA node). -/
+  ss : List Shape
+  /-- Forward SSA/DAG for nodes 1..(n-1); inputs live in `Γ := [inShape]`. -/
+  body : ForwardData α [inShape] ss
+
+namespace ForwardGraph
+
+variable {α : Type}
+
+/--
+Evaluate the lowered forward graph on a concrete input tensor.
+
+The result is the full typed runtime context `[inShape] ++ ss`, i.e. input followed by every
+lowered node value in topological order.
+-/
+def eval (e : ForwardGraph α) (x : Tensor α e.inShape) : TList α ([e.inShape] ++ e.ss) :=
+  ForwardData.eval (α := α) (Γ := [e.inShape]) (ss := e.ss) e.body (.cons x .nil)
+
+end ForwardGraph
+
+/-!
+## Denotation Table Helper
+
+`ForwardGraph.eval` produces a typed runtime context `TList α ([inShape] ++ ss)`.
+
+For debugging and for the forward-correctness development in
+`NN.Runtime.Autograd.IRExec.Correctness`,
+we provide a helper that erases this context
+into an IR-style value table `Array (NN.IR.DVal α)` in node-id order.
+-/
+
+namespace Internal
+
+/-- Convert a runtime `AnyTensor` (shape carried as a field) into an IR denotation value `DVal`. -/
+def dValOfAny {α : Type} [Context α] (v : Runtime.AnyTensor α) : NN.IR.DVal α :=
+  ⟨v.s, v.t⟩
+
+/--
+Convert a typed runtime context `TList α ss` into an IR-style value table.
+
+This is phrased in terms of `Array (DVal α)` because the IR denotation functions (`denoteAll*`)
+are array-based, while forward-graph execution evaluates into a typed context (`TList`).
+-/
+def dValsOfCtx {α : Type} [Context α] {ss : List Shape}
+    (ctx : Proofs.Autograd.Algebra.TList α ss) : Array (NN.IR.DVal α) :=
+  (Proofs.Autograd.Algebra.TList.toAnyArray (α := α) (ss := ss) ctx).map (dValOfAny (α := α))
+
+end Internal
+
+namespace ForwardGraph
+
+variable {α : Type} [Context α]
+
+/--
+Convert the full evaluated context into an IR-style value table (one `DVal` per node id).
+
+This is the bridge used to compare forward-graph evaluation with `NN.IR.Graph.denoteAll*`.
+-/
+def denoteAll (e : Runtime.Autograd.IRExec.ForwardGraph α)
+    (x : Tensor α e.inShape) : Array (NN.IR.DVal α) :=
+  Internal.dValsOfCtx (α := α) (ss := [e.inShape] ++ e.ss)
+    (Runtime.Autograd.IRExec.ForwardGraph.eval e x)
+
+end ForwardGraph
+
+end IRExec
+end Autograd
+end Runtime

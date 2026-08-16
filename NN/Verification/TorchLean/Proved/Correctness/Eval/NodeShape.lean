@@ -9,7 +9,7 @@ module
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.Core
 
 /-!
-# Compiled Forward Evaluation: Node Shape Preservation
+# Lowered Forward Evaluation: Node Shape Preservation
 -/
 
 @[expose] public section
@@ -29,7 +29,7 @@ open NN.Verification.TorchLean
       value
     has the expected output shape.
 
-    This is a small “shape preservation” lemma used in the main compiler-correctness proof.
+    This is a small “shape preservation” lemma used in the main lowering pass-correctness proof.
     -/
         theorem evalNode_ok_shape_of_hShapes
             {α : Type} [Context α] [DecidableEq Shape]

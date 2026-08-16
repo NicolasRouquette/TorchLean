@@ -12,6 +12,8 @@ public import NN.Runtime.Autograd.TorchLean
 public import NN.Spec.Layers.PositionalEncoding
 
 import Mathlib.Algebra.Order.Algebra
+import NN.Spec.Core.Utils
+import NN.Spec.Core.TensorReductionShape.Reductions
 
 @[expose] public section
 
@@ -29,8 +31,267 @@ namespace nn
 /-- Sequential model type (TorchLean `Seq`), analogous to PyTorch `nn.Sequential`. -/
 abbrev Sequential := _root_.Runtime.Autograd.TorchLean.NN.Seq
 
-/-- Single-layer definition type (TorchLean `LayerDef`), analogous to PyTorch `nn.Module`. -/
-abbrev LayerDef := _root_.Runtime.Autograd.TorchLean.NN.LayerDef
+/-- Immutable definition of one shape-checked layer, including initialization and execution. -/
+abbrev Layer := _root_.Runtime.Autograd.TorchLean.NN.Layer
+
+/--
+A shape-typed model whose input is a tensor of natural-number indices.
+
+Parameters use the selected model scalar, while the input remains a discrete `Nat` tensor. This is
+the public model type for embeddings, token models, and other indexed computations: indices cannot
+accidentally acquire gradients or be reinterpreted as floating-point data.
+-/
+structure IndexedModel (σ τ : Spec.Shape) where
+  /-- Model label used in summaries and diagnostics. -/
+  kind : String := "IndexedModel"
+  /-- Shapes of trainable parameters and persistent buffers. -/
+  stateShapes : List Spec.Shape
+  /-- Semantic initial values for the complete model state. -/
+  initState : _root_.Runtime.Autograd.Torch.TList Float stateShapes
+  /-- Optional storage-first initialization plan for executable `Float` backends. -/
+  runtimeInit : Option
+    (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.Plan stateShapes) := none
+  /-- Gradient flags aligned with `stateShapes`; persistent buffers carry `false`. -/
+  requiresGrad : List Bool := List.replicate stateShapes.length true
+  /-- Validate concrete indices before they reach a backend gather operation. -/
+  validateInput : Spec.Tensor Nat σ → Except String Unit := fun _ => pure ()
+  /-- Execution-polymorphic forward computation over one discrete input tensor. -/
+  forward : ∀ (_mode : _root_.Runtime.Autograd.TorchLean.NN.Mode)
+      {α : Type}, [_root_.Context α] → [DecidableEq Spec.Shape] →
+      _root_.Runtime.Autograd.TorchLean.ProgramWithNatInputs α stateShapes [σ] τ
+
+namespace IndexedModel
+
+/-- Append an ordinary sequential model after an indexed-input model. -/
+def andThen {σ τ υ : Spec.Shape} (first : IndexedModel σ τ) (rest : Sequential τ υ) :
+    IndexedModel σ υ where
+  kind := s!"{first.kind} → Sequential"
+  stateShapes := first.stateShapes ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes rest
+  initState := tensorpack.append first.initState
+    (_root_.Runtime.Autograd.TorchLean.NN.Seq.initState rest)
+  runtimeInit :=
+    match first.runtimeInit, _root_.Runtime.Autograd.TorchLean.NN.Seq.runtimeInit? rest with
+    | some firstPlan, some restPlan => some (firstPlan.append restPlan)
+    | _, _ => none
+  requiresGrad := first.requiresGrad ++
+    _root_.Runtime.Autograd.TorchLean.NN.Seq.requiresGrad rest
+  validateInput := first.validateInput
+  forward := fun mode {α} _ _ =>
+    fun {m} _ _ =>
+      _root_.Runtime.Autograd.Torch.CurriedRef.curry
+        (Ref := fun s => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s)
+        (ss := first.stateShapes ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes rest)
+        (β := _root_.Runtime.Autograd.Torch.CurriedRef
+          (fun s => _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) s)
+          [σ] (m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) υ)))
+        (fun state =>
+          let (firstState, restState) := _root_.Runtime.Autograd.Torch.RefList.split
+            (Ref := fun s => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s)
+            (ss₁ := first.stateShapes)
+            (ss₂ := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes rest) state
+          _root_.Runtime.Autograd.Torch.CurriedRef.curry
+            (Ref := fun s => _root_.Runtime.Autograd.Torch.NatTensorRef
+              (m := m) (α := α) s)
+            (ss := [σ])
+            (fun natInputs =>
+              match natInputs with
+              | .cons indices .nil => do
+                  let embedded ←
+                    (_root_.Runtime.Autograd.Torch.CurriedRef.uncurry
+                      (Ref := fun s =>
+                        _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s)
+                      (ss := first.stateShapes)
+                      (β := _root_.Runtime.Autograd.Torch.CurriedRef
+                        (fun s => _root_.Runtime.Autograd.Torch.NatTensorRef
+                          (m := m) (α := α) s)
+                        [σ]
+                        (m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) τ)))
+                      (first.forward mode (α := α)) firstState) indices
+                  _root_.Runtime.Autograd.TorchLean.NN.Seq.forwardState
+                    (model := rest) (α := α) (m := m) mode restState embedded))
+
+/-! ### Scalar objectives -/
+
+namespace Objective
+
+/--
+Pair an indexed-input model with a scalar loss under an explicit train/eval mode.
+
+The resulting training module accepts one ordinary target tensor followed by the model's discrete
+input tensor. Keeping those packs separate is important: token ids and table indices remain `Nat`
+throughout execution and therefore cannot receive gradients or be silently rounded through a
+floating-point scalar type.
+
+The target shape is independent of the model output shape, so this constructor also supports losses
+whose labels use a different representation from the prediction.
+-/
+def createWithMode {σ τ υ : Spec.Shape}
+    (mode : _root_.Runtime.Autograd.TorchLean.NN.Mode)
+    (model : IndexedModel σ τ)
+    (loss : ∀ {α : Type}, [_root_.Context α] → [DecidableEq Spec.Shape] →
+      _root_.Runtime.Autograd.TorchLean.Program α [τ, υ] Spec.Shape.scalar) :
+    _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef
+      model.stateShapes [υ] [σ] :=
+  { initState := model.initState
+    runtimeInit := model.runtimeInit
+    requiresGrad := model.requiresGrad
+    loss := fun {α} => by
+      intro _ _
+      exact fun {m} _ _ =>
+        _root_.Runtime.Autograd.Torch.CurriedRef.curry
+          (Ref := fun s => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s)
+          (ss := model.stateShapes ++ [υ])
+          (β := _root_.Runtime.Autograd.Torch.CurriedRef
+            (fun s => _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) s)
+            [σ]
+            (m (_root_.Runtime.Autograd.TorchLean.RefTy
+              (m := m) (α := α) Spec.Shape.scalar)))
+          (fun args =>
+            let (state, targets) := _root_.Runtime.Autograd.Torch.RefList.split
+              (Ref := fun s => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s)
+              (ss₁ := model.stateShapes) (ss₂ := [υ]) args
+            let .cons target .nil := targets
+            _root_.Runtime.Autograd.Torch.CurriedRef.curry
+              (Ref := fun s =>
+                _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) s)
+              (ss := [σ])
+              (β := m (_root_.Runtime.Autograd.TorchLean.RefTy
+                (m := m) (α := α) Spec.Shape.scalar))
+              (fun natInputs =>
+                match natInputs with
+                | .cons indices .nil => do
+                    let withInput := _root_.Runtime.Autograd.Torch.CurriedRef.uncurry
+                      (Ref := fun s =>
+                        _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s)
+                      (ss := model.stateShapes)
+                      (β := _root_.Runtime.Autograd.Torch.CurriedRef
+                        (fun s => _root_.Runtime.Autograd.Torch.NatTensorRef
+                          (m := m) (α := α) s)
+                        [σ]
+                        (m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) τ)))
+                      (model.forward mode (α := α)) state
+                    let prediction ← withInput indices
+                    _root_.Runtime.Autograd.Torch.CurriedRef.uncurry
+                      (Ref := fun s =>
+                        _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s)
+                      (ss := [τ, υ]) (loss (α := α) (m := m))
+                      (.cons prediction (.cons target .nil)))) }
+
+/-- Pair an indexed-input model with a scalar loss in training mode. -/
+def create {σ τ υ : Spec.Shape} (model : IndexedModel σ τ)
+    (loss : ∀ {α : Type}, [_root_.Context α] → [DecidableEq Spec.Shape] →
+      _root_.Runtime.Autograd.TorchLean.Program α [τ, υ] Spec.Shape.scalar) :
+    _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef
+      model.stateShapes [υ] [σ] :=
+  createWithMode .train model loss
+
+/-- Pair an indexed-input model with mean-squared error under an explicit layer mode. -/
+def mseWithMode {σ τ : Spec.Shape}
+    (mode : _root_.Runtime.Autograd.TorchLean.NN.Mode)
+    (model : IndexedModel σ τ)
+    (reduction : _root_.TorchLean.Loss.Reduction := .mean) :
+    _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef
+      model.stateShapes [τ] [σ] :=
+  createWithMode mode model (fun {α} _ _ => fun {m} _ _ => fun prediction target =>
+    _root_.TorchLean.Loss.mse (m := m) (α := α) (s := τ) prediction target
+      (reduction := reduction))
+
+/-- Pair an indexed-input model with mean-squared error in training mode. -/
+def mse {σ τ : Spec.Shape} (model : IndexedModel σ τ)
+    (reduction : _root_.TorchLean.Loss.Reduction := .mean) :
+    _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef
+      model.stateShapes [τ] [σ] :=
+  mseWithMode .train model reduction
+
+end Objective
+
+end IndexedModel
+
+/--
+A reusable trainable embedding table with `vocab` rows and vectors of length `embedDim`.
+
+Unlike `IndexedModel`, this definition is independent of the eventual token-tensor shape. Calling
+`table.model indices` specializes it to an input shape while retaining `Tensor Nat indices` at the
+public boundary. Instantiating that model produces mutable weight storage; the definition itself
+remains immutable so it can be lowered and used in proofs.
+-/
+structure Embedding (vocab embedDim : Nat) where
+  /-- Initial table values, with one row per vocabulary item. -/
+  initialWeight : Spec.Tensor Float (.dim vocab (.dim embedDim .scalar))
+  /-- Storage-first initializer equivalent to `initialWeight`. -/
+  runtimeInit : _root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.Plan
+    [.dim vocab (.dim embedDim .scalar)]
+  /-- Whether reverse mode accumulates gradients for the table. -/
+  requiresGrad : Bool := true
+
+namespace Embedding
+
+/-- Construction options for a freshly initialized embedding table. -/
+structure Config where
+  /-- Seed for deterministic table initialization. Seeded builders replace this field. -/
+  seed : Nat := 0
+  /--
+  Initialization scheme for the table.
+
+  The default agrees with `torch.nn.Embedding.reset_parameters`: independent samples from the
+  standard normal distribution. Language-model constructors normally override this with their
+  architecture-specific initialization, such as GPT-2's standard deviation `0.02`.
+  -/
+  weightInit : _root_.Runtime.Autograd.Torch.Init.Scheme := .normal 0.0 1.0
+  /-- Freeze the table by excluding it from reverse-mode parameter gradients. -/
+  freeze : Bool := false
+
+/--
+Construct an embedding from an exact initial weight table.
+
+This is the typed counterpart of passing `_weight` to `torch.nn.Embedding`. The supplied tensor
+fixes both dimensions at compile time and is also recorded as an exact row-major runtime
+initializer, so CPU and CUDA module construction start from the same payload.
+-/
+def ofWeight {vocab embedDim : Nat}
+    (weight : Spec.Tensor Float (.dim vocab (.dim embedDim .scalar)))
+    (freeze : Bool := false) : Embedding vocab embedDim :=
+  { initialWeight := weight
+    runtimeInit := .cons
+      (.flat (FloatArray.mk (Spec.toList weight).toArray)) .nil
+    requiresGrad := !freeze }
+
+/-- Specialize an embedding table to a concrete index-tensor shape. -/
+def model {vocab embedDim : Nat} (table : Embedding vocab embedDim) (inputShape : Spec.Shape) :
+    IndexedModel inputShape (inputShape.appendDim embedDim) :=
+  let weightShape : Spec.Shape := .dim vocab (.dim embedDim .scalar)
+  { kind := s!"Embedding({vocab}, {embedDim})"
+    stateShapes := [weightShape]
+    initState := tensorpack! table.initialWeight
+    runtimeInit := some table.runtimeInit
+    requiresGrad := [table.requiresGrad]
+    validateInput := fun tokenIds =>
+      if Spec.Tensor.allSpec (fun tokenId => decide (tokenId < vocab)) tokenIds then
+        pure ()
+      else
+        throw s!"embedding: token index outside vocabulary of size {vocab}"
+    forward := fun _ {α} _ _ =>
+      fun {m} _ _ => fun weight =>
+        _root_.Runtime.Autograd.Torch.CurriedRef.curry
+          (Ref := fun s => _root_.Runtime.Autograd.Torch.NatTensorRef
+            (m := m) (α := α) s)
+          (ss := [inputShape])
+          (fun natInputs =>
+            match natInputs with
+            | .cons tokenIds .nil => do
+                let flatIds := _root_.Runtime.Autograd.Torch.mapNatTensor (m := m) (α := α)
+                  (fun x => Spec.Tensor.reshapeSpec
+                    (s₁ := inputShape) (s₂ := .dim inputShape.size .scalar) x (by
+                      simp [Spec.Shape.size])) tokenIds
+                let rows ← _root_.Runtime.Autograd.TorchLean.F.embeddingRowsNat
+                  (m := m) (α := α) (vocab := vocab) (dim := embedDim)
+                  (k := inputShape.size) weight flatIds
+                _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
+                  (s₁ := .dim inputShape.size (.dim embedDim .scalar))
+                  (s₂ := inputShape.appendDim embedDim) rows (by
+                    simp [Spec.Shape.size_appendDim, Spec.Shape.size])) }
+
+end Embedding
 
 /-!
 Expose common `Seq` helpers under `TorchLean.nn`.
@@ -39,16 +300,18 @@ The names mirror the TorchLean runtime layer so users can move between the publi
 runtime layer code without learning a second vocabulary.
 -/
 export _root_.Runtime.Autograd.TorchLean.NN.Seq
-  (paramShapes paramRequiresGrad initParams runtimeInit? hasBufferUpdates updateBuffers
-   programWithMode forwardProgram
-   scalarModuleDefWithMode scalarModuleDef
-   mseScalarModuleDefWithMode mseScalarModuleDef
-   crossEntropyOneHotScalarModuleDefWithMode crossEntropyOneHotScalarModuleDef
-   compileForwardWithMode compileForward
-   forward predict forwardArtifact)
+  (stateShapes requiresGrad initState runtimeInit? hasBufferUpdates updateBuffers)
+
+/-! Constructors that pair an immutable model with a scalar training loss. -/
+namespace Objective
+
+export _root_.Runtime.Autograd.TorchLean.NN.Seq.Objective
+  (createWithMode create mseWithMode mse oneHotCrossEntropyWithMode oneHotCrossEntropy)
+
+end Objective
 
 /-- Lift a single layer definition into a sequential model. -/
-def of {σ τ : Spec.Shape} (layer : LayerDef σ τ) : Sequential σ τ :=
+def of {σ τ : Spec.Shape} (layer : Layer σ τ) : Sequential σ τ :=
   _root_.Runtime.Autograd.TorchLean.NN.singleLayer layer
 
 /-!
@@ -65,7 +328,7 @@ universe u v
 class AsSequential (F : Spec.Shape → Spec.Shape → Sort u) where
   asSequential : {σ τ : Spec.Shape} → F σ τ → Sequential σ τ
 
-instance : AsSequential LayerDef where
+instance : AsSequential Layer where
   asSequential := _root_.Runtime.Autograd.TorchLean.NN.singleLayer
 
 instance : AsSequential Sequential where
@@ -86,8 +349,8 @@ structure Linear where
 /--
 Linear layer on the last axis (prefix-shape preserving).
 
-PyTorch analogue: `torch.nn.linear`.
-See `https://pytorch.org/docs/stable/generated/torch.nn.linear.html`.
+PyTorch analogue: `torch.nn.Linear`.
+See `https://pytorch.org/docs/stable/generated/torch.nn.Linear.html`.
 
 Unlike the runtime TorchLean layer constructor (which is vector-only),
 this public layer constructor follows PyTorch’s convention:
@@ -111,14 +374,14 @@ def linearWith (inDim outDim : Nat) (cfg : Linear) (seedW seedB : Nat := 0)
   let batch : Nat := Spec.Shape.size pfx
   of
     { kind := s!"Linear({inDim}, {outDim})"
-      paramShapes := [WShape, bShape]
-      initParams := tensorpack! w0, b0
+      stateShapes := [WShape, bShape]
+      initState := tensorpack! w0, b0
       runtimeInit := some (.cons
         (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.FloatInit.ofScheme weightInit seedW)
         (.cons
           (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.FloatInit.ofScheme cfg.biasInit seedB)
           .nil))
-      paramRequiresGrad := [true, true]
+      requiresGrad := [true, true]
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun w b x =>
@@ -136,7 +399,7 @@ def linearWith (inDim outDim : Nat) (cfg : Linear) (seedW seedB : Nat := 0)
               let wT ←
                 _root_.Runtime.Autograd.Torch.transpose2d (m := m) (α := α)
                   (mDim := outDim) (nDim := inDim) w
-              let y ← _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+              let y ← _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
                 (mDim := batch) (nDim := inDim) (pDim := outDim) x2D wT
               let y2D ←
                 _root_.Runtime.Autograd.TorchLean.F.addB (m := m) (α := α)
@@ -225,40 +488,30 @@ def lstm (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
     seedB)
 
 /--
-Embedding table initialization configuration (one-hot / token-distribution inputs).
-
-TorchLean-friendly analogue of `torch.nn.Embedding` in the common setting where token ids are
-represented as one-hot vectors (or soft token distributions), so lookup is a matrix multiplication
-rather than integer indexing.
--/
-structure Embedding where
-  /-- Seed for deterministic embedding-table initialization. -/
-  seedW : Nat := 0
-  /-- Initialization scheme for the embedding table. -/
-  wInit : _root_.Runtime.Autograd.Torch.Init.Scheme := .uniform (-0.02) 0.02
-
-/--
-Embedding layer for one-hot / token-distribution inputs (no bias).
+Linear projection for one-hot or soft token-distribution inputs.
 
 Input shape: `[..., vocab]`
 Output shape: `[..., embedDim]`
 
-PyTorch analogue: conceptually `nn.Embedding(vocab, embedDim)` but applied to one-hot inputs.
+This is not an indexed embedding: it multiplies the final input axis by a trainable table. Use
+`embedding` for integer token ids.
 -/
-def embedding (vocab embedDim : Nat) (cfg : Embedding := {}) (pfx : Spec.Shape := Spec.Shape.scalar) :
+def oneHotEmbedding (vocab embedDim : Nat) (cfg : Embedding.Config := {})
+    (pfx : Spec.Shape := Spec.Shape.scalar) :
     Sequential (pfx.appendDim vocab) (pfx.appendDim embedDim) :=
   let WShape : Spec.Shape := .dim vocab (.dim embedDim .scalar)
   let w0 : Spec.Tensor Float WShape :=
-    _root_.Runtime.Autograd.Torch.Init.tensor (s := WShape) (sch := cfg.wInit) (seed := cfg.seedW)
+    _root_.Runtime.Autograd.Torch.Init.tensor
+      (s := WShape) (sch := cfg.weightInit) (seed := cfg.seed)
   let batch : Nat := Spec.Shape.size pfx
   of
-    { kind := s!"Embedding({vocab}, {embedDim})"
-      paramShapes := [WShape]
-      initParams := tensorpack! w0
+    { kind := s!"OneHotEmbedding({vocab}, {embedDim})"
+      stateShapes := [WShape]
+      initState := tensorpack! w0
       runtimeInit := some (.cons
         (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.FloatInit.ofScheme
-          cfg.wInit cfg.seedW) .nil)
-      paramRequiresGrad := [true]
+          cfg.weightInit cfg.seed) .nil)
+      requiresGrad := [!cfg.freeze]
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun w x =>
@@ -273,7 +526,7 @@ def embedding (vocab embedDim : Nat) (cfg : Embedding := {}) (pfx : Spec.Shape :
                     -- size(sIn) = size(pfx) * vocab = batch * vocab
                     simp [sIn, batch, Spec.Shape.size_appendDim, Spec.Shape.size])
               let y ←
-                _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+                _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
                   (mDim := batch) (nDim := vocab) (pDim := embedDim)
                   x2D w
               _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
@@ -284,6 +537,25 @@ def embedding (vocab embedDim : Nat) (cfg : Embedding := {}) (pfx : Spec.Shape :
                   simp [sOut, batch, Spec.Shape.size_appendDim, Spec.Shape.size])
             ) : m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sOut))
     }
+
+/--
+Look up rows of a trainable embedding table using a tensor of natural-number indices.
+
+For input shape `σ`, `embedding vocab embedDim σ` returns shape `σ.appendDim embedDim`. This matches
+`torch.nn.Embedding`: the input stores integer indices, the output appends the embedding dimension,
+and gradients flow to selected rows of the table rather than to the indices.
+-/
+def embedding (vocab embedDim : Nat) (cfg : Embedding.Config := {}) :
+    Embedding vocab embedDim :=
+  let weightShape : Spec.Shape := .dim vocab (.dim embedDim .scalar)
+  let initialWeight : Spec.Tensor Float weightShape :=
+    _root_.Runtime.Autograd.Torch.Init.tensor
+      (s := weightShape) (sch := cfg.weightInit) (seed := cfg.seed)
+  { initialWeight
+    runtimeInit := .cons
+      (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.FloatInit.ofScheme
+        cfg.weightInit cfg.seed) .nil
+    requiresGrad := !cfg.freeze }
 
 /--
 Learned positional embedding configuration.
@@ -312,12 +584,12 @@ def learnedPositionalEmbedding {batch seqLen embedDim : Nat} (cfg : LearnedPosit
     _root_.Runtime.Autograd.Torch.Init.tensor (s := posShape) (sch := cfg.posInit) (seed := cfg.seedPos)
   of
     { kind := "LearnedPositionalEmbedding"
-      paramShapes := [posShape]
-      initParams := tensorpack! pos0
+      stateShapes := [posShape]
+      initState := tensorpack! pos0
       runtimeInit := some (.cons
         (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.FloatInit.ofScheme
           cfg.posInit cfg.seedPos) .nil)
-      paramRequiresGrad := [true]
+      requiresGrad := [true]
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun pos x =>
@@ -354,9 +626,9 @@ def sinusoidalPositionalEncoding {batch seqLen embedDim : Nat}
     Spec.sinusoidalPositionalEncodingSpec (α := Float) seqLen embedDim cfg.startPos
   of
     { kind := "SinusoidalPositionalEncoding"
-      paramShapes := [peShape]
-      initParams := tensorpack! pe0
-      paramRequiresGrad := [false]
+      stateShapes := [peShape]
+      initState := tensorpack! pe0
+      requiresGrad := [false]
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun pe x =>
@@ -420,9 +692,9 @@ def rope {batch numHeads seqLen headDim : Nat} (cfg : RoPE := {}) :
 
   of
     { kind := "RoPE"
-      paramShapes := [csShape, csShape]
-      initParams := tensorpack! cos0, sin0
-      paramRequiresGrad := [false, false]
+      stateShapes := [csShape, csShape]
+      initState := tensorpack! cos0, sin0
+      requiresGrad := [false, false]
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun cos sin x =>
@@ -486,24 +758,24 @@ def rope {batch numHeads seqLen headDim : Nat} (cfg : RoPE := {}) :
             ) : m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) xShape))
     }
 
-/-- Elementwise ReLU. PyTorch analogue: `torch.nn.relu` / `torch.nn.functional.relu`. -/
+/-- Elementwise ReLU. PyTorch analogue: `torch.nn.ReLU` / `torch.nn.functional.relu`. -/
 def relu {s : Spec.Shape} : Sequential s s :=
   of <| _root_.Runtime.Autograd.TorchLean.NN.relu (s := s)
-/-- Elementwise SiLU/Swish. PyTorch analogue: `torch.nn.silu` / `torch.nn.functional.silu`. -/
+/-- Elementwise SiLU/Swish. PyTorch analogue: `torch.nn.SiLU` / `torch.nn.functional.silu`. -/
 def silu {s : Spec.Shape} : Sequential s s :=
   of <| _root_.Runtime.Autograd.TorchLean.NN.silu (s := s)
-/-- Elementwise GELU. PyTorch analogue: `torch.nn.gelu` / `torch.nn.functional.gelu`. -/
+/-- Elementwise GELU. PyTorch analogue: `torch.nn.GELU` / `torch.nn.functional.gelu`. -/
 def gelu {s : Spec.Shape} : Sequential s s :=
   of <| _root_.Runtime.Autograd.TorchLean.NN.gelu (s := s)
-/-- Elementwise sigmoid. PyTorch analogue: `torch.nn.sigmoid` / `torch.nn.functional.sigmoid`. -/
+/-- Elementwise sigmoid. PyTorch analogue: `torch.nn.Sigmoid` / `torch.sigmoid`. -/
 def sigmoid {s : Spec.Shape} : Sequential s s :=
   of <| _root_.Runtime.Autograd.TorchLean.NN.sigmoid (s := s)
-/-- Elementwise tanh. PyTorch analogue: `torch.nn.tanh` / `torch.nn.functional.tanh`. -/
+/-- Elementwise tanh. PyTorch analogue: `torch.nn.Tanh` / `torch.tanh`. -/
 def tanh {s : Spec.Shape} : Sequential s s :=
   of <| _root_.Runtime.Autograd.TorchLean.NN.tanh (s := s)
-/-- Softmax. PyTorch analogue: `torch.nn.softmax` / `torch.nn.functional.softmax`. -/
-def softmax {s : Spec.Shape} : Sequential s s :=
-  of <| _root_.Runtime.Autograd.TorchLean.NN.softmax (s := s)
+/-- Softmax over the final axis, analogous to `torch.softmax(x, dim := -1)`. -/
+def softmaxLast {s : Spec.Shape} : Sequential s s :=
+  of <| _root_.Runtime.Autograd.TorchLean.NN.softmaxLast (s := s)
 /-- Reduce-sum to a scalar. PyTorch analogue: `torch.sum`. -/
 def sum {s : Spec.Shape} : Sequential s Spec.Shape.scalar :=
   of <| _root_.Runtime.Autograd.TorchLean.NN.sum (s := s)
@@ -512,24 +784,47 @@ def flatten {s : Spec.Shape} : Sequential s (.dim (Spec.Shape.size s) .scalar) :
   of <| _root_.Runtime.Autograd.TorchLean.NN.flatten (s := s)
 
 /--
-Flatten a batched tensor `N × σ` into a matrix `N × (size σ)`.
+View a tensor with a new shape containing the same number of scalar entries.
 
-PyTorch analogue: `torch.flatten(x, start_dim=1)`.
+This is the shape-typed counterpart of `torch.reshape`: the equality argument records at
+construction time that the source and target shapes have equal size.
 -/
-def flattenBatch {n : Nat} {s : Spec.Shape} :
-    Sequential (.dim n s) (.dim n (.dim (Spec.Shape.size s) .scalar)) :=
+def reshape (source target : Spec.Shape)
+    (sameSize : Spec.Shape.size source = Spec.Shape.size target) :
+    Sequential source target :=
   of
-    { kind := "FlattenBatch"
-      paramShapes := []
-      initParams := .nil
-      paramRequiresGrad := []
+    { kind := "Reshape"
+      stateShapes := []
+      initState := .nil
+      requiresGrad := []
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun x =>
             _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-              (s₁ := .dim n s)
-              (s₂ := .dim n (.dim (Spec.Shape.size s) .scalar))
-              x (by simp [Spec.Shape.size])
+              (s₁ := source) (s₂ := target) x sameSize }
+
+/--
+Flatten each tensor after an arbitrary collection of leading dimensions.
+
+For `leading = shape![batch]`, this is the typed counterpart of
+`torch.flatten(x, start_dim=1)`. Multiple leading dimensions are preserved without introducing a
+separate batched tensor type.
+-/
+def flattenLeading (leading : Spec.Shape := .scalar) {s : Spec.Shape} :
+    Sequential (leading.concat s) (leading.appendDim (Spec.Shape.size s)) :=
+  of
+    { kind := "FlattenLeading"
+      stateShapes := []
+      initState := .nil
+      requiresGrad := []
+      forward := fun _ {α} _ _ =>
+        fun {m} _ _ =>
+          fun x =>
+            _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
+              (s₁ := leading.concat s)
+              (s₂ := leading.appendDim (Spec.Shape.size s))
+              x (by
+                simp [Spec.Shape.size_concat, Spec.Shape.size_appendDim])
     }
 
 /--

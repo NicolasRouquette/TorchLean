@@ -19,7 +19,7 @@ public import NN.Backend.Reference
 public import NN.Backend.LibTorch
 public import NN.Backend.Registry
 public import NN.Backend.IR
-public import NN.Backend.Lowering
+public import NN.Backend.Grouping
 public import NN.Backend.Gate
 public import NN.Backend.Accepted
 public import NN.Backend.Profile
@@ -32,7 +32,7 @@ Contract-carrying backend vocabulary for TorchLean runtimes.
 
 The semantic graph and specs stay in Lean. Fast providers such as native CUDA, LibTorch, ATen,
 cuBLAS, cuDNN, or cuFFT enter through named capsules that record shape/layout/value/VJP contracts
-and an explicit trust level. The planner consumes these capsules under an `ExecutionConfig` and
+and an explicit trust level. The planner consumes these capsules under an `KernelPolicy` and
 selects an admissible execution provider for each operation or fused operation group.
 -/
 

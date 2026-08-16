@@ -70,9 +70,9 @@ directed endpoints. ReLU restores the nonnegative lower bound of the hidden acti
 The resulting range trace contains one row for every node. A row records the node id, operation,
 input enclosures, and derived output enclosure.
 
-### 3. Select backend capsules
+### 3. Select kernel capsules
 
-The backend planner independently selects a capsule for each operation. A capsule records the
+The kernel planner independently selects a capsule for each operation. A capsule records the
 provider, device, layout requirements, forward and VJP ownership, reduction policy, and trust
 classification. The example uses the checked portable CPU profile because its fixed-left matrix
 accumulation matches the canonical tensor semantics.
@@ -83,7 +83,7 @@ policy, certificate generation fails until that provider has a matching contract
 ### 4. Bind the artifact
 
 `generateChecked` stores the graph, range-registry name, source assumptions, derived ranges, and
-backend audit together. Replay checks all of them. Replacing the graph, registry, or backend plan
+kernel audit together. Replay checks all of them. Replacing the graph, registry, or kernel plan
 therefore invalidates the artifact.
 
 ### 5. Execute binary32 and replay every node
@@ -123,12 +123,12 @@ step data because square root, bias correction, and division need explicit posit
 the next parameter bound, and optimizer-state bounds. A future InfoView or training dashboard can
 render this record without changing the proof.
 
-There is one boundary to keep clear. The canonical `NN.IR.Graph` compiler currently proves forward
-semantic preservation. It does not yet lower every compiled node to a proof-bearing VJP. Therefore:
+There is one boundary to keep clear. Canonical `NN.IR.Graph` lowering currently proves forward
+semantic preservation. It does not yet lower every typed graph node to a proof-bearing VJP. Therefore:
 
 - the runnable MLP above is a complete canonical-IR **forward** certificate and IEEE replay;
 - rounded backward and optimizer theorems are complete for a supplied proof-bearing `RevGraph`;
-- automatically producing that `RevGraph` from every canonical-IR model remains a separate compiler
+- automatically producing that `RevGraph` from every canonical-IR model remains a separate lowering
   theorem.
 
 TorchLean keeps these statements separate so a forward artifact is never presented as a proof of a

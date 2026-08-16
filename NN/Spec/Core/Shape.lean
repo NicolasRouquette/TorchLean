@@ -104,19 +104,6 @@ def ofList : List Nat → Shape
   | [] => .scalar
   | n :: ns => .dim n (ofList ns)
 
-/-- Internal helper: check that a list of axis indices is duplicate-free. -/
-def nodupBool (xs : List Nat) : Bool :=
-  match xs with
-  | [] => true
-  | x :: xs => (!xs.contains x) && nodupBool xs
-
-/-- Internal helper: get the `i`-th entry (0-based) from a list of dimensions, defaulting to `0`. -/
-def getDim! (xs : List Nat) (i : Nat) : Nat :=
-  match xs, i with
-  | [], _ => 0
-  | x :: _, 0 => x
-  | _ :: xs, i+1 => getDim! xs i
-
 /-- Pretty-print a `Shape` for debugging / logs. -/
 def pretty (s : Shape) : String :=
   match s with
@@ -382,14 +369,14 @@ def permute? (s : Shape) (perm : List Nat) : Option Shape :=
   let r := rank s
   if perm.length != r then
     none
-  else if !nodupBool perm then
+  else if !(decide perm.Nodup) then
     none
   else if !(perm.all (fun i => i < r)) then
     none
   else
     let dims := toList s
     -- `dims.length = r` by construction of `toList`/`rank`.
-    let dims' := perm.map (fun i => getDim! dims i)
+    let dims' := perm.map (fun i => dims.getD i 0)
     some (ofList dims')
 
 /-!

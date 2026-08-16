@@ -130,61 +130,61 @@ def twoConvCnn
     {h_stride1 : stride1 ≠ 0} {h_stride2 : stride2 ≠ 0}
     {h_poolKH : poolKH ≠ 0} {h_poolKW : poolKW ≠ 0}
     {h_poolStride1 : poolStride1 ≠ 0} {h_poolStride2 : poolStride2 ≠ 0} :
-    Graph
+    Chain
       [ .dim c1 (.dim inC (.dim kH (.dim kW .scalar))), .dim c1 .scalar
       , .dim c2 (.dim c1 (.dim kH (.dim kW .scalar))), .dim c2 .scalar
       , .dim outDim (.dim (featSize c2 inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW
         poolStride1 poolStride2) .scalar)
       , .dim outDim .scalar ]
       (.dim inC (.dim inH (.dim inW .scalar))) (.dim outDim .scalar) :=
-  Graph.conv2d (inC := inC) (outC := c1) (kH := kH) (kW := kW) (stride := stride1) (padding :=
+  Chain.conv2d (inC := inC) (outC := c1) (kH := kH) (kW := kW) (stride := stride1) (padding :=
     padding1)
     (inH := inH) (inW := inW) (h_inC := h_inC) (h_kH := h_kH) (h_kW := h_kW)
     (hStride := h_stride1)
   >>>
-  Graph.relu
+  Chain.relu
     (.dim c1 (.dim (outH inH kH stride1 padding1) (.dim (outW inW kW stride1 padding1) .scalar)))
   >>>
-  Graph.maxPool2d
+  Chain.maxPool2d
     (kH := poolKH) (kW := poolKW)
     (inH := outH inH kH stride1 padding1)
     (inW := outW inW kW stride1 padding1)
     (inC := c1) (stride := poolStride1)
     (h_kH := h_poolKH) (h_kW := h_poolKW) (hStride := h_poolStride1)
   >>>
-  Graph.conv2d
+  Chain.conv2d
     (inC := c1) (outC := c2) (kH := kH) (kW := kW) (stride := stride2) (padding := padding2)
     (inH := poolH (outH inH kH stride1 padding1) poolKH poolStride1)
     (inW := poolW (outW inW kW stride1 padding1) poolKW poolStride1)
     (h_inC := h_c1) (h_kH := h_kH) (h_kW := h_kW) (hStride := h_stride2)
   >>>
-  Graph.relu
+  Chain.relu
     (.dim c2 (.dim (outH (poolH (outH inH kH stride1 padding1) poolKH poolStride1) kH stride2 padding2) (.dim (outW (poolW (outW inW kW stride1 padding1) poolKW poolStride1) kW stride2 padding2) .scalar)))
   >>>
-  Graph.maxPool2d
+  Chain.maxPool2d
     (kH := poolKH) (kW := poolKW)
     (inH := outH (poolH (outH inH kH stride1 padding1) poolKH poolStride1) kH stride2 padding2)
     (inW := outW (poolW (outW inW kW stride1 padding1) poolKW poolStride1) kW stride2 padding2)
     (inC := c2) (stride := poolStride2)
     (h_kH := h_poolKH) (h_kW := h_poolKW) (hStride := h_poolStride2)
   >>>
-  Graph.flatten
+  Chain.flatten
     (.dim c2 (.dim (featH inH kH stride1 padding1 poolKH poolStride1 stride2 padding2 poolStride2) (.dim (featW inW kW stride1 padding1 poolKW poolStride1 stride2 padding2 poolStride2) .scalar)))
   >>>
   -- Linear head: interpret the flattened feature vector as `Vec (featSize ...)`.
-  Graph.linear
+  Chain.linear
     (inDim := featSize c2 inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1
       poolStride2)
     (outDim := outDim)
 
 /--
 The same 2-conv CNN, but exposed as a DAG `Model` via the structural lowering
-`LowerToDAG.Graph.toDAGModelZeroInit`.
+`LowerToDAG.Chain.toDAGModelZeroInit`.
 
 This lets “DAG-only” downstream tooling consume this architecture even though it is authored as a
-sequential `Graph` pipeline.
+sequential `Chain` pipeline.
 
-Initialization: all-zero parameters (see `LowerToDAG.Graph.toDAGModelZeroInit`).
+Initialization: all-zero parameters (see `LowerToDAG.Chain.toDAGModelZeroInit`).
  -/
 def twoConvCnnDAGModelZeroInit
     (inC c1 c2 outDim inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1
@@ -202,7 +202,7 @@ def twoConvCnnDAGModelZeroInit
       , .dim outDim .scalar ]
       [.dim inC (.dim inH (.dim inW .scalar))]
       (.dim outDim .scalar) :=
-  LowerToDAG.Graph.toDAGModelZeroInit <|
+  LowerToDAG.Chain.toDAGModelZeroInit <|
     twoConvCnn
       (inC := inC) (c1 := c1) (c2 := c2) (outDim := outDim)
       (inH := inH) (inW := inW)

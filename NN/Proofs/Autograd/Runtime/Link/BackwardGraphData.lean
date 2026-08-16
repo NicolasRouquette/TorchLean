@@ -30,16 +30,16 @@ open Runtime
 open Runtime.Autograd
 
 /--
-Variant of `backwardDenseFrom_compileAux_eq_backpropAllCtx` for the `GraphData` interface.
+Variant of `backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx` for the `GraphData` interface.
 
 This is useful when a graph carries extra payload `Δ` (e.g. parameters/config) through forward and
 backward closures.
 -/
-theorem backwardDenseFrom_compileAuxData_eq_backpropAllCtx {α : Type} {Δ : Type} [DecidableEq Shape]
+theorem backwardDenseFrom_lowerGraphDataToTape_eq_backpropAllCtx {α : Type} {Δ : Type} [DecidableEq Shape]
   [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d0 : Δ)
     (seed : TList α (Γ ++ ss)) :
-    Runtime.Autograd.Tape.backwardDenseFrom (t := (compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss :=
+    Runtime.Autograd.Tape.backwardDenseFrom (t := (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss :=
       ss) g x d0).1)
         (grads0 := TList.toAnyArray (α := α) (ss := Γ ++ ss) seed) =
       .ok
@@ -144,20 +144,20 @@ theorem backwardDenseFrom_compileAuxData_eq_backpropAllCtx {α : Type} {Δ : Typ
 
         simpa [t, seedArr] using loop_id t.nodes.size (le_rfl)
 
-      simpa [compileAuxData, _root_.Proofs.Autograd.Algebra.GraphData.backpropAllCtx,
+      simpa [lowerGraphDataToTape, _root_.Proofs.Autograd.Algebra.GraphData.backpropAllCtx,
         Runtime.Autograd.Tape.backwardDenseFrom, hnsize, TList.toAnyArray_cast] using hloop
   | snoc g node ih =>
       rename_i ssPrev τ
-      rcases hprev : compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0 with ⟨tPrev,
+      rcases hprev : lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0 with ⟨tPrev,
         ctxPrev⟩
       have hctxPrev :
           ctxPrev = _root_.Proofs.Autograd.Algebra.GraphData.eval (α := α) (Δ := Δ) (Γ := Γ) (ss :=
             ssPrev) g x d0 := by
         simpa [hprev] using
-          (compileAuxData_ctx_eq_eval (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
+          (lowerGraphDataToTape_ctx_eq_eval (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
       have htPrevSize : tPrev.nodes.size = Γ.length + ssPrev.length := by
         simpa [hprev] using
-          (compileAuxData_nodes_size (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
+          (lowerGraphDataToTape_nodes_size (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
 
       let assoc : (Γ ++ ssPrev) ++ [τ] = Γ ++ (ssPrev ++ [τ]) := List.append_assoc Γ ssPrev [τ]
       let seed' : TList α ((Γ ++ ssPrev) ++ [τ]) := TList.cast (α := α) (h := assoc.symm) seed
@@ -174,7 +174,7 @@ theorem backwardDenseFrom_compileAuxData_eq_backpropAllCtx {α : Type} {Δ : Typ
 
       let y := node.forward ctxPrev d0
       let runtimeNode : Runtime.Autograd.Node α :=
-        { name := some "proof-compiled"
+        { name := some "typed-graph"
           value := Runtime.Autograd.AnyTensor.mk y
           requires_grad := true
           parents := []
@@ -221,10 +221,10 @@ theorem backwardDenseFrom_compileAuxData_eq_backpropAllCtx {α : Type} {Δ : Typ
           ssPrev) g x d0 seedPrev'
 
       have hTape :
-          (compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev ++ [τ]) (.snoc (ss := ssPrev) (τ
+          (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev ++ [τ]) (.snoc (ss := ssPrev) (τ
             := τ) g node) x d0).1 =
             tNext := by
-        simp [compileAuxData, hprev, tNext, y, runtimeNode]
+        simp [lowerGraphDataToTape, hprev, tNext, y, runtimeNode]
 
       have hBackpropArr :
           TList.toAnyArray (α := α) (ss := Γ ++ (ssPrev ++ [τ]))
@@ -277,10 +277,10 @@ theorem backwardDenseFrom_compileAuxData_eq_backpropAllCtx {α : Type} {Δ : Typ
               rfl
             simp [runtimeNode, outAny, hτ, hcastAny, ctx, contrib, hctxPrev]
           have hpidlt :=
-            compileAuxData_backward_pids_lt_id (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev ++ [τ])
+            lowerGraphDataToTape_backward_pids_lt_id (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev ++ [τ])
               (.snoc (ss := ssPrev) (τ := τ) g node) x d0
               n runtimeNode (by
-                simpa [compileAuxData, hprev, tNext, runtimeNode, Runtime.Autograd.Tape.getNode?,
+                simpa [lowerGraphDataToTape, hprev, tNext, runtimeNode, Runtime.Autograd.Tape.getNode?,
                   htNextNodes, n])
               outAny _ hback hmem
           simpa [n] using hpidlt
@@ -306,7 +306,7 @@ theorem backwardDenseFrom_compileAuxData_eq_backpropAllCtx {α : Type} {Δ : Typ
             simpa [Runtime.Autograd.Tape.getNode?, tNext, htNextNodes, nodeAt] using this
           have hreq : nodeAt.requires_grad = true := by
             have hreq' :=
-              (compileAuxData_requires_grad_true (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0) i
+              (lowerGraphDataToTape_requires_grad_true (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0) i
                 (by
                 simpa [hprev] using hiT)
             simpa [hprev, nodeAt] using hreq'
@@ -321,7 +321,7 @@ theorem backwardDenseFrom_compileAuxData_eq_backpropAllCtx {α : Type} {Δ : Typ
                 tPrev.nodes.map (fun nd => nd.value) =
                   TList.toAnyArray (α := α) (ss := Γ ++ ssPrev) ctxPrev := by
               simpa [hprev] using
-                (compileAuxData_values_eq (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
+                (lowerGraphDataToTape_values_eq (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
             have hvalOpt := congrArg (fun a => a[i]?) hvals
             -- Evaluate both sides at `i`.
             have hnodeVal :
@@ -596,13 +596,13 @@ theorem backwardDenseFrom_compileAuxData_eq_backpropAllCtx {α : Type} {Δ : Typ
                         intro pid pg hmem
                         have hgetComp :
                             Runtime.Autograd.Tape.getNode?
-                                (t := (compileAuxData (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x
+                                (t := (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x
                                   d0).1)
                                 id =
                               some nodeAt := by
                           simpa [hprev] using hnodePrev
                         exact
-                          compileAuxData_backward_pids_lt_id (α := α) (Δ := Δ) (Γ := Γ) (ss :=
+                          lowerGraphDataToTape_backward_pids_lt_id (α := α) (Δ := Δ) (Γ := Γ) (ss :=
                             ssPrev) g x d0 id nodeAt
                               hgetComp dLdy contribs hback hmem
 

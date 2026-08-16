@@ -23,34 +23,33 @@ carries the resulting gradient error into the next training state.
 Start with the checked-in example:
 
 ```
-lake exe torchlean float32_modes
+lake exe torchlean float32_semantics
 ```
 
 It evaluates
 
 $$`y=W_2\operatorname{ReLU}(W_1x+b_1)+b_2`
 
-twice. The first run uses Lean's host `Float`; the second uses `IEEE32Exec`. Both runs then compute
+twice. The first run uses Lean's native `Float32`; the second uses the independent bit-level
+`IEEE32Exec` reference. Both runs then compute
 the parameter and input VJPs. A shortened output is:
 
 ```
-== Float (runtime) ==
+== Float32 (native runtime) ==
 y = [2.080000]
 hiddenBiasGrad = [0.700000, 0.800000, 0.900000]
 inputGrad = [0.760000, 1.000000]
 
-== Float32 (IEEE32Exec) ==
+== IEEE32Exec ==
 y = [2.080000]
 hiddenBiasGrad = [0.700000, 0.800000, 0.900000]
 inputGrad = [0.760000, 1.000000]
 
-max_abs_diff(Float vs IEEE32Exec) =
-  0.0000000762939453835542735760100185871124267578125
+max_abs_diff(Float32 vs IEEE32Exec) = 0
 ```
 
-The values look identical at six decimal places. The final line shows that they are not. This is a
-good experiment, but we want more than the distance observed at one input. We want a bound derived
-from the operations in the model.
+The two independent implementations agree on every value printed by this finite run. That is useful
+regression evidence, while the theorem layer supplies bounds that apply beyond one chosen input.
 
 # The Approximation Relation
 

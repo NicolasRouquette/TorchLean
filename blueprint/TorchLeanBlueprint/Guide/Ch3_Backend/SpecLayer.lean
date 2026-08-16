@@ -266,8 +266,8 @@ scaled dot-product attention. Model definitions under `NN.Spec.Models` compose t
 into families such as CNNs, transformers, recurrent networks, and state-space models.
 
 That inventory is a semantics inventory, not a runtime support matrix. An operation can have a pure
-definition before it has an eager tape rule, a compiled lowering, a CUDA kernel, or an end-to-end
-correctness theorem. The relevant runtime and compiler chapters name those smaller supported
+definition before it has an eager tape rule, typed graph lowering, a CUDA kernel, or an end-to-end
+correctness theorem. The relevant runtime and lowering chapters name those smaller supported
 fragments explicitly.
 
 # Shape Indices And Scalar Types

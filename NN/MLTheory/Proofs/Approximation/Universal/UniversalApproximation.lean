@@ -8,6 +8,7 @@ module
 
 public import Mathlib.Algebra.Order.Floor.Semiring
 public import Mathlib.Data.Real.Basic
+public import NN.Proofs.Utils.List
 public import NN.Spec.Core.Tensor
 public import NN.Runtime.Context
 public import NN.Spec.Layers.Activation
@@ -84,56 +85,6 @@ lemma mlp_forward_eq_linear_relu_linear {hidDim : ℕ}
       Spec.linearSpec (α := ℝ) l2 a1 := by
   simpa [Examples.mlpForward] using (Examples.mlp_spec_forward_eq (α := ℝ) l1 l2 x)
 
-/--
-Move a scalar initial accumulator out of a left fold that only adds terms.
-
-This is bookkeeping for converting TorchLean's list-fold tensor semantics into Mathlib finite
-sums.
--/
-lemma foldl_add_init {α : Type} (l : List α) (f : α → ℝ) (a : ℝ) :
-    l.foldl (fun acc x => acc + f x) a = a + l.foldl (fun acc x => acc + f x) 0 := by
-  induction l generalizing a with
-  | nil =>
-    simp
-  | cons x xs ih =>
-    -- Expand both sides one step and use the induction hypothesis twice.
-    -- `foldl` on a cons updates the accumulator once and recurses.
-    simp [List.foldl]
-    have h1 := ih (a := a + f x)
-    have h2 := ih (a := f x)
-    -- Rewrite using `h1`/`h2` and reassociate.
-    -- After rewriting, both sides become `a + f x + foldl ... 0 xs`.
-    simp [h1, h2, add_assoc]
-
-/-- Convert the `List.finRange` fold used in `matVecMulSpec` into a `Finset.univ` sum. -/
-lemma finRange_foldl_add (n : ℕ) (f : Fin n → ℝ) :
-    (List.finRange n).foldl (fun acc i => acc + f i) 0 = ∑ i : Fin n, f i := by
-  classical
-  induction n with
-  | zero =>
-    simp
-  | succ n ih =>
-    -- Unfold `finRange (n+1)` and compute `foldl` step-by-step.
-    -- Then reduce to the induction hypothesis on the tail.
-    have :
-        (List.finRange (n + 1)).foldl (fun acc i => acc + f i) 0 =
-          f 0 + (List.finRange n).foldl (fun acc i => acc + f i.succ) 0 := by
-      -- `finRange (n+1) = 0 :: (finRange n).map Fin.succ`
-      -- and `foldl` over a `map` composes the element function.
-      calc
-        (List.finRange (n + 1)).foldl (fun acc i => acc + f i) 0
-            = ((0 : Fin (n + 1)) :: (List.finRange n).map Fin.succ).foldl (fun acc i => acc + f i) 0
-              := by
-              simp [List.finRange_succ]
-        _ = ((List.finRange n).map Fin.succ).foldl (fun acc i => acc + f i) (f 0) := by
-              simp [List.foldl]
-        _ = (List.finRange n).foldl (fun acc i => acc + f i.succ) (f 0) := by
-              simp [List.foldl_map]
-        _ = f 0 + (List.finRange n).foldl (fun acc i => acc + f i.succ) 0 := by
-              exact foldl_add_init (List.finRange n) (fun i : Fin n => f i.succ) (f 0)
-    -- Apply IH to the shifted function.
-    rw [this, ih (fun i : Fin n => f i.succ), Fin.sum_univ_succ]
-
 /-- `vectorN` is the dependent-tensor vector constructor expanded pointwise. -/
 lemma vectorN_eq_dim {α : Type} [Zero α] (n : ℕ) (f : Fin n → α) :
     vectorN n f = Tensor.dim (fun i : Fin n => Tensor.scalar (f i)) := by
@@ -185,10 +136,10 @@ lemma finRange_foldl_add_scalar (n : ℕ) (f : Fin n → ℝ) :
       simp
     | cons k ks ih =>
       simp [List.foldl, ih]
-  -- Then use `finRange_foldl_add` on the scalar fold.
+  -- Then use the shared list-to-finset fold theorem on the scalar fold.
   rw [h_scalar 0]
   congr 1
-  simpa using (finRange_foldl_add n f)
+  simpa using (List.finRange_foldl_add_eq_finset_sum (n := n) f)
 
 set_option linter.auxLemma false in
 /-- Matrix-vector multiply for a one-row matrix is the expected finite dot product. -/

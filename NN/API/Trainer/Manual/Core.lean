@@ -35,7 +35,7 @@ exports that back executable examples.
 -/
 
 /-
-Supervised training helpers built directly on `ScalarModule`.
+Supervised training helpers built directly on `Objective`.
 
 This is a lower-level layer than `TorchLean.Trainer`: it is designed around a
 `SeqTask σ τ` (model + loss) and produces a `Runner` + `Stepper` that can be used in scripts.
@@ -44,7 +44,7 @@ This is a lower-level layer than `TorchLean.Trainer`: it is designed around a
 /-- Built-in loss choices for `SeqTask`. -/
 inductive SeqLoss where
   | mse (reduction : _root_.TorchLean.Loss.Reduction := .mean)
-  | crossEntropyOneHot (reduction : _root_.TorchLean.Loss.Reduction := .mean)
+  | oneHotCrossEntropy (reduction : _root_.TorchLean.Loss.Reduction := .mean)
 
 /-- A supervised task is just a model plus a choice of loss. -/
 structure SeqTask (σ τ : Spec.Shape) where
@@ -54,25 +54,27 @@ structure SeqTask (σ τ : Spec.Shape) where
   loss : SeqLoss
 
 /--
-Build a `ScalarModuleDef` for a task, choosing an explicit model mode (train/eval).
+Build the scalar objective for a task in an explicit train/eval mode.
 
 This is the underlying "instantiate me as a runnable module" step for training.
 -/
-def SeqTask.moduleDefWithMode {σ τ : Spec.Shape} (task : SeqTask σ τ)
+def SeqTask.objectiveWithMode {σ τ : Spec.Shape} (task : SeqTask σ τ)
     (mode : _root_.Runtime.Autograd.TorchLean.NN.Mode) :
-    TorchLean.Module.ScalarModuleDef (_root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes task.model) [σ, τ] :=
+    TorchLean.Module.ObjectiveDef
+      (_root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes task.model) [σ, τ] :=
   match task.loss with
   | .mse reduction =>
-      _root_.Runtime.Autograd.TorchLean.NN.Seq.mseScalarModuleDefWithMode mode (model := task.model) (reduction :=
-        reduction)
-  | .crossEntropyOneHot reduction =>
-      _root_.Runtime.Autograd.TorchLean.NN.Seq.crossEntropyOneHotScalarModuleDefWithMode mode
+      _root_.Runtime.Autograd.TorchLean.NN.Seq.Objective.mseWithMode mode
+        (model := task.model) (reduction := reduction)
+  | .oneHotCrossEntropy reduction =>
+      _root_.Runtime.Autograd.TorchLean.NN.Seq.Objective.oneHotCrossEntropyWithMode mode
         (model := task.model) (reduction := reduction)
 
-/-- Default module definition for a task (training mode). -/
-def SeqTask.moduleDef {σ τ : Spec.Shape} (task : SeqTask σ τ) :
-    TorchLean.Module.ScalarModuleDef (_root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes task.model) [σ, τ] :=
-  task.moduleDefWithMode .train
+/-- Build the task's scalar objective in training mode. -/
+def SeqTask.objective {σ τ : Spec.Shape} (task : SeqTask σ τ) :
+    TorchLean.Module.ObjectiveDef
+      (_root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes task.model) [σ, τ] :=
+  task.objectiveWithMode .train
 
 namespace SeqTask
 
@@ -83,16 +85,17 @@ def mse {σ τ : Spec.Shape} (model : _root_.Runtime.Autograd.TorchLean.NN.Seq �
   { model := model, loss := .mse reduction }
 
 /-- Constructor: one-hot classification task (cross-entropy loss). -/
-def crossEntropyOneHot {σ τ : Spec.Shape} (model : _root_.Runtime.Autograd.TorchLean.NN.Seq σ τ)
+def oneHotCrossEntropy {σ τ : Spec.Shape}
+    (model : _root_.Runtime.Autograd.TorchLean.NN.Seq σ τ)
     (reduction : _root_.TorchLean.Loss.Reduction := .mean) :
     SeqTask σ τ :=
-  { model := model, loss := .crossEntropyOneHot reduction }
+  { model := model, loss := .oneHotCrossEntropy reduction }
 
 end SeqTask
 
-/-- Parameter shapes for a task (delegates to `Seq.paramShapes`). -/
-abbrev paramShapes {σ τ : Spec.Shape} (task : SeqTask σ τ) : List Spec.Shape :=
-  _root_.Runtime.Autograd.TorchLean.NN.Seq.paramShapes task.model
+/-- Shapes of the task model's trainable parameters and persistent buffers. -/
+abbrev stateShapes {σ τ : Spec.Shape} (task : SeqTask σ τ) : List Spec.Shape :=
+  _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes task.model
 
 /--
 Optimizer hyperparameter configuration for the supervised training helpers.
@@ -153,15 +156,17 @@ structure TrainConfig where
   cudaMemWatch : Nat := 0
   deriving Repr
 
+namespace CUDAMemory
+
 /-- State carried by the CUDA-memory drift detector used by sustained training runs. -/
-structure CudaMemWatchState where
+structure State where
   firstStep : Nat
   firstFreeBytes : Nat
   warned : Bool
 deriving Repr
 
 /-- Resolve an explicit CUDA-memory cadence, or enable periodic sampling for very long runs. -/
-def effectiveCudaMemWatch (opts : _root_.Runtime.Autograd.Torch.Options)
+def cadence (opts : _root_.Runtime.Autograd.Torch.Options)
     (steps requested : Nat) : Nat :=
   if requested != 0 then
     requested
@@ -174,9 +179,8 @@ def effectiveCudaMemWatch (opts : _root_.Runtime.Autograd.Torch.Options)
 Sample the CUDA allocator and warn when sustained free-memory loss projects exhaustion before the
 requested run completes.
 -/
-def reportCudaMemWatch (opts : _root_.Runtime.Autograd.Torch.Options)
-    (watchEvery totalSteps done : Nat) (state? : Option CudaMemWatchState) :
-    IO (Option CudaMemWatchState) := do
+def sample (opts : _root_.Runtime.Autograd.Torch.Options)
+    (watchEvery totalSteps done : Nat) (state? : Option State) : IO (Option State) := do
   if !opts.usesCuda || watchEvery = 0 || (done != 0 && done % watchEvery != 0) then
     pure state?
   else
@@ -199,11 +203,14 @@ def reportCudaMemWatch (opts : _root_.Runtime.Autograd.Torch.Options)
             let projectedFailure := done + freeNow / dropPerStep
             if projectedFailure < totalSteps then
               IO.println <|
-                s!"  cuda_mem warning: free device memory is dropping by ~{dropPerStep} bytes/step; " ++
-                  s!"projected allocation failure before requested step count (around step {projectedFailure})."
+                s!"  cuda_mem warning: free device memory is dropping by ~{dropPerStep} " ++
+                  s!"bytes/step; projected allocation failure before requested step count " ++
+                  s!"(around step {projectedFailure})."
               pure (some { st with warned := true })
             else
               pure (some st)
+
+end CUDAMemory
 
 /--
 Small summary returned by lower training helpers.
@@ -313,8 +320,8 @@ def adadeltaStateWithLR {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
 A fully instantiated supervised task runner.
 
 This bundles:
-- the imperative `ScalarModule` (parameters/buffers stored in refs),
-- compiled forward artifacts and loss functions for both `.train` and `.eval` modes (so switching mode is
+- the imperative `Objective` (parameters/buffers stored in refs),
+- lowered typed graphs for forward evaluation and loss in both `.train` and `.eval` modes (so switching mode is
   low-overhead),
 - and the current mode stored in an `IO.Ref`.
 
@@ -324,100 +331,84 @@ during training.
 structure Runner (α : Type) [_root_.Context α] [DecidableEq Spec.Shape]
     {σ τ : Spec.Shape} (task : SeqTask σ τ) where
   /-- Instantiated scalar module storing parameters/buffers in mutable refs. -/
-  module : TorchLean.Module.ScalarModule α (paramShapes task) [σ, τ]
-  /-- Compiled forward predictor specialized to training-mode behavior. -/
-  predictorTrain : _root_.Runtime.Autograd.Torch.CompiledGraph α (paramShapes task ++ [σ]) τ
-  /-- Compiled forward predictor specialized to eval-mode behavior. -/
-  predictorEval : _root_.Runtime.Autograd.Torch.CompiledGraph α (paramShapes task ++ [σ]) τ
-  /-- Compiled loss function for training-mode behavior. -/
-  lossTrain : _root_.Runtime.Autograd.Torch.CompiledScalar α (paramShapes task ++ [σ, τ])
-  /-- Compiled loss function for eval-mode behavior. -/
-  lossEval : _root_.Runtime.Autograd.Torch.CompiledScalar α (paramShapes task ++ [σ, τ])
+  module : TorchLean.Module.Objective α (stateShapes task) [σ, τ]
+  /-- Typed forward graph specialized to training-mode behavior. -/
+  predictorTrain : _root_.Runtime.Autograd.Torch.TypedGraph α (stateShapes task ++ [σ]) τ
+  /-- Typed forward graph specialized to eval-mode behavior. -/
+  predictorEval : _root_.Runtime.Autograd.Torch.TypedGraph α (stateShapes task ++ [σ]) τ
+  /-- Typed scalar loss graph specialized to training-mode behavior. -/
+  lossTrain : _root_.Runtime.Autograd.Torch.TypedScalarGraph α (stateShapes task ++ [σ, τ])
+  /-- Typed scalar loss graph specialized to eval-mode behavior. -/
+  lossEval : _root_.Runtime.Autograd.Torch.TypedScalarGraph α (stateShapes task ++ [σ, τ])
   /-- Mutable mode flag (`.train` / `.eval`) used by stateful layers (e.g. dropout/batchnorm). -/
   mode : IO.Ref _root_.Runtime.Autograd.TorchLean.NN.Mode
 
+namespace Runner
+
 /-- Finish runner construction once parameter storage has been instantiated. -/
-def runnerOfModule {σ τ : Spec.Shape} (task : SeqTask σ τ)
+def ofModule {σ τ : Spec.Shape} (task : SeqTask σ τ)
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
-    (module : TorchLean.Module.ScalarModule α (paramShapes task) [σ, τ]) :
+    (module : TorchLean.Module.Objective α (stateShapes task) [σ, τ]) :
     IO (Runner α task) := do
-  let predictorTrain ← _root_.Runtime.Autograd.TorchLean.NN.Seq.compileForwardWithMode .train (α := α) task.model
-  let predictorEval ← _root_.Runtime.Autograd.TorchLean.NN.Seq.compileForwardWithMode .eval (α := α) task.model
-  let lossTrain ← _root_.Runtime.Autograd.TorchLean.Autodiff.compileLoss (α := α)
-    (paramShapes := paramShapes task) (inputShapes := [σ, τ])
-    (task.moduleDefWithMode .train).loss
-  let lossEval ← _root_.Runtime.Autograd.TorchLean.Autodiff.compileLoss (α := α)
-    (paramShapes := paramShapes task) (inputShapes := [σ, τ])
-    (task.moduleDefWithMode .eval).loss
-  let mode : IO.Ref _root_.Runtime.Autograd.TorchLean.NN.Mode ← IO.mkRef .eval
+  let predictorTrain ← _root_.Runtime.Autograd.TorchLean.NN.Seq.lowerToTypedGraph
+    (α := α) task.model (mode := .train)
+  let predictorEval ← _root_.Runtime.Autograd.TorchLean.NN.Seq.lowerToTypedGraph
+    (α := α) task.model (mode := .eval)
+  let lossTrain ← _root_.Runtime.Autograd.TorchLean.Autodiff.lowerScalarToTypedGraph (α := α)
+    (paramShapes := stateShapes task) (inputShapes := [σ, τ])
+    (task.objectiveWithMode .train).loss
+  let lossEval ← _root_.Runtime.Autograd.TorchLean.Autodiff.lowerScalarToTypedGraph (α := α)
+    (paramShapes := stateShapes task) (inputShapes := [σ, τ])
+    (task.objectiveWithMode .eval).loss
+  let mode : IO.Ref _root_.Runtime.Autograd.TorchLean.NN.Mode ← IO.mkRef .train
   pure { module, predictorTrain, predictorEval, lossTrain, lossEval, mode }
 
 /--
 Instantiate a `Runner` by explicitly providing a `Float → α` cast and backend.
 
-Use this when you want to run the same task over different numeric backends (e.g. `Float` vs
-`IEEE32Exec`) or when you want custom literal injection.
+Use this when you want to run the same task over different scalar semantics (for example native
+`Float32` and `IEEE32Exec`) or when you want custom literal injection.
 -/
-def instantiateConfigured {σ τ : Spec.Shape} (task : SeqTask σ τ)
+def instantiateAs {σ τ : Spec.Shape} (task : SeqTask σ τ)
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (cast : Float → α) (opts : _root_.Runtime.Autograd.Torch.Options := {}) :
     IO (Runner α task) := do
-  let module ← TorchLean.Module.instantiateConfigured (α := α) task.moduleDef cast opts
-  runnerOfModule task module
+  let module ← TorchLean.Module.instantiateAs (α := α) task.objective cast opts
+  ofModule task module
 
 /--
-Instantiate a `Float` runner using storage-first parameter initialization when the model provides
-it. Models without a runtime plan automatically retain the ordinary tensor initializer path.
+Instantiate a runner over Lean's binary64 `Float` type.
+
+This explicit compatibility path is useful for numerical comparisons and low-level tests. Public
+training defaults to native `Float32`. Storage-first initialization is used when the model provides
+a plan; other models retain their tensor initializer.
 -/
-def instantiateConfiguredFloat {σ τ : Spec.Shape} (task : SeqTask σ τ)
+def instantiateFloat64 {σ τ : Spec.Shape} (task : SeqTask σ τ)
     (opts : _root_.Runtime.Autograd.Torch.Options := {}) : IO (Runner Float task) := do
-  let module ← TorchLean.Module.instantiateFloat task.moduleDef opts
-  runnerOfModule task module
-
-/--
-Instantiate a `Runner` by explicitly providing a `Float → α` cast and a backend selector.
-
-Instantiate a module with explicit runtime options.
--/
-def instantiateWith {σ τ : Spec.Shape} (task : SeqTask σ τ)
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (cast : Float → α) (backend : _root_.Runtime.Autograd.Torch.Backend := .eager) :
-    IO (Runner α task) := do
-  instantiateConfigured (task := task) (α := α) cast { backend := backend }
+  let module ← TorchLean.Module.instantiateFloat64 task.objective opts
+  ofModule task module
 
 /--
 Instantiate a `Runner` using the standard runtime literal injection `_root_.TorchLean.Runtime.ofFloat`.
 
 This is the common entrypoint for executable examples.
 -/
-def instantiateWithRuntimeOptions {σ τ : Spec.Shape} (task : SeqTask σ τ)
+def instantiate {σ τ : Spec.Shape} (task : SeqTask σ τ)
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [_root_.TorchLean.Runtime.FromFloat α]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (opts : _root_.Runtime.Autograd.Torch.Options := {}) :
     IO (Runner α task) :=
-  instantiateConfigured (task := task) (α := α) _root_.TorchLean.Runtime.ofFloat opts
+  instantiateAs (task := task) (α := α) _root_.TorchLean.Runtime.ofFloat opts
+
+end Runner
 
 /--
-Instantiate a `Runner` using the standard runtime literal injection `_root_.TorchLean.Runtime.ofFloat` and a
-backend selector.
-
-Instantiate a module after parsing runtime options.
--/
-def instantiate {σ τ : Spec.Shape} (task : SeqTask σ τ)
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [_root_.TorchLean.Runtime.FromFloat α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (backend : _root_.Runtime.Autograd.Torch.Backend := .eager) :
-    IO (Runner α task) :=
-  instantiateWithRuntimeOptions (task := task) (α := α) { backend := backend }
-
-/--
-Run a TorchLean task with CLI-style dtype/backend selection, then call `k` with a fully constructed
+Run a TorchLean task with CLI-style scalar/execution selection, then call `k` with a fully constructed
   runner.
 
-This is used by `lake exe` entrypoints: `run` takes care of parsing dtype flags and instantiating
-the underlying module/compiled programs.
+This is used by `lake exe` entrypoints: `run` takes care of parsing scalar flags and instantiating
+the underlying module and typed graphs.
 -/
 def run {σ τ : Spec.Shape} (task : SeqTask σ τ) (args : List String)
     (k :
@@ -425,16 +416,20 @@ def run {σ τ : Spec.Shape} (task : SeqTask σ τ) (args : List String)
         [_root_.TorchLean.Runtime.FromFloat α] →
         Runner α task → List String → IO Unit) :
     IO Unit := do
-  TorchLean.Module.withModuleRuntime task.moduleDef args (fun {α} _ _ _ _ module rest => do
-    let predictorTrain ← _root_.Runtime.Autograd.TorchLean.NN.Seq.compileForwardWithMode .train (α := α) task.model
-    let predictorEval ← _root_.Runtime.Autograd.TorchLean.NN.Seq.compileForwardWithMode .eval (α := α) task.model
-    let lossTrain ← _root_.Runtime.Autograd.TorchLean.Autodiff.compileLoss (α := α)
-      (paramShapes := paramShapes task) (inputShapes := [σ, τ])
-      (task.moduleDefWithMode .train).loss
-    let lossEval ← _root_.Runtime.Autograd.TorchLean.Autodiff.compileLoss (α := α)
-      (paramShapes := paramShapes task) (inputShapes := [σ, τ])
-      (task.moduleDefWithMode .eval).loss
-    let mode : IO.Ref _root_.Runtime.Autograd.TorchLean.NN.Mode ← IO.mkRef .eval
+  TorchLean.Module.withModule task.objective args (fun {α} _ _ _ _ _cast module rest => do
+    let predictorTrain ← _root_.Runtime.Autograd.TorchLean.NN.Seq.lowerToTypedGraph
+      (α := α) task.model (mode := .train)
+    let predictorEval ← _root_.Runtime.Autograd.TorchLean.NN.Seq.lowerToTypedGraph
+      (α := α) task.model (mode := .eval)
+    let lossTrain ←
+      _root_.Runtime.Autograd.TorchLean.Autodiff.lowerScalarToTypedGraph (α := α)
+      (paramShapes := stateShapes task) (inputShapes := [σ, τ])
+      (task.objectiveWithMode .train).loss
+    let lossEval ←
+      _root_.Runtime.Autograd.TorchLean.Autodiff.lowerScalarToTypedGraph (α := α)
+      (paramShapes := stateShapes task) (inputShapes := [σ, τ])
+      (task.objectiveWithMode .eval).loss
+    let mode : IO.Ref _root_.Runtime.Autograd.TorchLean.NN.Mode ← IO.mkRef .train
     k (α := α)
       { module := module
         predictorTrain := predictorTrain
@@ -445,15 +440,17 @@ def run {σ τ : Spec.Shape} (task : SeqTask σ τ) (args : List String)
       rest
   )
 
-/-- Read the current parameter list from a runner. -/
-def params {σ τ : Spec.Shape} {task : SeqTask σ τ}
+namespace Runner
+
+/-- Read the complete parameter-and-buffer state from a runner. -/
+def state {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) :
-    IO (_root_.Runtime.Autograd.Torch.TList α (paramShapes task)) :=
-  TorchLean.Module.params runner.module
+    IO (_root_.Runtime.Autograd.Torch.TList α (stateShapes task)) :=
+  TorchLean.Module.state runner.module
 
 /-- Read the runner's current mode (`.train` or `.eval`). -/
-def mode {σ τ : Spec.Shape} {task : SeqTask σ τ}
+def currentMode {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) : IO _root_.Runtime.Autograd.TorchLean.NN.Mode :=
   runner.mode.get
@@ -464,14 +461,14 @@ def setMode {σ τ : Spec.Shape} {task : SeqTask σ τ}
     (runner : Runner α task) (value : _root_.Runtime.Autograd.TorchLean.NN.Mode) : IO Unit :=
   runner.mode.set value
 
-/-- Convenience: `setMode runner .train`. -/
-def trainMode {σ τ : Spec.Shape} {task : SeqTask σ τ}
+/-- Select training behavior for stateful layers. -/
+def train {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) : IO Unit :=
   setMode runner .train
 
-/-- Convenience: `setMode runner .eval`. -/
-def evalMode {σ τ : Spec.Shape} {task : SeqTask σ τ}
+/-- Select evaluation behavior for stateful layers. -/
+def eval {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) : IO Unit :=
   setMode runner .eval
@@ -481,25 +478,7 @@ def isTraining {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) : IO Bool :=
   do
-    pure ((← mode runner) == .train)
-
-/-- Pick the predictor compiled for the runner's current mode (`.train` or `.eval`). -/
-def activePredictor {σ τ : Spec.Shape} {task : SeqTask σ τ}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
-    (runner : Runner α task) :
-    IO (_root_.Runtime.Autograd.Torch.CompiledGraph α (paramShapes task ++ [σ]) τ) := do
-  match (← mode runner) with
-  | .train => pure runner.predictorTrain
-  | .eval => pure runner.predictorEval
-
-/-- Pick the loss program compiled for the runner's current mode (`.train` or `.eval`). -/
-def activeLoss {σ τ : Spec.Shape} {task : SeqTask σ τ}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
-    (runner : Runner α task) :
-    IO (_root_.Runtime.Autograd.Torch.CompiledScalar α (paramShapes task ++ [σ, τ])) := do
-  match (← mode runner) with
-  | .train => pure runner.lossTrain
-  | .eval => pure runner.lossEval
+    pure ((← currentMode runner) == .train)
 
 /--
 Refresh mode-dependent runner buffers using one supervised sample.
@@ -507,60 +486,72 @@ Refresh mode-dependent runner buffers using one supervised sample.
 This mutates the module parameters only in `.train` mode, mirroring PyTorch-style buffer updates
 for layers such as normalization. In `.eval` mode it is a no-op.
 -/
-def updateRunnerBuffers {σ τ : Spec.Shape} {task : SeqTask σ τ}
+def updateBuffers {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) (sample : _root_.Runtime.Autograd.Torch.TList α [σ, τ]) : IO Unit := do
-  let currentMode ← mode runner
-  if currentMode == .train && _root_.Runtime.Autograd.TorchLean.NN.Seq.hasBufferUpdates task.model then
+  let selectedMode ← currentMode runner
+  if selectedMode == .train &&
+      _root_.Runtime.Autograd.TorchLean.NN.Seq.hasBufferUpdates task.model then
     match sample with
     | .cons x (.cons _y .nil) => do
-        let ps ← params runner
-        let ps' ← _root_.Runtime.Autograd.TorchLean.NN.Seq.updateBuffers currentMode task.model ps x
-        TorchLean.Module.setParams runner.module ps'
+        let ps ← state runner
+        let ps' ←
+          _root_.Runtime.Autograd.TorchLean.NN.Seq.updateBuffers selectedMode task.model ps x
+        TorchLean.Module.loadState runner.module ps'
   else
     pure ()
 
 /--
-Run one forward/backward pass on a single supervised sample and return gradients for all parameters.
-Unlike PyTorch's in-place `.grad` convention, this API returns the gradient pack explicitly.
+Return the state-shaped gradient of one supervised sample.
+
+Unlike PyTorch's mutating `.backward()` operation, this function returns the gradient pack.
 -/
-def backward {σ τ : Spec.Shape} {task : SeqTask σ τ}
+def gradState {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) (sample : _root_.Runtime.Autograd.Torch.TList α [σ, τ]) :
-    IO (_root_.Runtime.Autograd.Torch.TList α (paramShapes task)) := do
+    IO (_root_.Runtime.Autograd.Torch.TList α (stateShapes task)) := do
   -- The instantiated scalar module always uses the training-mode program; keep the runner mode
-  -- aligned so `updateRunnerBuffers` is not accidentally skipped.
-  trainMode runner
-  updateRunnerBuffers runner sample
-  TorchLean.Module.backward runner.module sample .nil
+  -- aligned so `updateBuffers` is not accidentally skipped.
+  train runner
+  updateBuffers runner sample
+  TorchLean.Module.gradState runner.module sample .nil
 
-/-- Predict on one input tensor using the runner's active mode (`.train` or `.eval`). -/
-def predict {σ τ : Spec.Shape} {task : SeqTask σ τ}
+/-- Run one input tensor using the active mode (`.train` or `.eval`). -/
+def run {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) (x : Spec.Tensor α σ) :
     IO (Spec.Tensor α τ) := do
   if runner.module.opts.usesCuda then
-    let currentMode ← mode runner
-    _root_.Runtime.Autograd.TorchLean.NN.Seq.forward (α := α) (tensorConv := runner.module.tensorConv)
-      runner.module.opts currentMode task.model runner.module.trainer.params x
+    let selectedMode ← currentMode runner
+    _root_.Runtime.Autograd.TorchLean.NN.Seq.forwardNoGrad
+      (α := α) (tensorConv := runner.module.tensorConv)
+      runner.module.opts task.model runner.module.trainer.state x (mode := selectedMode)
   else
-    let ps ← params runner
-    let predictor ← activePredictor runner
-    pure (_root_.Runtime.Autograd.TorchLean.NN.Seq.forwardArtifact task.model predictor ps x)
+    let ps ← state runner
+    let predictor :=
+      match ← currentMode runner with
+      | .train => runner.predictorTrain
+      | .eval => runner.predictorEval
+    let args : _root_.Runtime.Autograd.Torch.TList α
+        (_root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes task.model ++ [σ]) :=
+      _root_.Proofs.Autograd.Algebra.TList.append
+        (ss₁ := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes task.model)
+        (ss₂ := [σ]) ps (.cons x .nil)
+    pure (_root_.Runtime.Autograd.Torch.TypedGraph.forward predictor args)
 
-/-- Predict on a list of inputs by repeatedly calling `predict`. -/
-def predictBatch {σ τ : Spec.Shape} {task : SeqTask σ τ}
+/-- Run a list of inputs using the active mode. -/
+def runBatch {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) (xs : List (Spec.Tensor α σ)) :
     IO (List (Spec.Tensor α τ)) :=
-  xs.mapM (predict runner)
+  xs.mapM (run runner)
 
-/-- For classification heads: run `predict`, then take `argmax` over the logits (if defined). -/
-def predictClass? {σ : Spec.Shape} {n : Nat} {task : SeqTask σ (.dim n .scalar)}
+/-- Run a classification head and return its largest logit index. -/
+def classify? {σ : Spec.Shape} {n : Nat} {task : SeqTask σ (.dim n .scalar)}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) (x : Spec.Tensor α σ) :
     IO (Option (Fin n)) := do
-  let logits ← predict runner x
+  let logits ← run runner x
   pure <| _root_.TorchLean.Metrics.argmax? (α := α) (n := n) logits
 
 /-- Compute `(correct, total)` for a one-hot classification dataset. -/
@@ -576,7 +567,7 @@ def accuracyOneHot {σ : Spec.Shape} {n : Nat} {task : SeqTask σ (.dim n .scala
           let (x, y) :=
             match sample with
             | .cons x (.cons y .nil) => (x, y)
-          let logits ← predict runner x
+          let logits ← run runner x
           let ok := _root_.TorchLean.Metrics.correctOneHot? (α := α) (n := n) logits y
           go (if ok = some true then correct + 1 else correct) (total + 1) rest
   go 0 0 samples
@@ -589,16 +580,19 @@ def meanLoss {σ τ : Spec.Shape} {task : SeqTask σ τ}
   let values ←
     if runner.module.opts.usesCuda then
       samples.mapM (fun sample => do
-        let loss ← TorchLean.Module.forward runner.module sample .nil
+        let loss ← TorchLean.Module.loss runner.module sample .nil
         pure (Spec.Tensor.toScalar loss))
     else do
-      let compiled ← activeLoss runner
-      let ps ← params runner
+      let lossGraph :=
+        match ← currentMode runner with
+        | .train => runner.lossTrain
+        | .eval => runner.lossEval
+      let ps ← state runner
       samples.mapM (fun sample => do
-        let args : _root_.Runtime.Autograd.Torch.TList α (paramShapes task ++ [σ, τ]) :=
+        let args : _root_.Runtime.Autograd.Torch.TList α (stateShapes task ++ [σ, τ]) :=
           _root_.Proofs.Autograd.Algebra.TList.append
-            (α := α) (ss₁ := paramShapes task) (ss₂ := [σ, τ]) ps sample
-        pure (Spec.Tensor.toScalar <| _root_.Runtime.Autograd.Torch.CompiledScalar.forward compiled
+            (α := α) (ss₁ := stateShapes task) (ss₂ := [σ, τ]) ps sample
+        pure (Spec.Tensor.toScalar <| _root_.Runtime.Autograd.Torch.TypedScalarGraph.forward lossGraph
           args))
   match values with
   | [] => pure 0
@@ -616,8 +610,10 @@ def meanLossDataset {σ τ : Spec.Shape} {task : SeqTask σ τ}
 def moduleLoss {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) (sample : _root_.Runtime.Autograd.Torch.TList α [σ, τ]) : IO α := do
-  let loss ← TorchLean.Module.forward runner.module sample .nil
+  let loss ← TorchLean.Module.loss runner.module sample .nil
   pure (Spec.Tensor.toScalar loss)
+
+end Runner
 
 /-- Treat `0` as the conservative single-sample step size. -/
 def effectiveTrainBatchSize (n : Nat) : Nat :=

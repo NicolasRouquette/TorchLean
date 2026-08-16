@@ -27,7 +27,7 @@ namespace NN
 /-! ## Sequential models -/
 
 /--
-Sequential composition of `LayerDef`s, indexed by input/output shape.
+Sequential composition of `Layer`s, indexed by input/output shape.
 
 This is the builder-layer analogue of `torch.nn.Sequential`: a `Seq σ τ` represents a model that
 takes an input of shape `σ` and produces an output of shape `τ` by running layers left-to-right.
@@ -36,41 +36,41 @@ inductive Seq : Shape → Shape → Type 2 where
   /-- The empty sequence, which leaves a tensor unchanged. -/
   | id (s : Shape) : Seq s s
   /-- Run one layer, then the remaining sequence. -/
-  | cons {σ τ υ : Shape} : LayerDef σ τ → Seq τ υ → Seq σ υ
+  | cons {σ τ υ : Shape} : Layer σ τ → Seq τ υ → Seq σ υ
 
 namespace Seq
 
 /--
-Collect the parameter shapes required by a sequential model.
+Collect the parameter and persistent-buffer shapes owned by a sequential model.
 
-This concatenates each layer’s `paramShapes` in order.
+This concatenates each layer's `stateShapes` in order.
 -/
-def paramShapes : {σ τ : Shape} → Seq σ τ → List Shape
+def stateShapes : {σ τ : Shape} → Seq σ τ → List Shape
   | _, _, .id _ => []
-  | _, _, .cons l rest => l.paramShapes ++ paramShapes rest
+  | _, _, .cons l rest => l.stateShapes ++ stateShapes rest
 
 /--
-Collect the `requires_grad` flags for all parameters in a sequential model.
+Collect the gradient flags for all parameters and buffers in a sequential model.
 
-This concatenates each layer’s `paramRequiresGrad` in order.
+This concatenates each layer's `requiresGrad` in order. Persistent buffers carry `false`.
 -/
-def paramRequiresGrad : {σ τ : Shape} → Seq σ τ → List Bool
+def requiresGrad : {σ τ : Shape} → Seq σ τ → List Bool
   | _, _, .id _ => []
-  | _, _, .cons l rest => l.paramRequiresGrad ++ paramRequiresGrad rest
+  | _, _, .cons l rest => l.requiresGrad ++ requiresGrad rest
 
 /--
-Initial parameter values for a sequential model.
+Initial parameter and persistent-buffer values for a sequential model.
 
-This concatenates each layer’s `initParams` into the flat parameter list expected by
-`programWithMode` / `scalarModuleDefWithMode`.
+This concatenates each layer's `initState` into the flat state list expected by `forward` and
+the supervised module constructors.
 -/
-def initParams : {σ τ : Shape} → (m : Seq σ τ) → Torch.TList Float (paramShapes m)
+def initState : {σ τ : Shape} → (m : Seq σ τ) → Torch.TList Float (stateShapes m)
   | _, _, .id _ => .nil
   | _, _, .cons l rest =>
-      let xs := l.initParams
-      let ys := initParams rest
+      let xs := l.initState
+      let ys := initState rest
       _root_.Proofs.Autograd.Algebra.TList.append (α := Float)
-        (ss₁ := l.paramShapes) (ss₂ := paramShapes rest) xs ys
+        (ss₁ := l.stateShapes) (ss₂ := stateShapes rest) xs ys
 
 /--
 Collect a storage-first initializer plan when every parameterized layer supplies one.
@@ -79,7 +79,7 @@ Parameter-free layers need no annotation and contribute the empty plan. If any p
 has only tensor-valued initializers, the whole model falls back to the ordinary initialization path.
 -/
 def runtimeInit? : {σ τ : Shape} → (m : Seq σ τ) →
-    Option (TorchLean.Module.RuntimeInit.Plan (paramShapes m))
+    Option (TorchLean.Module.RuntimeInit.Plan (stateShapes m))
   | _, _, .id _ => some .nil
   | _, _, .cons l rest =>
       match l.runtimeInit, runtimeInit? rest with
@@ -112,54 +112,54 @@ abbrev RefT (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape]
   Torch.Ops.Ref (m := m) (α := α) s
 
 /--
-Internal evaluator that splits the flat parameter list as it walks the model.
+Internal evaluator that splits the flat model state as it walks the model.
 
-This is the reference-level forward pass used to implement `programWithMode`.
+This is the reference-level forward pass used to implement `forward`.
 -/
-def forwardParams {σ τ : Shape} (model : Seq σ τ) {α : Type} [Context α] [DecidableEq Shape]
+def forwardState {σ τ : Shape} (model : Seq σ τ) {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Torch.Ops (m := m) (α := α)]
     (mode : Mode)
-    (ps : Torch.RefList (RefT (m := m) (α := α)) (paramShapes model))
+    (ps : Torch.RefList (RefT (m := m) (α := α)) (stateShapes model))
     (x : RefT (m := m) (α := α) σ) : m (RefT (m := m) (α := α) τ) :=
   match model with
   | .id _ => pure x
   | .cons l rest =>
       let (psL, psR) :=
         Torch.RefList.split (Ref := RefT (m := m) (α := α))
-          (ss₁ := l.paramShapes) (ss₂ := paramShapes rest) ps
+          (ss₁ := l.stateShapes) (ss₂ := stateShapes rest) ps
       do
         let y ← l.forwardRef (α := α) (m := m) mode psL x
-        forwardParams (model := rest) (α := α) (m := m) mode psR y
+        forwardState (model := rest) (α := α) (m := m) mode psR y
 
-/-- Turn a sequential model into a backend-generic `Program` (forward pass only). -/
-def programWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
+/--
+The differentiable forward computation of a sequential model.
+
+The result is operation-polymorphic: eager execution records an autograd tape, while typed-graph
+execution records shape-indexed SSA data. `mode` controls layers such as dropout and batch
+normalization; it does not enable or disable gradient tracking.
+-/
+def forward {σ τ : Shape} (model : Seq σ τ) (mode : Mode := .eval)
     {α : Type} [Context α] [DecidableEq Shape] :
-    TorchLean.Program α (paramShapes model ++ [σ]) τ :=
+    TorchLean.Program α (stateShapes model ++ [σ]) τ :=
   fun {m} _ _ =>
     Torch.CurriedRef.curry (Ref := RefT (m := m) (α := α))
-      (ss := paramShapes model ++ [σ]) (β := m (RefT (m := m) (α := α) τ)) (fun args => do
-        let (ps, x) := Torch.RefList.splitLast (Ref := RefT (m := m) (α := α)) (ss := paramShapes
+      (ss := stateShapes model ++ [σ]) (β := m (RefT (m := m) (α := α) τ)) (fun args => do
+        let (ps, x) := Torch.RefList.splitLast (Ref := RefT (m := m) (α := α)) (ss := stateShapes
           model) (τ := σ) args
-        forwardParams (model := model) (α := α) (m := m) mode ps x)
-
-  /-- Default eval-mode forward program for a sequential model. -/
-  def forwardProgram {σ τ : Shape} (model : Seq σ τ) {α : Type} [Context α] [DecidableEq Shape] :
-      TorchLean.Program α (paramShapes model ++ [σ]) τ :=
-    programWithMode .eval model
+        forwardState (model := model) (α := α) (m := m) mode ps x)
 
   /-!
   ## Forward and inference helpers
 
   The naming mirrors the PyTorch split:
 
-  - `Mode.eval` / `Mode.train` choose layer behavior,
-  - `forward` executes the model under an explicit mode,
+  - `Mode.eval` / `Mode.train` choose layer behavior in `forward`,
+  - `forwardNoGrad` executes a concrete forward pass without recording gradients,
   - `predict` is eval-mode eager inference from live parameters,
-  - `compile` builds a reusable artifact, and
-  - `forwardArtifact` executes that artifact.
+  - `lowerToTypedGraph` records a reusable typed graph.
 
-  In particular, `predict` is not the compiled-artifact runner. Compiled execution has a separate
-  name because the mode is captured when the artifact is built.
+  In particular, `predict` is not the typed graph runner. Lowering captures the layer mode in the
+  graph. Evaluate the result with `TypedGraph.forward`.
   -/
 
   /-!
@@ -168,8 +168,8 @@ def programWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
   Why this exists: several runnable examples want to inspect logits (argmax decoding, probes,
   interactive loops) without re-implementing the `useParams/useInputs` boilerplate.
 
-  Note: this is eager-only. If you want "compile once, run many", use `compile`
-  + `forwardArtifact` instead.
+  Note: this is eager-only. To record once and run many times, use
+  `lowerToTypedGraph`, then evaluate the returned graph with `TypedGraph.forward`.
   -/
 
   /--
@@ -179,30 +179,28 @@ def programWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
   then releases ephemeral CUDA tape buffers because no backward pass will follow. Use this for
   validation, decoding, diffusion sampling, and other inference loops.
   -/
-  def forward {σ τ : Shape}
+  def forwardNoGrad {σ τ : Shape}
       (opts : _root_.Runtime.Autograd.Torch.Options)
-      (mode : Mode)
       (model : Seq σ τ)
       {α : Type} [Context α] [DecidableEq Shape]
       [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-      (params : _root_.Runtime.Autograd.Torch.ParamList α (paramShapes model))
-      (x : Spec.Tensor α σ) : IO (Spec.Tensor α τ) := do
-    -- `Seq.forward` is an inference helper. It still uses the eager session machinery to run the
-    -- model, but leaves are marked non-differentiable so calling forward does not build a training
-    -- tape by accident.
-    let opts := { opts with trackGradients := false }
+      (params : _root_.Runtime.Autograd.Torch.ParamList α (stateShapes model))
+      (x : Spec.Tensor α σ) (mode : Mode := .eval) : IO (Spec.Tensor α τ) := do
+    -- Inference still uses the eager session machinery so it can select native kernels, but its
+    -- leaves are deliberately non-differentiable and the transient tape is released before return.
+    let opts := { opts with gradEnabled := false }
     let sess ← _root_.Runtime.Autograd.Torch.Internal.EagerSession.new (α := α) opts
     sess.resetTape
     let outRef ← (do
       let pRefs ← _root_.Runtime.Autograd.Torch.Internal.useParams (α := α)
-        (ss := paramShapes model) params
+        (ss := stateShapes model) params
       let xRefs ← _root_.Runtime.Autograd.Torch.Internal.useInputs (α := α)
         (ss := [σ]) (.cons x .nil)
       let allRefs := _root_.Runtime.Autograd.Torch.RefList.append
-        (ss₁ := paramShapes model) (ss₂ := [σ]) pRefs xRefs
+        (ss₁ := stateShapes model) (ss₂ := [σ]) pRefs xRefs
       _root_.Runtime.Autograd.Torch.CurriedRef.uncurry
-        (ss := paramShapes model ++ [σ])
-        (programWithMode mode (model := model) (α := α)) allRefs) |>.run sess
+        (ss := stateShapes model ++ [σ])
+        (forward model (mode := mode) (α := α)) allRefs) |>.run sess
     let y ← _root_.Runtime.Autograd.Torch.Internal.EagerSession.getValue (α := α) sess outRef
     if opts.usesCuda then
       _root_.Runtime.Autograd.Torch.Internal.EagerSession.releaseCudaTapeNonParamValues sess
@@ -217,61 +215,35 @@ def programWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
   /--
   Run eval-mode eager inference for one concrete input.
 
-  This is the inference convenience wrapper around `forward opts .eval ...`. It keeps the common
-  path short while leaving training/eval mode explicit in `forward`.
+  This is the eval-mode convenience wrapper around `forwardNoGrad`.
   -/
   def predict {σ τ : Shape}
       (opts : _root_.Runtime.Autograd.Torch.Options)
       (model : Seq σ τ)
       {α : Type} [Context α] [DecidableEq Shape]
       [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-      (params : _root_.Runtime.Autograd.Torch.ParamList α (paramShapes model))
+      (params : _root_.Runtime.Autograd.Torch.ParamList α (stateShapes model))
       (x : Spec.Tensor α σ) : IO (Spec.Tensor α τ) :=
-    forward (α := α) (tensorConv := tensorConv) opts .eval model params x
+    forwardNoGrad (α := α) (tensorConv := tensorConv) opts model params x
 
   /--
-  Compile a sequential model into a reusable `CompiledGraph`.
+  Lower a sequential model into a reusable `TypedGraph`.
 
-  This is the "compile once, run many times" entrypoint for inference.
+  The model is recorded once as a typed SSA graph and can then be evaluated repeatedly.
   -/
-  def compileForwardWithMode {σ τ : Shape}
-      (mode : Mode)
+  def lowerToTypedGraph {σ τ : Shape}
       (model : Seq σ τ)
+      (mode : Mode := .eval)
       {α : Type} [Context α] [DecidableEq Shape] :
-      IO (_root_.Runtime.Autograd.Torch.CompiledGraph α (paramShapes model ++ [σ]) τ) :=
-    _root_.Runtime.Autograd.TorchLean.Autodiff.compileGraph (α := α)
-      (paramShapes := paramShapes model) (inputShapes := [σ]) (τ := τ)
-      (fun {β} _ _ => programWithMode mode (model := model) (α := β))
-
-  /--
-  Compile a sequential model in evaluation mode (`Mode.eval`).
-  -/
-  def compileForward {σ τ : Shape} (model : Seq σ τ)
-      {α : Type} [Context α] [DecidableEq Shape] :
-      IO (_root_.Runtime.Autograd.Torch.CompiledGraph α (paramShapes model ++ [σ]) τ) :=
-    compileForwardWithMode (α := α) .eval model
-
-  /--
-  Run a compiled sequential model on a single input tensor.
-
-  This helper calls `CompiledGraph.forward` and handles packing the
-  argument list `params ++ [x]`.
-  -/
-  def forwardArtifact {σ τ : Shape}
-      (model : Seq σ τ)
-      {α : Type} [Context α] [DecidableEq Shape]
-      (compiled : _root_.Runtime.Autograd.Torch.CompiledGraph α (paramShapes model ++ [σ]) τ)
-      (params : _root_.Runtime.Autograd.Torch.TList α (paramShapes model))
-      (x : Spec.Tensor α σ) : Spec.Tensor α τ :=
-      let args : _root_.Runtime.Autograd.Torch.TList α (paramShapes model ++ [σ]) :=
-        _root_.Proofs.Autograd.Algebra.TList.append
-          (α := α) (ss₁ := paramShapes model) (ss₂ := [σ]) params (.cons x .nil)
-      _root_.Runtime.Autograd.Torch.CompiledGraph.forward compiled args
+      IO (_root_.Runtime.Autograd.Torch.TypedGraph α (stateShapes model ++ [σ]) τ) :=
+    _root_.Runtime.Autograd.TorchLean.Autodiff.lowerToTypedGraph (α := α)
+      (paramShapes := stateShapes model) (inputShapes := [σ]) (τ := τ)
+      (fun {β} _ _ => forward model (mode := mode) (α := β))
 
   /--
   Update per-layer buffers across a sequential model.
 
-This walks the model left-to-right and, for each layer that defines `LayerDef.updateBuffers`,
+This walks the model left-to-right and, for each layer that defines `Layer.updateBuffers`,
 updates that layer’s parameter/buffer slice using the current activation. This is used to implement
 BatchNorm-style running statistics (and similar stateful layers) in a pure, explicit way.
 
@@ -280,94 +252,94 @@ PyTorch analogy: updating `running_mean` / `running_var` buffers during a forwar
 -/
 def updateBuffers {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
     {α : Type} [Context α] [DecidableEq Shape]
-    (ps : Torch.TList α (paramShapes model)) (x : Tensor α σ) :
-    IO (Torch.TList α (paramShapes model)) :=
+    (ps : Torch.TList α (stateShapes model)) (x : Tensor α σ) :
+    IO (Torch.TList α (stateShapes model)) :=
   match model with
   | .id _ => pure .nil
   | .cons l rest => do
       let (psL, psR) :=
         _root_.Proofs.Autograd.Algebra.TList.splitAppend
-          (α := α) (ss₁ := l.paramShapes) (ss₂ := paramShapes rest) ps
+          (α := α) (ss₁ := l.stateShapes) (ss₂ := stateShapes rest) ps
       let psL' ←
         match l.updateBuffers with
         | some f => f mode psL x
         | none => pure psL
-      let y ← LayerDef.forwardTensor l mode psL' x
+      let y ← Layer.forwardTensor l mode psL' x
       let psR' ← updateBuffers mode rest psR y
       pure <| _root_.Proofs.Autograd.Algebra.TList.append
-        (α := α) (ss₁ := l.paramShapes) (ss₂ := paramShapes rest) psL' psR'
+        (α := α) (ss₁ := l.stateShapes) (ss₂ := stateShapes rest) psL' psR'
 
-/-! ## Build a runnable `ScalarModuleDef` -/
+/-! ## Scalar objectives -/
+
+namespace Objective
 
 /--
-Bundle a sequential model and a supervised loss into a `ScalarModuleDef`.
+Pair an immutable sequential model with a scalar loss in an explicit layer mode.
 
-The resulting `ScalarModuleDef` can be handed to TorchLean’s runtime training code: it knows how to
-initialize parameters and compute a scalar loss given `(x, y)` pairs.
-
-PyTorch analogy: an `nn.Module` paired with a loss function, evaluated under `mode` (`train` vs
-  `eval`).
+The resulting definition initializes the model's complete parameter-and-buffer state and computes
+the loss from one `(input, target)` pair.
 -/
-def scalarModuleDefWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
+def createWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
     (loss : ∀ {α : Type}, [Context α] → [DecidableEq Shape] → TorchLean.Program α [τ, τ]
       Shape.scalar) :
-    TorchLean.Module.ScalarModuleDef (paramShapes model) [σ, τ] :=
-  { initParams := initParams model
+    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+  { initState := initState model
     runtimeInit := runtimeInit? model
-    initRequiresGrad := paramRequiresGrad model
+    requiresGrad := requiresGrad model
     loss := fun {α} => by
       intro _ _; exact
         (fun {m} _ _ =>
           Torch.CurriedRef.curry (Ref := RefT (m := m) (α := α))
-            (ss := paramShapes model ++ [σ, τ])
+            (ss := stateShapes model ++ [σ, τ])
             (β := m (RefT (m := m) (α := α) Shape.scalar)) (fun args => do
               let (ps, xy) :=
                 Torch.RefList.split (Ref := RefT (m := m) (α := α))
-                  (ss₁ := paramShapes model) (ss₂ := [σ, τ]) args
+                  (ss₁ := stateShapes model) (ss₂ := [σ, τ]) args
               let .cons x (.cons y .nil) := xy
-              let yhat ← forwardParams (model := model) (α := α) (m := m) mode ps x
+              let yhat ← forwardState (model := model) (α := α) (m := m) mode ps x
               Torch.CurriedRef.uncurry (Ref := RefT (m := m) (α := α)) (ss := [τ, τ])
                 (loss (α := α) (m := m)) (.cons yhat (.cons y .nil))
           ))
   }
 
-/-- Training-mode scalar-loss wrapper. -/
-def scalarModuleDef {σ τ : Shape} (model : Seq σ τ)
+/-- Pair a sequential model with a scalar loss in training mode. -/
+def create {σ τ : Shape} (model : Seq σ τ)
     (loss : ∀ {α : Type}, [Context α] → [DecidableEq Shape] → TorchLean.Program α [τ, τ]
       Shape.scalar) :
-    TorchLean.Module.ScalarModuleDef (paramShapes model) [σ, τ] :=
-  scalarModuleDefWithMode .train model loss
+    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+  createWithMode .train model loss
 
-/-- Common supervised regression wrapper: `loss := Loss.mse` with a chosen reduction. -/
-def mseScalarModuleDefWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
+/-- Pair a model with mean-squared error in an explicit layer mode. -/
+def mseWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
     (reduction : TorchLean.Loss.Reduction := .mean) :
-    TorchLean.Module.ScalarModuleDef (paramShapes model) [σ, τ] :=
-  scalarModuleDefWithMode mode (model := model) (loss := fun {α} _ _ =>
+    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+  createWithMode mode (model := model) (loss := fun {α} _ _ =>
     fun {m} _ _ =>
       fun yhat y => TorchLean.Loss.mse (m := m) (α := α) (s := τ) yhat y (reduction := reduction))
 
-/-- Training-mode MSE wrapper. -/
-def mseScalarModuleDef {σ τ : Shape} (model : Seq σ τ) (reduction : TorchLean.Loss.Reduction :=
+/-- Pair a model with mean-squared error in training mode. -/
+def mse {σ τ : Shape} (model : Seq σ τ) (reduction : TorchLean.Loss.Reduction :=
   .mean) :
-    TorchLean.Module.ScalarModuleDef (paramShapes model) [σ, τ] :=
-  mseScalarModuleDefWithMode .train model reduction
+    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+  mseWithMode .train model reduction
 
-/-- Common supervised classification wrapper: `loss := Loss.crossEntropyOneHot` with a chosen
-  reduction. -/
-def crossEntropyOneHotScalarModuleDefWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
+/-- Pair a model with one-hot cross entropy in an explicit layer mode. -/
+def oneHotCrossEntropyWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
     (reduction : TorchLean.Loss.Reduction := .mean) :
-    TorchLean.Module.ScalarModuleDef (paramShapes model) [σ, τ] :=
-  scalarModuleDefWithMode mode (model := model) (loss := fun {α} _ _ =>
+    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+  createWithMode mode (model := model) (loss := fun {α} _ _ =>
     fun {m} _ _ =>
       fun logits targetOneHot =>
-        TorchLean.Loss.crossEntropyOneHot (m := m) (α := α) (s := τ) logits targetOneHot
+        TorchLean.Loss.oneHotCrossEntropy (m := m) (α := α) (s := τ) logits targetOneHot
           (reduction := reduction))
 
-/-- Training-mode cross-entropy wrapper. -/
-def crossEntropyOneHotScalarModuleDef {σ τ : Shape} (model : Seq σ τ)
+/-- Pair a model with one-hot cross entropy in training mode. -/
+def oneHotCrossEntropy {σ τ : Shape} (model : Seq σ τ)
     (reduction : TorchLean.Loss.Reduction := .mean) :
-    TorchLean.Module.ScalarModuleDef (paramShapes model) [σ, τ] :=
-  crossEntropyOneHotScalarModuleDefWithMode .train model reduction
+    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+  oneHotCrossEntropyWithMode .train model reduction
+
+end Objective
 
 end Seq
 end NN

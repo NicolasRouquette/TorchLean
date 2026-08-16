@@ -35,7 +35,7 @@ def verifyCert (path : String := defaultCertPath) : IO Unit :=
 
 /-- CLI entrypoint used by the unified verification dispatcher. -/
 def main (args : List String) : IO Unit := do
-  let args := TorchLean.CLI.defaultPathFlagFromPositional args "cert" defaultCertPath
+  let args := TorchLean.CLI.normalizePathFlag args "cert" defaultCertPath
   let (path, args) ←
     match TorchLean.CLI.takeFlagValueDefault args "cert" defaultCertPath with
     | .ok result => pure result

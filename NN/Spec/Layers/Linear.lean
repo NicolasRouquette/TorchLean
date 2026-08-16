@@ -32,7 +32,7 @@ variable {α : Type} [Add α] [Mul α] [Zero α]
 /--
 Linear layer specification (pure, shape-indexed).
 
-This is the spec-level analogue of PyTorch `torch.nn.linear` / `torch.nn.functional.linear`:
+This is the spec-level analogue of PyTorch `torch.nn.Linear` / `torch.nn.functional.linear`:
 - `weights` has shape `[outDim, inDim]`,
 - `bias` has shape `[outDim]`.
 -/

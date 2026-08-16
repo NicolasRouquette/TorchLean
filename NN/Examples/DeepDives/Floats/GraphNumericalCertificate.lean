@@ -66,7 +66,7 @@ def sources : Array SourceRange := #[
   { nodeId := 1, enclosure := interval 0x3f000000 0x3f800000 }
 ]
 
-/-- Generate and replay the range trace and the selected backend plan. -/
+/-- Generate and replay the range trace and the selected kernel plan. -/
 def checked : Except String CheckedCertificate :=
   generateChecked NN.Backend.BackendProfile.checkedCpu graph sources
 
@@ -375,7 +375,7 @@ input [1,2]
 ```
 
 Nothing in certificate generation is told that this is an MLP. The checker sees ten ordinary IR
-nodes and obtains each transfer from `GraphRangeRegistry`. The backend planner independently chooses
+nodes and obtains each transfer from `GraphRangeRegistry`. Kernel selection independently chooses
 a capsule for every operation. The final replay executes the stored graph with bit-level binary32
 semantics and checks all ten intermediate tensors against the regenerated ranges.
 -/

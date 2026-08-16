@@ -41,7 +41,7 @@ before runtime:
 -- def badVector : Tensor Float (shape![3]) := tensor! [1.0, 2.0]
 ```
 -/
-def twoVector : Tensor.T Float (shape![2]) :=
+def twoVector : Tensor Float (shape![2]) :=
   tensor! [1.0, 2.0]
 
 /--

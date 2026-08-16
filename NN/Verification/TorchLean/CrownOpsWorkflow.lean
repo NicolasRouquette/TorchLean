@@ -7,14 +7,14 @@ Authors: TorchLean Team
 module
 
 public import NN.API
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 
 /-!
 # TorchLean CROWN Ops Workflow
 
 Running CROWN end-to-end on small TorchLean graphs.
 
-We compile TorchLean programs to the verifier IR (`NN.IR.Graph`), then run:
+We lower TorchLean programs to the verifier IR (`NN.IR.Graph`), then run:
 - IBP (`runIBP`)
 - basic CROWN forward bounds (`runCROWN`)
 - objective-dependent backward/dual CROWN (`runCROWNBackwardObjective`)
@@ -28,7 +28,7 @@ For attention + `layer_norm`, see
 
 Run:
   `lake exe verify -- torchlean-crown-ops`
-  `lake exe verify -- torchlean-crown-ops --dtype ieee754exec`
+  `lake exe verify -- torchlean-crown-ops --scalar ieee32-exec`
 -/
 
 @[expose] public section
@@ -55,19 +55,19 @@ def softmaxYShape : Spec.Shape := .dim softmaxOutDim .scalar
 
 /-- TorchLean model: `Linear -> Softmax`. -/
 def softmaxModel : nn.Sequential softmaxXShape softmaxYShape :=
-  nn.run 0 <|
+  nn.build 0 <|
     nn.Sequential![
       nn.linear softmaxInDim softmaxOutDim,
-      nn.softmax
+      nn.softmaxLast
     ]
 
 /-- Parameter shapes for `softmaxModel`. -/
-def softmaxParamShapes : List Spec.Shape := nn.paramShapes softmaxModel
+def softmaxParamShapes : List Spec.Shape := nn.stateShapes softmaxModel
 
 /-- Example margin functional on softmax outputs
 ($\mathrm{lo}_0-\mathrm{hi}_1$). -/
 def softmaxMargin {α : Type} [Context α]
-    (lo hi : Tensor α softmaxYShape) : α :=
+    (lo hi : Spec.Tensor α softmaxYShape) : α :=
   let lo0 := _root_.Spec.Tensor.vecGet lo fin0!
   let hi1 := _root_.Spec.Tensor.vecGet hi fin1!
   lo0 - hi1
@@ -75,7 +75,7 @@ def softmaxMargin {α : Type} [Context α]
 /--
 Run the softmax workflow under a chosen scalar backend `α`.
 
-This compiles the TorchLean model to the verifier IR and prints IBP/CROWN bounds.
+This lowers the TorchLean model to verifier IR and prints IBP/CROWN bounds.
 -/
 def runSoftmax {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
     [Runtime.FromFloat α] [BoundOps α] : IO Unit := do
@@ -91,28 +91,28 @@ def runSoftmax {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToStrin
         ] (by rfl))
       (NN.Tensor.ofListOfLength (α := α) [3] [cast 0.1, cast (-0.2), cast 0.0] (by rfl))
 
-  let compiled ←
-    match Verification.compileProgram
+  let lowered ←
+    match Verification.lowerProgramToIR
           (α := α) (paramShapes := softmaxParamShapes) (σ := softmaxXShape) (τ := softmaxYShape)
-          (nn.forwardProgram (model := softmaxModel) (α := α)) params with
+          (nn.forward softmaxModel (α := α)) params with
     | .ok c => pure c
     | .error e => throw <| IO.userError e
 
-  IO.println s!"compiled IR nodes: {compiled.graph.nodes.size}"
+  IO.println s!"lowered IR nodes: {lowered.graph.nodes.size}"
 
-  let x0 : Tensor α softmaxXShape :=
+  let x0 : Spec.Tensor α softmaxXShape :=
     NN.Tensor.ofListOfLength (α := α) [2] [cast 0.2, cast (-0.1)] (by rfl)
   let eps : α := Runtime.ofFloat 0.05
   let xB : FlatBox α := Verification.lInfBall (α := α) x0 eps
-  let ps : ParamStore α := compiled.seedInputBox xB
+  let ps : ParamStore α := lowered.seedInputBox xB
 
   -- IBP
-  let ibp := compiled.runIBP ps
-  let outB ← compiled.outputBoxOrThrow ibp
+  let ibp := lowered.runIBP ps
+  let outB ← lowered.outputBoxOrThrow ibp
   if hDim : outB.dim = softmaxOutDim then
-    let loY : Tensor α softmaxYShape := by
+    let loY : Spec.Tensor α softmaxYShape := by
       simpa [softmaxYShape] using outB.loAsDim hDim
-    let hiY : Tensor α softmaxYShape := by
+    let hiY : Spec.Tensor α softmaxYShape := by
       simpa [softmaxYShape] using outB.hiAsDim hDim
     IO.println s!"[IBP] p lo = {pretty loY}"
     IO.println s!"[IBP] p hi = {pretty hiY}"
@@ -121,12 +121,12 @@ def runSoftmax {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToStrin
     IO.println s!"[IBP] unexpected output dim {outB.dim} (expected {softmaxOutDim})"
 
   -- CROWN (forward, affine lower+upper)
-  match compiled.outputBoxCROWN? ps xB with
+  match lowered.outputBoxCROWN? ps xB with
   | .ok outC =>
       if hOut : outC.dim = softmaxOutDim then
-          let loY : Tensor α softmaxYShape := by
+          let loY : Spec.Tensor α softmaxYShape := by
             simpa [softmaxYShape] using outC.loAsDim hOut
-          let hiY : Tensor α softmaxYShape := by
+          let hiY : Spec.Tensor α softmaxYShape := by
             simpa [softmaxYShape] using outC.hiAsDim hOut
           IO.println s!"[CROWN] p lo = {pretty loY}"
           IO.println s!"[CROWN] p hi = {pretty hiY}"
@@ -137,10 +137,10 @@ def runSoftmax {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToStrin
       IO.println s!"[CROWN] {msg}"
 
   -- Backward/dual CROWN for the margin objective: p0 - p1.
-  let objV : Tensor α (.dim softmaxOutDim .scalar) :=
+  let objV : Spec.Tensor α (.dim softmaxOutDim .scalar) :=
     NN.Tensor.ofListOfLength (α := α) [3] [cast 1.0, cast (-1.0), cast 0.0] (by rfl)
   let obj : FlatVec α := { n := softmaxOutDim, v := objV }
-  match compiled.backwardObjectiveBox? ps ibp xB obj with
+  match lowered.backwardObjectiveBox? ps ibp xB obj with
   | .ok outC =>
       let loM : α := getAtOrZero outC.lo [0]
       let hiM : α := getAtOrZero outC.hi [0]
@@ -163,7 +163,7 @@ def mseXShape : Spec.Shape := .dim mseInDim .scalar
 /-- Output shape for the MSE-loss workflow. -/
 def mseYShape : Spec.Shape := .dim mseOutDim .scalar
 
-/-- Parameter shapes for the MSE-loss workflow forwardProgram (`[W,b,target]`). -/
+/-- Parameter shapes for the MSE-loss workflow (`[W,b,target]`). -/
 def mseParamShapes : List Spec.Shape := [mseWShape, mseBShape, mseYShape]
 
 /-- TorchLean forward program computing
@@ -182,7 +182,7 @@ def mseLossModel {α : Type} [Context α] [DecidableEq Spec.Shape] :
 /--
 Run the MSE-loss workflow under a chosen scalar backend `α`.
 
-This compiles the TorchLean forwardProgram to the verifier IR and prints IBP/CROWN bounds for the scalar
+This lowers the TorchLean forward computation to verifier IR and prints IBP/CROWN bounds for the scalar
   loss.
 -/
 def runMSE {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
@@ -197,30 +197,30 @@ def runMSE {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α
       (NN.Tensor.ofListOfLength (α := α) [2] [cast 0.05, cast (-0.02)] (by rfl))
       (NN.Tensor.ofListOfLength (α := α) [2] [cast 0.0, cast 1.0] (by rfl))
 
-  let compiled ←
-    match Verification.compileProgram
+  let lowered ←
+    match Verification.lowerProgramToIR
           (α := α) (paramShapes := mseParamShapes) (σ := mseXShape)
           (τ := Spec.Shape.scalar)
           (mseLossModel (α := α)) params with
     | .ok c => pure c
     | .error e => throw <| IO.userError e
 
-  IO.println s!"compiled IR nodes: {compiled.graph.nodes.size}"
+  IO.println s!"lowered IR nodes: {lowered.graph.nodes.size}"
 
-  let x0 : Tensor α mseXShape :=
+  let x0 : Spec.Tensor α mseXShape :=
     NN.Tensor.ofListOfLength (α := α) [2] [cast 0.3, cast (-0.4)] (by rfl)
   let eps : α := Runtime.ofFloat 0.05
   let xB : FlatBox α := Verification.lInfBall (α := α) x0 eps
-  let ps : ParamStore α := compiled.seedInputBox xB
+  let ps : ParamStore α := lowered.seedInputBox xB
 
   -- IBP
-  let ibp := compiled.runIBP ps
-  let outB ← compiled.outputBoxOrThrow ibp
+  let ibp := lowered.runIBP ps
+  let outB ← lowered.outputBoxOrThrow ibp
   IO.println s!"[IBP] loss lo = {pretty outB.lo}"
   IO.println s!"[IBP] loss hi = {pretty outB.hi}"
 
   -- CROWN forward bounds on the scalar loss.
-  match compiled.outputBoxCROWN? ps xB with
+  match lowered.outputBoxCROWN? ps xB with
   | .ok outC =>
       if hOut : outC.dim = 1 then
           IO.println s!"[CROWN] loss lo = {pretty outC.lo}"
@@ -232,7 +232,7 @@ def runMSE {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α
 
   -- Backward/dual CROWN for the loss objective itself (obj = 1).
   let obj : FlatVec α := { n := 1, v := Spec.fill (α := α) Numbers.one (.dim 1 .scalar) }
-  match compiled.backwardObjectiveBox? ps ibp xB obj with
+  match lowered.backwardObjectiveBox? ps ibp xB obj with
   | .ok outC =>
       IO.println s!"[CROWN-backward] loss lo = {pretty outC.lo}"
       IO.println s!"[CROWN-backward] loss hi = {pretty outC.hi}"
@@ -252,7 +252,7 @@ CLI entry point for the CROWN-ops workflow.
 This is wired into `lake exe verify -- torchlean-crown-ops`.
 -/
 def main (args : List String) : IO Unit :=
-  NN.Verification.TorchLean.runWithBoundDType
+  NN.Verification.TorchLean.runWithBoundScalar
     "TorchLean → IR → IBP + CROWN (ops: softmax/mse_loss)" args
     (@runOnce)
 

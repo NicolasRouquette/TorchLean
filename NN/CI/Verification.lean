@@ -23,8 +23,8 @@ public import NN.Verification.Cert.IBPNodeCert
 public import NN.Verification.ODE.Ast
 public import NN.Verification.ODE.Parse
 public import NN.Verification.PINN.Architecture
-public import NN.Verification.TorchLean.Compile
-public import NN.Verification.TorchLean.CompileExec
+public import NN.Verification.TorchLean.Lowering
+public import NN.Verification.TorchLean.ExecutableLowering
 public import NN.Verification.TorchLean.Correctness
 public import NN.Verification.TorchLean.Proved
 public import NN.Verification.TorchLean.SpecEval

@@ -65,7 +65,7 @@ abbrev σ : Shape := nn.models.resnetInShape cfg
 abbrev τ : Shape := nn.models.resnetOutShape cfg
 
 /-- Residual classifier from the public model API. -/
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.resnet cfg (hInChannels := by decide) (hHiddenChannels := by decide)
 
 /-- Train the residual classifier with the public classification trainer. -/
@@ -77,8 +77,8 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := flags.lr } })
-        .classification
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := flags.lr } })
+        .oneHotCrossEntropy
         (seed := flags.seed)
   let trained ← trainer.train
     (Data.floatSamples batches)

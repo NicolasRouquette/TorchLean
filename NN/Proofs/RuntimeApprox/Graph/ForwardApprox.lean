@@ -19,7 +19,7 @@ tape/SSA-style graph, assuming each node provides a local forward approximation 
 
 It is intended to be instantiated by proof-relevant runtimes such as rounding models
 (`NF` / `neural_round`). Lean gives builtin `Float` a logical model, but connecting that model
-and its compiled implementation to these approximation bounds requires separate per-operation
+and its runtime implementation to these approximation bounds requires separate per-operation
 proofs.
 
 ## What you get

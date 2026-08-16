@@ -22,7 +22,7 @@ The data path is explicit:
 
 1. load real CIFAR-10 `.npy` arrays through `Data`;
 2. take a typed image batch with shape `[batch, channels, height, width]`;
-3. hide deterministic spatial blocks with `ssl.blockMaeSample`;
+3. hide deterministic spatial blocks with `ssl.BlockMAE.sample`;
 4. run a ViT encoder over patch tokens;
 5. train a decoder head to reconstruct the original image vector.
 
@@ -90,7 +90,7 @@ The command crops CIFAR images to `2×2`, uses one image patch, and reconstructs
 flattened image. That keeps MAE in the runnable quick-check suite while still checking the patch masking,
 patch embedding, transformer token, decoder, data loading, and CUDA training path.
 -/
-def cfg : nn.models.VitMaeConfig 2 :=
+def cfg : nn.models.ViTMAEConfig 2 :=
   { encoder :=
       { batch := batch
         inChannels := inC
@@ -133,12 +133,12 @@ Construct the trainable model.
 The architecture lives in the public self-supervised model API; this example only chooses a config,
 loads data, and trains it.
 -/
-def model : nn.M (nn.Sequential σ τ) :=
+def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.vitMaskedAutoencoder cfg
     (h_inC := by decide)
     (h_seqLen := by
-      norm_num [nn.models.VitMaeConfig.seqLen, nn.models.VitConfig.seqLen,
-        nn.models.VitConfig.patchSpatial, cfg, Spec.convOutSpatial,
+      norm_num [nn.models.ViTMAEConfig.seqLen, nn.models.ViTConfig.seqLen,
+        nn.models.ViTConfig.patchSpatial, cfg, Spec.convOutSpatial,
         Spec.Shape.slidingWindowOutDim,
         inH, inW, patchH, patchW, stride, padding, Spec.Shape.ofList, Spec.Shape.size,
         Vector.get, Vector.toList, Vector.ofFn])
@@ -155,7 +155,7 @@ def mkMaeSample
       (.dim cfg.encoder.batch (.dim cfg.encoder.inChannels (.dim inH (.dim inW .scalar))))
       (.dim cfg.encoder.batch (.dim RealData.cifarClasses .scalar))) :
   SupervisedSample Float σ τ :=
-  ssl.blockMaeSample cfg.encoder.batch cfg.reconDim
+  ssl.BlockMAE.sample cfg.encoder.batch cfg.reconDim
     #v[cfg.encoder.inChannels, inH, inW]
     #v[none, some patchH, some patchW]
     maskPeriod maskOffset (by decide) (Sample.x b)
@@ -166,7 +166,7 @@ Public singleton dataset for masked-image reconstruction on one real CIFAR batch
 Like the compact vector generative examples, the sample itself is loaded as `Float` from the real
 data boundary, then cast into the runtime-selected scalar by the public dataset constructor.
 -/
-def data (flags : RealData.CifarModelTrainFlags) : Trainer.Dataset σ τ :=
+def data (flags : RealData.CifarModelTrainFlags) : Trainer.DataSource σ τ :=
   Data.ioSingletonFloat do
     let batch ←
       RealData.loadCifarBatch exeName cfg.encoder.batch flags.nRows flags.seed
@@ -184,7 +184,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.runConfig opts { optimizer := optim.adam { lr := flags.lr } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := flags.lr } })
         .regression
         (seed := flags.seed)
   trainer.train

@@ -24,7 +24,7 @@ namespace nn
 namespace models
 
 /-- Configuration for a Transformer over patches from a `d`-dimensional spatial domain. -/
-structure VitConfig (d : Nat) where
+structure ViTConfig (d : Nat) where
   /-- Number of independent samples processed together. -/
   batch : Nat
   /-- Number of channels in each input sample. -/
@@ -43,40 +43,40 @@ structure VitConfig (d : Nat) where
   ffnHidden : Nat
 
 /-- Spatial extent of the patch embedding. -/
-def VitConfig.patchSpatial {d : Nat} (cfg : VitConfig d) : Vector Nat d :=
+def ViTConfig.patchSpatial {d : Nat} (cfg : ViTConfig d) : Vector Nat d :=
   Spec.convOutSpatial cfg.spatial cfg.patch.kernel cfg.patch.stride cfg.patch.padding
 
 /-- Number of patch tokens. -/
-def VitConfig.seqLen {d : Nat} (cfg : VitConfig d) : Nat :=
+def ViTConfig.seqLen {d : Nat} (cfg : ViTConfig d) : Nat :=
   Spec.Shape.size (Spec.Shape.ofList cfg.patchSpatial.toList)
 
 /-- Number of flattened features passed to the classifier. -/
-def VitConfig.flatDim {d : Nat} (cfg : VitConfig d) : Nat :=
+def ViTConfig.flatDim {d : Nat} (cfg : ViTConfig d) : Nat :=
   Spec.Shape.size (.dim cfg.seqLen (.dim cfg.patch.outChannels .scalar))
 
 /-- Input shape `(batch, inChannels, spatial...)`. -/
-def vitInShape {d : Nat} (cfg : VitConfig d) : Spec.Shape :=
+def vitInShape {d : Nat} (cfg : ViTConfig d) : Spec.Shape :=
   .dim cfg.batch (Spec.Shape.ofList (cfg.inChannels :: cfg.spatial.toList))
 
 /-- Shape produced by patch embedding. -/
-def vitConvOutShape {d : Nat} (cfg : VitConfig d) : Spec.Shape :=
+def vitConvOutShape {d : Nat} (cfg : ViTConfig d) : Spec.Shape :=
   .dim cfg.batch (Spec.Shape.ofList (cfg.patch.outChannels :: cfg.patchSpatial.toList))
 
 /-- Token shape `(batch, sequence, embedding)`. -/
-def vitTokensShape {d : Nat} (cfg : VitConfig d) : Spec.Shape :=
+def vitTokensShape {d : Nat} (cfg : ViTConfig d) : Spec.Shape :=
   .dim cfg.batch (.dim cfg.seqLen (.dim cfg.patch.outChannels .scalar))
 
 /-- Classifier output shape `(batch, outDim)`. -/
-def vitOutShape {d : Nat} (cfg : VitConfig d) : Spec.Shape :=
+def vitOutShape {d : Nat} (cfg : ViTConfig d) : Spec.Shape :=
   .dim cfg.batch (.dim cfg.outDim .scalar)
 
 /-- flatten the patch grid into a sequence and move channels to the final axis. -/
-def spatialToTokens {d : Nat} (cfg : VitConfig d) :
-    LayerDef (vitConvOutShape cfg) (vitTokensShape cfg) :=
+def spatialToTokens {d : Nat} (cfg : ViTConfig d) :
+    Layer (vitConvOutShape cfg) (vitTokensShape cfg) :=
   { kind := "SpatialToTokens"
-    paramShapes := []
-    initParams := .nil
-    paramRequiresGrad := []
+    stateShapes := []
+    initState := .nil
+    requiresGrad := []
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => (show m (_root_.Runtime.Autograd.TorchLean.RefTy
@@ -90,17 +90,17 @@ def spatialToTokens {d : Nat} (cfg : VitConfig d) :
                     Spec.Shape.size
                         (Spec.Shape.ofList (cfg.patch.outChannels :: cfg.patchSpatial.toList)) =
                       cfg.patch.outChannels * cfg.seqLen := by
-                  simp [VitConfig.seqLen, Spec.Shape.ofList, Spec.Shape.size]
+                  simp [ViTConfig.seqLen, Spec.Shape.ofList, Spec.Shape.size]
                 simp [vitConvOutShape, middle, Spec.Shape.size, hInner])
           _root_.Runtime.Autograd.Torch.swapAdjacentAtDepth
             (m := m) (α := α) (s := middle) 1 flattened) }
 
 /-- Build patch embedding, one Transformer encoder block, and a linear classifier. -/
-def vit {d : Nat} (cfg : VitConfig d)
+def vit {d : Nat} (cfg : ViTConfig d)
     (hInChannels : cfg.inChannels ≠ 0 := by decide)
     (hSeqLen : cfg.seqLen ≠ 0 := by decide)
     (hModel : cfg.patch.outChannels ≠ 0 := by decide) :
-    M (Sequential (vitInShape cfg) (vitOutShape cfg)) :=
+    Builder (Sequential (vitInShape cfg) (vitOutShape cfg)) :=
   letI : NeZero cfg.inChannels := ⟨hInChannels⟩
   letI : NeZero cfg.seqLen := ⟨hSeqLen⟩
   letI : NeZero cfg.patch.outChannels := ⟨hModel⟩
@@ -115,7 +115,7 @@ def vit {d : Nat} (cfg : VitConfig d)
         ffnHidden := cfg.ffnHidden
         activation := .gelu
         dropout? := none },
-    flattenBatch,
+    flattenLeading (.dim cfg.batch .scalar),
     linear cfg.flatDim cfg.outDim (pfx := .dim cfg.batch .scalar)
   ]
 

@@ -9,7 +9,7 @@ module
 public import NN.Verification.TorchLean.Proved.Correctness.WellFormed
 
 /-!
-# Compiled Forward Evaluation: Shared Invariants
+# Lowered Forward Evaluation: Shared Invariants
 -/
 
 @[expose] public section
@@ -41,7 +41,7 @@ theorem shapeBNe_refl (s : Shape) : (s != s) = false := by
 
 end IRStep
 
-/-! ### Compiler correctness (forward fragment) -/
+/-! ### Lowering correctness (forward fragment) -/
 
 namespace IRStep
 
@@ -136,10 +136,10 @@ theorem range_map_getElem!_eq_toList {β : Type} [Inhabited β] (values : Array 
 end IRStep
 
 /-- Evaluate a typed forward let-chain while accumulating every intermediate dynamic value. -/
-def evalFGraphVals
+def evalForwardLetChainVals
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
-    (g : FGraph α paramShapes inShape ss out)
+    (g : ForwardLetChain α paramShapes inShape ss out)
     (params : Runtime.Autograd.Torch.TList α paramShapes)
     (vals : Array (DVal α)) : Except String (Array (DVal α)) :=
   match g with
@@ -149,7 +149,7 @@ def evalFGraphVals
       let vOut ←
         evalNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out := mid)
           node params vals
-      evalFGraphVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss ++ [mid])
+      evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss ++ [mid])
         (out := out)
         gNext params (vals.push vOut)
 
@@ -180,11 +180,11 @@ theorem getVal_eq_ok
   /--
   Generic prefix-preservation argument for `ParamStore` lookups.
 
-  The forward compiler appends exactly one fresh IR node at each let-binding.  Any payload lookup
-  that is preserved by a single `compileNode` step for keys below the fresh id is therefore
-  preserved by the whole compiled suffix.
+  The forward lowering pass appends exactly one fresh IR node at each let-binding.  Any payload lookup
+  that is preserved by a single `lowerNode` step for keys below the fresh id is therefore
+  preserved by the whole lowered suffix.
   -/
-  private theorem compileFGraph_ps_lookup_get?_lt
+  private theorem lowerForwardLetChain_ps_lookup_get?_lt
       {α β : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (read : NN.MLTheory.CROWN.Graph.ParamStore α → Nat → Option β)
@@ -194,166 +194,166 @@ theorem getVal_eq_ok
           (ps : NN.MLTheory.CROWN.Graph.ParamStore α),
           k < id →
           read
-              (compileNode (α := α) (paramShapes := paramShapes) (inShape := inShape)
+              (lowerNode (α := α) (paramShapes := paramShapes) (inShape := inShape)
                 (ss := ss₀) (out := mid₀) id node params ps).2 k =
             read ps k)
-      (g : FGraph α paramShapes inShape ss out)
+      (g : ForwardLetChain α paramShapes inShape ss out)
     (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (c : NN.Verification.TorchLean.CompiledIR α)
+    (c : NN.Verification.TorchLean.LoweredIR α)
       {k : Nat} (hk : k < c.graph.nodes.size) :
       read
-          (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss)
+          (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss)
             (out := out) g params c).ps k =
         read c.ps k := by
     classical
       induction g generalizing c with
       | ret y =>
-        simp [compileFGraph]
+        simp [lowerForwardLetChain]
       | @let1 ss₀ mid₀ out₀ node gNext ih =>
         let id := c.graph.nodes.size
         have hk' : k < id := by simpa [id] using hk
         have hk_succ : k < id + 1 := Nat.lt_succ_of_lt hk'
         let res :=
-          compileNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀)
+          lowerNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀)
             (out := mid₀) id node params c.ps
         let n : NN.IR.Node := res.1
         let ps' : NN.MLTheory.CROWN.Graph.ParamStore α := res.2
-        let c' : NN.Verification.TorchLean.CompiledIR α :=
+        let c' : NN.Verification.TorchLean.LoweredIR α :=
           { c with graph := { nodes := c.graph.nodes.push n }, ps := ps', outputId := id }
         have hps' : read ps' k = read c.ps k := by
           simpa [res, ps'] using hStep (id := id) (k := k) (params := params) (ps := c.ps) hk'
         have hIH :=
           ih (c := c') (hk := by simpa [c', Array.size_push, id] using hk_succ)
         have : read
-            (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape)
+            (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape)
               (ss := ss₀ ++ [mid₀]) (out := out₀) gNext params c').ps k =
             read c.ps k := by
           calc
             read
-                (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape)
+                (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape)
                   (ss := ss₀ ++ [mid₀]) (out := out₀) gNext params c').ps k
                 =
               read c'.ps k := hIH
             _ = read c.ps k := by simpa [c'] using hps'
-        simpa [compileFGraph, c', id, res] using this
+        simpa [lowerForwardLetChain, c', id, res] using this
 
   /--
-  Compiling a let-chain does not change `ps.constVals` entries for keys `< c.graph.nodes.size`.
-  Compilation only inserts payload at the fresh node id, so older keys are unchanged.
+  Lowering a let-chain does not change `ps.constVals` entries for keys `< c.graph.nodes.size`.
+  Lowering only inserts payload at the fresh node id, so older keys are unchanged.
   -/
-  theorem compileFGraph_ps_constVals_get?_lt
+  theorem lowerForwardLetChain_ps_constVals_get?_lt
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
-      (g : FGraph α paramShapes inShape ss out)
+      (g : ForwardLetChain α paramShapes inShape ss out)
       (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (c : NN.Verification.TorchLean.CompiledIR α)
+    (c : NN.Verification.TorchLean.LoweredIR α)
     {k : Nat} (hk : k < c.graph.nodes.size) :
-    (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
+    (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
       out)
         g params c).ps.constVals.get? k = c.ps.constVals.get? k := by
     classical
     exact
-    compileFGraph_ps_lookup_get?_lt
+    lowerForwardLetChain_ps_lookup_get?_lt
       (α := α) (β := NN.MLTheory.CROWN.Graph.FlatVec α)
       (read := fun ps k => ps.constVals.get? k)
       (hStep := by
         intro ss₀ mid₀ node id k params ps hk
         have hidk : id ≠ k := (ne_comm).1 hk.ne
         cases node <;>
-          simp [compileNode, Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hidk])
+          simp [lowerNode, Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hidk])
       g params c hk
 
   /--
-  Compiling a let-chain does not change `ps.linearWB` entries for keys `< c.graph.nodes.size`.
-  Compilation only inserts linear payload at the fresh node id, so older keys are unchanged.
+  Lowering a let-chain does not change `ps.linearWB` entries for keys `< c.graph.nodes.size`.
+  Lowering only inserts linear payload at the fresh node id, so older keys are unchanged.
   -/
-  theorem compileFGraph_ps_linearWB_get?_lt
+  theorem lowerForwardLetChain_ps_linearWB_get?_lt
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
-      (g : FGraph α paramShapes inShape ss out)
+      (g : ForwardLetChain α paramShapes inShape ss out)
       (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (c : NN.Verification.TorchLean.CompiledIR α)
+    (c : NN.Verification.TorchLean.LoweredIR α)
     {k : Nat} (hk : k < c.graph.nodes.size) :
-    (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
+    (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
       out)
         g params c).ps.linearWB.get? k = c.ps.linearWB.get? k := by
     classical
     exact
-    compileFGraph_ps_lookup_get?_lt
+    lowerForwardLetChain_ps_lookup_get?_lt
       (α := α) (β := NN.MLTheory.CROWN.Graph.LinParams α)
       (read := fun ps k => ps.linearWB.get? k)
       (hStep := by
         intro ss₀ mid₀ node id k params ps hk
         have hidk : id ≠ k := (ne_comm).1 hk.ne
         cases node <;>
-          simp [compileNode, Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hidk])
+          simp [lowerNode, Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hidk])
       g params c hk
 
   /--
-  Compiling a let-chain does not change `ps.conv2dCfg` entries for keys `< c.graph.nodes.size`.
-  Compilation only inserts convolution payloads at fresh node ids, so older keys are unchanged.
+  Lowering a let-chain does not change `ps.conv2dCfg` entries for keys `< c.graph.nodes.size`.
+  Lowering only inserts convolution payloads at fresh node ids, so older keys are unchanged.
   -/
-  theorem compileFGraph_ps_conv2dCfg_get?_lt
+  theorem lowerForwardLetChain_ps_conv2dCfg_get?_lt
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
-      (g : FGraph α paramShapes inShape ss out)
+      (g : ForwardLetChain α paramShapes inShape ss out)
       (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (c : NN.Verification.TorchLean.CompiledIR α)
+    (c : NN.Verification.TorchLean.LoweredIR α)
     {k : Nat} (hk : k < c.graph.nodes.size) :
-    (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
+    (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
       out)
         g params c).ps.conv2dCfg.get? k = c.ps.conv2dCfg.get? k := by
     classical
     exact
-    compileFGraph_ps_lookup_get?_lt
+    lowerForwardLetChain_ps_lookup_get?_lt
       (α := α) (β := NN.MLTheory.CROWN.Graph.Conv2DParams α)
       (read := fun ps k => ps.conv2dCfg.get? k)
       (hStep := by
         intro ss₀ mid₀ node id k params ps hk
         have hidk : id ≠ k := (ne_comm).1 hk.ne
         cases node <;>
-          simp [compileNode, Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hidk])
+          simp [lowerNode, Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hidk])
       g params c hk
 
   /--
-  Compiling a let-chain does not change `ps.batchNorm2dNchwEval` entries for keys below the
+  Lowering a let-chain does not change `ps.batchNorm2dNchwEval` entries for keys below the
   starting graph size.  Eval-mode BatchNorm payloads enter through the broader IR/import bridge,
   not through this proved first-order fragment.
   -/
-  theorem compileFGraph_ps_batchNorm2dNchwEval_get?_lt
+  theorem lowerForwardLetChain_ps_batchNorm2dNchwEval_get?_lt
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
-      (g : FGraph α paramShapes inShape ss out)
+      (g : ForwardLetChain α paramShapes inShape ss out)
       (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (c : NN.Verification.TorchLean.CompiledIR α)
+    (c : NN.Verification.TorchLean.LoweredIR α)
     {k : Nat} (hk : k < c.graph.nodes.size) :
-    (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
+    (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
       out)
         g params c).ps.batchNorm2dNchwEval.get? k =
       c.ps.batchNorm2dNchwEval.get? k := by
     classical
     exact
-    compileFGraph_ps_lookup_get?_lt
+    lowerForwardLetChain_ps_lookup_get?_lt
       (α := α) (β := NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α)
       (read := fun ps k => ps.batchNorm2dNchwEval.get? k)
       (hStep := by
         intro ss₀ mid₀ node id k params ps hk
-        cases node <;> simp [compileNode])
+        cases node <;> simp [lowerNode])
       g params c hk
 
   /--
-  `compileFGraph` does not change existing nodes at indices `< c.graph.nodes.size`.
-  Compilation only appends nodes, so `getNode` agrees on the prefix.
+  `lowerForwardLetChain` does not change existing nodes at indices `< c.graph.nodes.size`.
+  Lowering only appends nodes, so `getNode` agrees on the prefix.
   -/
-  theorem compileFGraph_getNode_lt
+  theorem lowerForwardLetChain_getNode_lt
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
-      (g : FGraph α paramShapes inShape ss out)
+      (g : ForwardLetChain α paramShapes inShape ss out)
     (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (c : NN.Verification.TorchLean.CompiledIR α)
+    (c : NN.Verification.TorchLean.LoweredIR α)
     {i : Nat} (hi : i < c.graph.nodes.size) :
     (NN.IR.Graph.getNode
-      (g := (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss)
+      (g := (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss)
           (out := out)
           g params c).graph) i)
       =
@@ -361,22 +361,22 @@ theorem getVal_eq_ok
     classical
     induction g generalizing c with
     | ret y =>
-      simp [compileFGraph]
+      simp [lowerForwardLetChain]
     | @let1 ss₀ mid₀ out₀ node gNext ih =>
       let id := c.graph.nodes.size
       let res :=
-        compileNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out :=
+        lowerNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out :=
           mid₀)
           id node params c.ps
       let n : NN.IR.Node := res.1
       let ps' : NN.MLTheory.CROWN.Graph.ParamStore α := res.2
-      let c' : NN.Verification.TorchLean.CompiledIR α :=
+      let c' : NN.Verification.TorchLean.LoweredIR α :=
         { c with graph := { nodes := c.graph.nodes.push n }, ps := ps', outputId := id }
       have hi' : i < c'.graph.nodes.size := by
         simpa [c', Array.size_push] using Nat.lt_succ_of_lt hi
       have hNext :
           NN.IR.Graph.getNode
-              (g := (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss :=
+              (g := (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss :=
                 ss₀ ++ [mid₀]) (out := out₀)
                 gNext params c').graph) i
             =
@@ -385,41 +385,41 @@ theorem getVal_eq_ok
       have hPush :
           NN.IR.Graph.getNode (g := c'.graph) i = NN.IR.Graph.getNode (g := c.graph) i := by
         simpa [c', res, id] using getNode_push_lt (g := c.graph) (n := n) (hi := hi)
-      simpa [compileFGraph, c', id, res] using Eq.trans hNext hPush
+      simpa [lowerForwardLetChain, c', id, res] using Eq.trans hNext hPush
 
-  /-- `compileFGraph` is monotone in `graph.nodes.size` (it only appends nodes). -/
-  theorem compileFGraph_nodesSize_le
+  /-- `lowerForwardLetChain` is monotone in `graph.nodes.size` (it only appends nodes). -/
+  theorem lowerForwardLetChain_nodesSize_le
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
-        (g : FGraph α paramShapes inShape ss out)
+        (g : ForwardLetChain α paramShapes inShape ss out)
       (params : Runtime.Autograd.Torch.TList α paramShapes)
-      (c : NN.Verification.TorchLean.CompiledIR α) :
+      (c : NN.Verification.TorchLean.LoweredIR α) :
     c.graph.nodes.size ≤
-      (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
+      (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
           out)
         g params c).graph.nodes.size := by
     classical
     induction g generalizing c with
     | ret y =>
-        simp [compileFGraph]
+        simp [lowerForwardLetChain]
     | @let1 ss₀ mid₀ out₀ node gNext ih =>
         let id := c.graph.nodes.size
         let res :=
-          compileNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out :=
+          lowerNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out :=
             mid₀)
             id node params c.ps
         let n : NN.IR.Node := res.1
         let ps' : NN.MLTheory.CROWN.Graph.ParamStore α := res.2
-        let c' : NN.Verification.TorchLean.CompiledIR α :=
+        let c' : NN.Verification.TorchLean.LoweredIR α :=
           { c with graph := { nodes := c.graph.nodes.push n }, ps := ps', outputId := id }
         have h1 : c.graph.nodes.size ≤ c'.graph.nodes.size := by
           simp [c', Array.size_push]
         have h2 : c'.graph.nodes.size ≤
-            (compileFGraph (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀ ++
+            (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀ ++
               [mid₀]) (out := out₀)
               gNext params c').graph.nodes.size := by
           exact ih (c := c')
-        simpa [compileFGraph, c', id, res] using Nat.le_trans h1 h2
+        simpa [lowerForwardLetChain, c', id, res] using Nat.le_trans h1 h2
 
     /-- Shape lookup through `shapesOfVals` agrees with looking up the dynamic value first. -/
     lemma shapesOfVals_get?_eq

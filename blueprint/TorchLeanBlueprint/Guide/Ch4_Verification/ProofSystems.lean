@@ -7,9 +7,9 @@ open Verso.Genre Manual
 tag := "proof-systems-beyond-bounds"
 %%%
 
-Imagine that a compiler accidentally drops the bias from a linear layer. The compiled graph may
+Imagine that lowering accidentally drops the bias from a linear layer. The resulting forward graph may
 still be well shaped, execute without an exception, and even receive a convincing interval
-certificate. The certificate would then describe the wrong function. A compiler-correctness
+certificate. The certificate would then describe the wrong function. A lowering-correctness
 relation is what prevents that quiet change of subject.
 
 The same pattern reappears elsewhere. IBP and CROWN relate boxes or affine forms to graph values;
@@ -21,7 +21,7 @@ naming two objects and the relation that is supposed to connect them.
 
 The common structure is relational. Let `S` be a semantic object, `A` an executable or imported
 artifact, and `R S A` the proposition that the artifact represents the semantics correctly. A
-compiler proof establishes `R` for the executable graph it produces. A certificate checker parses
+lowering proof establishes `R` for the executable graph it produces. A certificate checker parses
 an untrusted artifact and returns evidence from which `R` follows. A backend contract records `R`
 as an assumption when the implementation remains outside the proved fragment.
 
@@ -40,36 +40,36 @@ those programs must be trusted merely because the checker accepts their output. 
 Lean definition of `R`, the checker, and its soundness theorem. When no such theorem exists, the
 artifact is evidence or an explicit boundary, not a certificate by vocabulary alone.
 
-# IRExec Correctness: The Big Compiler Theorem
+# IR Lowering Correctness
 
 The theorem to care about first is:
 
 ```
-Runtime.Autograd.Compiled.execGraphOfIR_semantics_eq
+Runtime.Autograd.IRExec.denoteAll_eq_of_lowerToForwardGraph
 ```
 
 The declaration is in the
-[IR execution correctness API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean).
+[IR execution correctness API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean).
 
 In plain English:
 
-> If `execGraphOfIR` successfully compiles an `NN.IR.Graph` and payload into executable compiled
-> graph data, and the graph is in the named supported fragment, then evaluating the compiled graph
+> If `lowerToForwardGraph` successfully lowers an `NN.IR.Graph` and payload into a shape-indexed
+> `ForwardGraph`, and the graph is in the named supported fragment, then evaluating that forward graph
 > on any input gives the same value table as the Lean denotational evaluator for the original IR
 > graph.
 
 The theorem connects three concrete objects: `NN.IR.Graph.denoteAll`, the reference denotation of
-the tagged operation IR; `execGraphOfIR`, the compiler; and `ExecGraphData.denoteAll`, the evaluator
-for the resulting compiled graph.
+the tagged operation IR; `lowerToForwardGraph`, the lowering function; and `ForwardGraph.denoteAll`, the
+forward-only evaluator produced from the IR.
 
-The theorem shape is: if `execGraphOfIR g payload` returns `ok exec`, and the named fragment
+The theorem shape is: if `lowerToForwardGraph g payload` returns `ok exec`, and the named fragment
 side conditions hold, then for every input `x`, the value table produced by
-`ExecGraphData.denoteAll exec x` is the same value table produced by
+`ForwardGraph.denoteAll exec x` is the same value table produced by
 `NN.IR.Graph.denoteAll g payload x`.
 
 In theorem notation, the supported-fragment statement has the shape:
 
-$$`\operatorname{execGraphOfIR}(G,P)=\operatorname{ok}(E)
+$$`\operatorname{lowerToForwardGraph}(G,P)=\operatorname{ok}(E)
 \;\land\; \operatorname{NoMSELoss}(G)
 \;\land\; \operatorname{NoRawLog}(G)
 \;\land\; \operatorname{NoConcat}(G)
@@ -77,11 +77,11 @@ $$`\operatorname{execGraphOfIR}(G,P)=\operatorname{ok}(E)
 \forall x,\;
 \operatorname{Graph.denoteAll}(G,P,x)
 =
-\operatorname{ok}\!\left(\operatorname{ExecGraphData.denoteAll}(E,x)\right)`
+\operatorname{ok}\!\left(\operatorname{ForwardGraph.denoteAll}(E,x)\right)`
 
 For the covered IRExec fragment, this theorem prevents "verified the wrong executable graph."
 
-There are side conditions, and they matter. The graph must pass the structural checks, compilation
+There are side conditions, and they matter. The graph must pass the structural checks, lowering
 must succeed, and the current theorem has explicit fragment predicates:
 
 - `NoMSELoss g`, because that op is outside this whole-graph semantic equivalence proof path.
@@ -91,37 +91,37 @@ must succeed, and the current theorem has explicit fragment predicates:
 - `NoConcat g`, because concatenation lowering has not yet been connected to this whole-graph
   preservation theorem, even though selected concat cases execute.
 
-That precision is part of the compiler proof: supported ops get named coverage, and unsupported ops
+That precision is part of the lowering proof: supported ops get named coverage, and unsupported ops
 or ops needing extra domain facts do not get folded into the theorem by vague prose.
 
-In an ordinary compiler workflow, regression tests supply much of our confidence that a lowering
+In an ordinary runtime workflow, regression tests supply much of our confidence that a lowering
 did not change the program. Here, for the supported IRExec fragment and named side conditions, a
-Lean theorem ties the compiler's forward result to the IR denotation for every input. Tests remain
+Lean theorem ties `ForwardGraph` evaluation to the IR denotation for every input. Tests remain
 valuable, but this particular silent-wrong-code question no longer rests on the tested examples
 alone.
 
-The proof is large because it recursively mirrors the compiler. The workhorse lemma is
-`buildFrom_preserves_denotation`: as the compiler walks node ids and extends the compiled graph, the
-IR value table and compiled context stay aligned. Each operator branch proves one local
+The proof is large because it recursively mirrors lowering. The workhorse lemma is
+`buildFrom_preserves_denotation`: as lowering walks node ids and extends the forward graph, the
+IR value table and typed context stay aligned. Each operator branch proves one local
 preservation fact, then the recursive theorem stitches the branch into the whole graph.
 
 The current proof is split for auditability:
 
-- The [IRExec common API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Compiled/IRExec/Correctness/Common.lean) contains shared
-  infrastructure for dynamic values, compiled contexts, and finishing a node step.
-- The [semantic equivalence common API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalenceCommon.lean)
+- The [IRExec common API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/IRExec/Correctness/Common.lean) contains shared
+  infrastructure for dynamic values, typed contexts, and finishing a node step.
+- The [semantic equivalence common API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalenceCommon.lean)
   contains helper lemmas used by the recursive proof.
-- The [semantic equivalence op cases API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalenceOpCases.lean)
+- The [semantic equivalence op cases API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalenceOpCases.lean)
   contains heavy named cases such as `.linear` and `.conv2d`.
 - `Correctness/Ops/*` contains smaller branches by op family: activations, constants, elementwise,
   linear algebra, normalization, pooling, permutation, random, reductions, structural ops, and unary
   ops.
-- The [semantic equivalence theorem API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean)
-  ties the cases together into `execGraphOfIR_semantics_eq`.
+- The [semantic equivalence theorem API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean)
+  ties the cases together into `denoteAll_eq_of_lowerToForwardGraph`.
 
 For this supported fragment, the theorem quantifies over every input, while regression tests
-exercise selected examples. If the compiler accepts the graph and the named fragment side
-conditions hold, the compiled evaluator and IR denotation agree.
+exercise selected examples. If lowering accepts the graph and the named fragment side
+conditions hold, the forward-graph evaluator and IR denotation agree.
 
 # A Tiny IRExec Example
 
@@ -137,16 +137,16 @@ First interpret the IR directly:
 - linear node `1` reads `W` and `b` from the payload and computes $`Wx+b`;
 - ReLU node `2` computes `max(0,node1)`.
 
-Then compile the IR into `ExecGraphData` and run the compiled graph:
+Then lower the IR into a `ForwardGraph` and run it:
 
-- compiled node `1` has a forward closure for the affine map;
-- compiled node `2` has a forward closure for ReLU;
-- the compiled evaluator visits the same dependency order as the IR denotation.
+- forward-graph node `1` has a closure for the affine map;
+- forward-graph node `2` has a closure for ReLU;
+- the forward-graph evaluator visits the same dependency order as the IR denotation.
 
-If compilation silently omitted `b`, those paths would disagree as soon as a nonzero bias affected
+If lowering silently omitted `b`, those paths would disagree as soon as a nonzero bias affected
 the output. The theorem says that cannot happen: they produce the same result for every `x`,
-provided the compiler accepted the graph and the operations are in the proved fragment. At that
-boundary, the compiled evaluator is a proved refinement of the IR semantics rather than merely a
+provided lowering accepted the graph and the operations are in the proved fragment. At that
+boundary, the forward-graph evaluator is a proved refinement of the IR semantics rather than merely a
 second implementation with matching tests.
 
 # Run The Graph Through Both Views
@@ -171,13 +171,13 @@ forward: GraphSpec MLP lowered to TorchLean and executed
 ```
 
 The output establishes that this execution completed and that the loss decreased on this run. The
-compiler theorem supplies the stronger statement: for every input, if this graph is in the proved
-fragment and compilation succeeds, the compiled denotation equals the IR denotation. The training
-log and compiler theorem answer different questions, and both are useful.
+lowering theorem supplies the stronger statement: for every input, if this graph is in the proved
+fragment and lowering succeeds, the forward-graph denotation equals the IR denotation. The training
+log and lowering theorem answer different questions, and both are useful.
 
 # Unsupported Cases Must Remain Visible
 
-The axis-operator tutorial compares specification execution with compiled execution:
+The axis-operator tutorial compares specification execution with forward-graph execution:
 
 ```
 lake exe torchlean ir_axis_ops
@@ -187,27 +187,27 @@ For concatenation on the middle axis, both paths execute and print the same lead
 
 ```
 [concat_middle_axis] spec outShape: ... [2,8,4]
-[concat_middle_axis] compiled outShape: ... [2,8,4]
+[concat_middle_axis] forward graph outShape: ... [2,8,4]
 ```
 
-For middle-axis softmax and LayerNorm, the specification path runs but the compiled path reports:
+For middle-axis softmax and LayerNorm, the specification path runs but the forward-graph path reports:
 
 ```
-compiled skipped: current IRExec backend supports fewer axis cases
+forward graph skipped: current IRExec path supports fewer axis cases
 than the spec semantics.
 ```
 
 That message is a feature, not an inconvenience to hide. The semantic language can describe more
-programs than a particular compiler theorem or runtime backend currently covers. A clean system
+programs than a particular lowering theorem or runtime path currently covers. A clean system
 rejects or skips the unsupported lowering; it does not infer correctness from the fact that a
 different implementation happened to return an array of the expected shape.
 
 The executable negative cases in
 [`IR.ShapeContracts`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/IR/ShapeContracts.lean)
 exercise this boundary for malformed axes, incompatible shapes, and unsupported contracts. They
-are useful regression checks that rejection remains fail-closed. They are not a semantic compiler
+are useful regression checks that rejection remains fail-closed. They are not a semantic lowering
 theorem: the whole-graph meaning-preservation result is still
-`execGraphOfIR_semantics_eq` with its explicit fragment hypotheses.
+`denoteAll_eq_of_lowerToForwardGraph` with its explicit fragment hypotheses.
 
 # How The Proof Systems Compose
 
@@ -219,7 +219,7 @@ $$`
 \text{source model}
 &\equiv \text{IR denotation},\\
 \text{IR denotation}
-&\equiv \text{compiled forward denotation},\\
+&\equiv \text{lowered forward-graph denotation},\\
 \text{graph VJP}
 &= (D\,\text{forward})^\ast,\\
 \text{rounded execution}
@@ -236,7 +236,7 @@ Each line has its own hypotheses and failure modes:
   * Typical obligation
 *
   * source to IR
-  * compiler covers every source constructor used
+  * lowering covers every source constructor used
 *
   * IR to executable graph
   * graph is well formed and satisfies fragment predicates
@@ -257,7 +257,7 @@ boundary.
 
 # Why The Relations Compose
 
-Suppose lowering relates a source model `M` to an IR graph `G`, compilation relates `G` to an
+Suppose source lowering relates a model `M` to an IR graph `G`, runtime lowering relates `G` to an
 executable graph `E`, and a numerical theorem bounds `E_float` against the real denotation of `E`.
 The end-to-end argument is ordinary transitivity, but each intermediate term must be the same
 mathematical object:

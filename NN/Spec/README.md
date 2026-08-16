@@ -43,7 +43,7 @@ spec-focused and should avoid importing the full public API.
 ## Terminology
 
 - spec = pure reference definitions in this folder.
-- runtime = tape/graph execution, compilation, CUDA paths, and training loops (see `NN/Runtime/*` and
+- runtime = tape/graph execution, lowering, CUDA paths, and training loops (see `NN/Runtime/*` and
   `NN.Runtime`).
 - verification = bound propagation, certificate checking, and artifact replay (see `NN/Verification/*` and
   `NN.Verification`).

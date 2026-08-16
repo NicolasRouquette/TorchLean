@@ -523,7 +523,7 @@ reintroduce the view after its type is correct.
 
 The focused examples are useful when one artifact is the whole subject:
 
-- [Float32 modes](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/DeepDives/Floats/Float32Modes.lean)
+- [Float32 semantics](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/DeepDives/Floats/Float32Semantics.lean)
   pairs `#float32_view`, `#float32_compare_view`, and `#float32_round_view` with executable binary32
   values.
 - [CROWN workflow](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/TorchLean/CrownOpsWorkflow.lean)

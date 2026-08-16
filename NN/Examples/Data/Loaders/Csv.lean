@@ -62,7 +62,7 @@ def inDim : Nat := 2
 def outDim : Nat := 1
 
 /-- A small 2-layer batched MLP `2 -> 8 -> 1`. -/
-def mkModel {batch : Nat} : nn.M (nn.Sequential (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar))) :=
+def mkModel {batch : Nat} : nn.Builder (nn.Sequential (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar))) :=
   nn.models.mlpRelu
     { batch := batch, inDim := inDim, hidDim := 8, outDim := outDim }
 
@@ -80,8 +80,8 @@ def usage : String :=
     , "  --seed N"
     , "  --batch N"
     , "  --steps N"
-    , "  --dtype float|float32|ieee32"
-    , "  --backend eager|compiled"
+    , "  --scalar float32|ieee32-exec|complex64"
+    , "  --execution eager|typed-graph"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "  --show-backend                    print backend capsules as they execute"
     ]
@@ -96,7 +96,7 @@ def main (args : List String) : IO Unit := do
   let (dataDir, args) ← CLI.orThrow label <| _root_.NN.Examples.Data.SamplePaths.takeDataDir args
   let (seed, args) ← CLI.orThrow label <| CLI.takeSeed args 0
   let (steps, args) ← CLI.orThrow label <| CLI.takeStepsFlagDefault args 30
-  let (batch, args) ← CLI.orThrow label <| CLI.takePositiveNatFlagDefault args label "batch" 5
+  let (batch, args) ← CLI.orThrow label <| CLI.takePositiveNatFlag args label "batch" 5
   let (csvPath, args) ← CLI.orThrow label <|
     CLI.takePathFlagDefault args "csv" (_root_.NN.Examples.Data.SamplePaths.regressionCsv dataDir)
 
@@ -121,7 +121,7 @@ def main (args : List String) : IO Unit := do
   Data.requireFile label "CSV dataset" csvPath missingCsvHint
   let trained ← trainer.train data { steps := steps }
   trained.printSummary
-  let heldout : Tensor.T Float (.dim batch (.dim inDim .scalar)) :=
+  let heldout : Tensor Float (.dim batch (.dim inDim .scalar)) :=
     Tensor.fill 0.25 (.dim batch (.dim inDim .scalar))
   trained.printPrediction "predict(batch=heldout)" heldout
 

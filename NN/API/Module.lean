@@ -8,7 +8,7 @@ module
 
 public import NN.API.Module.Command
 public import NN.API.Neural
-public import NN.API.RL
+public import NN.API.Trainer.Manual.Core
 
 /-!
 # Executable Modules
@@ -22,269 +22,366 @@ namespace TorchLean
 
 namespace Module
 
-export _root_.Runtime.Autograd.TorchLean.Module (OptimizerHandle optimizerHandle)
+export _root_.Runtime.Autograd.TorchLean.Module (BoundOptimizer bindOptimizer)
 
 /--
-Instantiate an executable runtime module from a `ScalarModuleDef`.
+Live parameter and buffer storage shared by executable modules.
 
-This handles custom runtime tasks that do not use the standard supervised constructors such as
-`Module.instantiateMse` or `Module.instantiateCrossEntropyOneHot`.
+The shape list remains in the type, so replacing the state cannot silently reorder parameters or
+load tensors with incompatible dimensions. Mutation is confined to this runtime object; model and
+layer definitions remain immutable values that can be lowered and reasoned about.
+-/
+structure RuntimeState (α : Type) [_root_.Context α] [DecidableEq Shape]
+    (stateShapes : List Shape) where
+  /-- Live parameter and buffer storage. -/
+  stateRef : _root_.Runtime.Autograd.Torch.ParamList α stateShapes
+  /-- Runtime options fixed when the state is instantiated. -/
+  options : Options
+  /-- Current behavior of training-sensitive layers such as dropout and normalization. -/
+  modeRef : IO.Ref _root_.Runtime.Autograd.TorchLean.NN.Mode
+  /-- Host/device conversion used by the selected runtime scalar. -/
+  tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α
+
+namespace RuntimeState
+
+/-- Instantiate runtime state after converting semantic initializer tensors to `α`. -/
+def instantiateAs {α : Type} [_root_.Context α] [DecidableEq Shape]
+    [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    {stateShapes : List Shape} (initial : TensorPack Float stateShapes)
+    (runtimeInit : Option
+      (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.Plan stateShapes))
+    (requiresGrad : List Bool) (options : Options) (cast : Float → α) :
+    IO (RuntimeState α stateShapes) := do
+  let stateRef ←
+    match runtimeInit with
+    | some plan => do
+        let empty := _root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.zeroTList
+          (cast 0.0) (ss := stateShapes)
+        let stateRef ← _root_.Runtime.Autograd.Torch.ParamList.ofTListWithRequiresGrad
+          empty requiresGrad
+        _root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.applyPlan
+          (α := α) cast options stateRef plan
+        pure stateRef
+    | none => do
+        let values := _root_.Runtime.Autograd.TorchLean.Module.castTList cast initial
+        _root_.Runtime.Autograd.Torch.ParamList.ofTListWithRequiresGrad values requiresGrad
+  let modeRef ← IO.mkRef (_root_.Runtime.Autograd.TorchLean.NN.Mode.train)
+  pure { stateRef, options, modeRef, tensorConv }
+
+/-- Read the current behavior of training-sensitive layers. -/
+def mode {α : Type} [_root_.Context α] [DecidableEq Shape] {stateShapes : List Shape}
+    (state : RuntimeState α stateShapes) : IO _root_.Runtime.Autograd.TorchLean.NN.Mode :=
+  state.modeRef.get
+
+/-- Enable training behavior. -/
+def train {α : Type} [_root_.Context α] [DecidableEq Shape] {stateShapes : List Shape}
+    (state : RuntimeState α stateShapes) : IO Unit :=
+  state.modeRef.set .train
+
+/-- Enable evaluation behavior. -/
+def eval {α : Type} [_root_.Context α] [DecidableEq Shape] {stateShapes : List Shape}
+    (state : RuntimeState α stateShapes) : IO Unit :=
+  state.modeRef.set .eval
+
+/-- Return `true` exactly when the state uses training behavior. -/
+def isTraining {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {stateShapes : List Shape} (state : RuntimeState α stateShapes) : IO Bool := do
+  pure ((← state.mode) == .train)
+
+/-- Read all parameters and buffers, synchronizing device storage when necessary. -/
+def state {α : Type} [_root_.Context α] [DecidableEq Shape]
+    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    {stateShapes : List Shape} (runtimeState : RuntimeState α stateShapes) :
+    IO (TensorPack α stateShapes) :=
+  _root_.Runtime.Autograd.Torch.ParamList.valuesSynced runtimeState.stateRef
+
+/-- Replace all parameters and buffers with a shape-compatible state. -/
+def loadState {α : Type} [_root_.Context α] [DecidableEq Shape] {stateShapes : List Shape}
+    (runtimeState : RuntimeState α stateShapes) (values : TensorPack α stateShapes) : IO Unit :=
+  _root_.Runtime.Autograd.Torch.ParamList.setValues runtimeState.stateRef values
+
+end RuntimeState
+
+end Module
+
+namespace nn
+
+/--
+An ordinary tensor model with live, mutable runtime state.
+
+`nn.Sequential` remains the immutable, shape-checked model definition used by proofs and graph
+lowering. An `nn.Module` is its runtime counterpart: it owns one parameter set and a mutable
+train/eval flag. This separation gives executable code the familiar module lifecycle without
+hiding mutation inside the mathematical model.
+-/
+structure Module (α : Type) [_root_.Context α] [DecidableEq Shape]
+    {σ τ : Shape} (model : nn.Sequential σ τ)
+    extends _root_.TorchLean.Module.RuntimeState α (nn.stateShapes model)
+
+/-- An indexed-input model with live, mutable runtime state. -/
+structure IndexedModule (α : Type) [_root_.Context α] [DecidableEq Shape]
+    {σ τ : Shape} (model : nn.IndexedModel σ τ)
+    extends _root_.TorchLean.Module.RuntimeState α model.stateShapes
+
+namespace Module
+
+/-- Instantiate a checked model under an explicitly selected scalar type. -/
+def instantiateAs {σ τ : Shape} {α : Type}
+    [_root_.Context α] [DecidableEq Shape]
+    [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    (model : nn.Sequential σ τ) (options : Options) (cast : Float → α) :
+    IO (Module α model) := do
+  let state ← _root_.TorchLean.Module.RuntimeState.instantiateAs
+    (nn.initState model) (nn.runtimeInit? model) (nn.requiresGrad model) options cast
+  pure { toRuntimeState := state }
+
+/--
+Instantiate a native binary32 model with mutable parameter and buffer storage.
+-/
+def instantiate {σ τ : Shape} (model : nn.Sequential σ τ) (options : Options) :
+    IO (Module Float32 model) :=
+  instantiateAs model options Float.toFloat32
+
+/-- Read whether training-sensitive layers currently use training or evaluation behavior. -/
+def mode {σ τ : Shape} {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {model : nn.Sequential σ τ} (module : Module α model) :
+    IO _root_.Runtime.Autograd.TorchLean.NN.Mode :=
+  module.toRuntimeState.mode
+
+/-- Enable training behavior for dropout, normalization buffers, and similar layers. -/
+def train {σ τ : Shape} {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {model : nn.Sequential σ τ} (module : Module α model) : IO Unit :=
+  module.toRuntimeState.train
+
+/-- Enable deterministic evaluation behavior for training-sensitive layers. -/
+def eval {σ τ : Shape} {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {model : nn.Sequential σ τ} (module : Module α model) : IO Unit :=
+  module.toRuntimeState.eval
+
+/-- Return `true` exactly when this module uses training behavior. -/
+def isTraining {σ τ : Shape} {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {model : nn.Sequential σ τ} (module : Module α model) : IO Bool := do
+  module.toRuntimeState.isTraining
+
+/-- Read the complete parameter-and-buffer state, synchronizing device storage when necessary. -/
+def state {σ τ : Shape} {α : Type}
+    [_root_.Context α] [DecidableEq Shape]
+    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    {model : nn.Sequential σ τ} (module : Module α model) :
+    IO (TensorPack α (nn.stateShapes model)) :=
+  module.toRuntimeState.state
+
+/-- Replace the complete shape-indexed parameter-and-buffer state. -/
+def loadState {σ τ : Shape} {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {model : nn.Sequential σ τ} (module : Module α model)
+    (state : TensorPack α (nn.stateShapes model)) : IO Unit :=
+  module.toRuntimeState.loadState state
+
+/--
+Run one concrete input without constructing a backward tape.
+
+The module's mode controls training-sensitive layer behavior. This concrete runtime call does not
+construct a backward tape; differentiable model programs use `nn.forward`.
+-/
+def run {σ τ : Shape} {α : Type}
+    [_root_.Context α] [DecidableEq Shape]
+    [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    {model : nn.Sequential σ τ} (module : Module α model)
+    (input : Tensor α σ) : IO (Tensor α τ) := do
+  _root_.Runtime.Autograd.TorchLean.NN.Seq.forwardNoGrad
+    (α := α) (tensorConv := tensorConv)
+    module.options model module.stateRef input
+    (mode := ← module.mode)
+
+/-- Evaluation-mode inference that restores the previous mode after the call. -/
+def predict {σ τ : Shape} {α : Type}
+    [_root_.Context α] [DecidableEq Shape]
+    [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    {model : nn.Sequential σ τ} (module : Module α model)
+    (input : Tensor α σ) : IO (Tensor α τ) := do
+  let previous ← module.mode
+  module.eval
+  try
+    module.run input
+  finally
+    module.modeRef.set previous
+
+end Module
+
+namespace IndexedModule
+
+/-- Instantiate an indexed model under an explicitly selected scalar type. -/
+def instantiateAs {σ τ : Shape} {α : Type}
+    [_root_.Context α] [DecidableEq Shape]
+    [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    (model : nn.IndexedModel σ τ) (options : Options) (cast : Float → α) :
+    IO (IndexedModule α model) := do
+  let state ← _root_.TorchLean.Module.RuntimeState.instantiateAs
+    model.initState model.runtimeInit model.requiresGrad options cast
+  pure { toRuntimeState := state }
+
+/-- Instantiate a native binary32 indexed model. -/
+def instantiate {σ τ : Shape} (model : nn.IndexedModel σ τ) (options : Options) :
+    IO (IndexedModule Float32 model) :=
+  instantiateAs model options Float.toFloat32
+
+/-- Read the current behavior of training-sensitive layers. -/
+def mode {σ τ : Shape} {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {model : nn.IndexedModel σ τ} (module : IndexedModule α model) :
+    IO _root_.Runtime.Autograd.TorchLean.NN.Mode :=
+  module.toRuntimeState.mode
+
+/-- Enable training behavior. -/
+def train {σ τ : Shape} {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {model : nn.IndexedModel σ τ} (module : IndexedModule α model) : IO Unit :=
+  module.toRuntimeState.train
+
+/-- Enable evaluation behavior. -/
+def eval {σ τ : Shape} {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {model : nn.IndexedModel σ τ} (module : IndexedModule α model) : IO Unit :=
+  module.toRuntimeState.eval
+
+/-- Return `true` exactly when the module uses training behavior. -/
+def isTraining {σ τ : Shape} {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {model : nn.IndexedModel σ τ} (module : IndexedModule α model) : IO Bool :=
+  module.toRuntimeState.isTraining
+
+/-- Read the complete parameter-and-buffer state. -/
+def state {σ τ : Shape} {α : Type}
+    [_root_.Context α] [DecidableEq Shape]
+    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    {model : nn.IndexedModel σ τ} (module : IndexedModule α model) :
+    IO (TensorPack α model.stateShapes) :=
+  module.toRuntimeState.state
+
+/-- Replace the complete shape-indexed parameter-and-buffer state. -/
+def loadState {σ τ : Shape} {α : Type} [_root_.Context α] [DecidableEq Shape]
+    {model : nn.IndexedModel σ τ} (module : IndexedModule α model)
+    (state : TensorPack α model.stateShapes) : IO Unit :=
+  module.toRuntimeState.loadState state
+
+/-- Run one validated index tensor without constructing a backward tape. -/
+def run {σ τ : Shape} {α : Type}
+    [_root_.Context α] [DecidableEq Shape]
+    [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    {model : nn.IndexedModel σ τ} (module : IndexedModule α model)
+    (input : Tensor Nat σ) : IO (Tensor α τ) := do
+  match model.validateInput input with
+  | .error message => throw <| IO.userError message
+  | .ok () =>
+      let currentMode ← module.mode
+      let program : _root_.Runtime.Autograd.TorchLean.ProgramWithNatInputs α
+          (model.stateShapes ++ []) [σ] τ :=
+        fun {m} _ _ => by
+          simpa using (model.forward currentMode (α := α) (m := m))
+      let evaluator ← _root_.Runtime.Autograd.TorchLean.Module.Evaluator.withState
+        (program := program)
+        module.options module.stateRef
+      _root_.Runtime.Autograd.TorchLean.Module.Evaluator.evaluatePacked
+        evaluator .nil (.cons input .nil)
+
+/-- Evaluation-mode inference that restores the previous mode after the call. -/
+def predict {σ τ : Shape} {α : Type}
+    [_root_.Context α] [DecidableEq Shape]
+    [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    {model : nn.IndexedModel σ τ} (module : IndexedModule α model)
+    (input : Tensor Nat σ) : IO (Tensor α τ) := do
+  let previous ← module.mode
+  module.eval
+  try
+    module.run input
+  finally
+    module.modeRef.set previous
+
+end IndexedModule
+
+end nn
+
+namespace Module
+
+/--
+Instantiate an executable runtime objective from an `ObjectiveDef`.
+
+This is the low-level entry point for custom losses and multi-input runtime programs. Ordinary
+sequential models use `nn.Module.instantiate` or the `Trainer` API.
 -/
 def instantiate
     {α : Type} [_root_.Context α] [DecidableEq Shape] [Runtime.FromFloat α]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    {paramShapes inputShapes natInputShapes : List Shape}
+    {stateShapes inputShapes natInputShapes : List Shape}
     (opts : Options)
-    (defn : ScalarModuleDef paramShapes inputShapes natInputShapes)
+    (defn : ObjectiveDef stateShapes inputShapes natInputShapes)
     (cast : Float → α := Runtime.ofFloat) :
-    IO (ScalarModule α paramShapes inputShapes natInputShapes) :=
-  instantiateConfigured (α := α) defn cast opts
+    IO (Objective α stateShapes inputShapes natInputShapes) :=
+  instantiateAs (α := α) defn cast opts
 
-/--
-Run one inference step through a supervised runtime module.
+namespace Supervised
 
-Public sibling of the direct runtime pattern `model.predict opts m.trainer.params x`.
--/
+/-- Run evaluation-mode prediction through a supervised runtime module. -/
 def predict {σ τ : Shape} {α : Type}
     [_root_.Context α] [DecidableEq Shape]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (opts : Options)
     (model : TorchLean.nn.Sequential σ τ)
-    (m : ScalarModule α (nn.paramShapes model) [σ, τ])
-    (x : Tensor.T α σ) : IO (Tensor.T α τ) :=
-  nn.predict (α := α) opts model m.trainer.params x
+    (m : Objective α (nn.stateShapes model) [σ, τ])
+    (x : Tensor α σ) : IO (Tensor α τ) :=
+  _root_.Runtime.Autograd.TorchLean.NN.Seq.predict
+    (α := α) opts model m.trainer.state x
 
-/--
-Instantiate a supervised MSE module directly from a sequential model.
--/
-def instantiateMse {σ τ : Shape} {α : Type}
-    [_root_.Context α] [DecidableEq Shape] [Runtime.FromFloat α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (opts : Options)
-    (model : TorchLean.nn.Sequential σ τ)
-    (reduction : _root_.TorchLean.Loss.Reduction := .mean)
-    (cast : Float → α := Runtime.ofFloat) :
-    IO (ScalarModule α (nn.paramShapes model) [σ, τ]) :=
-  instantiate (α := α) opts
-    (nn.mseScalarModuleDef model (reduction := reduction)) cast
-
-/--
-Instantiate a supervised one-hot cross-entropy module directly from a sequential model.
--/
-def instantiateCrossEntropyOneHot {σ τ : Shape} {α : Type}
-    [_root_.Context α] [DecidableEq Shape] [Runtime.FromFloat α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (opts : Options)
-    (model : TorchLean.nn.Sequential σ τ)
-    (reduction : _root_.TorchLean.Loss.Reduction := .mean)
-    (cast : Float → α := Runtime.ofFloat) :
-    IO (ScalarModule α (nn.paramShapes model) [σ, τ]) :=
-  instantiate (α := α) opts
-    (nn.crossEntropyOneHotScalarModuleDef model (reduction := reduction))
-    cast
-
-/--
-Instantiate a custom supervised runtime module directly from a sequential model.
-
-Use this when a public example keeps the ordinary `TorchLean.nn.Sequential` model API but needs a custom
-loss/module definition instead of the standard MSE or cross-entropy module constructors.
--/
-def instantiateModuleDefModel
-    {σ τ : Shape} {α : Type}
-    [_root_.Context α] [DecidableEq Shape] [Runtime.FromFloat α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (opts : Options)
-    (model : TorchLean.nn.Sequential σ τ)
-    (moduleDefOf : (model : TorchLean.nn.Sequential σ τ) →
-      ScalarModuleDef (nn.paramShapes model) [σ, τ])
-    (cast : Float → α := Runtime.ofFloat) :
-    IO (ScalarModule α (nn.paramShapes model) [σ, τ]) :=
-  instantiate (α := α) opts (moduleDefOf model) cast
-
-/-- Float specialization of `instantiateModuleDefModel` with storage-first initialization. -/
-def instantiateModuleDefModelFloat
-    {σ τ : Shape}
-    (opts : Options)
-    (model : TorchLean.nn.Sequential σ τ)
-    (moduleDefOf : (model : TorchLean.nn.Sequential σ τ) →
-      ScalarModuleDef (nn.paramShapes model) [σ, τ]) :
-    IO (ScalarModule Float (nn.paramShapes model) [σ, τ]) :=
-  TorchLean.Module.instantiateFloat (moduleDefOf model) opts
-
-/--
-Instantiate the standard PPO actor-critic supervised runtime module from rollout-shaped actor and
-critic networks.
--/
-def instantiatePpoActorCritic
-    {stateShape : Shape} {batch nActions : Nat} {α : Type}
-    [Fact (0 < batch)] [Fact (0 < nActions)]
-    [_root_.Context α] [DecidableEq Shape] [Runtime.FromFloat α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (opts : Options)
-    (actor : TorchLean.nn.Sequential stateShape (.dim batch (.dim nActions .scalar)))
-    (critic : TorchLean.nn.Sequential stateShape (.dim batch (.dim 1 .scalar)))
-    (cast : Float → α := Runtime.ofFloat) :
-    IO (ScalarModule α
-      (nn.paramShapes actor ++ nn.paramShapes critic)
-      [stateShape, (.dim batch (.dim nActions .scalar)), (.dim batch .scalar), (.dim batch .scalar),
-        (.dim batch (.dim 1 .scalar))]) :=
-  instantiate (α := α) opts
-    (rl.policy.autograd.ppoActorCriticScalarModuleDef
-      (batch := batch) (nActions := nActions) actor critic)
-    cast
-
-/--
-Build a sequential model, instantiate a one-hot cross-entropy runtime module for it, and continue
-with both values.
-
-This packages the common public example pattern
-`nn.withModel mkModel fun model => let m ← Module.instantiateCrossEntropyOneHot ...`.
--/
-def withCrossEntropyOneHotModel
-    {σ τ : Shape} {α : Type} {β : Type}
-    [_root_.Context α] [DecidableEq Shape] [Runtime.FromFloat α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (mkModel : TorchLean.nn.M (TorchLean.nn.Sequential σ τ))
-    (opts : Options)
-    (reduction : _root_.TorchLean.Loss.Reduction := .mean)
-    (cast : Float → α := Runtime.ofFloat)
-    (k : (model : TorchLean.nn.Sequential σ τ) →
-      ScalarModule α (nn.paramShapes model) [σ, τ] → IO β) : IO β :=
-  nn.withModel mkModel fun model => do
-    let m ← instantiateCrossEntropyOneHot
-      (α := α) opts model (reduction := reduction) (cast := cast)
-    k model m
-
-/--
-Build a sequential model, instantiate an MSE runtime module for it, and continue with both values.
--/
-def withMseModel
-    {σ τ : Shape} {α : Type} {β : Type}
-    [_root_.Context α] [DecidableEq Shape] [Runtime.FromFloat α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (mkModel : TorchLean.nn.M (TorchLean.nn.Sequential σ τ))
-    (opts : Options)
-    (reduction : _root_.TorchLean.Loss.Reduction := .mean)
-    (cast : Float → α := Runtime.ofFloat)
-    (k : (model : TorchLean.nn.Sequential σ τ) →
-      ScalarModule α (nn.paramShapes model) [σ, τ] → IO β) : IO β :=
-  nn.withModel mkModel fun model => do
-    let m ← instantiateMse
-      (α := α) opts model (reduction := reduction) (cast := cast)
-    k model m
-
-/--
-Build a sequential model, instantiate a custom supervised runtime module for it, and continue with
-both values.
-
-This packages the common public example pattern
-`nn.withModel mkModel fun model => let m ← Module.instantiate ... (moduleDefOf model)`.
--/
-def withModuleDefModel
-    {σ τ : Shape} {α : Type} {β : Type}
-    [_root_.Context α] [DecidableEq Shape] [Runtime.FromFloat α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (mkModel : TorchLean.nn.M (TorchLean.nn.Sequential σ τ))
-    (opts : Options)
-    (moduleDefOf : (model : TorchLean.nn.Sequential σ τ) →
-      ScalarModuleDef (nn.paramShapes model) [σ, τ])
-    (cast : Float → α := Runtime.ofFloat)
-    (k : (model : TorchLean.nn.Sequential σ τ) →
-      ScalarModule α (nn.paramShapes model) [σ, τ] → IO β) : IO β :=
-  nn.withModel mkModel fun model => do
-    let m ← instantiateModuleDefModel
-      (α := α) opts model moduleDefOf (cast := cast)
-    k model m
-
-/--
-Build a sequential model, instantiate a runtime module for a custom scalar loss program, and
-continue with both values.
-
-Custom-loss sibling of `withMseModel` / `withCrossEntropyOneHotModel`. Use it when the model is
-ordinary `TorchLean.nn.Sequential`, but the loss needs task-specific logic beyond the standard MSE or
-cross-entropy module constructors.
--/
-def withScalarLossModel
-    {σ τ : Shape} {α : Type} {β : Type}
-    [_root_.Context α] [DecidableEq Shape] [Runtime.FromFloat α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (mkModel : TorchLean.nn.M (TorchLean.nn.Sequential σ τ))
-    (opts : Options)
-    (loss : ∀ {α : Type}, [_root_.Context α] → [DecidableEq Shape] →
-      _root_.Runtime.Autograd.TorchLean.Program α [τ, τ] Shape.scalar)
-    (cast : Float → α := Runtime.ofFloat)
-    (k : (model : TorchLean.nn.Sequential σ τ) →
-      ScalarModule α (nn.paramShapes model) [σ, τ] → IO β) : IO β :=
-  withModuleDefModel
-    (α := α) (mkModel := mkModel) (opts := opts)
-    (moduleDefOf := fun model => nn.scalarModuleDef model (loss := loss))
-    (cast := cast) k
-
-/-- Float specialization of `withScalarLossModel` with storage-first parameter initialization. -/
-def withScalarLossModelFloat
-    {σ τ : Shape} {β : Type}
-    (mkModel : TorchLean.nn.M (TorchLean.nn.Sequential σ τ))
-    (opts : Options)
-    (loss : ∀ {α : Type}, [_root_.Context α] → [DecidableEq Shape] →
-      _root_.Runtime.Autograd.TorchLean.Program α [τ, τ] Shape.scalar)
-    (k : (model : TorchLean.nn.Sequential σ τ) →
-      ScalarModule Float (nn.paramShapes model) [σ, τ] → IO β) : IO β :=
-  nn.withModel mkModel fun model => do
-    let m ← instantiateModuleDefModelFloat opts model
-      (fun current => nn.scalarModuleDef current (loss := loss))
-    k model m
+end Supervised
 
 /--
 Evaluate one supervised sample through a runtime module and return the scalar loss value.
 
-This packages the common public example pattern `Module.forward ...; Tensor.toScalar`.
+This packages the common public example pattern `Module.loss ...; Tensor.toScalar`.
 -/
-def lossScalar {σ τ : Shape} {α : Type}
+def lossValue {σ τ : Shape} {α : Type}
     [_root_.Context α] [DecidableEq Shape]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (model : TorchLean.nn.Sequential σ τ)
-    (m : ScalarModule α (nn.paramShapes model) [σ, τ])
+    (m : Objective α (nn.stateShapes model) [σ, τ])
     (sample : SupervisedSample α σ τ) : IO α := do
-  let loss ← forward (α := α) m sample .nil
+  let loss ← loss (α := α) m sample .nil
   pure (Tensor.toScalar loss)
 
 /--
-Create an Adam optimizer handle bound to a concrete runtime module.
+Bind Adam state and updates to a concrete runtime module.
 
-This packages the common public example pattern `optim.runtimeAdam ...; optim.handle m opt`.
+This packages the common public pattern of constructing Adam and binding it to a module.
 -/
-def adamHandle {α : Type}
+def bindAdam {α : Type}
     [_root_.Context α] [DecidableEq Shape]
-    {paramShapes inputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes)
+    {stateShapes inputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes)
     (lr beta1 beta2 epsilon : α) := do
   let opt := _root_.Runtime.Autograd.TorchLean.Optim.adam (α := α) lr beta1 beta2 epsilon
-    (paramShapes := paramShapes)
-  optimizerHandle (α := α) m opt
+    (paramShapes := stateShapes)
+  bindOptimizer (α := α) m opt
 
 /--
-Create an AdamW optimizer handle bound to a concrete runtime module.
+Bind AdamW state and updates to a concrete runtime module.
 -/
-def adamWHandle {α : Type}
+def bindAdamW {α : Type}
     [_root_.Context α] [DecidableEq Shape]
-    {paramShapes inputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes)
+    {stateShapes inputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes)
     (lr weightDecay beta1 beta2 epsilon : α) := do
   let opt := _root_.Runtime.Autograd.TorchLean.Optim.adamw (α := α)
-    (paramShapes := paramShapes)
+    (paramShapes := stateShapes)
     lr weightDecay beta1 beta2 epsilon
-  optimizerHandle (α := α) m opt
+  bindOptimizer (α := α) m opt
 
 /--
-Create an SGD optimizer handle bound to a concrete runtime module.
+Bind SGD state and updates to a concrete runtime module.
 -/
-def sgdHandle {α : Type}
+def bindSGD {α : Type}
     [_root_.Context α] [DecidableEq Shape]
-    {paramShapes inputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes)
+    {stateShapes inputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes)
     (lr : α) := do
-  let opt := _root_.Runtime.Autograd.TorchLean.Optim.sgd (α := α) lr (paramShapes := paramShapes)
-  optimizerHandle (α := α) m opt
+  let opt := _root_.Runtime.Autograd.TorchLean.Optim.sgd (α := α) lr
+    (paramShapes := stateShapes)
+  bindOptimizer (α := α) m opt
 
 /--
 Create a one-step update function for any typed module input pack from the public optimizer config
@@ -293,66 +390,66 @@ used by the trainer API.
 Generic bridge for custom training loops: richer examples can keep their own control flow while
 still choosing a public `optim.*` config through the same API as `Trainer.RunConfig`.
 -/
-def optimizerInputs {α : Type}
+def makeOptimizerStep {α : Type}
     [_root_.Context α] [Runtime.FromFloat α] [DecidableEq Shape]
-    {paramShapes inputShapes : List Shape}
-    (m : ScalarModule α paramShapes inputShapes)
+    {stateShapes inputShapes : List Shape}
+    (m : Objective α stateShapes inputShapes)
     (cfg : TorchLean.Trainer.Manual.OptimizerConfig) :
     IO (TensorPack α inputShapes → IO Unit) := do
   match cfg with
   | .sgd lr momentum =>
       if momentum == 0.0 then
-        let optH ← sgdHandle m (Runtime.ofFloat lr)
-        pure optH.step
+        let bound ← bindSGD m (Runtime.ofFloat lr)
+        pure bound.step
       else
         let opt := _root_.Runtime.Autograd.TorchLean.Optim.momentumSGD
           (α := α)
           (Runtime.ofFloat lr)
           (Runtime.ofFloat momentum)
-          (paramShapes := paramShapes)
-        let optH ← optimizerHandle (α := α) m opt
-        pure optH.step
+          (paramShapes := stateShapes)
+        let bound ← bindOptimizer (α := α) m opt
+        pure bound.step
   | .adagrad lr epsilon =>
       let opt := _root_.Runtime.Autograd.TorchLean.Optim.adagrad
         (α := α)
         (Runtime.ofFloat lr)
         (Runtime.ofFloat epsilon)
-        (paramShapes := paramShapes)
-      let optH ← optimizerHandle (α := α) m opt
-      pure optH.step
+        (paramShapes := stateShapes)
+      let bound ← bindOptimizer (α := α) m opt
+      pure bound.step
   | .rmsprop lr decay epsilon =>
       let opt := _root_.Runtime.Autograd.TorchLean.Optim.rmsprop
         (α := α)
         (Runtime.ofFloat lr)
         (Runtime.ofFloat decay)
         (Runtime.ofFloat epsilon)
-        (paramShapes := paramShapes)
-      let optH ← optimizerHandle (α := α) m opt
-      pure optH.step
+        (paramShapes := stateShapes)
+      let bound ← bindOptimizer (α := α) m opt
+      pure bound.step
   | .adam lr beta1 beta2 epsilon =>
-      let optH ← adamHandle m
+      let bound ← bindAdam m
         (Runtime.ofFloat lr)
         (Runtime.ofFloat beta1)
         (Runtime.ofFloat beta2)
         (Runtime.ofFloat epsilon)
-      pure optH.step
+      pure bound.step
   | .adadelta lr rho epsilon =>
       let opt := _root_.Runtime.Autograd.TorchLean.Optim.adadelta
         (α := α)
         (Runtime.ofFloat lr)
         (Runtime.ofFloat rho)
         (Runtime.ofFloat epsilon)
-        (paramShapes := paramShapes)
-      let optH ← optimizerHandle (α := α) m opt
-      pure optH.step
+        (paramShapes := stateShapes)
+      let bound ← bindOptimizer (α := α) m opt
+      pure bound.step
   | .adamw lr weightDecay beta1 beta2 epsilon =>
-      let optH ← adamWHandle m
+      let bound ← bindAdamW m
         (Runtime.ofFloat lr)
         (Runtime.ofFloat weightDecay)
         (Runtime.ofFloat beta1)
         (Runtime.ofFloat beta2)
         (Runtime.ofFloat epsilon)
-      pure optH.step
+      pure bound.step
 
 /--
 Create a sample-step function from the public optimizer config used by the trainer API.
@@ -360,12 +457,12 @@ Create a sample-step function from the public optimizer config used by the train
 Bridge for custom training loops: richer examples can keep their own control flow while still
 choosing a public `optim.*` config through the same API as `Trainer.RunConfig`.
 -/
-def optimizerStep {α : Type} {σ τ : Shape}
+def makeSupervisedStep {α : Type} {σ τ : Shape}
     [_root_.Context α] [Runtime.FromFloat α] [DecidableEq Shape]
-    {paramShapes : List Shape}
-    (m : ScalarModule α paramShapes [σ, τ])
+    {stateShapes : List Shape}
+    (m : Objective α stateShapes [σ, τ])
     (cfg : TorchLean.Trainer.Manual.OptimizerConfig) : IO (SupervisedSample α σ τ → IO Unit) := do
-  optimizerInputs m cfg
+  makeOptimizerStep m cfg
 
 end Module
 

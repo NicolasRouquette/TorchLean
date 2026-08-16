@@ -7,9 +7,53 @@ open Verso.Genre Manual
 tag := "graphs-and-ir"
 %%%
 
-GraphSpec preserves an architecture as a typed Lean term. A backend pass needs a more ordinary
-piece of data: an array of operation nodes that can be imported, traversed, serialized, checked, and
-assigned to kernels. That representation is `NN.IR.Graph`.
+GraphSpec preserves architecture and shape constraints in its type. Importers, exporters, and
+verification passes need a first-order representation that can be read before it is known to be
+valid. `NN.IR.Graph` is that representation: an array of operation nodes that can be traversed,
+serialized, checked, and assigned to kernels.
+
+This is not `Torch.TypedGraph`. That runtime type stores shape-indexed executable functions for
+forward evaluation, JVPs, and VJPs, together with a typed reference selecting its output. The
+supported canonical IR fragment lowers instead to `Runtime.Autograd.IRExec.ForwardGraph`, a
+forward-only shape-indexed form. Importing forward semantics does not supply a derivative rule, so
+the two executable graph types remain separate.
+
+The principal executable paths are:
+
+```
+GraphSpec.Chain ── toProgram ──> TorchLean.Program
+                                             │
+                                             ├── Autodiff.lowerToTypedGraph
+                                             │   ──> Torch.TypedGraph
+                                             │        (forward + JVP + VJP)
+                                             │
+                                             └── Verification.lowerForwardToIR
+                                                 ──> NN.IR.Graph
+                                                       │
+                                                       └── IRExec.lowerToForwardGraph
+                                                           ──> IRExec.ForwardGraph
+                                                                (forward only)
+
+NN.IR.Graph ── kernel selection ──> GraphKernelPlan
+                                     (metadata only)
+```
+
+`TorchLean.Program` in this diagram is an operation-polymorphic function, not a stored graph. The
+broad `lowerForwardToIR` pass executes that function with an IR-building interpreter and validates
+the graph it produces. It does not by itself carry an end-to-end source-lowering theorem.
+
+The theorem-backed source path is deliberately separate:
+
+```
+Proved.ForwardProgram ── Proved.lowerForwardProgramToIR ──> NN.IR.Graph
+          │                                                        │
+   Proved.evalForward                                      runForwardIR
+          │                                                        │
+          └──────────────────── equal by theorem ──────────────────┘
+```
+
+`Proved.ForwardProgram` is a smaller first-order let-chain whose constructors expose the fragment
+covered by the theorem. It is not an alias for the general `TorchLean.Program` interface.
 
 The easiest way to understand it is to build one. Consider
 
@@ -227,16 +271,16 @@ lake exe torchlean ir_axis_ops
 
 The example checks softmax, layer normalization, and concatenation on rank-three tensors. For
 concatenation it reports the same output shape and leading values from both the pure spec evaluator
-and the compiled IR path:
+and the forward-graph path:
 
 ```
 concat axis=1: [2,3,4] ++ [2,5,4] -> [2,8,4]
 spec outShape:     [2,8,4]
-compiled outShape: [2,8,4]
+forward graph outShape: [2,8,4]
 ```
 
 For the current middle-axis softmax and layer-normalization cases, the spec evaluator runs while
-the compiled path explicitly reports that the case is unsupported. This is preferable to silently
+the forward-graph path explicitly reports that the case is unsupported. This is preferable to silently
 changing the axis or falling back to a different meaning.
 
 Change `concat axis=1` to an out-of-range axis in the source
@@ -245,7 +289,8 @@ Shape inference rejects the node before evaluation.
 
 # Executable IR Coverage And Proof Coverage
 
-`Runtime.Autograd.Compiled.IRExec` lowers the current IR vocabulary operation by operation,
+`Runtime.Autograd.IRExec.lowerToForwardGraph` validates the graph and lowers the current IR vocabulary
+operation by operation,
 including elementwise arithmetic, seeded masks, broadcasting, reductions, rank-two and limited
 rank-three matmul, linear and convolution payloads, pooling, normalization, reshape/permutation,
 concat, and scalar MSE. Lowering remains allowed to reject a shape or axis that its runtime builder
@@ -253,7 +298,7 @@ cannot represent.
 
 The recursive semantic-equivalence theorem is narrower than the executable lowering. Its named
 side conditions are `NoRawLog`, `NoMSELoss`, and `NoConcat`. Per-operation lemmas live under
-`NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops`; the end-to-end theorem is in
+`NN.Runtime.Autograd.IRExec.Correctness.Ops`; the end-to-end theorem is in
 `Correctness.SemanticEquivalence`. This separation lets the executable path grow without silently
 expanding the theorem statement.
 
@@ -271,7 +316,6 @@ The graph is the same data, but the meaning of arithmetic changes with `α`. The
 interpretations is never automatic.
 
 `DVal α` varies the shape while retaining the scalar contract introduced in *Tensors And Shapes*.
-The PyTorch comparison discusses the separate mixed-precision question.
 
 For the six-node example:
 
@@ -284,25 +328,26 @@ Graph.denote (α := IEEE32Exec) graph payloadIEEE inputIEEE
 have the same node structure and different scalar semantics. A runtime-approximation theorem must
 relate their inputs, parameters, and operations before it can bound the final outputs.
 
-# Compiler Claims Have A Fragment
+# Lowering Claims Have A Fragment
 
-The proof-bearing compiler under `NN.Verification.TorchLean.Proved` relates supported compiled
-forward evaluation to IR denotation. Its theorem is not a wildcard over every `OpKind`.
+The proof-bearing lowering under `NN.Verification.TorchLean.Proved` relates its first-order source
+evaluator to IR denotation. Its theorem is not a wildcard over every `TorchLean.Program` or
+`OpKind` accepted by the broad executable lowering.
 
-Other compiled bridges have side conditions such as excluding raw logarithm or MSE nodes. Those
+Other IR-to-forward-graph proofs have side conditions such as excluding raw logarithm or MSE nodes. Those
 conditions are mathematically meaningful:
 
 - `log` needs a domain and numerical policy;
-- an MSE node may combine reduction and loss conventions not yet covered by a compiler proof.
+- an MSE node may combine reduction and loss conventions not yet covered by a lowering proof.
 
-When a compiler returns an executable object, ask two separate questions:
+When lowering returns an executable object, ask two separate questions:
 
 1. did lowering succeed for this concrete graph?
 2. which theorem covers the operations and side conditions in that graph?
 
-Successful compilation without the second answer is an execution result, not a semantic proof.
+Successful lowering without the second answer is an execution result, not a semantic proof.
 
-# Backend Planning Does Not Execute
+# Kernel Selection Does Not Execute
 
 The backend adapter maps operation tags to backend operations:
 
@@ -319,8 +364,8 @@ IDs and records capsule names in graph order.
 This is useful audit data, but a `KernelCapsule` is a contract descriptor, not a closure containing
 machine code. Planning node 1 for `nativeCuda` does not call a CUDA kernel. Eager execution must
 bind the selected capsule to a typed handler with the same operation, provider, and device before
-that handler can run. An `AcceptedGraphPlan` remains data; the current compiled trainer does not
-consume it.
+that handler can run. An `AcceptedGraphKernelPlan` remains data; the current typed graph trainer
+does not consume it.
 
 The distinction prevents a common architecture mistake:
 
@@ -359,7 +404,7 @@ For any graph-based claim, locate:
 2. its concrete parameter payload;
 3. the structural and shape checks that ran;
 4. the scalar context used by denotation;
-5. the compiler theorem and fragment, if lowering was used;
+5. the lowering theorem and fragment, if lowering was used;
 6. the capsule selected for each native operation;
 7. the provider branch that actually executed it.
 

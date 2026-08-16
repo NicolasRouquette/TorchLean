@@ -204,7 +204,7 @@ ideal semantics. The second is an approximation theorem with a tolerance.
 # Numerical Traces For The Canonical IR
 
 The proof-relevant `FwdGraph` and `RevGraph` explain how local approximation theorems compose. Model
-export and backend planning, however, use the canonical op-tagged `NN.IR.Graph`. TorchLean connects
+export and kernel selection, however, use the canonical op-tagged `NN.IR.Graph`. TorchLean connects
 that graph directly to executable binary32 through
 [the graph numerical certificate checker](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/Graph/NumericalCertificate.lean).
 It does not introduce a second deployment graph or a second interval type.
@@ -216,7 +216,7 @@ Checking performs three independent executable validations:
 
 1. validate that source and derived endpoints are finite and ordered;
 2. reconstruct every supported range transfer from the graph;
-3. re-run backend planning and compare the selected kernel capsules and numerical policies.
+3. re-run kernel selection and compare the selected capsules and numerical policies.
 
 `GraphRangeRegistry` dispatches by primitive operation, not model family. The built-in transfers
 cover source and shape-only nodes, pooling, arithmetic, inverse, ReLU, absolute value, directed
@@ -238,7 +238,7 @@ interval.
 
 `GraphRangeContract.derive` is an executable range transformer, not a soundness theorem.
 `generateChecked` and `check` establish that the stored trace is exactly the trace reconstructed by
-the selected registry and backend plan; they do not establish that every reconstructed interval
+the selected registry and kernel plan; they do not establish that every reconstructed interval
 encloses the graph's real denotation.
 
 `executeIEEE32` evaluates the same `NN.IR.Graph` with TorchLean's bit-level `IEEE32Exec` context and
@@ -262,8 +262,8 @@ that every accepted graph trace encloses exact graph semantics. The separation b
 rounding facts and a composed global error follows the standard treatment in Higham,
 *Accuracy and Stability of Numerical Algorithms*, 2nd edition.
 
-The canonical `NN.IR.Graph` compiler currently proves forward semantic preservation only. Its
-compiled nodes do not yet carry proved VJPs, so this certificate should not be described as a
+The canonical `NN.IR.Graph` lowering currently proves forward semantic preservation only. Its IR
+nodes do not yet carry proved VJPs, so this certificate should not be described as a
 canonical-IR backward certificate. Backward numerical theorems use the proof-bearing `RevGraph`
 path below, which erases to executable autograd `GraphData` without discarding its VJP rules. An
 autograd-capable lowering from canonical IR would need an additional correspondence theorem.
@@ -313,7 +313,7 @@ contract's derived interval to the operation's real semantics.
 
 The [complete numerical-runtime walkthrough](https://lean-dojo.github.io/TorchLean/examples/numerical-runtime/)
 shows the model definitions, the five replay stages, the backend-capsule audit, and the handoff to
-backward and optimizer bounds. It also states the current compiler boundary explicitly: canonical
+backward and optimizer bounds. It also states the current lowering boundary explicitly: canonical
 IR has checked forward replay, while backward and optimizer composition currently begins from a
 proof-bearing `RevGraph`.
 

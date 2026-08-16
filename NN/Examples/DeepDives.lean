@@ -8,7 +8,7 @@ module
 
 public import NN.Examples.DeepDives.Floats.ArbIEEEExecCompare
 public import NN.Examples.DeepDives.Floats.EffectiveRounding
-public import NN.Examples.DeepDives.Floats.Float32Modes
+public import NN.Examples.DeepDives.Floats.Float32Semantics
 public import NN.Examples.DeepDives.Floats.GraphNumericalCertificate
 public import NN.Examples.DeepDives.GraphSpec.Tutorial
 public import NN.Examples.DeepDives.IRAxisOps

@@ -27,11 +27,11 @@ pipeline” workflow in the TorchLean paper (`arXiv:2602.22631`, Figure 7):
 
 This file is shared by (ii) and (iii). It contains:
 - the shapes / parameter pack layout for a small controller and a 1-hidden-layer Lyapunov net, and
-- the scalar TorchLean `lossProgram` used for both training and verification compilation.
+- the scalar TorchLean `lossProgram` used for both training and verification lowering.
 
 Key point: the *same* TorchLean program is used in two roles:
 - **execution/training** (with `α = IEEE32Exec`), and
-- **compilation** to the op-tagged verifier IR used by in-repo IBP/CROWN bound propagation.
+- **lowering** to the op-tagged verifier IR used by in-repo IBP/CROWN bound propagation.
 -/
 
 @[expose] public section
@@ -138,7 +138,7 @@ def lyapunovValueAndGradient
     (s₁ := .dim width .scalar) (s₂ := .dim width (.dim 1 .scalar)) gHidden (by
       simp [_root_.Spec.Shape.size])
   let w1T ← TorchLean.transpose2d (m := m) (α := β) (mDim := width) (nDim := xDim) w1
-  let dsM ← TorchLean.matmul (m := m) (α := β) (mDim := xDim) (nDim := width) (pDim := 1)
+  let dsM ← TorchLean.mm (m := m) (α := β) (mDim := xDim) (nDim := width) (pDim := 1)
     w1T gHiddenM
   let ds ← TorchLean.reshape (m := m) (α := β)
     (s₁ := .dim xDim (.dim 1 .scalar)) (s₂ := xShape) dsM (by

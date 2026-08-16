@@ -19,11 +19,11 @@ This next-step file shows the intended minibatch path in TorchLean:
 2. choose persistent runtime settings with `Trainer.RunConfig`,
 3. write the model over the minibatch shape (`batch × Vec inDim`),
 4. call `trainer.train data trainOptions`,
-5. reuse the trained handle for one follow-up prediction batch.
+5. reuse the training result for one follow-up prediction batch.
 
 Run the loader tutorial instead when possible:
 
-- `lake exe torchlean data_csv --steps 1 --batch 5 --dtype float --backend eager`
+- `lake exe torchlean data_csv --steps 1 --batch 5 --scalar float32 --execution eager`
 
 Build this comparison module directly with:
 
@@ -57,7 +57,7 @@ def hidDim : Nat := 8
 def outDim : Nat := 1
 
 /-- Batched MLP `2 -> 8 -> 1` built from the public model constructor. -/
-def mkModel {batch : Nat} : nn.M (nn.Sequential (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar))) :=
+def mkModel {batch : Nat} : nn.Builder (nn.Sequential (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar))) :=
   nn.models.mlpRelu
     { batch := batch, inDim := inDim, hidDim := hidDim, outDim := outDim }
 
@@ -75,8 +75,8 @@ def usage : String :=
     , "  --seed N"
     , "  --batch N"
     , "  --steps N"
-    , "  --dtype float|float32|ieee32"
-    , "  --backend eager|compiled"
+    , "  --scalar float32|ieee32-exec|complex64"
+    , "  --execution eager|typed-graph"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "  --show-backend                    print backend capsules as they execute"
     , "  --log PATH"
@@ -114,7 +114,7 @@ def main (args : List String) : IO Unit := do
   Data.requireFile "MinibatchMLPTrain" "CSV dataset" csvPath missingCsvHint
   let trained ← trainer.train data parsed.trainOptions
   trained.printSummary
-  let heldout : Tensor.T Float (.dim batch (.dim inDim .scalar)) :=
+  let heldout : Tensor Float (.dim batch (.dim inDim .scalar)) :=
     Tensor.fill 0.25 (.dim batch (.dim inDim .scalar))
   trained.printPrediction "predict(batch=heldout)" heldout
 

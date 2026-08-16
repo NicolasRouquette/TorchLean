@@ -11,20 +11,20 @@ public import NN.API
 /-!
 # TorchLean MLP Train-Then-Verify Workflow
 
-This is a native TorchLean workflow: the model is built, trained, compiled to verifier IR, and
+This is a native TorchLean workflow: the model is built, trained, lowered to verifier IR, and
 checked without importing an external certificate.
 
 Training:
 - build a 2-layer ReLU MLP with a scalar MSE loss
-- train it for a few SGD steps under the compiled TorchLean backend
+- train it for a few SGD steps with reusable typed graph execution
 
 Verification:
-- compile the trained model's forward pass to the verifier IR
+- lower the trained model's forward pass to the verifier IR
 - run public IBP bounds on a small input box around one sample
 
 Run:
-  `lake exe verify -- torchlean-mlp-workflow --dtype float`
-  `lake exe verify -- torchlean-mlp-workflow --dtype float32`
+  `lake exe verify -- torchlean-mlp-workflow --scalar float32`
+  `lake exe verify -- torchlean-mlp-workflow --scalar ieee32-exec`
 -/
 
 @[expose] public section
@@ -60,7 +60,7 @@ def YFloat : Spec.Tensor Float (.dim 3 yShape) :=
     (Data.Synthetic.affinePlane 2.0 (-3.0) 0.0)
 
 /-- TorchLean model used for training and verification. -/
-def mkModel : nn.M (nn.Sequential xShape yShape) :=
+def mkModel : nn.Builder (nn.Sequential xShape yShape) :=
   nn.Sequential![
     nn.linear inDim hiddenDim,
     nn.relu,
@@ -69,7 +69,7 @@ def mkModel : nn.M (nn.Sequential xShape yShape) :=
 
 /-- Deterministically instantiate the workflow model from initialization seed zero. -/
 def model : nn.Sequential xShape yShape :=
-  nn.run 0 mkModel
+  nn.build 0 mkModel
 
 /--
 Run training and verification under a chosen scalar backend `α`.
@@ -83,11 +83,11 @@ def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
   let dataset := Data.tensorDataset XFloat YFloat
   let trainer := Trainer.new model <|
     Trainer.Config.fromRunConfig
-      (Trainer.runConfig opts { optimizer := optim.sgd { lr := 0.05 } })
+      (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.sgd { lr := 0.05 } })
       .regression
 
   IO.println s!"== TorchLean MLP workflow ({inDim} → {hiddenDim} → {outDim}) =="
-  IO.println s!"Training with backend={reprStr opts.backend}, device={opts.device.cliName}"
+  IO.println s!"Training with execution={reprStr opts.execution}, device={opts.device.cliName}"
   let trained ← trainer.train dataset { steps := 10 }
   IO.println s!"avg_loss(on samples)={trained.report.after}"
   IO.println "Checking public IBP bounds on a small input box"
@@ -101,7 +101,7 @@ def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
   CLI.requireNoArgs "torchlean-mlp-workflow" rest
   if opts.usesCuda then
     throw <| IO.userError
-      "torchlean-mlp-workflow: CUDA eager training is not used here; this workflow keeps trained parameters as Lean tensors so the verifier can compile and check them. Use the model-training examples for CUDA runtime training, or run this verifier workflow without --device cuda."
+      "torchlean-mlp-workflow: CUDA eager training is not used here; this workflow keeps trained parameters as Lean tensors so the verifier can lower and check them. Use the model-training examples for CUDA runtime training, or run this verifier workflow without --device cuda."
   runOnce (α := α) opts
 
 /--
@@ -111,10 +111,11 @@ This is wired into `lake exe verify -- torchlean-mlp-workflow`.
 -/
 def main (args : List String) : IO Unit := do
   let args :=
-    if CLI.hasFlagValue args "backend" then
+    if CLI.hasFlagValue args "execution" then
       args
     else
-      "--backend=compiled" :: args
-  Runtime.withOptionsScalar args (@runMain)
+      "--execution=typed-graph" :: args
+  Module.withRuntime args
+    (fun {α} _ _ _ _ _cast opts rest => runMain (α := α) opts rest)
 
 end NN.Verification.TorchLean.MlpTrainVerifyWorkflow

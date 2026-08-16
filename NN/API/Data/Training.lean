@@ -27,37 +27,37 @@ export Training (Dataset DataLoader)
 Runtime-polymorphic supervised dataset for `Float` tensors.
 
 Use this for most tutorials and file-loader paths: Float data is cast into whichever runtime scalar
-the command selected with `--dtype`.
+the command selected with `--scalar`.
 -/
 def tensorDataset
     {n : Nat} {σ τ : Shape}
-    (X : Tensor.T Float (.dim n σ)) (Y : Tensor.T Float (.dim n τ)) :
-    Trainer.Dataset σ τ :=
-  { build := fun {α} _ => pure <| supervisedFromLeadingAxisFloat (α := α) X Y }
+    (X : Tensor Float (.dim n σ)) (Y : Tensor Float (.dim n τ)) :
+    Trainer.DataSource σ τ :=
+  { build := fun {α} _ => pure <| TensorDataset.supervisedFloat (α := α) X Y }
 
 /--
 Runtime-polymorphic supervised dataset from an explicit sample builder.
 
 Use this when Lean code generates samples directly rather than loading them from batched tensors,
 CSV, or NPY files. Sequence windows, synthetic PDE batches, and task-specific examples can keep
-their own sample logic while still returning a standard `Trainer.Dataset`.
+their own sample logic while still returning a standard `Trainer.DataSource`.
 -/
 def samples
     {σ τ : Shape}
     (mk : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → List (SupervisedSample α σ τ)) :
-    Trainer.Dataset σ τ :=
+    Trainer.DataSource σ τ :=
   { build := fun {α} _ _ => pure <| fromList (mk (α := α)) }
 
 /--
 Build a singleton dataset from one runtime-polymorphic supervised sample.
 
-Small examples can use the `Trainer.Dataset` API without fixing the runtime scalar or backend
+Small examples can use the `Trainer.DataSource` API without fixing the runtime scalar or backend
 in the dataset definition itself.
 -/
 def singleton
     {σ τ : Shape}
     (mk : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → SupervisedSample α σ τ) :
-    Trainer.Dataset σ τ :=
+    Trainer.DataSource σ τ :=
   samples (fun {α} _ _ => [mk (α := α)])
 
 /--
@@ -70,7 +70,7 @@ or one file-backed record.
 def singletonFrom
     {ρ : Type} {σ τ : Shape} (arg : ρ)
     (mk : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → ρ → SupervisedSample α σ τ) :
-    Trainer.Dataset σ τ :=
+    Trainer.DataSource σ τ :=
   singleton (fun {α} _ _ => mk (α := α) arg)
 
 /--
@@ -82,7 +82,7 @@ trainer still owns the scalar/backend choice through `Trainer.RunConfig` and `Tr
 def ioSingletonFloat
     {σ τ : Shape}
     (mk : IO (SupervisedSample Float σ τ)) :
-    Trainer.Dataset σ τ :=
+    Trainer.DataSource σ τ :=
   { build := fun {_} _ _ => do
       let sample ← mk
       pure <| fromList
@@ -101,7 +101,7 @@ have to write their own scalar-polymorphic dataset adapter.
 def floatSamples
     {σ τ : Shape}
     (samples : List (SupervisedSample Float σ τ)) :
-    Trainer.Dataset σ τ :=
+    Trainer.DataSource σ τ :=
   { build := fun {_} _ _ =>
       pure <| fromList <| samples.map (fun sample =>
         Sample.mk
@@ -112,7 +112,7 @@ def floatSamples
 def floatSampleArray
     {σ τ : Shape}
     (samples : Array (SupervisedSample Float σ τ)) :
-    Trainer.Dataset σ τ :=
+    Trainer.DataSource σ τ :=
   floatSamples samples.toList
 
 /--
@@ -123,9 +123,9 @@ the batch axis. The returned dataset stores samples of shape `dim batch σ` and 
 can be passed directly to `Trainer.new` with a batched model.
 -/
 def batchDataset
-    {σ τ : Shape} (batch : Nat) (data : Trainer.Dataset σ τ)
+    {σ τ : Shape} (batch : Nat) (data : Trainer.DataSource σ τ)
     (shuffle : Bool := true) (seed : Nat := 0) (dropLast : Bool := true) :
-    Trainer.Dataset (.dim batch σ) (.dim batch τ) :=
+    Trainer.DataSource (.dim batch σ) (.dim batch τ) :=
   { build := fun {α} _ => do
       if !dropLast then
         throw <| IO.userError
@@ -144,12 +144,12 @@ def batchDataset
 Split a public dataset into deterministic train/test views.
 
 Dataset-level analogue of `torch.utils.data.random_split`: the split happens after the
-trainer materializes the runtime scalar, but callers stay on ordinary `Trainer.Dataset` values.
+trainer materializes the runtime scalar, but callers stay on ordinary `Trainer.DataSource` values.
 -/
 def randomSplitDataset
-    {σ τ : Shape} (trainSize : Nat) (data : Trainer.Dataset σ τ) (seed : Nat := 0) :
-    Trainer.Dataset σ τ × Trainer.Dataset σ τ :=
-  let mk (takeTrain : Bool) : Trainer.Dataset σ τ :=
+    {σ τ : Shape} (trainSize : Nat) (data : Trainer.DataSource σ τ) (seed : Nat := 0) :
+    Trainer.DataSource σ τ × Trainer.DataSource σ τ :=
+  let mk (takeTrain : Bool) : Trainer.DataSource σ τ :=
     { build := fun {α} _ _ => do
         let samples ← data.build (α := α)
         if trainSize > samples.size then
@@ -170,7 +170,7 @@ def tabularCsvDataset
     (path : System.FilePath) (batch inDim outDim : Nat)
     (csvOptions : CsvOptions := {}) (shuffle : Bool := true) (seed : Nat := 0)
     (dropLast : Bool := true) :
-    Trainer.Dataset (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar)) :=
+    Trainer.DataSource (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar)) :=
   { build := fun {α} _ => do
       if !dropLast then
         throw <| IO.userError
@@ -197,7 +197,7 @@ tensors rather than class labels. The source records where batched features and 
 trainer materializes them at the selected scalar type.
 -/
 def supervisedDataset (src : SupervisedSource) :
-    Trainer.Dataset (Shape.ofDims src.xDims) (Shape.ofDims src.yDims) :=
+    Trainer.DataSource (Shape.ofDims src.xDims) (Shape.ofDims src.yDims) :=
   { build := fun {α} _ => do
       let loaded ← src.load (α := α)
       match loaded with
@@ -213,7 +213,7 @@ and `yPath` stores matching targets with shape `yDims`.
 def supervisedNpyDataset
     (xPath yPath : System.FilePath) (n : Nat)
     (xDims yDims : List Nat) :
-    Trainer.Dataset (Shape.ofDims xDims) (Shape.ofDims yDims) :=
+    Trainer.DataSource (Shape.ofDims xDims) (Shape.ofDims yDims) :=
   supervisedDataset (supervisedNpySource xPath yPath n xDims yDims)
 
 /--
@@ -223,7 +223,7 @@ Public file-data analogue of `torch.utils.data.TensorDataset`: the source record
 integer labels live, and the trainer materializes them at the selected scalar type.
 -/
 def labeledDataset (src : LabeledSource) :
-    Trainer.Dataset (Shape.ofDims src.xDims) (.dim src.classes .scalar) :=
+    Trainer.DataSource (Shape.ofDims src.xDims) (.dim src.classes .scalar) :=
   { build := fun {α} _ => do
       let loaded ← src.load (α := α)
       match loaded with

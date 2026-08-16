@@ -37,14 +37,14 @@ correctness bugs where compiled models return incorrect outputs without an excep
 - Li et al., “Demystifying the Silence of Correctness Bugs in PyTorch Compiler”, 2026.
   https://arxiv.org/abs/2604.08720
 
-TorchLean's answer is a semantic boundary. For the supported IR fragment, successful compilation to
-the executable graph should be justified by a theorem that executable evaluation agrees with the
+TorchLean's answer is a semantic boundary. For the supported IR fragment, successful lowering to
+the executable typed graph is justified by a theorem that executable evaluation agrees with the
 denotational source semantics. External compilers and GPU kernels still need their own conformance
 evidence; this file spells out the contract shape so that “we tested it once” is not confused with a
 semantic guarantee.
 
-The full TorchLean compiler-correctness chapter contains the stronger IR-specific theorem. This
-example stays local so that importing the examples chapter does not force every heavy compiler
+The full TorchLean lowering-correctness chapter contains the stronger IR-specific theorem. This
+example stays local so that importing the examples chapter does not force every heavy lowering
 proof to elaborate.
 -/
 

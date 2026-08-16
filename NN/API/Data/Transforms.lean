@@ -12,7 +12,7 @@ public import NN.API.Data.Dataset
 # Dataset and Sample Transforms (Torchvision-Style)
 
 This module provides a small transform library inspired by `torchvision.transforms`:
-- composable pure transforms (`Compose`, `Lambda`)
+- composition of pure transforms
 - dataset mapping helpers
 - common tensor/sample normalization utilities
 
@@ -31,20 +31,6 @@ are caught by the typechecker rather than at runtime.
 namespace TorchLean
 namespace Data
 namespace Transforms
-
-/--
-Torchvision-style transform composition.
-
-Applies transforms left-to-right:
-
-$\operatorname{Compose}[f,g,h](x)=h(g(f(x)))$.
--/
-def Compose {a : Type} (ts : List (a → a)) : a → a :=
-  fun x => ts.foldl (fun acc f => f acc) x
-
-/-- Torchvision-style "Lambda" transform wrapper. -/
-def Lambda {a : Type} (f : a → a) : a → a :=
-  f
 
 /-- Compose two pure transforms. -/
 def compose {a b c : Type} (g : b → c) (f : a → b) : a → c :=

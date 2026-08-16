@@ -21,7 +21,7 @@ ABIs, and model families whose architecture is itself part of a theorem.
 
 ## Sequential Graphs
 
-`Graph ps σ τ` represents a chain from input shape `σ` to output shape `τ`. The list `ps`
+`Chain ps σ τ` represents a chain from input shape `σ` to output shape `τ`. The list `ps`
 records parameter tensor shapes in ABI order.
 
 ```lean
@@ -34,8 +34,8 @@ def g (inDim hidDim outDim : Nat) :=
   GraphSpec.Models.mlp inDim hidDim outDim
 
 #check GraphSpec.Interp.spec (g 4 8 2)
-#check GraphSpec.Compile.torchProgram (g 4 8 2)
-#check GraphSpec.LowerToDAG.Graph.toDAGModelZeroInit (g 4 8 2)
+#check GraphSpec.Chain.toProgram (g 4 8 2)
+#check GraphSpec.LowerToDAG.Chain.toDAGModelZeroInit (g 4 8 2)
 ```
 
 Sequential graphs work well for MLPs and feed-forward pipelines. `>>>` composes layers while the
@@ -61,10 +61,10 @@ runtime.
 terms. Their types preserve every tensor shape. `Block.andThen` feeds all outputs of one block into
 another block without duplicating shared intermediates.
 
-## Semantics And Compilation
+## Semantics And Lowering
 
 `Term.eval` and `Block.eval` give pure tensor semantics for any scalar `Context`.
-`Term.compile` and `Block.compile` produce programs for a backend implementing TorchLean's
+`Term.lower` and `Block.lower` produce programs for any execution monad implementing TorchLean's
 runtime operations.
 
 The library proves that:
@@ -82,15 +82,15 @@ entire architecture for every later result.
 
 | File | Contents |
 | --- | --- |
-| `Core.lean` | sequential graph syntax and composition |
-| `DAG/Core.lean` | typed variables, terms, blocks, substitutions, semantics, and compilation |
+| `Core.lean` | sequential chain syntax and composition |
+| `DAG/Core.lean` | typed variables, terms, blocks, substitutions, semantics, and lowering |
 | `DAG/Term.lean` | reusable term combinators |
 | `DAG/Primitives/Core.lean` | primitive operation interface and basic operations |
 | `DAG/Primitives/LinearAlgebra.lean` | matrix and batched linear algebra |
 | `DAG/Primitives/Nonlinear.lean` | activations and elementwise nonlinearities |
 | `DAG/Primitives/Normalization.lean` | normalization operations |
 | `DAG/Primitives/Shape.lean` | reshape, broadcast, concat, slicing, and axis operations |
-| `ToTorchLean.lean` | lowering of the supported sequential subset |
+| `ToSequential.lean` | conversion of the supported layer-stack subset to `TorchLean.NN.Seq` |
 | `Models/` | MLP, CNN, residual, and TorchLean lowering examples |
 
 ## Adding A Primitive
@@ -107,9 +107,9 @@ open NN.Tensor
 def myOp (s : Shape) : Primitive [] s s :=
   { name := "myOp"
     specFwd := fun {α} _ctx _params x => x
-    torchProgram := fun {α} _ctx _deq =>
+    program := fun {α} _ctx _deq =>
       fun {m} _ _ => fun x => pure x
-    toLayerDefM? := none
+    toLayerM? := none
     countsAsLayer := false }
 
 end NN.GraphSpec.Primitive

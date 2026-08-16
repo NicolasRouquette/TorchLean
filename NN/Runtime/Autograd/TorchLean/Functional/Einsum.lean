@@ -30,7 +30,7 @@ def matmul2d {α : Type} [Context α] [DecidableEq Shape]
     (a : RefTy (m := m) (α := α) (.dim mDim (.dim nDim .scalar)))
     (b : RefTy (m := m) (α := α) (.dim nDim (.dim pDim .scalar))) :
     m (RefTy (m := m) (α := α) (.dim mDim (.dim pDim .scalar))) :=
-  _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α) (mDim := mDim) (nDim := nDim) (pDim :=
+  _root_.Runtime.Autograd.Torch.mm (m := m) (α := α) (mDim := mDim) (nDim := nDim) (pDim :=
     pDim) a b
 
 /-- Batched matmul: `[batch,m,n] × [batch,n,p] → [batch,m,p]`. -/
@@ -499,12 +499,6 @@ def firstDup? (xs : List Label) : Option (Label × Nat × Nat) :=
         | none => go ((x, i) :: seen) (i + 1) xs
   go [] 0 xs
 
-/-- `Shape.appendDim s 1` preserves `Spec.Shape.size` (used to justify reshape tricks). -/
-theorem size_appendDim_one (s : Shape) : Spec.Shape.size (Shape.appendDim s 1) = Spec.Shape.size s := by
-  induction s with
-  | scalar => simp [Shape.appendDim, Spec.Shape.size]
-  | dim n s ih => simp [Shape.appendDim, Spec.Shape.size, ih]
-
 /-- Permutation list that moves `axis` to the last position (keeping relative order of others). -/
 def permMoveAxisToLast (r axis : Nat) : List Nat :=
   (List.range axis) ++ ((List.range (r - (axis + 1))).map (fun i => axis + 1 + i)) ++ [axis]
@@ -935,7 +929,7 @@ def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
         let d := Einsum.dimFindD dimMap l 1
         let sReshape : Shape := Shape.appendDim cur.fst 1
         have hSz : Spec.Shape.size cur.fst = Spec.Shape.size sReshape := by
-          simpa [sReshape] using (Eq.symm (Einsum.size_appendDim_one cur.fst))
+          simpa [sReshape] using (Spec.Shape.size_appendDim cur.fst 1).symm
         let xReshaped ← OptionT.lift <|
           reshape (m := m) (α := α) (s₁ := cur.fst) (s₂ := sReshape) cur.snd hSz
         let sBroad : Shape := Shape.appendDim cur.fst d

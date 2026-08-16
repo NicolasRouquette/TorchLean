@@ -159,9 +159,11 @@ def run : IO Unit := do
 
   -- Exercise the actual capsule route, not only the raw FFI. LibTorch computes the forward value;
   -- the CUDA tape records the node and evaluates the composed TorchLean VJP during backward.
+  let profileOpts :=
+    Runtime.Autograd.Torch.Options.withBackendProfile
+      ({} : Runtime.Autograd.Torch.Options) NN.Backend.BackendProfile.libTorchForwardCuda
   let profileSession ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float)
-    ({ executionProfile := NN.Backend.BackendProfile.libTorchForwardCuda } :
-      Runtime.Autograd.Torch.Options)
+    profileOpts
   let selectedAttention ← profileSession.selectedCapsule
     .scaledDotProductAttention
   unless selectedAttention.sameIdentity NN.Backend.Attention.libTorchSDPAForward do

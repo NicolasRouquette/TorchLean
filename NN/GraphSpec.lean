@@ -13,7 +13,7 @@ public import NN.GraphSpec.Models.MlpDeterministicInit
 public import NN.GraphSpec.Models.MlpSpecEquivalence
 public import NN.GraphSpec.Primitives
 public import NN.GraphSpec.Primitives.Embedding
-public import NN.GraphSpec.ToTorchLean
+public import NN.GraphSpec.ToSequential
 
 /-!
 # Graph Specifications
@@ -29,13 +29,13 @@ import NN.GraphSpec
 It gives you:
 
 - the canonical DAG model API (`NN.GraphSpec.DAG.Term`, `NN.GraphSpec.DAG.Model`),
-- the sequential authoring sugar (`NN.GraphSpec.Graph` + `>>>`) for chain models and its lowering
+- the sequential authoring syntax (`NN.GraphSpec.Chain` + `>>>`) for chain models and its lowering
   into DAG,
-- the Spec semantics (`NN.GraphSpec.Interp.spec`) and TorchLean compiler
-  (`NN.GraphSpec.Compile.torchProgram`),
+- the Spec semantics (`NN.GraphSpec.Interp.spec`) and TorchLean lowering
+  (`NN.GraphSpec.Chain.toProgram`),
 - sequential and DAG primitive packs,
 - the GraphSpec example architectures (`NN.GraphSpec.Models`),
-- the optional lowering to `TorchLean.NN.Seq` when primitives provide `toLayerDefM?`,
+- the optional lowering to `TorchLean.NN.Seq` when primitives provide `toLayerM?`,
 - and the model/primitive bridge theorems that connect GraphSpec syntax to Spec references.
 
 Umbrella re-export; the implementation lives in the imported modules.
@@ -52,8 +52,8 @@ namespace GraphSpec
 
 GraphSpec's canonical “runnable + spec” representation is `DAG.Model`.
 
-Sequential `Graph` pipelines can be lowered to DAG via `Core.LowerToDAG.Graph.toDAGTerm` and
-`Core.LowerToDAG.Graph.toDAGModelZeroInit`, so users can author simple pipelines and still end up
+Sequential `Chain` pipelines can be lowered to DAG via `Core.LowerToDAG.Chain.toDAGTerm` and
+`Core.LowerToDAG.Chain.toDAGModelZeroInit`, so users can author simple pipelines and still end up
 in the same general model representation.
 -/
 
@@ -68,11 +68,11 @@ abbrev specFwd {ps ins : List Spec.Shape} {τ : Spec.Shape} (m : Model ps ins τ
     Runtime.Autograd.Torch.TList α ps → Runtime.Autograd.Torch.TList α ins → Spec.Tensor α τ :=
   DAG.Model.specFwd (ps := ps) (ins := ins) (τ := τ) m
 
-@[inherit_doc DAG.Model.torchProgram]
-abbrev torchProgram {ps ins : List Spec.Shape} {τ : Spec.Shape} (m : Model ps ins τ)
+@[inherit_doc DAG.Model.toProgram]
+abbrev toProgram {ps ins : List Spec.Shape} {τ : Spec.Shape} (m : Model ps ins τ)
     {α : Type 0} [Context α] [DecidableEq Spec.Shape] :
     Runtime.Autograd.TorchLean.Program α (ps ++ ins) τ :=
-  DAG.Model.torchProgram (ps := ps) (ins := ins) (τ := τ) m
+  DAG.Model.toProgram (ps := ps) (ins := ins) (τ := τ) m
 
 end Model
 

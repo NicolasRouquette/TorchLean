@@ -41,8 +41,8 @@ def linear {α : Type} (s : Session α) [Inhabited α] [Add α] [Mul α] [Zero �
   match s.impl with
   | .eager sess =>
       EagerSession.linear (α := α) sess (inDim := inDim) (outDim := outDim) w b x
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.linear (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.linear (α := α) sess
         (inDim := inDim) (outDim := outDim) w b x
 
 /--
@@ -58,8 +58,8 @@ def mseLoss {α : Type} (s : Session α)
   IO (_root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) := do
   match s.impl with
   | .eager sess => EagerSession.mseLoss (α := α) sess (sh := sh) yhat target
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.mseLoss (α := α) sess (sh := sh) yhat target
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.mseLoss (α := α) sess (sh := sh) yhat target
 
 /--
 LayerNorm over a `seqLen × embedDim` tensor.
@@ -78,8 +78,8 @@ def layerNorm {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
         (seqLen := seqLen) (embedDim := embedDim) (h_seq_pos := h_seq_pos) (h_embed_pos :=
           h_embed_pos)
         x gamma beta
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.layerNorm (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.layerNorm (α := α) sess
         (seqLen := seqLen) (embedDim := embedDim) (h_seq_pos := h_seq_pos) (h_embed_pos :=
           h_embed_pos)
         x gamma beta
@@ -89,7 +89,7 @@ BatchNorm over a CHW tensor (channel-first).
 
 PyTorch analogue: `torch.nn.BatchNorm2d` (in channel-first layout).
 -/
-def batchnormChannelFirst {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
+def batchNormChannelFirst {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   {channels height width : Nat} (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0)
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim channels (.dim height (.dim width .scalar))))
   (gamma : _root_.Runtime.Autograd.Torch.TensorRef α (.dim channels .scalar))
@@ -98,12 +98,12 @@ def batchnormChannelFirst {α : Type} (s : Session α) [Context α] [DecidableEq
     := do
   match s.impl with
   | .eager sess =>
-      EagerSession.batchnormChannelFirst (α := α) sess
+      EagerSession.batchNormChannelFirst (α := α) sess
         (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h) (h_w :=
           h_w)
         x gamma beta
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.batchnormChannelFirst (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.batchNormChannelFirst (α := α) sess
         (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h) (h_w :=
           h_w)
         x gamma beta
@@ -132,8 +132,8 @@ def conv {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
         (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
         (hInC := hInC) (hKernel := hKernel)
         w b x
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.conv (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.conv (α := α) sess
         (d := d) (inC := inC) (outC := outC)
         (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
         (hInC := hInC) (hKernel := hKernel)
@@ -162,8 +162,8 @@ def convTranspose {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
         (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
         (hInC := hInC) (hKernel := hKernel)
         w b x
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.convTranspose (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.convTranspose (α := α) sess
         (d := d) (inC := inC) (outC := outC)
         (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
         (hInC := hInC) (hKernel := hKernel)
@@ -190,8 +190,8 @@ def conv2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
         (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
         (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 := h3)
         kernel bias input
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.conv2d (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.conv2d (α := α) sess
         (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
         (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 := h3)
         kernel bias input
@@ -217,8 +217,8 @@ def convTranspose2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape
         (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
         (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 := h3)
         kernel bias input
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.convTranspose2d (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.convTranspose2d (α := α) sess
         (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
         (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 := h3)
         kernel bias input
@@ -244,8 +244,8 @@ def multiHeadAttention {α : Type} (s : Session α) [Context α]
       EagerSession.multiHeadAttention (α := α) sess
         (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim) (h1 := h1)
         wq wk wv wo x (mask := mask)
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.multiHeadAttention (α := α) sess
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.multiHeadAttention (α := α) sess
         (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim) (h1 := h1)
         wq wk wv wo x (mask := mask)
 

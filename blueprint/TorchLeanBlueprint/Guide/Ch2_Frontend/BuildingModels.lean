@@ -27,7 +27,7 @@ how the same tensor contracts extend those architectures.
 The layer type is:
 
 ```
-nn.LayerDef inputShape outputShape
+nn.Layer inputShape outputShape
 ```
 
 A sequential model has:
@@ -51,7 +51,7 @@ shapes contain the same number of values.
 Model builders use:
 
 ```
-nn.M A
+nn.Builder A
 ```
 
 which is a seeded construction of `A`. It allocates deterministic seeds for parameterized layers
@@ -59,7 +59,7 @@ but does not run a forward pass or optimizer update.
 
 # What A Layer Definition Contains
 
-When I add a layer, I check more than its input and output shape. `nn.LayerDef σ τ` stores the
+When I add a layer, I check more than its input and output shape. `nn.Layer σ τ` stores the
 pieces that have to remain aligned as the layer moves from model construction to execution:
 
 :::table +header
@@ -86,7 +86,7 @@ pieces that have to remain aligned as the layer moves from model construction to
   * an optional train/eval-dependent update for state such as running statistics
 *
   * `forward`
-  * the backend-polymorphic tensor program from `σ` to `τ`
+  * the execution-polymorphic tensor program from `σ` to `τ`
 :::
 
 The forward program receives the parameters followed by the layer input. Its input shape list is
@@ -99,11 +99,65 @@ application code as `nn.Sequential`:
 ```
 inductive Seq : Shape → Shape → Type
   | id (s : Shape) : Seq s s
-  | cons : nn.LayerDef σ τ → Seq τ υ → Seq σ υ
+  | cons : nn.Layer σ τ → Seq τ υ → Seq σ υ
 ```
 
 The middle shape `τ` appears on both sides of `cons`. This is the check performed by
 `nn.Sequential!`; the macro saves syntax but does not weaken the type.
+
+# A Model Definition And Its Live State
+
+`nn.Sequential` is an immutable model definition. It contains the checked layer composition,
+parameter layout, initializers, and forward program; it does not hide mutable weights inside the
+value used by proofs and graph lowering.
+
+Manual runtime code can instantiate that definition as a live module:
+
+```
+nn.withModel model fun checked => do
+  let module ← nn.Module.instantiate checked { device := .cpu }
+  let trainingOutput ← module.run input
+  module.eval
+  let evaluationOutput ← module.run input
+```
+
+The module owns parameters, persistent buffers, and its train/eval mode. It begins in training
+mode. `run` executes without a backward tape and respects the current mode, whereas `predict`
+temporarily selects eval mode. The ordinary instantiator uses native `Float32`; `instantiateAs`
+exists for code that deliberately chooses a different scalar interpretation. The immutable
+`checked` value is still the object passed to `nn.lowerToTypedGraph` or a proof-facing
+interpretation.
+
+This distinction is intentional. Mutating an `nn.Sequential` or `nn.Layer` would make the meaning
+of a lowered graph depend on hidden state. Mutation belongs to the instantiated `nn.Module`; the
+definition passed to lowering and proofs remains an ordinary Lean value.
+
+Token models use the same split without turning indices into floating-point tensors:
+
+```
+let table := nn.build 2026 <| nn.embedding vocab embedDim
+let module ← nn.IndexedModule.instantiate (table.model tokenShape) { device := .cpu }
+let vectors ← module.predict tokenIds
+```
+
+The input is `Tensor Nat tokenShape`, and the output shape is
+`tokenShape.appendDim embedDim`. Repeated IDs select the same row and therefore accumulate into the
+same weight gradient. An index outside the vocabulary is rejected before the backend gather runs.
+Fresh tables use independent standard-normal entries, as `torch.nn.Embedding` does. Architectures
+may replace that default, and GPT-2 uses its smaller initialization scale.
+
+To start from an existing table, use the tensor itself:
+
+```
+let table := nn.Embedding.ofWeight weight
+let frozenTable := nn.Embedding.ofWeight weight (freeze := true)
+```
+
+The type of `weight` fixes the vocabulary and embedding dimensions. The first table participates in
+reverse mode; the second remains part of module state but receives no parameter gradient. Current
+embedding modules use dense row lookup and scatter-add gradients. Options that change PyTorch's
+forward or backward semantics, such as `padding_idx`, `max_norm`, frequency-scaled gradients, and
+sparse gradients, require their own checked definitions and are not accepted as ignored flags.
 
 # The Running MLP
 
@@ -118,7 +172,7 @@ def hidden : Nat := 8
 def outDim : Nat := 1
 
 def model :
-    nn.M (nn.Sequential (shape![inDim]) (shape![outDim])) :=
+    nn.Builder (nn.Sequential (shape![inDim]) (shape![outDim])) :=
   nn.Sequential![
     nn.linear inDim hidden,
     nn.relu,
@@ -225,7 +279,7 @@ The running-example chapter trained this MLP. Here we are interested in the obje
 *before* the trainer was created:
 
 ```
-def initialized := nn.run 2026 model
+def initialized := nn.build 2026 model
 
 #eval IO.println (nn.info initialized)
 ```
@@ -240,8 +294,8 @@ Sequential: [2] -> [1], layers=3, params=33
 ```
 
 This is a useful design loop. Change `hidden` to `2`, `16`, and `64`; predict the parameter count
-before asking Lean. Then insert another hidden `linear` and `relu` pair. The external input and output
-stay `[2] → [1]`, while the internal shape chain and parameter payload grow.
+before asking Lean. Then insert another hidden `linear` and `relu` pair. The external input and
+output stay `[2] → [1]`, while the internal shape chain and parameter payload grow.
 
 # Prefix Shapes Give Batches For Free
 
@@ -250,7 +304,7 @@ to a fixed batch:
 
 ```
 def batchedModel {batch : Nat} :
-    nn.M
+    nn.Builder
       (nn.Sequential
         (shape![batch, 2])
         (shape![batch, 1])) :=
@@ -367,8 +421,8 @@ lake exe torchlean transformer \
 The current example reports:
 
 ```
-[TorchLean] dtype: Float (Lean binary64; native execution boundary)
-[TorchLean] backend: Runtime.Autograd.Torch.Backend.eager
+[TorchLean] scalar: Float32 (native binary32 runtime)
+[TorchLean] execution: Runtime.Autograd.Torch.ExecutionMode.eager
 [TorchLean] device: cpu
 dataset size = 1
 mean_loss(before) = 2.499999
@@ -407,11 +461,11 @@ and reconstruct the readings that were hidden:
 import NN.API
 open TorchLean
 
-def signal : Tensor.T Float (shape![8]) :=
+def signal : Tensor Float (shape![8]) :=
   tensor! [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
 
-def maskedSignal : Tensor.T Float (shape![8]) :=
-  ssl.blockMask #v[8] #v[some 2] 2 0 signal
+def maskedSignal : Tensor Float (shape![8]) :=
+  ssl.BlockMask.apply #v[8] #v[some 2] 2 0 signal
 
 #eval Tensor.pretty maskedSignal
 ```
@@ -427,17 +481,18 @@ hide block indices congruent to zero modulo two, hence the first and third block
 `none` is left out of the block index; an image policy such as
 `#v[none, some 4, some 4]` therefore repeats the same 4-by-4 spatial mask across channels.
 
-For training, `ssl.blockMaeSample` pairs a masked batch with a row-major prefix of the original,
+For training, `ssl.BlockMAE.sample` pairs a masked batch with a row-major prefix of the original,
 unmasked batch. The reconstruction width appears in the target shape, and Lean requires a proof
 that the requested prefix fits. This makes the masking convention and reconstruction target part
 of the sample rather than an agreement hidden between a data loader and a decoder.
 
-The mask is deterministic. In the typed `blockMask` call, the policy and tensor ranks already
+The mask is deterministic. In the typed `BlockMask.apply` call, the policy and tensor ranks already
 agree by construction. A zero period or zero block width hides nothing; the lower-level coordinate
 helpers likewise treat a rank mismatch or out-of-bounds coordinate as visible rather than sampling
 a fallback mask. Randomized mask selection should choose the period/offset or another explicit mask
-from recorded generator state. The coordinate theorems `TorchLean.ssl.blockMask_hidden_scalar_eq_zero` and
-`TorchLean.ssl.blockMask_visible_scalar_eq_input` then describe exactly what the executable
+from recorded generator state. The coordinate theorems
+`TorchLean.ssl.BlockMask.hidden_scalar_eq_zero` and
+`TorchLean.ssl.BlockMask.visible_scalar_eq_input` then describe exactly what the executable
 transformation did.
 
 # Add A Low-Rank Linear Adapter Explicitly
@@ -491,8 +546,7 @@ TorchLean therefore writes:
 
 ```
 Trainer.new model { task := .regression }
-Trainer.new model { task := .classification }
-Trainer.new model { task := .crossEntropy }
+Trainer.new model { task := .oneHotCrossEntropy }
 Trainer.new model { task := .custom lossProgram }
 ```
 

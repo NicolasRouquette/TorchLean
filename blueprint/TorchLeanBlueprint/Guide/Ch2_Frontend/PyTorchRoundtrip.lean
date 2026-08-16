@@ -198,7 +198,7 @@ writes `NN/Examples/Interop/PyTorch/Transformer/transformer_encoder.json`.
 
 The
 [IR export example](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/DeepDives/TorchIRPyTorch.lean)
-does the reverse kind of work: it compiles a TorchLean model to the shared IR and emits runnable
+does the reverse kind of work: it lowers a TorchLean model to the shared IR and emits runnable
 PyTorch code for a curated set of architectures:
 
 - `linear`, `mlp`, `sum`, `autoencoder`
@@ -213,7 +213,7 @@ python3 exported_model.py
 ```
 
 PyTorch users get a translation example for architectures richer than a single linear layer, and the
-example shows where the compiled IR acts as the interchange format.
+example shows where the lowered IR acts as the interchange format.
 
 # A Small Python View
 

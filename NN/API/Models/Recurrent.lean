@@ -56,7 +56,7 @@ Vanilla RNN core plus time-distributed linear head:
 `rnn(seqLen, inputSize, hiddenSize) → linear(hiddenSize, outputSize)`.
 -/
 def rnnWithLinearHead (cfg : RecurrentConfig) :
-    nn.M (nn.Sequential (recurrentInShape cfg) (recurrentOutShape cfg)) :=
+    nn.Builder (nn.Sequential (recurrentInShape cfg) (recurrentOutShape cfg)) :=
   nn.Sequential![
     nn.rnn cfg.seqLen cfg.inputSize cfg.hiddenSize,
     linear cfg.hiddenSize cfg.outputSize (pfx := .dim cfg.seqLen .scalar)
@@ -68,7 +68,7 @@ LSTM core plus time-distributed linear head:
 `lstm(seqLen, inputSize, hiddenSize) → linear(hiddenSize, outputSize)`.
 -/
 def lstmWithLinearHead (cfg : RecurrentConfig) :
-    nn.M (nn.Sequential (recurrentInShape cfg) (recurrentOutShape cfg)) :=
+    nn.Builder (nn.Sequential (recurrentInShape cfg) (recurrentOutShape cfg)) :=
   nn.Sequential![
     nn.lstm cfg.seqLen cfg.inputSize cfg.hiddenSize,
     linear cfg.hiddenSize cfg.outputSize (pfx := .dim cfg.seqLen .scalar)

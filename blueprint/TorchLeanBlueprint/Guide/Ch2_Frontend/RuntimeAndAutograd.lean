@@ -10,16 +10,17 @@ tag := "runtime-autograd"
 The earlier autograd walkthrough used one high-level call:
 
 ```
-autograd.model.valueAndGradParamsScalar ...
+autograd.model.valueAndGradStateScalar ...
 ```
 
-Behind that call, TorchLean may construct a tape, replay a compiled derivative graph, invoke native
-CUDA kernels, and return a dependent gradient pack. Other parts of the repository also use explicit
-IR graphs and backend execution plans. These objects are related, but they are not interchangeable.
+Behind that call, TorchLean may construct a tape, reuse a typed derivative graph, invoke native
+CUDA kernels, and return a dependent gradient pack. Other parts of the repository use an
+op-tagged IR and kernel-selection metadata. These objects are related, but they are not
+interchangeable.
 
 Their lifetimes and uses determine which conclusions can be drawn from each one.
 
-# Four Objects Commonly Called “The Graph”
+# Graph Objects At Runtime
 
 :::table +header
 *
@@ -31,24 +32,32 @@ Their lifetimes and uses determine which conclusions can be drawn from each one.
   * reverse-mode execution
   * values, parents, local VJPs
 *
-  * compiled derivative graph
+  * `Torch.TypedGraph`
   * repeated runtime execution
-  * forward, JVP, VJP closures
+  * shape-indexed executable forward, JVP, and VJP functions
+*
+  * `Runtime.Autograd.IRExec.ForwardGraph`
+  * execute a lowered `NN.IR.Graph`
+  * a forward-only shape-indexed node list
 *
   * `NN.IR.Graph`
   * inspection and verification
   * explicit operation tags and payload references
 *
-  * backend execution plan
-  * provider selection
-  * accepted capsules and audit metadata
+  * `NN.Backend.GraphKernelPlan`
+  * kernel selection and audit
+  * source node IDs and selected capsule metadata
 :::
 
-A fifth object, a CUDA Graph capture, is a device launch-replay mechanism. Selecting TorchLean's
-`.compiled` backend does not mean CUDA Graph capture.
+A CUDA Graph capture is a separate device launch-replay mechanism. Selecting TorchLean's
+`.typedGraph` execution does not mean CUDA Graph capture.
 
-Confusing these artifacts leads to bad guarantees. For example, accepting a backend plan does not
-prove that the compiled trainer executed it, and proving an IR semantics theorem does not certify a
+The public `nn.TypedGraphModel` type is a transparent view of `Torch.TypedGraph` whose leaf context
+is written as model parameters followed by one input tensor. It does not add another stored graph
+or execution layer.
+
+Confusing these artifacts leads to bad guarantees. For example, accepting a kernel plan does not
+prove that typed graph execution followed it, and proving an IR semantics theorem does not certify a
 native tape node whose provider was never related to that IR operation.
 
 # Eager Execution
@@ -57,7 +66,7 @@ Run a short eager training job:
 
 ```
 lake exe torchlean quickstart_mlp \
-  --device cpu --backend eager --steps 2 --seed 2026
+  --device cpu --execution eager --steps 2 --seed 2026
 ```
 
 An eager session is created for the chosen scalar and profile. As the model runs, each operation:
@@ -119,32 +128,47 @@ node remains visible while its reverse contribution becomes zero.
 
 The widget reads a runtime artifact. It does not alter execution or prove the tape correct.
 
-# Compiled Execution
+# Typed Graph Execution
 
-Run the compiled version:
+Run the typed graph version:
 
 ```
 lake exe torchlean quickstart_mlp \
-  --device cpu --backend compiled --steps 2 --seed 2026
+  --device cpu --execution typed-graph --steps 2 --seed 2026
 ```
 
-Compiled execution records the model's scalar loss once in a typed graph-building monad. Nodes carry
-forward behavior and derivative behavior used for JVPs and VJPs. Each training step supplies current
-parameters and inputs and replays the graph.
+Typed graph execution records the model's scalar loss once as a typed SSA graph. Nodes carry the
+forward behavior and the executable rules used for JVPs and VJPs. Each training step supplies
+current parameters and inputs and reuses that graph. A separate typed reference selects the result,
+so the graph may return an input or an earlier node without adding a dummy final operation. Forward
+and reverse execution read and seed that exact reference.
+
+Shape correctness is built into the graph context: a node cannot refer to a parent at the wrong
+shape. Derivative correctness is not automatic. Executable `NodeData` contains functions but no
+proof field; proof-carrying `Node` adds the local JVP/VJP adjointness law, and proof-carrying
+`Graph` composes those laws into a graph theorem.
 
 This avoids reconstructing the same high-level program on every step. The trainer method remains
-`train`; the backend choice changes execution without introducing a second model API.
+`train`; the execution mode changes graph reuse without introducing a second model API.
 
-The current compiled trainer is CPU-only. Asking for a non-CPU compiled run is rejected. That
-failure is preferable to printing “compiled” while silently using another path.
+The current typed graph trainer is CPU-only. Asking for a non-CPU typed graph run is rejected. That
+failure is preferable to reporting typed graph execution while silently using another path.
 
-Compiled execution is distinct from `NN.IR.Graph` for an important reason: compiled nodes may carry
+Typed graph execution is distinct from `NN.IR.Graph` for an important reason: runtime nodes may carry
 Lean functions implementing behavior, whereas a verification/import/export IR needs explicit,
 inspectable operation tags and serializable payload references.
 
-Both paths follow the homogeneous-scalar contract from *Tensors And Shapes*: a compiled program is
+The bridge from `NN.IR.Graph` produces `Runtime.Autograd.IRExec.ForwardGraph`, not
+`Torch.TypedGraph`. It is deliberately forward-only: the IR lowering theorem compares its value
+table with `NN.IR.Semantics`. It does not invent JVP or VJP rules for imported operations.
+
+Both paths follow the homogeneous-scalar contract from *Tensors And Shapes*: a typed graph is
 parameterized by one `α`, while an IR denotation receives one `Payload α` and produces values over
 that same `α`.
+
+This is recording and lowering, not compilation in the `torch.compile` sense. TorchLean reserves
+*compilation* for optimization, fusion, scheduling, and native code generation. None of those steps
+is implied by selecting `.typedGraph`.
 
 # The Canonical IR
 
@@ -173,7 +197,7 @@ x
 Its evaluator interprets the same graph over real, interval, and IEEE scalar contexts. An eager tape
 produced while evaluating this model is still a separate trace of one execution.
 
-# Backend Planning
+# Kernel Selection
 
 Before an eager operation executes, the session asks its backend profile for a capsule. The capsule
 declares:
@@ -293,7 +317,7 @@ autograd.func.jacrev
 autograd.func.hessian
 ```
 
-compile a backend-generic tensor program and execute the requested derivative.
+lower a scalar-generic tensor program and execute the requested derivative.
 
 Model-level calls accept:
 
@@ -311,13 +335,13 @@ runtime machinery inside its optimizer loop.
 An instantiated `TorchLean.Module` also exposes three paired operations:
 
 ```
-TorchLean.Module.lossAndBackward
-TorchLean.Module.stepWithLoss
-TorchLean.Module.stepWithOptimizerAndLoss
+TorchLean.Module.lossAndGradState
+TorchLean.Module.sgdStepWithLoss
+TorchLean.Module.optimizerStepWithLoss
 ```
 
 `lossAndBackward` returns a scalar loss and parameter gradients from one forward tape.
-`stepWithLoss` applies a plain SGD update from that tape, while `stepWithOptimizerAndLoss` does the
+`sgdStepWithLoss` applies a plain SGD update from that tape, while `optimizerStepWithLoss` does the
 same for an explicit optimizer state. Both step functions return the loss before the update. This
 keeps the reported value tied to the random choices and saved intermediates that produced the
 gradient.
@@ -358,11 +382,11 @@ Relevant proof sources:
 When a gradient is surprising:
 
 1. Recompute a tiny case by hand.
-2. Print the scalar semantics, device, backend, and selected capsules.
+2. Print the scalar semantics, execution mode, device, and selected capsules.
 3. Inspect the forward tape and ensure the expected branch is reachable.
 4. Check output cotangent shape and values.
 5. Look for detach, train/eval mode, or stochastic state.
-6. Compare eager and compiled CPU on the same explicit parameters.
+6. Compare eager and typed graph CPU execution on the same explicit parameters.
 7. Compare a native provider with `IEEE32Exec` or a reference path on a small finite case.
 8. Distinguish a numerical discrepancy from a wrong derivative graph.
 
@@ -371,8 +395,9 @@ component. It identifies which artifact and which boundary must explain the mism
 
 # What To Carry Into The Graph Chapter
 
-The eager tape explains one execution. The compiled graph accelerates repeated differentiation. The
-canonical IR makes operation structure inspectable. The backend plan records provider choices.
+The eager tape explains one execution. The typed graph supports repeated differentiation. The
+canonical IR makes operation structure inspectable. A kernel plan records provider choices without
+claiming that those kernels executed.
 
 TorchLean keeps all four because they solve different problems. Before defining the canonical IR,
 we will cross one more concrete boundary: a named parameter payload moving between PyTorch and

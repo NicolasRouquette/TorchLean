@@ -84,8 +84,8 @@ def requireFloatLosses (context : String) (report : TrainSummary) : IO (Float ×
           s!"{context}: non-numeric final {report.metric} {report.after}"
   pure (before, after)
 
-/-- Print before/after losses and return them for artifact writers. -/
-def requireAndPrintFloatLosses (context : String) (report : TrainSummary)
+/-- Print numeric before/after losses and return them for artifact writers, or report an error. -/
+def printFloatLosses (context : String) (report : TrainSummary)
     (steps? : Option Nat := none) (lr? : Option Float := none) : IO (Float × Float) := do
   let (before, after) ← requireFloatLosses context report
   let stepsPart :=

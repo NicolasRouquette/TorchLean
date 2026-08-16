@@ -22,13 +22,20 @@ namespace TorchLean
 
 export Spec (Shape)
 
+/--
+TorchLean's shape-indexed tensor type.
+
+The scalar type is the first parameter and the statically known shape is the second.
+-/
+abbrev Tensor := Spec.Tensor
+
 namespace Ops
 
 /-!
-Low-level executable ops for verification and compiler-facing examples.
+Low-level executable ops for verification and graph-lowering examples.
 
 Most model code should use `nn.*` and `Trainer.*`. Use `Ops.*` when writing an explicit
-TorchLean executable program directly, for example before compiling a hand-built fragment to
+TorchLean executable program directly, for example before lowering a hand-built fragment to
 `NN.IR.Graph`.
 -/
 
@@ -37,7 +44,7 @@ export _root_.Runtime.Autograd.Torch
   (const add sub mul scale abs sqrt clamp max min
    broadcastTo reshape swapAdjacentAtDepth reduceSum reduceMean
    gatherScalar gatherRow gatherScalarNat gatherVecNat gatherRowsNat scatterAddVec scatterAddRow
-   matmul concatVectors
+   mm concatVectors
    maxPool avgPool smoothMaxPool
    relu silu gelu sigmoid tanh softmax softplus exp log inv safeLog logSoftmax
    sum flatten linear mseLoss layerNorm multiHeadAttention conv convTranspose)
@@ -57,49 +64,49 @@ namespace Tensor
 
 export Spec.Tensor (scalar dim vecGet toScalar)
 export NN.Tensor
-  (shapeOfDims numelDims vector oneHot oneHotNat matrix? matrix matrixPadTo matrixPadRight
+  (shapeOfDims numelDims vector oneHot oneHotNatOrZero matrix? matrix matrixResize matrixPadRight
    ofListOfLength ofList dynamicOfList fillOfDims zerosOfDims onesOfDims
-   float32Vector float32Matrix print)
+   float32Vector float32Matrix ieee32ExecVector ieee32ExecMatrix print)
 export Spec (vectorFromList matrixFromRows fill pretty)
 
 /--
-Flatten each sample in a batch and retain its first `takeDim` entries.
+Preserve `leading`, flatten the remaining source shape, and retain its first `takeDim` entries.
 
-The proof `hTake` rules out truncation beyond the flattened source shape, so the result has the
-statically known shape `batch × takeDim`.
+The proof `hTake` rules out truncation beyond the flattened source shape. A conventional batch is
+the special case `leading = shape![batch]`; several leading axes are handled by the same operation.
 -/
-def flattenBatchPrefix {α : Type} [Inhabited α]
-    (batch takeDim : Nat) {source : Shape}
+def flattenPrefix {α : Type} [Inhabited α]
+    (leading : Shape) (takeDim : Nat) {source : Shape}
     (hTake : takeDim ≤ Shape.size source)
-    (x : Spec.Tensor α (.dim batch source)) :
-    Spec.Tensor α (.dim batch (.dim takeDim .scalar)) :=
-  Spec.Tensor.dim (fun bi =>
-    let flat := Spec.Tensor.flattenSpec (Spec.getAtSpec x bi)
+    (x : Spec.Tensor α (leading.concat source)) :
+    Spec.Tensor α (leading.appendDim takeDim) :=
+  match leading with
+  | .scalar =>
+    let flat := Spec.Tensor.flattenSpec x
     Spec.Tensor.dim (fun j =>
       let h : j.val < Shape.size source := Nat.lt_of_lt_of_le j.isLt hTake
-      Spec.Tensor.scalar (Spec.Tensor.toScalar (Spec.get flat ⟨j.val, h⟩))))
+      Spec.Tensor.scalar (Spec.Tensor.toScalar (Spec.get flat ⟨j.val, h⟩)))
+  | .dim _ rest =>
+      Spec.Tensor.dim (fun i => flattenPrefix rest takeDim hTake (Spec.getAtSpec x i))
 
 /--
-Construct a fixed-length vector from an array.
+Construct a fixed-length vector from an array using a default value for missing entries.
 
 Entries beyond the array use `fallback`; entries beyond length `n` are ignored. This constructor is
 useful at runtime data boundaries where the tensor length is fixed by a model type while the source
 array is checked or padded by the caller.
 -/
-def vectorFromArray {α : Type} (n : Nat) (xs : Array α) (fallback : α) :
+def vectorFromArrayD {α : Type} (n : Nat) (xs : Array α) (fallback : α) :
     Spec.Tensor α (.dim n .scalar) :=
   Spec.Tensor.dim fun i => Spec.Tensor.scalar (xs.getD i.val fallback)
 
-/-- Public shorthand for TorchLean's shape-indexed tensor family. -/
-abbrev T := Spec.Tensor
-
 /-- Apply a scalar function pointwise while preserving the tensor shape. -/
-abbrev map {α β : Type} {s : Shape} (f : α → β) (x : Tensor.T α s) : Tensor.T β s :=
+abbrev map {α β : Type} {s : Shape} (f : α → β) (x : Tensor α s) : Tensor β s :=
   Spec.mapTensor f x
 
 /-- Convert a `Float` tensor pointwise with an explicitly supplied scalar cast. -/
-def castFloat {α : Type} (cast : Float → α) {s : Shape} (t : Tensor.T Float s) :
-    Tensor.T α s :=
+def castFloat {α : Type} (cast : Float → α) {s : Shape} (t : Tensor Float s) :
+    Tensor α s :=
   Spec.mapTensor cast t
 
 /--
@@ -108,7 +115,7 @@ type. The list length must equal the product of `dims`.
 -/
 def fromFloatList {α : Type} [Context α]
     (cast : Float → α) (dims : List Nat) (xs : List Float) :
-    Except String (Tensor.T α (Shape.ofDims dims)) := do
+    Except String (Tensor α (Shape.ofDims dims)) := do
   let tensor ← NN.Tensor.ofList (α := Float) dims xs
   pure (castFloat cast tensor)
 
@@ -118,7 +125,7 @@ scalar type.
 -/
 def generateFromFloat {α : Type} [Context α]
     (cast : Float → α) (dims : List Nat) (f : Nat → Float) :
-    Tensor.T α (Shape.ofDims dims) :=
+    Tensor α (Shape.ofDims dims) :=
   let xs := (List.range (NN.Tensor.numelDims dims)).map f
   have hLength : xs.length = NN.Tensor.numelDims dims := by
     simp [xs]
@@ -126,7 +133,7 @@ def generateFromFloat {α : Type} [Context α]
 
 /-- Generate a tensor of a statically known shape from its flat element index. -/
 def generateFromFloatShape {α : Type} [Context α]
-    (cast : Float → α) (shape : Shape) (f : Nat → Float) : Tensor.T α shape := by
+    (cast : Float → α) (shape : Shape) (f : Nat → Float) : Tensor α shape := by
   simpa [NN.Tensor.shapeOfDims_toList] using
     (generateFromFloat (α := α) cast shape.toList f)
 
@@ -136,19 +143,19 @@ Repeat one tensor across a fixed batch axis.
 Use this for classifier demos whose checked model consumes a whole batch, while the example wants to
 inspect one ordinary input.
 -/
-def repeatBatch {α : Type} {s : Shape} (batch : Nat) (x : Tensor.T α s) :
-    Tensor.T α (.dim batch s) :=
+def repeatBatch {α : Type} {s : Shape} (batch : Nat) (x : Tensor α s) :
+    Tensor α (.dim batch s) :=
   Spec.Tensor.dim (fun _ => x)
 
 /--
 Convert a runtime tensor back to a `Float` tensor inside `IO`.
 
-Trainer prediction handles use this so examples can train under executable IEEE32 or another scalar
+Trainer prediction results use this so examples can train under executable IEEE32 or another scalar
 backend, then inspect ordinary `Float` tensors afterward.
 -/
 def toFloatIO {α : Type} [_root_.Context α]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α] :
-    ∀ {s : Shape}, Tensor.T α s → IO (Tensor.T Float s)
+    ∀ {s : Shape}, Tensor α s → IO (Tensor Float s)
   | .scalar, .scalar x => do
       pure <| .scalar (← _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv.toFloat
         (α := α) x)

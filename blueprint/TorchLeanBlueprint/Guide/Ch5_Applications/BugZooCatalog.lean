@@ -24,9 +24,9 @@ easier to reuse and harder to overstate than a large demo that merely happens to
 tokens. The motivating incident explains why the contract matters; the Lean declaration says
 exactly what was checked.
 
-# Compile The Catalog
+# Build The Catalog
 
-All entries are imported by `NN/Examples/BugZoo/All.lean`. Compile them together with:
+All entries are imported by `NN/Examples/BugZoo/All.lean`. Build them together with:
 
 ```
 lake env lean NN/Examples/BugZoo/All.lean
@@ -36,7 +36,7 @@ A successful command is silent. It means every definition and theorem in the cat
 it does not mean that every external framework implementation satisfies those contracts.
 
 `All.lean` is also the completeness boundary for the maintained catalog: an example file not
-imported there is not covered by this compile command. The contracts describe TorchLean reference
+imported there is not covered by this build command. The contracts describe TorchLean reference
 objects; external framework conformance requires a separate importer, refinement theorem, or
 explicit assumption.
 
@@ -67,7 +67,7 @@ A good BugZoo example has four parts:
 - the external conformance obligation or unsupported scope that remains outside the checked claim.
 
 Most ML bugs here are semantic rather than syntactic. The program often still returns a tensor. The
-loss may still be a scalar. A compiled graph may still run. An LLM server may still emit tokens.
+loss may still be a scalar. An optimized graph may still run. An LLM server may still emit tokens.
 BugZoo asks whether those tensors and tokens still mean what the user thought they meant.
 
 The common contract shape is:
@@ -246,7 +246,7 @@ on silent `torch.compile` wrong outputs.
 
 The local object is the `SemanticBoundary` structure. It has a source evaluator, a target
 evaluator, an implementation relation, and a preservation field. This compact shape is the
-reusable claim behind heavier IR compiler correctness theorems: accepted target code must agree with
+reusable claim behind heavier IR lowering-preservation theorems: accepted target code must agree with
 the source semantics on every input. A runtime check can make us more confident, but it is not the same
 kind of artifact as a semantic boundary.
 
@@ -407,7 +407,7 @@ assumed to match the reference semantics.
 
 Test both sides of the boundary. A past or current token should be able to contribute; a future
 token must not. A fully blocked row should follow the declared zero-row policy instead of producing
-an accidental `NaN`. Compile `All.lean` after adding the focused example so the maintained catalog
+an accidental `NaN`. Build `All.lean` after adding the focused example so the maintained catalog
 actually imports it.
 
 The result is narrower and auditable: one recognizable failure becomes an explicit contract, one

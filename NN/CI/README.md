@@ -8,7 +8,7 @@ development stays focused on the files being changed.
 
 See:
 
-* `NN/Runtime/Autograd/Compiled/IRExec/Correctness.lean` (runtime compiler correctness,
+* `NN/Runtime/Autograd/IRExec/Correctness.lean` (runtime lowering correctness,
   including the semantic equivalence theorem)
 * `NN/CI/All.lean` (CI umbrella for broad compile checks)
 

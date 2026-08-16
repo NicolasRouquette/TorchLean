@@ -78,12 +78,6 @@ def wellFormedDec : (s : Shape) → Decidable s.wellFormed
 instance (s : Shape) : Decidable s.wellFormed :=
   wellFormedDec s
 
-/-- `Shape.appendDim s 1` preserves size (used to justify `reshape` in unsqueeze/keepdim code). -/
-theorem size_appendDim_one' (s : Shape) : Spec.Shape.size (Shape.appendDim s 1) = Spec.Shape.size s := by
-  induction s with
-  | scalar => simp [Shape.appendDim, Spec.Shape.size]
-  | dim n s ih => simp [Shape.appendDim, Spec.Shape.size, ih]
-
 /--
 Dynamic permutation: like `permute`, but returns an existential output shape.
 
@@ -208,7 +202,7 @@ def reduceDimsDynCore {α : Type} [Context α] [DecidableEq Shape]
     if keepdim then
       let sReshape : Shape := Shape.appendDim curRed.fst 1
       have hSz : Spec.Shape.size curRed.fst = Spec.Shape.size sReshape := by
-        simpa [sReshape] using (Eq.symm (size_appendDim_one' curRed.fst))
+        simpa [sReshape] using (Spec.Shape.size_appendDim curRed.fst 1).symm
       let xReshaped ← reshape (m := m) (α := α) (s₁ := curRed.fst) (s₂ := sReshape) curRed.snd hSz
       let curKeep : Σ s : Shape, RefTy (m := m) (α := α) s := ⟨sReshape, xReshaped⟩
       let curBack ← Einsum.permuteBySwaps (α := α) (m := m) curKeep swaps.reverse
@@ -336,7 +330,7 @@ def unsqueezeDyn {α : Type} [Context α] [DecidableEq Shape]
     return none
   let sApp : Shape := Shape.appendDim s 1
   have hSz : Spec.Shape.size s = Spec.Shape.size sApp := by
-    simpa [sApp] using (Eq.symm (size_appendDim_one' s))
+    simpa [sApp] using (Spec.Shape.size_appendDim s 1).symm
   let xApp ← reshape (m := m) (α := α) (s₁ := s) (s₂ := sApp) x hSz
   let swaps :=
     (List.range (r - axis)).map (fun i => (r - 1) - i)

@@ -19,21 +19,21 @@ import Mathlib.Algebra.Order.Algebra
 `TorchLean.NN`: a compact `torch.nn`-style builder layer.
 
 This module defines a small `torch.nn`-style builder layer for constructing shape-typed models.
-It packages parameter shapes/initial values together with a backend-polymorphic forward program, so
+It packages model-state shapes and initial values together with an execution-polymorphic forward program, so
 example code does not have to spell `paramShapes := [...]` / `inputShapes := [...]` everywhere.
 
 ## Main definitions
 
-- `LayerDef σ τ` packages a shape-typed layer with explicit parameters (shapes + initial values) and
+- `Layer σ τ` packages a shape-typed layer with explicit state (parameters and buffers) and
   a polymorphic `forward` program.
 - `Seq σ τ` composes layers sequentially (PyTorch analogy: `torch.nn.Sequential`), written `f >>>
   g`.
-- `scalarModuleDef*` helpers bundle a `Seq` model together with a scalar loss, producing a
-  `TorchLean.Module.ScalarModuleDef` that the runtime training code can execute.
+- `Seq.Objective` bundles a `Seq` model together with a scalar loss, producing a
+  `TorchLean.Module.ObjectiveDef` that the runtime training code can execute.
 
 ## PyTorch analogies
 
-- `LayerDef` is like a small `nn.Module` definition, except parameters are an explicit list instead
+- `Layer` is like a small `nn.Module` definition, except parameters are an explicit list instead
   of fields, and the forward pass is a typed TorchLean program.
 - `Mode` is like `module.train()` vs `module.eval()` (dropout and batchnorm-like layers branch on
   it).
@@ -81,63 +81,65 @@ deriving Repr, DecidableEq
 /-! ## Layer definitions -/
 
 /--
-A shape-typed layer definition with explicit parameters and a backend-polymorphic forward program.
+A shape-typed layer definition with explicit model state and an execution-polymorphic forward
+program.
 
-`LayerDef σ τ` is the core building block used by `Seq` (sequential composition). It stores:
-- a list of parameter shapes,
-- initial values for those parameters/buffers (as `Float` tensors, for reproducible
+`Layer σ τ` is the core building block used by `Seq` (sequential composition). It stores:
+- the shapes of parameters and persistent buffers,
+- initial values for that state (as `Float` tensors, for reproducible
   initialization),
 - per-parameter `requires_grad` flags, and
 - a `forward` program that is polymorphic over the backend monad and scalar type.
 
 PyTorch analogy: a small `nn.Module`, where:
-- `paramShapes`/`initParams` correspond to parameters (and possibly buffers),
+- `stateShapes`/`initState` contain parameters and persistent buffers,
 - `forward` corresponds to `Module.forward`,
 - `updateBuffers` corresponds to updating things like `running_mean`/`running_var` in BatchNorm.
 -/
-structure LayerDef (σ τ : Shape) where
+structure Layer (σ τ : Shape) where
   /-- Layer label used by public model summaries. -/
   kind : String := "Layer"
-  /-- Shapes of the layer's parameter tensors, in the order expected by `forward`. -/
-  paramShapes : List Shape
-  /-- Initial parameter values (stored as `Float` tensors for convenient seeding/init schemes). -/
-  initParams : Torch.TList Float paramShapes
+  /-- Shapes of parameters and persistent buffers, in the order expected by `forward`. -/
+  stateShapes : List Shape
+  /-- Initial model state, stored as `Float` tensors for convenient initialization. -/
+  initState : Torch.TList Float stateShapes
   /--
   Optional storage-first initialization plan for executable `Float` backends.
 
-  This does not replace `initParams`: the tensor-valued initializers remain available to the
+  This does not replace `initState`: the tensor-valued initializers remain available to the
   specification and proof layers. The plan lets a runtime create equivalent parameter storage
   without first enumerating those tensors on the host.
   -/
-  runtimeInit : Option (TorchLean.Module.RuntimeInit.Plan paramShapes) :=
-    if h : paramShapes = [] then some (h ▸ .nil) else none
+  runtimeInit : Option (TorchLean.Module.RuntimeInit.Plan stateShapes) :=
+    if h : stateShapes = [] then some (h ▸ .nil) else none
   /--
-  Per-parameter `requires_grad` flags (defaults to all `true`).
+  Gradient flags for model state (defaults to all `true`). Buffers use `false`.
 
   PyTorch analogy: `tensor.requires_grad_(...)` on parameters/buffers.
   -/
-  paramRequiresGrad : List Bool := List.replicate paramShapes.length true
+  requiresGrad : List Bool := List.replicate stateShapes.length true
   /--
   Optional buffer update function (used for running-statistics style layers).
 
   This is called during a forward pass (typically in `Mode.train`) to produce updated
     parameter/buffer
-  values. A canonical example is BatchNorm updating its `running_mean` / `running_var` buffers.
+  state values. A canonical example is BatchNorm updating its `running_mean` / `running_var`
+  buffers.
   -/
   updateBuffers :
     Option (
       Mode → ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
-        Torch.TList α paramShapes → Tensor α σ → IO (Torch.TList α paramShapes)
+        Torch.TList α stateShapes → Tensor α σ → IO (Torch.TList α stateShapes)
     ) := none
   /--
   Forward pass as a typed TorchLean program.
 
-  The program expects `(paramShapes ++ [σ])` inputs (the parameters, then the layer input) and
+  The program expects `(stateShapes ++ [σ])` inputs (model state, then the layer input) and
   produces an output of shape `τ`.
   -/
   forward :
     Mode → ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
-      TorchLean.Program α (paramShapes ++ [σ]) τ
+      TorchLean.Program α (stateShapes ++ [σ]) τ
 
 /--
 Update rule for a running statistics vector using momentum.
@@ -258,13 +260,13 @@ def nchwBatchStats {α : Type} [Context α]
       divSpec total (Tensor.scalar ((n * h * w : Nat) : α)))
   (means, vars)
 
-namespace LayerDef
+namespace Layer
 
 /--
-Backend reference type used when running a `LayerDef`.
+Backend reference type used when running a `Layer`.
 
-This is the `Ref` type provided by the current `Torch.Ops` backend instance, such as an eager tape or
-compiled IR.
+This is the `Ref` type provided by the current `Torch.Ops` instance, such as an eager tape or a
+typed graph.
 -/
 abbrev RefT (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape]
     [Torch.Ops (m := m) (α := α)] (s : Shape) : Type :=
@@ -280,22 +282,22 @@ there is no parameter copy or alias table hidden by this constructor.
 -/
 def ofRef {σ τ : Shape} {ps : List Shape}
     (kind : String)
-    (initParams : Torch.TList Float ps)
+    (initState : Torch.TList Float ps)
     (run : Mode → ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
       ∀ {m : Type → Type}, [Monad m] → [Torch.Ops (m := m) (α := α)] →
         Torch.RefList (RefT (m := m) (α := α)) ps →
         RefT (m := m) (α := α) σ → m (RefT (m := m) (α := α) τ))
     (runtimeInit : Option (TorchLean.Module.RuntimeInit.Plan ps) := none)
-    (paramRequiresGrad : List Bool := List.replicate ps.length true)
+    (requiresGrad : List Bool := List.replicate ps.length true)
     (updateBuffers : Option (
       Mode → ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
         Torch.TList α ps → Tensor α σ → IO (Torch.TList α ps)) := none) :
-    LayerDef σ τ :=
+    Layer σ τ :=
   { kind
-    paramShapes := ps
-    initParams
+    stateShapes := ps
+    initState
     runtimeInit
-    paramRequiresGrad
+    requiresGrad
     updateBuffers
     forward := fun mode {α} _ _ =>
       fun {m} _ _ =>
@@ -310,40 +312,40 @@ def ofRef {σ τ : Shape} {ps : List Shape}
             run mode params x) }
 
 /--
-Run a `LayerDef` forward given parameter refs and an input ref.
+Run a `Layer` forward given parameter refs and an input ref.
 
 This is the "module forward" operation at the reference level.
 
 PyTorch analogy: calling `layer(x)` where the layer's parameters are already allocated.
 -/
-def forwardRef {σ τ : Shape} (l : LayerDef σ τ) {α : Type} [Context α] [DecidableEq Shape]
+def forwardRef {σ τ : Shape} (l : Layer σ τ) {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Torch.Ops (m := m) (α := α)]
     (mode : Mode)
-    (ps : Torch.RefList (RefT (m := m) (α := α)) l.paramShapes)
+    (ps : Torch.RefList (RefT (m := m) (α := α)) l.stateShapes)
     (x : RefT (m := m) (α := α) σ) : m (RefT (m := m) (α := α) τ) :=
-  Torch.CurriedRef.uncurry (ss := l.paramShapes ++ [σ]) (Ref := RefT (m := m) (α := α))
+  Torch.CurriedRef.uncurry (ss := l.stateShapes ++ [σ]) (Ref := RefT (m := m) (α := α))
     (l.forward mode (α := α) (m := m)) (Torch.RefList.append ps (.cons x .nil))
 
 /--
-Run a `LayerDef` on concrete tensors by compiling its forward program.
+Run a `Layer` on concrete tensors by lowering its forward program to a typed graph.
 
 This is primarily used by runtime utilities (e.g. sequential `updateBuffers`) where we want to run
 forward to obtain intermediate activations.
 
 PyTorch analogy: running a forward pass eagerly on concrete tensors.
 -/
-def forwardTensor {σ τ : Shape} (l : LayerDef σ τ) (mode : Mode)
+def forwardTensor {σ τ : Shape} (l : Layer σ τ) (mode : Mode)
     {α : Type} [Context α] [DecidableEq Shape]
-    (ps : Torch.TList α l.paramShapes) (x : Tensor α σ) : IO (Tensor α τ) := do
-  let compiled ← _root_.Runtime.Autograd.TorchLean.Autodiff.compileGraph (α := α)
-    (paramShapes := l.paramShapes) (inputShapes := [σ]) (τ := τ)
+    (ps : Torch.TList α l.stateShapes) (x : Tensor α σ) : IO (Tensor α τ) := do
+  let graph ← _root_.Runtime.Autograd.TorchLean.Autodiff.lowerToTypedGraph (α := α)
+    (paramShapes := l.stateShapes) (inputShapes := [σ]) (τ := τ)
     (l.forward mode)
-  let args : Torch.TList α (l.paramShapes ++ [σ]) :=
-    _root_.Proofs.Autograd.Algebra.TList.append (α := α) (ss₁ := l.paramShapes) (ss₂ := [σ]) ps
+  let args : Torch.TList α (l.stateShapes ++ [σ]) :=
+    _root_.Proofs.Autograd.Algebra.TList.append (α := α) (ss₁ := l.stateShapes) (ss₂ := [σ]) ps
       (.cons x .nil)
-  pure <| _root_.Runtime.Autograd.Torch.CompiledGraph.forward compiled args
+  pure <| _root_.Runtime.Autograd.Torch.TypedGraph.forward graph args
 
-end LayerDef
+end Layer
 end NN
 
 end TorchLean

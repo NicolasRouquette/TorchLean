@@ -25,21 +25,9 @@ namespace NN.Examples.ModelZoo
 
 open TorchLean
 
-/-- Resolve the CUDA allocator-reporting cadence for a model-zoo run. -/
-def effectiveCudaMemWatch (opts : Options) (steps requested : Nat) : Nat :=
-  TorchLean.Trainer.Manual.effectiveCudaMemWatch opts steps requested
-
 /-- Training-log note recording the selected CUDA allocator-reporting cadence. -/
-def cudaMemWatchNote (opts : Options) (steps requested : Nat) : String :=
-  s!"cuda_mem_watch={effectiveCudaMemWatch opts steps requested}"
-
-/-- Sample and report CUDA allocator state when the selected cadence is reached. -/
-def reportCudaMemWatch
-    (opts : Options)
-    (watchEvery totalSteps completed : Nat)
-    (state? : Option TorchLean.Trainer.Manual.CudaMemWatchState) :
-    IO (Option TorchLean.Trainer.Manual.CudaMemWatchState) :=
-  TorchLean.Trainer.Manual.reportCudaMemWatch opts watchEvery totalSteps completed state?
+def cudaMemoryNote (opts : Options) (steps requested : Nat) : String :=
+  s!"cuda_mem_watch={TorchLean.Trainer.Manual.CUDAMemory.cadence opts steps requested}"
 
 /-- Return whether a completed model-zoo step should emit a periodic report. -/
 def shouldLogStep (every completed : Nat) : Bool :=
@@ -150,13 +138,13 @@ def writeTrainLog
     IO Unit :=
   Training.writeLogTo dest log
 
-@[inherit_doc TorchLean.Trainer.FixedSample.curveFloat]
-def trainFixedCurveFloat
+@[inherit_doc TorchLean.Trainer.FixedSample.curveFloat64]
+def trainFixedCurveFloat64
     {σ τ : Shape}
-    (mkModel : TorchLean.nn.M (TorchLean.nn.Sequential σ τ))
+    (mkModel : TorchLean.nn.Builder (TorchLean.nn.Sequential σ τ))
     (mkModuleDef :
       (model : TorchLean.nn.Sequential σ τ) →
-        TorchLean.Module.ScalarModuleDef (TorchLean.nn.paramShapes model) [σ, τ])
+        TorchLean.Module.ObjectiveDef (TorchLean.nn.stateShapes model) [σ, τ])
     (mkOptim :
       (paramShapes : List Shape) → _root_.Runtime.Autograd.TorchLean.Optim.Optimizer Float paramShapes)
     (opts : Options)
@@ -164,7 +152,7 @@ def trainFixedCurveFloat
     (steps : Nat)
     (cudaMemWatch : Nat := 0) :
     IO Training.Curve :=
-  TorchLean.Trainer.FixedSample.curveFloat
+  TorchLean.Trainer.FixedSample.curveFloat64
     (mkModel := mkModel)
     (mkModuleDef := mkModuleDef)
     (mkOptim := mkOptim)

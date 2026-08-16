@@ -83,11 +83,11 @@ rerun the checker; an endpoint mismatch should be reported.
 Two flags expose useful neighboring checks:
 
 ```
-lake exe verify -- spline-cert --ieee32
+lake exe verify -- spline-cert --ieee32-exec
 lake exe verify -- spline-cert --regen
 ```
 
-`--ieee32` additionally requires every rational value to be exactly representable as finite
+`--ieee32-exec` additionally requires every rational value to be exactly representable as finite
 binary32 and replays the endpoint equalities with `IEEE32Exec`. `--regen` asks the Julia producer to
 write a fresh JSON document before Lean checks it. Neither flag proves an interior range bound for
 a polynomial piece.
@@ -101,15 +101,16 @@ lake exe verify -- ode
 
 ```
 lake exe verify -- ode --model=direct \
-  [--scalar=float|ieee32exec] --cert=<ode_enclosure.json>
+  [--scalar=float64|ieee32-exec] --cert=<ode_enclosure.json>
 lake exe verify -- ode --model=torchlean \
-  --scalar=float --cert=<ode_enclosure.json>
+  --scalar=float64 --cert=<ode_enclosure.json>
 ```
 
 The ODE expression always comes from the certificate. The `--model` choice controls how the lower
-and upper corridor networks are evaluated: directly from the imported graph, or after compilation
+and upper corridor networks are evaluated: directly from the imported graph, or after lowering
 through TorchLean. The `--scalar` choice controls the arithmetic used by the direct evaluator.
-Today the TorchLean-compiled route supports only `--scalar=float`; pairing it with `ieee32exec` is
+Today the TorchLean-lowered route supports only `--scalar=float64`; pairing it with
+`ieee32-exec` is
 rejected rather than silently changing the requested semantics.
 
 Certificate times and initial endpoints must be finite and correctly ordered; `minWidth` and

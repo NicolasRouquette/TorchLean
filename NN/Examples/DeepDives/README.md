@@ -15,7 +15,7 @@ lake build NN.Examples.DeepDives
 | File | Command or action | What it shows |
 | --- | --- | --- |
 | `Tensors/Basic.lean` | build as part of `NN.Examples.DeepDives` | Tensor construction, indexing, shapes, and low-level tensor vocabulary. |
-| `Floats/Float32Modes.lean` | `lake exe torchlean float32_modes` | Difference between ideal values, proof-oriented float models, executable IEEE behavior, and runtime Float32 paths. |
+| `Floats/Float32Semantics.lean` | `lake exe torchlean float32_semantics` | Native binary32 execution compared with the bit-level IEEE reference. |
 | `Floats/ArbIEEEExecCompare.lean` | `lake exe torchlean floats_arb_ieee_compare` | Arb/python-flint interval evidence compared with TorchLean's executable IEEE32 path. |
 | `GraphSpec/Tutorial.lean` | `lake exe torchlean graphspec` | Authoring a small graph-style architecture and lowering it into the public trainer path. |
 | `IRAxisOps.lean` | `lake exe torchlean ir_axis_ops` | Axis operations in the op-tagged IR: reductions, broadcasts, shape changes, and evaluator behavior. |

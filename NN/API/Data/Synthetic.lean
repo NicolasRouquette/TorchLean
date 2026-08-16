@@ -129,12 +129,13 @@ def pointVector {α : Type} [Context α] (cast : Float → α) (x y : Float) : S
 
 /-! ## Labels and Packing -/
 
-/-- One-hot encode a label as a float vector of shape `Vec classes`. -/
-def oneHotFloat (classes label : Nat) : Spec.Tensor Float (.dim classes .scalar) :=
-  NN.Tensor.oneHotNat (α := Float) classes label
+/-- One-hot encode a label as a `Float` vector of shape `Vec classes`. -/
+def oneHotFloat (classes : Nat) (label : Fin classes) :
+    Spec.Tensor Float (.dim classes .scalar) :=
+  NN.Tensor.oneHot (α := Float) classes label
 
 /-- Casted version of `oneHotFloat`. -/
-def oneHot {α : Type} [Context α] (cast : Float → α) (classes label : Nat) :
+def oneHot {α : Type} [Context α] (cast : Float → α) (classes : Nat) (label : Fin classes) :
     Spec.Tensor α (.dim classes .scalar) :=
   TorchLean.Tensor.castFloat cast (oneHotFloat classes label)
 
@@ -144,7 +145,7 @@ Convert `(x, label)` pairs into `(x, oneHot(label))` pairs.
 This is a pure preprocessing step that keeps the data in-memory.
 -/
 def classification {α : Type} [Context α] {σ : Spec.Shape}
-    (cast : Float → α) (classes : Nat) (xs : List (Spec.Tensor Float σ × Nat)) :
+    (cast : Float → α) (classes : Nat) (xs : List (Spec.Tensor Float σ × Fin classes)) :
     List (Spec.Tensor α σ × Spec.Tensor α (.dim classes .scalar)) :=
   xs.map (fun (xF, label) =>
     (TorchLean.Tensor.castFloat cast xF, oneHot cast classes label))
@@ -162,7 +163,7 @@ def supervised {α : Type} [Context α] {σ τ : Spec.Shape}
 
 /-- Convert `(x, label)` pairs into TorchLean tensor-pack samples with one-hot targets. -/
 def labeled {α : Type} [Context α] {σ : Spec.Shape}
-    (cast : Float → α) (classes : Nat) (xs : List (Spec.Tensor Float σ × Nat)) :
+    (cast : Float → α) (classes : Nat) (xs : List (Spec.Tensor Float σ × Fin classes)) :
     List (_root_.TorchLean.TensorPack α [σ, .dim classes .scalar]) :=
   (classification (α := α) (σ := σ) cast classes xs).map (fun (x, y) =>
     tensorpack! x, y)

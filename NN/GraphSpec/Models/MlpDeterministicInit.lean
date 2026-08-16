@@ -11,13 +11,13 @@ public import NN.GraphSpec.Models.Mlp
 /-!
 # MLP Deterministic Initialization
 
-GraphSpec sequential graphs (`Graph` + `>>>`) have a *typed parameter ABI*:
+GraphSpec chains (`Chain` + `>>>`) have a typed parameter ABI:
 each model comes with an explicit type-level list `ps : List Shape` describing the shapes and the
 order of its parameter tensors.
 
 For execution/training examples, we often want deterministic (but nontrivial) initialization rather
 than “all zeros”. GraphSpec supports that by letting primitives optionally provide a TorchLean
-`LayerDef` (via `Primitive.toLayerDefM?`), whose `initParams` uses occurrence-indexed seeds.
+`Layer` (via `Primitive.toLayerM?`), whose `initState` uses occurrence-indexed seeds.
 
 This file proves one concrete bridge theorem: for the 2-layer MLP
 `Models.mlp`, the deterministic initialization obtained from GraphSpec is exactly the same typed
@@ -53,22 +53,22 @@ Seed discipline:
 -/
 theorem mlp_detInitParams_eq_torchlean_linear_inits
     (inDim hidDim outDim : Nat) :
-    LowerToDAG.Graph.detInitParams?
+    LowerToDAG.Chain.detInitParams?
         (mlp (inDim := inDim) (hidDim := hidDim) (outDim := outDim))
     =
     .ok
       (Proofs.Autograd.Algebra.TList.append (α := Float)
         (ss₁ := [.dim hidDim (.dim inDim .scalar), .dim hidDim .scalar])
         (ss₂ := [.dim outDim (.dim hidDim .scalar), .dim outDim .scalar])
-        (Runtime.Autograd.TorchLean.NN.linear inDim hidDim (seedW := 0) (seedB := 1)).initParams
-        (Runtime.Autograd.TorchLean.NN.linear hidDim outDim (seedW := 2) (seedB := 3)).initParams)
+        (Runtime.Autograd.TorchLean.NN.linear inDim hidDim (seedW := 0) (seedB := 1)).initState
+        (Runtime.Autograd.TorchLean.NN.linear hidDim outDim (seedW := 2) (seedB := 3)).initState)
           := by
   -- Unfold the MLP graph and the deterministic-init traversal.
   simp
     [ mlp
-    , LowerToDAG.Graph.detInitParams?
-    , LowerToDAG.Graph.detInitParamsAux
-    , Graph.linear, Graph.relu
+    , LowerToDAG.Chain.detInitParams?
+    , LowerToDAG.Chain.detInitParamsAux
+    , Chain.linear, Chain.relu
     , Primitive.linear, Primitive.relu
     ]
   -- Discharge the “ReLU contributes no params” bookkeeping.

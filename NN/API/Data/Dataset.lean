@@ -280,18 +280,18 @@ Untyped analogue of PyTorch's `torch.utils.data.DataLoader`.
 
 This is the deterministic, purely-functional loader provided by the TorchLean runtime.
 -/
-abbrev RawDataLoader (a : Type) :=
+abbrev DataLoader (a : Type) :=
   _root_.Runtime.Autograd.Train.DataLoader a
 
 /--
-Construct a `RawDataLoader` from a dataset.
+Construct a `DataLoader` from a dataset.
 
 If `shuffle := true`, shuffling is deterministic w.r.t. `seed`.
 If `dropLast := true`, incomplete final batches are discarded.
 -/
 def loader {a : Type} (ds : _root_.Runtime.Autograd.Train.Dataset a)
     (batchSize : Nat) (shuffle : Bool := false) (seed : Nat := 0) (dropLast : Bool := false) :
-    RawDataLoader a :=
+    DataLoader a :=
   { dataset := ds, batchSize := batchSize, shuffle := shuffle, seed := seed, dropLast := dropLast }
 
 /--
@@ -299,28 +299,28 @@ Run one epoch worth of minibatching and return:
 - an updated loader (with the new seed), and
 - the list of minibatches.
 -/
-def epoch {a : Type} (name : String) (dl : RawDataLoader a) :
-    Except String (RawDataLoader a × List (List a)) :=
+def epoch {a : Type} (name : String) (dl : DataLoader a) :
+    Except String (DataLoader a × List (List a)) :=
   _root_.Runtime.Autograd.Train.DataLoader.epoch name dl
 
 /--
 Like `epoch`, but apply a user-provided `collate` function to each minibatch, matching the role of
 PyTorch's `collate_fn=` option.
 -/
-def epochCollate {a b : Type} (name : String) (dl : RawDataLoader a)
+def epochCollate {a b : Type} (name : String) (dl : DataLoader a)
     (collate : List a → Except String b) :
-    Except String (RawDataLoader a × List b) :=
+    Except String (DataLoader a × List b) :=
   _root_.Runtime.Autograd.Train.DataLoader.epochCollate name dl collate
 
 /--
-Typed wrapper around `RawDataLoader` for supervised samples.
+Shape-typed wrapper around `DataLoader` for supervised samples.
 
 The batch size `n` is reflected in the type, and `BatchLoader.epoch` returns fully-collated
 `dim n` minibatches (so `dropLast=true` is required).
 -/
 structure BatchLoader (α : Type) (n : Nat) (σ τ : Spec.Shape) where
-  /-- Raw underlying data. -/
-  raw : RawDataLoader (TorchLean.Sample.Supervised α σ τ)
+  /-- Generic loader carrying the supervised samples. -/
+  loader : DataLoader (TorchLean.Sample.Supervised α σ τ)
 
 /-- Existential wrapper for loaders when the batch size is chosen at runtime. -/
 abbrev AnyBatchLoader (α : Type) (σ τ : Spec.Shape) :=
@@ -364,16 +364,15 @@ def supervised {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFlo
 /--
 Convert a list of `(x, label)` pairs into a dataset of one-hot classification samples.
 
-Labels are given as `Nat` and converted to one-hot targets of shape `Vec classes`.
+Each label has type `Fin classes`, so an out-of-range class cannot enter the dataset.
 -/
 def labeled {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α] {σ : Spec.Shape}
-    (classes : Nat) (xs : List (Spec.Tensor Float σ × Nat)) :
+    (classes : Nat) (xs : List (Spec.Tensor Float σ × Fin classes)) :
     _root_.Runtime.Autograd.Train.Dataset
       (_root_.TorchLean.TensorPack α [σ, .dim classes .scalar]) :=
   fromList <| xs.map (fun (xF, label) =>
     let x : Spec.Tensor α σ := Spec.mapTensor (_root_.TorchLean.Runtime.ofFloat (α := α)) xF
-    let yF : Spec.Tensor Float (.dim classes .scalar) := NN.Tensor.oneHotNat (α := Float)
-      classes label
+    let yF : Spec.Tensor Float (.dim classes .scalar) := NN.Tensor.oneHot (α := Float) classes label
     let y : Spec.Tensor α (.dim classes .scalar) :=
       Spec.mapTensor (_root_.TorchLean.Runtime.ofFloat (α := α)) yF
     tensorpack! x, y)

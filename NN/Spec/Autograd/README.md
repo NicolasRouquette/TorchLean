@@ -6,7 +6,7 @@ The interface is intentionally small:
 - an `OpSpec` is a forward function plus a VJP, and
 - composition of `OpSpec`s is the chain rule.
 
-This layer is independent of any particular runtime tape, compiled graph, CUDA kernel, or external
+This layer is independent of any particular runtime tape, typed graph, CUDA kernel, or external
 provider. It is the mathematical contract that runtime code should implement or reuse so executable
 training stays aligned with the spec.
 
@@ -25,7 +25,7 @@ PyTorch analogy:
 ## Related Modules
 
 - `NN/Runtime/Autograd/`: executable tape/graph engines and training utilities.
-- `NN/GraphSpec/` and `NN/IR/`: typed DAG and op-tagged IR representations used by compilation and
+- `NN/GraphSpec/` and `NN/IR/`: typed DAG and op-tagged IR representations used by lowering and
   verification.
 - `NN/Proofs/Autograd/`: correctness statements relating runtime execution or tape algebra to
   spec-level derivatives.

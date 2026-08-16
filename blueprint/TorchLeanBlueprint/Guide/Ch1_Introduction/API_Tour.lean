@@ -45,25 +45,25 @@ The checked-in example prints:
 [Float] [0.100000, 0.200000, 0.300000, 0.400000]
 [ℚ] [1/10, 1/5, 3/10, 2/5]
 [Int] [1, 2, 3, 4]
+[Float32] [0.100000, 0.200000, 0.300000, 0.400000]
 [IEEE32Exec] [0.100000, 0.200000, 0.300000, 0.400000]
 [Float] [[[1.000000, 2.000000], [3.000000, 4.000000]],
          [[5.000000, 6.000000], [7.000000, 8.000000]]]
 Expected failure printing Tensor ℝ: Refusing to print `Tensor ℝ` ...
 ```
 
-The same tensor structure can carry several scalar types. `Float` is Lean's executable host
-floating type. `ℚ` is exact rational arithmetic. `IEEE32Exec` is TorchLean's executable bit-level
-binary32 model. `ℝ` is useful in specifications and proofs, but arbitrary real values do not have a
-general executable printer.
+The same tensor structure can carry several scalar types. `Float32` is Lean's native binary32 type;
+`IEEE32Exec` is TorchLean's independent bit-level binary32 reference. `Float` is Lean's binary64
+host type, and `ℚ` supplies exact rational arithmetic. `ℝ` is useful in specifications and proofs,
+but arbitrary real values do not have a general executable printer.
 
 Open
 [`NN/Examples/Quickstart/TensorBasics.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Quickstart/TensorBasics.lean)
-and find the definitions of `xF`, `xQ`, and `x32`. The values look alike when printed, but their
-types select different arithmetic.
+and find the definitions of `xF`, `xQ`, `x32`, and `x32Ref`. The values look alike when printed,
+but their types select different arithmetic.
 
 One tensor still has one element type, and one model or IR evaluation chooses one numeric scalar
-`α`. The tensor chapter develops this rule; *TorchLean And PyTorch* explains the present
-mixed-precision difference.
+`α`. The tensor chapter develops this rule and shows how a runtime records the chosen arithmetic.
 
 # Build A Small File Of Your Own
 
@@ -74,10 +74,10 @@ import NN.API
 
 open TorchLean
 
-def point : Tensor.T Float (shape![2]) :=
+def point : Tensor Float (shape![2]) :=
   tensorOfList! [2] [0.25, -0.75]
 
-def model : nn.M (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+def model : nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -85,7 +85,7 @@ def model : nn.M (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
   ]
 
 def initialized :=
-  nn.run 2026 model
+  nn.build 2026 model
 
 #eval Tensor.pretty point
 #eval IO.println (nn.info initialized)
@@ -111,7 +111,7 @@ The summary accounts for every scalar parameter:
 
 $$`8\cdot2+8+1\cdot8+1=33`.
 
-It also exposes the ordered payload shapes. A later compiler or checkpoint adapter must provide
+It also exposes the ordered payload shapes. A later lowering pass or checkpoint adapter must provide
 weights and biases in this order and with these shapes.
 
 As a quick experiment, change the hidden width from `8` to `12` in both linear layers. Before
@@ -127,7 +127,7 @@ TorchLean offers two useful styles for fixed data. `tensorOfList!` takes dimensi
 row-major list:
 
 ```
-def matrix : Tensor.T Float (shape![2, 3]) :=
+def matrix : Tensor Float (shape![2, 3]) :=
   tensorOfList! [2, 3] [
     1.0, 2.0, 3.0,
     4.0, 5.0, 6.0
@@ -137,7 +137,7 @@ def matrix : Tensor.T Float (shape![2, 3]) :=
 The nested `tensor!` syntax mirrors the visible dimensions:
 
 ```
-def sameMatrix : Tensor.T Float (shape![2, 3]) :=
+def sameMatrix : Tensor Float (shape![2, 3]) :=
   tensor! [
     [1.0, 2.0, 3.0],
     [4.0, 5.0, 6.0]
@@ -151,7 +151,7 @@ inferred from a list:
 def inferred := Tensor.vector (α := Float) [1.0, 2.0, 3.0]
 
 #check inferred
--- inferred : Tensor.T Float (shape![3])
+-- inferred : Tensor Float (shape![3])
 ```
 
 Use an explicit type when the shape belongs to an interface. Use inference for local data whose
@@ -162,7 +162,7 @@ length is already clear from the value.
 A supervised dataset pairs one input tensor with one target tensor. Add to `Tour.lean`:
 
 ```
-def xs : Tensor.T Float (shape![4, 2]) :=
+def xs : Tensor Float (shape![4, 2]) :=
   tensorOfList! [4, 2] [
     0.0, 0.0,
     0.0, 1.0,
@@ -170,10 +170,10 @@ def xs : Tensor.T Float (shape![4, 2]) :=
     1.0, 1.0
   ]
 
-def ys : Tensor.T Float (shape![4, 1]) :=
+def ys : Tensor Float (shape![4, 1]) :=
   tensorOfList! [4, 1] [0.2, 1.0, 1.0, 1.8]
 
-def dataset : Trainer.Dataset (.dim 2 .scalar) (.dim 1 .scalar) :=
+def dataset : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
   Data.tensorDataset xs ys
 
 #check dataset
@@ -205,18 +205,18 @@ def trainer : Trainer (.dim 2 .scalar) (.dim 1 .scalar) :=
 #check trainer
 ```
 
-`Trainer.new` materializes the seeded builder and returns a handle carrying:
+`Trainer.new` materializes the seeded builder and returns a `Trainer` value containing:
 
 - the checked model;
 - the loss task;
 - optimizer and runtime settings;
 - the initialization seed.
 
-The default execution profile is checked CPU, using the eager runtime and host `Float`. A trainer
-configuration may instead select the compiled runtime or executable IEEE binary32. The generic
-dtype dispatcher also has an executable complex-binary32 scalar, but the high-level trainer does
-not yet expose complex prediction readback. Device and provider selection are runtime concerns;
-they do not change the model's input and output shapes.
+The default execution profile is checked CPU, using the eager runtime and native `Float32`. A
+trainer configuration may instead select typed graph execution or the bit-level `IEEE32Exec`
+reference. The generic scalar dispatcher also has an executable complex-binary32 scalar, but the
+high-level trainer does not yet expose complex prediction readback. Device and provider selection
+are runtime concerns; they do not change the model's input and output shapes.
 
 Training options belong to the call:
 
@@ -242,9 +242,8 @@ def trainTour : IO Unit := do
   trained.printPrediction "after" point
 ```
 
-`trainer.train` returns a trained handle. It does not mutate the immutable `trainer` definition in
-the source file. The returned handle closes over the runtime state containing the updated
-parameters.
+`trainer.train` returns a `TrainResult`. It does not mutate the immutable `trainer` definition in
+the source file. The result retains the runtime state containing the updated parameters.
 
 # Hand The Model To The Trainer
 
@@ -269,7 +268,8 @@ heldout x=(0.25,-0.75), target=0.2, prediction(after)=[0.210239]
 
 Later, the training chapter will open this run up and follow one step through the model, loss,
 tape, optimizer, and parameter update. The useful distinction here is simpler: `Trainer.new`
-creates the initial handle, and `train` returns a new handle containing the trained runtime state.
+creates the initial `Trainer`, and `train` returns a `TrainResult` containing the trained runtime
+state.
 The next two chapters explain why TorchLean keeps those dependencies explicit and teach just enough
 Lean to read their types without guesswork.
 
@@ -285,7 +285,7 @@ At the top level,
 lake exe torchlean --help
 ```
 
-lists runnable model families and the common `--device`, `--dtype`, `--backend`, `--seed`, and
+lists runnable model families and the common `--device`, `--scalar`, `--execution`, `--seed`, and
 `--show-backend` flags.
 
 # Take A Quick Look At Autograd
@@ -324,8 +324,8 @@ those objects carefully.
 The shorter application names are also available for a manual run:
 
 ```
-def compiled :=
-  Verification.compileForward initialized (nn.initParams initialized)
+def lowered :=
+  Verification.lowerForwardToIR initialized (nn.initState initialized)
 ```
 
 The result is an `Except`: unsupported operations or malformed lowering stop explicitly before a

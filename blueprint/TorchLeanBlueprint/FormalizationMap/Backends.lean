@@ -53,8 +53,8 @@ inspect either representation directly.
 :::
 
 :::definition "backend_profile" (parent := "backend_selection") (lean := "NN.Backend.BackendProfile")
-A backend profile stores a name, execution configuration, target, capsule modules, and graph
-lowering mode. Target availability and the registry are derived from those fields, and capsule
+A backend profile stores a name, kernel policy, target, capsule modules, and graph
+grouping mode. Target availability and the registry are derived from those fields, and capsule
 modules are validated when a graph is planned.
 :::
 
@@ -67,7 +67,7 @@ handlers. Profiles add the separate LibTorch module when requested.
 :::definition "checked_cpu_backend_profile" (parent := "backend_selection") (lean := "NN.Backend.BackendProfile.checkedCpu")
 The checked CPU profile instantiates {uses "backend_profile"}[the profile record] with
 {uses "backend_provider_catalog"}[the maintained capsule modules], a portable CPU target,
-coalesced lowering, and the checked assurance policy.
+coalesced grouping, and the checked assurance policy.
 :::
 
 :::definition "backend_executable_binding" (parent := "backend_selection") (lean := "NN.Backend.KernelCapsule.bind")
@@ -109,14 +109,14 @@ implementation from source.
 :::
 
 :::group "training_runtime"
-Scalar-loss modules and stateful supervised updates.
+Scalar objectives and stateful supervised updates.
 :::
 
-:::definition "runtime_module_training" (parent := "training_runtime") (lean := "Runtime.Autograd.TorchLean.Module.ScalarModule")
-`ScalarModule` wraps a scalar trainer, its runtime options, and the selected host/device tensor
+:::definition "runtime_module_training" (parent := "training_runtime") (lean := "Runtime.Autograd.TorchLean.Module.Objective")
+`Objective` wraps a scalar trainer, its runtime options, and the selected host/device tensor
 conversion. The trainer owns a shape-indexed mutable parameter pack and runs its scalar-loss
 {uses "runtime_ops_program"}[program] through {uses "backend_eager_dispatch"}[eager execution] or
-{uses "runtime_compiled_autograd"}[the compiled backend]. Gradients are returned to callers;
+{uses "runtime_typed_graph_autograd"}[typed graph execution]. Gradients are returned to callers;
 generic optimizer state is passed to and returned from update methods rather than stored here.
 :::
 

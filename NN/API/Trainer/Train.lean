@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API.Trainer.Train.Regression
-public import NN.API.Trainer.Train.CrossEntropy
+public import NN.API.Trainer.Train.OneHotCrossEntropy
 public import NN.API.Trainer.Train.Custom
 public import NN.API.Trainer.Train.Streams
 

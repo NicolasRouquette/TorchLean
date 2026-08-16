@@ -38,7 +38,7 @@ import NN.API
 open TorchLean
 
 def model :
-    nn.M (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+    nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -48,14 +48,14 @@ def model :
 
 The model accepts a length-two tensor and returns a length-one prediction. The dimensions occur in the model's
 type, so the output of a layer with width seven cannot be fed to a layer expecting width eight.
-`nn.M` means that this is a seeded model builder. It describes initialization but has not yet chosen
+`nn.Builder` means that this is a seeded model builder. It describes initialization but has not yet chosen
 the random seed or produced concrete parameter tensors.
 
 We can initialize it directly:
 
 ```
 def initialized :=
-  nn.run 2026 model
+  nn.build 2026 model
 ```
 
 or ask the trainer to initialize and execute it:
@@ -71,7 +71,7 @@ def trainer :=
 The notation is intentionally familiar to a PyTorch user, but Lean learns more from the declaration.
 It checks the input and output dimensions while elaborating the file. It distinguishes the seeded
 builder from the initialized model. Once initialized, the model exposes the exact order and shape of
-its parameter tensors. That information is available later to the trainer, graph compiler, and
+its parameter tensors. That information is available later to the trainer, graph lowering pass, and
 verifier without rediscovering it from runtime metadata.
 
 # Opening The Model Up
@@ -107,13 +107,12 @@ that two different payloads are the same trained model.
 
 The graph structure itself does not choose a scalar type. Evaluation does: `NN.IR.Payload α` and
 the graph denotation use one `α` for the numeric input, parameters, intermediates, and output. The
-tensor chapter explains this homogeneous-scalar boundary; the PyTorch comparison explains what
-would have to change for mixed precision.
+tensor chapter explains how that scalar interpretation is selected and recorded.
 
 ## The object checked by a verifier
 
-The verification compiler lowers supported forward programs and a concrete parameter payload
-to a `CompiledIR`. IBP and CROWN operate on that graph. Numerical certificates can replay
+The verification lowering converts supported forward programs and a concrete parameter payload
+to a `LoweredIR`. IBP and CROWN operate on that graph. Numerical certificates can replay
 bit-level ranges and backend policies over it. Other checkers consume external artifacts such as
 alpha-beta-CROWN leaves or PINN residual certificates.
 
@@ -126,15 +125,15 @@ collection of translations that lets those views meet.
 
 A TorchLean tensor has a scalar type and a shape:
 
-$$`\operatorname{Tensor.T}\;\alpha\;s`.
+$$`\operatorname{Tensor}\;\alpha\;s`.
 
 For example,
 
 ```
-def predictions : Tensor.T Float (shape![32, 1]) :=
+def predictions : Tensor Float (shape![32, 1]) :=
   tensorOfList! [32, 1] (List.replicate 32 0.0)
 
-def labels : Tensor.T Float (shape![32]) :=
+def labels : Tensor Float (shape![32]) :=
   tensorOfList! [32] (List.replicate 32 0.0)
 ```
 
@@ -146,9 +145,9 @@ Shape typing is deliberately modest. It catches structural mistakes while they a
 Questions about units, label quality, normalization, finiteness, and generalization appear later as
 their own definitions and hypotheses instead of being smuggled into the word "tensor."
 
-The scalar parameter is equally explicit. `Tensor.T α s` is homogeneous: every element of that
+The scalar parameter is equally explicit. `Tensor α s` is homogeneous: every element of that
 tensor has type `α`. The tensor chapter develops that point once, alongside the distinction between
-scalar polymorphism and mixed precision.
+specification scalars and executable runtime arithmetic.
 
 # From One Output To A Statement
 

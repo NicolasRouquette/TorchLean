@@ -10,21 +10,22 @@ module
 # `NN.Runtime.Autograd`: Runtime Autograd Overview
 
 This directory is the runtime execution layer for TorchLean's automatic differentiation.
-It contains three closely related "ways to run" the same differentiable programs:
+It contains two execution representations and an imperative API over them:
 
 1. **Eager tape (dynamic DAG)**: record a runtime tape during the forward pass, then run a
    reverse-mode loop over that tape to accumulate gradients.
-2. **Proof-compiled graph (typed SSA/DAG)**: record a *well-typed* IR (`GraphData`), compile it
-   to the same runtime tape, then reuse the same reverse-mode loop.
-3. **Imperative sessions**: wrap either backend behind an API that feels closer to PyTorch
+2. **Typed graph execution (typed SSA/DAG)**: record a well-typed graph (`GraphData`) carrying
+   forward, JVP, and VJP rules, then lower it with concrete inputs to the runtime tape. Fixed
+   programs can package this graph as a reusable artifact.
+3. **Imperative sessions**: wrap either representation behind an API that feels closer to PyTorch
    (`TensorRef` objects, `backward`, `step`, etc.).
 
 The key architectural idea is that we keep a small, explicit, pure core (the tape and its
 reverse-mode loop), then build convenience layers on top (imperative sessions, training helpers,
 optimizers). This makes it easier to:
 
-- reason about correctness at the IR level,
-- connect compiled execution to proofs, and
+- state precisely whether a result concerns executable `GraphData` or proof-carrying `Graph`,
+- prove that lowering preserves the stored graph program,
 - still offer familiar session-style ergonomics for executable training code.
 
 ## Where to look
@@ -33,18 +34,19 @@ optimizers). This makes it easier to:
   - `NN/Runtime/Autograd/Engine/Core.lean`
   - `NN/Runtime/Autograd/Engine/TapeM.lean` (StateT tape layer)
   - `NN/Runtime/Autograd/Engine/FastKernels.lean` (optional runtime-only speedups)
-- Proof-compiled execution path:
-  - `NN/Runtime/Autograd/Compiled.lean` (runtime umbrella)
-  - `NN/Runtime/Autograd/Compiled/Core.lean`
-  - `NN/Runtime/Autograd/Compiled/GraphM.lean` (authoring DSL for `GraphData`)
-  - `NN/Runtime/Autograd/Compiled/IRExec.lean` (shared `NN.IR.Graph` forward execution bridge)
+- Typed graph execution path:
+  - `NN/Runtime/Autograd/TypedGraph.lean` (runtime umbrella)
+  - `NN/Runtime/Autograd/TypedGraph/Core.lean`
+  - `NN/Runtime/Autograd/TypedGraph/GraphM.lean` (authoring DSL for `GraphData`)
+  - `NN/Runtime/Autograd/IRExec.lean` (shared `NN.IR.Graph` forward execution bridge)
 - PyTorch-style imperative front-end:
   - `NN/Runtime/Autograd/Torch/Core.lean`
   - `NN/Runtime/Autograd/Torch/Utils.lean`
-  - `NN/Runtime/Autograd/Torch/LinkedSession.lean` (records proved IR, runs compiled tape)
-- Unified user-facing API:
+  - `NN/Runtime/Autograd/Torch/TypedGraphSession.lean` (records a typed graph, runs the lowered tape)
+- Unified imperative runtime:
+  - `NN/Runtime/Autograd/TorchLean/Program.lean` (execution-polymorphic tensor programs)
   - `NN/Runtime/Autograd/TorchLean.lean` (umbrella import plus re-exports)
-  - `NN/Runtime/Autograd/TorchLean/Session.lean` (one API, eager or compiled backend)
+  - `NN/Runtime/Autograd/TorchLean/Session.lean` (one API, eager or typed graph execution)
 - Training helpers (datasets, logging, optimizers, trainer):
   - `NN/Runtime/Autograd/Train/*`
 - Runtime utilities:
@@ -53,10 +55,10 @@ optimizers). This makes it easier to:
 ## Connection to Proofs
 
 The runtime files define executable behavior. Proof modules under `NN.Proofs.Autograd.*` state and
-prove facts about the same tape/IR vocabulary, including semantic equivalence of compiled IR
-execution and reusable tape-node soundness lemmas. CUDA and foreign-process bridges are checked by
-contracts and tests at this layer, while their external implementations remain outside Lean's
-trusted kernel.
+prove facts about the same tape/graph vocabulary. In particular, tape lowering preserves
+`GraphData` backpropagation, while derivative soundness uses the stronger `Node` and `Graph` types
+that carry local adjointness laws. CUDA and foreign-process bridges are checked by contracts and
+tests at this layer, while their external implementations remain outside Lean's trusted kernel.
 
 ## References / citations
 

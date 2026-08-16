@@ -44,18 +44,18 @@ def conv
     {hStride : ∀ i : Fin d, stride.get i ≠ 0}
     (seedK seedB : Nat := 0)
     (kInit : Torch.Init.Scheme := .uniform (-0.1) 0.1) :
-    LayerDef (.dim batch (Shape.ofList (inC :: inSpatial.toList)))
+    Layer (.dim batch (Shape.ofList (inC :: inSpatial.toList)))
       (.dim batch (Shape.ofList (outC :: (Spec.convOutSpatial inSpatial kernel stride padding).toList))) :=
   let KShape : Shape := Shape.ofList (outC :: inC :: kernel.toList)
   let bShape : Shape := .dim outC .scalar
   let k0 : Tensor Float KShape := Torch.Init.tensor (s := KShape) (sch := kInit) (seed := seedK)
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"Conv{d}d({inC}, {outC})"
-    paramShapes := [KShape, bShape]
-    initParams := Torch.tlistPair k0 b0
+    stateShapes := [KShape, bShape]
+    initState := Torch.tlistPair k0 b0
     runtimeInit := some (.cons (TorchLean.Module.RuntimeInit.FloatInit.ofScheme kInit seedK)
       (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun k b x =>
@@ -86,7 +86,7 @@ def convTranspose
     {hInC : inC ≠ 0} {hKernel : ∀ i : Fin d, kernel.get i ≠ 0}
     (seedK seedB : Nat := 0)
     (kInit : Torch.Init.Scheme := .uniform (-0.1) 0.1) :
-    LayerDef (.dim batch (Shape.ofList (inC :: inSpatial.toList)))
+    Layer (.dim batch (Shape.ofList (inC :: inSpatial.toList)))
       (.dim batch (Shape.ofList (outC :: (Spec.convTransposeOutSpatial inSpatial kernel stride padding).toList)))
       :=
   let KShape : Shape := Shape.ofList (inC :: outC :: kernel.toList)
@@ -94,11 +94,11 @@ def convTranspose
   let k0 : Tensor Float KShape := Torch.Init.tensor (s := KShape) (sch := kInit) (seed := seedK)
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"ConvTranspose{d}d({inC}, {outC})"
-    paramShapes := [KShape, bShape]
-    initParams := Torch.tlistPair k0 b0
+    stateShapes := [KShape, bShape]
+    initState := Torch.tlistPair k0 b0
     runtimeInit := some (.cons (TorchLean.Module.RuntimeInit.FloatInit.ofScheme kInit seedK)
       (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun k b x =>
@@ -122,12 +122,12 @@ def maxPool
     (inSpatial : Vector Nat d)
     {hKernel : ∀ i : Fin d, kernel.get i ≠ 0}
     {hStride : ∀ i : Fin d, stride.get i ≠ 0} :
-    LayerDef (.dim batch (Shape.ofList (C :: inSpatial.toList)))
+    Layer (.dim batch (Shape.ofList (C :: inSpatial.toList)))
       (.dim batch (Shape.ofList (C :: (Spec.poolOutSpatialPad inSpatial kernel stride padding).toList)))
       :=
   { kind := s!"MaxPool{d}d"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x =>
@@ -149,12 +149,12 @@ def avgPool
     (inSpatial : Vector Nat d)
     (hKernel : ∀ i : Fin d, kernel.get i ≠ 0)
     (hStride : ∀ i : Fin d, stride.get i ≠ 0) :
-    LayerDef (.dim batch (Shape.ofList (C :: inSpatial.toList)))
+    Layer (.dim batch (Shape.ofList (C :: inSpatial.toList)))
       (.dim batch (Shape.ofList (C :: (Spec.poolOutSpatialPad inSpatial kernel stride padding).toList)))
       :=
   { kind := s!"AvgPool{d}d"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x =>
@@ -181,7 +181,7 @@ def conv2d
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (seedK seedB : Nat := 0)
     (kInit : Torch.Init.Scheme := .uniform (-0.1) 0.1) :
-    LayerDef (.dim inC (.dim inH (.dim inW .scalar)))
+    Layer (.dim inC (.dim inH (.dim inW .scalar)))
       (.dim outC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))) :=
   let _outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride padding
   let _outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride padding
@@ -190,11 +190,11 @@ def conv2d
   let k0 : Tensor Float KShape := Torch.Init.tensor (s := KShape) (sch := kInit) (seed := seedK)
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"Conv2d({inC}, {outC}, {kH}x{kW})"
-    paramShapes := [KShape, bShape]
-    initParams := Torch.tlistPair k0 b0
+    stateShapes := [KShape, bShape]
+    initState := Torch.tlistPair k0 b0
     runtimeInit := some (.cons (TorchLean.Module.RuntimeInit.FloatInit.ofScheme kInit seedK)
       (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun k b x =>
@@ -220,7 +220,7 @@ def convTranspose2d
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     (seedK seedB : Nat := 0)
     (kInit : Torch.Init.Scheme := .uniform (-0.1) 0.1) :
-    LayerDef (.dim inC (.dim inH (.dim inW .scalar)))
+    Layer (.dim inC (.dim inH (.dim inW .scalar)))
       (.dim outC (.dim (Spec.convTransposeOutDim inH kH stride padding)
         (.dim (Spec.convTransposeOutDim inW kW stride padding) .scalar))) :=
   let KShape : Shape := .dim inC (.dim outC (.dim kH (.dim kW .scalar)))
@@ -228,11 +228,11 @@ def convTranspose2d
   let k0 : Tensor Float KShape := Torch.Init.tensor (s := KShape) (sch := kInit) (seed := seedK)
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"ConvTranspose2d({inC}, {outC}, {kH}x{kW})"
-    paramShapes := [KShape, bShape]
-    initParams := Torch.tlistPair k0 b0
+    stateShapes := [KShape, bShape]
+    initState := Torch.tlistPair k0 b0
     runtimeInit := some (.cons (TorchLean.Module.RuntimeInit.FloatInit.ofScheme kInit seedK)
       (.cons .zeros .nil))
-    paramRequiresGrad := [true, true]
+    requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun k b x =>
@@ -252,11 +252,11 @@ PyTorch analogy: `torch.nn.functional.max_pool2d` (channel-first layout).
 def maxPool2d
     (kH kW inH inW inC stride : Nat)
     {h1 : kH ≠ 0} {h2 : kW ≠ 0} :
-    LayerDef (.dim inC (.dim inH (.dim inW .scalar)))
+    Layer (.dim inC (.dim inH (.dim inW .scalar)))
       (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))) :=
   { kind := s!"MaxPool2d({kH}x{kW})"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x =>
@@ -273,11 +273,11 @@ PyTorch analogy: `torch.nn.functional.max_pool2d(..., padding=padding)`.
 def maxPool2dPad
     (kH kW inH inW inC stride padding : Nat)
     {h1 : kH ≠ 0} {h2 : kW ≠ 0} :
-    LayerDef (.dim inC (.dim inH (.dim inW .scalar)))
+    Layer (.dim inC (.dim inH (.dim inW .scalar)))
       (.dim inC (.dim (Spec.poolOutDim inH kH stride padding) (.dim (Spec.poolOutDim inW kW stride padding) .scalar))) :=
   { kind := s!"MaxPool2d({kH}x{kW}, padding={padding})"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x =>
@@ -294,11 +294,11 @@ PyTorch analogy: `torch.nn.functional.avg_pool2d` (channel-first layout).
 def avgPool2d
     (kH kW inH inW inC stride : Nat)
     (h1 : kH ≠ 0) (h2 : kW ≠ 0) :
-    LayerDef (.dim inC (.dim inH (.dim inW .scalar)))
+    Layer (.dim inC (.dim inH (.dim inW .scalar)))
       (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))) :=
   { kind := s!"AvgPool2d({kH}x{kW})"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x =>
@@ -315,11 +315,11 @@ PyTorch analogy: `torch.nn.functional.avg_pool2d(..., padding=padding)`.
 def avgPool2dPad
     (kH kW inH inW inC stride padding : Nat)
     (h1 : kH ≠ 0) (h2 : kW ≠ 0) :
-    LayerDef (.dim inC (.dim inH (.dim inW .scalar)))
+    Layer (.dim inC (.dim inH (.dim inW .scalar)))
       (.dim inC (.dim (Spec.poolOutDim inH kH stride padding) (.dim (Spec.poolOutDim inW kW stride padding) .scalar))) :=
   { kind := s!"AvgPool2d({kH}x{kW}, padding={padding})"
-    paramShapes := []
-    initParams := .nil
+    stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x =>

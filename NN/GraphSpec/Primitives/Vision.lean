@@ -19,14 +19,14 @@ These are not model definitions. They are reusable nodes in the GraphSpec vocabu
 
 - `Primitive.conv2d` wraps `Spec.conv2dSpec` and `Runtime.Autograd.TorchLean.conv2d`;
 - `Primitive.maxPool2d` wraps the corresponding Spec/runtime pooling operation;
-- `Primitive.batchnormChw` wraps channel-first BatchNorm;
+- `Primitive.batchNormChw` wraps channel-first BatchNorm;
 - `Primitive.flatten` is the bridge from image-like tensors to vector classifiers.
 
 The corresponding model examples live under `NN.GraphSpec.Models`.
 
 Important scope note:
 
-- These primitives all fit the *chain* graph language `Graph ps σ τ` because they have one input
+- These primitives all fit the sequential language `Chain ps σ τ` because they have one input
   tensor and one output tensor (no merging of paths).
 - Residual networks require skip connections ($y+x$), which are **multi-input** and require
   **sharing**. For that, use `NN.GraphSpec.DAG`, whose DAG primitive constructors reuse these
@@ -107,7 +107,7 @@ def conv2d
           let layer : Spec.Conv2DSpec inC outC kH kW stride padding α h_inC h_kH h_kW :=
             { kernel := k, bias := b }
           Spec.conv2dSpec (α := α) (inH := inH) (inW := inW) layer x
-    torchProgram := fun {α} _ctx _deq =>
+    program := fun {α} _ctx _deq =>
       fun {m} _ _ =>
         fun k b x =>
           Runtime.Autograd.TorchLean.conv2d (m := m) (α := α)
@@ -115,7 +115,7 @@ def conv2d
             (stride := stride) (padding := padding) (inH := inH) (inW := inW)
             (h1 := h_inC) (h2 := h_kH) (h3 := h_kW)
             k b x
-    toLayerDefM? := some (fun i =>
+    toLayerM? := some (fun i =>
       -- Occurrence-indexed seeds, matching the `Primitive.linear` convention.
       ⟨ Runtime.Autograd.TorchLean.NN.conv2d
           (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
@@ -144,13 +144,13 @@ def maxPool2d
     specFwd := fun {α} _ctx _params x =>
       let layer : Spec.MaxPool2DSpec kH kW stride h_kH h_kW hStride := {}
       Spec.maxPool2dMultiSpec (layer := layer) x
-    torchProgram := fun {α} _ctx _deq =>
+    program := fun {α} _ctx _deq =>
       fun {m} _ _ =>
         fun x =>
           Runtime.Autograd.TorchLean.maxPool2d (m := m) (α := α)
             (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
             (h1 := h_kH) (h2 := h_kW) x
-    toLayerDefM? := some (fun _i =>
+    toLayerM? := some (fun _i =>
       ⟨ Runtime.Autograd.TorchLean.NN.maxPool2d
           (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
           (h1 := h_kH) (h2 := h_kW)
@@ -173,10 +173,10 @@ def flatten (s : Shape) : Primitive [] s (.dim (Spec.Shape.size s) .scalar) :=
   { name := "flatten"
     specFwd := fun {α} _ctx _params x =>
       Spec.Tensor.flattenSpec (α := α) (s := s) x
-    torchProgram := fun {α} _ctx _deq =>
+    program := fun {α} _ctx _deq =>
       fun {m} _ _ =>
         fun x => Runtime.Autograd.TorchLean.flatten (m := m) (α := α) (s := s) x
-    toLayerDefM? := some (fun _i => ⟨Runtime.Autograd.TorchLean.NN.flatten (s := s), by rfl⟩)
+    toLayerM? := some (fun _i => ⟨Runtime.Autograd.TorchLean.NN.flatten (s := s), by rfl⟩)
     countsAsLayer := false
   }
 
@@ -187,11 +187,11 @@ Parameters are `(gamma, beta)` vectors of length `channels`. This models the lea
 of batch normalization.
 
 Note: this op does not carry running mean/variance state inside GraphSpec. If/when we model those,
-they will need an explicit state/effect model outside of this pure graph language.
+they will need an explicit state/effect model outside of this pure architecture language.
 
 Reference: Ioffe & Szegedy (2015).
  -/
-def batchnormChw
+def batchNormChw
     (channels height width : Nat)
     (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0) :
     Primitive
@@ -205,15 +205,15 @@ def batchnormChw
           Spec.batchNorm2d (α := α)
             (channels := channels) (height := height) (width := width)
             x gamma beta h_c h_h h_w
-    torchProgram := fun {α} _ctx _deq =>
+    program := fun {α} _ctx _deq =>
       fun {m} _ _ =>
         fun gamma beta x =>
-          Runtime.Autograd.TorchLean.batchnormChannelFirst (m := m) (α := α)
+          Runtime.Autograd.TorchLean.batchNormChannelFirst (m := m) (α := α)
             (channels := channels) (height := height) (width := width)
             (h_c := h_c) (h_h := h_h) (h_w := h_w)
             x gamma beta
-    toLayerDefM? := some (fun i =>
-      ⟨ Runtime.Autograd.TorchLean.NN.batchnormChannelFirst
+    toLayerM? := some (fun i =>
+      ⟨ Runtime.Autograd.TorchLean.NN.batchNormChannelFirst
           (channels := channels) (height := height) (width := width)
           (h_c := h_c) (h_h := h_h) (h_w := h_w)
           (seedGamma := 2 * i) (seedBeta := 2 * i + 1)
@@ -223,13 +223,13 @@ def batchnormChw
 
 end Primitive
 
-namespace Graph
+namespace Chain
 
-/-- Graph constructor for `Primitive.conv2d`. -/
+/-- Chain constructor for `Primitive.conv2d`. -/
 def conv2d
     (inC outC kH kW stride padding inH inW : Nat)
     {h_inC : inC ≠ 0} {h_kH : kH ≠ 0} {h_kW : kW ≠ 0} {hStride : stride ≠ 0} :
-    Graph
+    Chain
       [ .dim outC (.dim inC (.dim kH (.dim kW .scalar))), .dim outC .scalar ]
       (.dim inC (.dim inH (.dim inW .scalar)))
       (.dim outC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))) :=
@@ -238,30 +238,30 @@ def conv2d
     (inH := inH) (inW := inW) (h_inC := h_inC) (h_kH := h_kH) (h_kW := h_kW)
     (hStride := hStride))
 
-/-- Graph constructor for `Primitive.max_pool2d`. -/
+/-- Chain constructor for `Primitive.max_pool2d`. -/
 def maxPool2d
     (kH kW inH inW inC stride : Nat)
     {h_kH : kH ≠ 0} {h_kW : kW ≠ 0} {hStride : stride ≠ 0} :
-    Graph [] (.dim inC (.dim inH (.dim inW .scalar)))
+    Chain [] (.dim inC (.dim inH (.dim inW .scalar)))
       (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))) :=
   .prim (Primitive.maxPool2d (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride
     := stride)
     (h_kH := h_kH) (h_kW := h_kW) (hStride := hStride))
 
-/-- Graph constructor for `Primitive.flatten`. -/
-def flatten (s : Shape) : Graph [] s (.dim (Spec.Shape.size s) .scalar) :=
+/-- Chain constructor for `Primitive.flatten`. -/
+def flatten (s : Shape) : Chain [] s (.dim (Spec.Shape.size s) .scalar) :=
   .prim (Primitive.flatten s)
 
-/-- Graph constructor for `Primitive.batchnorm_chw`. -/
-def batchnormChw
+/-- Chain constructor for `Primitive.batchnorm_chw`. -/
+def batchNormChw
     (channels height width : Nat)
     (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0) :
-    Graph [.dim channels .scalar, .dim channels .scalar]
+    Chain [.dim channels .scalar, .dim channels .scalar]
       (.dim channels (.dim height (.dim width .scalar))) (.dim channels (.dim height (.dim width .scalar))) :=
-  .prim (Primitive.batchnormChw (channels := channels) (height := height) (width := width) h_c h_h
+  .prim (Primitive.batchNormChw (channels := channels) (height := height) (width := width) h_c h_h
     h_w)
 
-end Graph
+end Chain
 
 end GraphSpec
 end NN

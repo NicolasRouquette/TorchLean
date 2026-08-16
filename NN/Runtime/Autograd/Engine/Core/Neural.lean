@@ -63,7 +63,7 @@ Batch normalization for channel-first images `(C,H,W)` (no batch axis).
 PyTorch comparison: conceptually `torch.nn.BatchNorm2d(C)` / `functional.batch_norm` on NCHW, but
 specialized here to a single image.
 -/
-def batchnormChannelFirst {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+def batchNormChannelFirst {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   [DecidableEq Shape]
   {channels height width : Nat}
   (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0)

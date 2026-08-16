@@ -121,14 +121,16 @@ def mismatchedRandomCapsule : KernelCapsule :=
     provider := .torchLean }
 
 def planOrThrow (tag : String) (profile : BackendProfile) (ops : List BackendOp) :
-    IO ExecutionPlan := do
+    IO KernelPlan := do
   match profile.planOps ops with
   | .ok plan => pure plan
   | .error msg => throw <| IO.userError s!"{tag}: planning failed: {msg}"
 
 def profileOrThrow (tag : String) (opts : Runtime.Autograd.Torch.Options) :
     IO BackendProfile := do
-  let profile := opts.backendProfile
+  let profile ← match opts.effectiveBackendProfile with
+    | .ok profile => pure profile
+    | .error msg => throw <| IO.userError s!"{tag}: profile resolution failed: {msg}"
   unless profile.hasDeviceCapsule do
     throw <| IO.userError s!"{tag}: profile `{profile.name}` has no capsule for its device"
   pure profile
@@ -142,7 +144,7 @@ def expectPlanningFails (tag : String) (profile : BackendProfile) (ops : List Ba
   | .error _ => pure ()
 
 def acceptedGraphOrThrow (tag : String) (profile : BackendProfile) (g : NN.IR.Graph) :
-    IO AcceptedGraphPlan := do
+    IO AcceptedGraphKernelPlan := do
   match profile.acceptGraph g with
   | .ok (.accepted plan) => pure plan
   | .ok (.rejected _ failures) =>
@@ -204,8 +206,11 @@ def expectRandomProviderRejected : IO Unit := do
   let mismatchedModule : Registry.CapsuleModule :=
     { name := "reference", capsules := [mismatchedRandomCapsule] }
   let profile := BackendProfile.checkedCpu.withCapsuleModules [mismatchedModule]
+  let opts :=
+    Runtime.Autograd.Torch.Options.withBackendProfile
+      ({} : Runtime.Autograd.Torch.Options) profile
   let session ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float)
-    { executionProfile := profile }
+    opts
   try
     let _ ← Runtime.Autograd.Torch.Internal.EagerSession.randUniform
       (s := session) (sh := Spec.Shape.ofList [2]) 7
@@ -219,10 +224,13 @@ def expectRuntimeDeviceRejected (tag : String) (device : NN.Backend.Device) :
   let unavailableProfile : BackendProfile :=
     { BackendProfile.checkedCpu with
       name := s!"unavailable_{device.cliName}"
-      config := { BackendProfile.checkedCpu.config with device := device } }
+      policy := { BackendProfile.checkedCpu.policy with device := device } }
   try
+    let opts :=
+      Runtime.Autograd.Torch.Options.withBackendProfile
+        ({} : Runtime.Autograd.Torch.Options) unavailableProfile
     let _ ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float)
-      { executionProfile := unavailableProfile }
+      opts
     throw <| IO.userError s!"{tag}: expected runtime device rejection"
   catch e =>
     let msg := toString e
@@ -231,7 +239,7 @@ def expectRuntimeDeviceRejected (tag : String) (device : NN.Backend.Device) :
 /-- User-facing CUDA sessions must agree with the implementation linked behind the CUDA symbols. -/
 def expectCudaSessionMatchesRuntime : IO Unit := do
   let opts : Runtime.Autograd.Torch.Options :=
-    { executionProfile := BackendProfile.checkedCuda }
+    { device := .cuda }
   match Runtime.Autograd.Cuda.Buffer.runtimeStatus with
   | .nativeAvailable =>
       let _ ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float) opts
@@ -251,6 +259,14 @@ def expectCudaSessionMatchesRuntime : IO Unit := do
 
 def run : IO Unit := do
   checkHandlerIdentity
+  let typedGraphCpuOpts : Runtime.Autograd.Torch.Options :=
+    { execution := .typedGraph
+      device := .cpu }
+  expect "typed graph CPU options retain the public execution and device choices"
+    (typedGraphCpuOpts.execution == .typedGraph && typedGraphCpuOpts.device == .cpu)
+  let typedGraphCpuProfile ← profileOrThrow "typed graph CPU profile" typedGraphCpuOpts
+  expect "execution mode does not alter CPU capsule selection"
+    (typedGraphCpuProfile.policy.device == .cpu)
   expect "default registry contract fields are aligned"
     ((Registry.flatten Registry.maintainedModules).all KernelCapsule.contractsAligned)
   expect "LibTorch registry contract fields are aligned"
@@ -270,14 +286,14 @@ def run : IO Unit := do
   let replaced ← planOrThrow "replacement capsule module" replacementProfile [.relu]
   expectCapsules "replacement capsule module is selected" replaced.capsuleNames
     ["replacement.relu"]
-  let inferenceOpts : Runtime.Autograd.Torch.Options := { trackGradients := false }
+  let inferenceOpts : Runtime.Autograd.Torch.Options := { gradEnabled := false }
   let inferenceProfile ← profileOrThrow "no-grad default profile" inferenceOpts
   expect "no-grad runtime planning requests no VJP"
-    (inferenceProfile.config.vjpMode == .none)
-  let trainingOpts : Runtime.Autograd.Torch.Options := { trackGradients := true }
+    (inferenceProfile.policy.vjpMode == .none)
+  let trainingOpts : Runtime.Autograd.Torch.Options := { gradEnabled := true }
   let trainingProfile ← profileOrThrow "training default profile" trainingOpts
   expect "training runtime planning requests the TorchLean tape"
-    (trainingProfile.config.vjpMode == .torchLeanTape)
+    (trainingProfile.policy.vjpMode == .torchLeanTape)
   expectOp "IR add maps to exact add capsule" .add (some .add)
   expectOp "IR linear maps to exact linear capsule" .linear (some .linear)
   expectOp "IR conv2d maps to the rank-generic convolution capability"
@@ -297,7 +313,7 @@ def run : IO Unit := do
   expect "external target admits external capsule when provider is available"
     (Target.external.declaredAvailability.admitsCapsule externalReluCapsule)
   match planOpsAvailable
-      { device := .external, backend := .only .external }
+      { device := .external, provider := .only .external }
       Target.external.declaredAvailability
       [externalReluCapsule]
       [.relu] with
@@ -337,7 +353,7 @@ def run : IO Unit := do
       throw <| IO.userError
         s!"erased verified metadata unexpectedly planned as {erased.capsuleNames}"
   | .error _ => pure ()
-  let verifiedConfig : ExecutionConfig :=
+  let verifiedConfig : KernelPolicy :=
     { device := .cpu, assurance := .verified, vjpMode := .none }
   match planVerifiedKernel verifiedConfig [verifiedReluKernel] with
   | .ok planned =>
@@ -370,7 +386,7 @@ def run : IO Unit := do
   let singletonCpuProfile : BackendProfile :=
     { BackendProfile.checkedCpu with
       name := "checked_cpu_singleton_test"
-      loweringMode := .singleton }
+      groupingMode := .singleton }
   let singletonCpuGraph ← acceptedGraphOrThrow "checked cpu singleton graph acceptance"
     singletonCpuProfile tinyReluGraph
   expectCapsules "singleton graph keeps repeated relu capsules"
@@ -516,8 +532,7 @@ def run : IO Unit := do
   expectCudaSessionMatchesRuntime
 
   let cpuSession ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float)
-    ({ executionProfile := BackendProfile.checkedCpu } :
-      Runtime.Autograd.Torch.Options)
+    ({ device := .cpu } : Runtime.Autograd.Torch.Options)
   let firstRelu ← cpuSession.selectedCapsule .relu
   let secondRelu ← cpuSession.selectedCapsule .relu
   let cpuSelections ← cpuSession.backendSelections
@@ -526,7 +541,7 @@ def run : IO Unit := do
   expectRandomProviderRejected
 
   let checkedCudaOpts : Runtime.Autograd.Torch.Options :=
-    { executionProfile := BackendProfile.checkedCuda }
+    { device := .cuda }
   for op in
       [ BackendOp.matmul
       , .batchNorm

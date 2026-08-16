@@ -6,8 +6,8 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Compiled.Core
-public import NN.Runtime.Autograd.Compiled.GraphM
+public import NN.Runtime.Autograd.TypedGraph.Core
+public import NN.Runtime.Autograd.TypedGraph.GraphM
 public import NN.Runtime.Autograd.Engine.Cuda.Tape
 public import NN.Runtime.Autograd.Engine.Cuda.Kernels
 public import NN.Runtime.Autograd.Engine.Cuda.ConvPool
@@ -37,7 +37,7 @@ open Tensor
 open Proofs.Autograd.Algebra
 
 /--
-`TList` is the dependently-typed heterogeneous tensor list used by the proved IR.
+`TList` is the dependently typed heterogeneous tensor list used by typed graphs.
 
 We re-export it here under the `Torch` front-end namespace because many user-facing helpers
 (trainer APIs, parameter packs, etc.) are naturally expressed as `TList`s.
@@ -45,18 +45,21 @@ We re-export it here under the `Torch` front-end namespace because many user-fac
 abbrev TList (α : Type) (ss : List Shape) := Proofs.Autograd.Algebra.TList α ss
 
 /--
-Execution backend for the Torch-style front-end.
+Execution mode for the Torch-style front-end.
 
-- `.eager`: build and execute a runtime tape directly (imperative, PyTorch-like).
-- `.compiled`: record typed IR and run a compiled tape (proof-friendly path, see
-  `Torch.LinkedSession` / `TorchLean.Session`).
+- `.eager`: execute operations immediately while building a dynamic autograd tape.
+- `.typedGraph`: build shape-indexed SSA data instead of using only the dynamic tape. High-level
+  trainers build their reusable graph once; the low-level session records graph data during a run.
+
+The second mode changes the representation used for execution. It is not an optimizing compiler,
+and graph construction alone does not prove the stored derivative rules correct.
 
 This is not a CUDA Graph selector. CUDA is controlled by `Options.device` on the
-eager backend; CUDA Graph capture/replay will require a distinct persistent-buffer backend.
+eager execution path; CUDA Graph capture/replay will require a distinct persistent-buffer mode.
 -/
-inductive Backend where
+inductive ExecutionMode where
   | eager
-  | compiled
+  | typedGraph
 deriving Repr, DecidableEq
 
 /--
@@ -66,9 +69,11 @@ PyTorch comparison: these are approximately session/global settings, such as the
 `requires_grad` value and requested execution device.
 -/
 structure Options where
-  /-- Execution backend selection. -/
-  backend : Backend := .eager
-  /-- Default `requires_grad` value for newly created parameters/inputs when a caller omits it. -/
+  /-- Choose immediate tape execution or shape-indexed typed graph execution. -/
+  execution : ExecutionMode := .eager
+  /-- Device requested for execution. -/
+  device : NN.Backend.Device := .cpu
+  /-- Default `requires_grad` value for parameters whose constructor omits it. Inputs default to false. -/
   requiresGradByDefault : Bool := true
   /--
   Global deterministic seed for runtime randomness.
@@ -83,58 +88,70 @@ structure Options where
   -/
   seed : Nat := 0
   /--
-  Track gradients for newly recorded leaves.
+  Enable gradient tracking for newly recorded leaves.
 
   Inference helpers set this to `false`: forward values are still materialized so they can be read
   back, but parameter/input leaves are recorded with `requires_grad = false`. The tape may still
   exist as a runtime value store; this flag controls whether newly recorded leaves participate in
-  backward, not whether forward execution is allowed to allocate intermediate values.
+  backward. It does not control whether forward execution may allocate intermediate values.
   -/
-  trackGradients : Bool := true
+  gradEnabled : Bool := true
   /--
-  Backend-contract profile selected for this run.
+  Optional backend-contract profile selected for this run.
 
-  Device, provider preference, assurance policy, VJP ownership, target availability, and capsule
-  modules travel together in this value. Keeping one profile avoids inconsistent combinations such
-  as a CUDA device paired with a CPU capsule catalog.
+  Ordinary callers select only `device`; TorchLean then uses the maintained profile for that
+  device. Advanced callers can provide a complete profile to choose provider preference, assurance
+  policy, VJP ownership, target availability, and capsule modules together. The profile is rejected
+  if its device differs from `device`.
   -/
-  executionProfile : NN.Backend.BackendProfile := NN.Backend.BackendProfile.checkedCpu
+  backendProfile? : Option NN.Backend.BackendProfile := none
   /-- Print each accepted backend capsule the first time an eager session executes it. -/
   showBackend : Bool := false
 deriving Repr
 
-/- Convenience API for PyTorch-style device selection. -/
+/- Convenience API for device and backend-contract selection. -/
 namespace Options
 
-/-- Device selected by the effective execution profile. -/
-def device (opts : Options) : NN.Backend.Device :=
-  opts.executionProfile.config.device
-
 /-- Select a maintained execution device or explain that it needs a caller-supplied profile. -/
-def toDevice (opts : Options) (device : NN.Backend.Device) : Except String Options := do
+def withDevice (opts : Options) (device : NN.Backend.Device) : Except String Options := do
   match NN.Backend.BackendProfile.maintainedForDevice? device with
-  | some profile => pure { opts with executionProfile := profile }
+  | some _ => pure { opts with device := device, backendProfile? := none }
   | none =>
       throw s!"device `{device.cliName}` has no maintained runtime profile; provide a backend profile with executable capsules"
 
 /-- Select a complete backend profile, including its device and contract policy. -/
 def withBackendProfile (opts : Options) (profile : NN.Backend.BackendProfile) : Options :=
-  { opts with executionProfile := profile }
+  { opts with device := profile.policy.device, backendProfile? := some profile }
+
+/-- Resolve the backend profile selected by `device` and an optional advanced override. -/
+def resolveBackendProfile (opts : Options) : Except String NN.Backend.BackendProfile := do
+  match opts.backendProfile? with
+  | some profile =>
+      if profile.policy.device == opts.device then
+        pure profile
+      else
+        throw s!"backend profile `{profile.name}` targets `{profile.policy.device.cliName}`, but the runtime requested `{opts.device.cliName}`"
+  | none =>
+      match NN.Backend.BackendProfile.maintainedForDevice? opts.device with
+      | some profile => pure profile
+      | none =>
+          throw s!"device `{opts.device.cliName}` has no maintained runtime profile; provide a backend profile with executable capsules"
 
 /-- Explain why a profile has no implementation catalog for its selected device. -/
 def unsupportedProfileMessage (profile : NN.Backend.BackendProfile) : String :=
-  s!"backend profile `{profile.name}` has no capsule for device `{profile.config.device.cliName}`"
+  s!"backend profile `{profile.name}` has no capsule for device `{profile.policy.device.cliName}`"
 
 /-- Whether the effective runtime device is CUDA. -/
 def usesCuda (opts : Options) : Bool :=
   opts.device == .cuda
 
-/-- Reject profiles with no registered capsule for their selected device. -/
-def validateDevice (opts : Options) : Except String Unit :=
-  if opts.executionProfile.hasDeviceCapsule then
+/-- Reject unresolved profiles and profiles with no registered capsule for their selected device. -/
+def validateDevice (opts : Options) : Except String Unit := do
+  let profile ← opts.resolveBackendProfile
+  if profile.hasDeviceCapsule then
     pure ()
   else
-    throw <| unsupportedProfileMessage opts.executionProfile
+    throw <| unsupportedProfileMessage profile
 
 /-- Validate both the named device and the linked native runtime before executing user code. -/
 def validateForExecution (opts : Options) : IO Unit := do
@@ -148,21 +165,21 @@ def validateForExecution (opts : Options) : IO Unit := do
 def deviceName (opts : Options) : String :=
   opts.device.cliName
 
-/-- Backend-contract profile attached to this runtime options record. -/
-def backendProfile (opts : Options) : NN.Backend.BackendProfile :=
-  let profile := opts.executionProfile
-  if opts.trackGradients then
+/-- Effective backend-contract profile after applying inference-only VJP policy. -/
+def effectiveBackendProfile (opts : Options) : Except String NN.Backend.BackendProfile := do
+  let profile ← opts.resolveBackendProfile
+  pure <| if opts.gradEnabled then
     profile
   else
-    { profile with config := { profile.config with vjpMode := .none } }
+    { profile with policy := { profile.policy with vjpMode := .none } }
 
 /-- Select a backend capsule for one operation under this options record. -/
 def planBackendOp (opts : Options) (op : NN.Backend.BackendOp) :
     Except String NN.Backend.AcceptedKernel := do
-  let profile := opts.backendProfile
+  let profile ← opts.effectiveBackendProfile
   match profile.planOps [op] with
   | .ok { kernels := k :: _ } =>
-      match k.accept profile.config.assurance with
+      match k.accept profile.policy.assurance with
       | .error failures =>
           .error s!"backend profile {profile.name} rejected `{op.name}`: {repr failures}"
       | .ok accepted => .ok accepted
@@ -173,10 +190,11 @@ def planBackendOp (opts : Options) (op : NN.Backend.BackendOp) :
 end Options
 
 /--
-Opaque handle to a tensor value in the current session/tape.
+Opaque handle to a tensor value in the current execution context.
 
-Like a PyTorch tensor handle, the value is identified by a node or leaf id in the autograd tape.
-The phantom shape index `s` makes shape mismatches explicit at compile time.
+The identifier refers to a leaf or node in the owning eager tape or typed graph recorder. It has no
+meaning outside that owner. The phantom shape index `s` makes shape mismatches explicit at compile
+time.
 -/
 structure TensorRef (α : Type) (s : Shape) where
   /-- Node/leaf identifier in the owning session tape. -/

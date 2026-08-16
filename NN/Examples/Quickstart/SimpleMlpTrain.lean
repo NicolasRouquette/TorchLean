@@ -24,8 +24,8 @@ It mirrors the simplest PyTorch workflow:
 Run:
 
 - `lake exe torchlean quickstart_mlp`
-- `lake exe torchlean quickstart_mlp --steps 200 --dtype float32 --backend eager`
-- `lake exe torchlean quickstart_mlp --steps 200 --dtype float --backend eager`
+- `lake exe torchlean quickstart_mlp --steps 200 --scalar ieee32-exec --execution eager`
+- `lake exe torchlean quickstart_mlp --steps 200 --scalar float32 --execution eager`
 
 Optional flags (tutorial-specific):
 
@@ -47,7 +47,7 @@ def inDim : Nat := 2
 def outDim : Nat := 1
 
 /-- A small 2-layer MLP `2 -> 8 -> 1`. -/
-def model : nn.M (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
+def model : nn.Builder (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
   nn.Sequential![
     nn.linear inDim 8,
     nn.relu,
@@ -74,7 +74,7 @@ Build the tutorial dataset at the runtime-selected scalar type.
 `Data.regressionGrid` keeps shape-indexed tensor slicing out of the first training example.
 The underlying value is still a TorchLean supervised dataset with checked input/output shapes.
 -/
-def buildDataset : Trainer.Dataset (.dim inDim .scalar) (.dim outDim .scalar) :=
+def buildDataset : Trainer.DataSource (.dim inDim .scalar) (.dim outDim .scalar) :=
   Data.regressionGrid (-1.0) 1.0 5 target
 
 /-- Command-line help for the simple MLP quickstart. -/
@@ -88,8 +88,8 @@ def usage : String :=
     , "Options:"
     , "  --seed N"
     , "  --steps N"
-    , "  --dtype float|float32|ieee32"
-    , "  --backend eager|compiled"
+    , "  --scalar float32|ieee32-exec|complex64"
+    , "  --execution eager|typed-graph"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "  --show-backend                    print backend capsules as they execute"
     , "  --log PATH"
@@ -121,7 +121,7 @@ def main (args : List String) : IO Unit := do
   ]
   let trained ← trainer.train buildDataset parsed.trainOptions probes
   trained.printSummary
-  let heldout : Tensor.T Float (.dim inDim .scalar) := tensorOfList! [2] [0.25, -0.75]
+  let heldout : Tensor Float (.dim inDim .scalar) := tensorOfList! [2] [0.25, -0.75]
   trained.printPrediction "predict(heldout)" heldout
 
 end NN.Examples.Quickstart.SimpleMLPTrain

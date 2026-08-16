@@ -31,7 +31,7 @@ namespace rl
 namespace cli
 
 /-- Parsed PPO-style training flags shared by multiple runnable examples. -/
-structure PpoFlags where
+structure PPOFlags where
   updates : Nat
   evalEvery : Nat
   evalEpisodes : Nat
@@ -52,16 +52,16 @@ Notes:
 def parsePpoFlags (exeName : String) (args : List String)
     (defaultLogPath : System.FilePath)
     (defaultUpdates defaultEvalEvery defaultEvalEpisodes defaultEvalMaxSteps : Nat) :
-    Except String (PpoFlags × List String) := do
+    Except String (PPOFlags × List String) := do
   let (logRaw?, args) ← TorchLean.CLI.takeFlagValueOnce args "log"
   let (updates, args) ←
-    TorchLean.CLI.takePositiveNatFlagDefault args exeName "updates" defaultUpdates
+    TorchLean.CLI.takePositiveNatFlag args exeName "updates" defaultUpdates
   let (evalEvery, args) ←
-    TorchLean.CLI.takePositiveNatFlagDefault args exeName "eval-every" defaultEvalEvery
+    TorchLean.CLI.takePositiveNatFlag args exeName "eval-every" defaultEvalEvery
   let (evalEpisodes, args) ←
-    TorchLean.CLI.takePositiveNatFlagDefault args exeName "eval-episodes" defaultEvalEpisodes
+    TorchLean.CLI.takePositiveNatFlag args exeName "eval-episodes" defaultEvalEpisodes
   let (evalMaxSteps, args) ←
-    TorchLean.CLI.takePositiveNatFlagDefault args exeName "eval-max-steps" defaultEvalMaxSteps
+    TorchLean.CLI.takePositiveNatFlag args exeName "eval-max-steps" defaultEvalMaxSteps
 
   let log := _root_.Runtime.Training.LogDestination.parse? defaultLogPath logRaw?
   pure ({ updates := updates

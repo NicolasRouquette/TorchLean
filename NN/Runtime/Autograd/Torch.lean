@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Torch.Core
-public import NN.Runtime.Autograd.Torch.LinkedSession
+public import NN.Runtime.Autograd.Torch.TypedGraphSession
 public import NN.Runtime.Autograd.Torch.Utils
 
 /-!
@@ -18,15 +18,14 @@ This is the public umbrella for the low-level PyTorch-style runtime layer.
 The split is intentional:
 
 - `Torch.Core` defines imperative tensor references, parameters, eager sessions, operation wrappers,
-  compiled scalar/output wrappers, and simple scalar trainers.
-- `Torch.LinkedSession` records the same style of imperative computation into the proved
-  `GraphData` IR and exposes the theorem connecting compiled runtime backprop to proved graph
-  backprop.
+  typed executable graphs, and simple scalar trainers.
+- `Torch.Internal.TypedGraphSession` is the recorder used to implement imperative typed graph
+  execution. Its backpropagation agrees with the runtime tape obtained from the recorded graph.
 - `Torch.Utils` contains compact example/training conveniences such as deterministic initializers,
   small sample builders, and trainer loops.
 
-`TorchLean/*` builds the higher-level model/program API on top of this layer. So `Torch` is the
-low-level session/ref bridge; `TorchLean` is the nicer user-facing model API.
+`TorchLean/*` builds the higher-level model and program API on top of this layer. `Torch` contains
+the low-level session and reference machinery; `TorchLean` contains the public model API.
 -/
 
 @[expose] public section

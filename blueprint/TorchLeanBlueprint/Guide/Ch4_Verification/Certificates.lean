@@ -147,7 +147,7 @@ There are three progressively stronger designs:
   replay entries must agree exactly at the binary32 level.
 - *Proof-backed soundness:* checker acceptance supplies the exact hypotheses of a theorem that
   encloses the graph semantics. This requires a proved local transfer for every supported
-  operator, plus a compiler correspondence and any required floating-point bridge.
+  operator, plus a lowering correspondence and any required floating-point bridge.
 
 The levels can share one producer workflow, but they support different claims.
 

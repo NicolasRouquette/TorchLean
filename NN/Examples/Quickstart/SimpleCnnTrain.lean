@@ -45,8 +45,8 @@ open TorchLean
 def defaultLogJson : System.FilePath := ModelZoo.trainLogPath "quickstart_simple_cnn"
 
 def mkModel {batch : Nat} :
-    nn.M (nn.Sequential (.dim batch (.dim 1 (.dim 4 (.dim 4 .scalar)))) (.dim batch (.dim 2 .scalar))) :=
-  let cfg : nn.models.CnnConfig 2 :=
+    nn.Builder (nn.Sequential (.dim batch (.dim 1 (.dim 4 (.dim 4 .scalar)))) (.dim batch (.dim 2 .scalar))) :=
+  let cfg : nn.models.CNNConfig 2 :=
     { batch := batch
       inChannels := 1
       spatial := #v[4, 4]
@@ -76,8 +76,8 @@ def usage : String :=
     , "  --seed N"
     , "  --batch N"
     , "  --steps N"
-    , "  --dtype float|float32|ieee32"
-    , "  --backend eager|compiled"
+    , "  --scalar float32|ieee32-exec|complex64"
+    , "  --execution eager|typed-graph"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "  --show-backend                    print backend capsules as they execute"
     , "  --log PATH"
@@ -95,7 +95,7 @@ def main (args : List String) : IO Unit := do
     _root_.NN.Examples.Quickstart.parseRuntimeTrain
       "SimpleCNNTrain" args defaultLogJson 1 (optim.adam { lr := 0.03 })
   let trainer := Trainer.new (mkModel (batch := batch)) <|
-    Trainer.Config.fromRunConfig parsed.run .classification (seed := seed)
+    Trainer.Config.fromRunConfig parsed.run .oneHotCrossEntropy (seed := seed)
 
   let trainData :=
     Data.batchDataset batch Data.Bands.dataset

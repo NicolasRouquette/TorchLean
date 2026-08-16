@@ -78,7 +78,7 @@ abbrev nTotal : Nat := 200
 
 /-- Small CNN (no BatchNorm): Conv -> ReLU -> Pool -> Conv -> ReLU -> Pool -> Linear(10). -/
 def mkModel {batch : Nat} :
-    nn.M (nn.Sequential (.dim batch (.dim channels (.dim height (.dim width .scalar)))) (shape![batch, classes])) :=
+    nn.Builder (nn.Sequential (.dim batch (.dim channels (.dim height (.dim width .scalar)))) (shape![batch, classes])) :=
   let outC1 : Nat := 16
   let outC2 : Nat := 32
   let spatial0 : Vector Nat 2 := #v[height, width]
@@ -110,7 +110,7 @@ def mkModel {batch : Nat} :
     nn.conv (leading := .dim batch .scalar) (inChannels := outC1) spatial2 conv2,
     nn.relu,
     nn.maxPool (leading := .dim batch .scalar) (channels := outC2) spatial3 pool,
-    nn.lift (nn.heads.classifierBatch (n := batch)
+    nn.lift (nn.heads.classifier (leading := .dim batch .scalar)
       (s := Spec.Shape.ofList (outC2 :: spatial4.toList)) classes)
   ]
 
@@ -119,12 +119,12 @@ def source (xPath yPath : System.FilePath) (nRows : Nat) : Data.LabeledSource :=
   Data.LabeledSource.ofPaths .npy xPath yPath nRows [channels, height, width] classes
 
 def trainDataset (xPath yPath : System.FilePath) (nRows trainSize seed : Nat) :
-    Trainer.Dataset (.dim channels (.dim height (.dim width .scalar))) (.dim classes .scalar) :=
+    Trainer.DataSource (.dim channels (.dim height (.dim width .scalar))) (.dim classes .scalar) :=
   (Data.randomSplitDataset trainSize (Data.labeledDataset (source xPath yPath nRows)) seed).1
 
 /-- Runtime-polymorphic test split used for `--check-only` reporting. -/
 def testDataset (xPath yPath : System.FilePath) (nRows trainSize seed : Nat) :
-    Trainer.Dataset (.dim channels (.dim height (.dim width .scalar))) (.dim classes .scalar) :=
+    Trainer.DataSource (.dim channels (.dim height (.dim width .scalar))) (.dim classes .scalar) :=
   (Data.randomSplitDataset trainSize (Data.labeledDataset (source xPath yPath nRows)) seed).2
 
 /-- Command-line help for the CIFAR10-style NPY loader tutorial. -/
@@ -147,8 +147,8 @@ def usage : String :=
     , "  --batch N"
     , "  --lr LR"
     , "  --check-only"
-    , "  --dtype float|float32|ieee32"
-    , "  --backend eager|compiled"
+    , "  --scalar float32|ieee32-exec|complex64"
+    , "  --execution eager|typed-graph"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "  --show-backend                    print backend capsules as they execute"
     ]
@@ -196,7 +196,7 @@ def main (args : List String) : IO Unit := do
   let run ← Trainer.RunConfig.parseRuntimeArgsOrThrow label args
     { optimizer := optim.adam { lr := lr } }
   let trainer := Trainer.new (mkModel (batch := eb.batch)) <|
-    Trainer.Config.fromRunConfig run .classification (seed := seed)
+    Trainer.Config.fromRunConfig run .oneHotCrossEntropy (seed := seed)
 
   IO.println "== CIFAR10-style NPY CNN tutorial =="
   IO.println s!"data_dir   = {dataDir}"
@@ -239,7 +239,7 @@ def main (args : List String) : IO Unit := do
             s!"train_size={trainSize}", s!"test_size={dsTest.size}",
             s!"epochs={eb.epochs}", s!"batch={eb.batch}", s!"lr={lr}"] }
     trained.printSummary
-    let blank : Tensor.T Float (.dim channels (.dim height (.dim width .scalar))) :=
+    let blank : Tensor Float (.dim channels (.dim height (.dim width .scalar))) :=
       Tensor.fill 0.0 (.dim channels (.dim height (.dim width .scalar)))
     trained.printPrediction "blank" (Tensor.repeatBatch eb.batch blank)
 

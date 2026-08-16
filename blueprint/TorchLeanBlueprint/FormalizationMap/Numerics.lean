@@ -169,7 +169,7 @@ field of {uses "numerical_optimizer_contract"}[the supplied optimizer contract].
 
 :::definition "checked_numerical_certificate" (parent := "runtime_error_bounds") (lean := "Proofs.RuntimeApprox.NumericalCertificate.CheckedCertificate")
 A checked numerical certificate retains the submitted artifact together with the canonical source
-ranges, node-range trace, accepted backend plan, and proofs that the recomputed trace and audit
+ranges, node-range trace, accepted kernel plan, and proofs that the recomputed trace and audit
 match the artifact.
 :::
 

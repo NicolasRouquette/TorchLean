@@ -136,11 +136,11 @@ The common runtime parser recognizes:
   * `--device auto|cpu|cuda|...`
   * requested execution device
 *
-  * `--dtype float|ieee754exec`
+  * `--scalar float32|ieee32-exec|complex64`
   * scalar runtime, where the command supports it
 *
-  * `--backend eager|compiled`
-  * eager autograd or proof-linked compiled host path where supported
+  * `--execution eager|typed-graph`
+  * eager autograd or shape-indexed typed graph host path where supported
 *
   * `--seed N`
   * explicit random seed
@@ -153,13 +153,13 @@ The parser also accepts names such as `rocm`, `metal`, `wasm`, `tpu`, `trainium`
 `external`. They are planning targets in the current registry, not completed runtimes. Requesting
 one fails validation rather than silently falling back to CPU.
 
-Most full model applications call the native `Float` trainer. They accept `--dtype float` only.
-Some quickstarts and numerical workflows are scalar-polymorphic and accept `--dtype ieee754exec`.
-The command decides; the presence of a name in the shared parser does not imply universal support.
+Most model commands use native `Float32`. Scalar-polymorphic quickstarts and numerical workflows
+also accept `--scalar ieee32-exec`. A command reports an error when it cannot implement the selected
+semantics; the shared parser never treats a recognized name as proof that every runtime supports it.
 
-`--backend compiled` selects the proof-linked host path for commands that implement that
-interpretation. It does not request a generic CUDA graph mode; CUDA-only specialized applications
-may require eager execution.
+`--execution typed-graph` selects the shape-indexed graph path for commands that implement it. It
+does not request a generic CUDA graph mode, perform compiler optimization, or by itself establish a
+derivative theorem. CUDA-only specialized applications may require eager execution.
 
 # CPU And CUDA Builds
 

@@ -214,7 +214,7 @@ If `--key` / `--key=...` is already present, the argument list is returned uncha
 first positional argument is rewritten to `--key=<path>`. If there is no positional path, the
 provided default path is inserted.
 -/
-def defaultPathFlagFromPositional
+def normalizePathFlag
     (args : List String)
     (key default : String) :
     List String :=
@@ -256,7 +256,7 @@ def takeNatFlagDefault
 Parse an optional natural-number flag, fall back to a default, and require that the selected value
 is strictly positive.
 -/
-def takePositiveNatFlagDefault
+def takePositiveNatFlag
     (args : List String)
     (exeName : String)
     (key : String)
@@ -393,7 +393,7 @@ Accepted forms:
 When `--key` is followed by a non-boolean token, the flag is treated as a bare switch and the next
 token is left for the caller. Duplicate occurrences are rejected.
 -/
-partial def takeBoolFlagOptionalValueOnce (args : List String) (key : String) :
+partial def takeSwitchOnce (args : List String) (key : String) :
     Except String (Option Bool × List String) := do
   let keyTok := s!"--{key}"
   let eqPrefix := s!"--{key}="
@@ -425,16 +425,16 @@ partial def takeBoolFlagOptionalValueOnce (args : List String) (key : String) :
   go args none []
 
 /-- Parse a bare-or-valued boolean flag and fall back to the provided default. -/
-def takeBoolFlagOptionalValueDefault (args : List String) (key : String) (default : Bool) :
+def takeSwitchDefault (args : List String) (key : String) (default : Bool) :
     Except String (Bool × List String) := do
-  let (value?, rest) ← takeBoolFlagOptionalValueOnce args key
+  let (value?, rest) ← takeSwitchOnce args key
   pure (value?.getD default, rest)
 
 /--
 Parse an optional floating-point flag, fall back to the provided default, and require that the
 selected value is strictly positive.
 -/
-def takePositiveFloatFlagDefault
+def takePositiveFloatFlag
     (args : List String)
     (exeName : String)
     (key : String)
@@ -449,7 +449,7 @@ def takePositiveFloatFlagDefault
 Parse an optional floating-point flag, fall back to the provided default, and require that the
 selected value is nonnegative.
 -/
-def takeNonnegativeFloatFlagDefault
+def takeNonnegativeFloatFlag
     (args : List String)
     (exeName : String)
     (key : String)
@@ -593,7 +593,7 @@ def positiveNatFlag
     (name : String)
     (default : Nat) :
     IO (Nat × List String) :=
-  orThrow exeName <| takePositiveNatFlagDefault args exeName name default
+  orThrow exeName <| takePositiveNatFlag args exeName name default
 
 /-- Parse an optional filesystem path. -/
 def pathFlag? (exeName : String) (args : List String) (name : String) :

@@ -16,9 +16,9 @@ import Mathlib.Algebra.Order.Algebra
 
 User-facing tensor API for TorchLean.
 
-This is the implementation leaf behind the public `NN.Tensor` umbrella. It is the ergonomic layer
-that sits on top of the spec-first tensor semantics in `NN.Spec.*`. It does not introduce new math;
-it provides constructors and syntax intended for examples, tests, compact models, and introductory examples.
+This module implements the constructors and notation exported through the public `NN.Tensor`
+umbrella. The tensor type and its mathematical operations remain those of `NN.Spec`; this file
+only supplies convenient construction and display functions.
 
 Typical responsibilities here:
 
@@ -86,11 +86,9 @@ abbrev _root_.Spec.Tensor.item {α : Type} (t : Spec.Tensor α Spec.Shape.scalar
 
 /-- Convert a runtime list of dimensions like `[2, 3, 4]` into a nested `Shape`.
 
-Why this exists:
-- In the spec layer we usually *carry the shape in the type* (great for safety).
-- In “API land” we often start from lists (CLI args, JSON, compact examples, …).
-
-`shapeOfDims` is the bridge between those representations.
+Shape-indexed definitions carry dimensions in their types, while parsers and command-line inputs
+usually provide dimensions as lists. `shapeOfDims` converts the latter representation to the
+former.
 -/
 @[reducible] def shapeOfDims : List Nat → Shape
   | [] => .scalar
@@ -127,12 +125,13 @@ def oneHot {α : Type} [Zero α] [One α] (n : Nat) (k : Fin n) :
     Spec.Tensor α (.dim n .scalar) :=
   Spec.Tensor.dim (fun i => Spec.Tensor.scalar (if decide (i = k) then (1 : α) else 0))
 
-/-- One-hot vector using a raw `Nat` index.
+/-- One-hot vector using a raw `Nat` index, or the zero vector when the index is out of range.
 
 If $k\ge n$, we return the all-zeros vector instead of failing.
 This is convenient in data-conversion code where carrying a `Fin n` would obscure the caller.
 -/
-def oneHotNat {α : Type} [Zero α] [One α] (n k : Nat) : Spec.Tensor α (.dim n .scalar) :=
+def oneHotNatOrZero {α : Type} [Zero α] [One α] (n k : Nat) :
+    Spec.Tensor α (.dim n .scalar) :=
   if h : k < n then
     oneHot (α := α) n ⟨k, h⟩
   else
@@ -161,17 +160,16 @@ def matrix (α : Type := Float) [Inhabited α] (xss : List (List α)) :
   | some t => .ok t
   | none => .error "matrix: empty or ragged nested lists"
 
-/-! ### Ragged-friendly 2D constructors -/
+/-! ### Rectangularizing two-dimensional data -/
 
-/-- 2-D tensor from nested lists, padding/truncating each row to `nCols`.
+/-- Resize every row to `nCols`, padding with `default` or dropping trailing entries.
 
-This is the permissive sibling of `matrix`: it never fails, but it will silently pad with
-`default` (and drop extra entries beyond `nCols`). This is useful when you *intend* ragged inputs
-(e.g. batching variable-length sequences after padding).
+Unlike `matrix`, this constructor accepts ragged input. It is intended for boundaries where the
+caller has deliberately chosen a fixed width, such as a padded sequence batch.
 
 PyTorch analogy: closer to `pad_sequence(..., batch_first=True)` followed by `torch.tensor`.
 -/
-def matrixPadTo (α : Type := Float) [Inhabited α] (nCols : Nat) (xss : List (List α)) :
+def matrixResize (α : Type := Float) [Inhabited α] (nCols : Nat) (xss : List (List α)) :
     Spec.Tensor α (.dim xss.length (.dim nCols .scalar)) :=
   Spec.matrixFromRowsPadTo (nCols := nCols) xss
 
@@ -517,16 +515,28 @@ def dynamicOfList {α : Type} (dims : List Nat) (xs : List α) : Except String (
   let t ← ofList (α := α) dims xs
   pure { s := shapeOfDims dims, t := t }
 
-/-! ## Common dtype helpers (from Float literals) -/
+/-! ## Common scalar constructors from host literals -/
 
-/-- 1-D tensor from Float literals, cast into the executable IEEE-754 FP32 backend. -/
+/-- Construct a native `Float32` vector from host `Float` literals. -/
 def float32Vector (xs : List Float) :
-    Spec.Tensor (TorchLean.Floats.F32 .ieee754Exec) (.dim xs.length .scalar) :=
+    Spec.Tensor Float32 (.dim xs.length .scalar) :=
+  Spec.mapTensor Float.toFloat32 (vector (α := Float) xs)
+
+/-- Construct a native `Float32` matrix from host `Float` literals. -/
+def float32Matrix (xss : List (List Float)) :
+    Except String (Spec.Tensor Float32
+      (.dim xss.length (.dim (if xss.isEmpty then 0 else xss.head!.length) .scalar))) := do
+  let t ← matrix (α := Float) xss
+  pure (Spec.mapTensor Float.toFloat32 t)
+
+/-- Construct an `IEEE32Exec` vector from host `Float` literals. -/
+def ieee32ExecVector (xs : List Float) :
+    Spec.Tensor TorchLean.Floats.IEEE32Exec (.dim xs.length .scalar) :=
   Spec.mapTensor TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat (vector (α := Float) xs)
 
-/-- 2-D tensor from Float literals, cast into the executable IEEE-754 FP32 backend. -/
-def float32Matrix (xss : List (List Float)) :
-    Except String (Spec.Tensor (TorchLean.Floats.F32 .ieee754Exec)
+/-- Construct an `IEEE32Exec` matrix from host `Float` literals. -/
+def ieee32ExecMatrix (xss : List (List Float)) :
+    Except String (Spec.Tensor TorchLean.Floats.IEEE32Exec
       (.dim xss.length (.dim (if xss.isEmpty then 0 else xss.head!.length) .scalar))) := do
   let t ← matrix (α := Float) xss
   pure (Spec.mapTensor TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat t)
@@ -543,6 +553,10 @@ class DTypeName (α : Type) where
 /-- Display name for `Float` tensors in `NN.Tensor.print`. -/
 instance : DTypeName Float where
   name := "Float"
+
+/-- Display name for native binary32 tensors. -/
+instance : DTypeName Float32 where
+  name := "Float32"
 /-- Display name for rational tensors in `NN.Tensor.print`. -/
 instance : DTypeName ℚ where
   name := "ℚ"
@@ -579,7 +593,7 @@ instance (priority := 10) {α : Type} [ToString α] : TensorPrintable α where
 instance (priority := 100) : TensorPrintable ℝ where
   pretty := fun {_s} _ =>
     .error
-      "Refusing to print `Tensor ℝ` (proof-level); cast to `Float`/`IEEE32Exec`/`ℚ` to display."
+      "Refusing to print `Tensor ℝ` (proof-level); cast to `Float`/`Float32`/`IEEE32Exec`/`ℚ` to display."
 
 /-- Printing is disabled by design for the proof-only rounding model `FP32`. -/
 instance (priority := 100) : TensorPrintable TorchLean.Floats.FP32 where

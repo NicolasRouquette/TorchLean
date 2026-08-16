@@ -43,13 +43,13 @@ Outward-rounded interval enclosure for the one-step discounted backup:
 
 `reward + γ * (1-done) * bootstrap`.
 
-This is the interval analogue of `discountedBackupIEEE32ExecChecked` (but purely functional, and
+This is the interval analogue of `discountedBackupChecked` (but purely functional, and
 returning an enclosure rather than failing).
 
 Reference:
 - Sutton and Barto, *Reinforcement Learning: An Introduction* (discounted backups / returns).
 -/
-def discountedBackupInterval32
+def discountedBackupInterval
     (reward gamma bootstrap : Float32Exec) (done : Bool) : Interval32 :=
   if done then
     TorchLean.Floats.IEEE754.IEEE32Exec.Interval32.point reward
@@ -66,14 +66,14 @@ Outward-rounded interval enclosure for the TD residual:
 
 `reward + γ * (1-done) * nextValue - value`.
 
-This is the interval analogue of `tdResidualIEEE32ExecChecked`.
+This is the interval analogue of `tdResidualChecked`.
 
 Reference:
 - Sutton and Barto, *Reinforcement Learning: An Introduction* (TD error / Bellman error).
 -/
-def tdResidualInterval32
+def tdResidualInterval
     (value reward gamma nextValue : Float32Exec) (done : Bool) : Interval32 :=
-  let target : Interval32 := discountedBackupInterval32 reward gamma nextValue done
+  let target : Interval32 := discountedBackupInterval reward gamma nextValue done
   TorchLean.Floats.IEEE754.IEEE32Exec.Interval32.sub target
     (TorchLean.Floats.IEEE754.IEEE32Exec.Interval32.point value)
 
@@ -87,7 +87,7 @@ still provides a useful non-finite/divergence detector for the PPO objective.
 Reference:
 - Schulman et al., "Proximal Policy Optimization Algorithms" (2017): https://arxiv.org/abs/1707.06347
 -/
-def ppoClippedObjectiveFromRatioInterval32
+def ppoClippedObjectiveFromRatioInterval
     (ratio advantage clipEps : Float32Exec) : Interval32 :=
   let one : Float32Exec := (1 : Float32Exec)
   -- Clipping thresholds are computed as float32 values (round-to-nearest). The main goal of this
@@ -112,13 +112,13 @@ Outward-rounded interval enclosure for fixed-horizon discounted returns.
 If you pass point intervals at the leaves (`Interval32.point`), the output is a conservative
 enclosure for the exact real return recursion (interpreting leaves via `IEEE32Exec.toReal`).
 
-This is an *executable* diagnostic: you can run it alongside `discountedReturnsVecFromIEEE32ExecChecked`
+This is an *executable* diagnostic: you can run it alongside `discountedReturnsChecked`
 to detect blow-ups (endpoints becoming `±Inf` or `Valid` failing).
 
 Reference:
 - Sutton and Barto, *Reinforcement Learning: An Introduction* (returns / bootstrapping).
 -/
-def discountedReturnsIntervals32 {n : Nat}
+def discountedReturnsIntervals {n : Nat}
     (gamma : Float32Exec) (rewards : Tensor Float32Exec (.dim n .scalar))
     (bootstrap : Float32Exec := (0 : Float32Exec)) :
     Tensor Interval32 (.dim n .scalar) :=
@@ -144,13 +144,13 @@ def discountedReturnsIntervals32 {n : Nat}
 Outward-rounded interval enclosure for fixed-horizon $\operatorname{GAE}(\lambda)$.
 
 This is useful as a coarse numerical diagnostic alongside
-`generalizedAdvantageEstimationVecIEEE32ExecChecked`.
+`generalizedAdvantageEstimationChecked`.
 
 Reference:
 - Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation"
   (2015): https://arxiv.org/abs/1506.02438
 -/
-def generalizedAdvantageEstimationIntervals32 {n : Nat}
+def generalizedAdvantageEstimationIntervals {n : Nat}
     (gamma lam : Float32Exec)
     (rewards values nextValues : Tensor Float32Exec (.dim n .scalar))
     (dones : Tensor Bool (.dim n .scalar)) :
@@ -202,7 +202,7 @@ Executable check: every `returns[i]` lies inside `intervals[i]` in the `IEEE32Ex
 This is an executable regression check for examples and tests; formal enclosure theorems live in
 `NN/Floats/Interval/*`.
 -/
-def returnsWithinIntervals32 {n : Nat}
+def returnsWithinIntervals {n : Nat}
     (returns : Tensor Float32Exec (.dim n .scalar))
     (intervals : Tensor Interval32 (.dim n .scalar)) : Bool :=
   let idxs : Array (Fin n) := Array.ofFn (fun i => i)

@@ -27,16 +27,16 @@ Most users should reach standard trainer optimizers through the application API:
 import NN
 open TorchLean
 
-let opt := optim.adamw
+let opt := optim.adamW
 let sched := schedulers.cosine
 ```
 
 The high-level trainer config exposes SGD, momentum SGD, AdaGrad, RMSProp, Adam, AdamW, and
 Adadelta. Optimizer-adjacent extension points use explicit runtime names:
 
-- `optim.runtimeMuon` is the runtime Muon optimizer. It requires an orthogonalization backend
+- `optim.muon.optimizer` is the runtime Muon optimizer. It requires an orthogonalization backend
   because the backend output is part of the mathematical update.
-- `optim.galore.projectedSGD` is the GaLore-style projected-gradient path. The projection is
+- `optim.galore.sgd` is the GaLore-style projected-gradient path. The projection is
   explicit, and the optimizer applied after projection is still named.
 
 Import `NN.API` and use `TorchLean.optim` and `TorchLean.schedulers`. Runtime implementation files

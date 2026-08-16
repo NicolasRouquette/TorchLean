@@ -84,7 +84,7 @@ The executable call is:
 
 ```
 def example : IO Unit := do
-  let x : Tensor.T Float (shape![2]) :=
+  let x : Tensor Float (shape![2]) :=
     tensor! [0.5, -1.2]
   let (value, grad) ←
     autograd.func.valueAndGradScalar
@@ -159,9 +159,9 @@ def square :
   fun x => nn.functional.square x
 
 def vjpExample : IO Unit := do
-  let x : Tensor.T Float (shape![2]) :=
+  let x : Tensor Float (shape![2]) :=
     tensor! [0.5, -1.2]
-  let seed : Tensor.T Float (shape![2]) :=
+  let seed : Tensor Float (shape![2]) :=
     tensor! [1.0, 1.0]
   let dx ←
     autograd.func.vjp
@@ -238,13 +238,13 @@ vjpOutParams (seed=ones) db =
 The model API returns a dependent parameter pack:
 
 ```
-let dparams ←
-  autograd.model.vjpParams
+let dState ←
+  autograd.model.vjpState
     (alpha := Float)
     model params x seedOut
 ```
 
-`dparams` has exactly the shapes and order of `params`. There is no mutable `.grad` field that might
+`dState` has exactly the shapes and order of `params`. There is no mutable `.grad` field that might
 contain stale values from a previous reverse pass.
 
 # A Loss Turns Output Derivatives Into Parameter Gradients
@@ -256,8 +256,8 @@ def loss :
     autograd.model.OutputLoss outputShape outputShape :=
   autograd.model.OutputLoss.mse
 
-let (lossValue, dparams) ←
-  autograd.model.valueAndGradParamsScalar
+let (lossValue, dState) ←
+  autograd.model.valueAndGradStateScalar
     (alpha := Float)
     model loss params x target
 ```
@@ -275,11 +275,11 @@ The quickstart's concrete result is:
 
 ```
 loss(mse) = 0.165133
-gradParams (mse) gW =
+gradState (mse) gW =
   [[-0.156667, 0.376000],
    [-0.160000, 0.384000],
    [0.070000, -0.168000]]
-gradParams (mse) gb =
+gradState (mse) gb =
   [-0.313333, -0.320000, 0.140000]
 ```
 
@@ -296,11 +296,11 @@ The quickstart checks both effects:
 loss(mse) = 0.165133
 loss(mse ∘ detach) = 0.165133
 
-gradParams (mse ∘ detach) gW =
+gradState (mse ∘ detach) gW =
   [[0.000000, 0.000000],
    [0.000000, 0.000000],
    [0.000000, 0.000000]]
-gradParams (mse ∘ detach) gb =
+gradState (mse ∘ detach) gb =
   [0.000000, 0.000000, 0.000000]
 ```
 
@@ -375,8 +375,8 @@ third additionally needs a runtime refinement or an explicit backend boundary. A
 use floating-point rounding and a different reduction tree even when it implements the same formal
 VJP equation.
 
-The `autograd.func` helpers execute the compiled derivative machinery directly. Trainer
-eager/compiled selection and native capsule selection are separate runtime choices. Primals,
+The `autograd.func` helpers execute the lowered derivative graph directly. Trainer
+eager/typed-graph selection and native capsule selection are separate runtime choices. Primals,
 cotangents, parameters, and returned derivatives follow the scalar contract described in
 *Tensors And Shapes*.
 
@@ -440,7 +440,7 @@ The derivative APIs differ in what they seed and what they return:
   * full second-derivative array
   * small scalar problems
 *
-  * `hvpParams`
+  * `hvpState`
   * one parameter-shaped direction
   * Hessian-vector product
   * curvature information without a full Hessian
@@ -465,14 +465,14 @@ autograd.func.hessian
 For checked models:
 
 ```
-autograd.model.gradParams
+autograd.model.gradState
 autograd.model.gradInputs
 autograd.model.valueAndGrads
-autograd.model.vjpParams
+autograd.model.vjpState
 autograd.model.vjpInput
-autograd.model.jacrevParams
-autograd.model.jvpParams
-autograd.model.hvpParams
+autograd.model.jacrevState
+autograd.model.jvpState
+autograd.model.hvpState
 ```
 
 The next page applies the same machinery to a scientific equation where a wrong derivative sign is

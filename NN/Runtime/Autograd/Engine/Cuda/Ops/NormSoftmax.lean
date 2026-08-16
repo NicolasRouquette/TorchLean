@@ -72,7 +72,7 @@ BatchNorm for a single channel-first image `(C,H,W)` (no batch axis).
 We normalize per-channel across the spatial dimension `H*W`, reusing the same math as layer-norm
 by treating the buffer as a `(channels, height*width)` matrix.
 -/
-def batchnormChannelFirst
+def batchNormChannelFirst
   {channels height width : Nat} (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0)
   (t : Tape) (xId gammaId betaId : Nat) : Result (Tape × Nat) := do
   have _ := h_c

@@ -358,18 +358,14 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"\bModule\.instantiateConfigured\b"),
-        "public examples should use `Module.instantiate`, `Module.instantiateMse`, or `Module.instantiateCrossEntropyOneHot`, not `Module.instantiateConfigured` directly.",
+        "public examples should use `Module.instantiate` or the `Trainer` API, not `Module.instantiateConfigured` directly.",
     ),
     (
         re.compile(r"\bTorchLean\.Module\.run\b"),
-        "public examples should use `Runtime.runFloat` or `Runtime.withOptions`, not the raw `TorchLean.Module.run` dispatcher.",
+        "public examples should use the `Trainer` API or `Module.Command.run`, not a removed raw `TorchLean.Module.run` dispatcher.",
     ),
     (
-        re.compile(r"\bModule\.(withMseModel|withCrossEntropyOneHotModel|withScalarLossModel)\b"),
-        "public model/example training should use `Trainer.*` handles, not raw `Module.with*Model` setup.",
-    ),
-    (
-        re.compile(r"\bModule\.(lossScalar|optimizerStep)\b"),
+        re.compile(r"\bModule\.(lossValue|optimizerStep)\b"),
         "public model/example training should use trained handles (`trained.predict`, callbacks, or `verify`), not raw module stepping.",
     ),
     (
@@ -419,7 +415,7 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "public examples should use `Trainer.new ... { task := ... }`; specialized `Trainer.*` constructors are removed.",
     ),
     (
-        re.compile(r"\bTrainer\.(Regression|Classifier|CrossEntropy|Custom)(\.|\b)"),
+        re.compile(r"\bTrainer\.(Regression|Classifier|OneHotCrossEntropy|Custom)(\.|\b)"),
         "public examples should stay on the unified `Trainer` API, not specialized trainer implementation handles.",
     ),
     (
@@ -444,15 +440,20 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"\(\s*\{[^}]*optimizer\s*:=.*\}\s*:\s*Trainer\.RunConfig\s*\)\.withOptions\s+opts"),
-        "public examples should use `Trainer.runConfig opts { optimizer := ... }`, not a type-ascribed RunConfig followed by `.withOptions opts`.",
+        "public examples should use `Trainer.RunConfig.ofRuntimeOptions opts { optimizer := ... }`, not a type-ascribed RunConfig followed by `.withRuntimeOptions opts`.",
     ),
     (
-        re.compile(r"\b(backend := opts\.backend|device := if opts\.usesCuda|fastKernels := opts\.fastKernels|fastGpuMatmulPrecision := opts\.fastGpuMatmulPrecision)\b"),
-        "public examples should use `Trainer.runConfig opts { ... }` or `Trainer.runtimeSettings opts { ... }` instead of manually copying runtime fields from `opts`.",
+        re.compile(
+            r"\b(execution := opts\.execution|device := opts\.device|"
+            r"backendProfile\? := opts\.backendProfile\?|device := if opts\.usesCuda|"
+            r"fastKernels := opts\.fastKernels|"
+            r"fastGpuMatmulPrecision := opts\.fastGpuMatmulPrecision)\b"
+        ),
+        "public examples should use `Trainer.RunConfig.ofRuntimeOptions opts { ... }` instead of manually copying runtime fields from `opts`.",
     ),
     (
         re.compile(r"\bnn\.(mseScalarModuleDef|crossEntropyOneHotScalarModuleDef)\b"),
-        "public examples should use public `Module.instantiate*` helpers instead of spelling raw loss-module defs.",
+        "public examples should use public `Module.instantiate*` helpers instead of spelling raw objective definitions.",
     ),
     (
         re.compile(r"\bfun\s+\{α\}"),
@@ -492,7 +493,7 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"\bfit\.fit\.predict(Batch)?\b"),
-        "public stream examples should use `trained.predict` / `trained.predictBatch`; do not expose the nested trained-handle field.",
+        "public stream examples should use `trained.predict` / `trained.predictMany`; do not expose internal training state.",
     ),
     (
         re.compile(r"\bfit\.curve\.values\b"),
@@ -504,11 +505,11 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"\bTrainer\.FitSummary\.parseFloat\?\b"),
-        "public examples should use `Trainer.TrainSummary.requireAndPrintFloatLosses` when numeric losses are required, not hand-rolled optional parsing.",
+        "public examples should use `Trainer.TrainSummary.printFloatLosses` when numeric losses are required, not hand-rolled optional parsing.",
     ),
     (
         re.compile(r"\bTrainer\.FitSummary\.requireFloatLosses\b"),
-        "public examples should use `Trainer.TrainSummary.requireAndPrintFloatLosses` when they need numeric losses for logs.",
+        "public examples should use `Trainer.TrainSummary.printFloatLosses` when they need numeric losses for logs.",
     ),
 ]
 
@@ -1212,6 +1213,28 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         ),
         (
             re.compile(
+                r"\b(?:oneHotNat|oneHotToken|oneHotSequence|matrixPadTo|vectorFromArray|"
+                r"flattenKeep0|instantiateHostFloat|curveHostFloat|trainFixedCurveHostFloat|"
+                r"RawDataLoader|EmbeddingOptions|oneHotAccuracyBatched|oneHotAccuracyLoader|"
+                r"oneHotMetricsBatched|classProbesBatched|ScalarModuleDef|ScalarModule|"
+                r"ppoActorCriticScalarModuleDef|ScalarEvaluator|lossScalar|"
+                r"LossModuleDef|LossModule|LossEvaluator|lossModuleWithMode|lossModule)\b"
+            ),
+            "removed misleading API name found; use the canonical name that states its fallback or scalar semantics.",
+        ),
+        (
+            re.compile(r"\b(?:Runtime\.Autograd\.Torch|TorchLean)\.matmul\b"),
+            "the rank-two public operation is `mm`; reserve `matmul` for rank-polymorphic broadcasting semantics.",
+        ),
+        (
+            re.compile(
+                r"\b(?:flattenBatch|flattenBatchPrefix|classifierBatch|regressorBatch|"
+                r"uniformND|maskND|randND|loadCsvTensorND)\b"
+            ),
+            "removed dimension-specific API name found; use `flattenLeading`, a head with an explicit leading shape, or the `*Dims` random constructor.",
+        ),
+        (
+            re.compile(
                 r"\b(?:NativeOptimizerCheckpoint|CudaAdamSchema|saveNativeOptimizerState|"
                 r"loadNativeOptimizerState|projectedSGDUpdate_identity_eq_sgd|"
                 r"update_identity_param_eq_momentumSGD)\b"
@@ -1459,9 +1482,9 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                     rel_posix.startswith("NN/Examples/")
                     or rel_posix.startswith("NN/Tests/")
                     or rel_posix.startswith("scripts/")
-                    # The compiled correctness proofs scope linter options locally to
+                    # The typed-graph correctness proofs scope linter options locally to
                     # keep proof scripts readable; warning here is usually not actionable.
-                    or rel_posix.startswith("NN/Runtime/Autograd/Compiled/IRExec/Correctness/")
+                    or rel_posix.startswith("NN/Runtime/Autograd/TypedGraph/IRExec/Correctness/")
                 ):
                     pass
                 else:

@@ -106,22 +106,16 @@ private lemma sum_fold_state_fst_eq {s : Shape} (epsElem : ℝ) (st : R × ℝ) 
             intro k st hk
             induction hn : n - k generalizing k st with
             | zero =>
-                have hk' : k = n := by
-                  have : n ≤ k := Nat.sub_eq_zero_iff_le.mp hn
-                  exact Nat.le_antisymm hk this
+                have hk' : k = n := by grind
                 subst k
                 simp [Spec.tensor_foldl_spec_go_of_not_lt]
             | succ m ih_go =>
-                have hlt : k < n := by
-                  have : 0 < n - k := by simp [hn]
-                  exact Nat.sub_pos_iff_lt.mp this
+                have hlt : k < n := by grind
                 have hk1 : k + 1 ≤ n := Nat.succ_le_of_lt hlt
                 rw [Spec.tensor_foldl_spec_go_of_lt (f := sumStep (β := β) (fexp := fexp) (rnd := rnd) epsElem)
                   (values := valuesR) (k := k) (acc := st) hlt]
                 rw [Spec.tensor_foldl_spec_go_of_lt (f := (· + ·)) (values := valuesR) (k := k) (acc := st.1) hlt]
-                have h_next : n - (k + 1) = m := by
-                  rw [Nat.sub_succ, hn]
-                  rfl
+                have h_next : n - (k + 1) = m := by grind
                 -- The recursive fold over the sub-tensor updates only the accumulator in `.1`.
                 have h_step :
                     (tensorFoldlSpec (sumStep (β := β) (fexp := fexp) (rnd := rnd) epsElem) st
@@ -196,22 +190,16 @@ private theorem approx_sum_fold_state {s : Shape} :
                 intro k accS st hk hAcc
                 induction hn : n - k generalizing k accS st with
                 | zero =>
-                    have hk' : k = n := by
-                      have : n ≤ k := Nat.sub_eq_zero_iff_le.mp hn
-                      exact Nat.le_antisymm hk this
+                    have hk' : k = n := by grind
                     subst k
                     simpa [Spec.tensor_foldl_spec_go_of_not_lt] using hAcc
                 | succ m ih_go =>
-                    have hlt : k < n := by
-                      have : 0 < n - k := by simp [hn]
-                      exact Nat.sub_pos_iff_lt.mp this
+                    have hlt : k < n := by grind
                     have hk1 : k + 1 ≤ n := Nat.succ_le_of_lt hlt
                     rw [Spec.tensor_foldl_spec_go_of_lt (f := sumStep (β := β) (fexp := fexp) (rnd := rnd) epsElem)
                       (values := valuesR) (k := k) (acc := st) hlt]
                     rw [Spec.tensor_foldl_spec_go_of_lt (f := (· + ·)) (values := valuesS) (k := k) (acc := accS) hlt]
-                    have h_next : n - (k + 1) = m := by
-                      rw [Nat.sub_succ, hn]
-                      rfl
+                    have h_next : n - (k + 1) = m := by grind
                     -- Apply the shape IH to fold over the current slice `valuesR ⟨k, hlt⟩`.
                     have hx_k :=
                       approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=

@@ -15,12 +15,12 @@ import Mathlib.Algebra.Order.Algebra
 
 TorchLean’s layer/model definitions are scalar-polymorphic: a model runs over whatever scalar type
 $\alpha$ you instantiate it with (for example `Float`, `IEEE32Exec`, or $\mathbb{R}$). A “real FFT”
-would normally *change* the scalar type (real $\to$ complex), but TorchLean’s `LayerDef` does not support changing the
+would normally *change* the scalar type (real $\to$ complex), but TorchLean’s `Layer` does not support changing the
 scalar type mid-model.
 
 So this module provides **complex-domain** transforms: `fft` and `ifft` as layers that assume the
 $\alpha$ already behaves like a complex field (for example `TorchLean.Complex
-IEEE32Exec`, selected via `--dtype=complex`).
+IEEE32Exec`, selected via `--scalar=complex64`).
 
 Implementation note: we define `fft`/`ifft` as multiplication by explicit DFT matrices (so they are
 purely built from existing ops like `const` and `matmul`).  This is correctness-first and keeps the
@@ -105,14 +105,14 @@ This is the most generally useful primitive for building N-D FFTs: you can permu
 front, call `fftLeadingAxis`, then permute back.
 -/
 def fftLeadingAxis (n : Nat) (rest : Shape) :
-    LayerDef (.dim n rest) (.dim n rest) :=
+    Layer (.dim n rest) (.dim n rest) :=
   let sIn : Shape := .dim n rest
   let cols : Nat := Spec.Shape.size rest
   let sMat : Shape := mat n cols
   have hSz : Spec.Shape.size sIn = Spec.Shape.size sMat := by
     simp [Spec.Shape.size, sIn, sMat, cols]
-  { paramShapes := []
-    initParams := .nil
+  { stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x =>
@@ -121,7 +121,7 @@ def fftLeadingAxis (n : Nat) (rest : Shape) :
             let f : Tensor α (mat n n) := dftMatrix (α := α) n
             let fR ← TorchLean.const (m := m) (α := α) (s := mat n n) f
             let yMat ←
-              TorchLean.matmul (m := m) (α := α)
+              TorchLean.mm (m := m) (α := α)
                 (mDim := n) (nDim := n) (pDim := cols) fR xMat
             TorchLean.reshape (m := m) (α := α) (s₁ := sMat) (s₂ := sIn) yMat hSz.symm)
   }
@@ -132,14 +132,14 @@ Inverse FFT along the outermost axis of a tensor (uses the inverse DFT matrix).
 See `fftLeadingAxis` for the implementation strategy.
 -/
 def ifftLeadingAxis (n : Nat) (rest : Shape) :
-    LayerDef (.dim n rest) (.dim n rest) :=
+    Layer (.dim n rest) (.dim n rest) :=
   let sIn : Shape := .dim n rest
   let cols : Nat := Spec.Shape.size rest
   let sMat : Shape := mat n cols
   have hSz : Spec.Shape.size sIn = Spec.Shape.size sMat := by
     simp [Spec.Shape.size, sIn, sMat, cols]
-  { paramShapes := []
-    initParams := .nil
+  { stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x =>
@@ -148,25 +148,25 @@ def ifftLeadingAxis (n : Nat) (rest : Shape) :
             let f : Tensor α (mat n n) := idftMatrix (α := α) n
             let fR ← TorchLean.const (m := m) (α := α) (s := mat n n) f
             let yMat ←
-              TorchLean.matmul (m := m) (α := α)
+              TorchLean.mm (m := m) (α := α)
                 (mDim := n) (nDim := n) (pDim := cols) fR xMat
             TorchLean.reshape (m := m) (α := α) (s₁ := sMat) (s₂ := sIn) yMat hSz.symm)
   }
 
 /-- FFT on matrices: apply the DFT along the leading dimension (`n×width`). -/
-abbrev fftMat (n width : Nat) : LayerDef (mat n width) (mat n width) :=
+abbrev fftMat (n width : Nat) : Layer (mat n width) (mat n width) :=
   fftLeadingAxis (n := n) (rest := .dim width .scalar)
 
 /-- Inverse FFT on matrices: apply the inverse DFT along the leading dimension (`n×width`). -/
-abbrev ifftMat (n width : Nat) : LayerDef (mat n width) (mat n width) :=
+abbrev ifftMat (n width : Nat) : Layer (mat n width) (mat n width) :=
   ifftLeadingAxis (n := n) (rest := .dim width .scalar)
 
 /-- Vector FFT layer, implemented as a DFT along the only non-scalar axis. -/
-abbrev fftVec (n : Nat) : LayerDef (vec n) (vec n) :=
+abbrev fftVec (n : Nat) : Layer (vec n) (vec n) :=
   fftLeadingAxis (n := n) (rest := .scalar)
 
 /-- Inverse vector FFT layer, implemented as an inverse DFT along the only non-scalar axis. -/
-abbrev ifftVec (n : Nat) : LayerDef (vec n) (vec n) :=
+abbrev ifftVec (n : Nat) : Layer (vec n) (vec n) :=
   ifftLeadingAxis (n := n) (rest := .scalar)
 
 namespace Internal
@@ -191,10 +191,10 @@ reaches depth `0`, applying `fftLeadingAxis`, then swapping back.
 
 If $\mathtt{depth}\ge\operatorname{rank}(s)$, this layer is the identity.
 -/
-def fftAtDepth : {s : Shape} → Nat → LayerDef s s
+def fftAtDepth : {s : Shape} → Nat → Layer s s
   | s, depth =>
-    { paramShapes := []
-      initParams := .nil
+    { stateShapes := []
+      initState := .nil
       forward := fun mode {α} _ _ =>
         fun {m} _ _ =>
           fun x =>
@@ -226,10 +226,10 @@ def fftAtDepth : {s : Shape} → Nat → LayerDef s s
     }
 
 /-- Inverse FFT along an axis at a given depth (see `fftAtDepth`). -/
-def ifftAtDepth : {s : Shape} → Nat → LayerDef s s
+def ifftAtDepth : {s : Shape} → Nat → Layer s s
   | s, depth =>
-    { paramShapes := []
-      initParams := .nil
+    { stateShapes := []
+      initState := .nil
       forward := fun mode {α} _ _ =>
         fun {m} _ _ =>
           fun x =>

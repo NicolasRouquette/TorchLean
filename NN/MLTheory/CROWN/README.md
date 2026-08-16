@@ -116,8 +116,8 @@ appropriate transfer and finite-precision refinement hypotheses.
 - `Cert/`: alpha/alpha-beta certificate structures.
 - `Lyapunov/`: controller and Lyapunov-oriented CROWN workflows. Imported numerical bounds support
   a theorem only after the caller proves `LyapunovCert.ValidFor`.
-  The two Lean-executed pipelines share compiled gradient search and loss-box verification through
-  `Lyapunov/TwoStage/CompiledLossAnalysis.lean` (`projectedGradientStep` and `checkLossBox`).
+  The two Lean-executed pipelines share lowered gradient search and loss-box verification through
+  `Lyapunov/TwoStage/LossAnalysis.lean` (`projectedGradientStep` and `checkLossBox`).
 - `Proofs/`: soundness theorems and proof layer overviews.
 - `Extras/`: optional helpers and proof toolboxes.
 - `Tactics/`: diagnostic commands for running an external producer and inspecting its certificates.

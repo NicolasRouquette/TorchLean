@@ -17,10 +17,10 @@ import Mathlib.Algebra.Order.Algebra
 
 Important note about TorchLean’s layer architecture:
 - TorchLean layers are scalar-polymorphic but **do not change scalar type** mid-model.
-- A real-valued FFT (real -> complex) therefore cannot be expressed as a `LayerDef` today.
+- A real-valued FFT (real -> complex) therefore cannot be expressed as a `Layer` today.
 
 So this implementation is intended to be instantiated over a complex scalar backend, e.g.:
-`--dtype=complex` (see `TorchLean.Runtime.DType`).
+`--scalar=complex64` (see `TorchLean.Runtime.ScalarMode`).
 
 Implementation note:
 `FFT1D` uses explicit DFT matrices (`matmul` with a constant matrix). This is
@@ -64,13 +64,13 @@ inductive Activation where
 
 /-- Reshape a `grid`-vector into a `grid×1` matrix. -/
 def reshapeVectorToMatrix (grid : Nat) :
-    LayerDef (vec grid) (mat grid 1) :=
+    Layer (vec grid) (mat grid 1) :=
   let s₁ : Shape := vec grid
   let s₂ : Shape := mat grid 1
   have h : Spec.Shape.size s₁ = Spec.Shape.size s₂ := by
     simp [Spec.Shape.size, s₁, s₂]
-  { paramShapes := []
-    initParams := .nil
+  { stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.reshape (m := m) (α := α) (s₁ := s₁) (s₂ := s₂) x h
@@ -78,13 +78,13 @@ def reshapeVectorToMatrix (grid : Nat) :
 
 /-- Inverse of `reshapeVectorToMatrix`: view a `grid×1` matrix back as a length-`grid` vector. -/
 def reshapeMatrixToVector (grid : Nat) :
-    LayerDef (mat grid 1) (vec grid) :=
+    Layer (mat grid 1) (vec grid) :=
   let s₁ : Shape := mat grid 1
   let s₂ : Shape := vec grid
   have h : Spec.Shape.size s₁ = Spec.Shape.size s₂ := by
     simp [Spec.Shape.size, s₁, s₂]
-  { paramShapes := []
-    initParams := .nil
+  { stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.reshape (m := m) (α := α) (s₁ := s₁) (s₂ := s₂) x h
@@ -96,22 +96,22 @@ def reshapeMatrixToVector (grid : Nat) :
 def matAffine
     (grid inC outC : Nat)
     (seedW seedB : Nat := 0) :
-    LayerDef (mat grid inC) (mat grid outC) :=
+    Layer (mat grid inC) (mat grid outC) :=
   let WShape : Shape := mat inC outC
   let bShape : Shape := vec outC
   let w0 : Tensor Float WShape :=
     Torch.Init.tensor (s := WShape) (sch := .uniform (-0.1) 0.1) (seed := seedW)
   let b0 : Tensor Float bShape :=
     Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
-  { paramShapes := [WShape, bShape]
-    initParams := Torch.tlistPair w0 b0
+  { stateShapes := [WShape, bShape]
+    initState := Torch.tlistPair w0 b0
     runtimeInit := some (.cons (.uniform (-0.1) 0.1 seedW) (.cons .zeros .nil))
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun w b x =>
           (show m (RefTy (m := m) (α := α) (mat grid outC)) from do
             let y ←
-              TorchLean.matmul (m := m) (α := α)
+              TorchLean.mm (m := m) (α := α)
                 (mDim := grid) (nDim := inC) (pDim := outC) x w
             let bb ←
               TorchLean.broadcastTo (m := m) (α := α)
@@ -127,13 +127,13 @@ abbrev spectralWShape (modes width : Nat) : Shape :=
 
 /-- Reshape `modes×width` to `modes×1×width` for `bmm` (mode-wise matmul). -/
 def reshapeModesMatToBmmIn (modes width : Nat) :
-    LayerDef (mat modes width) (.dim modes (.dim 1 (.dim width .scalar))) :=
+    Layer (mat modes width) (.dim modes (.dim 1 (.dim width .scalar))) :=
   let s₁ : Shape := mat modes width
   let s₂ : Shape := .dim modes (.dim 1 (.dim width .scalar))
   have h : Spec.Shape.size s₁ = Spec.Shape.size s₂ := by
     simp [Spec.Shape.size, s₁, s₂]
-  { paramShapes := []
-    initParams := .nil
+  { stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.reshape (m := m) (α := α) (s₁ := s₁) (s₂ := s₂) x h
@@ -141,13 +141,13 @@ def reshapeModesMatToBmmIn (modes width : Nat) :
 
 /-- Reshape `modes×1×width` back to `modes×width` after `bmm`. -/
 def reshapeBmmOutToModesMat (modes width : Nat) :
-    LayerDef (.dim modes (.dim 1 (.dim width .scalar))) (mat modes width) :=
+    Layer (.dim modes (.dim 1 (.dim width .scalar))) (mat modes width) :=
   let s₁ : Shape := .dim modes (.dim 1 (.dim width .scalar))
   let s₂ : Shape := mat modes width
   have h : Spec.Shape.size s₁ = Spec.Shape.size s₂ := by
     simp [Spec.Shape.size, s₁, s₂]
-  { paramShapes := []
-    initParams := .nil
+  { stateShapes := []
+    initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => TorchLean.reshape (m := m) (α := α) (s₁ := s₁) (s₂ := s₂) x h
@@ -167,7 +167,7 @@ def block
     (activation : Activation := .tanh)
     (seed : Nat := 0)
     (hModes : 2 * modes ≤ grid) :
-    LayerDef (mat grid width) (mat grid width) :=
+    Layer (mat grid width) (mat grid width) :=
   let wLowShape : Shape := spectralWShape modes width
   let wHighShape : Shape := spectralWShape modes width
   let wSkipShape : Shape := mat width width
@@ -189,8 +189,8 @@ def block
 
   let midLen : Nat := grid - 2 * modes
 
-  { paramShapes := [wLowShape, wHighShape, wSkipShape, bSkipShape]
-    initParams := Torch.tlistQuad wLow0 wHigh0 wSkip0 bSkip0
+  { stateShapes := [wLowShape, wHighShape, wSkipShape, bSkipShape]
+    initState := Torch.tlistQuad wLow0 wHigh0 wSkip0 bSkip0
     runtimeInit := some <| .cons (.uniform (-0.05) 0.05 seed) <|
       .cons (.uniform (-0.05) 0.05 (seed + 1)) <|
       .cons (.uniform (-0.05) 0.05 (seed + 2)) <| .cons .zeros .nil
@@ -204,7 +204,7 @@ def block
             let fiR ← TorchLean.const (m := m) (α := α) (s := mat grid grid) fi
 
             let xHat ←
-              TorchLean.matmul (m := m) (α := α)
+              TorchLean.mm (m := m) (α := α)
                 (mDim := grid) (nDim := grid) (pDim := width) fR x
 
             -- Low frequencies: rows [0, modes)
@@ -269,12 +269,12 @@ def block
               simpa [mat, hSum] using yHat'
 
             let ySpec ←
-              TorchLean.matmul (m := m) (α := α)
+              TorchLean.mm (m := m) (α := α)
                 (mDim := grid) (nDim := grid) (pDim := width) fiR yHat
 
             -- Skip connection in the original (spatial) domain
             let ySkip0 ←
-              TorchLean.matmul (m := m) (α := α)
+              TorchLean.mm (m := m) (α := α)
                 (mDim := grid) (nDim := width) (pDim := width) x wSkip
             let bSkipB ←
               TorchLean.broadcastTo (m := m) (α := α)
@@ -289,14 +289,14 @@ def block
 
 /-! ## Model constructor -/
 
-/-- `Seq.comp` preserves parameter order by list append. -/
-theorem paramShapes_comp {σ τ υ : Shape} (f : Seq σ τ) (g : Seq τ υ) :
-    Seq.paramShapes (f >>> g) = Seq.paramShapes f ++ Seq.paramShapes g := by
+/-- `Seq.comp` preserves model-state order by list append. -/
+theorem stateShapes_comp {σ τ υ : Shape} (f : Seq σ τ) (g : Seq τ υ) :
+    Seq.stateShapes (f >>> g) = Seq.stateShapes f ++ Seq.stateShapes g := by
   induction f with
   | id s =>
-      simp [Seq.comp, Seq.paramShapes]
+      simp [Seq.comp, Seq.stateShapes]
   | cons l rest ih =>
-      simp [Seq.comp, Seq.paramShapes, ih, List.append_assoc]
+      simp [Seq.comp, Seq.stateShapes, ih, List.append_assoc]
 
 /-- The `blocksSeq` helper from `model`, promoted to a named definition for reuse in lemmas. -/
 def blocksSeq
@@ -315,11 +315,11 @@ def blocksSeq
           (activation := activation) (seed := seed) (hModes := hModes))
 
 /--
-Closed-form parameter shapes for `blocks` repetitions of `block`.
+Closed-form model-state shapes for `blocks` repetitions of `block`.
 
-This is a convenience for documentation/lemmas: it matches `Seq.paramShapes (blocksSeq ...)`.
+This is a convenience for documentation and lemmas. It matches `Seq.stateShapes (blocksSeq ...)`.
 -/
-def blocksParamShapes (width modes blocks : Nat) : List Shape :=
+def blocksStateShapes (width modes blocks : Nat) : List Shape :=
   let wLow : Shape := spectralWShape modes width
   let wHigh : Shape := spectralWShape modes width
   let wSkip : Shape := mat width width
@@ -327,19 +327,19 @@ def blocksParamShapes (width modes blocks : Nat) : List Shape :=
   let blockShapes : List Shape := [wLow, wHigh, wSkip, bSkip]
   match blocks with
   | 0 => []
-  | Nat.succ k => blockShapes ++ blocksParamShapes (width := width) (modes := modes) (blocks := k)
+  | Nat.succ k => blockShapes ++ blocksStateShapes (width := width) (modes := modes) (blocks := k)
 
-/-- `Seq.paramShapes (blocksSeq ...)` matches the explicit list computed by `blocksParamShapes`. -/
-theorem blocksSeq_paramShapes (grid width modes blocks : Nat) (activation : Activation) (seed : Nat)
+/-- `Seq.stateShapes (blocksSeq ...)` agrees with the explicit state-shape list. -/
+theorem blocksSeq_stateShapes (grid width modes blocks : Nat) (activation : Activation) (seed : Nat)
     (hModes : 2 * modes ≤ grid) :
-    Seq.paramShapes (blocksSeq (grid := grid) (width := width) (modes := modes) (blocks := blocks)
+    Seq.stateShapes (blocksSeq (grid := grid) (width := width) (modes := modes) (blocks := blocks)
       (activation := activation) (seed := seed) (hModes := hModes))
-      = blocksParamShapes (width := width) (modes := modes) (blocks := blocks) := by
+      = blocksStateShapes (width := width) (modes := modes) (blocks := blocks) := by
   induction blocks with
   | zero =>
-      simp [blocksSeq, blocksParamShapes, Seq.paramShapes]
+      simp [blocksSeq, blocksStateShapes, Seq.stateShapes]
   | succ k ih =>
-      simp [blocksSeq, blocksParamShapes, Seq.paramShapes, ih, block, spectralWShape, mat, vec]
+      simp [blocksSeq, blocksStateShapes, Seq.stateShapes, ih, block, spectralWShape, mat, vec]
 
 /--
 Construct a small scalar->scalar 1D FNO model:
@@ -366,19 +366,19 @@ def model
         Seq.cons proj (Seq.cons reshapeOut (.id (vec grid)))
 
 /--
-Parameter-shape lemma for `model`.
+Model-state shape lemma for `model`.
 
 This can be useful when writing initialization/serialization code and wanting an explicit, stable
-shape list (analogous to inspecting parameter tensor shapes in PyTorch).
+shape list analogous to inspecting a PyTorch `state_dict`.
 -/
-theorem model_paramShapes (grid width modes blocks : Nat) (activation : Activation := .tanh)
+theorem model_stateShapes (grid width modes blocks : Nat) (activation : Activation := .tanh)
     (seed : Nat := 0) (hModes : 2 * modes ≤ grid) :
-    Seq.paramShapes (model (grid := grid) (width := width) (modes := modes) (blocks := blocks)
+    Seq.stateShapes (model (grid := grid) (width := width) (modes := modes) (blocks := blocks)
       (activation := activation) (seed := seed) (hModes := hModes)) =
       [mat 1 width, vec width] ++
-        blocksParamShapes (width := width) (modes := modes) (blocks := blocks) ++
+        blocksStateShapes (width := width) (modes := modes) (blocks := blocks) ++
         [mat width 1, vec 1] := by
-  simp [model, Seq.paramShapes, blocksSeq_paramShapes, paramShapes_comp,
+  simp [model, Seq.stateShapes, blocksSeq_stateShapes, stateShapes_comp,
     reshapeVectorToMatrix, reshapeMatrixToVector, matAffine]
 
 
@@ -443,7 +443,7 @@ def block
     (grid width modes : Nat)
     (seed : Nat := 0)
     (hModes : 2 * modes ≤ grid) :
-    LayerDef (mat grid width) (mat grid width) :=
+    Layer (mat grid width) (mat grid width) :=
   let wShape : Shape := _root_.Runtime.Autograd.TorchLean.NN.FNO1D.spectralWShape modes width
   let wSkipShape : Shape := mat width width
   let bSkipShape : Shape := vec width
@@ -458,8 +458,8 @@ def block
       simpa [two_mul] using hModes
     exact le_trans (Nat.le_add_right modes modes) hModesAdd
   let midLen : Nat := grid - 2 * modes
-  { paramShapes := [wShape, wShape, wShape, wShape, wSkipShape, bSkipShape]
-    initParams :=
+  { stateShapes := [wShape, wShape, wShape, wShape, wSkipShape, bSkipShape]
+    initState :=
       .cons (w0 0) <| .cons (w0 1) <| .cons (w0 2) <| .cons (w0 3) <|
         .cons wSkip0 <| .cons bSkip0 .nil
     runtimeInit := some <| .cons (.uniform (-0.04) 0.04 (seed + 0)) <|
@@ -480,9 +480,9 @@ def block
             let iSin ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) (s := mat grid grid)
               (idftSinMatrix (α := α) grid)
 
-            let xHatRe ← _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+            let xHatRe ← _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
               (mDim := grid) (nDim := grid) (pDim := width) fCos x
-            let xHatIm ← _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+            let xHatIm ← _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
               (mDim := grid) (nDim := grid) (pDim := width) fNegSin x
 
             let lowRe ← _root_.Runtime.Autograd.Torch.sliceLeadingAxisRange (m := m) (α := α)
@@ -567,13 +567,13 @@ def block
                   _ = grid := by simpa using (Nat.add_sub_of_le hModes)
               simpa [mat, hSum] using yHatIm'
 
-            let yCos ← _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+            let yCos ← _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
               (mDim := grid) (nDim := grid) (pDim := width) iCos yHatRe
-            let ySin ← _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+            let ySin ← _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
               (mDim := grid) (nDim := grid) (pDim := width) iSin yHatIm
             let ySpec ← _root_.Runtime.Autograd.Torch.sub (m := m) (α := α) (s := mat grid width) yCos ySin
 
-            let ySkip0 ← _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+            let ySkip0 ← _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
               (mDim := grid) (nDim := width) (pDim := width) x wSkip
             let bSkipB ← _root_.Runtime.Autograd.Torch.broadcastTo (m := m) (α := α)
               (s₁ := bSkipShape) (s₂ := mat grid width) Shape.BroadcastTo.proof bSkip

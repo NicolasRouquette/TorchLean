@@ -31,7 +31,7 @@ open Proofs.Autograd.Algebra
 /-!
 ## Internal Eager Session
 
-The eager backend keeps one mutable CPU tape, one mutable CUDA tape, the non-differentiable `Nat`
+The eager execution path keeps one mutable CPU tape, one mutable CUDA tape, the non-differentiable `Nat`
 environment, and the map from tape leaves back to trainable parameters. The public session-style API
 lives in `Runtime.Autograd.TorchLean.Session`; this module owns the lower-level state it delegates
 to.
@@ -79,6 +79,25 @@ instance (priority := 1000) : TensorConv Float where
       Runtime.Autograd.Cuda.Convert.unflattenFloatUnsafe (s := any.s) a
     pure { s := any.s, t := t }
   toFloat := fun x => pure x
+
+/-! #### Native Float32 implementation -/
+
+/-- Native binary32 conversions preserve the exact device wire representation. -/
+instance (priority := 1000) : TensorConv Float32 where
+  toAnyBuffer := fun {s} t => do
+    let asFloat : Tensor Float s := Spec.mapTensor Float32.toFloat t
+    let a := Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) asFloat
+    let b ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO a
+    pure { s := s, buf := b }
+  ofAnyBuffer := fun any => do
+    let a := Runtime.Autograd.Cuda.Buffer.toFloatArray any.buf
+    if a.size != Spec.Shape.size any.s then
+      throw <| IO.userError
+        s!"torch: cuda: bad buffer length (expected {Spec.Shape.size any.s}, got {a.size})"
+    let asFloat : Tensor Float any.s :=
+      Runtime.Autograd.Cuda.Convert.unflattenFloatUnsafe (s := any.s) a
+    pure { s := any.s, t := Spec.mapTensor Float.toFloat32 asFloat }
+  toFloat := fun x => pure x.toFloat
 
 /-! #### Executable IEEE32 host scalar implementation -/
 
@@ -219,11 +238,11 @@ def selectedCapsule {α : Type} (s : EagerSession α) (op : NN.Backend.BackendOp
   let planned ←
     match s.opts.planBackendOp op with
     | .ok planned => pure planned
-    | .error msg => throw <| IO.userError s!"torch: backend planning failed for `{op.name}`: {msg}"
+    | .error msg => throw <| IO.userError s!"torch: kernel selection failed for `{op.name}`: {msg}"
   let capsule := planned.capsule
   match capsule.validateEagerRequest op s.opts.device with
   | .ok () => pure ()
-  | .error msg => throw <| IO.userError s!"torch: invalid eager backend selection: {msg}"
+  | .error msg => throw <| IO.userError s!"torch: invalid backend selection during eager execution: {msg}"
   s.selectedBackends.set (selected ++ [planned])
   if s.opts.showBackend then
     let row := NN.Backend.KernelAudit.ofPlannedKernel
@@ -611,12 +630,12 @@ optimizer steps (e.g. SGD) can update parameters after `backward`.
 PyTorch comparison: like using a `torch.nn.Parameter` in a forward pass (it becomes a leaf in the
 autograd graph).
 
-When `s.opts.trackGradients = false`, the parameter is still registered as a leaf so CUDA cleanup
+When `s.opts.gradEnabled = false`, the parameter is still registered as a leaf so CUDA cleanup
 can recognize persistent parameter buffers, but the leaf itself is marked non-differentiable.
 -/
 def use {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
   (p : Param α sh) : IO (TensorRef α sh) := do
-  let requiresGrad := s.opts.trackGradients && p.requiresGrad
+  let requiresGrad := s.opts.gradEnabled && p.requiresGrad
   let id ←
     if Options.device s.opts == .cuda then
       let anyBuf ←
@@ -664,14 +683,14 @@ Record an external input tensor as a leaf on the tape.
 PyTorch comparison: like introducing a tensor into the autograd graph with a chosen
 `requires_grad` flag.
 
-The session-level `trackGradients` flag is a final gate on the caller's requested `requiresGrad`.
+The session-level `gradEnabled` flag is a final gate on the caller's requested `requiresGrad`.
 This keeps inference helpers from accidentally building a trainable tape even when a lower-level
 caller asks for a differentiable input.
 -/
 def input {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
   (v : Tensor α sh) (name : Option String := none) (requiresGrad : Bool := false) :
   IO (TensorRef α sh) := do
-  let requiresGrad := s.opts.trackGradients && requiresGrad
+  let requiresGrad := s.opts.gradEnabled && requiresGrad
   if Options.device s.opts == .cuda then
     let anyBuf ← CudaBridge.TensorConv.toAnyBuffer (α := α) (s := sh) v
     let t0 ← s.cudaTape.get

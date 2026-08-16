@@ -145,7 +145,7 @@ Important examples include:
   (arXiv:2205.14135), FlashAttention-2 (arXiv:2307.08691), FlashAttention-3 (arXiv:2407.08608),
   and the Dao-AILab `flash-attention` implementation.
 - Batched attention has the denotation of a leading-axis map of the single-sample attention
-  operation. The proof-compiled graph and verifier lowering retain those single-sample nodes. The
+  operation. Typed graph execution and verifier lowering retain those single-sample nodes. The
   eager CUDA implementation folds the batch and head axes for batched matrix multiplication and
   records one TorchLean tape node whose VJP sums shared projection-weight gradients over the batch.
   This is a scheduling refinement backed by regression tests, not a proof of the cuBLAS machine
@@ -205,7 +205,7 @@ The proof-bearing `RevGraph` path has rounded forward and VJP theorems and erase
 autograd `GraphData`. One optimizer contract carries those gradient bounds through SGD,
 momentum-SGD, and AdamW; AdamW supplies additional positivity and denominator-margin evidence at
 each step. These are Lean theorems about the `NF` rounded-real scalar model. The canonical
-`NN.IR.Graph` compiler currently proves forward semantic preservation only. It must not be cited as
+`NN.IR.Graph` lowering currently proves forward semantic preservation only. It must not be cited as
 an autograd or backward-certificate theorem until an autograd-capable lowering and correspondence
 proof are added.
 

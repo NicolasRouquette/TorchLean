@@ -416,8 +416,8 @@ open scoped BigOperators
 This is the analytic correctness lemma behind the tape node constructors: it identifies the JVP
 with the Fréchet derivative (a matrix multiplication) for `linear_spec`.
 
-PyTorch analogue: `torch.nn.linear` forward map is affine, derivative is constant.
-https://pytorch.org/docs/stable/generated/torch.nn.linear.html
+PyTorch analogue: the `torch.nn.Linear` forward map is affine, so its derivative is constant.
+https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
 -/
 def linear {inDim outDim : Nat} (m : Spec.LinearSpec ℝ inDim outDim) :
     OpSpecFDerivCorrect inDim outDim :=

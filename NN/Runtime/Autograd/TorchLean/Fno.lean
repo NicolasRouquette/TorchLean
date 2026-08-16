@@ -136,57 +136,57 @@ def frequencyMask {α : Type} [Context α] {d channels : Nat}
 
 /-- Reshape a spatial field to its matrix view. -/
 def flattenSpatial {d channels : Nat} (spatial : Vector Nat d) :
-    LayerDef (fieldShape spatial channels) (flatFieldShape spatial channels) :=
+    Layer (fieldShape spatial channels) (flatFieldShape spatial channels) :=
   let source : Shape := fieldShape spatial channels
   let target : Shape := flatFieldShape spatial channels
   have sameSize : Shape.size source = Shape.size target := by
     simp [source, target, fieldShape, gridSize, Shape.size, List.prod_append]
   { kind := "ReshapeSpatial"
-    paramShapes := []
-    initParams := .nil
-    paramRequiresGrad := []
+    stateShapes := []
+    initState := .nil
+    requiresGrad := []
     forward := fun _ {α} _ _ => fun {m} _ _ => fun x =>
       TorchLean.reshape (m := m) (α := α) (s₁ := source) (s₂ := target) x sameSize }
 
 /-- Restore a matrix view to its spatial axes. -/
 def restoreSpatial {d channels : Nat} (spatial : Vector Nat d) :
-    LayerDef (flatFieldShape spatial channels) (fieldShape spatial channels) :=
+    Layer (flatFieldShape spatial channels) (fieldShape spatial channels) :=
   let source : Shape := flatFieldShape spatial channels
   let target : Shape := fieldShape spatial channels
   have sameSize : Shape.size source = Shape.size target := by
     simp [source, target, fieldShape, gridSize, Shape.size, List.prod_append]
   { kind := "RestoreSpatial"
-    paramShapes := []
-    initParams := .nil
-    paramRequiresGrad := []
+    stateShapes := []
+    initState := .nil
+    requiresGrad := []
     forward := fun _ {α} _ _ => fun {m} _ _ => fun x =>
       TorchLean.reshape (m := m) (α := α) (s₁ := source) (s₂ := target) x sameSize }
 
 /-- Add the singleton channel axis used inside an FNO model. -/
 def addScalarChannel {d : Nat} (spatial : Vector Nat d) :
-    LayerDef (scalarFieldShape spatial) (fieldShape spatial 1) :=
+    Layer (scalarFieldShape spatial) (fieldShape spatial 1) :=
   let source : Shape := scalarFieldShape spatial
   let target : Shape := fieldShape spatial 1
   have sameSize : Shape.size source = Shape.size target := by
     simp [source, target, scalarFieldShape, fieldShape, List.prod_append]
   { kind := "AddScalarChannel"
-    paramShapes := []
-    initParams := .nil
-    paramRequiresGrad := []
+    stateShapes := []
+    initState := .nil
+    requiresGrad := []
     forward := fun _ {α} _ _ => fun {m} _ _ => fun x =>
       TorchLean.reshape (m := m) (α := α) (s₁ := source) (s₂ := target) x sameSize }
 
 /-- Remove the singleton channel axis after the output projection. -/
 def removeScalarChannel {d : Nat} (spatial : Vector Nat d) :
-    LayerDef (fieldShape spatial 1) (scalarFieldShape spatial) :=
+    Layer (fieldShape spatial 1) (scalarFieldShape spatial) :=
   let source : Shape := fieldShape spatial 1
   let target : Shape := scalarFieldShape spatial
   have sameSize : Shape.size source = Shape.size target := by
     simp [source, target, scalarFieldShape, fieldShape, List.prod_append]
   { kind := "RemoveScalarChannel"
-    paramShapes := []
-    initParams := .nil
-    paramRequiresGrad := []
+    stateShapes := []
+    initState := .nil
+    requiresGrad := []
     forward := fun _ {α} _ _ => fun {m} _ _ => fun x =>
       TorchLean.reshape (m := m) (α := α) (s₁ := source) (s₂ := target) x sameSize }
 
@@ -204,7 +204,7 @@ inverse transform.
 -/
 def block {d : Nat} (spatial modes : Vector Nat d) (width : Nat)
     (activation : Activation := .tanh) (seed : Nat := 0) :
-    LayerDef (fieldShape spatial width) (fieldShape spatial width) :=
+    Layer (fieldShape spatial width) (fieldShape spatial width) :=
   let grid := gridSize spatial
   let field : Shape := fieldShape spatial width
   let flat : Shape := flatFieldShape spatial width
@@ -220,12 +220,12 @@ def block {d : Nat} (spatial modes : Vector Nat d) (width : Nat)
   let bias0 : Tensor Float biasShape :=
     Torch.Init.tensor (s := biasShape) (sch := .zeros) (seed := seed + 3)
   { kind := "FNOBlock"
-    paramShapes := [spectralShape, spectralShape, skipShape, biasShape]
-    initParams := Torch.tlistQuad spectralReal0 spectralImag0 skip0 bias0
+    stateShapes := [spectralShape, spectralShape, skipShape, biasShape]
+    initState := Torch.tlistQuad spectralReal0 spectralImag0 skip0 bias0
     runtimeInit := some <| .cons (.uniform (-0.05) 0.05 seed) <|
       .cons (.uniform (-0.05) 0.05 (seed + 1)) <|
       .cons (.uniform (-0.05) 0.05 (seed + 2)) <| .cons .zeros .nil
-    paramRequiresGrad := [true, true, true, true]
+    requiresGrad := [true, true, true, true]
     forward := fun mode {α} _ _ => fun {m} _ _ => fun spectralReal spectralImag skip bias x =>
       (show m (RefTy (m := m) (α := α) field) from do
         let xMatrix ← (Internal.flattenSpatial spatial).forward mode (α := α) (m := m) x
@@ -238,9 +238,9 @@ def block {d : Nat} (spatial modes : Vector Nat d) (width : Nat)
           (Internal.idftCosMatrix (α := α) spatial)
         let inverseSinRef ← TorchLean.const (m := m) (α := α) (s := transformShape)
           (Internal.idftSinMatrix (α := α) spatial)
-        let xReal ← TorchLean.matmul (m := m) (α := α)
+        let xReal ← TorchLean.mm (m := m) (α := α)
           (mDim := grid) (nDim := grid) (pDim := width) cosRef xMatrix
-        let xImag ← TorchLean.matmul (m := m) (α := α)
+        let xImag ← TorchLean.mm (m := m) (α := α)
           (mDim := grid) (nDim := grid) (pDim := width) negSinRef xMatrix
         let xRealBmm ← (FNO1D.reshapeModesMatToBmmIn grid width).forward mode
           (α := α) (m := m) xReal
@@ -266,14 +266,14 @@ def block {d : Nat} (spatial modes : Vector Nat d) (width : Nat)
         let maskRef ← TorchLean.const (m := m) (α := α) (s := flat) mask
         let retainedReal ← TorchLean.mul (m := m) (α := α) (s := flat) transformedReal maskRef
         let retainedImag ← TorchLean.mul (m := m) (α := α) (s := flat) transformedImag maskRef
-        let inverseReal ← TorchLean.matmul (m := m) (α := α)
+        let inverseReal ← TorchLean.mm (m := m) (α := α)
           (mDim := grid) (nDim := grid) (pDim := width) inverseCosRef retainedReal
-        let inverseImag ← TorchLean.matmul (m := m) (α := α)
+        let inverseImag ← TorchLean.mm (m := m) (α := α)
           (mDim := grid) (nDim := grid) (pDim := width) inverseSinRef retainedImag
         let spectralMatrix ← TorchLean.sub (m := m) (α := α) (s := flat) inverseReal inverseImag
         let spectralResult ← (Internal.restoreSpatial spatial).forward mode
           (α := α) (m := m) spectralMatrix
-        let skipMatrix ← TorchLean.matmul (m := m) (α := α)
+        let skipMatrix ← TorchLean.mm (m := m) (α := α)
           (mDim := grid) (nDim := width) (pDim := width) xMatrix skip
         let biasBroadcast ← TorchLean.broadcastTo (m := m) (α := α)
           (s₁ := biasShape) (s₂ := flat) Shape.BroadcastTo.proof bias

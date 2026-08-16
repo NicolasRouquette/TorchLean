@@ -22,39 +22,104 @@ namespace TorchLean
 namespace Data
 
 def regressionGrid (lo hi : Float) (count : Nat) (target : Float → Float → Float) :
-    Trainer.Dataset (.dim 2 .scalar) (.dim 1 .scalar) :=
+    Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
   { build := fun {α} _ => pure <|
-      let X : Tensor.T Float (.dim (count * count) (.dim 2 .scalar)) :=
+      let X : Tensor Float (.dim (count * count) (.dim 2 .scalar)) :=
         TorchLean.Data.Synthetic.squareGrid lo hi count
-      let Y : Tensor.T Float (.dim (count * count) (.dim 1 .scalar)) :=
+      let Y : Tensor Float (.dim (count * count) (.dim 1 .scalar)) :=
         TorchLean.Data.Synthetic.regressionTargetsFloat X target
-      supervisedFromLeadingAxisFloat (α := α) X Y }
+      TensorDataset.supervisedFloat (α := α) X Y }
+
+namespace CausalLM
+
+namespace Internal
+
+/-- Build one Float input/target pair for next-token prediction. -/
+def oneHotPairFloat (seqLen vocab : Nat) (tokens : List Nat) (padId : Nat := 0) :
+    Tensor Float (shape![seqLen, vocab]) × Tensor Float (shape![seqLen, vocab]) :=
+  let input : Tensor Float (shape![seqLen, vocab]) :=
+    _root_.Spec.Tensor.dim fun t =>
+      TorchLean.text.oneHotTokenOrZero (α := Float) vocab (tokens.getD t.val padId)
+  let target : Tensor Float (shape![seqLen, vocab]) :=
+    _root_.Spec.Tensor.dim fun t =>
+      TorchLean.text.oneHotTokenOrZero (α := Float) vocab (tokens.getD (t.val + 1) padId)
+  (input, target)
+
+/-- Build one Float input/target pair per batch row. -/
+def oneHotPairRowsFloat (batch seqLen vocab : Nat)
+    (tokensAt : Fin batch → List Nat) (padId : Nat := 0) :
+    Tensor Float (shape![batch, seqLen, vocab]) ×
+      Tensor Float (shape![batch, seqLen, vocab]) :=
+  let input : Tensor Float (shape![batch, seqLen, vocab]) :=
+    _root_.Spec.Tensor.dim fun i => (oneHotPairFloat seqLen vocab (tokensAt i) padId).1
+  let target : Tensor Float (shape![batch, seqLen, vocab]) :=
+    _root_.Spec.Tensor.dim fun i => (oneHotPairFloat seqLen vocab (tokensAt i) padId).2
+  (input, target)
+
+end Internal
+
+/--
+Build one one-hot input/target pair for next-token prediction.
+
+The target is shifted by one token. Short windows are padded with `padId`.
+Any token id outside the vocabulary becomes a zero row. Indexed-token models validate ids before
+gathering and should be preferred for nontrivial language models.
+-/
+def oneHotPair
+    {α : Type} [_root_.Context α] [Runtime.FromFloat α]
+    (seqLen vocab : Nat) (tokens : List Nat) (padId : Nat := 0) :
+    Tensor α (shape![seqLen, vocab]) × Tensor α (shape![seqLen, vocab]) :=
+  let (input, target) := Internal.oneHotPairFloat seqLen vocab tokens padId
+  (Tensor.castFloat Runtime.ofFloat input, Tensor.castFloat Runtime.ofFloat target)
+
+/-- One-hot encode one causal-LM input window and repeat it across the batch axis. -/
+def oneHotInputs
+    {α : Type} [_root_.Context α] [Runtime.FromFloat α]
+    (batch seqLen vocab : Nat) (tokens : List Nat) (padId : Nat := 0) :
+    Tensor α (shape![batch, seqLen, vocab]) :=
+  let (input, _) := oneHotPair (α := α) seqLen vocab tokens padId
+  _root_.Spec.Tensor.dim fun _ => input
+
+/-- One-hot encode a distinct causal-LM input window for each batch row. -/
+def oneHotInputsRows
+    {α : Type} [_root_.Context α] [Runtime.FromFloat α]
+    (batch seqLen vocab : Nat) (tokensAt : Fin batch → List Nat) (padId : Nat := 0) :
+    Tensor α (shape![batch, seqLen, vocab]) :=
+  let input : Tensor Float (shape![batch, seqLen, vocab]) :=
+    _root_.Spec.Tensor.dim fun i =>
+      (Internal.oneHotPairFloat seqLen vocab (tokensAt i) padId).1
+  Tensor.castFloat Runtime.ofFloat input
 
 /--
 Build a batched one-hot causal-language-model sample by repeating one token window across every
 batch row.
 
 The token list represents a `seqLen + 1` window. Shorter lists are padded and longer lists are
-truncated by the causal-LM construction.
+truncated by the causal-LM construction. A token id outside the vocabulary becomes a zero row.
 -/
-def causalLmOneHotSample
+def oneHotBatch
     {α : Type} [_root_.Context α] [Runtime.FromFloat α]
     (batch seqLen vocab : Nat) (tokens : List Nat) (padId : Nat := 0) :
     SupervisedSample α (shape![batch, seqLen, vocab]) (shape![batch, seqLen, vocab]) :=
-  TorchLean.text.causalLmSampleOneHotBatch (α := α) batch seqLen vocab tokens (padId := padId)
+  let (input, target) := oneHotPair (α := α) seqLen vocab tokens padId
+  Sample.mk
+    (_root_.Spec.Tensor.dim fun _ => input)
+    (_root_.Spec.Tensor.dim fun _ => target)
 
 /--
 Build a batched one-hot causal-language-model sample from one token window per batch row.
 
 Use this for GPT-style examples that already know the per-row `(seqLen + 1)` token window they want
-each batch row to see.
+each batch row to see. A token id outside the vocabulary becomes a zero row.
 -/
-def causalLmOneHotSampleRows
+def oneHotBatchRows
     {α : Type} [_root_.Context α] [Runtime.FromFloat α]
     (batch seqLen vocab : Nat) (tokensAt : Fin batch → List Nat) (padId : Nat := 0) :
     SupervisedSample α (shape![batch, seqLen, vocab]) (shape![batch, seqLen, vocab]) :=
-  TorchLean.text.causalLmSampleOneHotBatchRows
-    (α := α) batch seqLen vocab tokensAt (padId := padId)
+  let (input, target) := Internal.oneHotPairRowsFloat batch seqLen vocab tokensAt padId
+  Sample.mk
+    (Tensor.castFloat Runtime.ofFloat input)
+    (Tensor.castFloat Runtime.ofFloat target)
 
 /--
 Build a batched one-hot causal-language-model sample from an array of per-row token windows.
@@ -62,14 +127,14 @@ Build a batched one-hot causal-language-model sample from an array of per-row to
 Rows past the end of the array use the explicit `fallback` window, so partial-batch behavior stays
 visible at the call site.
 -/
-def causalLmOneHotSampleRowsFromArray
+def oneHotBatchFromRows
     {α : Type} [_root_.Context α] [Runtime.FromFloat α]
     (batch seqLen vocab : Nat) (windows : Array (List Nat)) (fallback : List Nat)
     (padId : Nat := 0) :
     SupervisedSample α (shape![batch, seqLen, vocab]) (shape![batch, seqLen, vocab]) :=
   let tokensAt (i : Fin batch) : List Nat :=
     windows.getD i.val fallback
-  causalLmOneHotSampleRows (α := α) batch seqLen vocab tokensAt (padId := padId)
+  oneHotBatchRows (α := α) batch seqLen vocab tokensAt (padId := padId)
 
 /--
 Build a batched one-hot causal-language-model sample from a token array by choosing one
@@ -78,13 +143,15 @@ deterministic `(seqLen + 1)` window per batch row.
 Use this for GPT-style trainers that keep a tokenized corpus in memory and derive each batch from
 the same `(tokens, seed, step)` rule.
 -/
-def causalLmOneHotSampleRowsFromTokenArray
+def oneHotBatchFromTokenArray
     {α : Type} [_root_.Context α] [Runtime.FromFloat α]
     (batch seqLen vocab : Nat) (tokens : Array Nat) (seed step : Nat) (padId : Nat := 0) :
     SupervisedSample α (shape![batch, seqLen, vocab]) (shape![batch, seqLen, vocab]) :=
   let idsAt :=
     TorchLean.text.Corpus.randomBatchTokenWindows tokens batch seqLen seed step (padId := padId)
-  causalLmOneHotSampleRows (α := α) batch seqLen vocab idsAt (padId := padId)
+  oneHotBatchRows (α := α) batch seqLen vocab idsAt (padId := padId)
+
+namespace Internal
 
 /--
 Flatten one `(seqLen + 1)` token window into causal-LM `(x, y)` id lists.
@@ -94,7 +161,7 @@ $[t_0,\ldots,t_{\mathrm{seqLen}-1}]$ and the target is
 $[t_1,\ldots,t_{\mathrm{seqLen}}]$. Short windows are padded rather than rejected so small corpora
 can still exercise the training loop.
 -/
-def causalLmTokenIdRows (seqLen : Nat) (window : List Nat) (padId : Nat := 0) :
+def splitWindow (seqLen : Nat) (window : List Nat) (padId : Nat := 0) :
     List Nat × List Nat :=
   let tokenArray := window.toArray
   let x := (List.range seqLen).map (fun i => tokenArray.getD i padId)
@@ -107,13 +174,15 @@ Materialize row weights for a flattened `(batch × seqLen)` objective.
 Extra values are ignored and missing values receive weight zero. The masked sample builder below
 constructs exactly `batch * seqLen` entries.
 -/
-def causalLmRowWeightVec {α : Type} [_root_.Context α] [Runtime.FromFloat α]
+def rowWeightsTensor {α : Type} [_root_.Context α] [Runtime.FromFloat α]
     (batch seqLen : Nat) (weights : Array Float) :
-    Tensor.T α (.dim (batch * seqLen) .scalar) :=
+    Tensor α (.dim (batch * seqLen) .scalar) :=
   let weightsF : _root_.Spec.Tensor Float (.dim (batch * seqLen) .scalar) :=
     _root_.Spec.Tensor.dim (fun i : Fin (batch * seqLen) =>
       _root_.Spec.Tensor.scalar (weights.getD i.val 0))
   Tensor.castFloat Runtime.ofFloat weightsF
+
+end Internal
 
 /--
 Build an indexed-token causal-language-model batch from an array-backed corpus.
@@ -122,24 +191,26 @@ The result contains the input and next-token target as separate `Nat` tensors. K
 type discrete avoids one-hot expansion and prevents token ids from entering floating-point
 autograd.
 -/
-def causalLmTokenBatchFromTokenArray
+def tokenBatch
     (batch seqLen : Nat) (tokens : Array Nat) (seed step : Nat) (padId : Nat := 0) :
-    Tensor.T Nat (.dim (batch * seqLen) .scalar) ×
-      Tensor.T Nat (.dim (batch * seqLen) .scalar) :=
+    Tensor Nat (.dim (batch * seqLen) .scalar) ×
+      Tensor Nat (.dim (batch * seqLen) .scalar) :=
   let idsAt :=
     TorchLean.text.Corpus.randomBatchTokenWindows tokens batch seqLen seed step (padId := padId)
   let (xTokens, yTokens) := Id.run do
     let mut xs := Array.mkEmpty (batch * seqLen)
     let mut ys := Array.mkEmpty (batch * seqLen)
     for bi in List.finRange batch do
-      let (xRow, yRow) := causalLmTokenIdRows seqLen (idsAt bi) (padId := padId)
+      let (xRow, yRow) := Internal.splitWindow seqLen (idsAt bi) (padId := padId)
       for token in xRow do
         xs := xs.push token
       for token in yRow do
         ys := ys.push token
     return (xs, ys)
-  (Tensor.vectorFromArray (batch * seqLen) xTokens 0,
-    Tensor.vectorFromArray (batch * seqLen) yTokens 0)
+  (Tensor.vectorFromArrayD (batch * seqLen) xTokens 0,
+    Tensor.vectorFromArrayD (batch * seqLen) yTokens 0)
+
+namespace Internal
 
 /--
 Read the target-mask row paired with a causal-language-model window.
@@ -147,10 +218,12 @@ Read the target-mask row paired with a causal-language-model window.
 The input window begins at `offset`, while its first prediction target is the following token.
 Consequently the returned row starts at `targetMask[offset + 1]`.
 -/
-def causalLmTargetMaskRow
+def targetMaskRow
     (seqLen : Nat) (targetMask : Array Bool) (offset : Nat) : List Bool :=
   (List.range seqLen).map fun i =>
     targetMask.getD (offset + i + 1) false
+
+end Internal
 
 /--
 Build a token-id causal-language-model batch with an explicit target mask.
@@ -164,13 +237,13 @@ Active rows receive weight `1 / activeCount`, so the resulting weighted cross en
 exactly the selected targets. If a sampled batch has no active target, all weights are zero and the
 loss is zero. A shorter mask is treated as false beyond its end.
 -/
-def causalLmMaskedTokenBatchFromArrays
+def maskedTokenBatch
     {α : Type} [_root_.Context α] [Runtime.FromFloat α]
     (batch seqLen : Nat) (tokens : Array Nat) (targetMask : Array Bool)
     (seed step : Nat) (padId : Nat := 0) :
-    Tensor.T Nat (.dim (batch * seqLen) .scalar) ×
-      Tensor.T Nat (.dim (batch * seqLen) .scalar) ×
-      Tensor.T α (.dim (batch * seqLen) .scalar) :=
+    Tensor Nat (.dim (batch * seqLen) .scalar) ×
+      Tensor Nat (.dim (batch * seqLen) .scalar) ×
+      Tensor α (.dim (batch * seqLen) .scalar) :=
   let offsetAt := TorchLean.text.Corpus.randomBatchOffsets tokens.size seqLen batch seed step
   let (xTokens, yTokens, enabledTargets) := Id.run do
     let mut xs := Array.mkEmpty (batch * seqLen)
@@ -181,7 +254,7 @@ def causalLmMaskedTokenBatchFromArrays
       for i in [0:seqLen] do
         xs := xs.push (tokens.getD (offset + i) padId)
         ys := ys.push (tokens.getD (offset + i + 1) padId)
-      for active in causalLmTargetMaskRow seqLen targetMask offset do
+      for active in Internal.targetMaskRow seqLen targetMask offset do
         enabled := enabled.push active
     return (xs, ys, enabled)
   let activeCount := enabledTargets.foldl (fun count active =>
@@ -189,9 +262,9 @@ def causalLmMaskedTokenBatchFromArrays
   let activeWeight :=
     if activeCount = 0 then 0 else 1.0 / Float.ofNat activeCount
   let rowWeights := enabledTargets.map (fun active => if active then activeWeight else 0)
-  (Tensor.vectorFromArray (batch * seqLen) xTokens 0,
-    Tensor.vectorFromArray (batch * seqLen) yTokens 0,
-    causalLmRowWeightVec (α := α) batch seqLen rowWeights)
+  (Tensor.vectorFromArrayD (batch * seqLen) xTokens 0,
+    Tensor.vectorFromArrayD (batch * seqLen) yTokens 0,
+    Internal.rowWeightsTensor (α := α) batch seqLen rowWeights)
 
 /--
 Build one unbatched one-hot causal-language-model sample directly from a token list.
@@ -199,16 +272,12 @@ Build one unbatched one-hot causal-language-model sample directly from a token l
 The token list represents a `seqLen + 1` window. Shorter lists are padded and longer lists are
 truncated by the causal-LM construction.
 -/
-def causalLmOneHotMatSample
+def oneHotSample
     {α : Type} [_root_.Context α] [Runtime.FromFloat α]
     (seqLen vocab : Nat) (tokens : List Nat) :
     SupervisedSample α (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim vocab .scalar)) :=
-  let (xF, yF) := TorchLean.text.causalLmXYOneHotMatFloat seqLen vocab tokens
-  let x : Tensor.T α (.dim seqLen (.dim vocab .scalar)) :=
-    Tensor.castFloat Runtime.ofFloat xF
-  let y : Tensor.T α (.dim seqLen (.dim vocab .scalar)) :=
-    Tensor.castFloat Runtime.ofFloat yF
-  Sample.mk x y
+  let (input, target) := oneHotPair (α := α) seqLen vocab tokens
+  Sample.mk input target
 
 /--
 Build one unbatched one-hot causal-language-model sample from a text corpus string.
@@ -216,24 +285,24 @@ Build one unbatched one-hot causal-language-model sample from a text corpus stri
 This takes one `(seqLen + 1)` byte window from the UTF-8 bytes of `input`, converts it to one-hot
 `x/y` matrices, and casts the result into the runtime-selected scalar.
 -/
-def textCausalSample
+def byteSample
     {α : Type} [_root_.Context α] [Runtime.FromFloat α]
     (seqLen vocab : Nat) (input : String) :
     SupervisedSample α (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim vocab .scalar)) :=
   let bytes := input.toUTF8
   let toks := (TorchLean.text.byteTokenWindow bytes (seqLen + 1)).map (fun b => b % vocab)
-  causalLmOneHotMatSample (α := α) seqLen vocab toks
+  oneHotSample (α := α) seqLen vocab toks
 
 /--
 Build one fixed-batch one-hot causal-language-model sample from a text corpus string by repeating
 the same text window across every batch row.
 -/
-def textCausalBatchSample
+def byteBatch
     {α : Type} [_root_.Context α] [Runtime.FromFloat α]
     (batch seqLen vocab : Nat) (input : String) :
     SupervisedSample α (_root_.Spec.Shape.dim batch (.dim seqLen (.dim vocab .scalar)))
       (_root_.Spec.Shape.dim batch (.dim seqLen (.dim vocab .scalar))) :=
-  let s := textCausalSample (α := α) seqLen vocab input
+  let s := byteSample (α := α) seqLen vocab input
   Sample.mk
     (_root_.Spec.Tensor.dim (fun _ => Sample.x s))
     (_root_.Spec.Tensor.dim (fun _ => Sample.y s))
@@ -242,11 +311,11 @@ def textCausalBatchSample
 Build a runtime-polymorphic dataset containing one unbatched causal-language-model sample from a
 text corpus string.
 -/
-def textCausalDataset
+def byteDataset
     (seqLen vocab : Nat) (input : String) :
-    Trainer.Dataset (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim vocab .scalar)) :=
+    Trainer.DataSource (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim vocab .scalar)) :=
   Data.singletonFrom input (fun {α} _ _ text =>
-    textCausalSample (α := α) seqLen vocab text)
+    byteSample (α := α) seqLen vocab text)
 
 /--
 Build a runtime-polymorphic dataset containing one causal-language-model sample repeated across a
@@ -255,12 +324,14 @@ fixed batch axis.
 Use this when the model itself owns the batch dimension but the example naturally starts from one
 text window.
 -/
-def textCausalBatchDataset
+def byteBatchDataset
     (batch seqLen vocab : Nat) (input : String) :
-    Trainer.Dataset (_root_.Spec.Shape.dim batch (.dim seqLen (.dim vocab .scalar)))
+    Trainer.DataSource (_root_.Spec.Shape.dim batch (.dim seqLen (.dim vocab .scalar)))
       (_root_.Spec.Shape.dim batch (.dim seqLen (.dim vocab .scalar))) :=
   Data.singletonFrom input (fun {α} _ _ text =>
-    textCausalBatchSample (α := α) batch seqLen vocab text)
+    byteBatch (α := α) batch seqLen vocab text)
+
+end CausalLM
 
 end Data
 

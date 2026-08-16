@@ -8,7 +8,7 @@ module
 
 public import NN.API
 public import NN.Runtime.PyTorch.Export.IRPyTorch
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 
 /-!
 # TorchLean IR to PyTorch
@@ -36,28 +36,28 @@ open TorchLean
 
 /-! ## Architectures -/
 
-def archLinear : nn.M (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+def archLinear : nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
   nn.linear 2 1
 
-def archMLP : nn.M (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+def archMLP : nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
   nn.Sequential![
     nn.linear 2 3,
     nn.relu,
     nn.linear 3 1
   ]
 
-def archSumReduce : nn.M (nn.Sequential (.dim 4 .scalar) Shape.scalar) :=
+def archSumReduce : nn.Builder (nn.Sequential (.dim 4 .scalar) Shape.scalar) :=
   nn.sum (s := .dim 4 .scalar)
 
-def archAutoencoder : nn.M (nn.Sequential (.dim 3 .scalar) (.dim 3 .scalar)) :=
+def archAutoencoder : nn.Builder (nn.Sequential (.dim 3 .scalar) (.dim 3 .scalar)) :=
   nn.Sequential![
     nn.linear 3 2,
     nn.tanh,
     nn.linear 2 3
   ]
 
-def archCNN : nn.M (nn.Sequential (.dim 1 (.dim 1 (.dim 4 (.dim 4 .scalar)))) (shape![1, 3])) :=
-  let cfg : nn.models.CnnConfig 2 :=
+def archCNN : nn.Builder (nn.Sequential (.dim 1 (.dim 1 (.dim 4 (.dim 4 .scalar)))) (shape![1, 3])) :=
+  let cfg : nn.models.CNNConfig 2 :=
     { batch := 1
       inChannels := 1
       spatial := #v[4, 4]
@@ -76,8 +76,8 @@ def archCNN : nn.M (nn.Sequential (.dim 1 (.dim 1 (.dim 4 (.dim 4 .scalar)))) (s
       nn.models.cnn cfg
 
 def archConvMLP :
-    nn.M (nn.Sequential (.dim 1 (.dim 1 (.dim 3 (.dim 3 .scalar)))) (shape![1, 1])) :=
-  let cfg : nn.models.CnnConfig 2 :=
+    nn.Builder (nn.Sequential (.dim 1 (.dim 1 (.dim 3 (.dim 3 .scalar)))) (shape![1, 1])) :=
+  let cfg : nn.models.CNNConfig 2 :=
     { batch := 1
       inChannels := 1
       spatial := #v[3, 3]
@@ -96,20 +96,20 @@ def archConvMLP :
       nn.models.cnn cfg
 
 def archMHA :
-    nn.M (nn.Sequential (shape![1, 4, 8]) (shape![1, 4, 8])) :=
+    nn.Builder (nn.Sequential (shape![1, 4, 8]) (shape![1, 4, 8])) :=
   nn.multiheadAttention (batch := 1) (n := 4) (dModel := 8)
     { numHeads := 2, headDim := 4 }
 
-def archMHAMask : Tensor.T Bool (.dim 4 (.dim 4 .scalar)) :=
+def archMHAMask : Tensor Bool (.dim 4 (.dim 4 .scalar)) :=
   text.causalMask 4
 
 def archMHAMasked :
-    nn.M (nn.Sequential (shape![1, 4, 8]) (shape![1, 4, 8])) :=
+    nn.Builder (nn.Sequential (shape![1, 4, 8]) (shape![1, 4, 8])) :=
   nn.multiheadAttention (batch := 1) (n := 4) (dModel := 8)
     { numHeads := 2, headDim := 4 } (mask := some archMHAMask)
 
 def archTransformer :
-    nn.M (nn.Sequential (shape![1, 2, 2]) (shape![1, 2, 2])) :=
+    nn.Builder (nn.Sequential (shape![1, 2, 2]) (shape![1, 2, 2])) :=
   nn.transformerEncoderBlock (batch := 1) (n := 2) (dModel := 2)
     { numHeads := 1
     , headDim := 2
@@ -137,12 +137,12 @@ def usage : String :=
 /-! ## Export driver -/
 
 def emitSeq {σ τ : Shape} (className : String) (model : nn.Sequential σ τ) : IO Unit := do
-  let ps := nn.paramShapes model
+  let ps := nn.stateShapes model
   let prog : _root_.Runtime.Autograd.TorchLean.Program Float (ps ++ [σ]) τ :=
-    nn.forwardProgram (model := model) (α := Float)
-  let params := nn.initParams (m := model)
-  let compiled ←
-    match NN.Verification.TorchLean.compileForward
+    nn.forward model (α := Float)
+  let params := nn.initState (m := model)
+  let lowered ←
+    match NN.Verification.TorchLean.lowerForwardToIR
         (α := Float) (paramShapes := ps) (inShape := σ) (outShape := τ)
         (model := prog) (params := params) with
     | .error e => throw <| IO.userError e
@@ -150,8 +150,8 @@ def emitSeq {σ τ : Shape} (className : String) (model : nn.Sequential σ τ) :
 
   let code ←
     match Export.IRPyTorch.emit
-        (g := compiled.graph) (ps := compiled.ps) (inputId := compiled.inputId) (outputId :=
-          compiled.outputId)
+        (g := lowered.graph) (ps := lowered.ps) (inputId := lowered.inputId) (outputId :=
+          lowered.outputId)
         (opts := { className := className }) with
     | .error e => throw <| IO.userError e
     | .ok s => pure s
@@ -169,13 +169,13 @@ def main (args : List String) : IO Unit := do
       CLI.takeFlagValueDefault args "arch" "mlp"
     CLI.requireNoArgs "TorchIRPyTorch" rest
     if arch == "linear" then
-      emitSeq (className := "TorchLeanLinear") (nn.run seed archLinear)
+      emitSeq (className := "TorchLeanLinear") (nn.build seed archLinear)
     else if arch == "mlp" then
-      emitSeq (className := "TorchLeanMLP") (nn.run seed archMLP)
+      emitSeq (className := "TorchLeanMLP") (nn.build seed archMLP)
     else if arch == "sum" then
-      emitSeq (className := "TorchLeanSumReduce") (nn.run seed archSumReduce)
+      emitSeq (className := "TorchLeanSumReduce") (nn.build seed archSumReduce)
     else if arch == "autoencoder" then
-      emitSeq (className := "TorchLeanAutoencoder") (nn.run seed archAutoencoder)
+      emitSeq (className := "TorchLeanAutoencoder") (nn.build seed archAutoencoder)
     else if arch == "cnn" then
       throw <| IO.userError
         "torch_ir_pytorch: --arch cnn is not in the supported exporter fragment yet (conv lowering uses scatter)"
@@ -183,11 +183,11 @@ def main (args : List String) : IO Unit := do
       throw <| IO.userError
         "torch_ir_pytorch: --arch conv-mlp is not in the supported exporter fragment yet (conv lowering uses scatter)"
     else if arch == "mha" then
-      emitSeq (className := "TorchLeanMHA") (nn.run seed archMHA)
+      emitSeq (className := "TorchLeanMHA") (nn.build seed archMHA)
     else if arch == "mha-mask" then
-      emitSeq (className := "TorchLeanMHAMasked") (nn.run seed archMHAMasked)
+      emitSeq (className := "TorchLeanMHAMasked") (nn.build seed archMHAMasked)
     else if arch == "transformer" then
-      emitSeq (className := "TorchLeanTransformerBlock") (nn.run seed archTransformer)
+      emitSeq (className := "TorchLeanTransformerBlock") (nn.build seed archTransformer)
     else
       throw <| IO.userError
         (s!"unknown --arch {arch} (supported: linear | mlp | sum | autoencoder | " ++

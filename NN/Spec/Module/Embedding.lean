@@ -12,18 +12,9 @@ public import NN.Spec.Module.SpecModule
 /-!
 # Embedding
 
-Module wrappers for spec-layer embeddings.
-
-We intentionally expose the one-hot embedding variant here (purely numeric, no integer indices).
-
-Why one-hot in the spec layer:
-
-- It avoids committing to an "index tensor" representation. In Lean, indices would typically live
-  in `Nat`/`Fin`, which is great for proofs, but many numeric backends are scalar-only.
-- It keeps the forward definition completely algebraic: an embedding becomes `one_hot @ W`.
-
-In PyTorch terms: the usual API is `nn.Embedding(vocab, embed_dim)` on integer indices. This file
-packages the equivalent "one_hot then matmul" semantics.
+Module wrapper for the differentiable one-hot presentation of an embedding table. The indexed
+semantics is `Embedding.lookup`; this wrapper exists for proofs that treat the same table as the
+linear map `oneHot @ weight`.
 -/
 
 @[expose] public section
@@ -36,16 +27,14 @@ open ModSpec
 
 variable {α : Type} [Context α]
 
-/-- One-hot embedding wrapper: `(seqLen,vocab)` → `(seqLen,embedDim)`. -/
-def EmbeddingOneHotModuleSpec {vocab embedDim seqLen : Nat}
-  (emb : EmbeddingSpec vocab embedDim α) :
+/-- One-hot embedding module: `(seqLen, vocab)` to `(seqLen, embedDim)`. -/
+def oneHotEmbeddingModule {vocab embedDim seqLen : Nat}
+  (embedding : Embedding vocab embedDim α) :
   NNModuleSpec α (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
-{ forward := fun oneHot => embeddingOnehotSpec (α := α) emb oneHot
-  kind := "EmbeddingOneHot"
+{ forward := fun oneHot => embedding.oneHot oneHot
+  kind := "OneHotEmbedding"
   export_func := {
-    -- PyTorch equivalent is typically `nn.Embedding` on integer indices;
-    -- this one-hot version is semantically `one_hot @ W`.
-    toPyTorch := s!"EmbeddingOneHot(vocab={vocab}, embedDim={embedDim})"
+    toPyTorch := s!"OneHotEmbedding(vocab={vocab}, embedDim={embedDim})"
     dimensions := (vocab, embedDim)
   } }
 

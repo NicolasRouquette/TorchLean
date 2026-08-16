@@ -53,7 +53,7 @@ PyTorch docs (for API intuition, not semantics):
 - `torch.nn.Embedding`: https://pytorch.org/docs/stable/generated/torch.nn.Embedding.html
 - `torch.nn.RNN`: https://pytorch.org/docs/stable/generated/torch.nn.RNN.html
 - `torch.nn.LSTM`: https://pytorch.org/docs/stable/generated/torch.nn.LSTM.html
-- `torch.nn.linear`: https://pytorch.org/docs/stable/generated/torch.nn.linear.html
+- `torch.nn.Linear`: https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
 - `torch.nn.MultiheadAttention`:
   https://pytorch.org/docs/stable/generated/torch.nn.MultiheadAttention.html
 - `torch.nn.TransformerEncoderLayer`:
@@ -210,17 +210,17 @@ This is the usual "embedding lookup as a matrix multiply":
 PyTorch analogy: `y = x @ E` where `x` is one-hot / a distribution; this matches `nn.Embedding`
 when the input is exactly one-hot.
 -/
-def Seq2SeqEmbeddingSpec.forwardOnehot {vocabSize embedDim seqLen : Nat}
+def Seq2SeqEmbeddingSpec.forwardOneHot {vocabSize embedDim seqLen : Nat}
   (embedding : Seq2SeqEmbeddingSpec α vocabSize embedDim)
-  (token_onehot : Tensor α (.dim seqLen (.dim vocabSize .scalar))) :
+  (tokenOneHot : Tensor α (.dim seqLen (.dim vocabSize .scalar))) :
   Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-  match token_onehot with
+  match tokenOneHot with
   | Tensor.dim f =>
     let token_embeds := Tensor.dim (fun i => vecMatMulSpec (f i) embedding.embedding)
     dropoutInferenceSpec (p := embedding.dropout_rate) token_embeds
 
 /--
-Backward pass for `Seq2SeqEmbeddingSpec.forwardOnehot`.
+Backward pass for `Seq2SeqEmbeddingSpec.forwardOneHot`.
 
 This is just a time-distributed linear layer:
 
@@ -230,9 +230,9 @@ So:
 - `dE = Σ_t token_t ⊗ dY_t`
 - `dToken_t = E · dY_t` (not usually needed, but included for completeness)
 -/
-def Seq2SeqEmbeddingSpec.backwardOnehot {vocabSize embedDim seqLen : Nat}
+def Seq2SeqEmbeddingSpec.backwardOneHot {vocabSize embedDim seqLen : Nat}
   (embedding : Seq2SeqEmbeddingSpec α vocabSize embedDim)
-  (token_onehot : Tensor α (.dim seqLen (.dim vocabSize .scalar)))
+  (tokenOneHot : Tensor α (.dim seqLen (.dim vocabSize .scalar)))
   (grad_output : Tensor α (.dim seqLen (.dim embedDim .scalar))) :
   (Seq2SeqEmbeddingGrads α vocabSize embedDim × Tensor α (.dim seqLen (.dim vocabSize .scalar))) :=
   let grad_output0 :=
@@ -240,7 +240,7 @@ def Seq2SeqEmbeddingSpec.backwardOnehot {vocabSize embedDim seqLen : Nat}
   let step (acc : Seq2SeqEmbeddingGrads α vocabSize embedDim × List (Tensor α (.dim vocabSize
     .scalar))) (i : Fin seqLen) :=
     let (accE, accX) := acc
-    let token_t := get token_onehot i
+    let token_t := get tokenOneHot i
     let dY_t := get grad_output0 i
     let dE_t := outerProductSpec token_t dY_t
     let dToken_t := matVecMulSpec embedding.embedding dY_t
@@ -839,41 +839,41 @@ This is the “full” training interface for the Seq2Seq baseline.
 Differentiable forward pass for training (teacher forcing) using one-hot/token-distribution inputs.
 
 This is the same computation as `Seq2SeqSpec.forwardTraining`, except that embedding lookup is
-expressed as a matrix multiplication (`forwardOnehot`), so gradients can flow into the embedding
+expressed as a matrix multiplication (`forwardOneHot`), so gradients can flow into the embedding
 tables and back into upstream token distributions (if desired).
 -/
-def Seq2SeqSpec.forwardTrainingOnehot
+def Seq2SeqSpec.forwardTrainingOneHot
   {srcVocabSize tgtVocabSize embedDim hiddenDim srcSeqLen tgtSeqLen : Nat}
   (model : Seq2SeqSpec α srcVocabSize tgtVocabSize embedDim hiddenDim)
-  (src_onehot : Tensor α (.dim srcSeqLen (.dim srcVocabSize .scalar)))
-  (tgt_onehot : Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)))
+  (srcOneHot : Tensor α (.dim srcSeqLen (.dim srcVocabSize .scalar)))
+  (tgtOneHot : Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)))
   (_hSrc : srcSeqLen ≠ 0) (hTgt : tgtSeqLen ≠ 0) :
   Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)) :=
-  let src_embeds := Seq2SeqEmbeddingSpec.forwardOnehot model.src_embedding src_onehot
+  let src_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.src_embedding srcOneHot
   let (_encOut, encHidden) := Seq2SeqRNNEncoderSpec.forward model.encoder src_embeds none
-  let tgt_embeds := Seq2SeqEmbeddingSpec.forwardOnehot model.tgt_embedding tgt_onehot
+  let tgt_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.tgt_embedding tgtOneHot
   Seq2SeqDecoderSpec.forwardTeacherForcing model.decoder tgt_embeds encHidden hTgt
 
 /--
 Per-timestep cross-entropy loss for the differentiable Seq2Seq baseline.
 
 Computes:
-1. logits via `Seq2SeqSpec.forwardTrainingOnehot`,
+1. logits via `Seq2SeqSpec.forwardTrainingOneHot`,
 2. probabilities via `softmax`,
 3. cross-entropy against the target token distribution at each timestep.
 
 PyTorch analogue: `nn.CrossEntropyLoss` applied per timestep (with probabilities represented as
   one-hot).
 -/
-def Seq2SeqSpec.crossEntropyLossOnehot
+def Seq2SeqSpec.crossEntropyLossOneHot
   {srcVocabSize tgtVocabSize embedDim hiddenDim srcSeqLen tgtSeqLen : Nat}
   (model : Seq2SeqSpec α srcVocabSize tgtVocabSize embedDim hiddenDim)
-  (src_onehot : Tensor α (.dim srcSeqLen (.dim srcVocabSize .scalar)))
-  (tgt_onehot : Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)))
+  (srcOneHot : Tensor α (.dim srcSeqLen (.dim srcVocabSize .scalar)))
+  (tgtOneHot : Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)))
   (hSrc : srcSeqLen ≠ 0) (hTgt : tgtSeqLen ≠ 0) : α :=
-  let logits := Seq2SeqSpec.forwardTrainingOnehot (α := α) model src_onehot tgt_onehot hSrc hTgt
+  let logits := Seq2SeqSpec.forwardTrainingOneHot (α := α) model srcOneHot tgtOneHot hSrc hTgt
   let probs := Activation.softmaxSpec logits
-  crossEntropySpec probs tgt_onehot
+  crossEntropySpec probs tgtOneHot
 
 /--
 Compute `(loss, grads)` for the Seq2Seq baseline under per-timestep cross-entropy.
@@ -885,23 +885,23 @@ This returns gradients for:
 - the decoder output projection,
 - and decoder self-attention (if present).
 -/
-def Seq2SeqSpec.crossEntropyGradOnehot
+def Seq2SeqSpec.crossEntropyGradOneHot
   {srcVocabSize tgtVocabSize embedDim hiddenDim srcSeqLen tgtSeqLen : Nat}
   (model : Seq2SeqSpec α srcVocabSize tgtVocabSize embedDim hiddenDim)
-  (src_onehot : Tensor α (.dim srcSeqLen (.dim srcVocabSize .scalar)))
-  (tgt_onehot : Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)))
+  (srcOneHot : Tensor α (.dim srcSeqLen (.dim srcVocabSize .scalar)))
+  (tgtOneHot : Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)))
   (_hSrc : srcSeqLen ≠ 0) (hTgt : tgtSeqLen ≠ 0) :
   (α × Seq2SeqGrads α srcVocabSize tgtVocabSize embedDim hiddenDim) :=
 
-  let src_embeds := Seq2SeqEmbeddingSpec.forwardOnehot model.src_embedding src_onehot
+  let src_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.src_embedding srcOneHot
   let (encHiddens, encHidden) := Seq2SeqRNNEncoderSpec.forward model.encoder src_embeds none
-  let tgt_embeds := Seq2SeqEmbeddingSpec.forwardOnehot model.tgt_embedding tgt_onehot
+  let tgt_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.tgt_embedding tgtOneHot
 
   let logits := Seq2SeqDecoderSpec.forwardTeacherForcing model.decoder tgt_embeds encHidden hTgt
   let probs := Activation.softmaxSpec logits
-  let loss := crossEntropySpec probs tgt_onehot
+  let loss := crossEntropySpec probs tgtOneHot
 
-  let dProbs := crossEntropyDerivSpec probs tgt_onehot
+  let dProbs := crossEntropyDerivSpec probs tgtOneHot
   let dLogits := Activation.softmaxBackwardSpec logits dProbs
 
   let (decRnnGrads, outProjGrads, attnGradsOpt, dTgtEmbeds, dEncHidden) :=
@@ -910,10 +910,10 @@ def Seq2SeqSpec.crossEntropyGradOnehot
         tgtSeqLen)
       model.decoder tgt_embeds encHidden hTgt dLogits
 
-  let (dTgtEmbTable, _dTgtOnehot) :=
-    Seq2SeqEmbeddingSpec.backwardOnehot (α := α)
+  let (dTgtEmbTable, _dTgtOneHot) :=
+    Seq2SeqEmbeddingSpec.backwardOneHot (α := α)
       (vocabSize := tgtVocabSize) (embedDim := embedDim) (seqLen := tgtSeqLen)
-      model.tgt_embedding tgt_onehot dTgtEmbeds
+      model.tgt_embedding tgtOneHot dTgtEmbeds
 
   -- Encoder only feeds the decoder through the final hidden state.
   let dEncHiddens :=
@@ -935,10 +935,10 @@ def Seq2SeqSpec.crossEntropyGradOnehot
 
   let encGrads : Seq2SeqRNNGrads α embedDim hiddenDim := { dW := dW_enc, db := db_enc }
 
-  let (dSrcEmbTable, _dSrcOnehot) :=
-    Seq2SeqEmbeddingSpec.backwardOnehot (α := α)
+  let (dSrcEmbTable, _dSrcOneHot) :=
+    Seq2SeqEmbeddingSpec.backwardOneHot (α := α)
       (vocabSize := srcVocabSize) (embedDim := embedDim) (seqLen := srcSeqLen)
-      model.src_embedding src_onehot dSrcEmbeds
+      model.src_embedding srcOneHot dSrcEmbeds
 
   let grads : Seq2SeqGrads α srcVocabSize tgtVocabSize embedDim hiddenDim :=
     { d_src_embedding := dSrcEmbTable

@@ -13,12 +13,12 @@ public import NN.API.TensorPack
 public import NN.MLTheory.CROWN.Core
 public import NN.MLTheory.CROWN.Graph
 public import NN.MLTheory.CROWN.Lyapunov.TwoStage.Core
-public import NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis
+public import NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis
 public import NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils
 public import NN.Runtime.Autograd.TorchLean.Autodiff
-public import NN.Runtime.Autograd.TorchLean.Backend
+public import NN.Runtime.Autograd.TorchLean.Program
 public import NN.Runtime.Autograd.TorchLean.Module
-public import NN.Verification.TorchLean.Compile
+public import NN.Verification.TorchLean.Lowering
 public import NN.Verification.Util.Json
 
 /-!
@@ -31,7 +31,7 @@ What is “hybrid” here:
   The output is exported as *bit-exact* float32 parameters (a JSON array of uint32 bit patterns).
 - **Stage 2** (inside Lean): load those exact bits into `α = IEEE32Exec` (Lean's executable model of
   IEEE-754 float32), run a small refinement loop (PGD on input, SGD on parameters), and then
-  compile the TorchLean loss to the shared verifier IR and run in-repo IBP/CROWN bounds on a box.
+  lower the TorchLean loss to the shared verifier IR and run in-repo IBP/CROWN bounds on a box.
 
 Trust boundary:
 - Stage-1 training is untrusted and only provides an initialization.
@@ -258,16 +258,16 @@ def run (width : Nat) (args : List String) : IO Unit := do
       s!"candidates={opts.candidates} pgdSteps={pgdSteps}")
 
   let initParams ← loadFirstStageParams width weightsPath
-  let mod ← _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.create
-    (α := α) (paramShapes := paramShapes width) (inputShapes := [xShape])
+  let mod ← _root_.Runtime.Autograd.TorchLean.Module.Objective.create
+    (α := α) (stateShapes := paramShapes width) (inputShapes := [xShape])
     (natInputShapes := [])
-    (opts := { backend := .compiled })
-    (initRequiresGrad := List.replicate (paramShapes width).length true)
+    (opts := { execution := .typedGraph })
+    (requiresGrad := List.replicate (paramShapes width).length true)
     (loss := lossProg width (β := α))
-    (initParams := initParams)
-  let tr := _root_.Runtime.Autograd.TorchLean.Module.ScalarModule.trainer mod
+    (initState := initParams)
+  let tr := _root_.Runtime.Autograd.TorchLean.Module.Objective.trainer mod
 
-  let cLoss ← TorchLean.Autodiff.compileLoss
+  let cLoss ← TorchLean.Autodiff.lowerScalarToTypedGraph
     (α := α) (paramShapes := paramShapes width) (inputShapes := [xShape]) (lossProg width)
 
   -- Stage 2: PGD on x to find violations, then train on them
@@ -278,25 +278,25 @@ def run (width : Nat) (args : List String) : IO Unit := do
       let (seed', x0) := sampleStateVector seed rad
       seed := seed'
       let lossBeforePgd := _root_.Runtime.Autograd.Torch.scalarOf (←
-        _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr (.cons x0 .nil) .nil)
-      let params ← tr.getParams
+        _root_.Runtime.Autograd.Torch.ScalarTrainer.lossPacked tr (.cons x0 .nil) .nil)
+      let params ← tr.getState
       let mut x := x0
       for _k in [0:pgdSteps] do
-        x := CompiledLossAnalysis.projectedGradientStep
+        x := LossAnalysis.projectedGradientStep
           width cLoss params x pgdStepSize rad
       let xs : _root_.TorchLean.TensorPack α [xShape] := tensorpack! x
       let lossFound := _root_.Runtime.Autograd.Torch.scalarOf (←
-        _root_.Runtime.Autograd.Torch.ScalarTrainer.forwardT tr xs .nil)
+        _root_.Runtime.Autograd.Torch.ScalarTrainer.lossPacked tr xs .nil)
       if (0 : α) < lossFound then
         foundViolations := foundViolations + 1
-      _root_.Runtime.Autograd.Torch.ScalarTrainer.stepT tr lr xs .nil
+      _root_.Runtime.Autograd.Torch.ScalarTrainer.stepPacked tr lr xs .nil
       IO.println s!"[stage2] round {round}: lossBefore={lossBeforePgd} lossAfterPGD={lossFound}"
 
-  let params ← tr.getParams
+  let params ← tr.getState
   IO.println
     (s!"[stage2] PGD counterexample candidates={stage2Rounds * opts.candidates} " ++
       s!"(positive-loss={foundViolations})")
-  CompiledLossAnalysis.checkLossBox width params epsCheck
+  LossAnalysis.checkLossBox width params epsCheck
 
 /-- Default hidden width used by the hybrid workflow. -/
 def defaultWidth : Nat := 500

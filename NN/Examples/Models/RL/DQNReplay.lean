@@ -20,7 +20,7 @@ This example runs the runtime pieces used by an off-policy DQN-style update:
 
 The Q-functions are hand-written closures rather than neural networks, so the example stays focused
 on replay buffers and minibatch losses. A full trainable DQN run can later swap those closures for
-compiled TorchLean models and an optimizer step.
+typed graph TorchLean models and an optimizer step.
 
 Run from the repo root through the maintained example runner:
 
@@ -47,10 +47,10 @@ abbrev ObsShape : Shape := .dim 2 .scalar
 abbrev NActions : Nat := 3
 
 /-- A compact two-feature observation. -/
-def obsA : Tensor.T Float ObsShape := Tensor.vectorFromList [0.0, 1.0]
+def obsA : Tensor Float ObsShape := Tensor.vectorFromList [0.0, 1.0]
 
 /-- A second observation used as the next state. -/
-def obsB : Tensor.T Float ObsShape := Tensor.vectorFromList [1.0, 0.0]
+def obsB : Tensor Float ObsShape := Tensor.vectorFromList [1.0, 0.0]
 
 /-- One typed transition inserted into the replay buffer. -/
 def transitionA : rl.core.Transition Float ObsShape NActions :=
@@ -69,13 +69,13 @@ def transitionB : rl.core.Transition Float ObsShape NActions :=
     done := true }
 
 /-- Compact online Q-function used by the example. -/
-def onlineQ (obs : Tensor.T Float ObsShape) : Tensor.T Float (.dim NActions .scalar) :=
+def onlineQ (obs : Tensor Float ObsShape) : Tensor Float (.dim NActions .scalar) :=
   let x0 := Tensor.vecGet obs ⟨0, by decide⟩
   let x1 := Tensor.vecGet obs ⟨1, by decide⟩
   Tensor.vectorFromList [x0 + 0.2, x1 + 1.0, 0.5]
 
 /-- Compact target Q-function used by the example. -/
-def targetQ (obs : Tensor.T Float ObsShape) : Tensor.T Float (.dim NActions .scalar) :=
+def targetQ (obs : Tensor Float ObsShape) : Tensor Float (.dim NActions .scalar) :=
   let x0 := Tensor.vecGet obs ⟨0, by decide⟩
   let x1 := Tensor.vecGet obs ⟨1, by decide⟩
   Tensor.vectorFromList [0.1 + x1, 1.4 + x0, 0.3]

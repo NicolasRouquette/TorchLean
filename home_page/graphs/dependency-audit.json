@@ -1,74 +1,74 @@
 {
   "code_stats": {
-    "blank_or_comment_lines": 113570,
-    "code_lines": 216933,
+    "blank_or_comment_lines": 113458,
+    "code_lines": 217542,
     "declaration_counts": {
-      "abbrev": 599,
-      "class": 30,
-      "def": 8733,
-      "inductive": 136,
-      "instance": 263,
+      "abbrev": 595,
+      "class": 31,
+      "def": 8728,
+      "inductive": 135,
+      "instance": 274,
       "lemma": 665,
       "opaque": 121,
-      "structure": 634,
-      "theorem": 2216
+      "structure": 632,
+      "theorem": 2208
     },
-    "declarations": 13397,
+    "declarations": 13389,
     "layer_sizes": [
       {
         "files": 170,
         "layer": "NN.Proofs",
-        "lines": 65020
+        "lines": 65024
       },
       {
-        "files": 208,
+        "files": 206,
         "layer": "NN.Runtime",
-        "lines": 53458
+        "lines": 53153
       },
       {
         "files": 138,
         "layer": "NN.MLTheory",
-        "lines": 41078
+        "lines": 41153
       },
       {
         "files": 125,
         "layer": "NN.Floats",
-        "lines": 38812
+        "lines": 38770
       },
       {
         "files": 126,
         "layer": "NN.Spec",
-        "lines": 29766
+        "lines": 29772
       },
       {
         "files": 59,
         "layer": "blueprint",
-        "lines": 19233
+        "lines": 19863
       },
       {
-        "files": 92,
+        "files": 91,
         "layer": "NN.Verification",
-        "lines": 19093
+        "lines": 19028
       },
       {
         "files": 88,
         "layer": "NN.API",
-        "lines": 18775
+        "lines": 18544
       },
       {
         "files": 113,
         "layer": "NN.Examples",
-        "lines": 17264
+        "lines": 17449
       },
       {
         "files": 41,
         "layer": "NN.Tests",
-        "lines": 9570
+        "lines": 9872
       },
       {
         "files": 25,
         "layer": "NN.GraphSpec",
-        "lines": 5492
+        "lines": 5382
       },
       {
         "files": 18,
@@ -78,7 +78,7 @@
       {
         "files": 19,
         "layer": "Backend",
-        "lines": 3508
+        "lines": 3509
       },
       {
         "files": 9,
@@ -88,12 +88,12 @@
       {
         "files": 2,
         "layer": "NN.Tensor",
-        "lines": 619
+        "lines": 633
       },
       {
         "files": 9,
         "layer": "NN.CI",
-        "lines": 532
+        "lines": 531
       },
       {
         "files": 1,
@@ -103,7 +103,7 @@
       {
         "files": 2,
         "layer": "Core",
-        "lines": 301
+        "lines": 335
       },
       {
         "files": 1,
@@ -121,12 +121,12 @@
         "lines": 30
       }
     ],
-    "lean_files": 1248,
-    "theorem_like_declarations": 2881,
+    "lean_files": 1245,
+    "theorem_like_declarations": 2873,
     "top_level_files": [
       {
         "directory": "NN",
-        "files": 1186
+        "files": 1183
       },
       {
         "directory": "blueprint",
@@ -145,7 +145,7 @@
         "files": 1
       }
     ],
-    "total_lines": 330503
+    "total_lines": 331000
   },
   "edges": [
     {
@@ -219,7 +219,7 @@
       "src": "NN.API.CLI"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.ParamIO",
+      "dst": "NN.Runtime.Autograd.TorchLean.StateIO",
       "line": 9,
       "path": "NN/API/Checkpoint.lean",
       "public": true,
@@ -821,7 +821,7 @@
       "src": "NN.API.Module"
     },
     {
-      "dst": "NN.API.RL",
+      "dst": "NN.API.Trainer.Manual.Core",
       "line": 11,
       "path": "NN/API/Module.lean",
       "public": true,
@@ -872,6 +872,20 @@
     {
       "dst": "Mathlib.Algebra.Order.Algebra",
       "line": 14,
+      "path": "NN/API/Neural/Builders.lean",
+      "public": false,
+      "src": "NN.API.Neural.Builders"
+    },
+    {
+      "dst": "NN.Spec.Core.Utils",
+      "line": 15,
+      "path": "NN/API/Neural/Builders.lean",
+      "public": false,
+      "src": "NN.API.Neural.Builders"
+    },
+    {
+      "dst": "NN.Spec.Core.TensorReductionShape.Reductions",
+      "line": 16,
       "path": "NN/API/Neural/Builders.lean",
       "public": false,
       "src": "NN.API.Neural.Builders"
@@ -1486,11 +1500,60 @@
       "src": "NN.API.Text"
     },
     {
-      "dst": "NN.API.Trainer.Handle",
+      "dst": "NN.API.Trainer.Core",
       "line": 9,
       "path": "NN/API/Trainer/Constructor.lean",
       "public": true,
       "src": "NN.API.Trainer.Constructor"
+    },
+    {
+      "dst": "NN.API.Module",
+      "line": 9,
+      "path": "NN/API/Trainer/Core.lean",
+      "public": true,
+      "src": "NN.API.Trainer.Core"
+    },
+    {
+      "dst": "NN.API.Trainer.Manual.Core",
+      "line": 10,
+      "path": "NN/API/Trainer/Core.lean",
+      "public": true,
+      "src": "NN.API.Trainer.Core"
+    },
+    {
+      "dst": "NN.API.Optim",
+      "line": 11,
+      "path": "NN/API/Trainer/Core.lean",
+      "public": true,
+      "src": "NN.API.Trainer.Core"
+    },
+    {
+      "dst": "NN.API.Loss",
+      "line": 12,
+      "path": "NN/API/Trainer/Core.lean",
+      "public": true,
+      "src": "NN.API.Trainer.Core"
+    },
+    {
+      "dst": "NN.API.Trainer.Reporting",
+      "line": 13,
+      "path": "NN/API/Trainer/Core.lean",
+      "public": true,
+      "src": "NN.API.Trainer.Core"
+    },
+    {
+      "dst": "NN.API.Trainer.Manual",
+      "line": 14,
+      "path": "NN/API/Trainer/Core.lean",
+      "public": true,
+      "src": "NN.API.Trainer.Core"
+    },
+    {
+      "dst": "NN.API.Trainer.Summary",
+      "line": 15,
+      "path": "NN/API/Trainer/Core.lean",
+      "public": true,
+      "src": "NN.API.Trainer.Core"
     },
     {
       "dst": "NN.API.CLI",
@@ -1519,55 +1582,6 @@
       "path": "NN/API/Trainer/FixedSample.lean",
       "public": true,
       "src": "NN.API.Trainer.FixedSample"
-    },
-    {
-      "dst": "NN.API.Module",
-      "line": 9,
-      "path": "NN/API/Trainer/Handle.lean",
-      "public": true,
-      "src": "NN.API.Trainer.Handle"
-    },
-    {
-      "dst": "NN.API.Trainer.Manual.Core",
-      "line": 10,
-      "path": "NN/API/Trainer/Handle.lean",
-      "public": true,
-      "src": "NN.API.Trainer.Handle"
-    },
-    {
-      "dst": "NN.API.Optim",
-      "line": 11,
-      "path": "NN/API/Trainer/Handle.lean",
-      "public": true,
-      "src": "NN.API.Trainer.Handle"
-    },
-    {
-      "dst": "NN.API.Loss",
-      "line": 12,
-      "path": "NN/API/Trainer/Handle.lean",
-      "public": true,
-      "src": "NN.API.Trainer.Handle"
-    },
-    {
-      "dst": "NN.API.Trainer.Reporting",
-      "line": 13,
-      "path": "NN/API/Trainer/Handle.lean",
-      "public": true,
-      "src": "NN.API.Trainer.Handle"
-    },
-    {
-      "dst": "NN.API.Trainer.Manual",
-      "line": 14,
-      "path": "NN/API/Trainer/Handle.lean",
-      "public": true,
-      "src": "NN.API.Trainer.Handle"
-    },
-    {
-      "dst": "NN.API.Trainer.Summary",
-      "line": 15,
-      "path": "NN/API/Trainer/Handle.lean",
-      "public": true,
-      "src": "NN.API.Trainer.Handle"
     },
     {
       "dst": "NN.API.CLI",
@@ -1773,7 +1787,7 @@
       "src": "NN.API.Trainer.Reporting"
     },
     {
-      "dst": "NN.API.Trainer.Handle",
+      "dst": "NN.API.Trainer.Core",
       "line": 9,
       "path": "NN/API/Trainer/Results.lean",
       "public": true,
@@ -1787,7 +1801,7 @@
       "src": "NN.API.Trainer.Run"
     },
     {
-      "dst": "NN.API.Trainer.Handle",
+      "dst": "NN.API.Trainer.Core",
       "line": 10,
       "path": "NN/API/Trainer/Run.lean",
       "public": true,
@@ -1815,39 +1829,39 @@
       "src": "NN.API.Trainer.Summary"
     },
     {
+      "dst": "NN.API.Trainer.Run",
+      "line": 9,
+      "path": "NN/API/Trainer/Train/Custom.lean",
+      "public": true,
+      "src": "NN.API.Trainer.Train.Custom"
+    },
+    {
+      "dst": "NN.API.Trainer.Results",
+      "line": 10,
+      "path": "NN/API/Trainer/Train/Custom.lean",
+      "public": true,
+      "src": "NN.API.Trainer.Train.Custom"
+    },
+    {
       "dst": "NN.API.Checkpoint",
       "line": 9,
-      "path": "NN/API/Trainer/Train/CrossEntropy.lean",
+      "path": "NN/API/Trainer/Train/OneHotCrossEntropy.lean",
       "public": true,
-      "src": "NN.API.Trainer.Train.CrossEntropy"
+      "src": "NN.API.Trainer.Train.OneHotCrossEntropy"
     },
     {
       "dst": "NN.API.Trainer.Run",
       "line": 10,
-      "path": "NN/API/Trainer/Train/CrossEntropy.lean",
+      "path": "NN/API/Trainer/Train/OneHotCrossEntropy.lean",
       "public": true,
-      "src": "NN.API.Trainer.Train.CrossEntropy"
+      "src": "NN.API.Trainer.Train.OneHotCrossEntropy"
     },
     {
       "dst": "NN.API.Trainer.Results",
       "line": 11,
-      "path": "NN/API/Trainer/Train/CrossEntropy.lean",
+      "path": "NN/API/Trainer/Train/OneHotCrossEntropy.lean",
       "public": true,
-      "src": "NN.API.Trainer.Train.CrossEntropy"
-    },
-    {
-      "dst": "NN.API.Trainer.Run",
-      "line": 9,
-      "path": "NN/API/Trainer/Train/Custom.lean",
-      "public": true,
-      "src": "NN.API.Trainer.Train.Custom"
-    },
-    {
-      "dst": "NN.API.Trainer.Results",
-      "line": 10,
-      "path": "NN/API/Trainer/Train/Custom.lean",
-      "public": true,
-      "src": "NN.API.Trainer.Train.Custom"
+      "src": "NN.API.Trainer.Train.OneHotCrossEntropy"
     },
     {
       "dst": "NN.API.Trainer.Run",
@@ -1899,7 +1913,7 @@
       "src": "NN.API.Trainer.Train"
     },
     {
-      "dst": "NN.API.Trainer.Train.CrossEntropy",
+      "dst": "NN.API.Trainer.Train.OneHotCrossEntropy",
       "line": 10,
       "path": "NN/API/Trainer/Train.lean",
       "public": true,
@@ -1920,7 +1934,7 @@
       "src": "NN.API.Trainer.Train"
     },
     {
-      "dst": "NN.API.Trainer.Handle",
+      "dst": "NN.API.Trainer.Core",
       "line": 9,
       "path": "NN/API/Trainer.lean",
       "public": true,
@@ -1990,7 +2004,7 @@
       "src": "NN.API.Trainer"
     },
     {
-      "dst": "NN.API.Seeded",
+      "dst": "NN.API.Neural.Execution",
       "line": 9,
       "path": "NN/API/Verification.lean",
       "public": true,
@@ -2018,7 +2032,7 @@
       "src": "NN.API.Verification"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 13,
       "path": "NN/API/Verification.lean",
       "public": true,
@@ -2200,11 +2214,25 @@
       "src": "NN.Backend.Gate"
     },
     {
-      "dst": "NN.Backend.Lowering",
+      "dst": "NN.Backend.Grouping",
       "line": 10,
       "path": "NN/Backend/Gate.lean",
       "public": true,
       "src": "NN.Backend.Gate"
+    },
+    {
+      "dst": "NN.Backend.Audit",
+      "line": 9,
+      "path": "NN/Backend/Grouping.lean",
+      "public": true,
+      "src": "NN.Backend.Grouping"
+    },
+    {
+      "dst": "NN.Backend.IR",
+      "line": 10,
+      "path": "NN/Backend/Grouping.lean",
+      "public": true,
+      "src": "NN.Backend.Grouping"
     },
     {
       "dst": "NN.Backend.Registry",
@@ -2226,20 +2254,6 @@
       "path": "NN/Backend/LibTorch.lean",
       "public": true,
       "src": "NN.Backend.LibTorch"
-    },
-    {
-      "dst": "NN.Backend.Audit",
-      "line": 9,
-      "path": "NN/Backend/Lowering.lean",
-      "public": true,
-      "src": "NN.Backend.Lowering"
-    },
-    {
-      "dst": "NN.Backend.IR",
-      "line": 10,
-      "path": "NN/Backend/Lowering.lean",
-      "public": true,
-      "src": "NN.Backend.Lowering"
     },
     {
       "dst": "NN.Backend.Capsule",
@@ -2424,7 +2438,7 @@
       "src": "NN.Backend"
     },
     {
-      "dst": "NN.Backend.Lowering",
+      "dst": "NN.Backend.Grouping",
       "line": 22,
       "path": "NN/Backend.lean",
       "public": true,
@@ -3600,7 +3614,7 @@
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Compiled",
+      "dst": "NN.Runtime.Autograd.TypedGraph",
       "line": 11,
       "path": "NN/CI/Runtime.lean",
       "public": true,
@@ -3642,147 +3656,140 @@
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Backend",
+      "dst": "NN.Runtime.Autograd.TorchLean.Program",
       "line": 17,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.CompileExec",
+      "dst": "NN.Runtime.Autograd.TorchLean.Dual",
       "line": 18,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Dual",
+      "dst": "NN.Runtime.Autograd.TorchLean.Fno",
       "line": 19,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Fno",
+      "dst": "NN.Runtime.Autograd.TorchLean.Functional",
       "line": 20,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Functional",
+      "dst": "NN.Runtime.Autograd.TorchLean.Loss",
       "line": 21,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Loss",
+      "dst": "NN.Runtime.Autograd.TorchLean.Metrics",
       "line": 22,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Metrics",
+      "dst": "NN.Runtime.Autograd.TorchLean.Module",
       "line": 23,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Module",
+      "dst": "NN.Runtime.Autograd.TorchLean.NN",
       "line": 24,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.NN",
+      "dst": "NN.Runtime.Autograd.TorchLean.Norm",
       "line": 25,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Norm",
+      "dst": "NN.Runtime.Autograd.TorchLean.Optim",
       "line": 26,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Optim",
+      "dst": "NN.Runtime.Autograd.TorchLean.Random",
       "line": 27,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Random",
+      "dst": "NN.Runtime.Autograd.TorchLean.Session",
       "line": 28,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Session",
+      "dst": "NN.Runtime.Autograd.Train",
       "line": 29,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Train",
+      "dst": "NN.Runtime.Autograd.Utils",
       "line": 30,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Utils",
+      "dst": "NN.Runtime.Context",
       "line": 31,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Context",
+      "dst": "NN.Runtime.Optim",
       "line": 32,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Optim",
+      "dst": "NN.Runtime.PyTorch",
       "line": 33,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.PyTorch",
+      "dst": "NN.Runtime.Scalar",
       "line": 34,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Scalar",
+      "dst": "NN.Runtime.Training.Log",
       "line": 35,
       "path": "NN/CI/Runtime.lean",
       "public": true,
       "src": "NN.CI.Runtime"
     },
     {
-      "dst": "NN.Runtime.Training.Log",
-      "line": 36,
-      "path": "NN/CI/Runtime.lean",
-      "public": true,
-      "src": "NN.CI.Runtime"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness",
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness",
       "line": 9,
       "path": "NN/CI/SlowProofs.lean",
       "public": true,
@@ -4006,7 +4013,7 @@
       "src": "NN.CI.Theory"
     },
     {
-      "dst": "NN.MLTheory.CROWN.Operators.Batchnorm",
+      "dst": "NN.MLTheory.CROWN.Operators.BatchNorm",
       "line": 29,
       "path": "NN/CI/Theory.lean",
       "public": true,
@@ -4720,14 +4727,14 @@
       "src": "NN.CI.Verification"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 26,
       "path": "NN/CI/Verification.lean",
       "public": true,
       "src": "NN.CI.Verification"
     },
     {
-      "dst": "NN.Verification.TorchLean.CompileExec",
+      "dst": "NN.Verification.TorchLean.ExecutableLowering",
       "line": 27,
       "path": "NN/CI/Verification.lean",
       "public": true,
@@ -5282,30 +5289,30 @@
     {
       "dst": "Batteries.Data.Float.Basic",
       "line": 9,
-      "path": "NN/Examples/DeepDives/Floats/Float32Modes.lean",
+      "path": "NN/Examples/DeepDives/Floats/Float32Semantics.lean",
       "public": true,
-      "src": "NN.Examples.DeepDives.Floats.Float32Modes"
+      "src": "NN.Examples.DeepDives.Floats.Float32Semantics"
     },
     {
       "dst": "NN.API",
       "line": 10,
-      "path": "NN/Examples/DeepDives/Floats/Float32Modes.lean",
+      "path": "NN/Examples/DeepDives/Floats/Float32Semantics.lean",
       "public": true,
-      "src": "NN.Examples.DeepDives.Floats.Float32Modes"
+      "src": "NN.Examples.DeepDives.Floats.Float32Semantics"
     },
     {
       "dst": "NN.Floats",
       "line": 11,
-      "path": "NN/Examples/DeepDives/Floats/Float32Modes.lean",
+      "path": "NN/Examples/DeepDives/Floats/Float32Semantics.lean",
       "public": true,
-      "src": "NN.Examples.DeepDives.Floats.Float32Modes"
+      "src": "NN.Examples.DeepDives.Floats.Float32Semantics"
     },
     {
       "dst": "NN.Widgets",
       "line": 12,
-      "path": "NN/Examples/DeepDives/Floats/Float32Modes.lean",
+      "path": "NN/Examples/DeepDives/Floats/Float32Semantics.lean",
       "public": true,
-      "src": "NN.Examples.DeepDives.Floats.Float32Modes"
+      "src": "NN.Examples.DeepDives.Floats.Float32Semantics"
     },
     {
       "dst": "NN.Backend.Profile",
@@ -5350,7 +5357,7 @@
       "src": "NN.Examples.DeepDives.GraphSpec.Tutorial"
     },
     {
-      "dst": "NN.GraphSpec.ToTorchLean",
+      "dst": "NN.GraphSpec.ToSequential",
       "line": 11,
       "path": "NN/Examples/DeepDives/GraphSpec/Tutorial.lean",
       "public": true,
@@ -5371,7 +5378,7 @@
       "src": "NN.Examples.DeepDives.IRAxisOps"
     },
     {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec",
+      "dst": "NN.Runtime.Autograd.IRExec",
       "line": 11,
       "path": "NN/Examples/DeepDives/IRAxisOps.lean",
       "public": true,
@@ -5427,7 +5434,7 @@
       "src": "NN.Examples.DeepDives.TorchIRPyTorch"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 11,
       "path": "NN/Examples/DeepDives/TorchIRPyTorch.lean",
       "public": true,
@@ -5497,7 +5504,7 @@
       "src": "NN.Examples.DeepDives"
     },
     {
-      "dst": "NN.Examples.DeepDives.Floats.Float32Modes",
+      "dst": "NN.Examples.DeepDives.Floats.Float32Semantics",
       "line": 11,
       "path": "NN/Examples/DeepDives.lean",
       "public": true,
@@ -9837,7 +9844,7 @@
       "src": "NN.GraphSpec.Core"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Backend",
+      "dst": "NN.Runtime.Autograd.TorchLean.Program",
       "line": 9,
       "path": "NN/GraphSpec/DAG/Core.lean",
       "public": true,
@@ -10154,9 +10161,9 @@
     {
       "dst": "NN.GraphSpec.Core",
       "line": 9,
-      "path": "NN/GraphSpec/ToTorchLean.lean",
+      "path": "NN/GraphSpec/ToSequential.lean",
       "public": true,
-      "src": "NN.GraphSpec.ToTorchLean"
+      "src": "NN.GraphSpec.ToSequential"
     },
     {
       "dst": "NN.GraphSpec.Core",
@@ -10208,7 +10215,7 @@
       "src": "NN.GraphSpec"
     },
     {
-      "dst": "NN.GraphSpec.ToTorchLean",
+      "dst": "NN.GraphSpec.ToSequential",
       "line": 16,
       "path": "NN/GraphSpec.lean",
       "public": true,
@@ -11099,55 +11106,6 @@
     {
       "dst": "NN.Spec",
       "line": 9,
-      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/CompiledLossAnalysis.lean",
-      "public": true,
-      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis"
-    },
-    {
-      "dst": "NN.API.TensorPack",
-      "line": 10,
-      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/CompiledLossAnalysis.lean",
-      "public": true,
-      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis"
-    },
-    {
-      "dst": "NN.MLTheory.CROWN.Graph",
-      "line": 11,
-      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/CompiledLossAnalysis.lean",
-      "public": true,
-      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis"
-    },
-    {
-      "dst": "NN.MLTheory.CROWN.Lyapunov.TwoStage.Core",
-      "line": 12,
-      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/CompiledLossAnalysis.lean",
-      "public": true,
-      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis"
-    },
-    {
-      "dst": "NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils",
-      "line": 13,
-      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/CompiledLossAnalysis.lean",
-      "public": true,
-      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.TorchLean.Autodiff",
-      "line": 14,
-      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/CompiledLossAnalysis.lean",
-      "public": true,
-      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis"
-    },
-    {
-      "dst": "NN.Verification.TorchLean.Compile",
-      "line": 15,
-      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/CompiledLossAnalysis.lean",
-      "public": true,
-      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis"
-    },
-    {
-      "dst": "NN.Spec",
-      "line": 9,
       "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/Core.lean",
       "public": true,
       "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.Core"
@@ -11186,6 +11144,55 @@
       "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/ExecUtils.lean",
       "public": true,
       "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils"
+    },
+    {
+      "dst": "NN.Spec",
+      "line": 9,
+      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/LossAnalysis.lean",
+      "public": true,
+      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis"
+    },
+    {
+      "dst": "NN.API.TensorPack",
+      "line": 10,
+      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/LossAnalysis.lean",
+      "public": true,
+      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis"
+    },
+    {
+      "dst": "NN.MLTheory.CROWN.Graph",
+      "line": 11,
+      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/LossAnalysis.lean",
+      "public": true,
+      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis"
+    },
+    {
+      "dst": "NN.MLTheory.CROWN.Lyapunov.TwoStage.Core",
+      "line": 12,
+      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/LossAnalysis.lean",
+      "public": true,
+      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis"
+    },
+    {
+      "dst": "NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils",
+      "line": 13,
+      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/LossAnalysis.lean",
+      "public": true,
+      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TorchLean.Autodiff",
+      "line": 14,
+      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/LossAnalysis.lean",
+      "public": true,
+      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis"
+    },
+    {
+      "dst": "NN.Verification.TorchLean.Lowering",
+      "line": 15,
+      "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/LossAnalysis.lean",
+      "public": true,
+      "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis"
     },
     {
       "dst": "NN.Spec",
@@ -11237,7 +11244,7 @@
       "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineIIHybrid"
     },
     {
-      "dst": "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis",
+      "dst": "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis",
       "line": 16,
       "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIIHybrid.lean",
       "public": true,
@@ -11258,7 +11265,7 @@
       "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineIIHybrid"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Backend",
+      "dst": "NN.Runtime.Autograd.TorchLean.Program",
       "line": 19,
       "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIIHybrid.lean",
       "public": true,
@@ -11272,7 +11279,7 @@
       "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineIIHybrid"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 21,
       "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIIHybrid.lean",
       "public": true,
@@ -11328,7 +11335,7 @@
       "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineIIIAllInLean"
     },
     {
-      "dst": "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis",
+      "dst": "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis",
       "line": 15,
       "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIIIAllInLean.lean",
       "public": true,
@@ -11349,7 +11356,7 @@
       "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineIIIAllInLean"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Backend",
+      "dst": "NN.Runtime.Autograd.TorchLean.Program",
       "line": 18,
       "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIIIAllInLean.lean",
       "public": true,
@@ -11363,7 +11370,7 @@
       "src": "NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineIIIAllInLean"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 20,
       "path": "NN/MLTheory/CROWN/Lyapunov/TwoStage/PipelineIIIAllInLean.lean",
       "public": true,
@@ -11498,30 +11505,30 @@
     {
       "dst": "NN.MLTheory.CROWN.Core",
       "line": 9,
-      "path": "NN/MLTheory/CROWN/Operators/Batchnorm.lean",
+      "path": "NN/MLTheory/CROWN/Operators/BatchNorm.lean",
       "public": true,
-      "src": "NN.MLTheory.CROWN.Operators.Batchnorm"
+      "src": "NN.MLTheory.CROWN.Operators.BatchNorm"
     },
     {
       "dst": "NN.Spec.Core.Context",
       "line": 10,
-      "path": "NN/MLTheory/CROWN/Operators/Batchnorm.lean",
+      "path": "NN/MLTheory/CROWN/Operators/BatchNorm.lean",
       "public": true,
-      "src": "NN.MLTheory.CROWN.Operators.Batchnorm"
+      "src": "NN.MLTheory.CROWN.Operators.BatchNorm"
     },
     {
       "dst": "NN.Spec.Core.Tensor",
       "line": 11,
-      "path": "NN/MLTheory/CROWN/Operators/Batchnorm.lean",
+      "path": "NN/MLTheory/CROWN/Operators/BatchNorm.lean",
       "public": true,
-      "src": "NN.MLTheory.CROWN.Operators.Batchnorm"
+      "src": "NN.MLTheory.CROWN.Operators.BatchNorm"
     },
     {
       "dst": "NN.Spec.Core.TensorOps",
       "line": 12,
-      "path": "NN/MLTheory/CROWN/Operators/Batchnorm.lean",
+      "path": "NN/MLTheory/CROWN/Operators/BatchNorm.lean",
       "public": true,
-      "src": "NN.MLTheory.CROWN.Operators.Batchnorm"
+      "src": "NN.MLTheory.CROWN.Operators.BatchNorm"
     },
     {
       "dst": "NN.MLTheory.CROWN.Runtime.Ops",
@@ -11622,7 +11629,7 @@
       "src": "NN.MLTheory.CROWN.Operators"
     },
     {
-      "dst": "NN.MLTheory.CROWN.Operators.Batchnorm",
+      "dst": "NN.MLTheory.CROWN.Operators.BatchNorm",
       "line": 11,
       "path": "NN/MLTheory/CROWN/Operators.lean",
       "public": true,
@@ -17929,538 +17936,6 @@
       "src": "NN.Proofs"
     },
     {
-      "dst": "NN.Proofs.Autograd.Runtime.Link",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/Core.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.Core"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.Neural",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM/Convolution.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM.Convolution"
-    },
-    {
-      "dst": "NN.Proofs.Autograd.Tape.Algebra.Soundness",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM/Core.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM.Core"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Engine.Core",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM/Core.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM.Core"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.TorchLean.Random",
-      "line": 11,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM/Core.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM.Core"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.Core",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM/Elementwise.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM.Elementwise"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.ShapeIndex",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM/Neural.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM.Neural"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.LeadingAxis",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM/Neural.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM.Neural"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.Elementwise",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM/Pooling.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM.Pooling"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.Pooling",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM/ShapeIndex.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM.ShapeIndex"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.Core",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.Elementwise",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.Pooling",
-      "line": 11,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.ShapeIndex",
-      "line": 12,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.Neural",
-      "line": 13,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM.Convolution",
-      "line": 14,
-      "path": "NN/Runtime/Autograd/Compiled/GraphM.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.GraphM"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Lowering",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/API.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.API"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Helpers",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Builder.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Builder"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Lowering",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Builder.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Builder"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.API",
-      "line": 11,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Builder.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Builder"
-    },
-    {
-      "dst": "NN.IR.Semantics",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Core.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Core"
-    },
-    {
-      "dst": "NN.Proofs.Autograd.Runtime.Link",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Core.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Core"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Common.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Activations.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Activations"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Constants.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Constants"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Elementwise.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Elementwise"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/LinearAlgebra.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.LinearAlgebra"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Loss.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Loss"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Normalization.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Normalization"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Permutation.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Permutation"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Pooling.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Pooling"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Random.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Random"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Reductions.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Reductions"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Structural.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Structural"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Structural.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Structural"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops/Unary.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Unary"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Activations",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Constants",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Elementwise",
-      "line": 11,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.LinearAlgebra",
-      "line": 12,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Loss",
-      "line": 13,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Normalization",
-      "line": 14,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Permutation",
-      "line": 15,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Pooling",
-      "line": 16,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Random",
-      "line": 17,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Reductions",
-      "line": 18,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Structural",
-      "line": 19,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Unary",
-      "line": 20,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/Ops.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceOpCases",
-      "line": 11,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Activations",
-      "line": 12,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Constants",
-      "line": 13,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Elementwise",
-      "line": 14,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.LinearAlgebra",
-      "line": 15,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Normalization",
-      "line": 16,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Pooling",
-      "line": 17,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Permutation",
-      "line": 18,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Random",
-      "line": 19,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Reductions",
-      "line": 20,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Structural",
-      "line": 21,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Unary",
-      "line": 22,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalence.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalenceCommon.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalenceOpCases.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceOpCases"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness/SemanticEquivalenceOpCases.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceOpCases"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops",
-      "line": 11,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Correctness.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Correctness"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Core",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Helpers.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Helpers"
-    },
-    {
-      "dst": "NN.IR.HardMask",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Lowering.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Lowering"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Helpers",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Lowering.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Lowering"
-    },
-    {
-      "dst": "NN.Spec.Layers.Attention",
-      "line": 11,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec/Lowering.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec.Lowering"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Builder",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled/IRExec.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled.IRExec"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.Core",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Compiled.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/Compiled.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec",
-      "line": 11,
-      "path": "NN/Runtime/Autograd/Compiled.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Compiled"
-    },
-    {
       "dst": "NN.Runtime.Autograd.Engine.Core.Neural",
       "line": 10,
       "path": "NN/Runtime/Autograd/Engine/Core/ActivationsLoss.lean",
@@ -19063,6 +18538,384 @@
       "src": "NN.Runtime.Autograd.Engine"
     },
     {
+      "dst": "NN.Runtime.Autograd.IRExec.Lowering",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/API.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.API"
+    },
+    {
+      "dst": "NN.IR.Semantics",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Core.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Core"
+    },
+    {
+      "dst": "NN.Proofs.Autograd.Runtime.Link",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/IRExec/Core.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Core"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Common.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Common"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Activations.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Activations"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Common",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Constants.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Constants"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Elementwise.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Elementwise"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Common",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/LinearAlgebra.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.LinearAlgebra"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Common",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Loss.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Loss"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Normalization.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Normalization"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Permutation.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Permutation"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Common",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Pooling.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Pooling"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Common",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Random.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Random"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Reductions.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Reductions"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Common",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Structural.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Structural"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Structural.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Structural"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops/Unary.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Unary"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Activations",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Constants",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Elementwise",
+      "line": 11,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.LinearAlgebra",
+      "line": 12,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Loss",
+      "line": 13,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Normalization",
+      "line": 14,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Permutation",
+      "line": 15,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Pooling",
+      "line": 16,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Random",
+      "line": 17,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Reductions",
+      "line": 18,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Structural",
+      "line": 19,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Unary",
+      "line": 20,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/Ops.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.Ops"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Common",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceOpCases",
+      "line": 11,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Activations",
+      "line": 12,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Constants",
+      "line": 13,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Elementwise",
+      "line": 14,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.LinearAlgebra",
+      "line": 15,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Normalization",
+      "line": 16,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Pooling",
+      "line": 17,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Permutation",
+      "line": 18,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Random",
+      "line": 19,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Reductions",
+      "line": 20,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Structural",
+      "line": 21,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops.Unary",
+      "line": 22,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Common",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalenceCommon.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Common",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalenceOpCases.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceOpCases"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalenceOpCases.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceOpCases"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Common",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.Ops",
+      "line": 11,
+      "path": "NN/Runtime/Autograd/IRExec/Correctness.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Correctness"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Core",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Helpers.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Helpers"
+    },
+    {
+      "dst": "NN.IR.HardMask",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec/Lowering.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Lowering"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.Helpers",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/IRExec/Lowering.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Lowering"
+    },
+    {
+      "dst": "NN.Spec.Layers.Attention",
+      "line": 11,
+      "path": "NN/Runtime/Autograd/IRExec/Lowering.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec.Lowering"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec.API",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/IRExec.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.IRExec"
+    },
+    {
       "dst": "NN.Spec.Core.Shape",
       "line": 9,
       "path": "NN/Runtime/Autograd/LeadingAxis.lean",
@@ -19084,14 +18937,7 @@
       "src": "NN.Runtime.Autograd.Torch.Core.CheckpointIO"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.Core.BackwardOptim",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/Torch/Core/Compiled.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.Torch.Core.Compiled"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Torch.Core.Compiled",
+      "dst": "NN.Runtime.Autograd.Torch.Core.TypedGraph",
       "line": 9,
       "path": "NN/Runtime/Autograd/Torch/Core/Functional.lean",
       "public": true,
@@ -19294,14 +19140,21 @@
       "src": "NN.Runtime.Autograd.Torch.Core.Trainer"
     },
     {
-      "dst": "NN.Runtime.Autograd.Compiled.Core",
+      "dst": "NN.Runtime.Autograd.Torch.Core.BackwardOptim",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/Torch/Core/TypedGraph.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.Torch.Core.TypedGraph"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.Core",
       "line": 9,
       "path": "NN/Runtime/Autograd/Torch/Core/Types.lean",
       "public": true,
       "src": "NN.Runtime.Autograd.Torch.Core.Types"
     },
     {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM",
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM",
       "line": 10,
       "path": "NN/Runtime/Autograd/Torch/Core/Types.lean",
       "public": true,
@@ -19399,7 +19252,7 @@
       "src": "NN.Runtime.Autograd.Torch.Core"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.Core.Compiled",
+      "dst": "NN.Runtime.Autograd.Torch.Core.TypedGraph",
       "line": 13,
       "path": "NN/Runtime/Autograd/Torch/Core.lean",
       "public": true,
@@ -19420,60 +19273,60 @@
       "src": "NN.Runtime.Autograd.Torch.Core"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.LinkedSession.ConvAttention",
+      "dst": "NN.Runtime.Autograd.Torch.TypedGraphSession.ConvAttention",
       "line": 9,
-      "path": "NN/Runtime/Autograd/Torch/LinkedSession/Autograd.lean",
+      "path": "NN/Runtime/Autograd/Torch/TypedGraphSession/Autograd.lean",
       "public": true,
-      "src": "NN.Runtime.Autograd.Torch.LinkedSession.Autograd"
+      "src": "NN.Runtime.Autograd.Torch.TypedGraphSession.Autograd"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.LinkedSession.Neural",
+      "dst": "NN.Runtime.Autograd.Torch.TypedGraphSession.Neural",
       "line": 9,
-      "path": "NN/Runtime/Autograd/Torch/LinkedSession/ConvAttention.lean",
+      "path": "NN/Runtime/Autograd/Torch/TypedGraphSession/ConvAttention.lean",
       "public": true,
-      "src": "NN.Runtime.Autograd.Torch.LinkedSession.ConvAttention"
+      "src": "NN.Runtime.Autograd.Torch.TypedGraphSession.ConvAttention"
     },
     {
       "dst": "NN.Runtime.Autograd.Torch.Core",
       "line": 9,
-      "path": "NN/Runtime/Autograd/Torch/LinkedSession/Core.lean",
+      "path": "NN/Runtime/Autograd/Torch/TypedGraphSession/Core.lean",
       "public": true,
-      "src": "NN.Runtime.Autograd.Torch.LinkedSession.Core"
+      "src": "NN.Runtime.Autograd.Torch.TypedGraphSession.Core"
     },
     {
       "dst": "Mathlib.Algebra.Order.Algebra",
       "line": 10,
-      "path": "NN/Runtime/Autograd/Torch/LinkedSession/Core.lean",
+      "path": "NN/Runtime/Autograd/Torch/TypedGraphSession/Core.lean",
       "public": false,
-      "src": "NN.Runtime.Autograd.Torch.LinkedSession.Core"
+      "src": "NN.Runtime.Autograd.Torch.TypedGraphSession.Core"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.LinkedSession.Core",
+      "dst": "NN.Runtime.Autograd.Torch.TypedGraphSession.Core",
       "line": 9,
-      "path": "NN/Runtime/Autograd/Torch/LinkedSession/GraphOps.lean",
+      "path": "NN/Runtime/Autograd/Torch/TypedGraphSession/GraphOps.lean",
       "public": true,
-      "src": "NN.Runtime.Autograd.Torch.LinkedSession.GraphOps"
+      "src": "NN.Runtime.Autograd.Torch.TypedGraphSession.GraphOps"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.LinkedSession.ShapeIndex",
+      "dst": "NN.Runtime.Autograd.Torch.TypedGraphSession.ShapeIndex",
       "line": 9,
-      "path": "NN/Runtime/Autograd/Torch/LinkedSession/Neural.lean",
+      "path": "NN/Runtime/Autograd/Torch/TypedGraphSession/Neural.lean",
       "public": true,
-      "src": "NN.Runtime.Autograd.Torch.LinkedSession.Neural"
+      "src": "NN.Runtime.Autograd.Torch.TypedGraphSession.Neural"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.LinkedSession.GraphOps",
+      "dst": "NN.Runtime.Autograd.Torch.TypedGraphSession.GraphOps",
       "line": 9,
-      "path": "NN/Runtime/Autograd/Torch/LinkedSession/ShapeIndex.lean",
+      "path": "NN/Runtime/Autograd/Torch/TypedGraphSession/ShapeIndex.lean",
       "public": true,
-      "src": "NN.Runtime.Autograd.Torch.LinkedSession.ShapeIndex"
+      "src": "NN.Runtime.Autograd.Torch.TypedGraphSession.ShapeIndex"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.LinkedSession.Autograd",
+      "dst": "NN.Runtime.Autograd.Torch.TypedGraphSession.Autograd",
       "line": 9,
-      "path": "NN/Runtime/Autograd/Torch/LinkedSession.lean",
+      "path": "NN/Runtime/Autograd/Torch/TypedGraphSession.lean",
       "public": true,
-      "src": "NN.Runtime.Autograd.Torch.LinkedSession"
+      "src": "NN.Runtime.Autograd.Torch.TypedGraphSession"
     },
     {
       "dst": "NN.Runtime.Autograd.Torch.Core",
@@ -19504,7 +19357,7 @@
       "src": "NN.Runtime.Autograd.Torch"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.LinkedSession",
+      "dst": "NN.Runtime.Autograd.Torch.TypedGraphSession",
       "line": 10,
       "path": "NN/Runtime/Autograd/Torch.lean",
       "public": true,
@@ -19518,7 +19371,7 @@
       "src": "NN.Runtime.Autograd.Torch"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Backend",
+      "dst": "NN.Runtime.Autograd.TorchLean.Program",
       "line": 9,
       "path": "NN/Runtime/Autograd/TorchLean/Autodiff.lean",
       "public": true,
@@ -19537,48 +19390,6 @@
       "path": "NN/Runtime/Autograd/TorchLean/Autodiff.lean",
       "public": false,
       "src": "NN.Runtime.Autograd.TorchLean.Autodiff"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Torch.Core",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/TorchLean/Backend.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.TorchLean.Backend"
-    },
-    {
-      "dst": "NN.Tensor.API",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/TorchLean/Backend.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.TorchLean.Backend"
-    },
-    {
-      "dst": "Mathlib.Algebra.Order.Algebra",
-      "line": 12,
-      "path": "NN/Runtime/Autograd/TorchLean/Backend.lean",
-      "public": false,
-      "src": "NN.Runtime.Autograd.TorchLean.Backend"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec",
-      "line": 9,
-      "path": "NN/Runtime/Autograd/TorchLean/CompileExec.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.TorchLean.CompileExec"
-    },
-    {
-      "dst": "NN.Verification.TorchLean.Compile",
-      "line": 10,
-      "path": "NN/Runtime/Autograd/TorchLean/CompileExec.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.TorchLean.CompileExec"
-    },
-    {
-      "dst": "NN.Verification.TorchLean.Correctness",
-      "line": 11,
-      "path": "NN/Runtime/Autograd/TorchLean/CompileExec.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.TorchLean.CompileExec"
     },
     {
       "dst": "NN.Proofs.Autograd.Tape.Algebra.Soundness",
@@ -19637,7 +19448,7 @@
       "src": "NN.Runtime.Autograd.TorchLean.Fno1d"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Backend",
+      "dst": "NN.Runtime.Autograd.TorchLean.Program",
       "line": 9,
       "path": "NN/Runtime/Autograd/TorchLean/Functional/Core.lean",
       "public": true,
@@ -19721,7 +19532,7 @@
       "src": "NN.Runtime.Autograd.TorchLean.Module"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Backend",
+      "dst": "NN.Runtime.Autograd.TorchLean.Program",
       "line": 10,
       "path": "NN/Runtime/Autograd/TorchLean/Module.lean",
       "public": true,
@@ -19861,32 +19672,25 @@
       "src": "NN.Runtime.Autograd.TorchLean.Optim"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.Core.CheckpointIO",
+      "dst": "NN.Runtime.Autograd.Torch.Core",
       "line": 9,
-      "path": "NN/Runtime/Autograd/TorchLean/ParamIO.lean",
+      "path": "NN/Runtime/Autograd/TorchLean/Program.lean",
       "public": true,
-      "src": "NN.Runtime.Autograd.TorchLean.ParamIO"
+      "src": "NN.Runtime.Autograd.TorchLean.Program"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.NN",
+      "dst": "NN.Tensor.API",
       "line": 10,
-      "path": "NN/Runtime/Autograd/TorchLean/ParamIO.lean",
+      "path": "NN/Runtime/Autograd/TorchLean/Program.lean",
       "public": true,
-      "src": "NN.Runtime.Autograd.TorchLean.ParamIO"
+      "src": "NN.Runtime.Autograd.TorchLean.Program"
     },
     {
-      "dst": "NN.Spec.Core.TensorBridge",
-      "line": 11,
-      "path": "NN/Runtime/Autograd/TorchLean/ParamIO.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.TorchLean.ParamIO"
-    },
-    {
-      "dst": "Lean",
+      "dst": "Mathlib.Algebra.Order.Algebra",
       "line": 12,
-      "path": "NN/Runtime/Autograd/TorchLean/ParamIO.lean",
-      "public": true,
-      "src": "NN.Runtime.Autograd.TorchLean.ParamIO"
+      "path": "NN/Runtime/Autograd/TorchLean/Program.lean",
+      "public": false,
+      "src": "NN.Runtime.Autograd.TorchLean.Program"
     },
     {
       "dst": "NN.Spec.Core.Context",
@@ -19910,7 +19714,7 @@
       "src": "NN.Runtime.Autograd.TorchLean.Session.Autograd"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.LinkedSession",
+      "dst": "NN.Runtime.Autograd.Torch.TypedGraphSession",
       "line": 9,
       "path": "NN/Runtime/Autograd/TorchLean/Session/Eager.lean",
       "public": true,
@@ -19994,6 +19798,34 @@
       "src": "NN.Runtime.Autograd.TorchLean.Session"
     },
     {
+      "dst": "NN.Runtime.Autograd.Torch.Core.CheckpointIO",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/TorchLean/StateIO.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TorchLean.StateIO"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TorchLean.NN",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/TorchLean/StateIO.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TorchLean.StateIO"
+    },
+    {
+      "dst": "NN.Spec.Core.TensorBridge",
+      "line": 11,
+      "path": "NN/Runtime/Autograd/TorchLean/StateIO.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TorchLean.StateIO"
+    },
+    {
+      "dst": "Lean",
+      "line": 12,
+      "path": "NN/Runtime/Autograd/TorchLean/StateIO.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TorchLean.StateIO"
+    },
+    {
       "dst": "NN.Runtime.Autograd.Torch.Utils",
       "line": 9,
       "path": "NN/Runtime/Autograd/TorchLean/Training.lean",
@@ -20015,7 +19847,7 @@
       "src": "NN.Runtime.Autograd.TorchLean"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.Backend",
+      "dst": "NN.Runtime.Autograd.TorchLean.Program",
       "line": 10,
       "path": "NN/Runtime/Autograd/TorchLean.lean",
       "public": true,
@@ -20307,6 +20139,132 @@
       "path": "NN/Runtime/Autograd/Train.lean",
       "public": true,
       "src": "NN.Runtime.Autograd.Train"
+    },
+    {
+      "dst": "NN.Proofs.Autograd.Runtime.Link",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/TypedGraph/Core.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.Core"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.Neural",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM/Convolution.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM.Convolution"
+    },
+    {
+      "dst": "NN.Proofs.Autograd.Tape.Algebra.Soundness",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM/Core.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM.Core"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.Engine.Core",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM/Core.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM.Core"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TorchLean.Random",
+      "line": 11,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM/Core.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM.Core"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.Core",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM/Elementwise.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM.Elementwise"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.ShapeIndex",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM/Neural.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM.Neural"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.LeadingAxis",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM/Neural.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM.Neural"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.Elementwise",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM/Pooling.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM.Pooling"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.Pooling",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM/ShapeIndex.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM.ShapeIndex"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.Core",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.Elementwise",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.Pooling",
+      "line": 11,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.ShapeIndex",
+      "line": 12,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.Neural",
+      "line": 13,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM.Convolution",
+      "line": 14,
+      "path": "NN/Runtime/Autograd/TypedGraph/GraphM.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph.GraphM"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.Core",
+      "line": 9,
+      "path": "NN/Runtime/Autograd/TypedGraph.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM",
+      "line": 10,
+      "path": "NN/Runtime/Autograd/TypedGraph.lean",
+      "public": true,
+      "src": "NN.Runtime.Autograd.TypedGraph"
     },
     {
       "dst": "NN.Runtime.Autograd.Torch.Utils",
@@ -21275,71 +21233,78 @@
       "src": "NN.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Compiled",
+      "dst": "NN.Runtime.Autograd.TypedGraph",
       "line": 16,
       "path": "NN/Runtime.lean",
       "public": true,
       "src": "NN.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Engine",
+      "dst": "NN.Runtime.Autograd.IRExec",
       "line": 17,
       "path": "NN/Runtime.lean",
       "public": true,
       "src": "NN.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch",
+      "dst": "NN.Runtime.Autograd.Engine",
       "line": 18,
       "path": "NN/Runtime.lean",
       "public": true,
       "src": "NN.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean",
+      "dst": "NN.Runtime.Autograd.Torch",
       "line": 19,
       "path": "NN/Runtime.lean",
       "public": true,
       "src": "NN.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Train",
+      "dst": "NN.Runtime.Autograd.TorchLean",
       "line": 20,
       "path": "NN/Runtime.lean",
       "public": true,
       "src": "NN.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Utils",
+      "dst": "NN.Runtime.Autograd.Train",
       "line": 21,
       "path": "NN/Runtime.lean",
       "public": true,
       "src": "NN.Runtime"
     },
     {
-      "dst": "NN.Runtime.External",
-      "line": 23,
+      "dst": "NN.Runtime.Autograd.Utils",
+      "line": 22,
       "path": "NN/Runtime.lean",
       "public": true,
       "src": "NN.Runtime"
     },
     {
-      "dst": "NN.Runtime.PyTorch",
+      "dst": "NN.Runtime.External",
       "line": 24,
       "path": "NN/Runtime.lean",
       "public": true,
       "src": "NN.Runtime"
     },
     {
+      "dst": "NN.Runtime.PyTorch",
+      "line": 25,
+      "path": "NN/Runtime.lean",
+      "public": true,
+      "src": "NN.Runtime"
+    },
+    {
       "dst": "NN.Runtime.Optim",
-      "line": 26,
+      "line": 27,
       "path": "NN/Runtime.lean",
       "public": true,
       "src": "NN.Runtime"
     },
     {
       "dst": "NN.Runtime.RL",
-      "line": 27,
+      "line": 28,
       "path": "NN/Runtime.lean",
       "public": true,
       "src": "NN.Runtime"
@@ -23816,7 +23781,7 @@
       "src": "NN.Tests.MLTheory.CROWNOperators"
     },
     {
-      "dst": "NN.MLTheory.CROWN.Operators.Batchnorm",
+      "dst": "NN.MLTheory.CROWN.Operators.BatchNorm",
       "line": 11,
       "path": "NN/Tests/MLTheory/CROWNOperators.lean",
       "public": true,
@@ -24474,50 +24439,57 @@
       "src": "NN.Tests.Runtime.Cuda.ViewsBroadcastReduce"
     },
     {
-      "dst": "NN.Runtime.Autograd.Compiled.GraphM",
+      "dst": "NN.Runtime.Autograd.TypedGraph.GraphM",
       "line": 9,
       "path": "NN/Tests/Runtime/Floats/AllAutogradTests.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.AllAutogradTests"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.Core.Compiled",
+      "dst": "NN.Runtime.Autograd.Torch.Core.TypedGraph",
       "line": 10,
       "path": "NN/Tests/Runtime/Floats/AllAutogradTests.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.AllAutogradTests"
     },
     {
-      "dst": "NN.Runtime.Autograd.Utils",
+      "dst": "NN.API.Neural.Execution",
       "line": 11,
       "path": "NN/Tests/Runtime/Floats/AllAutogradTests.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.AllAutogradTests"
     },
     {
-      "dst": "NN.Spec.Core.Tensor",
+      "dst": "NN.Runtime.Autograd.Utils",
       "line": 12,
       "path": "NN/Tests/Runtime/Floats/AllAutogradTests.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.AllAutogradTests"
     },
     {
-      "dst": "NN.Spec.Core.Utils",
+      "dst": "NN.Spec.Core.Tensor",
       "line": 13,
       "path": "NN/Tests/Runtime/Floats/AllAutogradTests.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.AllAutogradTests"
     },
     {
-      "dst": "NN.Spec.Models.Mlp",
+      "dst": "NN.Spec.Core.Utils",
       "line": 14,
       "path": "NN/Tests/Runtime/Floats/AllAutogradTests.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.AllAutogradTests"
     },
     {
-      "dst": "NN.Tensor",
+      "dst": "NN.Spec.Models.Mlp",
       "line": 15,
+      "path": "NN/Tests/Runtime/Floats/AllAutogradTests.lean",
+      "public": true,
+      "src": "NN.Tests.Runtime.Floats.AllAutogradTests"
+    },
+    {
+      "dst": "NN.Tensor",
+      "line": 16,
       "path": "NN/Tests/Runtime/Floats/AllAutogradTests.lean",
       "public": true,
       "src": "NN.Tests.Runtime.Floats.AllAutogradTests"
@@ -24593,7 +24565,7 @@
       "src": "NN.Tests.Runtime.Floats.IRBatchNorm"
     },
     {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec",
+      "dst": "NN.Runtime.Autograd.IRExec",
       "line": 12,
       "path": "NN/Tests/Runtime/Floats/IRBatchNorm.lean",
       "public": true,
@@ -24845,7 +24817,7 @@
       "src": "NN.Tests.Runtime.Floats.TorchLeanIRExecEquivCheck"
     },
     {
-      "dst": "NN.Verification.TorchLean.CompileExec",
+      "dst": "NN.Verification.TorchLean.ExecutableLowering",
       "line": 12,
       "path": "NN/Tests/Runtime/Floats/TorchLeanIRExecEquivCheck.lean",
       "public": true,
@@ -25727,7 +25699,7 @@
       "src": "NN.Verification.ODE.Verify"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 12,
       "path": "NN/Verification/ODE/Verify.lean",
       "public": true,
@@ -26119,7 +26091,7 @@
       "src": "NN.Verification.Robustness.Digits"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 18,
       "path": "NN/Verification/Robustness/Digits.lean",
       "public": true,
@@ -26210,7 +26182,7 @@
       "src": "NN.Verification.Robustness.TorchLean"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 12,
       "path": "NN/Verification/Robustness/TorchLean.lean",
       "public": true,
@@ -26322,76 +26294,6 @@
       "src": "NN.Verification.Splines"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile.Builder",
-      "line": 9,
-      "path": "NN/Verification/TorchLean/Compile/API.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.Compile.API"
-    },
-    {
-      "dst": "NN.IR.Check",
-      "line": 9,
-      "path": "NN/Verification/TorchLean/Compile/Builder.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.Compile.Builder"
-    },
-    {
-      "dst": "NN.IR.HardMask",
-      "line": 10,
-      "path": "NN/Verification/TorchLean/Compile/Builder.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.Compile.Builder"
-    },
-    {
-      "dst": "NN.MLTheory.CROWN.Graph",
-      "line": 11,
-      "path": "NN/Verification/TorchLean/Compile/Builder.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.Compile.Builder"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.TorchLean.Backend",
-      "line": 12,
-      "path": "NN/Verification/TorchLean/Compile/Builder.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.Compile.Builder"
-    },
-    {
-      "dst": "NN.API.Scalar",
-      "line": 9,
-      "path": "NN/Verification/TorchLean/Compile.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.Compile"
-    },
-    {
-      "dst": "NN.Verification.TorchLean.Compile.API",
-      "line": 10,
-      "path": "NN/Verification/TorchLean/Compile.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.Compile"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec",
-      "line": 9,
-      "path": "NN/Verification/TorchLean/CompileExec.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.CompileExec"
-    },
-    {
-      "dst": "NN.Verification.TorchLean.Compile",
-      "line": 10,
-      "path": "NN/Verification/TorchLean/CompileExec.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.CompileExec"
-    },
-    {
-      "dst": "NN.Verification.TorchLean.Correctness",
-      "line": 11,
-      "path": "NN/Verification/TorchLean/CompileExec.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.CompileExec"
-    },
-    {
       "dst": "NN.IR.Semantics",
       "line": 9,
       "path": "NN/Verification/TorchLean/Correctness.lean",
@@ -26399,7 +26301,7 @@
       "src": "NN.Verification.TorchLean.Correctness"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 10,
       "path": "NN/Verification/TorchLean/Correctness.lean",
       "public": true,
@@ -26413,11 +26315,32 @@
       "src": "NN.Verification.TorchLean.CrownOpsWorkflow"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 10,
       "path": "NN/Verification/TorchLean/CrownOpsWorkflow.lean",
       "public": true,
       "src": "NN.Verification.TorchLean.CrownOpsWorkflow"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.IRExec",
+      "line": 9,
+      "path": "NN/Verification/TorchLean/ExecutableLowering.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.ExecutableLowering"
+    },
+    {
+      "dst": "NN.Verification.TorchLean.Lowering",
+      "line": 10,
+      "path": "NN/Verification/TorchLean/ExecutableLowering.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.ExecutableLowering"
+    },
+    {
+      "dst": "NN.Verification.TorchLean.Correctness",
+      "line": 11,
+      "path": "NN/Verification/TorchLean/ExecutableLowering.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.ExecutableLowering"
     },
     {
       "dst": "NN.API",
@@ -26427,11 +26350,60 @@
       "src": "NN.Verification.TorchLean.IBPWorkflow"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 10,
       "path": "NN/Verification/TorchLean/IBPWorkflow.lean",
       "public": true,
       "src": "NN.Verification.TorchLean.IBPWorkflow"
+    },
+    {
+      "dst": "NN.Verification.TorchLean.Lowering.Builder",
+      "line": 9,
+      "path": "NN/Verification/TorchLean/Lowering/API.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.Lowering.API"
+    },
+    {
+      "dst": "NN.IR.Check",
+      "line": 9,
+      "path": "NN/Verification/TorchLean/Lowering/Builder.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.Lowering.Builder"
+    },
+    {
+      "dst": "NN.IR.HardMask",
+      "line": 10,
+      "path": "NN/Verification/TorchLean/Lowering/Builder.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.Lowering.Builder"
+    },
+    {
+      "dst": "NN.MLTheory.CROWN.Graph",
+      "line": 11,
+      "path": "NN/Verification/TorchLean/Lowering/Builder.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.Lowering.Builder"
+    },
+    {
+      "dst": "NN.Runtime.Autograd.TorchLean.Program",
+      "line": 12,
+      "path": "NN/Verification/TorchLean/Lowering/Builder.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.Lowering.Builder"
+    },
+    {
+      "dst": "NN.API.Scalar",
+      "line": 9,
+      "path": "NN/Verification/TorchLean/Lowering.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.Lowering"
+    },
+    {
+      "dst": "NN.Verification.TorchLean.Lowering.API",
+      "line": 10,
+      "path": "NN/Verification/TorchLean/Lowering.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.Lowering"
     },
     {
       "dst": "NN.API",
@@ -26441,25 +26413,11 @@
       "src": "NN.Verification.TorchLean.MlpTrainVerifyWorkflow"
     },
     {
-      "dst": "NN.Verification.TorchLean.Proved.Syntax",
-      "line": 9,
-      "path": "NN/Verification/TorchLean/Proved/Compile.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.Proved.Compile"
-    },
-    {
       "dst": "NN.Verification.TorchLean.Proved.Correctness.Eval.PayloadOps",
       "line": 9,
       "path": "NN/Verification/TorchLean/Proved/Correctness/Eval/BatchNorm.lean",
       "public": true,
       "src": "NN.Verification.TorchLean.Proved.Correctness.Eval.BatchNorm"
-    },
-    {
-      "dst": "NN.Verification.TorchLean.Proved.Correctness.Eval.PayloadBridge",
-      "line": 9,
-      "path": "NN/Verification/TorchLean/Proved/Correctness/Eval/CompilePayload.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.Proved.Correctness.Eval.CompilePayload"
     },
     {
       "dst": "NN.Verification.TorchLean.Proved.Correctness.Eval.LinearAlgebra",
@@ -26567,6 +26525,13 @@
       "src": "NN.Verification.TorchLean.Proved.Correctness.Eval.LinearAlgebra"
     },
     {
+      "dst": "NN.Verification.TorchLean.Proved.Correctness.Eval.PayloadBridge",
+      "line": 9,
+      "path": "NN/Verification/TorchLean/Proved/Correctness/Eval/LoweringPayload.lean",
+      "public": true,
+      "src": "NN.Verification.TorchLean.Proved.Correctness.Eval.LoweringPayload"
+    },
+    {
       "dst": "NN.Verification.TorchLean.Proved.Correctness.Eval.Return",
       "line": 9,
       "path": "NN/Verification/TorchLean/Proved/Correctness/Eval/Main.lean",
@@ -26672,7 +26637,7 @@
       "src": "NN.Verification.TorchLean.Proved.Correctness.Eval"
     },
     {
-      "dst": "NN.Verification.TorchLean.Proved.Correctness.Eval.CompilePayload",
+      "dst": "NN.Verification.TorchLean.Proved.Correctness.Eval.LoweringPayload",
       "line": 11,
       "path": "NN/Verification/TorchLean/Proved/Correctness/Eval.lean",
       "public": true,
@@ -26686,7 +26651,7 @@
       "src": "NN.Verification.TorchLean.Proved.Correctness.Eval"
     },
     {
-      "dst": "NN.Verification.TorchLean.Proved.Compile",
+      "dst": "NN.Verification.TorchLean.Proved.Lowering",
       "line": 9,
       "path": "NN/Verification/TorchLean/Proved/Correctness/WellFormed.lean",
       "public": true,
@@ -26707,11 +26672,11 @@
       "src": "NN.Verification.TorchLean.Proved.Correctness"
     },
     {
-      "dst": "NN.Verification.TorchLean.Proved.Correctness",
+      "dst": "NN.Verification.TorchLean.Proved.Syntax",
       "line": 9,
-      "path": "NN/Verification/TorchLean/Proved/Public.lean",
+      "path": "NN/Verification/TorchLean/Proved/Lowering.lean",
       "public": true,
-      "src": "NN.Verification.TorchLean.Proved.Public"
+      "src": "NN.Verification.TorchLean.Proved.Lowering"
     },
     {
       "dst": "Init.Data.Array.Lemmas",
@@ -26749,7 +26714,7 @@
       "src": "NN.Verification.TorchLean.Proved.Syntax"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 14,
       "path": "NN/Verification/TorchLean/Proved/Syntax.lean",
       "public": true,
@@ -26777,7 +26742,7 @@
       "src": "NN.Verification.TorchLean.Proved"
     },
     {
-      "dst": "NN.Verification.TorchLean.Proved.Compile",
+      "dst": "NN.Verification.TorchLean.Proved.Lowering",
       "line": 10,
       "path": "NN/Verification/TorchLean/Proved.lean",
       "public": true,
@@ -26791,14 +26756,7 @@
       "src": "NN.Verification.TorchLean.Proved"
     },
     {
-      "dst": "NN.Verification.TorchLean.Proved.Public",
-      "line": 12,
-      "path": "NN/Verification/TorchLean/Proved.lean",
-      "public": true,
-      "src": "NN.Verification.TorchLean.Proved"
-    },
-    {
-      "dst": "NN.Runtime.Autograd.TorchLean.Backend",
+      "dst": "NN.Runtime.Autograd.TorchLean.Program",
       "line": 9,
       "path": "NN/Verification/TorchLean/SpecEval.lean",
       "public": true,
@@ -26861,7 +26819,7 @@
       "src": "NN.Verification.TorchLean.TransformerIBPWorkflow"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 10,
       "path": "NN/Verification/TorchLean/TransformerIBPWorkflow.lean",
       "public": true,
@@ -27008,14 +26966,14 @@
       "src": "NN.Verification"
     },
     {
-      "dst": "NN.Verification.TorchLean.Compile",
+      "dst": "NN.Verification.TorchLean.Lowering",
       "line": 15,
       "path": "NN/Verification.lean",
       "public": true,
       "src": "NN.Verification"
     },
     {
-      "dst": "NN.Verification.TorchLean.CompileExec",
+      "dst": "NN.Verification.TorchLean.ExecutableLowering",
       "line": 16,
       "path": "NN/Verification.lean",
       "public": true,
@@ -27617,14 +27575,14 @@
       "src": "blueprint.TorchLeanBlueprint.FormalizationMap.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Compiled",
+      "dst": "NN.Runtime.Autograd.TypedGraph",
       "line": 5,
       "path": "blueprint/TorchLeanBlueprint/FormalizationMap/Runtime.lean",
       "public": false,
       "src": "blueprint.TorchLeanBlueprint.FormalizationMap.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence",
+      "dst": "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence",
       "line": 6,
       "path": "blueprint/TorchLeanBlueprint/FormalizationMap/Runtime.lean",
       "public": false,
@@ -27638,7 +27596,7 @@
       "src": "blueprint.TorchLeanBlueprint.FormalizationMap.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.Torch.LinkedSession",
+      "dst": "NN.Runtime.Autograd.Torch.TypedGraphSession",
       "line": 8,
       "path": "blueprint/TorchLeanBlueprint/FormalizationMap/Runtime.lean",
       "public": false,
@@ -27652,22 +27610,15 @@
       "src": "blueprint.TorchLeanBlueprint.FormalizationMap.Runtime"
     },
     {
-      "dst": "NN.Runtime.Autograd.TorchLean.CompileExec",
+      "dst": "NN.Proofs.Autograd.Runtime.Link.BackwardGraphData",
       "line": 10,
       "path": "blueprint/TorchLeanBlueprint/FormalizationMap/Runtime.lean",
       "public": false,
       "src": "blueprint.TorchLeanBlueprint.FormalizationMap.Runtime"
     },
     {
-      "dst": "NN.Proofs.Autograd.Runtime.Link.BackwardGraphData",
+      "dst": "NN.Verification.TorchLean.Proved.Correctness",
       "line": 11,
-      "path": "blueprint/TorchLeanBlueprint/FormalizationMap/Runtime.lean",
-      "public": false,
-      "src": "blueprint.TorchLeanBlueprint.FormalizationMap.Runtime"
-    },
-    {
-      "dst": "NN.Verification.TorchLean.Proved.Public",
-      "line": 12,
       "path": "blueprint/TorchLeanBlueprint/FormalizationMap/Runtime.lean",
       "public": false,
       "src": "blueprint.TorchLeanBlueprint.FormalizationMap.Runtime"
@@ -27736,7 +27687,7 @@
       "src": "blueprint.TorchLeanBlueprint.FormalizationMap.Verification"
     },
     {
-      "dst": "NN.Verification.TorchLean.Proved.Public",
+      "dst": "NN.Verification.TorchLean.Proved.Correctness",
       "line": 10,
       "path": "blueprint/TorchLeanBlueprint/FormalizationMap/Verification.lean",
       "public": false,
@@ -28698,7 +28649,7 @@
   "findings": [],
   "layer_edges": [
     {
-      "count": 392,
+      "count": 388,
       "dst_layer": "NN.Runtime",
       "src_layer": "NN.Runtime"
     },
@@ -28728,7 +28679,7 @@
       "src_layer": "NN.API"
     },
     {
-      "count": 181,
+      "count": 179,
       "dst_layer": "NN.Verification",
       "src_layer": "NN.Verification"
     },
@@ -28808,7 +28759,7 @@
       "src_layer": "NN.Examples"
     },
     {
-      "count": 28,
+      "count": 27,
       "dst_layer": "NN.Runtime",
       "src_layer": "NN.CI"
     },
@@ -28819,13 +28770,13 @@
     },
     {
       "count": 25,
-      "dst_layer": "NN.Verification",
-      "src_layer": "NN.CI"
-    },
-    {
-      "count": 23,
       "dst_layer": "NN.Spec",
       "src_layer": "NN.API"
+    },
+    {
+      "count": 25,
+      "dst_layer": "NN.Verification",
+      "src_layer": "NN.CI"
     },
     {
       "count": 20,
@@ -28883,14 +28834,14 @@
       "src_layer": "blueprint"
     },
     {
-      "count": 15,
-      "dst_layer": "NN.Runtime",
-      "src_layer": "blueprint"
-    },
-    {
       "count": 14,
       "dst_layer": "NN.Floats",
       "src_layer": "NN.Examples"
+    },
+    {
+      "count": 14,
+      "dst_layer": "NN.Runtime",
+      "src_layer": "blueprint"
     },
     {
       "count": 13,
@@ -28984,6 +28935,11 @@
     },
     {
       "count": 5,
+      "dst_layer": "NN.API",
+      "src_layer": "NN.Tests"
+    },
+    {
+      "count": 5,
       "dst_layer": "NN.MLTheory",
       "src_layer": "NN.Tests"
     },
@@ -29020,11 +28976,6 @@
     {
       "count": 4,
       "dst_layer": "Core",
-      "src_layer": "NN.Tests"
-    },
-    {
-      "count": 4,
-      "dst_layer": "NN.API",
       "src_layer": "NN.Tests"
     },
     {
@@ -29140,11 +29091,6 @@
     {
       "count": 2,
       "dst_layer": "NN.MLTheory",
-      "src_layer": "NN.Runtime"
-    },
-    {
-      "count": 2,
-      "dst_layer": "NN.Verification",
       "src_layer": "NN.Runtime"
     },
     {
@@ -29403,11 +29349,16 @@
     ],
     "NN.API.Data.TensorDataset": [
       "TorchLean",
-      "Data"
+      "Data",
+      "TensorDataset"
     ],
     "NN.API.Data.Text": [
       "TorchLean",
-      "Data"
+      "Data",
+      "CausalLM",
+      "Internal",
+      "Internal",
+      "Internal"
     ],
     "NN.API.Data.Training": [
       "TorchLean",
@@ -29452,7 +29403,8 @@
     "NN.API.Models.Gpt2": [
       "TorchLean",
       "nn",
-      "models"
+      "models",
+      "CausalTransformer"
     ],
     "NN.API.Models.KAN": [
       "TorchLean",
@@ -29463,7 +29415,10 @@
     "NN.API.Models.Mamba": [
       "TorchLean",
       "nn",
-      "models"
+      "models",
+      "Mamba",
+      "Reference",
+      "Internal"
     ],
     "NN.API.Models.Mlp": [
       "TorchLean",
@@ -29503,11 +29458,17 @@
     ],
     "NN.API.Module": [
       "TorchLean",
-      "Module"
+      "Module",
+      "RuntimeState",
+      "nn",
+      "Module",
+      "IndexedModule",
+      "Module",
+      "Supervised"
     ],
     "NN.API.Module.Command": [
-      "TorchLean.Module",
-      "RunOptions"
+      "TorchLean.Module.Command",
+      "Config"
     ],
     "NN.API.Module.Execution": [
       "TorchLean",
@@ -29525,17 +29486,16 @@
     "NN.API.Neural.Builders": [
       "TorchLean",
       "nn",
+      "IndexedModel",
+      "Objective",
+      "Embedding",
+      "Objective",
       "Internal"
     ],
     "NN.API.Neural.Execution": [
       "TorchLean",
       "nn",
-      "Compiled",
-      "Runtime",
-      "Autograd",
-      "TorchLean",
-      "NN",
-      "Seq"
+      "TypedGraphModel"
     ],
     "NN.API.Neural.FunctionalBatch": [
       "TorchLean",
@@ -29554,7 +29514,8 @@
       "TorchLean",
       "nn",
       "LayerSummary",
-      "ModelSummary"
+      "ModelSummary",
+      "Internal"
     ],
     "NN.API.Neural.Transformer": [
       "TorchLean",
@@ -29572,6 +29533,8 @@
       "TorchLean",
       "optim",
       "Kind",
+      "runtime",
+      "muon",
       "galore"
     ],
     "NN.API.RL": [],
@@ -29618,15 +29581,14 @@
     "NN.API.Runtime": [
       "TorchLean",
       "Runtime",
-      "Backend",
+      "ExecutionMode",
       "Device",
       "BackendContracts"
     ],
     "NN.API.Scalar": [
       "TorchLean",
       "Runtime",
-      "DType",
-      "Internal"
+      "ScalarMode"
     ],
     "NN.API.Seeded": [
       "TorchLean",
@@ -29639,11 +29601,16 @@
     "NN.API.SelfSupervised": [],
     "NN.API.SelfSupervised.BlockMask": [
       "TorchLean",
-      "ssl"
+      "ssl",
+      "BlockMask",
+      "Internal",
+      "Internal",
+      "BlockMAE"
     ],
     "NN.API.SelfSupervised.MaskedPrediction": [
       "TorchLean",
-      "ssl"
+      "ssl",
+      "VectorMAE"
     ],
     "NN.API.Tensor": [
       "TorchLean",
@@ -29661,12 +29628,18 @@
     "NN.API.Text.Bpe": [
       "TorchLean",
       "text",
-      "Gpt2Bpe",
-      "LocalBpeVocab"
+      "GPT2BPE",
+      "Internal",
+      "Internal",
+      "Internal",
+      "Internal",
+      "Internal",
+      "Internal"
     ],
     "NN.API.Text.Generation": [
       "TorchLean",
-      "text"
+      "text",
+      "Internal"
     ],
     "NN.API.Text.Options": [
       "TorchLean",
@@ -29675,19 +29648,11 @@
       "TextCorpusOptions",
       "TextCorpusPathOptions",
       "FinetuneOptions",
-      "BpeCorpusOptions",
+      "BPECorpusOptions",
       "InteractiveOptions",
       "PromptGenerationOptions",
-      "SavedParamsGenerationOptions",
       "WindowOptions",
-      "CheckpointOptions",
-      "InteractiveTrainOptions",
-      "LoggedPromptInteractiveOptions",
-      "CorpusLoggedPromptInteractiveOptions",
-      "WindowedTrainGenerationOptions",
-      "CheckpointedWindowedTrainGenerationOptions",
-      "BatchedCheckpointedWindowedTrainGenerationOptions",
-      "InteractiveCheckpointedWindowedTrainGenerationOptions"
+      "CheckpointOptions"
     ],
     "NN.API.Text.Tokenizer": [
       "TorchLean",
@@ -29698,26 +29663,27 @@
     "NN.API.Text.Unicode": [
       "TorchLean",
       "text",
-      "Unicode"
+      "Unicode",
+      "Internal"
     ],
     "NN.API.Trainer": [],
     "NN.API.Trainer.Constructor": [
       "TorchLean",
       "Trainer"
     ],
+    "NN.API.Trainer.Core": [
+      "TorchLean",
+      "Trainer",
+      "Trainer",
+      "Implementation",
+      "Regression",
+      "OneHotCrossEntropy",
+      "Custom"
+    ],
     "NN.API.Trainer.FixedSample": [
       "TorchLean",
       "Trainer",
       "FixedSample"
-    ],
-    "NN.API.Trainer.Handle": [
-      "TorchLean",
-      "Trainer",
-      "Handle",
-      "Implementation",
-      "Regression",
-      "CrossEntropy",
-      "Custom"
     ],
     "NN.API.Trainer.Manual": [],
     "NN.API.Trainer.Manual.Control": [
@@ -29732,7 +29698,10 @@
       "TorchLean",
       "Trainer",
       "Manual",
-      "SeqTask"
+      "SeqTask",
+      "CUDAMemory",
+      "Runner",
+      "Runner"
     ],
     "NN.API.Trainer.Manual.Loops": [
       "TorchLean",
@@ -29771,7 +29740,7 @@
       "Config",
       "Implementation",
       "Regression",
-      "CrossEntropy",
+      "OneHotCrossEntropy",
       "Custom",
       "TrainOptions",
       "ClassProbe"
@@ -29787,20 +29756,20 @@
       "TrainSummary"
     ],
     "NN.API.Trainer.Train": [],
-    "NN.API.Trainer.Train.CrossEntropy": [
-      "TorchLean",
-      "Trainer",
-      "Implementation",
-      "CrossEntropy",
-      "Internal",
-      "CrossEntropy"
-    ],
     "NN.API.Trainer.Train.Custom": [
       "TorchLean",
       "Trainer",
       "Implementation",
       "Custom",
       "Internal"
+    ],
+    "NN.API.Trainer.Train.OneHotCrossEntropy": [
+      "TorchLean",
+      "Trainer",
+      "Implementation",
+      "OneHotCrossEntropy",
+      "Internal",
+      "OneHotCrossEntropy"
     ],
     "NN.API.Trainer.Train.Regression": [
       "TorchLean",
@@ -29824,8 +29793,8 @@
     "NN.Backend.Accepted": [
       "NN",
       "Backend",
-      "AcceptedGraphPlan",
-      "AcceptedPlanResult"
+      "AcceptedGraphKernelPlan",
+      "GraphKernelPlanResult"
     ],
     "NN.Backend.Attention": [
       "NN",
@@ -29837,8 +29806,8 @@
       "Backend",
       "KernelCapsule",
       "KernelAudit",
-      "ExecutionAudit",
-      "ExecutionPlan"
+      "KernelPlanAudit",
+      "KernelPlan"
     ],
     "NN.Backend.Availability": [
       "NN",
@@ -29864,30 +29833,30 @@
       "NN",
       "Backend",
       "ObligationReport",
-      "ExecutionAudit",
-      "ExecutionPlan",
-      "GraphLoweringPlan"
+      "KernelPlanAudit",
+      "KernelPlan",
+      "GroupedKernelPlan"
+    ],
+    "NN.Backend.Grouping": [
+      "NN",
+      "Backend",
+      "KernelGroup",
+      "GroupedKernelPlan",
+      "IR",
+      "PlannedNodeKernel",
+      "GraphKernelPlan",
+      "GroupingState"
     ],
     "NN.Backend.IR": [
       "NN",
       "Backend",
       "IR",
-      "GraphExecutionPlan"
+      "GraphKernelPlan"
     ],
     "NN.Backend.LibTorch": [
       "NN",
       "Backend",
       "LibTorch"
-    ],
-    "NN.Backend.Lowering": [
-      "NN",
-      "Backend",
-      "LoweredKernelGroup",
-      "GraphLoweringPlan",
-      "IR",
-      "PlannedNodeKernel",
-      "GraphExecutionPlan",
-      "LoweringState"
     ],
     "NN.Backend.NativeCUDA": [
       "NN",
@@ -29897,7 +29866,7 @@
     "NN.Backend.Planner": [
       "NN",
       "Backend",
-      "ExecutionPlan",
+      "KernelPlan",
       "VerifiedPlannedKernel"
     ],
     "NN.Backend.Profile": [
@@ -29911,8 +29880,8 @@
       "ContractEvidence",
       "ObligationReport",
       "KernelAudit",
-      "ExecutionAudit",
-      "ExecutionPlan"
+      "KernelPlanAudit",
+      "KernelPlan"
     ],
     "NN.Backend.Reference": [
       "NN",
@@ -29936,8 +29905,8 @@
       "ContractEvidence",
       "ContractDescriptor",
       "KernelAudit",
-      "ExecutionAudit",
-      "ExecutionPlan",
+      "KernelPlanAudit",
+      "KernelPlan",
       "BackendProfile"
     ],
     "NN.Backend.Target": [
@@ -30046,8 +30015,8 @@
     "NN.Examples.DeepDives.Floats.EffectiveRounding": [
       "NN.Examples.DeepDives.Floats.EffectiveRounding"
     ],
-    "NN.Examples.DeepDives.Floats.Float32Modes": [
-      "NN.Examples.DeepDives.Floats.Float32Modes"
+    "NN.Examples.DeepDives.Floats.Float32Semantics": [
+      "NN.Examples.DeepDives.Floats.Float32Semantics"
     ],
     "NN.Examples.DeepDives.Floats.GraphNumericalCertificate": [
       "NN.Examples.DeepDives.Floats.GraphNumericalCertificate"
@@ -30195,13 +30164,16 @@
     "NN.Examples.Models.Sequence": [],
     "NN.Examples.Models.Sequence.CharGpt": [
       "NN.Examples.Models.Sequence.CharGpt",
-      "ExperimentConfig"
+      "ExperimentConfig",
+      "TrainOptions"
     ],
     "NN.Examples.Models.Sequence.Gpt2": [
-      "NN.Examples.Models.Sequence.Gpt2"
+      "NN.Examples.Models.Sequence.Gpt2",
+      "TrainOptions"
     ],
     "NN.Examples.Models.Sequence.Gpt2Saved": [
-      "NN.Examples.Models.Sequence.Gpt2Saved"
+      "NN.Examples.Models.Sequence.Gpt2Saved",
+      "SavedOptions"
     ],
     "NN.Examples.Models.Sequence.GptAdder": [
       "NN.Examples.Models.Sequence.GptAdder",
@@ -30212,15 +30184,18 @@
       "NN.Examples.Models.Sequence.Lstm"
     ],
     "NN.Examples.Models.Sequence.Mamba": [
-      "NN.Examples.Models.Sequence.Mamba"
+      "NN.Examples.Models.Sequence.Mamba",
+      "TrainOptions"
     ],
     "NN.Examples.Models.Sequence.Rnn": [
       "NN.Examples.Models.Sequence.Rnn"
     ],
     "NN.Examples.Models.Sequence.TextGpt2": [
-      "NN.Examples.Models.Sequence.TextGpt2",
-      "ByteGpt2",
-      "BpeGpt2"
+      "NN.Examples.Models.Sequence.TextGPT2",
+      "CorpusOptions",
+      "ByteModel",
+      "BPEModel",
+      "LocalBPEVocab"
     ],
     "NN.Examples.Models.Sequence.Transformer": [
       "NN.Examples.Models.Sequence.Transformer"
@@ -30735,10 +30710,10 @@
       "NN",
       "GraphSpec",
       "Primitive",
-      "Graph",
+      "Chain",
       "LowerToDAG",
       "Interp",
-      "Compile"
+      "Chain"
     ],
     "NN.GraphSpec.DAG": [],
     "NN.GraphSpec.DAG.Core": [
@@ -30863,12 +30838,13 @@
       "NN",
       "GraphSpec",
       "Primitive",
-      "Graph"
+      "Chain"
     ],
-    "NN.GraphSpec.ToTorchLean": [
+    "NN.GraphSpec.ToSequential": [
       "NN",
       "GraphSpec",
-      "ToTorchLean"
+      "ToSequential",
+      "Internal"
     ],
     "NN.IR": [],
     "NN.IR.Check": [
@@ -30913,7 +30889,8 @@
       "NN.MLTheory.CROWN",
       "BoundOps",
       "NonlinearBoundOps",
-      "HostFloat"
+      "HostFloat",
+      "HostFloat32"
     ],
     "NN.MLTheory.CROWN.Cert.AlphaBetaCROWN": [
       "NN.MLTheory.CROWN.Cert"
@@ -31001,14 +30978,14 @@
     "NN.MLTheory.CROWN.Lyapunov.Certificate": [
       "NN.MLTheory.CROWN.Lyapunov"
     ],
-    "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis": [
-      "NN.MLTheory.CROWN.Lyapunov.TwoStage.CompiledLossAnalysis"
-    ],
     "NN.MLTheory.CROWN.Lyapunov.TwoStage.Core": [
       "NN.MLTheory.CROWN.Lyapunov.TwoStage.Core"
     ],
     "NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils": [
       "NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils"
+    ],
+    "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis": [
+      "NN.MLTheory.CROWN.Lyapunov.TwoStage.LossAnalysis"
     ],
     "NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineIIHybrid": [
       "NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineII.Hybrid"
@@ -31041,8 +31018,8 @@
     "NN.MLTheory.CROWN.Operators.Arithmetic": [
       "NN.MLTheory.CROWN.Operators.Arithmetic"
     ],
-    "NN.MLTheory.CROWN.Operators.Batchnorm": [
-      "NN.MLTheory.CROWN.Operators.Batchnorm"
+    "NN.MLTheory.CROWN.Operators.BatchNorm": [
+      "NN.MLTheory.CROWN.Operators.BatchNorm"
     ],
     "NN.MLTheory.CROWN.Operators.Conv": [
       "NN.MLTheory.CROWN"
@@ -32084,164 +32061,6 @@
       "ConstantExtension"
     ],
     "NN.Runtime": [],
-    "NN.Runtime.Autograd.Compiled": [],
-    "NN.Runtime.Autograd.Compiled.Core": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.GraphM": [],
-    "NN.Runtime.Autograd.Compiled.GraphM.Convolution": [
-      "Runtime",
-      "Autograd",
-      "Compiled",
-      "GraphM"
-    ],
-    "NN.Runtime.Autograd.Compiled.GraphM.Core": [
-      "Runtime",
-      "Autograd",
-      "Compiled",
-      "GraphM",
-      "VarList"
-    ],
-    "NN.Runtime.Autograd.Compiled.GraphM.Elementwise": [
-      "Runtime",
-      "Autograd",
-      "Compiled",
-      "GraphM"
-    ],
-    "NN.Runtime.Autograd.Compiled.GraphM.Neural": [
-      "Runtime",
-      "Autograd",
-      "Compiled",
-      "GraphM"
-    ],
-    "NN.Runtime.Autograd.Compiled.GraphM.Pooling": [
-      "Runtime",
-      "Autograd",
-      "Compiled",
-      "GraphM"
-    ],
-    "NN.Runtime.Autograd.Compiled.GraphM.ShapeIndex": [
-      "Runtime",
-      "Autograd",
-      "Compiled",
-      "GraphM"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec": [],
-    "NN.Runtime.Autograd.Compiled.IRExec.API": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Builder": [],
-    "NN.Runtime.Autograd.Compiled.IRExec.Core": [
-      "Runtime",
-      "Autograd",
-      "Compiled",
-      "ExecGraphData",
-      "IRExec",
-      "ExecGraphData"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Common": [
-      "Runtime",
-      "Autograd",
-      "Compiled",
-      "MatmulOperands"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops": [],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Activations": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Constants": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Elementwise": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.LinearAlgebra": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Loss": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Normalization": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Permutation": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Pooling": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Random": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Reductions": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Structural": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.Ops.Unary": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalence": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceCommon": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Correctness.SemanticEquivalenceOpCases": [
-      "Runtime",
-      "Autograd",
-      "Compiled"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Helpers": [
-      "Runtime",
-      "Autograd",
-      "Compiled",
-      "IRExec"
-    ],
-    "NN.Runtime.Autograd.Compiled.IRExec.Lowering": [
-      "Runtime",
-      "Autograd",
-      "Compiled",
-      "IRExec"
-    ],
     "NN.Runtime.Autograd.Engine": [],
     "NN.Runtime.Autograd.Engine.Core": [],
     "NN.Runtime.Autograd.Engine.Core.ActivationsLoss": [
@@ -32421,6 +32240,120 @@
       "Autograd",
       "TapeM"
     ],
+    "NN.Runtime.Autograd.IRExec": [],
+    "NN.Runtime.Autograd.IRExec.API": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Core": [
+      "Runtime",
+      "Autograd",
+      "IRExec",
+      "ForwardData",
+      "ForwardGraph",
+      "Internal",
+      "ForwardGraph"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Common": [
+      "Runtime",
+      "Autograd",
+      "IRExec",
+      "MatmulOperands"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops": [],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Activations": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Constants": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Elementwise": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.LinearAlgebra": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Loss": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Normalization": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Permutation": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Pooling": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Random": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Reductions": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Structural": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.Ops.Unary": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceOpCases": [
+      "Runtime",
+      "Autograd",
+      "IRExec"
+    ],
+    "NN.Runtime.Autograd.IRExec.Helpers": [
+      "Runtime",
+      "Autograd",
+      "IRExec",
+      "Internal"
+    ],
+    "NN.Runtime.Autograd.IRExec.Lowering": [
+      "Runtime",
+      "Autograd",
+      "IRExec",
+      "Internal"
+    ],
     "NN.Runtime.Autograd.LeadingAxis": [
       "Runtime.Autograd"
     ],
@@ -32440,13 +32373,6 @@
       "Torch",
       "Internal",
       "CheckpointIO"
-    ],
-    "NN.Runtime.Autograd.Torch.Core.Compiled": [
-      "Runtime",
-      "Autograd",
-      "Torch",
-      "CompiledScalar",
-      "CompiledGraph"
     ],
     "NN.Runtime.Autograd.Torch.Core.Functional": [
       "Runtime",
@@ -32551,6 +32477,14 @@
       "Runtime.Autograd.Torch",
       "ParamList"
     ],
+    "NN.Runtime.Autograd.Torch.Core.TypedGraph": [
+      "Runtime",
+      "Autograd",
+      "Torch",
+      "TypedGraphWithAux",
+      "TypedGraph",
+      "TypedScalarGraph"
+    ],
     "NN.Runtime.Autograd.Torch.Core.Types": [
       "Runtime",
       "Autograd",
@@ -32558,49 +32492,49 @@
       "Options",
       "AnyParam"
     ],
-    "NN.Runtime.Autograd.Torch.LinkedSession": [],
-    "NN.Runtime.Autograd.Torch.LinkedSession.Autograd": [
+    "NN.Runtime.Autograd.Torch.TypedGraphSession": [],
+    "NN.Runtime.Autograd.Torch.TypedGraphSession.Autograd": [
       "Runtime",
       "Autograd",
       "Torch",
       "Internal",
-      "SessionIR"
+      "TypedGraphSession"
     ],
-    "NN.Runtime.Autograd.Torch.LinkedSession.ConvAttention": [
+    "NN.Runtime.Autograd.Torch.TypedGraphSession.ConvAttention": [
       "Runtime",
       "Autograd",
       "Torch",
       "Internal",
-      "SessionIR"
+      "TypedGraphSession"
     ],
-    "NN.Runtime.Autograd.Torch.LinkedSession.Core": [
+    "NN.Runtime.Autograd.Torch.TypedGraphSession.Core": [
       "Runtime",
       "Autograd",
       "Torch",
       "Internal",
-      "SessionIRState",
-      "SessionIR"
+      "TypedGraphSessionState",
+      "TypedGraphSession"
     ],
-    "NN.Runtime.Autograd.Torch.LinkedSession.GraphOps": [
+    "NN.Runtime.Autograd.Torch.TypedGraphSession.GraphOps": [
       "Runtime",
       "Autograd",
       "Torch",
       "Internal",
-      "SessionIR"
+      "TypedGraphSession"
     ],
-    "NN.Runtime.Autograd.Torch.LinkedSession.Neural": [
+    "NN.Runtime.Autograd.Torch.TypedGraphSession.Neural": [
       "Runtime",
       "Autograd",
       "Torch",
       "Internal",
-      "SessionIR"
+      "TypedGraphSession"
     ],
-    "NN.Runtime.Autograd.Torch.LinkedSession.ShapeIndex": [
+    "NN.Runtime.Autograd.Torch.TypedGraphSession.ShapeIndex": [
       "Runtime",
       "Autograd",
       "Torch",
       "Internal",
-      "SessionIR"
+      "TypedGraphSession"
     ],
     "NN.Runtime.Autograd.Torch.Utils": [
       "Runtime",
@@ -32624,21 +32558,6 @@
       "TorchLean",
       "Autodiff",
       "Internal"
-    ],
-    "NN.Runtime.Autograd.TorchLean.Backend": [
-      "Runtime",
-      "Autograd",
-      "TorchLean",
-      "Curried",
-      "CurriedRef",
-      "RefList",
-      "Private"
-    ],
-    "NN.Runtime.Autograd.TorchLean.CompileExec": [
-      "Runtime",
-      "Autograd",
-      "TorchLean",
-      "Autodiff"
     ],
     "NN.Runtime.Autograd.TorchLean.Dual": [
       "Runtime",
@@ -32704,9 +32623,9 @@
       "Module",
       "RuntimeInit",
       "Plan",
-      "ScalarModule",
+      "Objective",
       "Evaluator",
-      "ScalarModuleDef"
+      "ObjectiveDef"
     ],
     "NN.Runtime.Autograd.TorchLean.NN": [],
     "NN.Runtime.Autograd.TorchLean.NN.Activations": [
@@ -32732,7 +32651,7 @@
       "Autograd",
       "TorchLean",
       "NN",
-      "LayerDef"
+      "Layer"
     ],
     "NN.Runtime.Autograd.TorchLean.NN.Normalization": [
       "Runtime",
@@ -32751,13 +32670,15 @@
       "Autograd",
       "TorchLean",
       "NN",
-      "Seq"
+      "Seq",
+      "Objective"
     ],
     "NN.Runtime.Autograd.TorchLean.Norm": [
       "Runtime",
       "Autograd",
       "TorchLean",
-      "Norm"
+      "Norm",
+      "Internal"
     ],
     "NN.Runtime.Autograd.TorchLean.Optim": [
       "Runtime",
@@ -32766,11 +32687,14 @@
       "Optim",
       "Private"
     ],
-    "NN.Runtime.Autograd.TorchLean.ParamIO": [
+    "NN.Runtime.Autograd.TorchLean.Program": [
       "Runtime",
       "Autograd",
       "TorchLean",
-      "ParamIO"
+      "Curried",
+      "CurriedRef",
+      "RefList",
+      "Private"
     ],
     "NN.Runtime.Autograd.TorchLean.Random": [
       "Runtime",
@@ -32815,6 +32739,12 @@
       "Autograd",
       "TorchLean",
       "Session"
+    ],
+    "NN.Runtime.Autograd.TorchLean.StateIO": [
+      "Runtime",
+      "Autograd",
+      "TorchLean",
+      "StateIO"
     ],
     "NN.Runtime.Autograd.TorchLean.Training": [
       "Runtime",
@@ -32894,6 +32824,50 @@
       "Autograd",
       "Train",
       "Trainer"
+    ],
+    "NN.Runtime.Autograd.TypedGraph": [],
+    "NN.Runtime.Autograd.TypedGraph.Core": [
+      "Runtime",
+      "Autograd",
+      "TypedGraph"
+    ],
+    "NN.Runtime.Autograd.TypedGraph.GraphM": [],
+    "NN.Runtime.Autograd.TypedGraph.GraphM.Convolution": [
+      "Runtime",
+      "Autograd",
+      "TypedGraph",
+      "GraphM"
+    ],
+    "NN.Runtime.Autograd.TypedGraph.GraphM.Core": [
+      "Runtime",
+      "Autograd",
+      "TypedGraph",
+      "GraphM",
+      "VarList"
+    ],
+    "NN.Runtime.Autograd.TypedGraph.GraphM.Elementwise": [
+      "Runtime",
+      "Autograd",
+      "TypedGraph",
+      "GraphM"
+    ],
+    "NN.Runtime.Autograd.TypedGraph.GraphM.Neural": [
+      "Runtime",
+      "Autograd",
+      "TypedGraph",
+      "GraphM"
+    ],
+    "NN.Runtime.Autograd.TypedGraph.GraphM.Pooling": [
+      "Runtime",
+      "Autograd",
+      "TypedGraph",
+      "GraphM"
+    ],
+    "NN.Runtime.Autograd.TypedGraph.GraphM.ShapeIndex": [
+      "Runtime",
+      "Autograd",
+      "TypedGraph",
+      "GraphM"
     ],
     "NN.Runtime.Autograd.Utils": [],
     "NN.Runtime.Context": [
@@ -33282,7 +33256,8 @@
       "Spec"
     ],
     "NN.Spec.Layers.Embedding": [
-      "Spec"
+      "Spec",
+      "Embedding"
     ],
     "NN.Spec.Layers.FlashAttention": [
       "Spec",
@@ -33663,10 +33638,13 @@
       "AutogradConv2d",
       "Tests",
       "Floats",
-      "CompiledLogSoftmaxJvp",
+      "TypedGraphLogSoftmaxJvp",
       "Tests",
       "Floats",
-      "CompiledSmoothMaxDomain",
+      "TypedGraphOutputReference",
+      "Tests",
+      "Floats",
+      "TypedGraphSmoothMaxDomain",
       "Tests",
       "Floats",
       "DisconnectedDenseGradient",
@@ -33891,42 +33869,34 @@
       "NN.Verification.Splines.PiecewisePolyCert",
       "Internal"
     ],
-    "NN.Verification.TorchLean.Compile": [
-      "NN.Verification.TorchLean"
-    ],
-    "NN.Verification.TorchLean.Compile.API": [
-      "NN.Verification.TorchLean"
-    ],
-    "NN.Verification.TorchLean.Compile.Builder": [
-      "NN.Verification.TorchLean"
-    ],
-    "NN.Verification.TorchLean.CompileExec": [
-      "NN.Verification.TorchLean"
-    ],
     "NN.Verification.TorchLean.Correctness": [
       "NN.Verification.TorchLean"
     ],
     "NN.Verification.TorchLean.CrownOpsWorkflow": [
       "NN.Verification.TorchLean.CrownOpsWorkflow"
     ],
+    "NN.Verification.TorchLean.ExecutableLowering": [
+      "NN.Verification.TorchLean"
+    ],
     "NN.Verification.TorchLean.IBPWorkflow": [
       "NN.Verification.TorchLean.IBPWorkflow"
+    ],
+    "NN.Verification.TorchLean.Lowering": [
+      "NN.Verification.TorchLean"
+    ],
+    "NN.Verification.TorchLean.Lowering.API": [
+      "NN.Verification.TorchLean"
+    ],
+    "NN.Verification.TorchLean.Lowering.Builder": [
+      "NN.Verification.TorchLean"
     ],
     "NN.Verification.TorchLean.MlpTrainVerifyWorkflow": [
       "NN.Verification.TorchLean.MlpTrainVerifyWorkflow"
     ],
     "NN.Verification.TorchLean.Proved": [],
-    "NN.Verification.TorchLean.Proved.Compile": [
-      "NN.Verification.TorchLean.Proved"
-    ],
     "NN.Verification.TorchLean.Proved.Correctness": [],
     "NN.Verification.TorchLean.Proved.Correctness.Eval": [],
     "NN.Verification.TorchLean.Proved.Correctness.Eval.BatchNorm": [
-      "NN.Verification.TorchLean.Proved",
-      "Correctness",
-      "IRStep"
-    ],
-    "NN.Verification.TorchLean.Proved.Correctness.Eval.CompilePayload": [
       "NN.Verification.TorchLean.Proved",
       "Correctness",
       "IRStep"
@@ -33963,6 +33933,11 @@
       "IRStep"
     ],
     "NN.Verification.TorchLean.Proved.Correctness.Eval.LinearAlgebra": [
+      "NN.Verification.TorchLean.Proved",
+      "Correctness",
+      "IRStep"
+    ],
+    "NN.Verification.TorchLean.Proved.Correctness.Eval.LoweringPayload": [
       "NN.Verification.TorchLean.Proved",
       "Correctness",
       "IRStep"
@@ -34028,7 +34003,7 @@
       "NN.Verification.TorchLean.Proved",
       "Correctness"
     ],
-    "NN.Verification.TorchLean.Proved.Public": [
+    "NN.Verification.TorchLean.Proved.Lowering": [
       "NN.Verification.TorchLean.Proved"
     ],
     "NN.Verification.TorchLean.Proved.Syntax": [
@@ -34213,8 +34188,8 @@
     "critical_path_import_edges": 95,
     "errors": 0,
     "findings": 0,
-    "import_edges": 4078,
-    "internal_import_edges": 3508,
+    "import_edges": 4071,
+    "internal_import_edges": 3501,
     "layers": [
       "Backend",
       "Core",
@@ -34238,9 +34213,9 @@
       "lakefile",
       "scripts"
     ],
-    "modules": 1248,
-    "private_import_edges": 353,
-    "public_import_edges": 3725,
+    "modules": 1245,
+    "private_import_edges": 354,
+    "public_import_edges": 3717,
     "warnings": 0
   },
   "top_fan_in": [
@@ -34302,15 +34277,11 @@
     },
     {
       "count": 18,
-      "module": "NN.API.Seeded"
-    },
-    {
-      "count": 18,
       "module": "NN.Runtime.Autograd.Engine.Cuda.Ops"
     },
     {
       "count": 17,
-      "module": "NN.Verification.TorchLean.Compile"
+      "module": "NN.API.Seeded"
     },
     {
       "count": 17,
@@ -34318,11 +34289,15 @@
     },
     {
       "count": 16,
-      "module": "NN.Spec.Layers.Loss"
+      "module": "NN.Spec.Core.Utils"
     },
     {
       "count": 16,
-      "module": "NN.Tests.Runtime.Cuda.Utils"
+      "module": "NN.Verification.TorchLean.Lowering"
+    },
+    {
+      "count": 16,
+      "module": "NN.Spec.Layers.Loss"
     }
   ],
   "top_fan_out": [
@@ -34343,7 +34318,7 @@
       "module": "NN.Proofs"
     },
     {
-      "count": 27,
+      "count": 26,
       "module": "NN.CI.Runtime"
     },
     {
@@ -34392,6 +34367,10 @@
     },
     {
       "count": 16,
+      "module": "NN.Runtime"
+    },
+    {
+      "count": 16,
       "module": "NN.Tests.Runtime.Cuda.Suite"
     },
     {
@@ -34401,10 +34380,6 @@
     {
       "count": 15,
       "module": "NN.Examples.BugZoo.All"
-    },
-    {
-      "count": 15,
-      "module": "NN.Runtime"
     }
   ]
 }

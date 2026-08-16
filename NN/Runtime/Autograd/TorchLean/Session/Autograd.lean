@@ -38,8 +38,8 @@ def backwardDenseAll {α : Type} (s : Session α) [Add α] [Zero α] [DecidableE
   match s.impl with
   | .eager sess =>
       EagerSession.backwardDenseAll (α := α) sess (sh := sh) out seed
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.backwardDenseAll (α := α) sess (sh := sh) out
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.backwardDenseAll (α := α) sess (sh := sh) out
         seed
 
 namespace Internal
@@ -88,8 +88,8 @@ def backwardScalarDenseAll {α : Type} (s : Session α) [Add α] [Zero α] [One 
   IO (Array (_root_.Runtime.AnyTensor α)) := do
   match s.impl with
   | .eager sess => EagerSession.backwardScalarDenseAll (α := α) sess loss
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.backwardScalarDenseAll (α := α) sess loss
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.backwardScalarDenseAll (α := α) sess loss
 
 /-- `backwardScalarDenseAll` with a per-leaf gradient hook applied. -/
 def backwardScalarDenseAllWithHook {α : Type} (s : Session α) [Add α] [Zero α] [One α] [DecidableEq
@@ -141,9 +141,9 @@ def vjpScalar {α : Type} (s : Session α) [Add α] [Zero α] [One α] [Decidabl
 /-! ## Forward-mode: JVP -/
 
 /--
-Jacobian-vector product for a single leaf (compiled backend only).
+Jacobian-vector product for a single leaf (typed graph execution only).
 
-For eager sessions, use the compiled backend if you need JVPs.
+For eager sessions, use the typed graph execution if you need JVPs.
 -/
 def jvpLeaf {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
     {shOut shX : Shape}
@@ -153,23 +153,23 @@ def jvpLeaf {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
     IO (Tensor α shOut) := do
   match s.impl with
   | .eager _ =>
-      throw <| IO.userError "torchlean: jvpLeaf is only supported for compiled sessions"
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.jvpLeaf (α := α) sess
+      throw <| IO.userError "torchlean: jvpLeaf is only supported for typed graph sessions"
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.jvpLeaf (α := α) sess
         (shOut := shOut) (shX := shX) out x dx
 
-/-- Scalar-loss JVP for a single leaf (compiled backend only). -/
+/-- Scalar-loss JVP for a single leaf (typed graph execution only). -/
 def jvpScalarLeaf {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
     (loss : _root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar)
     {shX : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α shX) (dx : Tensor α shX) :
     IO α := do
   match s.impl with
   | .eager _ =>
-      throw <| IO.userError "torchlean: jvpScalarLeaf is only supported for compiled sessions"
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.jvpScalarLeaf (α := α) sess loss x dx
+      throw <| IO.userError "torchlean: jvpScalarLeaf is only supported for typed graph sessions"
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.jvpScalarLeaf (α := α) sess loss x dx
 
-/-! ## Forward-mode: dense JVP (compiled backend only) -/
+/-! ## Forward-mode: dense JVP (typed graph execution only) -/
 
 /--
 Jacobian-vector product with explicit tangents for all *leaf* tensors.
@@ -183,9 +183,9 @@ def jvpDenseAll {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
     IO (Tensor α shOut) := do
   match s.impl with
   | .eager _ =>
-      throw <| IO.userError "torchlean: jvpDenseAll is only supported for compiled sessions"
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.jvpDenseAll (α := α) sess (sh := shOut) out
+      throw <| IO.userError "torchlean: jvpDenseAll is only supported for typed graph sessions"
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.jvpDenseAll (α := α) sess (sh := shOut) out
         dxs
 
 /--
@@ -200,8 +200,8 @@ def sgdStepAll {α : Type} (s : Session α)
   (lr : α) (grads : Array (_root_.Runtime.AnyTensor α)) : IO Unit := do
   match s.impl with
   | .eager sess => EagerSession.sgdStepAll (α := α) sess lr grads
-  | .compiled sess =>
-      _root_.Runtime.Autograd.Torch.Internal.SessionIR.sgdStepAll (α := α) sess lr grads
+  | .typedGraph sess =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.sgdStepAll (α := α) sess lr grads
 
 /-- Reset the tape, then run one fresh graph-building action. -/
 def withFreshTape {α β : Type} (s : Session α) (act : IO β) : IO β := do
@@ -223,10 +223,10 @@ def sgdStepScalarGraph {α : Type} (s : Session α)
     IO α :=
   withFreshTape (α := α) s do
     let loss ← buildLoss
-    let lossT ← getValue (α := α) s (sh := Shape.scalar) loss
+    let lossTensor ← getValue (α := α) s (sh := Shape.scalar) loss
     let grads ← backwardScalarDenseAll (α := α) s loss
     sgdStepAll (α := α) s lr grads
-    pure (Tensor.toScalar lossT)
+    pure (Tensor.toScalar lossTensor)
 
 /--
 Apply a dense SGD step to all parameters after transforming gradients with a user hook.

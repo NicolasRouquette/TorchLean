@@ -36,7 +36,7 @@ def reduceLeadingSum (outer : Nat) (inner : Shape) (hOuter : 0 < outer)
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Spec.Tensor.reduceSumAuto (α := α) 0 input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.reduceSum (m := m) (α := α) 0 input }
 
@@ -59,7 +59,7 @@ def reduceLeadingMean (outer : Nat) (inner : Shape) (hOuter : 0 < outer)
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Spec.Tensor.reduceMeanAuto (α := α) 0 inferInstance input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.reduceMean (m := m) (α := α) 0 input }
 
@@ -79,7 +79,7 @@ def transpose2d (rows columns : Nat) :
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons matrix .nil => _root_.Spec.Tensor.matrixTransposeSpec (α := α) matrix
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun matrix =>
         Runtime.Autograd.TorchLean.transpose2d (m := m) (α := α)
           (mDim := rows) (nDim := columns) matrix }
@@ -93,7 +93,7 @@ def transpose3dLastTwo (batch rows columns : Nat) :
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Spec.Tensor.transpose3DLastTwoSpec (α := α) input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.transpose3dLastTwo (m := m) (α := α)
           (a := batch) (b := rows) (c := columns) input }
@@ -105,7 +105,7 @@ def swapAdjacentAtDepth (s : Shape) (depth : Nat) :
     specFwd := fun {_α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Spec.Tensor.swapAtDepthHelper input depth
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.swapAdjacentAtDepth (m := m) (α := α) depth input }
 
@@ -123,7 +123,7 @@ def gatherRow (rows columns : Nat) (row : Fin rows) :
     specFwd := fun {_α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Spec.sliceSpec input row
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.gatherRow (m := m) (α := α) input row }
 
@@ -139,7 +139,7 @@ def gatherLeading (rows : Nat) (inner : Shape) (row : Fin rows) :
     specFwd := fun {_α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Spec.sliceSpec input row
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         (do
           let matrix ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
@@ -164,7 +164,7 @@ def broadcast {source target : Shape} (proof : source.CanBroadcastTo target) :
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Spec.Tensor.broadcastTo (α := α) proof input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.broadcastTo (m := m) (α := α) proof input }
 
@@ -176,7 +176,7 @@ def concatLeadingAxis (left right : Nat) (inner : Shape) :
       match xs with
       | .cons a (.cons b .nil) =>
           _root_.Spec.Tensor.concatLeadingAxisSpec (α := α) a b
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun a b =>
         Runtime.Autograd.TorchLean.concatLeadingAxis (m := m) (α := α)
           (nDim := left) (mDim := right) (s := inner) a b }
@@ -205,7 +205,7 @@ def sliceLeadingAxisRange (total start length : Nat) (inner : Shape)
       | .cons input .nil =>
           _root_.Spec.Tensor.sliceLeadingAxisRangeSpec
             (α := α) (n := total) (s := inner) start length hRange input
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.sliceLeadingAxisRange (m := m) (α := α)
           (nDim := total) (s := inner) start length hRange input }
@@ -226,7 +226,7 @@ def reshape (source target : Shape) (hSize : source.size = target.size) :
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil => _root_.Spec.Tensor.reshapeSpec (α := α) input hSize
-    torchProgram := fun {α} _ _ =>
+    program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.reshape (m := m) (α := α) input hSize }
 
