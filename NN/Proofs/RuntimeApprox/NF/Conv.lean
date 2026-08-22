@@ -8,20 +8,22 @@ module
 
 public import NN.Proofs.RuntimeApprox.NF.BackwardOps
 public import NN.Proofs.RuntimeApprox.NF.Ops
-public import NN.Proofs.RuntimeApprox.NF.Utils
+public import NN.Proofs.RuntimeApprox.NF.FoldLemmas
+public import NN.Proofs.RuntimeApprox.NF.Ops
 public import NN.Spec.Layers.Conv
+public import NN.Spec.Layers.Conv.TwoD.Padding
 
 /-!
-# Conv2D Shared Bounds
+# Conv2d Shared Bounds
 
-Shared NF backend utilities for Conv2D forward/backward runtime-to-spec approximation.
+Shared NF backend utilities for Conv2d forward/backward runtime-to-spec approximation.
 
-This file contains the common arithmetic error updates and tensor-shaped Conv2D bound builders used
+This file contains the common arithmetic error updates and tensor-shaped Conv2d bound builders used
 by both `ConvForward` and `ConvBackward`. The node constructors live in the direction-specific
 files; the shared definitions stay here so the forward and VJP proofs do not duplicate the same
 fold/error algebra.
 
-The key idea is to treat Conv2D as a pure spec definition (`Spec.conv2d_spec` /
+The key idea is to treat Conv2d as a pure spec definition (`Spec.conv2d_spec` /
 `Spec.conv2d_backward_spec`) instantiated at:
 - spec scalars: `ℝ`
 - runtime scalars: `NF β fexp rnd` (rounding after each primitive op)
@@ -159,11 +161,11 @@ lemma approx_fold_add {ι : Type} (l : List ι)
       ℝ))
       (st := ((0 : R), (0 : ℝ))) h0 hTerm)
 
-/-! ## Component access: `getAtOrZero` respects `approxT` -/
+/-! ## Component access: `getAtOrZero` respects `approxTensor` -/
 
 lemma approx_get_at_or_zero {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ} (_hx :
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps)
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps)
       (idx : List Nat),
       abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) (getAtOrZero xR idx) - getAtOrZero xS
         idx) ≤ eps := by
@@ -178,11 +180,11 @@ lemma approx_get_at_or_zero {s : Shape} :
               cases idx with
               | nil =>
                   simpa using
-                    (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+                    (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
                       rnd))
                       (x := x) (xR := xR) (eps := eps)).1 _hx
               | cons i is =>
-                  have heps : 0 ≤ eps := approxT_eps_nonneg _hx
+                  have heps : 0 ≤ eps := approxTensor_eps_nonneg _hx
                   -- Both sides are `0` for out-of-shape indices.
                   simpa [get_at_or_zero_scalar_cons, toSpec_zero (β := β) (fexp := fexp) (rnd :=
                     rnd)] using heps
@@ -193,7 +195,7 @@ lemma approx_get_at_or_zero {s : Shape} :
           | dim xRf =>
               cases idx with
               | nil =>
-                  have heps : 0 ≤ eps := approxT_eps_nonneg _hx
+                  have heps : 0 ≤ eps := approxTensor_eps_nonneg _hx
                   -- Out-of-shape: both reads are `0`.
                   simpa [get_at_or_zero_dim_nil, toSpec_zero (β := β) (fexp := fexp) (rnd := rnd)]
                     using heps
@@ -202,17 +204,17 @@ lemma approx_get_at_or_zero {s : Shape} :
                   · -- In-bounds: reduce to the IH on the selected slice.
                     let fi : Fin n := ⟨i, hi⟩
                     have hx_i :
-                        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                           (xSf fi) (xRf fi) eps := by
-                      -- `approxT_dim_get` gives component-wise approximation with the same `eps`.
-                      have := approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp)
+                      -- `approxTensor_dim_get` gives component-wise approximation with the same `eps`.
+                      have := approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp)
                         (rnd := rnd))
                         (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := eps) _hx fi
                       simpa using this
                     simpa [get_at_or_zero_dim_cons, hi] using ih (xS := xSf fi) (xR := xRf fi) hx_i
                       is
                   · -- Out-of-bounds: both reads are `0`.
-                    have heps : 0 ≤ eps := approxT_eps_nonneg
+                    have heps : 0 ≤ eps := approxTensor_eps_nonneg
                       _hx
                     have hn : ¬ i < n := hi
                     simpa [get_at_or_zero_dim_cons, hn, toSpec_zero (β := β) (fexp := fexp) (rnd :=
@@ -223,7 +225,7 @@ lemma approx_get_at_or_zero {s : Shape} :
 /--
 Approximation bound for reading padded inputs.
 
-Both the forward and backward Conv2D approximation proofs reduce to reading a padded input tensor
+Both the forward and backward Conv2d approximation proofs reduce to reading a padded input tensor
 at indices `(c,p,q)` and comparing the runtime read (in `R`) against the spec read (in `ℝ`).
 -/
 lemma approx_padded_input_read
@@ -231,7 +233,7 @@ lemma approx_padded_input_read
     {xS : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))}
     {xR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar)))}
     {epsX : ℝ}
-    (hx : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsX)
+    (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsX)
     (c : Fin inC) (p q : Nat) :
     abs
         (toSpec (β := β) (fexp := fexp) (rnd := rnd)
@@ -243,7 +245,7 @@ lemma approx_padded_input_read
                   (by simp; rw [h4])
                   xR
               else
-                Spec.padMultiChannel xR padding)
+                Spec.padChannelsFirst2d xR padding)
               [c.val, p, q]) -
           getAtOrZero
             (if h4 : padding = 0 then
@@ -253,7 +255,7 @@ lemma approx_padded_input_read
                 (by simp; rw [h4])
                 xS
             else
-              Spec.padMultiChannel xS padding)
+              Spec.padChannelsFirst2d xS padding)
             [c.val, p, q]) ≤ epsX := by
   classical
   by_cases h4 : padding = 0
@@ -264,13 +266,13 @@ lemma approx_padded_input_read
           epsX) hx
         [c.val, p, q])
   · have hR :=
-      Spec.get_at_or_zero_pad_multi_channel (α := R) (img := xR) (c := c) (p := p) (q := q) (padding
-        := padding)
+      Spec.getAtOrZero_padChannelsFirst2d (α := R) (input := xR) (channel := c) (row := p)
+        (col := q) (padding := padding)
     have hS :=
-      Spec.get_at_or_zero_pad_multi_channel (α := ℝ) (img := xS) (c := c) (p := p) (q := q) (padding
-        := padding)
+      Spec.getAtOrZero_padChannelsFirst2d (α := ℝ) (input := xS) (channel := c) (row := p)
+        (col := q) (padding := padding)
     by_cases ht : p < padding ∨ q < padding
-    · have heps : 0 ≤ epsX := approxT_eps_nonneg hx
+    · have heps : 0 ≤ epsX := approxTensor_eps_nonneg hx
       simpa [h4, ht, hR, hS] using heps
     · have hcore :=
         approx_get_at_or_zero (β := β) (fexp := fexp) (rnd := rnd)
@@ -289,7 +291,7 @@ lemma approx_padded_input_read
         exact Nat.le_of_not_gt this
       simpa [h4, ht, hR, hS, Nat.sub_add_cancel hp, Nat.sub_add_cancel hq] using hcore
 
-/-! ## Conv2D forward: pointwise error bound for one output scalar -/
+/-! ## Conv2d forward: pointwise error bound for one output scalar -/
 
 /-- Output height for a 2D convolution. -/
 def conv2dOutH (inH kH stride padding : Nat) : Nat :=
@@ -300,7 +302,7 @@ def conv2dOutW (inW kW stride padding : Nat) : Nat :=
   Shape.slidingWindowOutDim inW kW stride padding
 
 /--
-Pointwise absolute-error bound for one Conv2D output scalar in the NF backend.
+Pointwise absolute-error bound for one Conv2d output scalar in the NF backend.
 
 Implementation note:
 we replay the same fold structure as `Spec.conv2d_spec`, but track an explicit absolute-error
@@ -310,7 +312,7 @@ matters for worst-case rounding error.
 def conv2dPointBound
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3)
+    (layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3)
     (inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar))))
     (epsK epsB epsX : ℝ)
     (out_ch : Fin outC) (i : Fin (conv2dOutH inH kH stride padding)) (j : Fin (conv2dOutW inW kW
@@ -323,7 +325,7 @@ def conv2dPointBound
         (by simp; rw [h4])
         inputR
     else
-      Spec.padMultiChannel inputR padding
+      Spec.padChannelsFirst2d inputR padding
   let idxs : List (Fin inC × Fin kH × Fin kW) :=
     (List.finRange inC).flatMap (fun in_ch =>
       (List.finRange kH).flatMap (fun di =>
@@ -350,11 +352,11 @@ def conv2dPointBound
   let bias_val := getAtOrZero layerR.bias [out_ch.val]
   addEps (β := β) (fexp := fexp) (rnd := rnd) sumR bias_val sumEps epsB
 
-/-- Tensor of pointwise Conv2D absolute-error bounds for the full output image. -/
+/-- Tensor of pointwise Conv2d absolute-error bounds for the full output image. -/
 def conv2dBoundTensor
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3)
+    (layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3)
     (inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar))))
     (epsK epsB epsX : ℝ) :
     Spec.Tensor ℝ (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
@@ -369,13 +371,13 @@ def conv2dBoundTensor
                 out_ch i j)))
 
 /-!
-`conv2dPointBound` and `conv2dBoundTensor` provide the *data* needed for a Conv2D
+`conv2dPointBound` and `conv2dBoundTensor` provide the *data* needed for a Conv2d
 runtime→spec approximation lemma, but the full end-to-end `FwdNode`/`RevNode` instances are
 intentionally deferred.
 
 Reason: a direct proof that these bounds are sound for the current `Spec.conv2d_spec` definition
-is non-trivial and requires careful performance engineering (similar to the Conv2D `fderiv` file).
-The design intent is to keep Conv2D as a "big op" with its own proof module, instead of slowing
+is non-trivial and requires careful performance engineering (similar to the Conv2d `fderiv` file).
+The design intent is to keep Conv2d as a "big op" with its own proof module, instead of slowing
 down the core NF numeric library.
 -/
 

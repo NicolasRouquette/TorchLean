@@ -34,9 +34,8 @@ VENDORED_DIR_NAMES = {
 }
 
 # Keep the trusted boundary explicit: axioms must be quarantined, named, and documented.
-ALLOWED_AXIOMS = {
-    "NN/Runtime/Autograd/Engine/Cuda/Trusted.lean": {"instNonemptyBuffer"},
-}
+# TorchLean currently has no custom axioms.
+ALLOWED_AXIOMS: dict[str, set[str]] = {}
 
 # Narrow allowlist for linter suppressions that are noisy in API entrypoint files but do
 # not weaken proofs. Keep this list small and review each addition.
@@ -53,6 +52,18 @@ REMOVED_COMPATIBILITY_PATHS = {
     "NN/Library.lean",
     "NN/API/TorchLean/Trainer/Verify.lean",
     "NN/API/TorchLean/Data/DotInfo.lean",
+    "NN/API/Neural/FunctionalBatch.lean",
+    "NN/API/Models/Gpt2.lean",
+    "NN/API/Models/Mlp.lean",
+    "NN/Runtime/Autograd/Engine/Core/Core.lean",
+    "NN/Runtime/Autograd/IRExec/Helpers.lean",
+    "NN/Runtime/Autograd/Torch/Utils.lean",
+    "NN/Runtime/Autograd/Utils.lean",
+    "NN/Proofs/RuntimeApprox/NF/Utils.lean",
+    "NN/Spec/Core/Utils.lean",
+    "NN/Spec/Models/CommonHelpers.lean",
+    "NN/Spec/Layers/Utils.lean",
+    "NN/Verification/TorchLean/Proved/Correctness/Eval/Coverage.lean",
     "NN/MLTheory/CROWN/Lyapunov/Oracle.lean",
     "NN/MLTheory/CROWN/Tactics/CrownOracle.lean",
     "NN/Spec/Layers/Pooling/Aliases.lean",
@@ -302,15 +313,15 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"\bsample\.Supervised\b"),
-        "public examples should use `SupervisedSample`, not the internal `sample.Supervised` spelling.",
+        "public examples should use `Sample.Supervised`, not the internal `sample.Supervised` spelling.",
     ),
     (
         re.compile(r"_root_\.NN\.API\.sample\.Supervised\b"),
-        "public examples should use `SupervisedSample`, not the fully-qualified internal sample type.",
+        "public examples should use `Sample.Supervised`, not the fully-qualified internal sample type.",
     ),
     (
-        re.compile(r"\bSample\.Supervised\b"),
-        "public examples should use `SupervisedSample` as the sample type; reserve `Sample.*` for constructors/accessors.",
+        re.compile(r"\bSupervisedSample\b"),
+        "the `SupervisedSample` alias was removed; use the canonical `Sample.Supervised` type.",
     ),
     (
         re.compile(r"\bsample\.mk\b"),
@@ -325,8 +336,8 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "public examples should print `model.info`; do not introduce a second model-summary spelling.",
     ),
     (
-        re.compile(r"\bShape\.(Vec|Mat|Image|Images|NCHW)\b"),
-        "public examples should use the canonical lowercase shape helpers: `Shape.vec`, `Shape.mat`, `Shape.image`, `Shape.images`, `Shape.nchw`.",
+        re.compile(r"\bShape\.(?:Vec|Mat|Image|Images|NCHW|vec|mat|image|images|nchw)\b"),
+        "public examples should express dimensions with `shape![...]` or `Shape.ofList`, not domain- or layout-specific shape aliases.",
     ),
     (
         re.compile(r"\bSemantics\.Scalar\b"),
@@ -1182,6 +1193,10 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         (re.compile(r"\bsorry\b"), "`sorry` is banned in TorchLean sources."),
         (re.compile(r"\badmit\b"), "`admit` is banned in TorchLean sources."),
         (
+            re.compile(r"\bnamespace Private\b|\bSpec\.Private\b"),
+            "use a subsystem-scoped `Internal` namespace instead of a shared `Private` namespace.",
+        ),
+        (
             re.compile(r"\b(FitConfig|LoaderFitConfig|FitReport)\b"),
             "old lower training names are removed; use `TrainConfig`, `LoaderTrainConfig`, and `TrainReport`.",
         ),
@@ -1200,9 +1215,43 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         (
             re.compile(
                 r"\b(?:Conv2dLayer|Core\.oneHotAction|scalarValue|CROWNNodeCertificate|"
-                r"ToTorchLean\.Sequential)\b"
+                r"ToTorchLean\.Sequential|mseSpecBasic|mseDerivSpecBasic|"
+                r"layerNorm2dParams|appendCore|weakenContextCore|"
+                r"parseValueGraphUnchecked|parseGraphUnchecked|"
+                r"getRaw|singleRaw|getCLMRaw|stepRaw|RefT|"
+                r"GpuMatmulPrecision|matmulForward|matmulForwardcuBLAS(?:32|64|With)|"
+                r"embeddingRowsNat|embeddingBatchSeqNat|mlpGo|encoderStackGo|defaultTensor|"
+                r"ResnetConfig|Cnn2|Unet2|mlpRelu|nn\.models\.MlpConfig|"
+                r"oneHotTokenOrZero|parseExecutionMode|requestsCuda|AnyBatchLoader|loaderAny|"
+                r"asTextTokenizer|loadRolloutCast|ioSingletonFloat|oneHotFloat|castFloat|"
+                r"oneHotSequenceOrZero|oneHotBatchOrZero|Synthetic\.oneHot)\b"
             ),
             "removed duplicate name found; use the canonical declaration directly.",
+        ),
+        (
+            re.compile(
+                r"\b(?:ParamsT|netT|updateAtT|energyT|seqStatesT|"
+                r"VitPatchOutH|VitPatchOutW|VitPatchCount|"
+                r"approxT|approxTTol|scaleT|toVecT|ofVecT|getYorT|"
+                r"actual_index_lt|getMinorSpec|leadingEigenpairPowerIterationApproxSpec|"
+                r"normalizeProbsSpec|getValueAtPosition|extractWindow|padMultiChannel|"
+                r"extractMultiWindow|padChannelsZero|setValueAtPosition|addValueAtPosition|"
+                r"get_at_or_zero_pad_multi_channel(?:_shift)?|matrixFromRowsPadTo|"
+                r"fullLike|zerosLike|onesLike|useFin|expandLastDim|tlistBang)\b|"
+                r"\babbrev\s+StateT\b|tlist!"
+            ),
+            "removed opaque model name found; use the descriptive tensor or ViT declaration name.",
+        ),
+        (
+            re.compile(
+                r"\b(?:DVal|FlatDVal|flatDValShape|flatDValTensor|permuteDVal|"
+                r"mseLossDVal|getDVal|toDVal|dValOfAny|dValsOfCtx)\b"
+            ),
+            "removed shape-tagged-value alias found; use `Spec.PackedTensor` and its canonical operations.",
+        ),
+        (
+            re.compile(r"\bautograd\.func\.Fn\b|\babbrev\s+Fn\b"),
+            "the ambiguous `Fn` API name is removed; use `autograd.func.TensorFunction`.",
         ),
         (
             re.compile(
@@ -1214,6 +1263,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         (
             re.compile(
                 r"\b(?:oneHotNat|oneHotToken|oneHotSequence|matrixPadTo|vectorFromArray|"
+                r"vectorFromArrayD|"
                 r"flattenKeep0|instantiateHostFloat|curveHostFloat|trainFixedCurveHostFloat|"
                 r"RawDataLoader|EmbeddingOptions|oneHotAccuracyBatched|oneHotAccuracyLoader|"
                 r"oneHotMetricsBatched|classProbesBatched|ScalarModuleDef|ScalarModule|"
@@ -1232,6 +1282,119 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                 r"uniformND|maskND|randND|loadCsvTensorND)\b"
             ),
             "removed dimension-specific API name found; use `flattenLeading`, a head with an explicit leading shape, or the `*Dims` random constructor.",
+        ),
+        (
+            re.compile(
+                r"\b(?:linear2d|catAxisDyn|catAxis2Dyn|float32Vector|float32Matrix|"
+                r"ieee32ExecVector|ieee32ExecMatrix|singletonVectorFloat|pointVectorFloat|"
+                r"concatVectors|mapBatch0|boolMask01|multiheadAttentionWith|"
+                r"multiheadAttention|cycleDataset|cycleDatasetOrError|firstArrayOrError|"
+                r"shapeOfDims|ofDims|numelDims|tensorpack|exportGeneralModel|"
+                r"mapSequenceSpec|zipWithSequenceSpec|reduceSumSequenceSpec|reverseSequenceSpec|"
+                r"regressionGrid|regressionTargetsFloat|affinePlane|"
+                r"classifyVector|classVectorProbes|classVectorProbesBatch|"
+                r"datasetOfListVectors|readCsvDatasetPairs|readCsvVectorDataset|"
+                r"readNpyVector|readNpyMatrix|"
+                r"mlpInShape|mlpOutShape|cnnInShape|cnnOutShape|"
+                r"resnetInShape|resnetHiddenShape|resnetOutShape|"
+                r"epsConvNetInShape|epsConvNetOutShape|"
+                r"kanInShape|kanOutShape|"
+                r"vectorGenerativeConfig|vectorDataShape|vectorLatentShape|vectorVaeOutShape|"
+                r"recurrentInShape|recurrentOutShape|"
+                r"fnoInShape|fnoOutShape|"
+                r"PPOActorCriticConfig|ppoActorInShape|ppoActorOutShape|ppoCriticOutShape|"
+                r"ppoActor|ppoCritic|"
+                r"transformerEncoderShape|vitInShape|vitConvOutShape|vitTokensShape|vitOutShape|"
+                r"vitMaeInShape|vitMaeOutShape|"
+                r"scalarTensor|vectorTensor|matrixTensor|nDArrayTensor|vectorN|matrixMN|"
+                r"ofArray1D|ofArray2d|ofArrayDim|CausalTransformerOneHot|"
+                r"toScalar|ofScalar|ofVecFn|ofMatFn|shapeToList|listToShape|"
+                r"eval1NoGrad|eval1CompiledNoGrad|predict1|forwardCompiled|compileOut|"
+                r"curveFloat64|trainFixedCurveFloat64|Probe\.point|ClassProbe|"
+                r"uniformDims|maskDims|randDims|repeatBatch|"
+                r"VectorGenerativeConfig|vectorAutoencoder|vectorVae|vectorVqVae|"
+                r"vectorGanGenerator|vectorGanDiscriminator|vectorMaskedAutoencoder|"
+                r"loadCifarVectorBatch|cifarVectorDataset|MLPConfig|CNNConfig|FNOConfig|"
+                r"KANConfig|ViTConfig|ViTMAEConfig|round₃₂|ulp₃₂|eps₃₂|"
+                r"round₃₂_eq_round32|ulp₃₂_eq_ulp32|eps₃₂_eq_eps32|"
+                r"adaptFlatBatch|applyBatch|KANEdgeFamily|KANPiecewiseLinear|"
+                r"SGDConfig|RMSpropConfig|PPOFlags|BPECorpusOptions|optimizerLR|stepLR|"
+                r"bitsToα|[A-Za-z0-9_]*StateWithLR|VectorMAE|MaskedPrediction|vectorOfArrayD|"
+                r"expandVecToBatchSpec|batchToEndSpec|channelFirstToLastSpec|"
+                r"collectAtIndexSpec|linearBatchedSpec|sliceVectorSpec|"
+                r"sumLeading|reverseLeading|autoencoderBatchedForwardSpec|"
+                r"decisionTreeForwardSpecN|decisionTreeBatchedForwardSpecN|"
+                r"gradientBoostedTreesBatchedForwardSpec|"
+                r"shapeDims|permuteDyn|reduceSumDimsDyn|reduceMeanDimsDyn|sliceRangeAxisDyn|"
+                r"softmaxDyn|logSoftmaxDyn|unsqueezeDyn|squeezeDyn|concatAxisDyn|stackAxisDyn|"
+                r"splitAxisDyn|chunkAxisDyn|einsumDyn|"
+                r"cnnSpec|cnnWithReluSpec|cnnForward|CNN2Config|CNN2Spec|CNN2Grads|"
+                r"Cnn2Config|Cnn2Spec|Cnn2Grads|UNet2Config|UNet2Spec|UNet2Grads|"
+                r"UNetDownH|UNetDownW|UNetUpH|UNetUpW|Models\.CNN|"
+                r"simpleRnnModelSpec|rnnClassifierModelSpec|multilayerRnnSpec|"
+                r"rnnLanguageModelSpec|SimpleRNNModel|MultiLayerRNNModel|RNNClassifier|"
+                r"RNNGenerator|BiRNNModel|simpleRnnForward|simpleRnnSequenceForward|"
+                r"rnnClassifierForward|rnnGeneratorForward|birnnForward|"
+                r"multilayerRnnForwardSingle|simpleRnnBackward|sequenceClassificationLoss|"
+                r"simpleRNNToModuleSpec|rnnClassifierToModuleSpec|"
+                r"simpleGruModelSpec|gruClassifierModelSpec|multilayerGruSpec|"
+                r"gruLanguageModelSpec|SimpleGRUModel|MultiLayerGRUModel|GRUClassifier|"
+                r"GRUGenerator|BiGRUModel|GRULanguageModel|GRUEncoderDecoder|"
+                r"AttentionGRUModel|ResidualGRUModel|simpleGruForward|"
+                r"simpleGruSequenceForward|gruClassifierForward|gruGeneratorForward|"
+                r"bigruForward|multilayerGruForward|gruLmForward|gruEncoderDecoderForward|"
+                r"simpleGruBackward|residualGruForward|simpleGRUToModuleSpec|"
+                r"gruClassifierToModuleSpec|biGRUToModuleSpec|gruGeneratorToModuleSpec|"
+                r"LSTMGrads|SimpleLSTMModelGrads|simpleLstmModelSpec|"
+                r"lstmClassifierModelSpec|multilayerLstmSpec|lstmLanguageModelSpec|"
+                r"SimpleLSTMModel|MultiLayerLSTMModel|LSTMClassifier|LSTMGenerator|"
+                r"BiLSTMModel|LSTMLanguageModel|AttentionLSTMModel|simpleLstmForward|"
+                r"simpleLstmSequenceForward|simpleLstmBackward|simpleLstmMseLoss|"
+                r"simpleLstmMseGrad|lstmClassifierForward|lstmClassifierBackward|"
+                r"lstmGeneratorForward|bilstmForward|multilayerLstmForward|lstmLmForward|"
+                r"simpleLSTMToModuleSpec|lstmClassifierToModuleSpec|biLSTMToModuleSpec|"
+                r"ModSpec|NNModuleSpec|SpecChain|ExportFunctions|export_func|SpecModule|"
+                r"Proofs\.RuntimeApprox\.TList|"
+                r"[A-Za-z0-9_]*ModuleSpec|composeRight|mapEach|extractLayerInfo|"
+                r"exportSpecChain|exportMLPFromSpecChain|toModuleSpec|"
+                r"flatIndexAux|flatIndexAux_lt|andThenAux|eval_andThenAux|"
+                r"TypedGraphWithAux|lowerToTypedGraphWithAux|"
+                r"indexAux|hiddenList|applyAux|inSortedRangesAux|"
+                r"flattenFloatAux|flattenBoolMaskAux|unflattenFloatAux|"
+                r"unflattenBoolMaskAux|uniformAux|maskAux|normalAux|diagMaskSpecAux|argsAux|"
+                r"layernormPure|layernormPure_eq_spec|"
+                r"linearInterpolationRaw|cosineAnnealRaw|"
+                r"swapAtDepthHelper|swapAtDepthHelper_zero|swapAtDepthSpec|"
+                r"choleskyColsImpl|cholSolveImpl|solveRidgeImpl|"
+                r"unflattenFloatUnsafe|unflattenBoolMaskUnsafe|"
+                r"alphaBarsLinear|"
+                r"pretokenizeAux|parseJsonStringAux|toSeqAux|buildNodesAux|verifySegmentAux|"
+                r"detInitParamsAux|runListAux|runListAux_nil|runListAux_outputs_length|"
+                r"selectiveMamba_runListAux_append_outputs_prefix|neuralTruncateAux|"
+                r"neuralTruncateAux_remainder_bounds|neuralTruncateAux_mantissa_decomposition|"
+                r"neuralTruncateAux_brackets|"
+                r"DynTensor|dynamicOfList|reduceDimsDynCore|generatePyTorchHelperModules|"
+                r"countsFindD|dimFindD|vectorOfArrayWithDefault|oneHotBatchFromRows|"
+                r"byteAtD|charAtD|SessionImpl|encodeVec|encodeBatchVec|"
+                r"getDimSize|TorchLean\.Loss\.dimSize|Shape\.(?:dimSize|innerDimSize|isMatrix|isVector)|"
+                r"gatherScalarNat|gatherVecNat|gatherRowsNat|"
+                r"gatherScalarRef|gatherRowRef|gatherVecRef|gatherRowsRef|"
+                r"nllNat|crossEntropyNat|"
+                r"rowTargetFlatIndices|"
+                r"Data\.(?:fromList|toList|size|isEmpty))\b"
+            ),
+            "removed specialized or inconsistently named helper found; use the canonical shape-general API.",
+        ),
+        (
+            re.compile(r"\bnn\.(?:manualSeed|runGlobal|freshSeed|freshSeeds)\b"),
+            "global seed state belongs to `rand`; use `rand.manualSeed`, `rand.runGlobal`, or `rand.nextSeedGlobal`.",
+        ),
+        (
+            re.compile(
+                r"\bReport\.(?:probes|meanLossLoader|oneHotMetrics|oneHotMetricsLoader)\b|"
+                r"\bReport\.Objective\.meanLoss\b"
+            ),
+            "removed reporting wrapper found; call the canonical dataset or loader metric directly.",
         ),
         (
             re.compile(
@@ -1286,6 +1449,27 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         _check_local_source_refs(path, text, findings)
         _check_lean_doc_math(path, text, findings)
         _check_backend_contract_refs(path, text, lake_text, findings)
+
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        ownership_sensitive_cuda_modules = {
+            "NN/Runtime/Autograd/Engine/Cuda/Buffer.lean",
+            "NN/Runtime/Autograd/Engine/Cuda/Kernels.lean",
+            "NN/Runtime/Autograd/Engine/Cuda/ConvPool.lean",
+        }
+        if rel in ownership_sensitive_cuda_modules:
+            unsafe_extern = re.compile(r"@\[(?![^\]]*\bnever_extract\b)[^\]]*\bextern\b[^\]]*\]")
+            for m in unsafe_extern.finditer(masked):
+                line, col = _line_col(text, m.start())
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        path,
+                        line,
+                        col,
+                        "CUDA buffer externs must use `never_extract`; these calls allocate, "
+                        "observe, or mutate native resources and may not be commoned or deleted.",
+                    )
+                )
 
         if not _has_nn_header(path, text):
             findings.append(
@@ -1346,13 +1530,10 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                         )
                     )
 
-        is_shape_generic_public_api = any(
-            rel.startswith(prefix)
-            for prefix in (
-                "NN/API/TorchLean/",
-                "NN/API/Models/",
-                "NN/API/Samples/",
-            )
+        is_shape_generic_public_api = (
+            rel == "NN/API/Tensor.lean"
+            or rel.startswith("NN/API/Models/")
+            or rel.startswith("NN/API/Neural/")
         )
         if is_shape_generic_public_api:
             for declaration in PUBLIC_DECL_RE.finditer(masked):
@@ -1371,7 +1552,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                         )
                     )
 
-        if rel.startswith("NN/API/TorchLean/Trainer/Train/") and rel.endswith(".lean"):
+        if rel.startswith("NN/API/Trainer/Train/") and rel.endswith(".lean"):
             if "(opts : Options)" in masked and "(opts : TrainOptions" in masked:
                 findings.append(
                     Finding(
@@ -1383,7 +1564,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                     )
                 )
 
-        if rel == "NN/API/TorchLean/Trainer/Train.lean":
+        if rel == "NN/API/Trainer/Train.lean":
             m = TOP_LEVEL_API_DECL_RE.search(masked)
             if m:
                 line, col = _line_col(text, m.start())
@@ -1393,7 +1574,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                         path,
                         line,
                         col,
-                        "`NN.API.Runtime.Trainer.Train` must stay an import-only aggregator; put training implementation in `NN.API.Runtime.Trainer.Train.*` modules.",
+                            "`NN.API.Trainer.Train` must stay an import-only aggregator; put training implementation in `NN.API.Trainer.Train.*` modules.",
                     )
                 )
 
@@ -1404,7 +1585,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                     findings.append(Finding("ERROR", path, line, col, msg))
 
         if rel == "NN/API/Neural.lean" and re.search(
-            r"^\s*public\s+import\s+NN\.API\.Training\s*$", masked, flags=re.MULTILINE
+            r"^\s*public\s+import\s+NN\.API\.Trainer\s*$", masked, flags=re.MULTILINE
         ):
             findings.append(
                 Finding(
@@ -1415,13 +1596,10 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                     "`NN.API.Neural` must not re-export `NN.API.Trainer`; use `TorchLean.Trainer` for ordinary code and import the advanced training module explicitly when needed.",
                 )
             )
-        is_trainer_api = (
-            rel == "NN/API/TorchLean/Trainer.lean"
-            or rel.startswith("NN/API/TorchLean/Trainer/")
-        )
-        is_training_entrypoint = rel == "NN/API/Training.lean"
+        is_trainer_api = rel == "NN/API/Trainer.lean" or rel.startswith("NN/API/Trainer/")
+        is_training_entrypoint = rel in {"NN/API.lean", "NN/API/Data/Training.lean"}
         if re.search(
-            r"^\s*public\s+import\s+NN\.API\.Training\s*$", masked, flags=re.MULTILINE
+            r"^\s*public\s+import\s+NN\.API\.Trainer\s*$", masked, flags=re.MULTILINE
         ) and not (is_trainer_api or is_training_entrypoint):
             findings.append(
                 Finding(

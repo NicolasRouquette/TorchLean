@@ -41,7 +41,7 @@ namespace NN
 namespace GraphSpec
 namespace ToSequential
 
-open _root_.NN.Spec
+open _root_.Spec
 open NN.Tensor
 
 namespace Internal
@@ -51,7 +51,7 @@ Lower a chain to a TorchLean `Seq`, threading a “layer occurrence index”.
 
 The index is incremented for primitives with `countsAsLayer = true`.
 -/
-def toSeqAux
+def toSeqFrom
     {ps : List Shape} {σ τ : Shape}
     (g : Chain ps σ τ) (i : Nat) :
     Except String (_root_.Runtime.Autograd.TorchLean.NN.Seq σ τ × Nat) :=
@@ -61,8 +61,8 @@ def toSeqAux
       return (_root_.Runtime.Autograd.TorchLean.NN.Seq.id s, i)
   | .seq g₁ g₂ => do
       -- Sequential composition becomes sequential composition.
-      let (s₁, i') ← toSeqAux (ps := _) (σ := _) (τ := _) g₁ i
-      let (s₂, i'') ← toSeqAux (ps := _) (σ := _) (τ := _) g₂ i'
+      let (s₁, i') ← toSeqFrom (ps := _) (σ := _) (τ := _) g₁ i
+      let (s₂, i'') ← toSeqFrom (ps := _) (σ := _) (τ := _) g₂ i'
       return (_root_.Runtime.Autograd.TorchLean.NN.Seq.comp s₁ s₂, i'')
   | .prim p => do
       -- A primitive can only be lowered if it provides a `Layer`.
@@ -91,7 +91,7 @@ def toSeq
     {ps : List Shape} {σ τ : Shape}
     (g : Chain ps σ τ) :
     Except String (_root_.Runtime.Autograd.TorchLean.NN.Seq σ τ) :=
-  match Internal.toSeqAux (ps := ps) (σ := σ) (τ := τ) g 0 with
+  match Internal.toSeqFrom (ps := ps) (σ := σ) (τ := τ) g 0 with
   | .ok (s, _i) => .ok s
   | .error e => .error e
 

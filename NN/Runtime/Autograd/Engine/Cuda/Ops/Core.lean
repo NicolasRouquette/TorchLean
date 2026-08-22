@@ -28,18 +28,6 @@ open Tensor
 
 namespace Tape
 
-/-!
-## Small helpers
--/
-
-/-- Checked `Nat → UInt32` conversion for CUDA boundaries. Errors if `n ≥ 2^32`. -/
-def u32 (n : Nat) : Result UInt32 :=
-  AnyBuffer.natToU32Checked n
-
-/-- Number of elements in a runtime shape, checked for the `UInt32` CUDA ABI. -/
-def numelU32 (s : Shape) : Result UInt32 :=
-  AnyBuffer.numelU32 s
-
 /-- Reject shape metadata containing a dimension outside the CUDA `UInt32` ABI. -/
 def validateU32Dimensions (opName : String) (dims : Array Nat) : Result Unit := do
   for dim in dims do
@@ -64,7 +52,7 @@ def foldRowsColsLastAxis (s : Shape) : Result (UInt32 × UInt32) := do
       else if rowsFold = 0 then
         throw "autograd: softmax: folded leading dimension is 0"
       else
-        pure (← u32 rowsFold, ← u32 cols)
+        pure (← AnyBuffer.natToU32Checked rowsFold, ← AnyBuffer.natToU32Checked cols)
 
 /-- Broadcast a scalar CUDA buffer to `outShape`. Used by scalar reductions during backprop. -/
 def broadcastScalarToShape (g : Buffer) (outShape : Shape) : Buffer :=

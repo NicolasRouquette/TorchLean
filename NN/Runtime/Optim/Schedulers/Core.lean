@@ -85,7 +85,7 @@ Linear interpolation between `startValue` and `endValue` with no clamping.
 This matches PyTorch's anneal helpers (`OneCycleLR._annealing_linear`), which permit
 `factor` outside `[0,1]` and therefore extrapolate.
 -/
-def linearInterpolationRaw (startValue : α) (endValue : α) (factor : α) : α :=
+def linearInterpolationUnclamped (startValue : α) (endValue : α) (factor : α) : α :=
   startValue + factor * (endValue - startValue)
 
 /--
@@ -103,7 +103,7 @@ Cosine anneal between `startValue` and `endValue` with no clamping.
 
 This matches PyTorch's anneal helper (`OneCycleLR._annealing_cos`).
 -/
-def cosineAnnealRaw (startValue : α) (endValue : α) (factor : α) : α :=
+def cosineInterpolationUnclamped (startValue : α) (endValue : α) (factor : α) : α :=
   let cosOut := cos (pi * factor) + 1
   endValue + (startValue - endValue) / (1 + 1) * cosOut
 

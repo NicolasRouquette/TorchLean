@@ -8,8 +8,7 @@ import NN.API
 open TorchLean
 ```
 
-Use the complete library when the same file also needs specifications, proofs, verification, or
-backend internals:
+Use the complete library when the same file also needs specification, proof, or backend internals:
 
 ```lean
 import NN
@@ -40,9 +39,11 @@ Related APIs are organized by object:
 * **LoRA** is adapter/parameterization structure. It lives under `TorchLean.Adapters.LoRA`, so
   examples keep adapter weights and optimizer state separate.
 
-For application code, import `NN.API` and use the `TorchLean` namespace. A file that also needs
-proofs, verification, graph specifications, or backend internals can import `NN`. Focused imports
-remain available when only one subsystem is needed.
+For application code, import `NN.API` and use the `TorchLean` namespace. Import
+`NN.API.Verification` to lower models and call IBP or CROWN directly; the trained regression result
+already exposes its smaller `verifyRobustLInf` operation. A file that also needs proofs, graph
+specifications, or backend internals can import `NN`. Focused imports remain available when only
+one subsystem is needed.
 
 Trainable neural constructors live under `TorchLean.nn.models`. KNN, random-forest, Naive Bayes,
 SVM, GMM, PCA, regression, gradient-boosted-tree, HMM, and Hopfield definitions retain their
@@ -89,7 +90,7 @@ The closest PyTorch terms are similar, but not identical:
 | `nn.forward` | Differentiable model program. |
 | `module.run` | Concrete execution without gradient recording, in the current train/eval mode. |
 | `predict` | Evaluation-mode, no-gradient execution that restores the previous mode. |
-| `nn.softmaxLast` | Softmax layer over the final axis; lower-level functional APIs accept an explicit axis. |
+| `nn.softmax (axis := k)` | Softmax over any valid tensor dimension. |
 | `mm` | Two-dimensional matrix multiplication, matching `torch.mm`; use `bmm` for rank-three batches. TorchLean does not currently expose PyTorch's rank-polymorphic, broadcasting `torch.matmul`. |
 | `Tensor.oneHot n k` | One-hot encoding with `k : Fin n`; raw natural-number conversion is explicitly named `oneHotNatOrZero`. |
 | `module.state` | Ordered, shape-indexed parameter and buffer tensors, not a string-keyed Python `state_dict`. |
@@ -97,10 +98,11 @@ The closest PyTorch terms are similar, but not identical:
 | `execution := .typedGraph` | Record and reuse a typed forward/JVP/VJP graph; this is not `torch.compile`. |
 | `device` | Storage and kernel target, independent of execution mode. |
 
-The loss names also record their target convention. `task := .oneHotCrossEntropy` expects a target
-tensor with the same shape as the logits. Indexed language-model APIs instead accept `Tensor Nat`
-targets and use `Loss.crossEntropyRowsNat`; TorchLean does not call both conventions simply
-`crossEntropy`.
+The loss names also record their target convention. `task := .oneHotCrossEntropy axis` expects a
+target tensor with the same shape as the logits and applies the loss along `axis`. Indexed targets
+use the corresponding integer-label loss rather than sharing an ambiguous `crossEntropy` name.
+Dimensions are zero-based and need not be final: use axis `0` for `[classes, batch]`, axis `1` for
+`[batch, classes]`, and axis `2` for `[batch, time, vocabulary]`.
 
 The main entry points are:
 
@@ -182,9 +184,8 @@ every axis in `leading` and flattens only the remaining shape. For example, a cl
 `leading := shape![batch, time]` maps `shape![batch, time, height, width]` to
 `shape![batch, time, classes]`. TorchLean therefore has no separate batch-only classifier or
 regressor API. `Tensor.flattenPrefix` preserves the same leading shape while retaining a prefix of
-the flattened suffix. Random tensors follow the same convention: `rand.uniform` is used when the
-result shape is known statically, while `rand.uniformDims` is the boundary constructor for a
-runtime list of dimensions.
+the flattened suffix. Random tensors use that same shape directly. For dimensions stored in a list,
+write `rand.uniform key (s := Shape.ofList dims)`.
 
 ## Graph Vocabulary
 

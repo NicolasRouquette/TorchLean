@@ -31,7 +31,7 @@ layer stays focused on ergonomics:
   remember `xs.length` in the result type.
 - If you see `Tensor Float _`, the `_` asks Lean to infer the shape from the right hand side.
 - When you need dynamic shapes, use `ofList` (runtime dims + runtime length check) or
-  `DynTensor` (store the shape as data instead of in the type).
+  `SomeTensor` (store the shape as data instead of in the type).
 - For constants, `tensorOfList!` and `tensorF!` trade a bit of macro expansion for cleaner literal code.
 - `tensor!` accepts nested bracket syntax and flattens in row-major order, which is handy for
   handwritten examples.
@@ -59,7 +59,7 @@ same example be read as user code, lowered into an IR, or connected to a verific
 
 ## Files
 
-- `../Entrypoint/Tensor.lean`: the stable tensor subsystem import.
-- `API.lean`: the implementation leaf. Includes shape aliases, `vector`/`matrix`, dynamic N-D
+- `../Tensor.lean`: the stable tensor subsystem import.
+- `API.lean`: the implementation leaf. Includes shape syntax, `vector`/`matrix`, dynamic N-D
   constructors, padding friendly 2D constructors for ragged data, and a small printing API that
   refuses to print proof level scalar backends like `ℝ`.

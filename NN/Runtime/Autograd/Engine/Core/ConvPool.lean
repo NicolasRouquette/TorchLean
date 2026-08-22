@@ -51,16 +51,16 @@ def conv {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)
   let outSh : Shape := Shape.ofList (outC :: outSpatial.toList)
   let node : Node α :=
     { name := some name
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [kernelId, biasId, inputId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := outSh) dLdyAny
         let (dK, dB, dX) := Spec.convBackwardSpec (layer := layer) x dLdy
         pure [
-          (kernelId, AnyTensor.mk dK),
-          (biasId, AnyTensor.mk dB),
-          (inputId, AnyTensor.mk dX)
+          (kernelId, Spec.PackedTensor.ofTensor dK),
+          (biasId, Spec.PackedTensor.ofTensor dB),
+          (inputId, Spec.PackedTensor.ofTensor dX)
         ]
     }
   pure (t.addNode node)
@@ -120,16 +120,16 @@ def convTranspose {α : Type} [Context α] [DecidableRel ((· > ·) : α → α 
 
   let node : Node α :=
     { name := some name
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [kernelId, biasId, inputId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := outSh) dLdyAny
         let (dW, dB, dX) := Spec.convTransposeBackwardSpec (layer := layer) x dLdy
         pure [
-          (kernelId, AnyTensor.mk dW),
-          (biasId, AnyTensor.mk dB),
-          (inputId, AnyTensor.mk dX)
+          (kernelId, Spec.PackedTensor.ofTensor dW),
+          (biasId, Spec.PackedTensor.ofTensor dB),
+          (inputId, Spec.PackedTensor.ofTensor dX)
         ]
     }
   pure (t.addNode node)
@@ -181,13 +181,13 @@ def maxPool {α : Type} [Context α] [DecidableEq Shape]
     let outSh : Shape := Shape.ofList (C :: outSpatial.toList)
     let node : Node α :=
       { name := some "max_pool"
-        value := AnyTensor.mk y
-        requires_grad := true
+        value := Spec.PackedTensor.ofTensor y
+        requiresGrad := true
         parents := [xId]
         backward := fun dLdyAny => do
           let dLdy ← requireGrad (α := α) (τ := outSh) dLdyAny
           let dx := Spec.maxPoolBackwardSpec (layer := layer) (input := x) (grad_output := dLdy)
-          pure [(xId, AnyTensor.mk dx)]
+          pure [(xId, Spec.PackedTensor.ofTensor dx)]
       }
     pure (t.addNode node)
   else
@@ -211,13 +211,13 @@ def avgPool {α : Type} [Context α] [DecidableEq Shape]
     let outSh : Shape := Shape.ofList (C :: outSpatial.toList)
     let node : Node α :=
       { name := some "avg_pool"
-        value := AnyTensor.mk y
-        requires_grad := true
+        value := Spec.PackedTensor.ofTensor y
+        requiresGrad := true
         parents := [xId]
         backward := fun dLdyAny => do
           let dLdy ← requireGrad (α := α) (τ := outSh) dLdyAny
           let dx := Spec.avgPoolBackwardSpec (layer := layer) (grad_output := dLdy)
-          pure [(xId, AnyTensor.mk dx)]
+          pure [(xId, Spec.PackedTensor.ofTensor dx)]
       }
     pure (t.addNode node)
   else
@@ -247,15 +247,15 @@ def smoothMaxPool {α : Type} [Context α] [DecidableEq Shape]
     let outSh : Shape := Shape.ofList (C :: outSpatial.toList)
     let node : Node α :=
       { name := some "smooth_max_pool"
-        value := AnyTensor.mk y
-        requires_grad := true
+        value := Spec.PackedTensor.ofTensor y
+        requiresGrad := true
         parents := [xId]
         backward := fun dLdyAny => do
           let dLdy ← requireGrad (α := α) (τ := outSh) dLdyAny
           let dx :=
             Spec.smoothMaxPoolBackwardSpec (layer := layer) (beta := beta)
               (input := x) (grad_output := dLdy)
-          pure [(xId, AnyTensor.mk dx)]
+          pure [(xId, Spec.PackedTensor.ofTensor dx)]
       }
     pure (t.addNode node)
   else
@@ -272,12 +272,12 @@ def maxPool2d {α : Type} [Context α] [DecidableEq Shape]
   let x ← requireValue (α:=α) (t:=t)
     (s:=.dim inC (.dim inH (.dim inW .scalar))) xId
   if hStride : stride ≠ 0 then
-    let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
+    let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
     let y := Spec.maxPool2dMultiSpec (layer := layer) x
     let node : Node α :=
       { name := some "max_pool2d"
-        value := AnyTensor.mk y
-        requires_grad := true
+        value := Spec.PackedTensor.ofTensor y
+        requiresGrad := true
         parents := [xId]
         backward := fun dLdyAny => do
           let outH := Spec.poolOutDim inH kH stride 0
@@ -288,7 +288,7 @@ def maxPool2d {α : Type} [Context α] [DecidableEq Shape]
             Tensor.dim (fun c =>
               Spec.maxPool2dBackwardSpec (_layer := layer)
                 (input := getAtSpec x c) (grad_output := getAtSpec dLdy c))
-          pure [(xId, AnyTensor.mk dx)]
+          pure [(xId, Spec.PackedTensor.ofTensor dx)]
       }
     pure (t.addNode node)
   else
@@ -305,12 +305,12 @@ def maxPool2dPad {α : Type} [Context α] [DecidableEq Shape]
   let x ← requireValue (α:=α) (t:=t)
     (s:=.dim inC (.dim inH (.dim inW .scalar))) xId
   if hStride : stride ≠ 0 then
-    let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
+    let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
     let y := Spec.maxPool2dMultiSpecPad (layer := layer) (padding := padding) x
     let node : Node α :=
       { name := some "max_pool2d_pad"
-        value := AnyTensor.mk y
-        requires_grad := true
+        value := Spec.PackedTensor.ofTensor y
+        requiresGrad := true
         parents := [xId]
         backward := fun dLdyAny => do
           let outH := Spec.poolOutDim inH kH stride padding
@@ -319,7 +319,7 @@ def maxPool2dPad {α : Type} [Context α] [DecidableEq Shape]
             requireGrad (α := α) (τ := .dim inC (.dim outH (.dim outW .scalar))) dLdyAny
           let dx :=
             Spec.maxPool2dMultiBackwardSpecPad (layer := layer) (padding := padding) x dLdy
-          pure [(xId, AnyTensor.mk dx)]
+          pure [(xId, Spec.PackedTensor.ofTensor dx)]
       }
     pure (t.addNode node)
   else
@@ -339,12 +339,12 @@ def smoothMaxPool2d {α : Type} [Context α] [DecidableEq Shape]
   let x ← requireValue (α:=α) (t:=t)
     (s:=.dim inC (.dim inH (.dim inW .scalar))) xId
   if hStride : stride ≠ 0 then
-    let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
+    let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
     let y := Spec.smoothMaxPool2dMultiSpec (layer := layer) (beta := beta) x
     let node : Node α :=
       { name := some "smooth_max_pool2d"
-        value := AnyTensor.mk y
-        requires_grad := true
+        value := Spec.PackedTensor.ofTensor y
+        requiresGrad := true
         parents := [xId]
         backward := fun dLdyAny => do
           let outH := Spec.poolOutDim inH kH stride 0
@@ -353,7 +353,7 @@ def smoothMaxPool2d {α : Type} [Context α] [DecidableEq Shape]
             requireGrad (α := α) (τ := .dim inC (.dim outH (.dim outW .scalar))) dLdyAny
           let dx :=
             Spec.smoothMaxPool2dMultiBackwardSpec (layer := layer) (beta := beta) x dLdy
-          pure [(xId, AnyTensor.mk dx)]
+          pure [(xId, Spec.PackedTensor.ofTensor dx)]
       }
     pure (t.addNode node)
   else
@@ -370,12 +370,12 @@ def avgPool2d {α : Type} [Context α] [DecidableEq Shape]
   let x ← requireValue (α:=α) (t:=t)
     (s:=.dim inC (.dim inH (.dim inW .scalar))) xId
   if hStride : stride ≠ 0 then
-    let layer : Spec.AvgPool2DSpec kH kW stride h1 h2 hStride := {}
+    let layer : Spec.AvgPool2dSpec kH kW stride h1 h2 hStride := {}
     let y := Spec.avgPool2dMultiSpec (h1 := h1) (h2 := h2) (layer := layer) x
     let node : Node α :=
       { name := some "avg_pool2d"
-        value := AnyTensor.mk y
-        requires_grad := true
+        value := Spec.PackedTensor.ofTensor y
+        requiresGrad := true
         parents := [xId]
         backward := fun dLdyAny => do
           let outH := Spec.poolOutDim inH kH stride 0
@@ -385,7 +385,7 @@ def avgPool2d {α : Type} [Context α] [DecidableEq Shape]
           let dx :=
             Tensor.dim (fun c =>
               Spec.avgPool2dBackwardSpec (α := α) h1 h2 layer (getAtSpec dLdy c))
-          pure [(xId, AnyTensor.mk dx)]
+          pure [(xId, Spec.PackedTensor.ofTensor dx)]
       }
     pure (t.addNode node)
   else
@@ -402,13 +402,13 @@ def avgPool2dPad {α : Type} [Context α] [DecidableEq Shape]
   let x ← requireValue (α:=α) (t:=t)
     (s:=.dim inC (.dim inH (.dim inW .scalar))) xId
   if hStride : stride ≠ 0 then
-    let layer : Spec.AvgPool2DSpec kH kW stride h1 h2 hStride := {}
+    let layer : Spec.AvgPool2dSpec kH kW stride h1 h2 hStride := {}
     let y := Spec.avgPool2dMultiSpecPad (h1 := h1) (h2 := h2) (layer := layer) (padding :=
       padding) x
     let node : Node α :=
       { name := some "avg_pool2d_pad"
-        value := AnyTensor.mk y
-        requires_grad := true
+        value := Spec.PackedTensor.ofTensor y
+        requiresGrad := true
         parents := [xId]
         backward := fun dLdyAny => do
           let outH := Spec.poolOutDim inH kH stride padding
@@ -418,7 +418,7 @@ def avgPool2dPad {α : Type} [Context α] [DecidableEq Shape]
           let dx :=
             Spec.avgPool2dMultiBackwardSpecPad (h1 := h1) (h2 := h2) (layer := layer)
               (padding := padding) dLdy
-          pure [(xId, AnyTensor.mk dx)]
+          pure [(xId, Spec.PackedTensor.ofTensor dx)]
       }
     pure (t.addNode node)
   else

@@ -40,25 +40,22 @@ runs another. The binding proves only that identity agreement; it does not prove
 arithmetic, FFI code, compiler output, driver, or hardware. Those obligations retain the evidence
 and trust level stated by the capsule.
 
-## Lean Axioms
+## Lean Axioms and Hidden Implementations
 
-- `NN/Runtime/Autograd/Engine/Cuda/Trusted.lean`: `instNonemptyBuffer` is the nonemptiness witness
-  Lean needs for opaque extern declarations returning `Cuda.Buffer`. It does not allocate or
-  validate a CUDA buffer; real buffers still come from explicit FFI constructors/copy operations.
-- `scripts/checks/repo_lint.py` allowlists these exact axiom names. New axioms must be added here
-  deliberately and documented in this file.
+TorchLean currently declares no custom Lean axioms. The CUDA handle type is instead carried by
+`Runtime.Autograd.Cuda.BufferImpl`, an opaque `NonemptyType`. Its `Nonempty` instance is obtained
+from that data carrier rather than asserted as a proposition. This lets compiled extern functions
+return buffers, but it neither allocates a buffer nor proves anything about native memory.
 
-You can inspect theorem dependencies inside Lean with:
-
-```lean
-#print axioms Runtime.Autograd.Cuda.instNonemptyBuffer
-```
-
-For an audit from the shell:
+Opaque definitions and executable replacements are still important during an audit even though
+they are not axioms. The following command finds all three mechanisms:
 
 ```bash
-rg -n "^(noncomputable\\s+)?opaque |^axiom " NN -g'*.lean'
+rg -n "\\bopaque\\b|\\baxiom\\b|@\\[implemented_by" NN -g'*.lean'
 ```
+
+For any theorem used in a claim, `#print axioms theoremName` reports its transitive logical
+dependencies.
 
 ## Prop-Valued Contracts
 
@@ -69,16 +66,36 @@ make those assumptions visible.
 
 Important examples include:
 
-- `NN.MLTheory.CROWN.Graph.CrownCertSoundness.CrownTransferSound`, the transfer-rule soundness
-  assumption used by graph-CROWN certificate theorems for backend-dependent relaxations.
-- `NN.MLTheory.Proofs.UniversalApproximation.FloatIntervalApprox.OpsExact.Sound`, the local
-  operation level exact interval soundness contract for finite IEEE32 interval arithmetic.
+- `NN.MLTheory.CROWN.Graph.CrownCertSoundness.CrownTransferSound` is the generic graph-CROWN
+  transfer interface. TorchLean proves it for the concrete α-CROWN and α/β-CROWN transfer rules;
+  `alphaBetaCrown_cert_encloses_semantics` composes the latter proof with local certificate replay.
+  A new backend-dependent transfer rule must provide its own proof.
+- `NN.MLTheory.Proofs.UniversalApproximation.FloatIntervalApprox.OpsExact.Sound` packages local
+  finite-IEEE32 interval obligations. Addition, multiplication, and ReLU have proved lemmas and an
+  unconditional instance in `FloatInterval/Semantics.lean`; callers do not supply this instance.
+- `NN.MLTheory.CROWN.Lyapunov.LyapunovCert.ValidFor` remains a substantive application contract:
+  parsing endpoint values does not prove that they enclose the named Lyapunov function and orbital
+  derivative.
+- `roundedTargetExactIntervalImage_of_correctRounding` is conditional on correct rounding, real
+  activation conditions, threshold-network construction, and exact interval-semantics
+  construction. These premises are mathematical obligations, not facts inferred from execution.
+
+## Executable Replacements
+
+`@[implemented_by]` lets a definition have one logical body for reduction and a different compiled
+body for performance. Lean theorems describe the logical body; applying them to compiled results
+requires an agreement argument between the two implementations.
+
+`NN/Spec/Core/Tensor/Factorizations.lean` uses this mechanism for Cholesky columns, triangular
+solves, and ridge solves. Their strict array implementations are tested executable code, not
+consequences of the reconstruction theorems about the logical definitions.
 
 ## Opaque Non-FFI Declarations
 
-- `NN.MLTheory.CROWN.betaAt` is an executable wrapper around a length-checked beta-phase array
-  lookup. It keeps the checker executable without exposing brittle `Array.get!` internals to every
-  proof.
+- `NN.MLTheory.CROWN.betaAt` is an opaque executable wrapper around `Array.get!`. Its caller,
+  `phaseRelaxVec?`, checks the phase-array length before indexing. The wrapper alone is total and
+  would return `get!`'s fallback for an out-of-bounds index; its safety claim therefore belongs to
+  the caller's control flow.
 
 ## CUDA Runtime
 
@@ -93,6 +110,10 @@ Important examples include:
   declarations use `@&` for that calling convention; the native functions must neither retain nor
   decrement those borrowed objects. The CUDA stress suite creates thousands of short-lived
   wrappers and checks that every wrapper created in the loop is finalized.
+- Native buffer operations are marked `@[never_extract]`. This prevents Lean's compiler from
+  commoning or deleting calls that look pure in source but allocate, observe, or mutate native
+  resources. Explicit destruction is exposed through `releaseIO`; ownership-sensitive paths
+  sequence it in `IO` instead of pretending that release is a pure function.
 - CUDA buffer finalizers free device memory through `cudaFree`. This is safe for TorchLean's current
   default-stream runtime, where launches and host copies are ordered through the default stream. If
   future backends introduce user streams or asynchronous graph replay, finalizer/free ordering must
@@ -108,7 +129,7 @@ Important examples include:
     `cublasSgemmStridedBatched` in `csrc/cuda/kernels/torchlean_cuda_kernels.cu`.
   - FP64: `NN/Runtime/Autograd/Engine/Cuda/DGemm.lean` uses `torchleanDgemmCuda`, backed by
     `cublasDgemm` in `csrc/cuda/blas/torchlean_dgemm_cuda.cu`.
-- The fast-kernel Float dispatcher makes this choice explicit via `GpuMatmulPrecision`.
+- The fast-kernel Float dispatcher makes this choice explicit via `CublasPrecision`.
 - Several CUDA backward/reduction paths use `atomicAdd`. These are mathematically standard for
   accumulation but are not bit-deterministic across schedules because float32 addition is not
   associative.

@@ -32,7 +32,7 @@ open NN.Tensor
 /--
 2-conv CNN in TorchLean:
 
-`Conv2D → ReLU → MaxPool2D → Conv2D → ReLU → MaxPool2D → Flatten → Linear`.
+`Conv2d → ReLU → MaxPool2d → Conv2d → ReLU → MaxPool2d → Flatten → Linear`.
 
 Initialization is deterministic and matches the current GraphSpec primitive convention:
 - each “parameterized layer occurrence” gets an index `i = 0,1,2,...`,

@@ -83,7 +83,7 @@ def backwardScalarParamGradsCuda {α : Type} [CudaBridge.TensorConv α] (s : Eag
       | none =>
           releaseCudaAnyBuffer g
           throw <| IO.userError "torch: invalid parent id during CUDA backward"
-    if !node.requires_grad then
+    if !node.requiresGrad then
       checkCudaAnyBufferSize s!"discarded gradient for node {id}" g
       releaseCudaAnyBuffer g
     else if _h : g.s = node.value.s then
@@ -120,7 +120,7 @@ def backwardScalarParamGradsCuda {α : Type} [CudaBridge.TensorConv α] (s : Eag
         let node ← match t.getNode? id with
           | some n => pure n
           | none => throw <| IO.userError "torch: internal CUDA tape node missing"
-        if node.requires_grad then
+        if node.requiresGrad then
           checkCudaAnyBufferSize s!"upstream gradient for node {id} ({node.name})" dLdy
           let contribs ← okOrThrow <| node.backward dLdy
           for (pid, pg) in contribs do
@@ -151,14 +151,14 @@ Run reverse-mode backprop and return a dense gradient array for all tape entries
 def backwardDenseAll {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Add α] [Zero α]
   [DecidableEq Shape]
   {sh : Shape} (out : TensorRef α sh) (seed : Tensor α sh) :
-  IO (Array (Runtime.AnyTensor α)) := do
+  IO (Array (Spec.PackedTensor α)) := do
   if Options.device s.opts == .cuda then
     let gradsDev ← backwardDenseAllCuda (α := α) s (sh := sh) out seed
     gradsDev.mapM (fun g => CudaBridge.TensorConv.ofAnyBuffer (α := α) g)
   else
     let t ← s.tape.get
     okOrThrow (Runtime.Autograd.Tape.backwardDenseAll (t := t) (outId := out.id)
-      (seed := Runtime.Autograd.AnyTensor.mk seed))
+      (seed := Spec.PackedTensor.ofTensor seed))
 
 /--
 Run backward from a scalar loss with seed `1`.
@@ -167,22 +167,22 @@ PyTorch comparison: `loss.backward()` for a scalar loss.
 -/
 def backwardScalarDenseAll {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Add α]
   [Zero α] [One α] [DecidableEq Shape]
-  (loss : TensorRef α Shape.scalar) : IO (Array (Runtime.AnyTensor α)) := do
+  (loss : TensorRef α Shape.scalar) : IO (Array (Spec.PackedTensor α)) := do
   backwardDenseAll (α := α) s (sh := Shape.scalar) loss (Tensor.scalar (1 : α))
 
 /--
 Extract the gradient for a particular `TensorRef` from a dense gradient array.
 -/
 def grad {α : Type} {sh : Shape} [DecidableEq Shape]
-  (grads : Array (Runtime.AnyTensor α)) (x : TensorRef α sh) : IO (Tensor α sh) := do
+  (grads : Array (Spec.PackedTensor α)) (x : TensorRef α sh) : IO (Tensor α sh) := do
   let gAny ← match grads[x.id]? with
     | some g => pure g
     | none => throw <| IO.userError "torch: gradient array out of bounds"
-  if h : gAny.s = sh then
-    pure (Tensor.castShape gAny.t h)
+  if h : gAny.shape = sh then
+    pure (gAny.cast h)
   else
     throw <| IO.userError
-      s!"torch: grad shape mismatch (expected {Shape.pretty sh}, got {Shape.pretty gAny.s})"
+      s!"torch: grad shape mismatch (expected {Shape.pretty sh}, got {Shape.pretty gAny.shape})"
 
 /--
 Apply an SGD update to all parameters recorded via `use`.
@@ -191,7 +191,7 @@ PyTorch comparison: `for p in params: p.data -= lr * p.grad`.
 -/
 def sgdStepAll {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α)
   [Sub α] [Mul α] [Add α] [Zero α] [DecidableEq Shape]
-  (lr : α) (grads : Array (Runtime.AnyTensor α)) : IO Unit := do
+  (lr : α) (grads : Array (Spec.PackedTensor α)) : IO Unit := do
   if Options.device s.opts == .cuda then
     let lrF ← CudaBridge.TensorConv.toFloat (α := α) lr
     let t0 ← s.cudaTape.get
@@ -200,8 +200,8 @@ def sgdStepAll {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α)
       let gAny ← match grads[id]? with
         | some g => pure g
         | none => throw <| IO.userError "torch: gradient array out of bounds during SGD"
-      if hs : gAny.s = p.s then
-        let gT : Tensor α p.s := Tensor.castShape gAny.t hs
+      if hs : gAny.shape = p.s then
+        let gT : Tensor α p.s := gAny.cast hs
         let gDev ← CudaBridge.TensorConv.toAnyBuffer (α := α) (s := p.s) gT
         let pBuf ← okOrThrow <|
           Runtime.Autograd.Cuda.Tape.requireValue (t := t0) (id := id) (s := p.s)
@@ -209,7 +209,7 @@ def sgdStepAll {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α)
           { s := p.s, buf := Runtime.Autograd.Cuda.Buffer.axpy pBuf gDev.buf (-lrF) }
         p.setCuda updatedDev
         -- The uploaded host gradient is only a transient bridge buffer for this update.
-        let released := Runtime.Autograd.Cuda.Buffer.release gDev.buf
+        let released ← Runtime.Autograd.Cuda.Buffer.releaseIO gDev.buf
         AnyParam.observeCudaCleanupFlag released
       else
         throw <| IO.userError "torch: internal grad shape mismatch during SGD"
@@ -219,14 +219,14 @@ def sgdStepAll {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α)
       let gAny ← match grads[id]? with
         | some g => pure g
         | none => throw <| IO.userError "torch: gradient array out of bounds during SGD"
-      if hs : gAny.s = p.s then
+      if hs : gAny.shape = p.s then
         let pv ← p.get
-        if hp : pv.s = p.s then
-          let pvT : Tensor α p.s := Tensor.castShape pv.t hp
-          let gT : Tensor α p.s := Tensor.castShape gAny.t hs
+        if hp : pv.shape = p.s then
+          let pvT : Tensor α p.s := pv.cast hp
+          let gT : Tensor α p.s := gAny.cast hs
           let updated : Tensor α p.s :=
             Tensor.materialize <| subSpec pvT (scaleSpec (α := α) (s := p.s) gT lr)
-          p.set (Runtime.Autograd.AnyTensor.mk updated)
+          p.set (Spec.PackedTensor.ofTensor updated)
         else
           throw <| IO.userError "torch: internal param shape mismatch"
       else

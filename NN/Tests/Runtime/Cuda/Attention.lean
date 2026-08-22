@@ -114,9 +114,9 @@ def run : IO Unit := do
   Utils.assertApprox "hard mask preserves allowed probability[1]" (extremeHost.get! 1) 1.0
   Utils.assertApprox "all-blocked hard mask row[0]" (extremeHost.get! 2) 0.0
   Utils.assertApprox "all-blocked hard mask row[1]" (extremeHost.get! 3) 0.0
-  let _ := Runtime.Autograd.Cuda.Buffer.release extremeScores
-  let _ := Runtime.Autograd.Cuda.Buffer.release extremeMask
-  let _ := Runtime.Autograd.Cuda.Buffer.release extremeOut
+  discard <| Runtime.Autograd.Cuda.Buffer.releaseIO extremeScores
+  discard <| Runtime.Autograd.Cuda.Buffer.releaseIO extremeMask
+  discard <| Runtime.Autograd.Cuda.Buffer.releaseIO extremeOut
 
   let outShape : Shape := shape![n, dModel]
 
@@ -132,7 +132,7 @@ def run : IO Unit := do
       (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
       (h1 := hN) wqId wkId wvId woId xId (mask := some mask))
   let yCpu ← Utils.cpuValue (s := outShape) t6 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) outShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) outShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t6) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := outShape) gradsCpu xId
   let dWqCpu ← Utils.cpuGrad (s := shape![dModel, projDim]) gradsCpu wqId

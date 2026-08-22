@@ -55,33 +55,27 @@ def tanh {α : Type} (s : TypedGraphSession α) [Context α] [DecidableEq Shape]
     let st1 : TypedGraphSessionState α := { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
     pure ({ id := v.id }, st1))
 
-/--
-Record softmax (shape-preserving).
-
-PyTorch comparison: `torch.softmax(x, dim=...)`. This helper uses the convention baked into the
-underlying `GraphM.softmax` implementation.
--/
-def softmax {α : Type} (s : TypedGraphSession α) [Context α] [DecidableEq Shape] {sh : Shape}
-  (x : TensorRef α sh) : IO (TensorRef α sh) :=
+/-- Record softmax along an explicitly selected tensor dimension. -/
+def softmax {α : Type} (s : TypedGraphSession α) [Context α] [DecidableEq Shape]
+    {sh : Shape} (axis : Nat) [Shape.AxisInBounds axis sh]
+    (x : TensorRef α sh) : IO (TensorRef α sh) :=
   commitGraphM (α := α) s (β := TensorRef α sh) (fun {Γ} {ss} xv nat g => do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
-      (Runtime.Autograd.TypedGraph.GraphM.softmax (α := α) (Γ := Γ) (s := sh) { id := x.id })
+      (Runtime.Autograd.TypedGraph.GraphM.softmax
+        (α := α) (Γ := Γ) (s := sh) axis { id := x.id })
       ss g
     let ⟨ss', g'⟩ := st'
     let st1 : TypedGraphSessionState α := { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
     pure ({ id := v.id }, st1))
 
-/--
-Record stable log-softmax in the linked typed graph session.
-
-This commits a single `GraphM.logSoftmax` node instead of expanding to `softmax` followed by
-`log`, so typed graph execution keeps the same stable semantics as eager CPU/CUDA.
--/
-def logSoftmax {α : Type} (s : TypedGraphSession α) [Context α] [DecidableEq Shape] {sh : Shape}
-  (x : TensorRef α sh) : IO (TensorRef α sh) :=
+/-- Record stable log-softmax along an explicitly selected tensor dimension. -/
+def logSoftmax {α : Type} (s : TypedGraphSession α) [Context α] [DecidableEq Shape]
+    {sh : Shape} (axis : Nat) [Shape.AxisInBounds axis sh]
+    (x : TensorRef α sh) : IO (TensorRef α sh) :=
   commitGraphM (α := α) s (β := TensorRef α sh) (fun {Γ} {ss} xv nat g => do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
-      (Runtime.Autograd.TypedGraph.GraphM.logSoftmax (α := α) (Γ := Γ) (s := sh) { id := x.id })
+      (Runtime.Autograd.TypedGraph.GraphM.logSoftmax
+        (α := α) (Γ := Γ) (s := sh) axis { id := x.id })
       ss g
     let ⟨ss', g'⟩ := st'
     let st1 : TypedGraphSessionState α := { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }

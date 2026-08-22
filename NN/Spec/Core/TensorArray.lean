@@ -79,32 +79,31 @@ theorem shapeProd_cons (n : Nat) (ns : List Nat) :
 -- Tell `grind` about the standard runtime-shape "numel algebra" rules.
 attribute [grind =] shapeProd_nil shapeProd_cons
 
-/-- Compute the flat index for a given multi-index.
+namespace Internal
+
+/- Compute the flat index for a given multi-index.
 
 Returns `none` if the indices are out of bounds or the rank mismatches.
 -/
-def flatIndexAux : List Nat → List Nat → Nat → Option Nat
+def flatIndex : List Nat → List Nat → Nat → Option Nat
   | [], [], acc => some acc
   | d :: ds, i :: is, acc =>
     if i < d then
-      flatIndexAux ds is (acc * d + i)
+      flatIndex ds is (acc * d + i)
     else
       none
   | _, _, _ => none
 
-def flatIndex (shape : List Nat) (indices : List Nat) : Option Nat :=
-  flatIndexAux shape indices 0
-
 /--
-`flatIndexAux` returns an index that is bounded by the "mixed-radix" size implied by the
+The accumulator form of `flatIndex` returns an index bounded by the mixed-radix size implied by the
 remaining `shape`.
 
 Intuition: starting with accumulator `acc`, the recursion computes something of the form
 $\mathtt{acc}\,\operatorname{shapeProd}(\mathtt{shape})+\mathtt{tail}$, where
 $\mathtt{tail}<\operatorname{shapeProd}(\mathtt{shape})$.
 -/
-theorem flatIndexAux_lt (shape indices : List Nat) (acc idx : Nat) :
-  flatIndexAux shape indices acc = some idx → idx < (acc + 1) * shapeProd shape := by
+theorem flatIndex_lt (shape indices : List Nat) (acc idx : Nat) :
+  flatIndex shape indices acc = some idx → idx < (acc + 1) * shapeProd shape := by
   induction shape generalizing indices acc idx with
   | nil =>
     cases indices with
@@ -115,17 +114,17 @@ theorem flatIndexAux_lt (shape indices : List Nat) (acc idx : Nat) :
       simp
     | cons _ _ =>
       intro h
-      simp [flatIndexAux] at h
+      simp [flatIndex] at h
   | cons d ds ih =>
     cases indices with
     | nil =>
       intro h
-      simp [flatIndexAux] at h
+      simp [flatIndex] at h
     | cons i is =>
       intro h
       by_cases hi : i < d
-      · have hrec : flatIndexAux ds is (acc * d + i) = some idx := by
-          simpa [flatIndexAux, hi] using h
+      · have hrec : flatIndex ds is (acc * d + i) = some idx := by
+          simpa [flatIndex, hi] using h
         have hlt : idx < ((acc * d + i) + 1) * shapeProd ds :=
           ih (indices := is) (acc := acc * d + i) (idx := idx) hrec
         have hle : acc * d + i + 1 ≤ (acc + 1) * d := by
@@ -141,14 +140,20 @@ theorem flatIndexAux_lt (shape indices : List Nat) (acc idx : Nat) :
         have : idx < ((acc + 1) * d) * shapeProd ds :=
           Nat.lt_of_lt_of_le hlt hle'
         simpa [shapeProd_cons, Nat.mul_assoc] using this
-      · simp [flatIndexAux, hi] at h
+      · simp [flatIndex, hi] at h
+
+end Internal
+
+/-- Compute the row-major flat index of a multi-index, rejecting rank and bounds mismatches. -/
+def flatIndex (shape : List Nat) (indices : List Nat) : Option Nat :=
+  Internal.flatIndex shape indices 0
 
 /-- If `flatIndex` succeeds, the resulting index is in-bounds for the flattened tensor. -/
 theorem flatIndex_lt_shapeProd (shape indices : List Nat) (idx : Nat) :
   flatIndex shape indices = some idx → idx < shapeProd shape := by
   intro h
   have : idx < (0 + 1) * shapeProd shape :=
-    flatIndexAux_lt shape indices 0 idx (by simpa [flatIndex] using h)
+    Internal.flatIndex_lt shape indices 0 idx (by simpa [flatIndex] using h)
   simpa using this
 
 /--

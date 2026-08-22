@@ -130,13 +130,13 @@ def ppoRolloutTrainLog {α : Type} [Context α] [ToVizFloat α] [DecidableEq Sha
     simpa using this.symm
 
   let rewards : Tensor α (.dim horizon .scalar) :=
-    Tensor.ofArray1D (α := α) (n := horizon) rewardsArr hRewards
+    Tensor.ofArray (rewardsArr.map Tensor.scalar) (by simpa using hRewards)
   let dones : Tensor Bool (.dim horizon .scalar) :=
-    Tensor.ofArray1D (α := Bool) (n := horizon) donesArr hDones
+    Tensor.ofArray (donesArr.map Tensor.scalar) (by simpa using hDones)
   let values : Tensor α (.dim horizon .scalar) :=
-    Tensor.ofArray1D (α := α) (n := horizon) valuesArr hValues
+    Tensor.ofArray (valuesArr.map Tensor.scalar) (by simpa using hValues)
   let nextValues : Tensor α (.dim horizon .scalar) :=
-    Tensor.ofArray1D (α := α) (n := horizon) nextValuesArr hNextValues
+    Tensor.ofArray (nextValuesArr.map Tensor.scalar) (by simpa using hNextValues)
 
   let advRaw :=
     _root_.Runtime.RL.Core.generalizedAdvantageEstimationVec (α := α) (n := horizon)

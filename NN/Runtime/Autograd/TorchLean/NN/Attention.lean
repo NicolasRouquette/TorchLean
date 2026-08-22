@@ -55,7 +55,7 @@ def multiHeadAttention
   let wo0 : Tensor Float wOShape := Torch.Init.tensor outInit (seed := seedW + 3)
   { kind := s!"MultiHeadAttention(heads={numHeads}, headDim={headDim})"
     stateShapes := [wProjShape, wProjShape, wProjShape, wOShape]
-    initState := Torch.tlistQuad wq0 wk0 wv0 wo0
+    initState := .cons wq0 (.cons wk0 (.cons wv0 (.cons wo0 .nil)))
     runtimeInit := some <|
       .cons (Module.RuntimeInit.FloatInit.ofScheme projInit (seedW + 0)) <|
       .cons (Module.RuntimeInit.FloatInit.ofScheme projInit (seedW + 1)) <|

@@ -40,74 +40,6 @@ def irLinearOfLinParams {α : Type} [Context α]
     (p : NN.MLTheory.CROWN.Graph.LinParams α) : LinearWB α :=
   { outDim := p.m, inDim := p.n, W := p.w, b := p.b }
 
-/-- Convert verifier convolution parameters into the IR convolution payload format. -/
-def irConv2DOfGraphParams {α : Type} [Context α]
-    (cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α) : NN.IR.Conv2DParams α :=
-  { inC := cfg.inC, outC := cfg.outC, kH := cfg.kH, kW := cfg.kW
-    stride := cfg.stride, padding := cfg.padding, inH := cfg.inH, inW := cfg.inW
-    hIn := cfg.hIn, hKH := cfg.hKH, hKW := cfg.hKW, hStride := cfg.hStride,
-    spec := cfg.spec }
-
-/-- Convert verifier BatchNorm parameters into the IR BatchNorm payload format. -/
-def irBatchNorm2DNchwEvalOfGraphParams {α : Type} [Context α]
-    (p : NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α) :
-    NN.IR.BatchNorm2DNchwEvalParams α :=
-  { c := p.c, gamma := p.gamma, beta := p.beta, mean := p.mean, var := p.var, eps := p.eps }
-
-/-! ## Payload bridge coverage -/
-
-/-- IR constructor families whose evaluator path reads from `ParamStore` through `Payload`. -/
-def payloadBridgeCoverageWitnesses : List OpKind :=
-  [
-    .const .scalar,
-    .linear,
-    .conv2d 1 1 1 1 1 0,
-    .batchNorm2dNchwEval 1
-  ]
-
-/-- Tags for constructor families covered by the ParamStore-to-Payload bridge lemmas. -/
-def payloadBridgeCoverageTags : List String :=
-  payloadBridgeCoverageWitnesses.map OpKind.tag
-
-/-- Whether an IR constructor family has a payload-backed evaluator path. -/
-def opKindUsesPayloadBridge : OpKind → Bool
-  | .const .. => true
-  | .linear => true
-  | .conv2d .. => true
-  | .batchNorm2dNchwEval .. => true
-  | _ => false
-
-/-- The payload bridge checklist records each payload-backed constructor tag once. -/
-theorem payloadBridgeCoverageTags_nodup :
-    payloadBridgeCoverageTags.Nodup := by
-  decide
-
-/-- Every current payload-backed IR constructor family appears in the bridge checklist. -/
-theorem payloadBridgeCoverageTags_complete
-    (kind : OpKind) (h : opKindUsesPayloadBridge kind = true) :
-    kind.tag ∈ payloadBridgeCoverageTags := by
-  cases kind <;> simp [opKindUsesPayloadBridge, payloadBridgeCoverageTags,
-    payloadBridgeCoverageWitnesses, OpKind.tag] at h ⊢
-
-/-- The payload bridge checklist is exactly the set of current payload-backed constructor tags. -/
-theorem payloadBridgeCoverageTags_iff (tag : String) :
-    tag ∈ payloadBridgeCoverageTags ↔
-      ∃ kind : OpKind, opKindUsesPayloadBridge kind = true ∧ kind.tag = tag := by
-  constructor
-  · intro h
-    simp [payloadBridgeCoverageTags, payloadBridgeCoverageWitnesses, OpKind.tag] at h
-    rcases h with h | h | h | h
-    · subst tag
-      exact ⟨.const .scalar, by simp [opKindUsesPayloadBridge, OpKind.tag]⟩
-    · subst tag
-      exact ⟨.linear, by simp [opKindUsesPayloadBridge, OpKind.tag]⟩
-    · subst tag
-      exact ⟨.conv2d 1 1 1 1 1 0, by simp [opKindUsesPayloadBridge, OpKind.tag]⟩
-    · subst tag
-      exact ⟨.batchNorm2dNchwEval 1, by simp [opKindUsesPayloadBridge, OpKind.tag]⟩
-  · rintro ⟨kind, hPayload, rfl⟩
-    exact payloadBridgeCoverageTags_complete kind hPayload
-
 /-- Constants are forwarded from `ParamStore.constVals` to `Payload.const?` without changing data. -/
 theorem payloadOfParamStore_const?_eq
     {α : Type} [Context α]
@@ -168,20 +100,17 @@ theorem payloadOfParamStore_linear?_none
 theorem payloadOfParamStore_conv2d?_eq
     {α : Type} [Context α]
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α) (id : Nat) :
-    (payloadOfParamStore (α := α) ps).conv2d? id =
-      (ps.conv2dCfg.get? id).map (irConv2DOfGraphParams (α := α)) := by
+    (payloadOfParamStore (α := α) ps).conv2d? id = ps.conv2dCfg.get? id := by
   rfl
 
 /-- A present convolution entry becomes the matching IR convolution payload. -/
 theorem payloadOfParamStore_conv2d?_some
     {α : Type} [Context α]
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α) (id : Nat)
-    (cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α)
+    (cfg : NN.IR.Conv2dParams α)
     (h : ps.conv2dCfg.get? id = some cfg) :
-    (payloadOfParamStore (α := α) ps).conv2d? id =
-      some (irConv2DOfGraphParams (α := α) cfg) := by
-  rw [payloadOfParamStore_conv2d?_eq, h]
-  rfl
+    (payloadOfParamStore (α := α) ps).conv2d? id = some cfg := by
+  simpa [payloadOfParamStore_conv2d?_eq] using h
 
 /-- Missing convolution entries remain missing after converting to an IR payload. -/
 theorem payloadOfParamStore_conv2d?_none
@@ -190,27 +119,23 @@ theorem payloadOfParamStore_conv2d?_none
     (h : ps.conv2dCfg.get? id = none) :
     (payloadOfParamStore (α := α) ps).conv2d? id = none := by
   rw [payloadOfParamStore_conv2d?_eq, h]
-  rfl
 
 /-- BatchNorm parameters are forwarded from `ParamStore.batchNorm2dNchwEval` to the IR payload. -/
 theorem payloadOfParamStore_batchNorm2dNchwEval?_eq
     {α : Type} [Context α]
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α) (id : Nat) :
     (payloadOfParamStore (α := α) ps).batchNorm2dNchwEval? id =
-      (ps.batchNorm2dNchwEval.get? id).map
-        (irBatchNorm2DNchwEvalOfGraphParams (α := α)) := by
+      ps.batchNorm2dNchwEval.get? id := by
   rfl
 
 /-- A present BatchNorm entry becomes the matching IR BatchNorm payload. -/
 theorem payloadOfParamStore_batchNorm2dNchwEval?_some
     {α : Type} [Context α]
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α) (id : Nat)
-    (p : NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α)
+    (p : NN.IR.BatchNorm2dNchwEvalParams α)
     (h : ps.batchNorm2dNchwEval.get? id = some p) :
-    (payloadOfParamStore (α := α) ps).batchNorm2dNchwEval? id =
-      some (irBatchNorm2DNchwEvalOfGraphParams (α := α) p) := by
-  rw [payloadOfParamStore_batchNorm2dNchwEval?_eq, h]
-  rfl
+    (payloadOfParamStore (α := α) ps).batchNorm2dNchwEval? id = some p := by
+  simpa [payloadOfParamStore_batchNorm2dNchwEval?_eq] using h
 
 /-- Missing BatchNorm entries remain missing after converting to an IR payload. -/
 theorem payloadOfParamStore_batchNorm2dNchwEval?_none
@@ -219,7 +144,6 @@ theorem payloadOfParamStore_batchNorm2dNchwEval?_none
     (h : ps.batchNorm2dNchwEval.get? id = none) :
     (payloadOfParamStore (α := α) ps).batchNorm2dNchwEval? id = none := by
   rw [payloadOfParamStore_batchNorm2dNchwEval?_eq, h]
-  rfl
 
 /-! ## Evaluator facts for ParamStore-backed payloads -/
 
@@ -267,11 +191,11 @@ theorem evalLinear_from_paramStore
         some ({ m := outDim, n := inDim, w := W, b := b } :
           NN.MLTheory.CROWN.Graph.LinParams α)) :
     Graph.evalLinear (α := α) (payload := payloadOfParamStore (α := α) ps) (id := id)
-        (x := DVal.mk (α := α) (.dim inDim .scalar) x)
+        (x := Spec.PackedTensor.mk (α := α) (.dim inDim .scalar) x)
         (outShape := .dim outDim .scalar)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim outDim .scalar)
+        (Spec.PackedTensor.mk (α := α) (.dim outDim .scalar)
           (Tensor.addSpec (α := α)
             (Spec.matVecMulSpec (α := α) (m := outDim) (n := inDim) W x) b)) := by
   simp [Graph.evalLinear,
@@ -288,7 +212,7 @@ theorem evalLinear_missing_from_paramStore
     (x : Tensor α (.dim inDim .scalar))
     (hMissing : ps.linearWB.get? id = none) :
     Graph.evalLinear (α := α) (payload := payloadOfParamStore (α := α) ps) (id := id)
-        (x := DVal.mk (α := α) (.dim inDim .scalar) x)
+        (x := Spec.PackedTensor.mk (α := α) (.dim inDim .scalar) x)
         (outShape := .dim outDim .scalar)
       =
       Except.error s!"IR eval: missing linear payload for node {id}" := by
@@ -296,12 +220,12 @@ theorem evalLinear_missing_from_paramStore
     payloadOfParamStore_linear?_none (ps := ps) (id := id) hMissing]
   rfl
 
-/-- `Graph.evalConv2D` reads convolution parameters through the `ParamStore` bridge at any node id. -/
-theorem evalConv2D_from_paramStore
+/-- `Graph.evalConv2d` reads convolution parameters through the `ParamStore` bridge at any node id. -/
+theorem evalConv2d_from_paramStore
     {α : Type} [Context α] [DecidableEq Shape]
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (id : Nat)
-    (cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α)
+    (cfg : NN.IR.Conv2dParams α)
     (x : Tensor α (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))))
     (hStore : ps.conv2dCfg.get? id = some cfg)
     (hHeight : OpContracts.checkWindowFits "conv2d" "height" cfg.inH cfg.kH cfg.padding = .ok ())
@@ -310,11 +234,11 @@ theorem evalConv2D_from_paramStore
       .dim cfg.outC
         (.dim (Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding)
           (.dim (Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding) .scalar))
-    Graph.evalConv2D (α := α) (payload := payloadOfParamStore (α := α) ps) (id := id)
-        (x := DVal.mk (α := α) (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) x)
+    Graph.evalConv2d (α := α) (payload := payloadOfParamStore (α := α) ps) (id := id)
+        (x := Spec.PackedTensor.mk (α := α) (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) x)
       =
       Except.ok
-        (DVal.mk (α := α) outShape
+        (Spec.PackedTensor.mk (α := α) outShape
           (Spec.conv2dSpec (α := α) (layer := cfg.spec) (input := x))) := by
   have hInfer :
       OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
@@ -327,32 +251,32 @@ theorem evalConv2D_from_paramStore
       OpContracts.inferConvOutShape, Shape.toList, Shape.ofList, OpContracts.inferSlidingWindowDims, OpContracts.inferSlidingWindowDims.go, OpContracts.slideOutPad, cfg.hIn, cfg.hKH,
       cfg.hKW, cfg.hStride, hHeight, hWidth, Bind.bind, Except.bind, Pure.pure,
       Except.pure]
-  simp [Graph.evalConv2D,
+  simp [Graph.evalConv2d,
     payloadOfParamStore_conv2d?_some (ps := ps) (id := id) cfg hStore,
-    irConv2DOfGraphParams, Graph.expectShape, hInfer,
+    Graph.expectShape, hInfer,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
-/-- Missing `ParamStore.conv2dCfg` entries are rejected by `Graph.evalConv2D` at any node id. -/
-theorem evalConv2D_missing_from_paramStore
+/-- Missing `ParamStore.conv2dCfg` entries are rejected by `Graph.evalConv2d` at any node id. -/
+theorem evalConv2d_missing_from_paramStore
     {α : Type} [Context α] [DecidableEq Shape]
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (id : Nat)
-    (cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α)
+    (cfg : NN.IR.Conv2dParams α)
     (x : Tensor α (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))))
     (hMissing : ps.conv2dCfg.get? id = none) :
-    Graph.evalConv2D (α := α) (payload := payloadOfParamStore (α := α) ps) (id := id)
-        (x := DVal.mk (α := α) (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) x)
+    Graph.evalConv2d (α := α) (payload := payloadOfParamStore (α := α) ps) (id := id)
+        (x := Spec.PackedTensor.mk (α := α) (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) x)
       =
       Except.error s!"IR eval: missing conv2d payload for node {id}" := by
-  simp [Graph.evalConv2D,
+  simp [Graph.evalConv2d,
     payloadOfParamStore_conv2d?_none (ps := ps) (id := id) hMissing]
   rfl
 
 /--
-`Graph.evalBatchNorm2DNchwEval` reads eval-mode BatchNorm parameters through the `ParamStore`
+`Graph.evalBatchNorm2dNchwEval` reads eval-mode BatchNorm parameters through the `ParamStore`
 bridge at any node id.
 -/
-theorem evalBatchNorm2DNchwEval_from_paramStore
+theorem evalBatchNorm2dNchwEval_from_paramStore
     {α : Type} [Context α] [DecidableEq Shape]
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (id n c h w : Nat)
@@ -362,35 +286,35 @@ theorem evalBatchNorm2DNchwEval_from_paramStore
     (hStore :
       ps.batchNorm2dNchwEval.get? id =
         some ({ c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps } :
-          NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α)) :
-    Graph.evalBatchNorm2DNchwEval (α := α) (payload := payloadOfParamStore (α := α) ps)
+          NN.IR.BatchNorm2dNchwEvalParams α)) :
+    Graph.evalBatchNorm2dNchwEval (α := α) (payload := payloadOfParamStore (α := α) ps)
         (id := id)
-        (x := DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x)
+        (x := Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
+        (Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
           (batchNorm2dNchwEvalTensor (α := α) gamma beta mean var eps x)) := by
-  simp [Graph.evalBatchNorm2DNchwEval,
+  simp [Graph.evalBatchNorm2dNchwEval,
     payloadOfParamStore_batchNorm2dNchwEval?_some (ps := ps) (id := id)
       ({ c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps } :
-        NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α) hStore,
-    irBatchNorm2DNchwEvalOfGraphParams, Graph.expectShape,
+        NN.IR.BatchNorm2dNchwEvalParams α) hStore,
+    Graph.expectShape,
     batchNorm2dNchwEvalTensor, Bind.bind, Except.bind,
     Pure.pure, Except.pure]
 
 /-- Missing `ParamStore.batchNorm2dNchwEval` entries are rejected by BatchNorm evaluation. -/
-theorem evalBatchNorm2DNchwEval_missing_from_paramStore
+theorem evalBatchNorm2dNchwEval_missing_from_paramStore
     {α : Type} [Context α] [DecidableEq Shape]
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (id n c h w : Nat)
     (x : Tensor α (.dim n (.dim c (.dim h (.dim w .scalar)))))
     (hMissing : ps.batchNorm2dNchwEval.get? id = none) :
-    Graph.evalBatchNorm2DNchwEval (α := α) (payload := payloadOfParamStore (α := α) ps)
+    Graph.evalBatchNorm2dNchwEval (α := α) (payload := payloadOfParamStore (α := α) ps)
         (id := id)
-        (x := DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x)
+        (x := Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x)
       =
       Except.error s!"IR eval: missing batch_norm2d_nchw_eval payload for node {id}" := by
-  simp [Graph.evalBatchNorm2DNchwEval,
+  simp [Graph.evalBatchNorm2dNchwEval,
     payloadOfParamStore_batchNorm2dNchwEval?_none (ps := ps) (id := id) hMissing]
   rfl
 
@@ -402,7 +326,7 @@ theorem evalAt_const_from_paramStore_of_getNode
     (g : Graph) (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (i id : Nat) (s inputShape : Shape)
     (input : Tensor α inputShape)
-    (vals : Array (DVal α))
+    (vals : Array (Spec.PackedTensor α))
     (v : Tensor α (.dim (Spec.Shape.size s) .scalar))
     (hNode :
       Graph.getNode (g := g) i =
@@ -411,10 +335,10 @@ theorem evalAt_const_from_paramStore_of_getNode
       ps.constVals.get? id =
         some ({ n := Spec.Shape.size s, v := v } : NN.MLTheory.CROWN.Graph.FlatVec α)) :
     Graph.evalAt (α := α) (g := g) (payload := payloadOfParamStore (α := α) ps)
-        (input := DVal.mk (α := α) inputShape input)
+        (input := Spec.PackedTensor.mk (α := α) inputShape input)
         (vals := vals) (i := i)
       =
-      Except.ok (DVal.mk (α := α) s (Tensor.unflattenSpec (α := α) (s := s) v)) := by
+      Except.ok (Spec.PackedTensor.mk (α := α) s (Tensor.unflattenSpec (α := α) (s := s) v)) := by
   simp [Graph.evalAt, Graph.evalNode, hNode,
     evalConst_from_paramStore (ps := ps) (id := id) (s := s) (v := v) hStore,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
@@ -425,13 +349,13 @@ theorem evalAt_const_missing_from_paramStore_of_getNode
     (g : Graph) (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (i id : Nat) (s inputShape : Shape)
     (input : Tensor α inputShape)
-    (vals : Array (DVal α))
+    (vals : Array (Spec.PackedTensor α))
     (hNode :
       Graph.getNode (g := g) i =
         pure (NN.IR.Node.mk id [] (NN.IR.OpKind.const s) s))
     (hMissing : ps.constVals.get? id = none) :
     Graph.evalAt (α := α) (g := g) (payload := payloadOfParamStore (α := α) ps)
-        (input := DVal.mk (α := α) inputShape input)
+        (input := Spec.PackedTensor.mk (α := α) inputShape input)
         (vals := vals) (i := i)
       =
       Except.error s!"IR eval: missing const payload for node {id}" := by
@@ -446,34 +370,36 @@ theorem evalAt_linear_from_paramStore_of_getNode
     (i id pId outDim inDim : Nat)
     (inputShape : Shape)
     (input : Tensor α inputShape)
-    (vals : Array (DVal α))
+    (vals : Array (Spec.PackedTensor α))
     (W : Tensor α (.dim outDim (.dim inDim .scalar)))
     (b : Tensor α (.dim outDim .scalar))
     (x : Tensor α (.dim inDim .scalar))
+    (parent : Spec.PackedTensor α)
     (hNode :
       Graph.getNode (g := g) i =
         pure (NN.IR.Node.mk id [pId] NN.IR.OpKind.linear
           (Shape.dim outDim Shape.scalar)))
+    (hParentValue : vals[pId]? = some parent)
     (hParent :
-      Graph.expectShape (α := α) (expected := Shape.dim inDim Shape.scalar) vals[pId]! =
+      Graph.expectShape (α := α) (expected := Shape.dim inDim Shape.scalar) parent =
         Except.ok x)
     (hStore :
       ps.linearWB.get? id =
         some ({ m := outDim, n := inDim, w := W, b := b } :
           NN.MLTheory.CROWN.Graph.LinParams α)) :
     Graph.evalAt (α := α) (g := g) (payload := payloadOfParamStore (α := α) ps)
-        (input := DVal.mk (α := α) inputShape input)
+        (input := Spec.PackedTensor.mk (α := α) inputShape input)
         (vals := vals) (i := i)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim outDim .scalar)
+        (Spec.PackedTensor.mk (α := α) (.dim outDim .scalar)
           (Tensor.addSpec (α := α)
             (Spec.matVecMulSpec (α := α) (m := outDim) (n := inDim) W x) b)) := by
   simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalLinear,
     payloadOfParamStore_linear?_some (ps := ps) (id := id)
       ({ m := outDim, n := inDim, w := W, b := b } :
         NN.MLTheory.CROWN.Graph.LinParams α) hStore,
-    irLinearOfLinParams, hParent,
+    irLinearOfLinParams, hParentValue, hParent,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Missing `ParamStore.linearWB` entries are rejected at any `linear` node id. -/
@@ -483,19 +409,21 @@ theorem evalAt_linear_missing_from_paramStore_of_getNode
     (i id pId outDim : Nat)
     (inputShape : Shape)
     (input : Tensor α inputShape)
-    (vals : Array (DVal α))
+    (vals : Array (Spec.PackedTensor α))
+    (parent : Spec.PackedTensor α)
     (hNode :
       Graph.getNode (g := g) i =
         pure (NN.IR.Node.mk id [pId] NN.IR.OpKind.linear
           (Shape.dim outDim Shape.scalar)))
+    (hParentValue : vals[pId]? = some parent)
     (hMissing : ps.linearWB.get? id = none) :
     Graph.evalAt (α := α) (g := g) (payload := payloadOfParamStore (α := α) ps)
-        (input := DVal.mk (α := α) inputShape input)
+        (input := Spec.PackedTensor.mk (α := α) inputShape input)
         (vals := vals) (i := i)
       =
       Except.error s!"IR eval: missing linear payload for node {id}" := by
   simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalLinear,
-    payloadOfParamStore_linear?_none (ps := ps) (id := id) hMissing,
+    payloadOfParamStore_linear?_none (ps := ps) (id := id) hMissing, hParentValue,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
   rfl
 
@@ -504,11 +432,12 @@ theorem evalAt_conv2d_from_paramStore_of_getNode
     {α : Type} [Context α] [DecidableEq Shape]
     (g : Graph) (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (i id pId : Nat)
-    (cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α)
+    (cfg : NN.IR.Conv2dParams α)
     (inputShape : Shape)
     (input : Tensor α inputShape)
-    (vals : Array (DVal α))
+    (vals : Array (Spec.PackedTensor α))
     (x : Tensor α (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))))
+    (parent : Spec.PackedTensor α)
     (hNode :
       let outShape : Shape :=
         .dim cfg.outC
@@ -518,9 +447,10 @@ theorem evalAt_conv2d_from_paramStore_of_getNode
         pure (NN.IR.Node.mk id [pId]
           (NN.IR.OpKind.conv2d cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride cfg.padding)
           outShape))
+    (hParentValue : vals[pId]? = some parent)
     (hParent :
       Graph.expectShape (α := α)
-          (expected := .dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) vals[pId]! =
+          (expected := .dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) parent =
         Except.ok x)
     (hStore : ps.conv2dCfg.get? id = some cfg)
     (hHeight : OpContracts.checkWindowFits "conv2d" "height" cfg.inH cfg.kH cfg.padding = .ok ())
@@ -530,39 +460,30 @@ theorem evalAt_conv2d_from_paramStore_of_getNode
         (.dim (Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding)
           (.dim (Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding) .scalar))
     Graph.evalAt (α := α) (g := g) (payload := payloadOfParamStore (α := α) ps)
-        (input := DVal.mk (α := α) inputShape input)
+        (input := Spec.PackedTensor.mk (α := α) inputShape input)
         (vals := vals) (i := i)
       =
       Except.ok
-        (DVal.mk (α := α) outShape
+        (Spec.PackedTensor.mk (α := α) outShape
           (Spec.conv2dSpec (α := α) (layer := cfg.spec) (input := x))) := by
   have hParentShape :
-      vals[pId]!.shape = .dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar)) := by
-    by_cases hEq : vals[pId]!.fst = .dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))
-    · simpa [DVal.shape] using hEq
-    · exfalso
-      simp [Graph.expectShape, DVal.shape, hEq] at hParent
+      parent.shape = .dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar)) :=
+    shape_eq_of_expectShape_eq_ok hParent
   have hInfer :
       OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
-          cfg.padding vals[pId]!.fst =
+          cfg.padding parent.shape =
         Except.ok
           (.dim cfg.outC
             (.dim (Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding)
               (.dim (Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding) .scalar))) := by
-    change OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
-        cfg.padding vals[pId]!.shape =
-      Except.ok
-        (.dim cfg.outC
-          (.dim (Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding)
-            (.dim (Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding) .scalar)))
     rw [hParentShape]
     simp [OpContracts.inferConv2dOutShape, OpContracts.checkPositive,
       OpContracts.inferConvOutShape, Shape.toList, Shape.ofList, OpContracts.inferSlidingWindowDims, OpContracts.inferSlidingWindowDims.go, OpContracts.slideOutPad, cfg.hIn, cfg.hKH,
       cfg.hKW, cfg.hStride, hHeight, hWidth, Bind.bind, Except.bind, Pure.pure,
       Except.pure]
-  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalConv2D,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalConv2d,
     payloadOfParamStore_conv2d?_some (ps := ps) (id := id) cfg hStore,
-    irConv2DOfGraphParams, hParent, hInfer, shapeBNe_refl,
+    hParentValue, hParent, hInfer, shapeBNe_refl,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Missing `ParamStore.conv2dCfg` entries are rejected at any `conv2d` node id. -/
@@ -570,10 +491,11 @@ theorem evalAt_conv2d_missing_from_paramStore_of_getNode
     {α : Type} [Context α] [DecidableEq Shape]
     (g : Graph) (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (i id pId : Nat)
-    (cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α)
+    (cfg : NN.IR.Conv2dParams α)
     (inputShape : Shape)
     (input : Tensor α inputShape)
-    (vals : Array (DVal α))
+    (vals : Array (Spec.PackedTensor α))
+    (parent : Spec.PackedTensor α)
     (hNode :
       let outShape : Shape :=
         .dim cfg.outC
@@ -583,14 +505,15 @@ theorem evalAt_conv2d_missing_from_paramStore_of_getNode
         pure (NN.IR.Node.mk id [pId]
           (NN.IR.OpKind.conv2d cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride cfg.padding)
           outShape))
+    (hParentValue : vals[pId]? = some parent)
     (hMissing : ps.conv2dCfg.get? id = none) :
     Graph.evalAt (α := α) (g := g) (payload := payloadOfParamStore (α := α) ps)
-        (input := DVal.mk (α := α) inputShape input)
+        (input := Spec.PackedTensor.mk (α := α) inputShape input)
         (vals := vals) (i := i)
       =
       Except.error s!"IR eval: missing conv2d payload for node {id}" := by
-  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalConv2D,
-    payloadOfParamStore_conv2d?_none (ps := ps) (id := id) hMissing,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalConv2d,
+    payloadOfParamStore_conv2d?_none (ps := ps) (id := id) hMissing, hParentValue,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
   rfl
 
@@ -601,40 +524,40 @@ theorem evalAt_batchNorm2dNchwEval_from_paramStore_of_getNode
     (i id pId n c h w : Nat)
     (inputShape : Shape)
     (input : Tensor α inputShape)
-    (vals : Array (DVal α))
+    (vals : Array (Spec.PackedTensor α))
     (gamma beta mean var : Tensor α (.dim c .scalar))
     (eps : α)
     (x : Tensor α (.dim n (.dim c (.dim h (.dim w .scalar)))))
+    (parent : Spec.PackedTensor α)
     (hNode :
       Graph.getNode (g := g) i =
         pure (NN.IR.Node.mk id [pId] (NN.IR.OpKind.batchNorm2dNchwEval c)
           (Shape.dim n (Shape.dim c (Shape.dim h (Shape.dim w Shape.scalar))))))
-    (hParentShape :
-      vals[pId]!.shape = Shape.dim n (Shape.dim c (Shape.dim h (Shape.dim w Shape.scalar))))
+    (hParentValue : vals[pId]? = some parent)
     (hParent :
       Graph.expectShape (α := α)
           (expected := Shape.dim n (Shape.dim c (Shape.dim h (Shape.dim w Shape.scalar))))
-          vals[pId]! =
+          parent =
         Except.ok x)
     (hStore :
       ps.batchNorm2dNchwEval.get? id =
         some ({ c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps } :
-          NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α)) :
+          NN.IR.BatchNorm2dNchwEvalParams α)) :
     Graph.evalAt (α := α) (g := g) (payload := payloadOfParamStore (α := α) ps)
-        (input := DVal.mk (α := α) inputShape input)
+        (input := Spec.PackedTensor.mk (α := α) inputShape input)
         (vals := vals) (i := i)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
+        (Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
           (batchNorm2dNchwEvalTensor (α := α) gamma beta mean var eps x)) := by
-  have hShapeFst :
-      vals[pId]!.fst = Shape.dim n (Shape.dim c (Shape.dim h (Shape.dim w Shape.scalar))) := by
-    simpa [DVal.shape] using hParentShape
-  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalBatchNorm2DNchwEval,
+  have hParentShape :
+      parent.shape = Shape.dim n (Shape.dim c (Shape.dim h (Shape.dim w Shape.scalar))) :=
+    shape_eq_of_expectShape_eq_ok hParent
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalBatchNorm2dNchwEval,
     payloadOfParamStore_batchNorm2dNchwEval?_some (ps := ps) (id := id)
       ({ c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps } :
-        NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α) hStore,
-    irBatchNorm2DNchwEvalOfGraphParams, hShapeFst, hParent,
+        NN.IR.BatchNorm2dNchwEvalParams α) hStore,
+    hParentValue, hParentShape, hParent,
     batchNorm2dNchwEvalTensor, shapeBNe_refl,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
@@ -645,19 +568,21 @@ theorem evalAt_batchNorm2dNchwEval_missing_from_paramStore_of_getNode
     (i id pId n c h w : Nat)
     (inputShape : Shape)
     (input : Tensor α inputShape)
-    (vals : Array (DVal α))
+    (vals : Array (Spec.PackedTensor α))
+    (parent : Spec.PackedTensor α)
     (hNode :
       Graph.getNode (g := g) i =
         pure (NN.IR.Node.mk id [pId] (NN.IR.OpKind.batchNorm2dNchwEval c)
           (Shape.dim n (Shape.dim c (Shape.dim h (Shape.dim w Shape.scalar))))))
+    (hParentValue : vals[pId]? = some parent)
     (hMissing : ps.batchNorm2dNchwEval.get? id = none) :
     Graph.evalAt (α := α) (g := g) (payload := payloadOfParamStore (α := α) ps)
-        (input := DVal.mk (α := α) inputShape input)
+        (input := Spec.PackedTensor.mk (α := α) inputShape input)
         (vals := vals) (i := i)
       =
       Except.error s!"IR eval: missing batch_norm2d_nchw_eval payload for node {id}" := by
-  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalBatchNorm2DNchwEval,
-    payloadOfParamStore_batchNorm2dNchwEval?_none (ps := ps) (id := id) hMissing,
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, hNode, Graph.evalBatchNorm2dNchwEval,
+    payloadOfParamStore_batchNorm2dNchwEval?_none (ps := ps) (id := id) hMissing, hParentValue,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
   rfl
 

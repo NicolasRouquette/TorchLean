@@ -121,7 +121,7 @@ def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
     NN.Tensor.ofListOfLength (α := α) [2] [cast 0.0, cast 0.0] (by rfl)
 
   let params : TensorPack α paramShapes :=
-    tensorpack.quad hiddenWeight hiddenBias outputWeight outputBias
+    TensorPack! hiddenWeight, hiddenBias, outputWeight, outputBias
 
   let lowered ←
     match Verification.lowerProgramToIR

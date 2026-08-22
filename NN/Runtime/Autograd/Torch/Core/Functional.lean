@@ -256,17 +256,17 @@ class Ops (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape] where
   transpose3dLastTwo {a b c : Nat} :
     Ref (.dim a (.dim b (.dim c .scalar))) → m (Ref (.dim a (.dim c (.dim b .scalar))))
   swapAdjacentAtDepth {s : Shape} : (depth : Nat) → Ref s → m (Ref (s.swapAdjacentAtDepth depth))
-  reduceSum {s : Shape} (axis : Nat) [Shape.valid_axis_inst axis s] [Shape.WellFormed s] :
+  reduceSum {s : Shape} (axis : Nat) [Shape.HasNonemptyAxis axis s] [Shape.WellFormed s] :
     Ref s → m (Ref (shapeAfterSum s axis))
-  reduceMean {s : Shape} (axis : Nat) [Shape.valid_axis_inst axis s] [Shape.WellFormed s] :
+  reduceMean {s : Shape} (axis : Nat) [Shape.HasNonemptyAxis axis s] [Shape.WellFormed s] :
     Ref s → m (Ref (shapeAfterSum s axis))
   gatherScalar {n : Nat} : Ref (.dim n .scalar) → Fin n → m (Ref Shape.scalar)
   gatherRow {rows cols : Nat} : Ref (.dim rows (.dim cols .scalar)) → Fin rows → m (Ref (.dim cols
     .scalar))
-  gatherScalarNat {n : Nat} : Ref (.dim n .scalar) → Nat → m (Ref Shape.scalar)
-  gatherVecNat {n k : Nat} : Ref (.dim n .scalar) → NatTensorRef (.dim k .scalar) →
+  gatherScalarNatOrZero {n : Nat} : Ref (.dim n .scalar) → Nat → m (Ref Shape.scalar)
+  gatherVecNatOrZero {n k : Nat} : Ref (.dim n .scalar) → NatTensorRef (.dim k .scalar) →
     m (Ref (.dim k .scalar))
-  gatherRowsNat {rows cols k : Nat} :
+  gatherRowsNatOrZero {rows cols k : Nat} :
     Ref (.dim rows (.dim cols .scalar)) → NatTensorRef (.dim k .scalar) →
       m (Ref (.dim k (.dim cols .scalar)))
   scatterAddVec {n : Nat} : Ref (.dim n .scalar) → Ref Shape.scalar → Fin n → m (Ref (.dim n
@@ -282,16 +282,12 @@ class Ops (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape] where
     Ref (.dim batch (.dim mDim (.dim nDim .scalar))) →
     Ref (.dim batch (.dim nDim (.dim pDim .scalar))) →
     m (Ref (.dim batch (.dim mDim (.dim pDim .scalar))))
-  concatVectors {nDim mDim : Nat} :
-    Ref (.dim nDim .scalar) →
-    Ref (.dim mDim .scalar) →
-    m (Ref (.dim (nDim + mDim) .scalar))
   concatLeadingAxis {nDim mDim : Nat} {s : Shape} :
     Ref (.dim nDim s) →
     Ref (.dim mDim s) →
     m (Ref (.dim (nDim + mDim) s))
   sliceLeadingAxisRange {nDim : Nat} {s : Shape} :
-    (start len : Nat) → (h : len + start ≤ nDim) →
+    (start len : Nat) → (h : start + len ≤ nDim) →
     Ref (.dim nDim s) → m (Ref (.dim len s))
   maxPool {d C : Nat}
     {inSpatial kernel stride padding : Vector Nat d}
@@ -331,8 +327,10 @@ class Ops (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape] where
   sigmoid : {s : Shape} → Ref s → m (Ref s)
   tanh : {s : Shape} → Ref s → m (Ref s)
   gelu : {s : Shape} → Ref s → m (Ref s)
-  softmax : {s : Shape} → Ref s → m (Ref s)
-  logSoftmax : {s : Shape} → Ref s → m (Ref s)
+  /-- Backend primitive for softmax over the final tensor dimension. -/
+  softmaxLast : {s : Shape} → Ref s → m (Ref s)
+  /-- Backend primitive for stable log-softmax over the final tensor dimension. -/
+  logSoftmaxLast : {s : Shape} → Ref s → m (Ref s)
   softplus : {s : Shape} → Ref s → m (Ref s)
   exp : {s : Shape} → Ref s → m (Ref s)
   log : {s : Shape} → Ref s → m (Ref s)
@@ -491,6 +489,16 @@ def broadcastTo {s₁ s₂ : Shape} (cb : Shape.CanBroadcastTo s₁ s₂)
 def reshape {s₁ s₂ : Shape} (x : Ref (m := m) (α := α) s₁) (h : Spec.Shape.size s₁ = Spec.Shape.size s₂) :
   m (Ref (m := m) (α := α) s₂) :=
   Ops.reshape (m := m) (α := α) (s₁ := s₁) (s₂ := s₂) x h
+
+/-- Restore an axis removed by a reduction and repeat the reduced value along that axis. -/
+def broadcastAfterSum (s : Shape) (axis : Nat)
+    (x : Ref (m := m) (α := α) (Spec.Tensor.shapeAfterSum s axis)) :
+    m (Ref (m := m) (α := α) s) := do
+  let kept ← reshape (m := m) (α := α)
+    (s₁ := Spec.Tensor.shapeAfterSum s axis)
+    (s₂ := Spec.Tensor.shapeAfterSumKeepDim s axis) x
+    (Spec.Tensor.shape_after_sum_keep_dim_size s axis).symm
+  broadcastTo (m := m) (α := α) (Spec.Tensor.shapeAfterSumKeepDimBroadcast s axis) kept
 /-- Re-export of `Ops.transpose2d`. PyTorch: `x.t()` / `transpose`. -/
 def transpose2d {mDim nDim : Nat}
   (x : Ref (m := m) (α := α) (.dim mDim (.dim nDim .scalar))) :
@@ -517,11 +525,11 @@ def swapAdjacentAtDepth {s : Shape} (depth : Nat)
   m (Ref (m := m) (α := α) (s.swapAdjacentAtDepth depth)) :=
   Ops.swapAdjacentAtDepth (m := m) (α := α) (s := s) depth x
 /-- Re-export of `Ops.reduce_sum`. PyTorch: `torch.sum(..., dim=axis)`. -/
-def reduceSum {s : Shape} (axis : Nat) [Shape.valid_axis_inst axis s] [Shape.WellFormed s]
+def reduceSum {s : Shape} (axis : Nat) [Shape.HasNonemptyAxis axis s] [Shape.WellFormed s]
   (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) (shapeAfterSum s axis)) :=
   Ops.reduceSum (m := m) (α := α) (s := s) axis x
 /-- Re-export of `Ops.reduce_mean`. PyTorch: `torch.mean(..., dim=axis)`. -/
-def reduceMean {s : Shape} (axis : Nat) [Shape.valid_axis_inst axis s] [Shape.WellFormed s]
+def reduceMean {s : Shape} (axis : Nat) [Shape.HasNonemptyAxis axis s] [Shape.WellFormed s]
   (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) (shapeAfterSum s axis)) :=
   Ops.reduceMean (m := m) (α := α) (s := s) axis x
 /-- Re-export of `Ops.gather_scalar`. PyTorch: `x[i]` (1D). -/
@@ -534,22 +542,22 @@ def gatherRow {rows cols : Nat}
   (x : Ref (m := m) (α := α) (.dim rows (.dim cols .scalar))) (i : Fin rows) :
   m (Ref (m := m) (α := α) (.dim cols .scalar)) :=
   Ops.gatherRow (m := m) (α := α) (rows := rows) (cols := cols) x i
-/-- Re-export of `Ops.gather_scalar_nat` (index is a raw `Nat`). -/
-def gatherScalarNat {n : Nat}
+/-- Gather from a vector by a raw natural-number index, returning zero out of bounds. -/
+def gatherScalarNatOrZero {n : Nat}
   (x : Ref (m := m) (α := α) (.dim n .scalar)) (i : Nat) : m (Ref (m := m) (α := α) Shape.scalar) :=
-  Ops.gatherScalarNat (m := m) (α := α) (n := n) x i
-/-- Re-export of `Ops.gather_vec_nat` (index tensor). -/
-def gatherVecNat {n k : Nat}
+  Ops.gatherScalarNatOrZero (m := m) (α := α) (n := n) x i
+/-- Gather by an index tensor, returning zero at every out-of-bounds position. -/
+def gatherVecNatOrZero {n k : Nat}
   (x : Ref (m := m) (α := α) (.dim n .scalar))
   (idx : NatTensorRef (m := m) (α := α) (.dim k .scalar)) :
   m (Ref (m := m) (α := α) (.dim k .scalar)) :=
-  Ops.gatherVecNat (m := m) (α := α) (n := n) (k := k) x idx
-/-- Re-export of `Ops.gather_rows_nat` (index tensor). -/
-def gatherRowsNat {rows cols k : Nat}
+  Ops.gatherVecNatOrZero (m := m) (α := α) (n := n) (k := k) x idx
+/-- Gather matrix rows by an index tensor, returning a zero row out of bounds. -/
+def gatherRowsNatOrZero {rows cols k : Nat}
   (x : Ref (m := m) (α := α) (.dim rows (.dim cols .scalar)))
   (idx : NatTensorRef (m := m) (α := α) (.dim k .scalar)) :
   m (Ref (m := m) (α := α) (.dim k (.dim cols .scalar))) :=
-  Ops.gatherRowsNat (m := m) (α := α) (rows := rows) (cols := cols) (k := k) x idx
+  Ops.gatherRowsNatOrZero (m := m) (α := α) (rows := rows) (cols := cols) (k := k) x idx
 /-- Re-export of `Ops.scatter_add_vec`. -/
 def scatterAddVec {n : Nat}
   (x : Ref (m := m) (α := α) (.dim n .scalar)) (v : Ref (m := m) (α := α) Shape.scalar) (i : Fin n)
@@ -580,12 +588,6 @@ def bmm {batch mDim nDim pDim : Nat}
   (b : Ref (m := m) (α := α) (.dim batch (.dim nDim (.dim pDim .scalar)))) :
   m (Ref (m := m) (α := α) (.dim batch (.dim mDim (.dim pDim .scalar)))) :=
   Ops.bmm (m := m) (α := α) (batch := batch) (mDim := mDim) (nDim := nDim) (pDim := pDim) a b
-/-- Re-export of `Ops.concat_vectors`. PyTorch: `torch.cat([a,b], dim=0)` for vectors. -/
-def concatVectors {nDim mDim : Nat}
-  (a : Ref (m := m) (α := α) (.dim nDim .scalar))
-  (b : Ref (m := m) (α := α) (.dim mDim .scalar)) :
-  m (Ref (m := m) (α := α) (.dim (nDim + mDim) .scalar)) :=
-  Ops.concatVectors (m := m) (α := α) (nDim := nDim) (mDim := mDim) a b
 /-- Re-export of `Ops.concat_leading_axis`. PyTorch: `torch.cat(..., dim=0)`. -/
 def concatLeadingAxis {nDim mDim : Nat} {s : Shape}
   (a : Ref (m := m) (α := α) (.dim nDim s))
@@ -593,7 +595,7 @@ def concatLeadingAxis {nDim mDim : Nat} {s : Shape}
   m (Ref (m := m) (α := α) (.dim (nDim + mDim) s)) :=
   Ops.concatLeadingAxis (m := m) (α := α) (nDim := nDim) (mDim := mDim) (s := s) a b
 /-- Re-export of `Ops.slice_leading_axis_range`. PyTorch: `x[start:start+len]` on the leading dimension. -/
-def sliceLeadingAxisRange {nDim : Nat} {s : Shape} (start len : Nat) (h : len + start ≤ nDim)
+def sliceLeadingAxisRange {nDim : Nat} {s : Shape} (start len : Nat) (h : start + len ≤ nDim)
   (x : Ref (m := m) (α := α) (.dim nDim s)) :
   m (Ref (m := m) (α := α) (.dim len s)) :=
   Ops.sliceLeadingAxisRange (m := m) (α := α) (nDim := nDim) (s := s) start len h x
@@ -713,9 +715,10 @@ def sigmoid {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α :=
 /-- Re-export of `Ops.tanh`. -/
 def tanh {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) s) := Ops.tanh (m :=
   m) (α := α) x
-/-- Apply softmax over the final axis. -/
-def softmax {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) s) := Ops.softmax
-  (m := m) (α := α) x
+/-- Apply the backend softmax primitive over the final tensor dimension. -/
+def softmaxLast {s : Shape} (x : Ref (m := m) (α := α) s) :
+    m (Ref (m := m) (α := α) s) :=
+  Ops.softmaxLast (m := m) (α := α) x
 /-- Re-export of `Ops.softplus`. -/
 def softplus {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) s) := Ops.softplus
   (m := m) (α := α) x
@@ -744,17 +747,15 @@ def bernoulliMask {s : Shape} (keepProb : Ref (m := m) (α := α) Shape.scalar) 
   Ops.bernoulliMask (m := m) (α := α) (s := s) keepProb seed
 
 /--
-Stable `log_softmax(x)` along the last axis.
+Apply the stable backend log-softmax primitive over the final tensor dimension.
 
-This is a backend primitive with the standard max-shifted formulation
-`x - max(x) - log(sum(exp(x - max(x))))`, matching PyTorch's numerical intent.  The optional
-`ε` parameter is accepted to keep existing call sites stable and is ignored by this primitive;
-callers that need an epsilon-smoothed logarithm should use `safeLog` explicitly.
+The primitive uses the max-shifted formulation
+`x - max(x) - log(sum(exp(x - max(x))))`. Arbitrary-axis user operations permute their selected
+dimension to this position before calling the primitive.
 -/
-def logSoftmax {s : Shape} (x : Ref (m := m) (α := α) s) (ε : α := Numbers.epsilon) :
+def logSoftmaxLast {s : Shape} (x : Ref (m := m) (α := α) s) :
     m (Ref (m := m) (α := α) s) :=
-  let _epsilonAcceptedForCallSites := ε
-  Ops.logSoftmax (m := m) (α := α) (s := s) x
+  Ops.logSoftmaxLast (m := m) (α := α) (s := s) x
 
 /-- SiLU / swish: `x * sigmoid(x)`. -/
 def silu {s : Shape} (x : Ref (m := m) (α := α) s) : m (Ref (m := m) (α := α) s) := do

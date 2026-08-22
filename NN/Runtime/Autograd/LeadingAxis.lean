@@ -32,7 +32,7 @@ per-entry semantics.
 def mapLeadingAxisWith {m : Type → Type} [Monad m] {Ref : Shape → Type} {σ τ : Shape}
     (empty : m (Ref (.dim 0 τ)))
     (slice : ∀ {n : Nat}, Ref (.dim n σ) → (start len : Nat) →
-      (h : len + start ≤ n) → m (Ref (.dim len σ)))
+      (h : start + len ≤ n) → m (Ref (.dim len σ)))
     (reshape : ∀ {s₁ s₂ : Shape}, Ref s₁ → Shape.size s₁ = Shape.size s₂ → m (Ref s₂))
     (concat : ∀ {n k : Nat}, Ref (.dim n τ) → Ref (.dim k τ) →
       m (Ref (.dim (n + k) τ)))
@@ -44,7 +44,7 @@ def mapLeadingAxisWith {m : Type → Type} [Monad m] {Ref : Shape → Type} {σ 
       let head ← reshape (s₁ := .dim 1 σ) (s₂ := σ) headBatch (by simp [Shape.size])
       let yHead ← f head
       let yHeadBatch ← reshape (s₁ := τ) (s₂ := .dim 1 τ) yHead (by simp [Shape.size])
-      let tail ← slice (n := k + 1) x 1 k (by simp)
+      let tail ← slice (n := k + 1) x 1 k (by simp [Nat.add_comm])
       let yTail ← mapLeadingAxisWith empty slice reshape concat f (n := k) tail
       let y ← concat (n := 1) (k := k) yHeadBatch yTail
       pure (by simpa [Nat.one_add] using y)

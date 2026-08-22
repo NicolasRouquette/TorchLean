@@ -183,7 +183,7 @@ def maxPool2d {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then
-    let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
+    let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
     let outH := Spec.poolOutDim inH kH stride 0
     let outW := Spec.poolOutDim inW kW stride 0
     let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
@@ -224,7 +224,7 @@ def maxPool2dPad {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then
-    let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
+    let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
     let outH := Spec.poolOutDim inH kH stride padding
     let outW := Spec.poolOutDim inW kW stride padding
     let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
@@ -267,7 +267,7 @@ def smoothMaxPool2d {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then
-    let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
+    let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
     let outH := Spec.poolOutDim inH kH stride 0
     let outW := Spec.poolOutDim inW kW stride 0
     let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
@@ -306,7 +306,7 @@ def avgPool2d {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then
-    let layer : Spec.AvgPool2DSpec kH kW stride h1 h2 hStride := {}
+    let layer : Spec.AvgPool2dSpec kH kW stride h1 h2 hStride := {}
     let outH := Spec.poolOutDim inH kH stride 0
     let outW := Spec.poolOutDim inW kW stride 0
     let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))
@@ -345,7 +345,7 @@ def avgPool2dPad {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   if hStride : stride ≠ 0 then
-    let layer : Spec.AvgPool2DSpec kH kW stride h1 h2 hStride := {}
+    let layer : Spec.AvgPool2dSpec kH kW stride h1 h2 hStride := {}
     let outH := Spec.poolOutDim inH kH stride padding
     let outW := Spec.poolOutDim inW kW stride padding
     let outShape : Shape := .dim inC (.dim outH (.dim outW .scalar))

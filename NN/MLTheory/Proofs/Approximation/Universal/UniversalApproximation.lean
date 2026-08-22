@@ -66,7 +66,7 @@ namespace NN.MLTheory.Proofs.UniversalApproximation
 /-- Extract scalar from a length-1 tensor. -/
 def extractScalarOutput (t : Tensor ℝ (.dim 1 .scalar)) : ℝ :=
   match t with
-  | .dim f => toScalar (f ⟨0, by norm_num⟩)
+  | .dim f => item (f ⟨0, by norm_num⟩)
 
 /-- Evaluate a 2-layer ReLU MLP on a scalar input. -/
 noncomputable def mlpEval1d (hidDim : ℕ)
@@ -85,26 +85,15 @@ lemma mlp_forward_eq_linear_relu_linear {hidDim : ℕ}
       Spec.linearSpec (α := ℝ) l2 a1 := by
   simpa [Examples.mlpForward] using (Examples.mlp_spec_forward_eq (α := ℝ) l1 l2 x)
 
-/-- `vectorN` is the dependent-tensor vector constructor expanded pointwise. -/
-lemma vectorN_eq_dim {α : Type} [Zero α] (n : ℕ) (f : Fin n → α) :
-    vectorN n f = Tensor.dim (fun i : Fin n => Tensor.scalar (f i)) := by
-  cases n with
-  | zero =>
-    apply congrArg Tensor.dim
-    funext i
-    exact (Fin.elim0 i)
-  | succ n =>
-    simp [vectorN]
-
 /-- First real hinge layer: hidden unit $i$ computes $x-t_i$ before ReLU. -/
 noncomputable def hingeLayer1 (n : ℕ) (t : Fin n → ℝ) : LinearSpec ℝ 1 n :=
-  { weights := matrixMN n 1 (fun _ _ => (1 : ℝ))
-    bias := vectorN n (fun i => -t i) }
+  { weights := Tensor.matrix (m := n) (n := 1) (fun _ _ => (1 : ℝ))
+    bias := Tensor.vector (n := n) (fun i => -t i) }
 
 /-- Second real hinge layer: sum hidden activations with coefficients $c_i$ and bias $b$. -/
 noncomputable def hingeLayer2 (n : ℕ) (c : Fin n → ℝ) (b : ℝ) : LinearSpec ℝ n 1 :=
-  { weights := matrixMN 1 n (fun _ j => c j)
-    bias := vectorN 1 (fun _ => b) }
+  { weights := Tensor.matrix (m := 1) (n := n) (fun _ j => c j)
+    bias := Tensor.vector (n := 1) (fun _ => b) }
 
 /-- Real hinge network $b+\sum_i c_i\operatorname{ReLU}(x-t_i)$. -/
 noncomputable def hingeFun (n : ℕ) (t : Fin n → ℝ) (c : Fin n → ℝ) (b x : ℝ) : ℝ :=
@@ -143,8 +132,8 @@ lemma finRange_foldl_add_scalar (n : ℕ) (f : Fin n → ℝ) :
 
 set_option linter.auxLemma false in
 /-- Matrix-vector multiply for a one-row matrix is the expected finite dot product. -/
-lemma mat_vec_mul_spec_matrixMN_vector (n : ℕ) (c v : Fin n → ℝ) :
-    matVecMulSpec (matrixMN 1 n (fun _ j => c j))
+lemma mat_vec_mul_spec_matrix_vector (n : ℕ) (c v : Fin n → ℝ) :
+    matVecMulSpec (Tensor.matrix (m := 1) (n := n) (fun _ j => c j))
         (Tensor.dim (fun j => Tensor.scalar (v j))) =
       Tensor.dim (fun _ => Tensor.scalar (∑ j : Fin n, c j * v j)) := by
   classical
@@ -183,14 +172,15 @@ lemma mat_vec_mul_spec_matrixMN_vector (n : ℕ) (c v : Fin n → ℝ) :
   exact hfold.trans (finRange_foldl_add_scalar n (fun j : Fin n => c j * v j))
 
 /-- Matrix-vector multiply by the all-ones column extracts the scalar input into every hidden unit. -/
-lemma mat_vec_mul_spec_matrixMN_singleton (n : ℕ) (x : ℝ) :
-    matVecMulSpec (matrixMN n 1 (fun _ _ => (1 : ℝ))) (Tensor.singleton x) =
+lemma mat_vec_mul_spec_matrix_singleton (n : ℕ) (x : ℝ) :
+    matVecMulSpec (Tensor.matrix (m := n) (n := 1) (fun _ _ => (1 : ℝ)))
+        (Tensor.singleton x) =
       Tensor.dim (fun _ : Fin n => Tensor.scalar x) := by
   classical
   apply congrArg Tensor.dim
   funext i
   -- Unfold and compute the unique dot product over `Fin 1`.
-  simp [List.finRange_succ, List.foldl]
+  simp [Tensor.vector, List.finRange_succ, List.foldl]
 
 /--
 The explicit two-layer network built from `hingeLayer1` and `hingeLayer2` computes `hingeFun`.
@@ -214,8 +204,8 @@ lemma mlp_eval_1d_hinge (n : ℕ) (t : Fin n → ℝ) (c : Fin n → ℝ) (b x :
         Tensor.dim (fun i : Fin n => Tensor.scalar (x - t i)) := by
     unfold hingeLayer1 Spec.linearSpec
     -- `mat_vec_mul_spec` yields the constant vector `x`; then add the bias `-t`.
-    rw [mat_vec_mul_spec_matrixMN_singleton]
-    simp [vectorN_eq_dim, addSpec, Tensor.map2Spec, sub_eq_add_neg]
+    rw [mat_vec_mul_spec_matrix_singleton]
+    simp [Tensor.vector, addSpec, Tensor.map2Spec, sub_eq_add_neg]
   -- Apply ReLU pointwise.
   have ha1 :
       Activation.reluSpec (α := ℝ) (s := .dim n .scalar)
@@ -232,17 +222,17 @@ lemma mlp_eval_1d_hinge (n : ℕ) (t : Fin n → ℝ) (c : Fin n → ℝ) (b x :
     -- layer.
     rw [ha1]
     unfold hingeLayer2 Spec.linearSpec
-    -- `mat_vec_mul_spec_matrixMN_vector` gives the dot product as a `Finset.univ` sum.
+    -- `mat_vec_mul_spec_matrix_vector` gives the dot product as a `Finset.univ` sum.
     have hmv :
-        matVecMulSpec (matrixMN 1 n (fun _ j => c j))
+        matVecMulSpec (Tensor.matrix (m := 1) (n := n) (fun _ j => c j))
             (Tensor.dim (fun j => Tensor.scalar (relu (x - t j)))) =
           Tensor.dim (fun _ : Fin 1 => Tensor.scalar (∑ j : Fin n, c j * relu (x - t j))) := by
-      simpa using mat_vec_mul_spec_matrixMN_vector n c (fun j => relu (x - t j))
+      simpa using mat_vec_mul_spec_matrix_vector n c (fun j => relu (x - t j))
     rw [hmv]
-    simp [vectorN_eq_dim, addSpec, Tensor.map2Spec, add_comm]
+    simp [Tensor.vector, addSpec, Tensor.map2Spec, add_comm]
   -- Extract the scalar output (the unique element of `Fin 1`) and reorder `b + sum`.
   -- `Fin 1` has a unique element, so `fin_cases` reduces the extracted component.
-  simp [hy, Tensor.toScalar, add_comm]
+  simp [hy, Tensor.item, add_comm]
 
 /--
 1D Universal Approximation (ReLU, one hidden layer).

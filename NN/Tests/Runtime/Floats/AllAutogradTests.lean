@@ -9,9 +9,9 @@ module
 public import NN.Runtime.Autograd.TypedGraph.GraphM
 public import NN.Runtime.Autograd.Torch.Core.TypedGraph
 public import NN.API.Neural.Execution
-public import NN.Runtime.Autograd.Utils
+public import NN.Runtime.Autograd.Train
 public import NN.Spec.Core.Tensor
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 public import NN.Spec.Models.Mlp
 public import NN.Tensor
 
@@ -113,7 +113,7 @@ def checkMlpGrads :
     let yId ← TapeM.linear (inDim:=hidDim) (outDim:=outDim) outputWeightId outputBiasId a1Id
 
     let t ← TapeM.getTape
-    let grads ← liftM (Tape.backward (t:=t) yId (Runtime.Autograd.AnyTensor.mk dLdy))
+    let grads ← liftM (Tape.backward (t:=t) yId (Spec.PackedTensor.ofTensor dLdy))
 
     let ids : ParamIds := { hiddenWeightId := hiddenWeightId, hiddenBiasId := hiddenBiasId, outputWeightId := outputWeightId, outputBiasId := outputBiasId }
     pure (ids, grads)
@@ -164,7 +164,7 @@ using SGD on the mean-squared-error (MSE) loss.
 
 Key things to notice when reading the code:
 * The forward pass is written in the `TapeM` style, so the tape is threaded implicitly.
-* Dataset inputs/targets are created with `requires_grad = false` (they are constants).
+* Dataset inputs/targets are created with `requiresGrad = false` (they are constants).
 * After the forward pass, we call `backwardScalar` to get a gradient map `id -> grad`.
 * Parameters are updated with a simple tensor-level SGD update rule.
 -/
@@ -222,7 +222,7 @@ def initialOptimizerState : Train.OptimizerState Float :=
   , groups :=
       [ { params := [0, 1]
         , lr := 0.2
-        , weight_decay := 0.0
+        , weightDecay := 0.0
         , scheduler := some lrScheduler
         } ]
   }
@@ -405,8 +405,8 @@ def trainStep (p : Params) (lr : Float := 0.1) : Runtime.Autograd.Result (Prod P
   let (t2, hiddenBiasId) := Tape.leaf (t:=t1) p.hiddenBias (name := some "hiddenBias")
   let (t3, outputWeightId) := Tape.leaf (t:=t2) p.outputWeight (name := some "outputWeight")
   let (t4, outputBiasId) := Tape.leaf (t:=t3) p.outputBias (name := some "outputBias")
-  let (t5, xId)  := Tape.leaf (t:=t4) x (name := some "x") (requires_grad := false)
-  let (t6, yId)  := Tape.leaf (t:=t5) yTarget (name := some "y") (requires_grad := false)
+  let (t5, xId)  := Tape.leaf (t:=t4) x (name := some "x") (requiresGrad := false)
+  let (t6, yId)  := Tape.leaf (t:=t5) yTarget (name := some "y") (requiresGrad := false)
 
   -- Forward pass: linear -> relu -> linear -> mse_loss
   let (t7, z1Id) ← Tape.linear (t:=t6) (inDim:=inDim) (outDim:=hidDim) hiddenWeightId hiddenBiasId xId
@@ -522,7 +522,7 @@ end Tests
 /-! ## autograd_conv2d_test.lean -/
 
 /-!
-Conv2D gradient runtime check using the dynamic tape.
+Conv2d gradient runtime check using the dynamic tape.
 -/
 
 open _root_.Spec
@@ -610,7 +610,7 @@ def run : IO Unit := do
         (Runtime.Autograd.TypedGraph.GraphM.Var vectorShape) := do
     let x ← Runtime.Autograd.TypedGraph.GraphM.arg
       (α := Float) (Γ := [vectorShape]) 0 vectorShape
-    Runtime.Autograd.TypedGraph.GraphM.logSoftmax x
+    Runtime.Autograd.TypedGraph.GraphM.logSoftmax 0 x
   let graph ←
     match Runtime.Autograd.Torch.lowerToTypedGraph
         (α := Float) (Γ := [vectorShape]) (τ := vectorShape) build with
@@ -680,12 +680,12 @@ def run : IO Unit := do
     .cons (Tensor.scalar 2.0) .nil
   let checkGraph (label : String)
       (graph : Runtime.Autograd.Torch.TypedGraph Float [Shape.scalar] Shape.scalar) : IO Unit := do
-    let output := Tensor.toScalar (Runtime.Autograd.Torch.TypedGraph.forward graph inputs)
-    let tangent := Tensor.toScalar (Runtime.Autograd.Torch.TypedGraph.jvp graph inputs tangents)
+    let output := Tensor.item (Runtime.Autograd.Torch.TypedGraph.forward graph inputs)
+    let tangent := Tensor.item (Runtime.Autograd.Torch.TypedGraph.jvp graph inputs tangents)
     let gradients := Runtime.Autograd.Torch.TypedGraph.vjpWithSeed
       graph inputs (Tensor.scalar 5.0)
     let gradient := match gradients with
-      | .cons grad .nil => Tensor.toScalar grad
+      | .cons grad .nil => Tensor.item grad
     unless output == 3.0 && tangent == 2.0 && gradient == 5.0 do
       throw <| IO.userError
         s!"{label}: got forward={output}, jvp={tangent}, vjp={gradient}; expected 3, 2, 5"
@@ -694,15 +694,15 @@ def run : IO Unit := do
 
   let publicModel : TorchLean.nn.TypedGraphModel [] Shape.scalar Shape.scalar Float := identity
   let noParams : TorchLean.TensorPack Float [] := .nil
-  let publicOutput := Tensor.toScalar <|
+  let publicOutput := Tensor.item <|
     TorchLean.nn.TypedGraphModel.forward publicModel noParams (Tensor.scalar 3.0)
-  let publicTangent := Tensor.toScalar <|
+  let publicTangent := Tensor.item <|
     TorchLean.nn.TypedGraphModel.jvp publicModel noParams noParams
       (Tensor.scalar 3.0) (Tensor.scalar 2.0)
   let (publicParamGrads, publicInputGrad) :=
     TorchLean.nn.TypedGraphModel.vjpWithSeed publicModel noParams
       (Tensor.scalar 3.0) (Tensor.scalar 5.0)
-  let publicInputGradient := Tensor.toScalar publicInputGrad
+  let publicInputGradient := Tensor.item publicInputGrad
   let noPublicParamGrads := match publicParamGrads with
     | .nil => true
   unless noPublicParamGrads && publicOutput == 3.0 && publicTangent == 2.0 &&
@@ -763,15 +763,15 @@ def run : IO Unit := do
   let (t3, invId) ← okOrThrow <|
     Tape.inv (α := Float) (t := t2) (s := Shape.scalar) xId
   let grads ← okOrThrow <|
-    Tape.backwardDenseAll (t := t3) outId (AnyTensor.mk (Tensor.scalar 1.0))
+    Tape.backwardDenseAll (t := t3) outId (Spec.PackedTensor.ofTensor (Tensor.scalar 1.0))
   unless grads.size = t3.nodes.size do
     throw <| IO.userError "disconnected dense gradient: result length mismatch"
   let checkFiniteZero (label : String) (id : Nat) : IO Unit := do
     let grad ← match grads[id]? with
       | some grad => pure grad
       | none => throw <| IO.userError s!"{label}: gradient id out of bounds"
-    if h : grad.s = Shape.scalar then
-      let value := Tensor.toScalar (Tensor.castShape grad.t h)
+    if h : grad.shape = Shape.scalar then
+      let value := Tensor.item (grad.cast h)
       unless value.isFinite && value == 0.0 do
         throw <| IO.userError s!"{label}: expected finite zero, got {value}"
     else
@@ -801,9 +801,9 @@ def scalarParam (id : Nat) (x : Float) : Train.ParamEntry Float :=
   Train.ParamEntry.ofTensor id (Tensor.scalar x)
 
 /-- Construct a one-entry scalar gradient map. -/
-def scalarGrad (id : Nat) (x : Float) : Std.HashMap Nat (Runtime.AnyTensor Float) :=
-  ({} : Std.HashMap Nat (Runtime.AnyTensor Float)).insert id
-    (Runtime.Autograd.AnyTensor.mk (Tensor.scalar x))
+def scalarGrad (id : Nat) (x : Float) : Std.HashMap Nat (Spec.PackedTensor Float) :=
+  ({} : Std.HashMap Nat (Spec.PackedTensor Float)).insert id
+    (Spec.PackedTensor.ofTensor (Tensor.scalar x))
 
 /-- Read a scalar parameter while preserving the runtime's error reporting. -/
 def getScalar (tag : String) (params : Train.ParamTable Float) (id : Nat) :
@@ -841,6 +841,16 @@ def checkMomentumInitialization : Runtime.Autograd.Result Bool := do
   let second ← getScalar "momentum initialization" params2 0
   pure (close first 0.8 && close second 0.52)
 
+/-- Adadelta's update accumulator stores the unscaled update, independently of the learning rate. -/
+def checkAdadeltaAccumulator : Bool :=
+  let params : Tensor Float .scalar := Tensor.scalar 10.0
+  let grads : Tensor Float .scalar := Tensor.scalar 2.0
+  let state := _root_.Optim.Adadelta.init 0.5 0.0 1.0 params
+  let (nextState, nextParams) := _root_.Optim.Adadelta.update state params grads
+  match nextState.u, nextParams with
+  | .scalar updateSquare, .scalar parameter =>
+      close updateSquare 0.8 && close parameter (10.0 - 1.0 / Float.sqrt 5.0)
+
 /-- Warmup-cosine decay remains at zero after its finite schedule has ended. -/
 def checkWarmupCosineStops : Bool :=
   let base : _root_.Optim.WarmupCosineScheduler Float :=
@@ -860,6 +870,8 @@ def run : IO Unit := do
   | .error msg => throw <| IO.userError s!"optimizer numerics (momentum): {msg}"
   | .ok false => throw <| IO.userError "optimizer numerics (momentum): FAILED"
   | .ok true => pure ()
+  unless checkAdadeltaAccumulator do
+    throw <| IO.userError "optimizer numerics (Adadelta accumulator): FAILED"
   unless checkWarmupCosineStops do
     throw <| IO.userError "optimizer numerics (warmup cosine): FAILED"
   IO.println "optimizer and scheduler edge cases (Float): OK"

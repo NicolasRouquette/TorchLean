@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Spec.Core.Sequence
 public import NN.Spec.Core.Tensor
 public import NN.Spec.Core.Tensor.Linalg
 public import NN.Spec.Core.TensorOps
@@ -54,13 +55,16 @@ def effectiveWeight {α : Type} [Add α] [Mul α] [Sub α] [Zero α]
     Tensor α (.dim inDim (.dim outDim .scalar)) :=
   addSpec base (delta p scale)
 
-/-- Apply a linear map whose weight is augmented by a LoRA update. -/
+/-- Apply a linear map whose weight is augmented by a LoRA update at every leading index. -/
 def linear {α : Type} [Add α] [Mul α] [Sub α] [Zero α]
-    {batch inDim rank outDim : Nat}
-    (x : Tensor α (.dim batch (.dim inDim .scalar)))
+    {leading : Shape} {inDim rank outDim : Nat}
+    (x : Tensor α (leading.appendDim inDim))
     (base : Tensor α (.dim inDim (.dim outDim .scalar)))
     (p : Params α inDim rank outDim) (scale : α) :
-    Tensor α (.dim batch (.dim outDim .scalar)) :=
-  matMulSpec x (effectiveWeight base p scale)
+    Tensor α (leading.appendDim outDim) :=
+  by
+    rw [Shape.appendDim_eq_concat] at x ⊢
+    exact Tensor.mapLeading leading
+      (fun row => vecMatMulSpec row (effectiveWeight base p scale)) x
 
 end TorchLean.Adapters.LoRA

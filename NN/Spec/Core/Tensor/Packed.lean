@@ -11,8 +11,9 @@ public import NN.Spec.Core.TensorReductionShape.LinearAlgebra
 /-!
 # Shape-Tagged Tensors
 
-A small existential package for storing tensors whose shapes are known only at runtime. The package
-and its shape-changing adjacent-swap operation are shared by executable tensor interpreters.
+`PackedTensor` stores a tensor together with the shape that indexes its type. It is the canonical
+representation used whenever a collection contains tensors of different shapes, including runtime
+contexts, autograd tapes, graph interpreters, and certificate checkers.
 -/
 
 @[expose] public section
@@ -20,29 +21,51 @@ and its shape-changing adjacent-swap operation are shared by executable tensor i
 namespace Spec
 
 /-- A tensor paired with the shape that indexes its type. -/
-abbrev PackedTensor (alpha : Type) [Context alpha] : Type :=
-  Sigma fun shape : Shape => Tensor alpha shape
+structure PackedTensor (α : Type) where
+  /-- The runtime shape of the tensor. -/
+  shape : Shape
+  /-- The tensor value, indexed by its stored shape. -/
+  tensor : Tensor α shape
 
 namespace PackedTensor
 
-/-- The runtime shape carried by a packed tensor. -/
-@[simp] def shape {alpha : Type} [Context alpha] (value : PackedTensor alpha) : Shape := value.1
-
-/-- The tensor stored in a packed tensor, indexed by its recovered shape. -/
-@[simp] def tensor {alpha : Type} [Context alpha] (value : PackedTensor alpha) :
-    Tensor alpha value.shape := value.2
-
 /-- Package a statically shaped tensor for shape-erased storage. -/
-@[simp] def mk {alpha : Type} [Context alpha] (shape : Shape) (tensor : Tensor alpha shape) :
-    PackedTensor alpha :=
+@[simp] def ofTensor {α : Type} {shape : Shape} (tensor : Tensor α shape) : PackedTensor α :=
   ⟨shape, tensor⟩
 
+@[simp] theorem shape_ofTensor {α : Type} {shape : Shape} (tensor : Tensor α shape) :
+    (ofTensor tensor).shape = shape :=
+  rfl
+
+@[simp] theorem tensor_ofTensor {α : Type} {shape : Shape} (tensor : Tensor α shape) :
+    (ofTensor tensor).tensor = tensor :=
+  rfl
+
+/-- Cast the stored tensor after checking its runtime shape. -/
+def cast {α : Type} {shape : Shape} (value : PackedTensor α) (h : value.shape = shape) :
+    Tensor α shape :=
+  Tensor.castShape value.tensor h
+
+@[simp] theorem cast_self {α : Type} (value : PackedTensor α) (h : value.shape = value.shape) :
+    value.cast h = value.tensor := by
+  rw [Subsingleton.elim h rfl]
+  rfl
+
+/-- Materialize the tensor payload without changing its denotation or shape. -/
+def materialize {α : Type} (value : PackedTensor α) : PackedTensor α :=
+  ⟨value.shape, Tensor.materialize value.tensor⟩
+
+/-- Materialization preserves a packed tensor extensionally. -/
+@[simp] theorem materialize_eq {α : Type} (value : PackedTensor α) : materialize value = value := by
+  cases value
+  simp [materialize]
+
 /-- Swap two adjacent axes at `depth`, retaining the resulting shape in the package. -/
-def swapAdjacentAtDepth {alpha : Type} [Context alpha]
-    (value : PackedTensor alpha) (depth : Nat) : PackedTensor alpha :=
+def swapAdjacentAtDepth {α : Type}
+    (value : PackedTensor α) (depth : Nat) : PackedTensor α :=
   match value with
   | ⟨shape, tensor⟩ =>
-      ⟨shape.swapAdjacentAtDepth depth, Tensor.swapAtDepthHelper (tensor := tensor) depth⟩
+      ⟨shape.swapAdjacentAtDepth depth, Tensor.swapAdjacentAxes (tensor := tensor) depth⟩
 
 end PackedTensor
 end Spec

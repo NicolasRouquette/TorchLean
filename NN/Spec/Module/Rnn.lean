@@ -9,7 +9,7 @@ module
 public import NN.Spec.Core.Sequence
 public import NN.Spec.Layers.Gru
 public import NN.Spec.Layers.Lstm
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 
 /-!
 # RNN/LSTM/GRU module wrappers
@@ -17,13 +17,13 @@ public import NN.Spec.Module.SpecModule
 The layer specs (`NN/Spec/Layers/Rnn.lean`, `lstm.lean`, `gru.lean`) expose step-level and
 sequence-level recurrence definitions.
 
-This file wraps the "sequence forward" functions as `NNModuleSpec`s so recurrent blocks can be
-composed with other modules in a `SpecChain`.
+This file wraps the "sequence forward" functions as `Spec.Module`s so recurrent blocks can be
+composed with other modules in a `Spec.Module.Chain`.
 
 Design choices:
 
 - These wrappers are **stateless** modules: they pick a canonical initial hidden/state (all zeros).
-  `NNModuleSpec` remains a pure `forward`; more stateful variants can be built at the layer-spec
+  `Spec.Module` remains a pure `forward`; more stateful variants can be built at the layer-spec
   level if needed.
 - The exported `forward` returns the *full output sequence*, including every intermediate state,
   matching common encoder usage.
@@ -35,169 +35,143 @@ wrappers, with the initial hidden/state fixed to zeros.
 @[expose] public section
 
 
-namespace Spec
+namespace Spec.Module
 open Tensor
-open ModSpec
 
 variable {α : Type} [Context α]
 
 -- RNN module specification wrapper
 /-- RNN sequence wrapper with a zero initial hidden state. -/
-def RNNModuleSpec {seqLen inputSize hiddenSize : Nat}
+def rnn {seqLen inputSize hiddenSize : Nat}
   (rnn : RNNSpec α inputSize hiddenSize) :
-  NNModuleSpec α
+  Spec.Module α
     (.dim seqLen (.dim inputSize .scalar))
     (.dim seqLen (.dim hiddenSize .scalar)) :=
 {
   forward := fun x =>
-    let initial_hidden := fill 0 (.dim hiddenSize .scalar)
-    rnnSequenceSpec rnn x initial_hidden,
+    let initialHidden := fill 0 (.dim hiddenSize .scalar)
+    rnnSequenceSpec rnn x initialHidden,
   kind := "RNN",
-  export_func := {
-    toPyTorch := s!"RNNOnlyOutput({inputSize}, {hiddenSize})",
-    dimensions := (inputSize, hiddenSize)
-  }
+  pythonExpr := s!"RNNOnlyOutput({inputSize}, {hiddenSize})"
 }
 
 -- LSTM module specification wrapper
 /-- LSTM sequence wrapper with a zero initial state; returns the output sequence. -/
-def LSTMModuleSpec {seqLen inputSize hiddenSize : Nat}
+def lstm {seqLen inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize) :
-  NNModuleSpec α
+  Spec.Module α
     (.dim seqLen (.dim inputSize .scalar))
     (.dim seqLen (.dim hiddenSize .scalar)) :=
 {
   forward := fun x =>
-    let initial_state : LSTMState α hiddenSize := {
+    let initialState : LSTMState α hiddenSize := {
       hidden := fill 0 (.dim hiddenSize .scalar),
       cell := fill 0 (.dim hiddenSize .scalar)
     }
-    (lstmSequenceSpec lstm x initial_state).1,
+    (lstmSequenceSpec lstm x initialState).1,
   kind := "LSTM",
-  export_func := {
-    toPyTorch := s!"LSTMOnlyOutput({inputSize}, {hiddenSize})",
-    dimensions := (inputSize, hiddenSize)
-  }
+  pythonExpr := s!"LSTMOnlyOutput({inputSize}, {hiddenSize})"
 }
 
 -- GRU module specification wrapper
 /-- GRU sequence wrapper with a zero initial hidden state; returns the output sequence. -/
-def GRUModuleSpec {seqLen inputSize hiddenSize : Nat}
+def gru {seqLen inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize) :
-  NNModuleSpec α
+  Spec.Module α
     (.dim seqLen (.dim inputSize .scalar))
     (.dim seqLen (.dim hiddenSize .scalar)) :=
 {
   forward := fun x =>
-    let initial_hidden := fill 0 (.dim hiddenSize .scalar)
-    gruSequenceSpec gru x initial_hidden,
+    let initialHidden := fill 0 (.dim hiddenSize .scalar)
+    gruSequenceSpec gru x initialHidden,
   kind := "GRU",
-  export_func := {
-    toPyTorch := s!"GRUOnlyOutput({inputSize}, {hiddenSize})",
-    dimensions := (inputSize, hiddenSize)
-  }
+  pythonExpr := s!"GRUOnlyOutput({inputSize}, {hiddenSize})"
 }
 
 /-- Bidirectional LSTM wrapper (concatenates forward/backward features). -/
-def BiLSTMModuleSpec {seqLen inputSize hiddenSize : Nat}
-  (forward_lstm : LSTMSpec α inputSize hiddenSize)
-  (backward_lstm : LSTMSpec α inputSize hiddenSize) :
-  NNModuleSpec α
+def bidirectionalLstm {seqLen inputSize hiddenSize : Nat}
+  (forwardLstm : LSTMSpec α inputSize hiddenSize)
+  (backwardLstm : LSTMSpec α inputSize hiddenSize) :
+  Spec.Module α
     (.dim seqLen (.dim inputSize .scalar))
     (.dim seqLen (.dim (hiddenSize + hiddenSize) .scalar)) :=
 {
   forward := fun x =>
-    let initial_state : LSTMState α hiddenSize := {
+    let initialState : LSTMState α hiddenSize := {
       hidden := fill 0 (.dim hiddenSize .scalar),
       cell := fill 0 (.dim hiddenSize .scalar)
     }
-    -- Forward pass
-    let (forward_out, _) := lstmSequenceSpec forward_lstm x initial_state
-    -- Backward pass (reverse inputs, then reverse outputs back to original order).
-    let reversed_inputs := reverseSequenceSpec x
-    let (backward_out_rev, _) := lstmSequenceSpec backward_lstm reversed_inputs initial_state
-    let backward_out := reverseSequenceSpec backward_out_rev
-    concatSequenceSpec forward_out backward_out,
+    let (forwardOut, _) := lstmSequenceSpec forwardLstm x initialState
+    let reversedInputs := Tensor.reverseLeadingAxis x
+    let (reversedBackwardOut, _) := lstmSequenceSpec backwardLstm reversedInputs initialState
+    let backwardOut := Tensor.reverseLeadingAxis reversedBackwardOut
+    Tensor.zipWithLeading (.dim seqLen .scalar) (.dim (hiddenSize + hiddenSize) .scalar)
+      Tensor.concatLeadingAxisSpec forwardOut backwardOut,
   kind := "BiLSTM",
-  export_func := {
-    toPyTorch := s!"LSTMOnlyOutput({inputSize}, {hiddenSize}, bidirectional=True)",
-    dimensions := (inputSize, hiddenSize * 2)
-  }
+  pythonExpr := s!"LSTMOnlyOutput({inputSize}, {hiddenSize}, bidirectional=True)"
 }
 
 -- RNN Cell module (for single timestep processing)
-/-- Wrap `rnn_cell_spec` as an `NNModuleSpec` for a single timestep.
+/-- Wrap `rnn_cell_spec` as an `Spec.Module` for a single timestep.
 
 Input convention: we take a single vector `[x; h]` (concatenated input and previous hidden state),
 so the module is shape-safe and easy to compose.
 -/
-def RNNCellModuleSpec {inputSize hiddenSize : Nat}
+def rnnCell {inputSize hiddenSize : Nat}
   (rnn : RNNSpec α inputSize hiddenSize) :
-  NNModuleSpec α
+  Spec.Module α
     (.dim (inputSize + hiddenSize) .scalar)
     (.dim hiddenSize .scalar) :=
 {
   forward := fun x =>
-    -- Split concatenated input back into input and hidden
-    let input := sliceVectorSpec x 0 inputSize (by
+    let input := sliceRangeSpec x 0 inputSize (by
       simp)
-    let hidden := sliceVectorSpec x inputSize hiddenSize (by simp)
+    let hidden := sliceRangeSpec x inputSize hiddenSize (by simp)
     rnnCellSpec rnn input hidden,
   kind := "RNNCell",
-  export_func := {
-    toPyTorch := s!"nn.RNNCell({inputSize}, {hiddenSize})",
-    dimensions := (inputSize + hiddenSize, hiddenSize)
-  }
+  pythonExpr := s!"nn.RNNCell({inputSize}, {hiddenSize})"
 }
 
 -- LSTM Cell module (for single timestep processing)
-/-- Wrap `lstm_cell_spec` as an `NNModuleSpec` for a single timestep.
+/-- Wrap `lstm_cell_spec` as an `Spec.Module` for a single timestep.
 
 Input convention: a single concatenated vector `[x; h; c]` (input, previous hidden, previous cell).
 Output convention: the concatenated new state `[h'; c']`.
 -/
-def LSTMCellModuleSpec {inputSize hiddenSize : Nat}
+def lstmCell {inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize) :
-  NNModuleSpec α
+  Spec.Module α
     (.dim (inputSize + hiddenSize + hiddenSize) .scalar)
     (.dim (hiddenSize + hiddenSize) .scalar) :=
 {
   forward := fun x =>
-    -- Split concatenated input back into input, hidden, and cell
-    let input := sliceVectorSpec x 0 inputSize (by
+    let input := sliceRangeSpec x 0 inputSize (by
       simp [Nat.add_assoc])
-    let hidden := sliceVectorSpec x inputSize hiddenSize (by
+    let hidden := sliceRangeSpec x inputSize hiddenSize (by
       simp)
-    let cell := sliceVectorSpec x (inputSize + hiddenSize) hiddenSize (by simp)
+    let cell := sliceRangeSpec x (inputSize + hiddenSize) hiddenSize (by simp)
     let state : LSTMState α hiddenSize := ⟨hidden, cell⟩
-    let new_state := lstmCellSpec lstm input state
-    concatVectorsSpec new_state.hidden new_state.cell,
+    let nextState := lstmCellSpec lstm input state
+    concatLeadingAxisSpec nextState.hidden nextState.cell,
   kind := "LSTMCell",
-  export_func := {
-    toPyTorch := s!"nn.LSTMCell({inputSize}, {hiddenSize})",
-    dimensions := (inputSize + hiddenSize + hiddenSize, hiddenSize + hiddenSize)
-  }
+  pythonExpr := s!"nn.LSTMCell({inputSize}, {hiddenSize})"
 }
 
 -- GRU Cell module (for single timestep processing)
-/-- Wrap `gru_cell_spec` as an `NNModuleSpec` for a single timestep, using input `[x; h]`. -/
-def GRUCellModuleSpec {inputSize hiddenSize : Nat}
+/-- Wrap `gru_cell_spec` as an `Spec.Module` for a single timestep, using input `[x; h]`. -/
+def gruCell {inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize) :
-  NNModuleSpec α
+  Spec.Module α
     (.dim (inputSize + hiddenSize) .scalar)
     (.dim hiddenSize .scalar) :=
 {
   forward := fun x =>
-    -- Split concatenated input back into input and hidden
-    let input := sliceVectorSpec x 0 inputSize (by
+    let input := sliceRangeSpec x 0 inputSize (by
       simp)
-    let hidden := sliceVectorSpec x inputSize hiddenSize (by simp)
+    let hidden := sliceRangeSpec x inputSize hiddenSize (by simp)
     gruCellSpec gru input hidden,
   kind := "GRUCell",
-  export_func := {
-    toPyTorch := s!"nn.GRUCell({inputSize}, {hiddenSize})",
-    dimensions := (inputSize + hiddenSize, hiddenSize)
-  }
+  pythonExpr := s!"nn.GRUCell({inputSize}, {hiddenSize})"
 }
 
 /-- Bidirectional RNN wrapper (concatenates forward/backward features).
@@ -205,27 +179,23 @@ def GRUCellModuleSpec {inputSize hiddenSize : Nat}
 We run the RNNSpec forward over `x`, run it again over the reversed sequence, then reverse outputs
 back and concatenate along the feature axis.
 -/
-def BiRNNModuleSpec {seqLen inputSize hiddenSize : Nat}
-  (forward_rnn : RNNSpec α inputSize hiddenSize)
-  (backward_rnn : RNNSpec α inputSize hiddenSize) :
-  NNModuleSpec α
+def bidirectionalRnn {seqLen inputSize hiddenSize : Nat}
+  (forwardRnn : RNNSpec α inputSize hiddenSize)
+  (backwardRnn : RNNSpec α inputSize hiddenSize) :
+  Spec.Module α
     (.dim seqLen (.dim inputSize .scalar))
     (.dim seqLen (.dim (hiddenSize + hiddenSize) .scalar)) :=
 {
   forward := fun x =>
-    let initial_hidden := fill 0 (.dim hiddenSize .scalar)
-    -- Forward pass
-    let forward_out := rnnSequenceSpec forward_rnn x initial_hidden
-    -- Backward pass (reverse inputs, then reverse outputs back).
-    let reversed_inputs := reverseSequenceSpec x
-    let backward_out_rev := rnnSequenceSpec backward_rnn reversed_inputs initial_hidden
-    let backward_out := reverseSequenceSpec backward_out_rev
-    concatSequenceSpec forward_out backward_out,
+    let initialHidden := fill 0 (.dim hiddenSize .scalar)
+    let forwardOut := rnnSequenceSpec forwardRnn x initialHidden
+    let reversedInputs := Tensor.reverseLeadingAxis x
+    let reversedBackwardOut := rnnSequenceSpec backwardRnn reversedInputs initialHidden
+    let backwardOut := Tensor.reverseLeadingAxis reversedBackwardOut
+    Tensor.zipWithLeading (.dim seqLen .scalar) (.dim (hiddenSize + hiddenSize) .scalar)
+      Tensor.concatLeadingAxisSpec forwardOut backwardOut,
   kind := "BiRNN",
-  export_func := {
-    toPyTorch := s!"RNNOnlyOutput({inputSize}, {hiddenSize}, bidirectional=True)",
-    dimensions := (inputSize, hiddenSize * 2)
-  }
+  pythonExpr := s!"RNNOnlyOutput({inputSize}, {hiddenSize}, bidirectional=True)"
 }
 
-end Spec
+end Spec.Module

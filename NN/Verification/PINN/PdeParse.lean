@@ -48,7 +48,9 @@ namespace NN.Verification.PINN.PdeParse
 open NN.Verification.PINN.PdeAst
 open NN.Verification.Util
 
-/-- Parser state for the hand-written PDE expression parser. -/
+namespace Internal
+
+/-- Cursor state for the hand-written PDE expression parser. -/
 abbrev State := TextCursor.Cursor
 
 /-- Whether the PDE parser cursor has reached the end of its source text. -/
@@ -229,15 +231,17 @@ end
 def parseExprCore (env : String → Option Float) (st : State) : Except String (Expr × State) :=
   parseExprCoreFuel (fuelOf st) env st
 
+end Internal
+
 /-- Entry point: parse a string to Expr using `env` for identifiers. -/
 def parseExpr (env : String → Option Float) (s : String) : Except String Expr :=
-  match parseExprCore env { source := s } with
+  match Internal.parseExprCore env { source := s } with
   | .ok (e, st) =>
-      let st := skipWs st
-      if eof st then
+      let st := Internal.skipWs st
+      if Internal.eof st then
         .ok e
       else
-        match peek st with
+        match Internal.peek st with
         | some c => .error s!"unexpected trailing input near '{c}'"
         | none => .error "unexpected trailing input"
   | .error msg => .error msg

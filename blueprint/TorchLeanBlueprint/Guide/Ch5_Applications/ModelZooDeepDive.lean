@@ -98,7 +98,7 @@ $$`j>i\quad\Longrightarrow\quad
 \operatorname{attentionWeight}_{i,j}=0.`
 
 The source of the shared architecture is
-[NN/API/Models/Gpt2.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Gpt2.lean).
+[NN/API/Models/CausalTransformer.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/CausalTransformer.lean).
 The corpus split, configuration presets, evaluation loop, generation, and checkpoint handling are
 in
 [NN/Examples/Models/Sequence/CharGpt.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Sequence/CharGpt.lean).

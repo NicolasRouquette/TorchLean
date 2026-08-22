@@ -9,14 +9,13 @@ module
 public import NN.Spec.Core.TensorReductionShape
 
 /-!
-# Common helpers (spec models)
+# Tensor Numerical Algorithms
 
-This file centralizes small utilities used across multiple spec‑level models:
+Reference implementations shared by classical models, graph specifications, and runtime checks:
 
-- simple matrix operations (minor, determinant, inverse),
-- distance functions for KNN,
-- normalization helpers,
-- and other "model glue" functions.
+- matrix minors, determinants, inverses, and power iteration;
+- distances between vectors;
+- vector normalization.
 
 ## Intent / tradeoffs
 
@@ -25,9 +24,9 @@ These definitions prioritize:
 - **shape safety** (via `Spec.Tensor`),
 over performance.
 
-In particular, `determinant_spec` uses Laplace expansion, which is exponentially expensive and is
-only meant for small matrices (e.g. 2×2, 3×3) and/or proof‑oriented reference code. If you need
-large‑scale linear algebra, use the runtime layer with array‑backed kernels.
+In particular, `determinantSpec` uses Laplace expansion, which is exponentially expensive and is
+only meant for small matrices (for example, 2 x 2 or 3 x 3) and proof-oriented reference code. For
+large-scale linear algebra, use the runtime layer with array-backed kernels.
 -/
 
 @[expose] public section
@@ -41,37 +40,30 @@ variable {α : Type} [Context α]
 
 -- Matrix operations used by classical model specifications.
 
-/--
-Helper lemma for minor/index computations.
-
-When forming a matrix minor, we "skip" a row/column and map an index `i : Fin (n-1)` to the
-corresponding original index in `Fin n` by either leaving it unchanged (if it is before the skipped
-index) or shifting it by `+1` (if it is at/after the skipped index). This lemma proves the resulting
-index is still `< n`.
--/
-lemma actual_index_lt {n : ℕ} (skip : ℕ) (i : Fin (n-1)) :
-  (if i.val < skip then i.val else i.val + 1) < n := by
-  by_cases h : i.val < skip <;> simp [h]
+/-- The index in `Fin n` corresponding to `i : Fin (n - 1)` after skipping one position. -/
+lemma minorIndex_lt {n : ℕ} (skip : Fin n) (i : Fin (n - 1)) :
+    (if i.val < skip.val then i.val else i.val + 1) < n := by
+  by_cases h : i.val < skip.val <;> simp [h]
   · exact Nat.lt_of_lt_of_le i.isLt (Nat.pred_le n)
   · grind
 
 /--
 Matrix minor: delete `row` and `col` from an `n × n` matrix, producing an `(n-1) × (n-1)` matrix.
 
-This is used by `determinant_spec` (Laplace expansion) and the adjugate-based inverse below.
+This is used by `determinantSpec` (Laplace expansion) and the adjugate-based inverse below.
 -/
-def getMinorSpec {α : Type} {n : Nat}
+def matrixMinorSpec {α : Type} {n : Nat}
     (matrix : Tensor α (.dim n (.dim n .scalar)))
-    (row col : Nat) :
+    (row col : Fin n) :
     Tensor α (.dim (n - 1) (.dim (n - 1) .scalar)) :=
   Tensor.dim (fun i =>
     Tensor.dim (fun j =>
-      let actual_i := if i.val < row then i.val else i.val + 1
-      let actual_j := if j.val < col then j.val else j.val + 1
+      let actualI := if i.val < row.val then i.val else i.val + 1
+      let actualJ := if j.val < col.val then j.val else j.val + 1
       Tensor.scalar (
         get2 matrix
-          ⟨actual_i, actual_index_lt row i⟩
-          ⟨actual_j, actual_index_lt col j⟩
+          ⟨actualI, minorIndex_lt row i⟩
+          ⟨actualJ, minorIndex_lt col j⟩
       )
     )
   )
@@ -84,7 +76,7 @@ This uses Laplace expansion (cofactor expansion) along the first row, with speci
 for `n = 0, 1, 2`. It is mathematically clear but exponentially slow, so it is intended only for
 very small `n` and/or proof-oriented reference code.
 -/
-def determinantSpec {α : Type} [Context α]:
+def determinantSpec {α : Type} [Context α] :
   ∀ {n : Nat}, Tensor α (.dim n (.dim n .scalar)) → Tensor α .scalar
 | 0, _ => Tensor.scalar 1
 | 1, A =>
@@ -104,12 +96,12 @@ def determinantSpec {α : Type} [Context α]:
       | Tensor.scalar a, Tensor.scalar b, Tensor.scalar c, Tensor.scalar d =>
         Tensor.scalar (a * d - b * c)
 | n+2, A =>
-  let laplace_expansion (j : Fin (n+2)) :=
-    let minor := getMinorSpec A 0 j
-    let cofactor := if j.val % 2 = 0 then 1 else Numbers.neg_one
+  let laplaceTerm (j : Fin (n+2)) :=
+    let minor := matrixMinorSpec A ⟨0, Nat.zero_lt_succ (n + 1)⟩ j
+    let cofactor := if j.val % 2 = 0 then 1 else Numbers.negOne
     let element := get2 A ⟨0, Nat.zero_lt_succ (n+1)⟩ j
-    cofactor * element * Tensor.toScalar (determinantSpec minor)
-  let sum := (List.finRange (n+2)).foldl (fun acc j => acc + laplace_expansion j) 0
+    cofactor * element * Tensor.item (determinantSpec minor)
+  let sum := (List.finRange (n+2)).foldl (fun acc j => acc + laplaceTerm j) 0
   Tensor.scalar sum
 
 
@@ -125,7 +117,7 @@ PyTorch analogue: `torch.linalg.inv`, with failure represented explicitly by `Op
 def inverseSpec? {n : Nat}
   (matrix : Tensor α (.dim n (.dim n .scalar))) :
   Option (Tensor α (.dim n (.dim n .scalar))) :=
-  let det := Tensor.toScalar (determinantSpec matrix)
+  let det := Tensor.item (determinantSpec matrix)
   if det == 0 then
     none
   else
@@ -136,25 +128,25 @@ def inverseSpec? {n : Nat}
       Tensor.dim (fun i =>
         Tensor.dim (fun j =>
           let cofactor := if (i.val + j.val) % 2 = 0 then 1 else -1
-          let minor := getMinorSpec matrix i.val j.val
-          let minor_det := Tensor.toScalar (determinantSpec minor)
-          Tensor.scalar (cofactor * minor_det)))
+          let minor := matrixMinorSpec matrix i j
+          let minorDet := Tensor.item (determinantSpec minor)
+          Tensor.scalar (cofactor * minorDet)))
     let adjugate := matrixTransposeSpec cofactors
     -- Scale by 1/det
     some (scaleSpec adjugate (1 / det))
 
 /--
-Approximate the leading eigenpair by 20 steps of power iteration.
+Approximate the leading eigenpair by a caller-selected number of power-iteration steps.
 
 The scalar is the final Rayleigh quotient and the tensor is the corresponding normalized iterate.
 This definition does not claim to compute a full eigendecomposition. Convergence to a dominant
 eigenvector requires the usual spectral assumptions on `matrix` and a suitable initial vector.
 -/
-def leadingEigenpairPowerIterationApproxSpec {n : Nat}
-  (matrix : Tensor α (.dim n (.dim n .scalar))) :
-  (α × Tensor α (.dim n .scalar)) :=
+def powerIterationLeadingEigenpairSpec {n : Nat}
+    (matrix : Tensor α (.dim n (.dim n .scalar))) (iterations : Nat) :
+    α × Tensor α (.dim n .scalar) :=
   -- Power iteration: returns normalized eigenvector and its Rayleigh quotient
-  let rec power_iteration (v : Tensor α (.dim n .scalar)) (iter : Nat) :
+  let rec powerIteration (v : Tensor α (.dim n .scalar)) (iter : Nat) :
     (Tensor α (.dim n .scalar) × α) :=
     if iter = 0 then
       let Av := matVecMulSpec matrix v
@@ -169,16 +161,16 @@ def leadingEigenpairPowerIterationApproxSpec {n : Nat}
           | Tensor.scalar val => Tensor.scalar (val / norm)
         )
       else v
-      power_iteration normalized (iter - 1)
+      powerIteration normalized (iter - 1)
 
   -- Start from a normalized all-ones vector.  Normalizing before the first multiplication matters
   -- for the zero matrix: every direction is then an eigenvector, and the fallback branch below
   -- should still return a unit vector rather than the raw all-ones vector.
-  let initial_raw : Tensor α (.dim n .scalar) := Tensor.dim (fun _ => Tensor.scalar 1)
-  let initial_norm := MathFunctions.sqrt (sumSpec (squareSpec initial_raw))
-  let initial_v :=
-    if initial_norm > 0 then scaleSpec initial_raw (1 / initial_norm) else initial_raw
-  let (eigenvector, eigenvalue) := power_iteration initial_v 20
+  let initialRaw : Tensor α (.dim n .scalar) := Tensor.dim (fun _ => Tensor.scalar 1)
+  let initialNorm := MathFunctions.sqrt (sumSpec (squareSpec initialRaw))
+  let initialVector :=
+    if initialNorm > 0 then scaleSpec initialRaw (1 / initialNorm) else initialRaw
+  let (eigenvector, eigenvalue) := powerIteration initialVector iterations
   (eigenvalue, eigenvector)
 
 
@@ -192,23 +184,23 @@ PyTorch analogue: `torch.linalg.vector_norm(x - y)` or `torch.cdist` (batched).
 def euclideanDistanceSpec {nFeatures : Nat}
   (x y : Tensor α (.dim nFeatures .scalar)) : α :=
   let diff := subSpec x y
-  let squared_diff := squareSpec diff
-  let sum_squared := sumSpec squared_diff
-  MathFunctions.sqrt sum_squared
+  let squaredDiff := squareSpec diff
+  let sumSquared := sumSpec squaredDiff
+  MathFunctions.sqrt sumSquared
 
 /-- Squared Euclidean distance (avoids the final square root). -/
 def squaredEuclideanDistanceSpec {nFeatures : Nat}
   (x y : Tensor α (.dim nFeatures .scalar)) : α :=
   let diff := subSpec x y
-  let squared_diff := squareSpec diff
-  sumSpec squared_diff
+  let squaredDiff := squareSpec diff
+  sumSpec squaredDiff
 
 /-- Manhattan (L1) distance between two feature vectors. -/
 def manhattanDistanceSpec {nFeatures : Nat}
   (x y : Tensor α (.dim nFeatures .scalar)) : α :=
   let diff := subSpec x y
-  let abs_diff := mapSpec MathFunctions.abs diff
-  sumSpec abs_diff
+  let absDiff := mapSpec MathFunctions.abs diff
+  sumSpec absDiff
 
 /--
 Cosine distance `1 - cos(theta)` between two feature vectors.
@@ -217,41 +209,42 @@ If either vector has zero norm, this returns `1`.
 -/
 def cosineDistanceSpec {nFeatures : Nat}
   (x y : Tensor α (.dim nFeatures .scalar)) : α :=
-  let dot_product := dotSpec x y
-  let norm_x := MathFunctions.sqrt (sumSpec (squareSpec x))
-  let norm_y := MathFunctions.sqrt (sumSpec (squareSpec y))
-  let denominator := norm_x * norm_y
-  if denominator == 0 then 1 else 1 - (dot_product / denominator)
+  let dotProduct := dotSpec x y
+  let normX := MathFunctions.sqrt (sumSpec (squareSpec x))
+  let normY := MathFunctions.sqrt (sumSpec (squareSpec y))
+  let denominator := normX * normY
+  if denominator == 0 then 1 else 1 - (dotProduct / denominator)
 
 /--
 Minkowski distance of order `p` between two feature vectors.
 
-This generalizes L1 (Manhattan) and L2 (Euclidean). For `p = 1` this is the L1 norm, and for
-`p = 2` it is the L2 norm.
+This generalizes L1 (Manhattan) and L2 (Euclidean). The explicit positivity hypothesis rules out
+the undefined order-zero and negative-order cases.
 -/
 def minkowskiDistanceSpec {nFeatures : Nat}
-  (p : α) (x y : Tensor α (.dim nFeatures .scalar)) : α :=
+  (p : α) (_hp : p > 0) (x y : Tensor α (.dim nFeatures .scalar)) : α :=
   let diff := subSpec x y
-  let abs_diff := mapSpec MathFunctions.abs diff
-  let powered := mapSpec (fun a => a ^ p) abs_diff
-  let sum_powered := sumSpec powered
-  sum_powered ^ (1 / p)
+  let absDiff := mapSpec MathFunctions.abs diff
+  let powered := mapSpec (fun a => a ^ p) absDiff
+  let sumPowered := sumSpec powered
+  sumPowered ^ (1 / p)
 
 -- Normalization and utility functions shared by model specifications.
 
 /--
-Normalize a vector of (nonnegative) scores into a probability distribution.
+Divide a vector by its sum when that sum is positive.
 
-If the total is `0`, this returns the uniform distribution.
+If the sum is not positive, this returns the uniform vector. When the input entries are
+nonnegative, the positive-sum branch is a probability distribution.
 
 PyTorch analogue: `probs / probs.sum()` (with an explicit zero-sum guard).
 -/
-def normalizeProbsSpec {n : Nat} (probs : Tensor α (.dim n .scalar)) :
+def normalizeByPositiveSumSpec {n : Nat} (values : Tensor α (.dim n .scalar)) :
   Tensor α (.dim n .scalar) :=
-  let total := sumSpec probs
+  let total := sumSpec values
   if total > 0 then
     Tensor.dim (fun i =>
-      match get probs i with
+      match get values i with
       | Tensor.scalar p => Tensor.scalar (p / total)
     )
   else

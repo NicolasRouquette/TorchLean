@@ -149,7 +149,7 @@ def sampleRandom (b : Buffer α obsShape nActions) (seed counter batchSize : Nat
       for _ in [0:batchSize] do
         let key := _root_.Runtime.Autograd.TorchLean.Random.keyOf seed c
         let u : Float :=
-          Tensor.toScalar
+          Tensor.item
             (_root_.Runtime.Autograd.TorchLean.Random.uniform (α := Float) key (s := Shape.scalar))
         let idx := ((u * Float.ofNat b.items.size).floor.toUInt64.toNat) % b.items.size
         match b.items[idx]? with

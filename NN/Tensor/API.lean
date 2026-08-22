@@ -8,7 +8,7 @@ module
 
 public import NN.Floats.Float32
 public import NN.Spec.Core.Complex
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 import Mathlib.Algebra.Order.Algebra
 
 /-!
@@ -31,7 +31,7 @@ Notation policy:
 - keep compact literal constructors (`shape!`, `tensor!`, `tensorOfList!`, `tensorF!`, `tensor32!`,
   `fin!`) in this module so they are easy to find and do not leak into unrelated imports,
 - keep more semantic glyphs scoped when possible (as in `NN.IR` and `NN.Floats.IEEEExec`),
-- and prefer namespace-local aliases over reusing the same unscoped token in multiple layers.
+- and prefer namespace-local notation over reusing the same unscoped token in multiple layers.
 
 Lean is statically typed, so the element type usually plays the role of “dtype”:
 
@@ -54,57 +54,9 @@ you actually want to display.
 
 namespace NN.Tensor
 
-open _root_.NN.Spec
-
-/-- Local alias for the canonical spec shape type. -/
-abbrev Shape := Spec.Shape
-
-/-! ## Scalar extraction -/
-
-/--
-Extract the scalar value from a scalar-shaped tensor.
-
-PyTorch comparison: like `t.item()` for a 0-dim tensor.
--/
-def scalarOf {α : Type} (t : Spec.Tensor α Spec.Shape.scalar) : α :=
-  match t with
-  | .scalar v => v
-
-/--
-Dot-notation sugar for scalar tensors: `t.item`.
-
-This is defined at the `Spec.Tensor` namespace so that it works with the canonical tensor type.
--/
-abbrev _root_.Spec.Tensor.item {α : Type} (t : Spec.Tensor α Spec.Shape.scalar) : α :=
-  NN.Tensor.scalarOf t
-
-/-- `Tensor.scalar x` round-trips through `Spec.Tensor.item`. -/
-@[simp] theorem _root_.Spec.Tensor.item_scalar {α : Type} (x : α) :
-    (Spec.Tensor.scalar x).item = x := rfl
+open _root_.Spec
 
 /-! ## Construction -/
-
-/-- Convert a runtime list of dimensions like `[2, 3, 4]` into a nested `Shape`.
-
-Shape-indexed definitions carry dimensions in their types, while parsers and command-line inputs
-usually provide dimensions as lists. `shapeOfDims` converts the latter representation to the
-former.
--/
-@[reducible] def shapeOfDims : List Nat → Shape
-  | [] => .scalar
-  | n :: ns => .dim n (shapeOfDims ns)
-
-/-- `shapeOfDims` round-trips through `Spec.Shape.toList`. -/
-@[simp] theorem shapeOfDims_toList (s : Spec.Shape) :
-    shapeOfDims (_root_.Spec.Shape.toList s) = s := by
-  induction s with
-  | scalar => rfl
-  | dim n rest ih =>
-      simp [_root_.Spec.Shape.toList, shapeOfDims, ih]
-
-/-- Number of scalar elements (“numel”) implied by a runtime `dims` list. -/
-def numelDims (dims : List Nat) : Nat :=
-  Spec.Shape.size (shapeOfDims dims)
 
 /-- Create a 1-D tensor from a Lean `List`.
 
@@ -137,45 +89,55 @@ def oneHotNatOrZero {α : Type} [Zero α] [One α] (n k : Nat) :
   else
     Spec.fill (0 : α) (.dim n .scalar)
 
-/-- 2-D tensor from nested lists, returning `none` for empty/ragged inputs.
+/--
+One-hot encode every entry of a natural-number tensor along a new final axis.
 
-This delegates to `Spec.from_list_2d`, which refuses:
-- an empty outer list,
-- any empty row,
-- or rows with mismatched lengths.
+An index smaller than `n` selects the corresponding coordinate. An out-of-range index produces an
+all-zero row, matching `oneHotNatOrZero`. The source shape is otherwise arbitrary.
+-/
+def oneHotIndicesOrZero {α : Type} [Zero α] [One α] (n : Nat) :
+    {s : Spec.Shape} → Spec.Tensor Nat s → Spec.Tensor α (s.appendDim n)
+  | .scalar, .scalar k => oneHotNatOrZero (α := α) n k
+  | .dim _ _, .dim values =>
+      Spec.Tensor.dim fun i => oneHotIndicesOrZero (α := α) n (values i)
+
+/-- 2-D tensor from nested lists, returning `none` for ragged input.
+
+Empty input denotes a `0 × 0` tensor. Empty rows are accepted when every row is empty.
 
 PyTorch analogy: `torch.tensor(xss)` also refuses ragged inputs.
 -/
-def matrix? (α : Type := Float) [Inhabited α] (xss : List (List α)) :
+def matrix? (α : Type := Float) (xss : List (List α)) :
     Option (Spec.Tensor α (.dim xss.length
-      (.dim (if xss.isEmpty then 0 else xss.head!.length) .scalar)))
+      (.dim (Option.getD (xss.head?.map List.length) 0) .scalar)))
       :=
-  Spec.matrixFromRows xss
+  Spec.matrixFromRows? xss
 
 /-- 2-D tensor from nested lists, with a clear error message on failure. -/
-def matrix (α : Type := Float) [Inhabited α] (xss : List (List α)) :
+def matrix (α : Type := Float) (xss : List (List α)) :
     Except String (Spec.Tensor α (.dim xss.length
-      (.dim (if xss.isEmpty then 0 else xss.head!.length) .scalar))) :=
+      (.dim (Option.getD (xss.head?.map List.length) 0) .scalar))) :=
   match matrix? (α := α) xss with
   | some t => .ok t
-  | none => .error "matrix: empty or ragged nested lists"
+  | none => .error "matrix: rows have different lengths"
 
 /-! ### Rectangularizing two-dimensional data -/
 
-/-- Resize every row to `nCols`, padding with `default` or dropping trailing entries.
+/-- Resize every row to `columnCount`, padding with `default` or dropping trailing entries.
 
 Unlike `matrix`, this constructor accepts ragged input. It is intended for boundaries where the
 caller has deliberately chosen a fixed width, such as a padded sequence batch.
 
 PyTorch analogy: closer to `pad_sequence(..., batch_first=True)` followed by `torch.tensor`.
 -/
-def matrixResize (α : Type := Float) [Inhabited α] (nCols : Nat) (xss : List (List α)) :
-    Spec.Tensor α (.dim xss.length (.dim nCols .scalar)) :=
-  Spec.matrixFromRowsPadTo (nCols := nCols) xss
+def matrixResize (α : Type := Float) [Inhabited α]
+    (columnCount : Nat) (rows : List (List α)) :
+    Spec.Tensor α (.dim rows.length (.dim columnCount .scalar)) :=
+  Spec.matrixFromRowsResize (columnCount := columnCount) rows
 
 /-- 2-D tensor from nested lists, padding to the maximum row length (`0` if empty).
 
-This is convenient when you just want a rectangular tensor without precomputing `nCols`. -/
+This is convenient when you just want a rectangular tensor without precomputing the width. -/
 def matrixPadRight (α : Type := Float) [Inhabited α] (xss : List (List α)) :
     Spec.Tensor α (.dim xss.length (.dim (Spec.maxRowLength xss) .scalar)) :=
   Spec.matrixFromRowsPadRight xss
@@ -191,63 +153,44 @@ The “real” spec constructors are shape-indexed, i.e. you usually build tenso
 
 So we do a small amount of reshaping here.
 
-Implementation note:
-- `buildFromFlat_ofLenEq` consumes the flat list using a proof that lengths match.
-- The public APIs (`ofListOfLength` and `ofList`) are the ones that establish that proof.
+`ofListOfLength` performs the structural recursion locally, so the implementation does not add a
+second tensor-construction entry point to the public API. `ofList` supplies the same length proof
+after checking it at runtime.
 -/
-/--
-Build a shape-indexed tensor from a flat list, given a proof that the lengths match.
-
-This is a helper for `ofListOfLength`/`ofList`: users typically want those APIs rather than
-recursing over `Shape` directly.
--/
-def buildFromFlatOfLenEq {α : Type} :
-    (s : Shape) → (xs : List α) → xs.length = Spec.Shape.size s → Spec.Tensor α s
-  | .scalar, xs, h => by
-      have hx : xs.length = 1 := by
-        have h' := h
-        simp [Spec.Shape.size] at h'
-        exact h'
-      have h0 : 0 < xs.length := by
-        simp [hx]
-      exact Spec.Tensor.scalar (xs.get ⟨0, h0⟩)
-  | .dim n s', xs, h => by
-      let chunkSize : Nat := Spec.Shape.size s'
-      have hxLen : xs.length = n * chunkSize := by
-        have h' := h
-        simp [Spec.Shape.size] at h'
-        dsimp [chunkSize]
-        exact h'
-      refine Spec.Tensor.dim (fun i => ?_)
-      let start : Nat := i.val * chunkSize
-      let chunk : List α := (xs.drop start).take chunkSize
-      have hAdd : start + chunkSize ≤ xs.length := by
-        have hMul : (i.val + 1) * chunkSize ≤ n * chunkSize :=
-          Nat.mul_le_mul_right chunkSize (Nat.succ_le_of_lt i.2)
-        have : i.val * chunkSize + chunkSize ≤ n * chunkSize := by
-          simpa [Nat.add_mul] using hMul
-        simpa [hxLen, start] using this
-      have hStartLe : start ≤ xs.length :=
-        Nat.le_trans (Nat.le_add_right start chunkSize) hAdd
-      have hChunkSub : chunkSize ≤ xs.length - start := by
-        have hAdd' : chunkSize + start ≤ xs.length := by
-          simpa [Nat.add_comm] using hAdd
-        exact (Nat.le_sub_iff_add_le hStartLe).2 hAdd'
-      have hChunkLen : chunk.length = chunkSize := by
-        simp [chunk, List.length_take, List.length_drop, Nat.min_eq_left hChunkSub]
-      have hChunkLen' : chunk.length = Spec.Shape.size s' := by
-        simpa [chunkSize] using hChunkLen
-      exact buildFromFlatOfLenEq (s := s') (xs := chunk) hChunkLen'
-
 /-- N-D tensor from a runtime `dims` list and a flat `xs`, given a proof of matching length.
 
 This is the “static / proof-carrying” version: if you can prove the length match, you avoid any
 runtime checks and you keep a precise shape in the type.
 -/
 def ofListOfLength {α : Type} (dims : List Nat) (xs : List α)
-    (h : xs.length = numelDims dims) : Spec.Tensor α (shapeOfDims dims) :=
-  buildFromFlatOfLenEq (α := α) (s := shapeOfDims dims) (xs := xs) (by
-    simpa [numelDims] using h)
+    (h : xs.length = dims.prod) : Spec.Tensor α (Spec.Shape.ofList dims) :=
+  let rec build :
+      (s : Spec.Shape) → (ys : List α) → ys.length = Spec.Shape.size s → Spec.Tensor α s
+    | .scalar, ys, hSize => by
+        have hy : ys.length = 1 := by
+          simpa [Spec.Shape.size] using hSize
+        have hNonempty : 0 < ys.length := by simp [hy]
+        exact .scalar (ys.get ⟨0, hNonempty⟩)
+    | .dim n tail, ys, hSize => by
+        let chunkSize := Spec.Shape.size tail
+        have hy : ys.length = n * chunkSize := by
+          simpa [Spec.Shape.size, chunkSize] using hSize
+        refine .dim fun i => ?_
+        let start := i.val * chunkSize
+        let chunk := (ys.drop start).take chunkSize
+        have hEnd : start + chunkSize ≤ ys.length := by
+          have hMul : (i.val + 1) * chunkSize ≤ n * chunkSize :=
+            Nat.mul_le_mul_right chunkSize (Nat.succ_le_of_lt i.2)
+          simpa [hy, start, Nat.add_mul] using hMul
+        have hStart : start ≤ ys.length :=
+          Nat.le_trans (Nat.le_add_right start chunkSize) hEnd
+        have hChunkLe : chunkSize ≤ ys.length - start := by
+          apply (Nat.le_sub_iff_add_le hStart).2
+          simpa [Nat.add_comm] using hEnd
+        have hChunk : chunk.length = Spec.Shape.size tail := by
+          simp [chunk, List.length_take, List.length_drop, Nat.min_eq_left hChunkLe, chunkSize]
+        exact build tail chunk hChunk
+  build (Spec.Shape.ofList dims) xs (by simpa using h)
 
 /-- N-D tensor from a runtime `dims` list and a flat `xs`, with a runtime length check.
 
@@ -255,8 +198,8 @@ This is the “dynamic / user-friendly” version: it fails with a descriptive m
 of provided scalars doesn’t match the implied `numel`.
 -/
 def ofList {α : Type} (dims : List Nat) (xs : List α) :
-    Except String (Spec.Tensor α (shapeOfDims dims)) :=
-  let expected := numelDims dims
+    Except String (Spec.Tensor α (Spec.Shape.ofList dims)) :=
+  let expected := dims.prod
   if h : xs.length = expected then
     .ok (ofListOfLength (α := α) (dims := dims) (xs := xs) h)
   else
@@ -269,15 +212,18 @@ def ofList {α : Type} (dims : List Nat) (xs : List α) :
 The `OfDims` suffix distinguishes this constructor from `Spec.fill`, whose second argument is an
 already-typed `Shape`.
 -/
-def fillOfDims {α : Type} (value : α) (dims : List Nat) : Spec.Tensor α (shapeOfDims dims) :=
-  Spec.fill value (shapeOfDims dims)
+def fillOfDims {α : Type} (value : α) (dims : List Nat) :
+    Spec.Tensor α (Spec.Shape.ofList dims) :=
+  Spec.fill value (Spec.Shape.ofList dims)
 
 /-- All-zeros tensor, from a runtime `dims` list. -/
-def zerosOfDims {α : Type} [Zero α] (dims : List Nat) : Spec.Tensor α (shapeOfDims dims) :=
+def zerosOfDims {α : Type} [Zero α] (dims : List Nat) :
+    Spec.Tensor α (Spec.Shape.ofList dims) :=
   fillOfDims (α := α) 0 dims
 
 /-- All-ones tensor, from a runtime `dims` list. -/
-def onesOfDims {α : Type} [One α] (dims : List Nat) : Spec.Tensor α (shapeOfDims dims) :=
+def onesOfDims {α : Type} [One α] (dims : List Nat) :
+    Spec.Tensor α (Spec.Shape.ofList dims) :=
   fillOfDims (α := α) 1 dims
 
 /-! ## Tactics -/
@@ -293,9 +239,9 @@ Usage:
 -/
 macro "tensor_len" : tactic =>
   `(tactic| first
-    | (simp [NN.Tensor.numelDims, NN.Tensor.shapeOfDims, Spec.Shape.size]; dsimp; decide)
+    | (simp [List.prod]; dsimp; decide)
     | decide
-    | simp [NN.Tensor.numelDims, NN.Tensor.shapeOfDims, Spec.Shape.size])
+    | simp [List.prod])
 
 /-!
 `tensorOfList!` is the checked literal constructor for constants whose length proof should be solved
@@ -328,10 +274,8 @@ macro "tensorOfList!" "(" name:ident ":=" elemTy:term ")" dims:term:max xs:term:
   `(NN.Tensor.ofListOfLength (α := $elemTy) (dims := $dims) (xs := $xs) (by tensor_len))
 
 /-!
-`shape!` is a compact convenience macro for examples: build a `Shape` from a bracketed dimension list.
-
-It expands through reducible `shapeOfDims`, so it stays definitionally aligned with `tensorOfList!`
-while still unfolding for dependent proofs and shape typeclass search.
+`shape!` is a compact convenience macro for writing a statically known `Shape`. It expands directly
+to `Shape.dim` constructors, so structural shape evidence remains available to typeclass search.
 
 Example:
   `def s : Shape := shape![2, 3, 4]`
@@ -339,8 +283,11 @@ Example:
 syntax (name := shapeBang) "shape!" "[" term,* "]" : term
 
 macro_rules
-  | `(shape![ $ds:term,* ]) =>
-      `(NN.Tensor.shapeOfDims [ $ds,* ])
+  | `(shape![ $ds:term,* ]) => do
+      let mut shape ← `(Spec.Shape.scalar)
+      for dim in ds.getElems.reverse do
+        shape ← `(Spec.Shape.dim $dim $shape)
+      pure shape
 
 /-!
 `tensor!` is the "nested brackets" constructor, similar to writing nested Python lists in PyTorch.
@@ -360,7 +307,7 @@ It is fully general over rank: the nesting depth determines the rank.
 Internally, it computes the dims from list lengths and flattens in row-major order
 (last dimension changes fastest), then calls `tensorOfList!`.
 
-If you need runtime/ragged handling, use `ofList`/`dynamicOfList` instead.
+If you need runtime/ragged handling, use `ofList`/`someTensorOfList` instead.
 -/
 
 open Lean
@@ -496,7 +443,7 @@ def w : Tensor TorchLean.Floats.IEEE32Exec (shape![2, 2]) :=
 macro "tensor32!" xs:term:max : term =>
   `(Spec.mapTensor TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat (tensor! $xs))
 
-/-! ## Dynamic tensor wrapper (shape not in the type) -/
+/-! ## Existentially shaped tensors -/
 
 /-- A tensor paired with its shape, where the shape is stored as data instead of being in the type.
 
@@ -504,42 +451,16 @@ This is useful when:
 - you need to accept arbitrary tensors at runtime (CLI / file formats / interoperability),
 - but you still want to carry a `Shape` around so downstream code can inspect it.
 -/
-structure DynTensor (α : Type) where
+structure SomeTensor (α : Type) where
   /-- Runtime shape tag carried alongside the tensor. -/
-  s : Shape
+  s : Spec.Shape
   /-- Shape-indexed tensor whose type is tied to `s`. -/
   t : Spec.Tensor α s
 
-/-- Build a `DynTensor` from runtime dims + flat data, with a runtime length check. -/
-def dynamicOfList {α : Type} (dims : List Nat) (xs : List α) : Except String (DynTensor α) := do
+/-- Pair runtime dimensions with a tensor after checking the number of flat entries. -/
+def someTensorOfList {α : Type} (dims : List Nat) (xs : List α) : Except String (SomeTensor α) := do
   let t ← ofList (α := α) dims xs
-  pure { s := shapeOfDims dims, t := t }
-
-/-! ## Common scalar constructors from host literals -/
-
-/-- Construct a native `Float32` vector from host `Float` literals. -/
-def float32Vector (xs : List Float) :
-    Spec.Tensor Float32 (.dim xs.length .scalar) :=
-  Spec.mapTensor Float.toFloat32 (vector (α := Float) xs)
-
-/-- Construct a native `Float32` matrix from host `Float` literals. -/
-def float32Matrix (xss : List (List Float)) :
-    Except String (Spec.Tensor Float32
-      (.dim xss.length (.dim (if xss.isEmpty then 0 else xss.head!.length) .scalar))) := do
-  let t ← matrix (α := Float) xss
-  pure (Spec.mapTensor Float.toFloat32 t)
-
-/-- Construct an `IEEE32Exec` vector from host `Float` literals. -/
-def ieee32ExecVector (xs : List Float) :
-    Spec.Tensor TorchLean.Floats.IEEE32Exec (.dim xs.length .scalar) :=
-  Spec.mapTensor TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat (vector (α := Float) xs)
-
-/-- Construct an `IEEE32Exec` matrix from host `Float` literals. -/
-def ieee32ExecMatrix (xss : List (List Float)) :
-    Except String (Spec.Tensor TorchLean.Floats.IEEE32Exec
-      (.dim xss.length (.dim (if xss.isEmpty then 0 else xss.head!.length) .scalar))) := do
-  let t ← matrix (α := Float) xss
-  pure (Spec.mapTensor TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat t)
+  pure { s := Spec.Shape.ofList dims, t := t }
 
 /-! ## Printing -/
 
@@ -583,7 +504,7 @@ We model printing as `Except String String` because some tensor element types ar
 non-printable (e.g. `ℝ` or proof-only floating-point models).
 -/
 class TensorPrintable (α : Type) where
-  pretty : {s : Shape} → Spec.Tensor α s → Except String String
+  pretty : {s : Spec.Shape} → Spec.Tensor α s → Except String String
 
 /-- Default printing for element types that support `ToString`. -/
 instance (priority := 10) {α : Type} [ToString α] : TensorPrintable α where
@@ -603,7 +524,7 @@ instance (priority := 100) : TensorPrintable TorchLean.Floats.FP32 where
         "use `IEEE32Exec`/`Float` for runtime printing.")
 
 /-- Print a tensor with a dtype tag, or throw an `IO.userError` if the dtype refuses to print. -/
-def print {α : Type} [DTypeName α] [TensorPrintable α] {s : Shape}
+def print {α : Type} [DTypeName α] [TensorPrintable α] {s : Spec.Shape}
     (t : Spec.Tensor α s) : IO Unit := do
   match (TensorPrintable.pretty (α := α) t) with
   | .ok str => IO.println s!"[{DTypeName.name (α := α)}] {str}"

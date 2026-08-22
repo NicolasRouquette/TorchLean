@@ -7,8 +7,8 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Graph
-public import NN.Spec.Core.Utils
-public import NN.Verification.Cert.Common
+public import NN.Spec.Core.Tensor.API
+public import NN.Verification.Cert.NodeReplay
 public import Lean.Data.Json
 
 /-!
@@ -49,7 +49,7 @@ namespace NN.Verification.IBPNodeCert
 open NN.MLTheory.CROWN.Graph
 open NN.MLTheory.CROWN
 open NN.Verification.Json
-open NN.Verification.Cert.Common
+open NN.Verification.Cert.NodeReplay
 open Import.PyTorch
 open _root_.Spec
 open _root_.Spec.Tensor

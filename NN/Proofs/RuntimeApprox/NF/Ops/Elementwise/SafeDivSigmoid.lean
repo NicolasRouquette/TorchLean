@@ -325,13 +325,13 @@ The domain condition is stated over the exact tensor, while `epsy < η` certifie
 runtime denominator remains separated from zero. This is the reusable division rule for softmax,
 normalization, and positive quantization scales; callers do not need a rank-specific theorem.
 -/
-theorem approxT_div_spec_of_pos_lb {s : Shape} (η : ℝ) :
+theorem approxTensor_div_spec_of_pos_lb {s : Shape} (η : ℝ) :
     ∀ {xS yS : SpecTensor s} {xR yR : Tensor R s} {epsx epsy : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
       Tensor.Forall (fun y : ℝ => η ≤ y) yS →
       epsy < η →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (divSpec xS yS) (divSpec xR yR)
           (linfNorm (divPosBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
             (s := s) η epsx epsy xR yR)) := by
@@ -346,14 +346,14 @@ theorem approxT_div_spec_of_pos_lb {s : Shape} (η : ℝ) :
               | scalar xR =>
                   cases yR with
                   | scalar yR =>
-                      have hx' := (approxT_scalar_iff (α := R)
+                      have hx' := (approxTensor_scalar_iff (α := R)
                         (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).mp hx
-                      have hy' := (approxT_scalar_iff (α := R)
+                      have hy' := (approxTensor_scalar_iff (α := R)
                         (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).mp hy
                       have hdiv := approx_div_nf_of_pos_lb
                         (β := β) (fexp := fexp) (rnd := rnd)
                         (by simpa using hdom) hmargin hx' hy'
-                      apply (approxT_scalar_iff (α := R)
+                      apply (approxTensor_scalar_iff (α := R)
                         (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).mpr
                       change
                         abs
@@ -384,15 +384,15 @@ theorem approxT_div_spec_of_pos_lb {s : Shape} (η : ℝ) :
                             (t := divPosBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                               (s := .dim n inner) η epsx epsy
                               (Tensor.dim valuesXR) (Tensor.dim valuesYR)))
-                      refine approxT_dim_of_forall
+                      refine approxTensor_dim_of_forall
                         (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                         (xS := divSpec (Tensor.dim valuesXS) (Tensor.dim valuesYS))
                         (xR := divSpec (Tensor.dim valuesXR) (Tensor.dim valuesYR))
                         (eps := bound) hbound ?_
                       intro i
-                      have hxI := approxT_dim_get (α := R)
+                      have hxI := approxTensor_dim_get (α := R)
                         (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hx i
-                      have hyI := approxT_dim_get (α := R)
+                      have hyI := approxTensor_dim_get (α := R)
                         (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hy i
                       have hlocal := ih hxI hyI (by simpa using hdom i) hmargin
                       have hle :
@@ -408,26 +408,26 @@ theorem approxT_div_spec_of_pos_lb {s : Shape} (η : ℝ) :
                               (divPosBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                                 (s := inner) η epsx epsy (valuesXR i) (valuesYR i)) ≤ bound at h
                         exact h
-                      exact approxT_mono hlocal hle
+                      exact approxTensor_mono hlocal hle
 
 /--
-`approxT` bound for `safeDiv` lifted to arbitrary tensor shapes.
+`approxTensor` bound for `safeDiv` lifted to arbitrary tensor shapes.
 
 This is the tensor-level wrapper around `approx_safeDiv_nf`, built via
-  `approxT_map2_spec_of_scalar_bound`.
+  `approxTensor_map2_spec_of_scalar_bound`.
 -/
-theorem approxT_safeDiv_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
+theorem approxTensor_safeDiv_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
     ∀ {xS yS : SpecTensor s} {xR yR : Tensor R s} {epsx epsy : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (map2Spec (s := s) (safeDiv (ε := ε)) xS yS)
           (map2Spec (s := s) (safeDivR (β := β) (fexp := fexp) (rnd := rnd) ε) xR yR)
           (linfNorm (safeDivBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) ε epsx epsy
             xR yR)) := by
   intro xS yS xR yR epsx epsy hx hy
   have h :=
-    approxT_map2_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+    approxTensor_map2_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
       rnd))
       (s := s)
       (fS := safeDiv (ε := ε))
@@ -466,15 +466,15 @@ def sigmoidBoundTensor {s : Shape} (_eps : ℝ) (xR : Tensor R s) : SpecTensor s
   Spec.mapTensor (sigmoidBoundScalar (β := β) (fexp := fexp) (rnd := rnd)) xR
 
 /--
-`approxT` bound for `sigmoid` lifted to arbitrary tensor shapes.
+`approxTensor` bound for `sigmoid` lifted to arbitrary tensor shapes.
 
 This is the tensor-level wrapper around `sigmoid_bound_scalar` (scalar case) and the usual
 componentwise `linf_norm` lifting (dimension case).
 -/
-theorem approxT_sigmoid_spec {s : Shape} :
+theorem approxTensor_sigmoid_spec {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) xS)
           (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) xR)
           (linfNorm (sigmoidBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps xR)) :=
@@ -528,7 +528,7 @@ theorem approxT_sigmoid_spec {s : Shape} :
                   tensorLinfNorm, MathFunctions.abs] using
                   (le_abs_self (sigmoidBoundScalar (β := β) (fexp := fexp) (rnd := rnd) xR))
               exact
-                (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                   (x := Activation.Math.sigmoidSpec (α := ℝ) x)
                   (xR := Activation.Math.sigmoidSpec (α := R) xR)
                   (eps := linfNorm (sigmoidBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
@@ -556,7 +556,7 @@ theorem approxT_sigmoid_spec {s : Shape} :
                       ≤ B := by
                 intro i
                 have hx_i :=
-                  approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                  approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                     (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := eps) hx i
                 have hih := ih (xS := xSf i) (xR := xRf i) hx_i
                 have hB_ge :
@@ -574,7 +574,7 @@ theorem approxT_sigmoid_spec {s : Shape} :
                           (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (xRf i)))
                       ≤ linfNorm (sigmoidBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                         (s := s) eps (xRf i)) := by
-                  simpa [approxT, approxWith] using hih
+                  simpa [approxTensor, approxWith] using hih
                 exact le_trans hdist hB_ge
               have hf :
                   ∀ i ∈ List.finRange n,
@@ -615,7 +615,7 @@ theorem approxT_sigmoid_spec {s : Shape} :
                             (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (xRf i)))))
                     0 (List.finRange n) ≤ B
                 exact hfold
-              simpa [approxT, approxWith, B] using this
+              simpa [approxTensor, approxWith, B] using this
 end NFBackend
 
 end

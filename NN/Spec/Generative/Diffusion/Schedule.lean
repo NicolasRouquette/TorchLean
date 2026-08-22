@@ -87,7 +87,7 @@ def alphaBar (sched : VPSchedule α T) (t : Fin (T + 1)) : α :=
 
 /-- Vector form of `alphaBar` (length $T+1$). -/
 def alphaBarVec (sched : VPSchedule α T) : Spec.Vec (T + 1) α :=
-  Spec.vectorTensor (fun t => sched.alphaBar t)
+  Spec.Tensor.vector (fun t => sched.alphaBar t)
 
 /--
 Convert a discrete time index `t : Fin (T+1)` into a scalar time $t/T\in[0,1]$ (when $T>0$).
@@ -117,16 +117,16 @@ when a model or theorem needs them.
 -/
 def linearBetas (T : Nat) (β_start β_end : α) : Spec.Vec T α :=
   match T with
-  | 0 => Spec.vectorTensor (fun i : Fin 0 => (False.elim (by simpa using i.2)))
+  | 0 => Spec.Tensor.vector (fun i : Fin 0 => (False.elim (by simpa using i.2)))
   | Nat.succ T' =>
       match T' with
       | 0 =>
           -- `T = 1`: by convention, return the endpoint.
-          Spec.vectorTensor (fun _i : Fin 1 => β_end)
+          Spec.Tensor.vector (fun _i : Fin 1 => β_end)
       | Nat.succ T'' =>
           -- `T = T'' + 2`: interpolate using denominator `(T-1) = T'' + 1`, so the last beta is
           -- exactly `β_end`.
-          Spec.vectorTensor (fun i : Fin (Nat.succ (Nat.succ T'')) =>
+          Spec.Tensor.vector (fun i : Fin (Nat.succ (Nat.succ T'')) =>
             let denom : α := (Nat.succ T'' : α) -- = T - 1
             let frac : α := (i.1 : α) / denom
             β_start + frac * (β_end - β_start))

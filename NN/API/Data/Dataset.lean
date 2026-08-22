@@ -10,7 +10,9 @@ module
 
 public import NN.API.Scalar
 public import NN.API.Macros
+public import NN.API.Tensor
 public import NN.API.TensorPack
+public import NN.Runtime.Autograd.Train.Dataset
 public import NN.Runtime.Autograd.Train.IoLoader
 
 import Mathlib.Algebra.Order.Algebra
@@ -65,10 +67,10 @@ namespace Data
 
 export _root_.Runtime.Autograd.Train
   (Dataset CsvOptions
-   readCsvFloatRows readCsvDatasetPairs readCsvVectorDataset
-   readNpy readNpyLeadingAxisPrefix readNpyVector readNpyMatrix
+   readCsvFloatRows
+   readNpy readNpyLeadingAxisPrefix
    vectorOfList vectorOfArray matrixOfLists matrixOfArrays
-   datasetOfPairs datasetOfListVectors)
+   datasetOfPairs)
 /--
 Typed analogue of PyTorch's `TensorDataset`.
 
@@ -76,10 +78,6 @@ In TorchLean, a sample is usually a `TensorPack α shapes`, i.e. a shape-tracked
 -/
 abbrev TensorDataset (α : Type) (shapes : List Spec.Shape) :=
   _root_.Runtime.Autograd.Train.Dataset (_root_.TorchLean.TensorPack α shapes)
-
-/-- Build a dataset from an explicit list of samples. -/
-def fromList {a : Type} (xs : List a) : _root_.Runtime.Autograd.Train.Dataset a :=
-  _root_.Runtime.Autograd.Train.Dataset.ofList xs
 
 /-- Require that all paths exist, otherwise raise a user-facing error with a shared hint. -/
 def requireFiles (exeName : String) (paths : List System.FilePath) (hint : String := "") :
@@ -106,54 +104,6 @@ def requirePairedFiles
   requireFile exeName xLabel xPath hint
   requireFile exeName yLabel yPath hint
 
-/-- Write a small CSV file, creating the parent directory if needed. -/
-def writeCsv (path : System.FilePath) (header : List String) (rows : List (List String)) :
-    IO Unit := do
-  if let some parent := path.parent then
-    IO.FS.createDirAll parent
-  let lines := String.intercalate "\n" ((String.intercalate "," header) :: rows.map
-    (String.intercalate ",")) ++ "\n"
-  IO.FS.writeFile path lines
-
-/--
-Write a one-dimensional prediction probe CSV.
-
-Rows are `i,x,input,target,prediction`, where $x=i/(n-1)$ for $n>1$.
-This writes the compact prediction table used by plotting examples such as 1D operator learning.
--/
-def writeVectorPredictionCsv {n : Nat}
-    (path : System.FilePath)
-    (input target prediction : Spec.Tensor Float (.dim n .scalar)) : IO Unit := do
-  let rows := (List.finRange n).map (fun i =>
-    let denom := Float.ofNat (Nat.max 1 (n - 1))
-    let xpos := Float.ofNat i.val / denom
-    [toString i.val, toString xpos, toString (Spec.Tensor.vecGet input i),
-      toString (Spec.Tensor.vecGet target i), toString (Spec.Tensor.vecGet prediction i)])
-  writeCsv path ["i", "x", "input", "target", "prediction"] rows
-
-/-- Materialize a dataset as a list. -/
-def toList {a : Type} (ds : _root_.Runtime.Autograd.Train.Dataset a) : List a :=
-  _root_.Runtime.Autograd.Train.Dataset.toList ds
-
-/-- Converting a list to a dataset and back yields the original list. -/
-@[simp] theorem toList_fromList {a : Type} (xs : List a) : toList (fromList xs) = xs := by
-  simp [toList, fromList,
-    _root_.Runtime.Autograd.Train.Dataset.toList,
-    _root_.Runtime.Autograd.Train.Dataset.ofList]
-
-/-- Number of elements in the dataset. -/
-def size {a : Type} (ds : _root_.Runtime.Autograd.Train.Dataset a) : Nat :=
-  _root_.Runtime.Autograd.Train.Dataset.size ds
-
-/-- The size of a dataset built from a list is the list length. -/
-@[simp] theorem size_fromList {a : Type} (xs : List a) : size (fromList xs) = xs.length := by
-  simp [size, fromList, _root_.Runtime.Autograd.Train.Dataset.size,
-    _root_.Runtime.Autograd.Train.Dataset.ofList]
-
-/-- Whether the dataset is empty. -/
-def isEmpty {a : Type} (ds : _root_.Runtime.Autograd.Train.Dataset a) : Bool :=
-  _root_.Runtime.Autograd.Train.Dataset.isEmpty ds
-
 /--
 Build a cycling index function for a *nonempty* list.
 
@@ -179,45 +129,9 @@ def cycleListOrError {a : Type} (xs : List a) (err : String := "empty list") : E
   | [] => .error err
   | x :: xs => .ok (cycleList (x :: xs) (by simp))
 
-/--
-Build a cycling index function for a *nonempty* dataset.
-
-`cycleDataset ds h i` returns `ds[i % ds.size]`.
-
-This is the dataset analogue of `cycleList`. It avoids per-step `Option` handling in fixed-step
-training loops.
--/
-def cycleDataset {a : Type} (ds : _root_.Runtime.Autograd.Train.Dataset a) (h : ds.data.size ≠ 0) :
-  Nat → a :=
-  fun i =>
-    let n := ds.data.size
-    have hn : 0 < n :=
-      Nat.pos_of_ne_zero (by simpa [n] using h)
-    ds.data[i % n]'(Nat.mod_lt _ hn)
-
-/--
-Like `cycleDataset`, but fail with a message if the dataset is empty.
-
-This is the preferred helper for “PyTorch-style” fixed-step loops over in-memory datasets.
--/
-def cycleDatasetOrError {a : Type} (ds : _root_.Runtime.Autograd.Train.Dataset a)
-    (err : String := "empty dataset") : Except String (Nat → a) :=
-  match h : ds.data.size with
-  | 0 => .error err
-  | n + 1 =>
-      .ok (cycleDataset ds (by
-        -- In this branch, `ds.data.size = n+1`, so it is nonzero.
-        simp [h]))
-
 /-- Safe indexing into a dataset. -/
 def get? {a : Type} (ds : _root_.Runtime.Autograd.Train.Dataset a) (i : Nat) : Option a :=
   _root_.Runtime.Autograd.Train.Dataset.get? ds i
-
-/-- Return the first array element, or a caller-provided error when the array is empty. -/
-def firstArrayOrError {a : Type} (xs : Array a) (err : String := "empty array") : Except String a :=
-  match xs[0]? with
-  | some x => .ok x
-  | none => .error err
 
 /-- Map a dataset elementwise (pure, deterministic). -/
 def map {a b : Type} (f : a → b) (ds : _root_.Runtime.Autograd.Train.Dataset a) :
@@ -323,7 +237,7 @@ structure BatchLoader (α : Type) (n : Nat) (σ τ : Spec.Shape) where
   loader : DataLoader (TorchLean.Sample.Supervised α σ τ)
 
 /-- Existential wrapper for loaders when the batch size is chosen at runtime. -/
-abbrev AnyBatchLoader (α : Type) (σ τ : Spec.Shape) :=
+abbrev SomeBatchLoader (α : Type) (σ τ : Spec.Shape) :=
   Σ n : Nat, BatchLoader α n σ τ
 
 /--
@@ -356,10 +270,10 @@ This casts float data into the selected scalar backend `α` and packs it into a
 def supervised {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α] {σ τ : Spec.Shape}
     (xs : List (Spec.Tensor Float σ × Spec.Tensor Float τ)) :
     _root_.Runtime.Autograd.Train.Dataset (_root_.TorchLean.TensorPack α [σ, τ]) :=
-  fromList <| xs.map (fun (xF, yF) =>
+  _root_.Runtime.Autograd.Train.Dataset.ofList <| xs.map (fun (xF, yF) =>
     let x : Spec.Tensor α σ := Spec.mapTensor (_root_.TorchLean.Runtime.ofFloat (α := α)) xF
     let y : Spec.Tensor α τ := Spec.mapTensor (_root_.TorchLean.Runtime.ofFloat (α := α)) yF
-    tensorpack! x, y)
+    TensorPack! x, y)
 
 /--
 Convert a list of `(x, label)` pairs into a dataset of one-hot classification samples.
@@ -370,12 +284,13 @@ def labeled {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat 
     (classes : Nat) (xs : List (Spec.Tensor Float σ × Fin classes)) :
     _root_.Runtime.Autograd.Train.Dataset
       (_root_.TorchLean.TensorPack α [σ, .dim classes .scalar]) :=
-  fromList <| xs.map (fun (xF, label) =>
+  _root_.Runtime.Autograd.Train.Dataset.ofList <| xs.map (fun (xF, label) =>
     let x : Spec.Tensor α σ := Spec.mapTensor (_root_.TorchLean.Runtime.ofFloat (α := α)) xF
-    let yF : Spec.Tensor Float (.dim classes .scalar) := NN.Tensor.oneHot (α := Float) classes label
+    let yF : Spec.Tensor Float (.dim classes .scalar) :=
+      TorchLean.Tensor.oneHot (α := Float) classes label
     let y : Spec.Tensor α (.dim classes .scalar) :=
       Spec.mapTensor (_root_.TorchLean.Runtime.ofFloat (α := α)) yF
-    tensorpack! x, y)
+    TensorPack! x, y)
 
 end Data
 end TorchLean

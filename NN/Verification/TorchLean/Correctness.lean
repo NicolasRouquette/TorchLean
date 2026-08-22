@@ -43,15 +43,8 @@ def payloadOfParamStore {α : Type} [Context α] (ps : NN.MLTheory.CROWN.Graph.P
     linear? := fun id =>
       (ps.linearWB.get? id).map (fun p =>
         { outDim := p.m, inDim := p.n, W := p.w, b := p.b })
-    conv2d? := fun id =>
-      (ps.conv2dCfg.get? id).map (fun cfg =>
-        { inC := cfg.inC, outC := cfg.outC, kH := cfg.kH, kW := cfg.kW
-          stride := cfg.stride, padding := cfg.padding, inH := cfg.inH, inW := cfg.inW
-          hIn := cfg.hIn, hKH := cfg.hKH, hKW := cfg.hKW, hStride := cfg.hStride,
-          spec := cfg.spec })
-    batchNorm2dNchwEval? := fun id =>
-      (ps.batchNorm2dNchwEval.get? id).map (fun p =>
-        { c := p.c, gamma := p.gamma, beta := p.beta, mean := p.mean, var := p.var, eps := p.eps }) }
+    conv2d? := ps.conv2dCfg.get?
+    batchNorm2dNchwEval? := ps.batchNorm2dNchwEval.get? }
 
 /-- Cast a tensor across a proved shape equality. -/
 def castTensor {α : Type} [Context α] {s s' : Spec.Shape} (h : s = s')
@@ -63,7 +56,7 @@ def runForwardIR
     {α : Type} [Context α] [DecidableEq Spec.Shape]
     {inShape outShape : Spec.Shape}
     (c : LoweredIR α) (x : Spec.Tensor α inShape) : Except String (Spec.Tensor α outShape) := do
-  let input : DVal α := DVal.mk (α := α) inShape x
+  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
   let out ←
     Graph.denote (α := α) (g := c.graph) (payload := payloadOfParamStore (α := α) c.ps)
       (input := input) (outputId := c.outputId)

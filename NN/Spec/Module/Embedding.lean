@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Layers.Embedding
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 
 /-!
 # Embedding
@@ -20,22 +20,18 @@ linear map `oneHot @ weight`.
 @[expose] public section
 
 
-namespace Spec
+namespace Spec.Module
 
 open Tensor
-open ModSpec
 
 variable {α : Type} [Context α]
 
 /-- One-hot embedding module: `(seqLen, vocab)` to `(seqLen, embedDim)`. -/
-def oneHotEmbeddingModule {vocab embedDim seqLen : Nat}
+def oneHotEmbedding {vocab embedDim seqLen : Nat}
   (embedding : Embedding vocab embedDim α) :
-  NNModuleSpec α (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
+  Spec.Module α (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
 { forward := fun oneHot => embedding.oneHot oneHot
   kind := "OneHotEmbedding"
-  export_func := {
-    toPyTorch := s!"OneHotEmbedding(vocab={vocab}, embedDim={embedDim})"
-    dimensions := (vocab, embedDim)
-  } }
+  pythonExpr := s!"OneHotEmbedding(vocab={vocab}, embedDim={embedDim})" }
 
-end Spec
+end Spec.Module

@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API
+public import NN.API.Module.Command
 public import NN.IR.Check
 public import NN.Runtime.Autograd.IRExec
 
@@ -22,16 +23,10 @@ This example is a small regression guard for three ops where TorchLean’s IR us
 - `layernorm axis`
   PyTorch: `F.layer_norm(x, normalized_shape=x.shape[axis:])`
 
-Why this tutorial exists:
-
-* These three ops are easy to accidentally restrict to “last axis only” (because the spec primitives
-  we reuse are last-axis).
-* The denotational IR semantics supports the PyTorch meaning on *any* valid axis:
-  it implements non-last axes by reshaping/permuting into a form the spec primitive already
-  supports.
-* Forward-graph IR execution is more conservative today. This tutorial runs it only for
-  supported cases and prints an explicit skip for known backend gaps, instead of treating the
-  backend covers more than it does.
+Each operation accepts any in-bounds tensor dimension. The implementation may move that dimension
+to an innermost position while evaluating an optimized kernel, but its public semantics preserves
+the original shape and dimension numbering. Forward graph execution reports unsupported backend
+cases explicitly.
 
 Run:
 
@@ -68,9 +63,9 @@ def usage : String :=
 We keep shapes compact while still exercising the “axis is not last / not 0” code paths.
 -/
 
-abbrev baseRankThreeShape : Shape := NN.Tensor.shapeOfDims [2, 3, 4]
-abbrev widerMiddleAxisShape : Shape := NN.Tensor.shapeOfDims [2, 5, 4]
-abbrev concatenatedMiddleAxisShape : Shape := NN.Tensor.shapeOfDims [2, 8, 4]
+abbrev baseRankThreeShape : Shape := Spec.Shape.ofList [2, 3, 4]
+abbrev widerMiddleAxisShape : Shape := Spec.Shape.ofList [2, 5, 4]
+abbrev concatenatedMiddleAxisShape : Shape := Spec.Shape.ofList [2, 8, 4]
 
 /-!
 ## Small IR Graphs
@@ -125,7 +120,7 @@ def runOne
   checkIR tag g
 
   -- Spec semantics (denotational model).
-  let input : NN.IR.DVal α := NN.IR.DVal.mk (α := α) inputShape x
+  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inputShape x
   let outSpec ← CLI.orThrow s!"{tag}:spec" <|
     NN.IR.Graph.denote (α := α) (g := g) (payload := payload) (input := input) (outputId :=
       outputId)
@@ -134,7 +129,7 @@ def runOne
   IO.println s!"[{tag}] spec first scalars: {firstScalars (Spec.toList tSpec)}"
 
   if !runForward then
-    IO.println s!"[{tag}] IR execution skipped: current IRExec path supports fewer axis cases than the spec semantics."
+    IO.println s!"[{tag}] forward graph execution skipped by the caller."
     return ()
 
   -- Lower the IR to its forward-only executable graph, then evaluate it.
@@ -182,7 +177,7 @@ def runOnce
   IO.println ""
   IO.println "-- softmax axis=1 on shape [2,3,4]"
   runOne (α := α) (tag := "softmax_middle_axis") (g := softmaxMiddleAxisGraph) (payload := payload)
-    (inputShape := baseRankThreeShape) (x := x234) (outputId := ⟨1, by decide⟩) (runForward := false)
+    (inputShape := baseRankThreeShape) (x := x234) (outputId := ⟨1, by decide⟩)
 
   IO.println ""
   IO.println "-- layernorm axis=1 on rank-3 shape [2,3,4]"

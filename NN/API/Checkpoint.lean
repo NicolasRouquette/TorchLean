@@ -8,7 +8,7 @@ module
 
 public import NN.Runtime.Autograd.TorchLean.StateIO
 public import NN.Runtime.Autograd.TorchLean.Module
-public import NN.API.Neural
+public import NN.API.Neural.Builders
 
 /-!
 # Runtime Checkpoints
@@ -28,12 +28,12 @@ trainers and data loaders.
 Both checkpoint formats preserve the model's shape-indexed state layout:
 
 - Native `Float32` modules use exact little-endian binary32 payloads on CPU and CUDA.
-- Compatibility `Float` modules use exact binary64 JSON on CPU and binary32 payloads on CUDA.
+- Binary64 `Float` modules use exact binary64 JSON on CPU and binary32 payloads on CUDA.
 - Streamed checkpoints write one tensor at a time instead of materializing a second host copy of a
   large device-resident model.
 
 This is enough to checkpoint any TorchLean runtime model implemented as a
-`TorchLean.Module.Objective` over native `Float32` or compatibility `Float`, independent of
+`TorchLean.Module.Objective` over native `Float32` or binary64 `Float`, independent of
 architecture.
 -/
 
@@ -66,7 +66,7 @@ class CheckpointScalar (α : Type) where
   read : {shapes : List Spec.Shape} →
     Bool → System.FilePath → _root_.Runtime.Autograd.Torch.ParamList α shapes → IO Unit
 
-/-- Compatibility `Float` checkpoints keep exact binary64 values on CPU and binary32 values on CUDA. -/
+/-- Binary64 `Float` checkpoints keep exact binary64 values on CPU and binary32 values on CUDA. -/
 instance : CheckpointScalar Float where
   write := fun {shapes} useCuda path state => do
     if useCuda then
@@ -103,7 +103,7 @@ instance : CheckpointScalar Float32 where
 Save the current values of a TorchLean runtime module.
 
 The scalar type selects the checkpoint encoding through `CheckpointScalar`. Native `Float32`
-modules preserve exact binary32 payloads on CPU and CUDA. Compatibility `Float` modules preserve
+modules preserve exact binary32 payloads on CPU and CUDA. Binary64 `Float` modules preserve
 binary64 values on CPU and the runtime's binary32 values on CUDA.
 -/
 def saveModule {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [CheckpointScalar α]

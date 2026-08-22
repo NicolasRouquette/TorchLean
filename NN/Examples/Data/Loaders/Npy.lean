@@ -63,8 +63,7 @@ def outDim : Nat := 1
 
 /-- A small 2-layer batched MLP `2 -> 8 -> 1`. -/
 def mkModel {batch : Nat} : nn.Builder (nn.Sequential (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar))) :=
-  nn.models.mlpRelu
-    { batch := batch, inDim := inDim, hidDim := 8, outDim := outDim }
+  nn.blocks.mlp inDim outDim { hidden := [8] } (.dim batch .scalar)
 
 /-- Command-line help for the NPY loader tutorial. -/
 def usage : String :=

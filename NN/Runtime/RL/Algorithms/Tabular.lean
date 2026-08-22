@@ -60,14 +60,14 @@ def actionRow {nStates nActions : Nat} (q : Tensor α (.dim nStates (.dim nActio
 def maxActionValue {nStates nActions : Nat} (q : Tensor α (.dim nStates (.dim nActions .scalar)))
     (state : Fin nStates) : α :=
   let row := actionRow (α := α) q state
-  match _root_.TorchLean.Metrics.argmax? (α := α) (n := nActions) row with
+  match _root_.TorchLean.Metrics.argmaxVector? (α := α) (n := nActions) row with
   | some action => Tensor.vecGet row action
   | none => 0
 
 /-- Greedy action at a state, if the action space is nonempty. -/
 def greedyAction? {nStates nActions : Nat} (q : Tensor α (.dim nStates (.dim nActions .scalar)))
     (state : Fin nStates) : Option (Fin nActions) :=
-  _root_.TorchLean.Metrics.argmax? (α := α) (n := nActions) (actionRow (α := α) q state)
+  _root_.TorchLean.Metrics.argmaxVector? (α := α) (n := nActions) (actionRow (α := α) q state)
 
 /-- Expected action value under an explicit policy over the next state. -/
 def expectedActionValue {nStates nActions : Nat}

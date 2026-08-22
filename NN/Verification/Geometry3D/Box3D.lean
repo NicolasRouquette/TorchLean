@@ -274,17 +274,17 @@ abbrev CameraP (α : Type) := Spec.Tensor α (.dim 3 (.dim 4 .scalar))
 abbrev ProjectedCorners (α : Type) := Spec.Tensor α (.dim 8 (.dim 2 .scalar))
 
 /-- A 2D box `[xmin, ymin, xmax, ymax]`. -/
-abbrev Box2D (α : Type) := Spec.Tensor α (.dim 4 .scalar)
+abbrev Box2d (α : Type) := Spec.Tensor α (.dim 4 .scalar)
 
 /-- Matrix scalar accessor for tensor-shaped matrices. -/
 def matGet {α : Type} {rows cols : Nat}
     (x : Spec.Tensor α (.dim rows (.dim cols .scalar))) (i : Fin rows) (j : Fin cols) : α :=
-  Spec.Tensor.toScalar (Spec.get (Spec.get x i) j)
+  Spec.Tensor.item (Spec.get (Spec.get x i) j)
 
 /-- Vector scalar accessor for tensor-shaped vectors. -/
 def vecGet {α : Type} {n : Nat}
     (x : Spec.Tensor α (.dim n .scalar)) (i : Fin n) : α :=
-  Spec.Tensor.toScalar (Spec.get x i)
+  Spec.Tensor.item (Spec.get x i)
 
 /-- Extract the `i`-th cuboid corner as a `[3]` tensor. -/
 def corner {α : Type} (corners : BoxCorners α) (i : Fin 8) : Point3 α :=
@@ -316,7 +316,7 @@ def projectY {α : Type} [OfNat α 1] [Add α] [Mul α] [Div α]
 /-- Project one 3D point to a 2D tensor. -/
 def projectPoint {α : Type} [OfNat α 1] [Add α] [Mul α] [Div α]
     (P : CameraP α) (x : Point3 α) : Point2 α :=
-  Spec.vectorTensor (fun j : Fin 2 =>
+  Spec.Tensor.vector (fun j : Fin 2 =>
     if j.val = 0 then
       projectX P x
     else
@@ -325,7 +325,7 @@ def projectPoint {α : Type} [OfNat α 1] [Add α] [Mul α] [Div α]
 /-- Project all eight cuboid corners. -/
 def projectBox {α : Type} [OfNat α 1] [Add α] [Mul α] [Div α]
     (P : CameraP α) (corners : BoxCorners α) : ProjectedCorners α :=
-  Spec.matrixTensor (fun i j => vecGet (projectPoint P (corner corners i)) j)
+  Spec.Tensor.matrix (fun i j => vecGet (projectPoint P (corner corners i)) j)
 
 /-- A compact exported 3D-box/camera certificate. -/
 structure BoxCameraCert (α : Type) where
@@ -340,7 +340,7 @@ structure BoxCameraCert (α : Type) where
   /-- Eight exported 3D cuboid corners. -/
   corners : BoxCorners α
   /-- Claimed 2D box `[xmin,ymin,xmax,ymax]`. -/
-  bbox : Box2D α
+  bbox : Box2d α
 
 /-- Left edge `xmin` of the claimed 2D bounding box. -/
 def xmin {α : Type} (cert : BoxCameraCert α) : α := vecGet cert.bbox ⟨0, by decide⟩

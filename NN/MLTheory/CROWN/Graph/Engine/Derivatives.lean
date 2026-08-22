@@ -44,7 +44,7 @@ private def tanhDerivBox (dim : Nat) : FlatBox α :=
 
 /-- Global enclosure for the derivative of the logistic sigmoid. -/
 private def sigmoidDerivBox (dim : Nat) : FlatBox α :=
-  let quarter := BoundOps.mulUp Numbers.pointfive Numbers.pointfive
+  let quarter := BoundOps.mulUp Numbers.half Numbers.half
   { dim := dim
     lo := Spec.fill (α := α) Numbers.zero (.dim dim .scalar)
     hi := Spec.fill (α := α) quarter (.dim dim .scalar) }
@@ -58,7 +58,7 @@ private def tanhSecondDerivBox (dim : Nat) : FlatBox α :=
 /-- A simple global enclosure for the second derivative of the logistic sigmoid. -/
 private def sigmoidSecondDerivBox (dim : Nat) : FlatBox α :=
   { dim := dim
-    lo := Spec.fill (α := α) Numbers.neg_one (.dim dim .scalar)
+    lo := Spec.fill (α := α) Numbers.negOne (.dim dim .scalar)
     hi := Spec.fill (α := α) Numbers.one (.dim dim .scalar) }
 
 /-- Shared first-derivative propagation with a caller-supplied input seed. -/
@@ -140,7 +140,7 @@ private def runFirstDerivativeWithSeed
           let z := Spec.fill (α:=α) Numbers.zero (.dim dIn.dim .scalar)
           let o := Spec.fill (α:=α) Numbers.one  (.dim dIn.dim .scalar)
           let dF : FlatBox α := { dim := dIn.dim, lo := z, hi := o }
-          match box_mul_elem (α:=α) dIn dF with
+          match boxMulElem (α:=α) dIn dF with
           | some prod => drs.set! id (some prod)
           | none => drs
         | none => drs
@@ -150,7 +150,7 @@ private def runFirstDerivativeWithSeed
       | p1 :: _ =>
         match drs[p1]! with
         | some dZ =>
-          match box_mul_elem (α := α) dZ (tanhDerivBox (α := α) dZ.dim) with
+          match boxMulElem (α := α) dZ (tanhDerivBox (α := α) dZ.dim) with
           | some prod => drs.set! id (some prod)
           | none => drs
         | none => drs
@@ -160,7 +160,7 @@ private def runFirstDerivativeWithSeed
       | p1 :: _ =>
         match drs[p1]! with
         | some dZ =>
-          match box_mul_elem (α := α) dZ (sigmoidDerivBox (α := α) dZ.dim) with
+          match boxMulElem (α := α) dZ (sigmoidDerivBox (α := α) dZ.dim) with
           | some prod => drs.set! id (some prod)
           | none => drs
         | none => drs
@@ -251,7 +251,7 @@ private def runFirstDerivativeWithSeed
         | some dZ, some zB =>
           match boxUnaryEnclosure? (α := α) NonlinearBoundOps.cosBounds zB with
           | some dF =>
-            match box_mul_elem (α:=α) dZ dF with
+            match boxMulElem (α:=α) dZ dF with
             | some prod => drs.set! id (some prod)
             | none => drs
           | none => drs
@@ -264,7 +264,7 @@ private def runFirstDerivativeWithSeed
         | some dZ, some zB =>
           match boxUnaryEnclosure? (α := α) NonlinearBoundOps.sinBounds zB with
           | some sB =>
-            match box_mul_elem (α:=α) dZ (boxNeg (α := α) sB) with
+            match boxMulElem (α:=α) dZ (boxNeg (α := α) sB) with
             | some prod => drs.set! id (some prod)
             | none => drs
           | none => drs
@@ -300,14 +300,14 @@ private def runFirstDerivativeWithSeed
       match node.parents with
       | p1 :: p2 :: _ =>
         match drs[p1]!, drs[p2]! with
-        | some d1, some d2 => some (box_add (α:=α) d1 d2) |> fun r => drs.set! id r
+        | some d1, some d2 => some (boxAdd (α:=α) d1 d2) |> fun r => drs.set! id r
         | _, _ => drs
       | _ => drs
     | .sub =>
       match node.parents with
       | p1 :: p2 :: _ =>
         match drs[p1]!, drs[p2]! with
-        | some d1, some d2 => some (box_sub (α:=α) d1 d2) |> fun r => drs.set! id r
+        | some d1, some d2 => some (boxSub (α:=α) d1 d2) |> fun r => drs.set! id r
         | _, _ => drs
       | _ => drs
     | .mul_elem =>
@@ -315,8 +315,8 @@ private def runFirstDerivativeWithSeed
       | p1 :: p2 :: _ =>
         match drs[p1]!, drs[p2]!, ibp[p1]!, ibp[p2]! with
         | some dx, some dy, some xB, some yB =>
-          match box_mul_elem (α:=α) dx yB, box_mul_elem (α:=α) xB dy with
-          | some t1, some t2 => drs.set! id (some (box_add (α:=α) t1 t2))
+          match boxMulElem (α:=α) dx yB, boxMulElem (α:=α) xB dy with
+          | some t1, some t2 => drs.set! id (some (boxAdd (α:=α) t1 t2))
           | _, _ => drs
         | _, _, _, _ => drs
       | _ => drs
@@ -407,7 +407,7 @@ private def runFirstDerivativeWithSeed
                 acc + (au * av)
             ) 0
             let V := (Numbers.two * G) / nA
-            let dt_abs := (Numbers.pointfive * t3_hi) * V
+            let dt_abs := (Numbers.half * t3_hi) * V
             -- Add symmetric dt*u term per component: ± dt_abs * max|u_i|
             let fulo := getDimScalarFn (α:=α) u_lo
             let fuhi := getDimScalarFn (α:=α) u_hi
@@ -547,14 +547,14 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       match node.parents with
       | p1 :: p2 :: _ =>
         match d2s[p1]!, d2s[p2]! with
-        | some a, some b => d2s.set! id (some (box_add (α:=α) a b))
+        | some a, some b => d2s.set! id (some (boxAdd (α:=α) a b))
         | _, _ => d2s
       | _ => d2s
     | .sub =>
       match node.parents with
       | p1 :: p2 :: _ =>
         match d2s[p1]!, d2s[p2]! with
-        | some a, some b => d2s.set! id (some (box_sub (α:=α) a b))
+        | some a, some b => d2s.set! id (some (boxSub (α:=α) a b))
         | _, _ => d2s
       | _ => d2s
     | .mul_elem =>
@@ -565,13 +565,13 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
         | some xB, some yB, some dxLeft, some dxRight, some dyLeft, some dyRight,
             some d2x, some d2y =>
           -- D²(xy)[u,v] = D²x[u,v]y + Dx[u]Dy[v] + Dx[v]Dy[u] + xD²y[u,v].
-          match box_mul_elem (α := α) d2x yB,
-              box_mul_elem (α := α) dxLeft dyRight,
-              box_mul_elem (α := α) dxRight dyLeft,
-              box_mul_elem (α := α) xB d2y with
+          match boxMulElem (α := α) d2x yB,
+              boxMulElem (α := α) dxLeft dyRight,
+              boxMulElem (α := α) dxRight dyLeft,
+              boxMulElem (α := α) xB d2y with
           | some t1, some t2, some t3, some t4 =>
             d2s.set! id <| some <|
-              box_add (α := α) (box_add (α := α) t1 t2) (box_add (α := α) t3 t4)
+              boxAdd (α := α) (boxAdd (α := α) t1 t2) (boxAdd (α := α) t3 t4)
           | _, _, _, _ => d2s
         | _, _, _, _, _, _, _, _ => d2s
       | _ => d2s
@@ -589,13 +589,13 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | p1 :: _ =>
         match dLeft[p1]!, dRight[p1]!, d2s[p1]! with
         | some dzLeft, some dzRight, some d2z =>
-          match box_mul_elem (α := α) dzLeft dzRight with
+          match boxMulElem (α := α) dzLeft dzRight with
           | none => d2s
           | some dzProduct =>
-            match box_mul_elem (α := α)
+            match boxMulElem (α := α)
                 (tanhSecondDerivBox (α := α) dzProduct.dim) dzProduct,
-              box_mul_elem (α := α) (tanhDerivBox (α := α) d2z.dim) d2z with
-            | some tA, some tB => d2s.set! id (some (box_add (α := α) tA tB))
+              boxMulElem (α := α) (tanhDerivBox (α := α) d2z.dim) d2z with
+            | some tA, some tB => d2s.set! id (some (boxAdd (α := α) tA tB))
             | _, _ => d2s
         | _, _, _ => d2s
       | _ => d2s
@@ -608,12 +608,12 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
           match boxUnaryEnclosure? (α := α) NonlinearBoundOps.sinBounds zB,
               boxUnaryEnclosure? (α := α) NonlinearBoundOps.cosBounds zB with
           | some sinB, some cosB =>
-            match box_mul_elem (α := α) dzLeft dzRight with
+            match boxMulElem (α := α) dzLeft dzRight with
             | none => d2s
             | some dzProduct =>
-              match box_mul_elem (α:=α) (boxNeg (α := α) sinB) dzProduct,
-                  box_mul_elem (α:=α) cosB d2z with
-              | some tA, some tB => d2s.set! id (some (box_add (α:=α) tA tB))
+              match boxMulElem (α:=α) (boxNeg (α := α) sinB) dzProduct,
+                  boxMulElem (α:=α) cosB d2z with
+              | some tA, some tB => d2s.set! id (some (boxAdd (α:=α) tA tB))
               | _, _ => d2s
           | _, _ => d2s
         | _, _, _, _ => d2s
@@ -627,12 +627,12 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
           match boxUnaryEnclosure? (α := α) NonlinearBoundOps.sinBounds zB,
               boxUnaryEnclosure? (α := α) NonlinearBoundOps.cosBounds zB with
           | some sinB, some cosB =>
-            match box_mul_elem (α := α) dzLeft dzRight with
+            match boxMulElem (α := α) dzLeft dzRight with
             | none => d2s
             | some dzProduct =>
-              match box_mul_elem (α:=α) (boxNeg (α := α) cosB) dzProduct,
-                  box_mul_elem (α:=α) (boxNeg (α := α) sinB) d2z with
-              | some tA, some tB => d2s.set! id (some (box_add (α:=α) tA tB))
+              match boxMulElem (α:=α) (boxNeg (α := α) cosB) dzProduct,
+                  boxMulElem (α:=α) (boxNeg (α := α) sinB) d2z with
+              | some tA, some tB => d2s.set! id (some (boxAdd (α:=α) tA tB))
               | _, _ => d2s
           | _, _ => d2s
         | _, _, _, _ => d2s
@@ -642,13 +642,13 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | p1 :: _ =>
         match dLeft[p1]!, dRight[p1]!, d2s[p1]! with
         | some dzLeft, some dzRight, some d2z =>
-          match box_mul_elem (α := α) dzLeft dzRight with
+          match boxMulElem (α := α) dzLeft dzRight with
           | none => d2s
           | some dzProduct =>
-            match box_mul_elem (α := α)
+            match boxMulElem (α := α)
                 (sigmoidSecondDerivBox (α := α) dzProduct.dim) dzProduct,
-              box_mul_elem (α := α) (sigmoidDerivBox (α := α) d2z.dim) d2z with
-            | some tA, some tB => d2s.set! id (some (box_add (α := α) tA tB))
+              boxMulElem (α := α) (sigmoidDerivBox (α := α) d2z.dim) d2z with
+            | some tA, some tB => d2s.set! id (some (boxAdd (α := α) tA tB))
             | _, _ => d2s
         | _, _, _ => d2s
       | _ => d2s
@@ -659,12 +659,12 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
         | some zB, some dzLeft, some dzRight, some d2z =>
           match derivBoxExp? (α := α) zB with
           | some derivative =>
-            match box_mul_elem (α := α) dzLeft dzRight with
+            match boxMulElem (α := α) dzLeft dzRight with
             | none => d2s
             | some dzProduct =>
-              match box_mul_elem (α:=α) derivative dzProduct,
-                  box_mul_elem (α:=α) derivative d2z with
-              | some tA, some tB => d2s.set! id (some (box_add (α:=α) tA tB))
+              match boxMulElem (α:=α) derivative dzProduct,
+                  boxMulElem (α:=α) derivative d2z with
+              | some tA, some tB => d2s.set! id (some (boxAdd (α:=α) tA tB))
               | _, _ => d2s
           | none => d2s
         | _, _, _, _ => d2s
@@ -676,12 +676,12 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
         | some zB, some dzLeft, some dzRight, some d2z =>
           match derivBoxLog? (α := α) zB, secondDerivBoxLog? (α := α) zB with
           | some firstDerivative, some secondDerivative =>
-            match box_mul_elem (α := α) dzLeft dzRight with
+            match boxMulElem (α := α) dzLeft dzRight with
             | none => d2s
             | some dzProduct =>
-              match box_mul_elem (α:=α) secondDerivative dzProduct,
-                  box_mul_elem (α:=α) firstDerivative d2z with
-              | some tA, some tB => d2s.set! id (some (box_add (α:=α) tA tB))
+              match boxMulElem (α:=α) secondDerivative dzProduct,
+                  boxMulElem (α:=α) firstDerivative d2z with
+              | some tA, some tB => d2s.set! id (some (boxAdd (α:=α) tA tB))
               | _, _ => d2s
           | _, _ => d2s
         | _, _, _, _ => d2s

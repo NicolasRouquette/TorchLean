@@ -62,7 +62,7 @@ $$
 $$
 -/
 def alphaBar (sch : VPLinearSchedule α) (t : α) : α :=
-  let half : α := Numbers.pointfive
+  let half : α := Numbers.half
   -- Use `t*t` instead of `t^2` to avoid relying on numeral coercions into arbitrary backends.
   let intBeta : α := sch.beta0 * t + half * (sch.beta1 - sch.beta0) * (t * t)
   MathFunctions.exp (-intBeta)
@@ -105,9 +105,9 @@ def pfOdeRhs (sch : VPLinearSchedule α) (model : EpsModel α s) (x : Tensor α 
   let β : α := sch.beta t
   let σ : α := sch.sigma t
   let epsHat : Tensor α s := model.eps x t
-  let drift_x : Tensor α s := Tensor.scaleSpec x (Numbers.neg_point_five * β)
+  let drift_x : Tensor α s := Tensor.scaleSpec x (Numbers.negHalf * β)
   let drift_eps : Tensor α s :=
-    Tensor.scaleSpec epsHat (Numbers.pointfive * safeDiv β σ)
+    Tensor.scaleSpec epsHat (Numbers.half * safeDiv β σ)
   drift_x + drift_eps
 
 /--

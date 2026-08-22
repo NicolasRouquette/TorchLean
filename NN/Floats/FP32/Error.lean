@@ -72,21 +72,21 @@ Informal: if `fl32(x)` denotes rounding `x : ℝ` to the binary32 grid, then
 $|\operatorname{fl}_{32}(x)-x|\le\varepsilon_{32}(x)$.
 -/
 theorem round_abs_error (x : ℝ) :
-    abs (round₃₂ x - x) ≤ eps₃₂ x := by
-  simpa [round₃₂, round32, rnd32] using
+    abs (round32 x - x) ≤ eps32 x := by
+  simpa [round32, rnd32] using
     (neural_error_bound_ulp (β := binaryRadix) (fexp := fexp32) (rnd := rnd32) x)
 
 /-- Normal binary32 rounding has relative error at most the unit roundoff $2^{-24}$. -/
 theorem round_relative_error_of_normal (x : ℝ) (hx : x ≠ 0)
     (hnormal : minNormal ≤ abs x) :
-    ErrorBounds.relativeError x (round₃₂ x) hx ≤ neuralBpow binaryRadix (-24) := by
+    ErrorBounds.relativeError x (round32 x) hx ≤ neuralBpow binaryRadix (-24) := by
   have h := relative_error_round_FLT_normal
     (β := binaryRadix) (-149) 24 (by norm_num) rnd32 x hx
     (by simpa using hnormal)
   calc
-    ErrorBounds.relativeError x (round₃₂ x) hx ≤
+    ErrorBounds.relativeError x (round32 x) hx ≤
         neuralBpow binaryRadix (1 - 24) / 2 := by
-      simpa [round₃₂, round32, fexp32, rnd32] using h
+      simpa [round32, fexp32, rnd32] using h
     _ = neuralBpow binaryRadix (-24) := by
       norm_num [neuralBpow, binaryRadix, NeuralRadix.toReal, zpow_negSucc]
 
@@ -100,9 +100,9 @@ $|\operatorname{fl}_{32}(a+b)-(a+b)|\le\varepsilon_{32}(a+b)$.
 -/
 theorem add_abs_error (a b : FP32) :
     abs ((a + b).val - (a.val + b.val)) ≤
-      eps₃₂ (a.val + b.val) := by
+      eps32 (a.val + b.val) := by
   -- By definition, `a + b` rounds the exact real sum.
-  simpa [HAdd.hAdd, Add.add, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+  simpa [HAdd.hAdd, Add.add, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := a.val + b.val))
 
 /--
@@ -126,8 +126,8 @@ $|\operatorname{fl}_{32}(a-b)-(a-b)|\le\varepsilon_{32}(a-b)$.
 -/
 theorem sub_abs_error (a b : FP32) :
     abs ((a - b).val - (a.val - b.val)) ≤
-      eps₃₂ (a.val - b.val) := by
-  simpa [HSub.hSub, Sub.sub, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (a.val - b.val) := by
+  simpa [HSub.hSub, Sub.sub, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := a.val - b.val))
 
 /--
@@ -138,8 +138,8 @@ $|\operatorname{fl}_{32}(ab)-ab|\le\varepsilon_{32}(ab)$.
 -/
 theorem mul_abs_error (a b : FP32) :
     abs ((a * b).val - (a.val * b.val)) ≤
-      eps₃₂ (a.val * b.val) := by
-  simpa [HMul.hMul, Mul.mul, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (a.val * b.val) := by
+  simpa [HMul.hMul, Mul.mul, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := a.val * b.val))
 
 /--
@@ -152,8 +152,8 @@ $\left|\operatorname{fl}_{32}(a/b)-a/b\right|\le\varepsilon_{32}(a/b)$.
 -/
 theorem div_abs_error (a b : FP32) :
     abs ((a / b).val - (a.val / b.val)) ≤
-      eps₃₂ (a.val / b.val) := by
-  simpa [HDiv.hDiv, Div.div, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (a.val / b.val) := by
+  simpa [HDiv.hDiv, Div.div, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := a.val / b.val))
 
 /-! ## Transcendentals (proof semantics) -/
@@ -170,8 +170,8 @@ and similarly for the other functions below.
 -/
 theorem exp_abs_error (a : FP32) :
     abs ((MathFunctions.exp a).val - Real.exp a.val) ≤
-      eps₃₂ (Real.exp a.val) := by
-  simpa [MathFunctions.exp, NF.instMathFunctions, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (Real.exp a.val) := by
+  simpa [MathFunctions.exp, NF.instMathFunctions, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := Real.exp a.val))
 
 /--
@@ -182,8 +182,8 @@ $|\operatorname{fl}_{32}(\tanh x)-\tanh x|\le\varepsilon_{32}(\tanh x)$.
 -/
 theorem tanh_abs_error (a : FP32) :
     abs ((MathFunctions.tanh a).val - Real.tanh a.val) ≤
-      eps₃₂ (Real.tanh a.val) := by
-  simpa [MathFunctions.tanh, NF.instMathFunctions, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (Real.tanh a.val) := by
+  simpa [MathFunctions.tanh, NF.instMathFunctions, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := Real.tanh a.val))
 
 /--
@@ -197,8 +197,8 @@ $|\operatorname{fl}_{32}(\log x)-\log x|\le\varepsilon_{32}(\log x)$.
 -/
 theorem log_abs_error (a : FP32) :
     abs ((MathFunctions.log a).val - Real.log a.val) ≤
-      eps₃₂ (Real.log a.val) := by
-  simpa [MathFunctions.log, NF.instMathFunctions, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (Real.log a.val) := by
+  simpa [MathFunctions.log, NF.instMathFunctions, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := Real.log a.val))
 
 /--
@@ -209,8 +209,8 @@ $|\operatorname{fl}_{32}(\cos x)-\cos x|\le\varepsilon_{32}(\cos x)$.
 -/
 theorem cos_abs_error (a : FP32) :
     abs ((MathFunctions.cos a).val - Real.cos a.val) ≤
-      eps₃₂ (Real.cos a.val) := by
-  simpa [MathFunctions.cos, NF.instMathFunctions, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (Real.cos a.val) := by
+  simpa [MathFunctions.cos, NF.instMathFunctions, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := Real.cos a.val))
 
 /--
@@ -221,8 +221,8 @@ $|\operatorname{fl}_{32}(\sin x)-\sin x|\le\varepsilon_{32}(\sin x)$.
 -/
 theorem sin_abs_error (a : FP32) :
     abs ((MathFunctions.sin a).val - Real.sin a.val) ≤
-      eps₃₂ (Real.sin a.val) := by
-  simpa [MathFunctions.sin, NF.instMathFunctions, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (Real.sin a.val) := by
+  simpa [MathFunctions.sin, NF.instMathFunctions, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := Real.sin a.val))
 
 /--
@@ -233,8 +233,8 @@ $|\operatorname{fl}_{32}(\sinh x)-\sinh x|\le\varepsilon_{32}(\sinh x)$.
 -/
 theorem sinh_abs_error (a : FP32) :
     abs ((MathFunctions.sinh a).val - Real.sinh a.val) ≤
-      eps₃₂ (Real.sinh a.val) := by
-  simpa [MathFunctions.sinh, NF.instMathFunctions, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (Real.sinh a.val) := by
+  simpa [MathFunctions.sinh, NF.instMathFunctions, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := Real.sinh a.val))
 
 /--
@@ -245,8 +245,8 @@ $|\operatorname{fl}_{32}(\cosh x)-\cosh x|\le\varepsilon_{32}(\cosh x)$.
 -/
 theorem cosh_abs_error (a : FP32) :
     abs ((MathFunctions.cosh a).val - Real.cosh a.val) ≤
-      eps₃₂ (Real.cosh a.val) := by
-  simpa [MathFunctions.cosh, NF.instMathFunctions, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (Real.cosh a.val) := by
+  simpa [MathFunctions.cosh, NF.instMathFunctions, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := Real.cosh a.val))
 
 /--
@@ -257,8 +257,8 @@ $|\operatorname{fl}_{32}(\sqrt{x})-\sqrt{x}|\le\varepsilon_{32}(\sqrt{x})$.
 -/
 theorem sqrt_abs_error (a : FP32) :
     abs ((MathFunctions.sqrt a).val - Real.sqrt a.val) ≤
-      eps₃₂ (Real.sqrt a.val) := by
-  simpa [MathFunctions.sqrt, NF.instMathFunctions, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (Real.sqrt a.val) := by
+  simpa [MathFunctions.sqrt, NF.instMathFunctions, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := Real.sqrt a.val))
 
 /--
@@ -272,8 +272,8 @@ $\left|\operatorname{fl}_{32}(|x|)-|x|\right|\le\varepsilon_{32}(|x|)$.
 -/
 theorem abs_abs_error (a : FP32) :
     abs ((MathFunctions.abs a).val - |a.val|) ≤
-      eps₃₂ (|a.val|) := by
-  simpa [MathFunctions.abs, NF.instMathFunctions, NF.ofReal, NF.roundR, round₃₂, round32, rnd32] using
+      eps32 (|a.val|) := by
+  simpa [MathFunctions.abs, NF.instMathFunctions, NF.ofReal, NF.roundR, round32, rnd32] using
     (round_abs_error (x := |a.val|))
 
 end FP32

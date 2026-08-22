@@ -80,8 +80,8 @@ def hingeLossMean {n : Nat} (scores : Tensor α (.dim n .scalar)) (y : Tensor α
   α :=
   let losses : Tensor α (.dim n .scalar) :=
     Tensor.dim (fun i =>
-      let s := toScalar (getAtSpec scores i)
-      let yi := toScalar (getAtSpec y i)
+      let s := item (getAtSpec scores i)
+      let yi := item (getAtSpec y i)
       Tensor.scalar (hingeLossPerExample s yi))
   meanSpec losses
 
@@ -95,7 +95,7 @@ def LinearSVM.objective {n p : Nat} (lambda : α) (m : LinearSVM p α)
   let scores := LinearSVM.decisionBatch (n := n) m X
   let hinge := hingeLossMean scores y
   let wnorm2 : α := Tensor.dotSpec m.w m.w
-  (Numbers.pointfive * lambda * wnorm2) + hinge
+  (Numbers.half * lambda * wnorm2) + hinge
 
 /-!
 ### Backward pass
@@ -145,7 +145,7 @@ def LinearSVM.backward
         let dw := acc.1
         let db := acc.2
         let xi := getAtSpec X idx
-        let yi := toScalar (getAtSpec y idx)
+        let yi := item (getAtSpec y idx)
         let score := LinearSVM.decision m xi
         let one_minus_margin := (1 : α) - (yi * score)
         if decide (one_minus_margin > (0 : α)) then
@@ -158,7 +158,7 @@ def LinearSVM.backward
   let dX_hinge : Tensor α (.dim n (.dim p .scalar)) :=
     Tensor.dim (fun idx =>
       let xi := getAtSpec X idx
-      let yi := toScalar (getAtSpec y idx)
+      let yi := item (getAtSpec y idx)
       let score := LinearSVM.decision m xi
       let one_minus_margin := (1 : α) - (yi * score)
       let active : Bool := decide (one_minus_margin > (0 : α))
@@ -214,9 +214,9 @@ def findSupportVectorIndices {n p : Nat}
 
   Tensor.dim (fun i =>
     let x_i := getAtSpec X i
-    let y_i := toScalar (getAtSpec y i)
+    let y_i := item (getAtSpec y i)
     let margin := y_i * (Tensor.dotSpec final_weights x_i + final_bias)
-    if abs (margin - (1 : α)) < (pointone : α) then
+    if abs (margin - (1 : α)) < (oneTenth : α) then
       Tensor.scalar i.val  -- support vector index
     else
       Tensor.scalar n      -- sentinel value, meaning "not a support vector"
@@ -295,11 +295,8 @@ def polynomial {p : ℕ} (degree : Nat) (c : α) (x y : Tensor α (.dim p .scala
 def rbf {p : ℕ} (gamma : α) (x y : Tensor α (.dim p .scalar)) {h : p ≠ 0} : α :=
   let diff := subSpec x y
   let squared := mulSpec diff diff
-  -- Provide explicit proof that axis 0 is valid for Shape.dim p Shape.scalar
-  have _ : Shape.valid_axis_inst 0 (Shape.dim p Shape.scalar) :=
-    Shape.validAxisInstZeroAlt h
-  let squaredDist := reduceSumAuto 0 squared
-  let dist_scalar := toScalar squaredDist
+  let squaredDist := reduceSum 0 squared (Shape.hasNonemptyAxisZeroOfNe h).proof
+  let dist_scalar := item squaredDist
   exp ((-gamma * dist_scalar))
 
 end Kernel

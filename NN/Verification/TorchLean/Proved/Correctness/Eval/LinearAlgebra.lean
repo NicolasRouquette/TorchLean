@@ -57,11 +57,11 @@ theorem evalAt_matmul_eq
     Graph.evalAt (α := α)
         (g := binaryGraphOut .matmul leftShape rightShape outShape)
         (payload := {})
-        (input := DVal.mk (α := α) leftShape left)
-        (vals := #[DVal.mk (α := α) leftShape left, DVal.mk (α := α) rightShape right])
+        (input := Spec.PackedTensor.mk (α := α) leftShape left)
+        (vals := #[Spec.PackedTensor.mk (α := α) leftShape left, Spec.PackedTensor.mk (α := α) rightShape right])
         (i := 2)
       =
-      Except.ok (DVal.mk (α := α) outShape (op.denote left right)) := by
+      Except.ok (Spec.PackedTensor.mk (α := α) outShape (op.denote left right)) := by
   cases op <;>
     simp [MatmulOperation.denote, Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, binaryGraphOut, binaryNodeOut, Graph.getNode,
       Graph.getNode?, Graph.expectShape, Bind.bind, Except.bind, Pure.pure, Except.pure]
@@ -78,14 +78,14 @@ theorem evalAt_matmul2d_eq
           (.dim n (.dim p .scalar))
           (.dim m (.dim p .scalar)))
         (payload := {})
-        (input := DVal.mk (α := α) (.dim m (.dim n .scalar)) a)
+        (input := Spec.PackedTensor.mk (α := α) (.dim m (.dim n .scalar)) a)
         (vals := #[
-          DVal.mk (α := α) (.dim m (.dim n .scalar)) a,
-          DVal.mk (α := α) (.dim n (.dim p .scalar)) b
+          Spec.PackedTensor.mk (α := α) (.dim m (.dim n .scalar)) a,
+          Spec.PackedTensor.mk (α := α) (.dim n (.dim p .scalar)) b
         ]) (i := 2)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim m (.dim p .scalar))
+        (Spec.PackedTensor.mk (α := α) (.dim m (.dim p .scalar))
           (Tensor.matMulSpec (α := α) a b)) := by
   exact evalAt_matmul_eq (.matrix m n p) a b
 
@@ -101,14 +101,14 @@ theorem evalAt_bmm_eq
           (.dim batch (.dim n (.dim p .scalar)))
           (.dim batch (.dim m (.dim p .scalar))))
         (payload := {})
-        (input := DVal.mk (α := α) (.dim batch (.dim m (.dim n .scalar))) a)
+        (input := Spec.PackedTensor.mk (α := α) (.dim batch (.dim m (.dim n .scalar))) a)
         (vals := #[
-          DVal.mk (α := α) (.dim batch (.dim m (.dim n .scalar))) a,
-          DVal.mk (α := α) (.dim batch (.dim n (.dim p .scalar))) b
+          Spec.PackedTensor.mk (α := α) (.dim batch (.dim m (.dim n .scalar))) a,
+          Spec.PackedTensor.mk (α := α) (.dim batch (.dim n (.dim p .scalar))) b
         ]) (i := 2)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim batch (.dim m (.dim p .scalar)))
+        (Spec.PackedTensor.mk (α := α) (.dim batch (.dim m (.dim p .scalar)))
           (Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := n) (p := p) a b)) := by
   exact evalAt_matmul_eq (.batched batch m n p) a b
 

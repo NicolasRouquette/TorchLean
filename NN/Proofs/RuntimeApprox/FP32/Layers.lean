@@ -84,14 +84,14 @@ existential. It combines the matrix-vector product budget with the final rounded
 
 This is the base layer theorem used by the MLP and CROWN/IBP FP32 wrappers.
 -/
-theorem approxT_linear_fp32 {inDim outDim : Nat}
+theorem approxTensor_linear_fp32 {inDim outDim : Nat}
     {WS : LinearSpec ℝ inDim outDim} {xS : SpecTensor (.dim inDim .scalar)}
     {WR : LinearSpec R inDim outDim} {xR : Tensor R (.dim inDim .scalar)}
     {epsW epsb epsx : ℝ}
-    (hW : approxT (α := R) (toSpec := toSpec) WS.weights WR.weights epsW)
-    (hb : approxT (α := R) (toSpec := toSpec) WS.bias WR.bias epsb)
-    (hx : approxT (α := R) (toSpec := toSpec) xS xR epsx) :
-    approxT (α := R) (toSpec := toSpec)
+    (hW : approxTensor (α := R) (toSpec := toSpec) WS.weights WR.weights epsW)
+    (hb : approxTensor (α := R) (toSpec := toSpec) WS.bias WR.bias epsb)
+    (hx : approxTensor (α := R) (toSpec := toSpec) xS xR epsx) :
+    approxTensor (α := R) (toSpec := toSpec)
       (Spec.linearSpec (α := ℝ) WS xS)
       (Spec.linearSpec (α := R) WR xR)
       (linearErrorBudget epsW epsb epsx WR xR) := by
@@ -99,12 +99,12 @@ theorem approxT_linear_fp32 {inDim outDim : Nat}
   -- an NF-backend approximation theorem; this theorem specializes and composes them for
   -- the concrete FP32 rounding model.
   have hmv :=
-    Proofs.RuntimeApprox.NFBackend.approxT_mat_vec_mul_spec
+    Proofs.RuntimeApprox.NFBackend.approxTensor_mat_vec_mul_spec
       (β := β) (fexp := fexp) (rnd := rnd) (m := outDim) (n := inDim)
       (AS := WS.weights) (vS := xS) (AR := WR.weights) (vR := xR)
       (epsA := epsW) (epsV := epsx) hW hx
   have hadd :=
-    Proofs.RuntimeApprox.NFBackend.approxT_add_spec
+    Proofs.RuntimeApprox.NFBackend.approxTensor_add_spec
       (β := β) (fexp := fexp) (rnd := rnd) (s := Shape.dim outDim .scalar)
       (xS := Spec.matVecMulSpec (α := ℝ) WS.weights xS)
       (yS := WS.bias)

@@ -109,14 +109,36 @@ def variadicGraphOut (kind : OpKind) (parentShapes : Array Shape) (outShape : Sh
       { id := i, parents := [], kind := .input, outShape := shape }).push
       (variadicNodeOut kind parentShapes outShape) }
 
-/-- Reading every valid array index in order reconstructs the array's list representation. -/
-theorem range_map_getElem!_eq_toList {β : Type} [Inhabited β] (values : Array β) :
-    (List.range values.size).map (fun i => values[i]!) = values.toList := by
-  apply List.ext_getElem
-  · simp
-  · intro i hRange hList
-    have hi : i < values.size := by simpa using hRange
-    simp [getElem!_pos values i hi, Array.getElem_toList]
+/-- A failure-aware lookup reconstructs an array when it succeeds at every valid index. -/
+theorem range_mapM_eq_toList_of_getElem_eq {β : Type} (values : Array β)
+    (get : Nat → Except String β)
+    (hget : ∀ i (hi : i < values.size), get i = Except.ok values[i]) :
+    (List.range values.size).mapM get = Except.ok values.toList := by
+  have hLookups :
+      (List.range values.size).map get = values.toList.map Except.ok := by
+    apply List.ext_getElem
+    · simp
+    · intro i hRange hValues
+      have hi : i < values.size := by simpa using hRange
+      simp [hget i hi, Array.getElem_toList]
+  have aux : ∀ (ids : List Nat) (result : List β),
+      ids.map get = result.map Except.ok → ids.mapM get = Except.ok result := by
+    intro ids
+    induction ids with
+    | nil =>
+        intro result hResult
+        cases result with
+        | nil => rfl
+        | cons _ _ => simp at hResult
+    | cons i ids ih =>
+        intro result hResult
+        cases result with
+        | nil => simp at hResult
+        | cons value result =>
+            simp only [List.map_cons, List.cons.injEq] at hResult
+            rw [List.mapM_cons, hResult.1, ih result hResult.2]
+            rfl
+  exact aux (List.range values.size) values.toList hLookups
 
 /-- The final node of a variadic evaluator fixture is its variadic operation node. -/
 @[simp] theorem variadicGraphOut_getNode
@@ -141,7 +163,7 @@ def evalForwardLetChainVals
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
     (g : ForwardLetChain α paramShapes inShape ss out)
     (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (vals : Array (DVal α)) : Except String (Array (DVal α)) :=
+    (vals : Array (Spec.PackedTensor α)) : Except String (Array (Spec.PackedTensor α)) :=
   match g with
   | .ret _y =>
       pure vals
@@ -156,26 +178,33 @@ def evalForwardLetChainVals
 /-- `Graph.expectShape` returns the stored tensor when the dynamic shape tag matches. -/
 theorem expectShape_eq_ok
     {α : Type} [Context α] [DecidableEq Shape]
-    {expected : Shape} (v : DVal α) (h : v.shape = expected) :
+    {expected : Shape} (v : Spec.PackedTensor α) (h : v.shape = expected) :
     NN.IR.Graph.expectShape (α := α) (expected := expected) v =
-      Except.ok (h ▸ v.tensor) := by
+      Except.ok (v.cast h) := by
   cases h
-  simp [NN.IR.Graph.expectShape, DVal.shape, DVal.tensor]
-  rfl
+  simp [NN.IR.Graph.expectShape, Spec.PackedTensor.cast, Pure.pure, Except.pure]
+
+/-- A successful shape check certifies the shape stored by the packed tensor. -/
+theorem shape_eq_of_expectShape_eq_ok
+    {α : Type} [Context α] [DecidableEq Shape]
+    {expected : Shape} {v : Spec.PackedTensor α} {t : Tensor α expected}
+    (h : NN.IR.Graph.expectShape (α := α) (expected := expected) v = Except.ok t) :
+    v.shape = expected := by
+  by_contra hShape
+  simp [NN.IR.Graph.expectShape, hShape] at h
 
 /-- `getVal` returns the indexed tensor when the runtime value carries the expected shape tag. -/
 theorem getVal_eq_ok
     {α : Type} [Context α] [DecidableEq Shape]
     {inShape : Shape} {ss : List Shape} {expected : Shape}
-    (vals : Array (DVal α)) (idx : Idx (Ctx inShape ss) expected)
-    (hSome : vals[idx.id]? = some (vals[idx.id]!))
-    (h : (vals[idx.id]!).1 = expected) :
+    (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) expected)
+    (v : Spec.PackedTensor α) (hSome : vals[idx.id]? = some v)
+    (h : v.shape = expected) :
     getVal (α := α) (inShape := inShape) (ss := ss) (s := expected) vals idx =
-      Except.ok (h ▸ (vals[idx.id]!).snd) := by
-  have hShape : (vals[idx.id]!).shape = expected := h
-  simp only [getVal, getDVal?, hSome, Bind.bind, Except.bind]
-  rw [dif_pos hShape]
-  rfl
+      Except.ok (v.cast h) := by
+  cases h
+  simp [getVal, getValue?, hSome, Spec.PackedTensor.cast, Bind.bind, Except.bind,
+    Pure.pure, Except.pure]
 
   /--
   Generic prefix-preservation argument for `ParamStore` lookups.
@@ -306,7 +335,7 @@ theorem getVal_eq_ok
     classical
     exact
     lowerForwardLetChain_ps_lookup_get?_lt
-      (α := α) (β := NN.MLTheory.CROWN.Graph.Conv2DParams α)
+      (α := α) (β := NN.IR.Conv2dParams α)
       (read := fun ps k => ps.conv2dCfg.get? k)
       (hStep := by
         intro ss₀ mid₀ node id k params ps hk
@@ -334,7 +363,7 @@ theorem getVal_eq_ok
     classical
     exact
     lowerForwardLetChain_ps_lookup_get?_lt
-      (α := α) (β := NN.MLTheory.CROWN.Graph.BatchNorm2DNchwEvalParams α)
+      (α := α) (β := NN.IR.BatchNorm2dNchwEvalParams α)
       (read := fun ps k => ps.batchNorm2dNchwEval.get? k)
       (hStep := by
         intro ss₀ mid₀ node id k params ps hk
@@ -423,7 +452,7 @@ theorem getVal_eq_ok
 
     /-- Shape lookup through `shapesOfVals` agrees with looking up the dynamic value first. -/
     lemma shapesOfVals_get?_eq
-        {α : Type} [Context α] (vals : Array (DVal α)) (i : Nat) :
+        {α : Type} [Context α] (vals : Array (Spec.PackedTensor α)) (i : Nat) :
         (shapesOfVals (α := α) vals)[i]? = (vals[i]?).map (fun v => v.1) := by
       -- Avoid `simp` loops on `Array.getElem?_eq_toList_get?'`.
       have hToList : vals.toList[i]? = vals[i]? := by
@@ -432,34 +461,48 @@ theorem getVal_eq_ok
       -- lookup.
       simp [shapesOfVals, List.getElem?_map, hToList]
 
-  @[simp] lemma shapesOfVals_length {α : Type} [Context α] (vals : Array (DVal α)) :
+  @[simp] lemma shapesOfVals_length {α : Type} [Context α] (vals : Array (Spec.PackedTensor α)) :
       (shapesOfVals (α := α) vals).length = vals.size := by
       simp [shapesOfVals]
 
   /-- A shape-context invariant proves that a typed index is in bounds for the value array. -/
-  theorem val_get?_eq_some_of_hShapes
+  theorem index_lt_of_shapesOfVals_eq
       {α : Type} [Context α]
       {inShape : Shape} {ss : List Shape} {s : Shape}
-      (vals : Array (DVal α)) (idx : Idx (Ctx inShape ss) s)
-      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
-      vals[idx.id]? = some (vals[idx.id]!) := by
+      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) : idx.id < vals.size := by
     have hLen : vals.size = (Ctx inShape ss).length := by
       simpa [shapesOfVals_length] using congrArg List.length hShapes
     have hiΓ : idx.id < (Ctx inShape ss).length := idx_id_lt_length (x := idx)
-    have hiVals : idx.id < vals.size := by simpa [hLen] using hiΓ
-    simp [getElem?_pos, hiVals]
+    simpa [hLen] using hiΓ
 
-  @[simp] theorem shape_of_vals_of_hShapes
+  /-- The packed runtime value selected by a typed index and a matching shape context. -/
+  def packedAt
       {α : Type} [Context α]
       {inShape : Shape} {ss : List Shape} {s : Shape}
-      (vals : Array (DVal α)) (idx : Idx (Ctx inShape ss) s)
+      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) : Spec.PackedTensor α :=
+    vals[idx.id]'(index_lt_of_shapesOfVals_eq vals idx hShapes)
+
+  /-- Safe array lookup returns the packed value selected by `packedAt`. -/
+  theorem getElem?_eq_some_packedAt
+      {α : Type} [Context α]
+      {inShape : Shape} {ss : List Shape} {s : Shape}
+      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
       (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
-      (vals[idx.id]!).shape = s := by
+      vals[idx.id]? = some (packedAt vals idx hShapes) := by
+    simp [packedAt, index_lt_of_shapesOfVals_eq vals idx hShapes]
+
+  @[simp] theorem packedAt_shape
+      {α : Type} [Context α]
+      {inShape : Shape} {ss : List Shape} {s : Shape}
+      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
+      (packedAt vals idx hShapes).shape = s := by
     classical
     have hLen : vals.size = (Ctx inShape ss).length := by
       simpa [shapesOfVals_length] using congrArg List.length hShapes
     have hiΓ : idx.id < (Ctx inShape ss).length := idx_id_lt_length (x := idx)
-    have hiVals : idx.id < vals.size := by simpa [hLen] using hiΓ
     have hFin : (⟨idx.id, hiΓ⟩ : Fin (Ctx inShape ss).length) = idx.i := by
       apply Fin.ext
       rfl
@@ -479,11 +522,30 @@ theorem getVal_eq_ok
     have hAt :
         (vals[idx.id]?).map (fun v => v.1) = some s := by
       simpa [shapesOfVals_get?_eq] using hShapesAt
-    -- `idx.id < vals.size`, so the Array lookup is `some (vals[idx.id]!)`.
-    have hSome : vals[idx.id]? = some (vals[idx.id]!) :=
-      val_get?_eq_some_of_hShapes vals idx hShapes
+    have hSome : vals[idx.id]? = some (packedAt vals idx hShapes) :=
+      getElem?_eq_some_packedAt vals idx hShapes
     -- Extract the shape from the mapped option.
     simpa [hSome] using hAt
+
+  /-- The typed tensor selected by an index into a runtime context with the expected shapes. -/
+  def tensorAt
+      {α : Type} [Context α]
+      {inShape : Shape} {ss : List Shape} {s : Shape}
+      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) : Tensor α s :=
+    (packedAt vals idx hShapes).cast (packedAt_shape vals idx hShapes)
+
+  /-- Shape checking succeeds for the typed tensor extracted from a well-shaped context. -/
+  theorem expectShape_packedAt_eq_ok
+      {α : Type} [Context α] [DecidableEq Shape]
+      {inShape : Shape} {ss : List Shape} {s : Shape}
+      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
+      NN.IR.Graph.expectShape (α := α) (expected := s) (packedAt vals idx hShapes) =
+        Except.ok (tensorAt vals idx hShapes) := by
+    simpa [tensorAt] using
+      expectShape_eq_ok (expected := s) (packedAt vals idx hShapes)
+        (packedAt_shape vals idx hShapes)
 
   /--
   `getVal` succeeds from a well-shaped executable context.
@@ -491,15 +553,15 @@ theorem getVal_eq_ok
   This is the proof layer form of `getVal_eq_ok`: callers use the semantic invariant
   `shapesOfVals vals = Ctx inShape ss`, and the lemma derives the array-bounds fact internally.
   -/
-  theorem getVal_eq_ok_of_hShapes
+  theorem getVal_eq_ok_of_shapesOfVals_eq
       {α : Type} [Context α] [DecidableEq Shape]
       {inShape : Shape} {ss : List Shape} {expected : Shape}
-      (vals : Array (DVal α)) (idx : Idx (Ctx inShape ss) expected)
-      (h : (vals[idx.id]!).1 = expected)
-      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss := by assumption) :
+      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) expected)
+      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
       getVal (α := α) (inShape := inShape) (ss := ss) (s := expected) vals idx =
-        Except.ok (h ▸ (vals[idx.id]!).snd) :=
-    getVal_eq_ok vals idx (val_get?_eq_some_of_hShapes vals idx hShapes) h
+        Except.ok (tensorAt vals idx hShapes) :=
+    getVal_eq_ok vals idx (packedAt vals idx hShapes)
+      (getElem?_eq_some_packedAt vals idx hShapes) (packedAt_shape vals idx hShapes)
 end Correctness
 
 end NN.Verification.TorchLean.Proved

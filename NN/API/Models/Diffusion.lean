@@ -31,28 +31,36 @@ namespace models
 
 /-- Configuration for a minimal epsilon-predictor conv net. -/
 structure EpsConvNetConfig (d : Nat) where
-  batch : Nat
+  /-- Number of channels in the denoised sample. -/
   dataChannels : Nat
+  /-- Extent of each spatial axis. -/
   spatial : Vector Nat d
+  /-- Spatial axes are nonempty. -/
   spatialNonzero : ∀ i : Fin d, spatial.get i ≠ 0
   /-- Hidden channel width. -/
   hiddenChannels : Nat := 32
 
+namespace EpsConvNetConfig
+
 /-- Epsilon-predictor input shape, with one extra channel carrying the diffusion time. -/
-def epsConvNetInShape {d : Nat} (cfg : EpsConvNetConfig d) : Spec.Shape :=
-  .dim cfg.batch (Spec.Shape.ofList ((cfg.dataChannels + 1) :: cfg.spatial.toList))
+def inputShape {d : Nat} (cfg : EpsConvNetConfig d)
+    (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.concat (Spec.Shape.ofList ((cfg.dataChannels + 1) :: cfg.spatial.toList))
 
 /-- Epsilon-predictor output shape matching the denoised data channels. -/
-def epsConvNetOutShape {d : Nat} (cfg : EpsConvNetConfig d) : Spec.Shape :=
-  .dim cfg.batch (Spec.Shape.ofList (cfg.dataChannels :: cfg.spatial.toList))
+def outputShape {d : Nat} (cfg : EpsConvNetConfig d)
+    (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.concat (Spec.Shape.ofList (cfg.dataChannels :: cfg.spatial.toList))
+
+namespace Internal
 
 /-- Seeded shape-preserving convolution over an arbitrary spatial rank. -/
-def EpsConvNetConfig.sameConv {d : Nat} (cfg : EpsConvNetConfig d)
+def sameConv {d : Nat} (cfg : EpsConvNetConfig d) (leading : Spec.Shape)
     (inChannels outChannels : Nat) [NeZero inChannels] :
     nn.Builder (nn.Sequential
-      (.dim cfg.batch (Spec.Shape.ofList (inChannels :: cfg.spatial.toList)))
-      (.dim cfg.batch (Spec.Shape.ofList (outChannels :: cfg.spatial.toList)))) :=
-  let layer := nn.conv (leading := .dim cfg.batch .scalar)
+      (leading.concat (Spec.Shape.ofList (inChannels :: cfg.spatial.toList)))
+      (leading.concat (Spec.Shape.ofList (outChannels :: cfg.spatial.toList)))) :=
+  let layer := nn.conv (leading := leading)
       (inChannels := inChannels) cfg.spatial
       { outChannels := outChannels
         kernel := Vector.replicate d 1
@@ -63,6 +71,9 @@ def EpsConvNetConfig.sameConv {d : Nat} (cfg : EpsConvNetConfig d)
   by
     simpa [Spec.Shape.concat, Spec.convOutSpatial_unit cfg.spatial cfg.spatialNonzero] using layer
 
+end Internal
+end EpsConvNetConfig
+
 /--
 Build a minimal epsilon-predictor conv net:
 `conv -> relu -> conv -> relu -> conv -> relu -> conv`.
@@ -70,24 +81,22 @@ Build a minimal epsilon-predictor conv net:
 This stays compact enough for the eager CUDA example while giving the CIFAR trainer more denoising
 capacity than a bare two-layer network.
 -/
-def epsConvNet {d : Nat} (cfg : EpsConvNetConfig d)
-    (h_batch : cfg.batch ≠ 0 := by decide)
+def epsConvNet {d : Nat} (cfg : EpsConvNetConfig d) (leading : Spec.Shape := .scalar)
     (h_dataC : cfg.dataChannels ≠ 0 := by decide)
     (h_inC : (cfg.dataChannels + 1) ≠ 0 := by decide)
     (h_hiddenC : cfg.hiddenChannels ≠ 0 := by decide) :
-    nn.Builder (nn.Sequential (epsConvNetInShape cfg) (epsConvNetOutShape cfg)) :=
-  letI : NeZero cfg.batch := ⟨h_batch⟩
+    nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
   letI : NeZero cfg.dataChannels := ⟨h_dataC⟩
   letI : NeZero (cfg.dataChannels + 1) := ⟨h_inC⟩
   letI : NeZero cfg.hiddenChannels := ⟨h_hiddenC⟩
   nn.Sequential![
-    cfg.sameConv (cfg.dataChannels + 1) cfg.hiddenChannels,
+    EpsConvNetConfig.Internal.sameConv cfg leading (cfg.dataChannels + 1) cfg.hiddenChannels,
     relu,
-    cfg.sameConv cfg.hiddenChannels cfg.hiddenChannels,
+    EpsConvNetConfig.Internal.sameConv cfg leading cfg.hiddenChannels cfg.hiddenChannels,
     relu,
-    cfg.sameConv cfg.hiddenChannels cfg.hiddenChannels,
+    EpsConvNetConfig.Internal.sameConv cfg leading cfg.hiddenChannels cfg.hiddenChannels,
     relu,
-    cfg.sameConv cfg.hiddenChannels cfg.dataChannels
+    EpsConvNetConfig.Internal.sameConv cfg leading cfg.hiddenChannels cfg.dataChannels
   ]
 
 /--
@@ -105,37 +114,36 @@ residual paths make the denoising problem much easier than a plain conv chain wh
 the eager CUDA memory envelope used by examples.
 -/
 def epsResidualConvNet {d : Nat} (cfg : EpsConvNetConfig d)
-    (h_batch : cfg.batch ≠ 0 := by decide)
+    (leading : Spec.Shape := .scalar)
     (h_dataC : cfg.dataChannels ≠ 0 := by decide)
     (h_inC : (cfg.dataChannels + 1) ≠ 0 := by decide)
     (h_hiddenC : cfg.hiddenChannels ≠ 0 := by decide) :
-    nn.Builder (nn.Sequential (epsConvNetInShape cfg) (epsConvNetOutShape cfg)) :=
-  letI : NeZero cfg.batch := ⟨h_batch⟩
+    nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
   letI : NeZero cfg.dataChannels := ⟨h_dataC⟩
   letI : NeZero (cfg.dataChannels + 1) := ⟨h_inC⟩
   letI : NeZero cfg.hiddenChannels := ⟨h_hiddenC⟩
   nn.Sequential![
-    cfg.sameConv (cfg.dataChannels + 1) cfg.hiddenChannels,
+    EpsConvNetConfig.Internal.sameConv cfg leading (cfg.dataChannels + 1) cfg.hiddenChannels,
     relu,
     (do
       let block ←
         nn.Sequential![
-          cfg.sameConv cfg.hiddenChannels cfg.hiddenChannels,
+          EpsConvNetConfig.Internal.sameConv cfg leading cfg.hiddenChannels cfg.hiddenChannels,
           relu,
-          cfg.sameConv cfg.hiddenChannels cfg.hiddenChannels
+          EpsConvNetConfig.Internal.sameConv cfg leading cfg.hiddenChannels cfg.hiddenChannels
         ]
       pure (nn.blocks.residual block)),
     relu,
     (do
       let block ←
         nn.Sequential![
-          cfg.sameConv cfg.hiddenChannels cfg.hiddenChannels,
+          EpsConvNetConfig.Internal.sameConv cfg leading cfg.hiddenChannels cfg.hiddenChannels,
           relu,
-          cfg.sameConv cfg.hiddenChannels cfg.hiddenChannels
+          EpsConvNetConfig.Internal.sameConv cfg leading cfg.hiddenChannels cfg.hiddenChannels
         ]
       pure (nn.blocks.residual block)),
     relu,
-    cfg.sameConv cfg.hiddenChannels cfg.dataChannels
+    EpsConvNetConfig.Internal.sameConv cfg leading cfg.hiddenChannels cfg.dataChannels
   ]
 
 end models
@@ -143,8 +151,8 @@ end nn
 
 namespace diffusion
 
-/-- Map a tensor from $[0,1]$ into the standard diffusion training range $[-1,1]$. -/
-def toMinusOneOne {s : Spec.Shape} (x01 : Spec.Tensor Float s) : Spec.Tensor Float s :=
+/-- Map a tensor from the unit interval to the signed unit interval. -/
+def unitToSignedUnit {s : Spec.Shape} (x01 : Spec.Tensor Float s) : Spec.Tensor Float s :=
   Spec.Tensor.mapSpec (fun x => 2.0 * x - 1.0) x01
 
 /--
@@ -153,11 +161,11 @@ Deterministic Gaussian epsilon tensor for an arbitrary diffusion shape.
 The `(seed, step)` pair is turned into the runtime RNG key, so examples and artifact generation can
 reproduce the same noising path without ambient randomness.
 -/
-def randomEps {s : Spec.Shape} (seed step : Nat) : Spec.Tensor Float s :=
+def normalNoise {s : Spec.Shape} (seed step : Nat) : Spec.Tensor Float s :=
   let key : UInt64 := _root_.Runtime.Autograd.TorchLean.Random.keyOf (seed := seed) (counter := step)
   _root_.Runtime.Autograd.TorchLean.Random.normal (α := Float) key (s := s)
 
-/-- linear beta schedule value at timestep `t`. -/
+/-- Linear beta-schedule value at timestep `t`. -/
 def linearBeta (T : Nat) (betaStart betaEnd : Float) (t : Nat) : Float :=
   if T <= 1 then
     betaEnd
@@ -165,23 +173,19 @@ def linearBeta (T : Nat) (betaStart betaEnd : Float) (t : Nat) : Float :=
     let u := Float.ofNat t / Float.ofNat (T - 1)
     betaStart + u * (betaEnd - betaStart)
 
-/--
-Compute the cumulative products
-$\bar\alpha_t=\prod_{s\le t}(1-\beta_s)$ for a linear beta schedule.
+/-- The cumulative coefficient $\bar\alpha_t=\prod_{s=0}^{t}(1-\beta_s)$. -/
+def linearAlphaBar (T : Nat) (betaStart betaEnd : Float) (t : Nat) : Float :=
+  (List.range (t + 1)).foldl
+    (fun alpha s => alpha * (1.0 - linearBeta T betaStart betaEnd s)) 1.0
 
-These values connect clean data $x_0$, noised data $x_t$, and the epsilon target used by DDPM-style
-training.
+/--
+The `T` cumulative coefficients of a linear beta schedule.
+
+The length belongs to the return type, so a consumer cannot pair the coefficients with a different
+timestep count.
 -/
-def alphaBarsLinear (T : Nat) (betaStart betaEnd : Float) : Array Float :=
-  Id.run do
-    let mut a : Float := 1.0
-    let mut out : Array Float := Array.mkEmpty T
-    for t in [0:T] do
-      let beta := linearBeta T betaStart betaEnd t
-      let alpha := 1.0 - beta
-      a := a * alpha
-      out := out.push a
-    return out
+def linearAlphaBars (T : Nat) (betaStart betaEnd : Float) : Vector Float T :=
+  Vector.ofFn fun t => linearAlphaBar T betaStart betaEnd t.val
 
 /--
 Append a constant time channel after arbitrary leading axes.
@@ -212,15 +216,16 @@ makes the transformation reusable:
 $x_t=\sqrt{\bar{\alpha}_t}\,x_0+\sqrt{1-\bar{\alpha}_t}\,\varepsilon$, with target
 $\varepsilon$.
 -/
-def noisedSampleFromEps (leading : Spec.Shape) {d c : Nat} (spatial : Vector Nat d)
-    (alphaBars : Array Float) (T : Nat)
+def noisedSampleFromNoise (leading : Spec.Shape) {d c T : Nat} [NeZero T]
+    (spatial : Vector Nat d) (alphaBars : Vector Float T)
     (x0 eps : Spec.Tensor Float
       (leading.concat (Spec.Shape.ofList (c :: spatial.toList)))) (step : Nat) :
     TorchLean.Sample.Supervised Float
       (leading.concat (Spec.Shape.ofList ((c + 1) :: spatial.toList)))
       (leading.concat (Spec.Shape.ofList (c :: spatial.toList))) :=
-  let tIdx : Nat := if T = 0 then 0 else step % T
-  let ab : Float := alphaBars.getD tIdx 1.0
+  let tIdx : Fin T :=
+    ⟨step % T, Nat.mod_lt step (Nat.pos_of_ne_zero (NeZero.ne T))⟩
+  let ab : Float := alphaBars.get tIdx
   let sqrtAb : Float := MathFunctions.sqrt (Max.max ab 0.0)
   let sqrtOneMinusAb : Float := MathFunctions.sqrt (Max.max (1.0 - ab) 0.0)
   let x_t : Spec.Tensor Float
@@ -228,7 +233,8 @@ def noisedSampleFromEps (leading : Spec.Shape) {d c : Nat} (spatial : Vector Nat
     Spec.Tensor.addSpec
       (Spec.Tensor.scaleSpec x0 sqrtAb)
       (Spec.Tensor.scaleSpec eps sqrtOneMinusAb)
-  let tNorm : Float := if T <= 1 then 0.0 else Float.ofNat tIdx / Float.ofNat (T - 1)
+  let tNorm : Float :=
+    if T <= 1 then 0.0 else Float.ofNat tIdx.val / Float.ofNat (T - 1)
   TorchLean.Sample.mk (appendTimeChannel leading spatial x_t tNorm) eps
 
 /--
@@ -237,16 +243,16 @@ Build a deterministic epsilon-prediction training sample.
 This is the common DDPM training step used by examples: draw reproducible Gaussian noise from
 `(seed, step)`, corrupt $x_0$, and use that same noise as the target.
 -/
-def noisedSample (leading : Spec.Shape) {d c : Nat} (spatial : Vector Nat d)
-    (alphaBars : Array Float) (T : Nat)
+def noisedSample (leading : Spec.Shape) {d c T : Nat} [NeZero T]
+    (spatial : Vector Nat d) (alphaBars : Vector Float T)
     (x0 : Spec.Tensor Float
       (leading.concat (Spec.Shape.ofList (c :: spatial.toList)))) (seed step : Nat) :
     TorchLean.Sample.Supervised Float
       (leading.concat (Spec.Shape.ofList ((c + 1) :: spatial.toList)))
       (leading.concat (Spec.Shape.ofList (c :: spatial.toList))) :=
-  noisedSampleFromEps leading spatial alphaBars T x0
-    (randomEps (s := leading.concat (Spec.Shape.ofList (c :: spatial.toList))) seed step)
-    (seed + step)
+  noisedSampleFromNoise leading spatial alphaBars x0
+    (normalNoise (s := leading.concat (Spec.Shape.ofList (c :: spatial.toList))) seed step)
+    step
 
 /--
 One deterministic DDIM reverse update ($\eta=0$).
@@ -275,30 +281,6 @@ def ddimPrev {s : Spec.Shape}
   Spec.Tensor.addSpec
     (Spec.Tensor.scaleSpec x0Clipped sqrtAbPrev)
     (Spec.Tensor.scaleSpec epsHat sqrtOneMinusAbPrev)
-
-/--
-Write the first image in an RGB NCHW batch as an ASCII PPM.
-
-This dependency-free writer emits portable image artifacts for examples and rendered diagnostics.
--/
-def writeFirstRgbPpm {batch c h w : Nat}
-    (path : System.FilePath) (x : Spec.Tensor Float (.dim batch (.dim c (.dim h (.dim w .scalar))))) : IO Unit := do
-  if c < 3 then
-    throw <| IO.userError "diffusion PPM export requires at least 3 channels"
-  if let some parent := path.parent then
-    IO.FS.createDirAll parent
-  let clamp01 (v : Float) : Float :=
-    if v < 0.0 then 0.0 else if v > 1.0 then 1.0 else v
-  let toByte (v : Float) : Nat :=
-    let v01 := clamp01 ((v + 1.0) / 2.0)
-    Nat.min 255 ((v01 * 255.0).toUInt64.toNat)
-  let hOut ← IO.FS.Handle.mk path IO.FS.Mode.write
-  hOut.putStr s!"P3\n{w} {h}\n255\n"
-  let getPx (ci hi wi : Nat) : Float :=
-    (Spec.getSpec (α := Float) (s := .dim batch (.dim c (.dim h (.dim w .scalar)))) x [0, ci, hi, wi]).getD 0.0
-  for hi in [0:h] do
-    for wi in [0:w] do
-      hOut.putStr s!"{toByte (getPx 0 hi wi)} {toByte (getPx 1 hi wi)} {toByte (getPx 2 hi wi)}\n"
 
 end diffusion
 

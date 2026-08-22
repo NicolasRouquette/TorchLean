@@ -49,12 +49,6 @@ namespace NN
 
 namespace FFT1D
 
-/-- Shape abbreviation for a length-`n` vector. -/
-abbrev vec (n : Nat) : Shape := .dim n .scalar
-
-/-- Shape abbreviation for an `m×n` matrix. -/
-abbrev mat (m n : Nat) : Shape := .dim m (.dim n .scalar)
-
 /-!
 We build twiddle factors using only the `Context` interface:
 $I=\sqrt{-1}$ and $e^{-i\theta}=\cos\theta-I\sin\theta$.
@@ -66,7 +60,7 @@ not meaningful.
 
 /-- The imaginary unit, represented as `sqrt(-1)` in the ambient scalar type. -/
 def I {α : Type} [Context α] : α :=
-  MathFunctions.sqrt Numbers.neg_one
+  MathFunctions.sqrt Numbers.negOne
 
 /-- Twiddle factor $e^{-2\pi i jk/n}$ written as $\cos\theta-i\sin\theta$. -/
 def twiddle {α : Type} [Context α] (n : Nat) (j k : Nat) : α :=
@@ -81,14 +75,16 @@ def twiddleInv {α : Type} [Context α] (n : Nat) (j k : Nat) : α :=
   MathFunctions.cos ang + I (α := α) * MathFunctions.sin ang
 
 /-- DFT matrix $F\in\mathbb{C}^{n\times n}$ with entries $F_{k,j}=e^{-2\pi i jk/n}$. -/
-def dftMatrix {α : Type} [Context α] (n : Nat) : Tensor α (mat n n) :=
+def dftMatrix {α : Type} [Context α] (n : Nat) :
+    Tensor α (.dim n (.dim n .scalar)) :=
   Tensor.dim (fun k =>
     Tensor.dim (fun j =>
       Tensor.scalar (twiddle (α := α) (n := n) (j := j.val) (k := k.val))))
 
 /-- Inverse DFT matrix $F^{-1}\in\mathbb{C}^{n\times n}$ with entries
 $(F^{-1})_{j,k}=e^{2\pi i jk/n}/n$. -/
-def idftMatrix {α : Type} [Context α] (n : Nat) : Tensor α (mat n n) :=
+def idftMatrix {α : Type} [Context α] (n : Nat) :
+    Tensor α (.dim n (.dim n .scalar)) :=
   Tensor.dim (fun j =>
     Tensor.dim (fun k =>
       Tensor.scalar (twiddleInv (α := α) (n := n) (j := j.val) (k := k.val) / (n : α))))
@@ -108,7 +104,7 @@ def fftLeadingAxis (n : Nat) (rest : Shape) :
     Layer (.dim n rest) (.dim n rest) :=
   let sIn : Shape := .dim n rest
   let cols : Nat := Spec.Shape.size rest
-  let sMat : Shape := mat n cols
+  let sMat : Shape := .dim n (.dim cols .scalar)
   have hSz : Spec.Shape.size sIn = Spec.Shape.size sMat := by
     simp [Spec.Shape.size, sIn, sMat, cols]
   { stateShapes := []
@@ -118,8 +114,8 @@ def fftLeadingAxis (n : Nat) (rest : Shape) :
         fun x =>
           (show m (RefTy (m := m) (α := α) sIn) from do
             let xMat ← TorchLean.reshape (m := m) (α := α) (s₁ := sIn) (s₂ := sMat) x hSz
-            let f : Tensor α (mat n n) := dftMatrix (α := α) n
-            let fR ← TorchLean.const (m := m) (α := α) (s := mat n n) f
+            let f : Tensor α (.dim n (.dim n .scalar)) := dftMatrix (α := α) n
+            let fR ← TorchLean.const (m := m) (α := α) (s := .dim n (.dim n .scalar)) f
             let yMat ←
               TorchLean.mm (m := m) (α := α)
                 (mDim := n) (nDim := n) (pDim := cols) fR xMat
@@ -135,7 +131,7 @@ def ifftLeadingAxis (n : Nat) (rest : Shape) :
     Layer (.dim n rest) (.dim n rest) :=
   let sIn : Shape := .dim n rest
   let cols : Nat := Spec.Shape.size rest
-  let sMat : Shape := mat n cols
+  let sMat : Shape := .dim n (.dim cols .scalar)
   have hSz : Spec.Shape.size sIn = Spec.Shape.size sMat := by
     simp [Spec.Shape.size, sIn, sMat, cols]
   { stateShapes := []
@@ -145,29 +141,13 @@ def ifftLeadingAxis (n : Nat) (rest : Shape) :
         fun x =>
           (show m (RefTy (m := m) (α := α) sIn) from do
             let xMat ← TorchLean.reshape (m := m) (α := α) (s₁ := sIn) (s₂ := sMat) x hSz
-            let f : Tensor α (mat n n) := idftMatrix (α := α) n
-            let fR ← TorchLean.const (m := m) (α := α) (s := mat n n) f
+            let f : Tensor α (.dim n (.dim n .scalar)) := idftMatrix (α := α) n
+            let fR ← TorchLean.const (m := m) (α := α) (s := .dim n (.dim n .scalar)) f
             let yMat ←
               TorchLean.mm (m := m) (α := α)
                 (mDim := n) (nDim := n) (pDim := cols) fR xMat
             TorchLean.reshape (m := m) (α := α) (s₁ := sMat) (s₂ := sIn) yMat hSz.symm)
   }
-
-/-- FFT on matrices: apply the DFT along the leading dimension (`n×width`). -/
-abbrev fftMat (n width : Nat) : Layer (mat n width) (mat n width) :=
-  fftLeadingAxis (n := n) (rest := .dim width .scalar)
-
-/-- Inverse FFT on matrices: apply the inverse DFT along the leading dimension (`n×width`). -/
-abbrev ifftMat (n width : Nat) : Layer (mat n width) (mat n width) :=
-  ifftLeadingAxis (n := n) (rest := .dim width .scalar)
-
-/-- Vector FFT layer, implemented as a DFT along the only non-scalar axis. -/
-abbrev fftVec (n : Nat) : Layer (vec n) (vec n) :=
-  fftLeadingAxis (n := n) (rest := .scalar)
-
-/-- Inverse vector FFT layer, implemented as an inverse DFT along the only non-scalar axis. -/
-abbrev ifftVec (n : Nat) : Layer (vec n) (vec n) :=
-  ifftLeadingAxis (n := n) (rest := .scalar)
 
 namespace Internal
 

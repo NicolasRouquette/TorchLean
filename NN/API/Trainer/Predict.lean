@@ -29,7 +29,7 @@ def predictWithRunner {σ τ : Shape} {task : TorchLean.Trainer.Manual.SeqTask �
     (runner : TorchLean.Trainer.Manual.Runner α task) (x : Tensor Float σ) :
     IO (Tensor Float τ) := do
   Manual.Runner.eval (task := task) runner
-  let x' := Tensor.castFloat (Runtime.ofFloat (α := α)) x
+  let x' := Tensor.map (Runtime.ofFloat (α := α)) x
   let y ← Manual.Runner.run (task := task) runner x'
   Tensor.toFloatIO y
 
@@ -45,7 +45,7 @@ def predictCustom {σ τ : Shape}
     let model := trainer.model
     let objectiveDef := nn.Objective.create model (loss := trainer.loss)
     let m ← Module.instantiate (α := α) opts objectiveDef
-    let x' := Tensor.castFloat (Runtime.ofFloat (α := α)) x
+    let x' := Tensor.map (Runtime.ofFloat (α := α)) x
     let y ← Module.Supervised.predict (α := α) opts model m x'
     Tensor.toFloatIO y
   if opts.usesCuda && run.scalar != .float32 then
@@ -65,8 +65,10 @@ def toRegression {σ τ : Shape} (trainer : TorchLean.Trainer σ τ)
 
 /-- Convert a public trainer to the cross-entropy implementation selected by its task. -/
 def toOneHotCrossEntropy {σ τ : Shape} (trainer : TorchLean.Trainer σ τ)
+    (axis : Nat) [_root_.Spec.Shape.AxisInBounds axis τ]
     (reduction : Loss.Reduction := .mean) : OneHotCrossEntropy σ τ :=
   { model := trainer.model
+    axis := axis
     reduction := reduction
     runtime := trainer.runtime }
 
@@ -94,8 +96,9 @@ def predict {σ τ : Shape} (trainer : TorchLean.Trainer σ τ) (x : Tensor Floa
       let impl := Implementation.toRegression trainer reduction
       Implementation.Regression.Internal.withRunner impl impl.runConfig
         (fun {_} _ _ _ _ _ _ runner => Implementation.predictWithRunner runner x)
-  | .oneHotCrossEntropy reduction =>
-      let impl := Implementation.toOneHotCrossEntropy trainer reduction
+  | @Task.oneHotCrossEntropy _ _ axis validAxis reduction =>
+      letI := validAxis
+      let impl := Implementation.toOneHotCrossEntropy trainer axis reduction
       Implementation.OneHotCrossEntropy.Internal.withRunner impl impl.runConfig
         (fun {_} _ _ _ _ _ runner => Implementation.predictWithRunner runner x)
   | .custom loss =>
@@ -119,8 +122,9 @@ def train {σ τ : Shape} (trainer : TorchLean.Trainer σ τ)
   match trainer.task with
   | .regression reduction =>
       (Implementation.toRegression trainer reduction).train data trainOptions probes
-  | .oneHotCrossEntropy reduction =>
-      (Implementation.toOneHotCrossEntropy trainer reduction).train data trainOptions probes
+  | @Task.oneHotCrossEntropy _ _ axis validAxis reduction =>
+      letI := validAxis
+      (Implementation.toOneHotCrossEntropy trainer axis reduction).train data trainOptions probes
   | .custom loss =>
       (Implementation.toCustom trainer loss).train data trainOptions
 
@@ -132,8 +136,8 @@ Generated-data examples use this when there is no fixed `Dataset` to hand to `tr
 def trainStream {σ τ : Shape}
     (trainer : TorchLean.Trainer σ τ)
     (opts : Options)
-    (sampleAt : Nat → SupervisedSample Float σ τ)
-    (evalSample : SupervisedSample Float σ τ)
+    (sampleAt : Nat → Sample.Supervised Float σ τ)
+    (evalSample : Sample.Supervised Float σ τ)
     (trainOptions : TrainOptions := {})
     (curveEvery : Nat := 0)
     (cudaMemWatch : Nat := 0)
@@ -159,8 +163,8 @@ def trainPairStreams {σ₁ τ₁ σ₂ τ₂ : Shape}
     (first : TorchLean.Trainer σ₁ τ₁)
     (second : TorchLean.Trainer σ₂ τ₂)
     (opts : Options)
-    (firstSampleAt : Nat → SupervisedSample Float σ₁ τ₁)
-    (secondSamplesAt : Nat → List (SupervisedSample Float σ₂ τ₂))
+    (firstSampleAt : Nat → Sample.Supervised Float σ₁ τ₁)
+    (secondSamplesAt : Nat → List (Sample.Supervised Float σ₂ τ₂))
     (evalTotal :
       (Tensor Float σ₁ → IO (Tensor Float τ₁)) →
       (Tensor Float σ₂ → IO (Tensor Float τ₂)) →

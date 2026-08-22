@@ -47,9 +47,6 @@ open IEEE32Exec
 
 noncomputable section
 
-/-- FP32 model type (rounded `ℝ`) used as the comparison target for IEEE32Exec error bounds. -/
-abbrev FP32 : Type := TorchLean.Floats.FP32
-
 -- We avoid simp-unfolding `IEEE32Exec.toReal`; this file uses the dedicated bridge lemmas instead.
 
 /-! ## Embedding IEEE32Exec values into the FP32 (rounded-ℝ) model -/

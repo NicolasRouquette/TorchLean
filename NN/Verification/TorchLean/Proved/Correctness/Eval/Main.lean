@@ -46,7 +46,7 @@ open NN.Verification.TorchLean
       params x := by
     classical
     -- Evaluate `lowerForwardProgramToIR` via the IR semantics, and rewrite it to the DSL evaluator.
-    let inputVal : DVal α := DVal.mk (α := α) inShape x
+    let inputVal : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
     let inputNode : NN.IR.Node := { id := 0, parents := [], kind := .input, outShape := inShape }
     let c0 : NN.Verification.TorchLean.LoweredIR α :=
       { graph := { nodes := #[inputNode] }, ps := {}, inputId := 0, outputId := 0 }
@@ -73,11 +73,11 @@ open NN.Verification.TorchLean
           outShape) p params #[inputVal] := by
       -- `lowerForwardProgramToIR` is `lowerForwardLetChain` starting from `c0`, so apply the lemma at `c=c0` and
       -- `vals=[inputVal]`.
-      have hSize0 : (#[inputVal] : Array (DVal α)).size = c0.graph.nodes.size := by
+      have hSize0 : (#[inputVal] : Array (Spec.PackedTensor α)).size = c0.graph.nodes.size := by
         simp [c0]
-      have hShapes0 : shapesOfVals (α := α) (#[inputVal] : Array (DVal α)) = Ctx inShape [] := by
-        simp [shapesOfVals, Ctx, inputVal, DVal.mk]
-      simpa [lowerForwardProgramToIR, c0, inputNode, inputVal, DVal.mk] using
+      have hShapes0 : shapesOfVals (α := α) (#[inputVal] : Array (Spec.PackedTensor α)) = Ctx inShape [] := by
+        simp [shapesOfVals, Ctx, inputVal]
+      simpa [lowerForwardProgramToIR, c0, inputNode, inputVal, Spec.PackedTensor.mk] using
         denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape
           := inShape) (ss := []) (out := outShape)
         (g := p) (params := params) (c := c0) (x := x) (vals := #[inputVal]) hSize0 hShapes0
@@ -159,12 +159,11 @@ open NN.Verification.TorchLean
         -- `getNode 0` returns the input node, and the `.input` branch deterministically returns
         -- `inputVal`.
         simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hGet0, inputNode, inputVal, NN.IR.Graph.expectShape,
-          DVal.shape, DVal.mk, DVal.tensor,
           Bind.bind, Pure.pure, Except.pure, Except.bind]
       rw [NN.IR.Graph.denoteAllFrom.eq_1, dif_pos h0]
       rw [hEval0]
       simp
-      have hPushEq : (#[].push inputVal : Array (DVal α)) = #[inputVal] := by
+      have hPushEq : (#[].push inputVal : Array (Spec.PackedTensor α)) = #[inputVal] := by
         rfl
       exact congrArg
         (fun vals =>
@@ -189,7 +188,7 @@ open NN.Verification.TorchLean
           let vals' ←
             evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out
               := outShape) p params #[inputVal]
-          let v : DVal α ← getDVal? vals' ((outputIndex (α := α) (paramShapes := paramShapes)
+          let v : Spec.PackedTensor α ← getValue? vals' ((outputIndex (α := α) (paramShapes := paramShapes)
             (inShape := inShape) (ss := []) (out := outShape) p).id)
           if h : v.shape = outShape then
             pure (h ▸ v.tensor)
@@ -212,7 +211,7 @@ open NN.Verification.TorchLean
             (payload := payloadOfParamStore (α := α)
               (lowerForwardProgramToIR (α := α) (paramShapes := paramShapes) (inShape := inShape) (outShape :=
                 outShape) p params).ps)
-            (input := DVal.mk (α := α) inShape x)
+            (input := Spec.PackedTensor.mk (α := α) inShape x)
           =
         NN.IR.Graph.denoteAllFrom (α := α)
             (g := (lowerForwardProgramToIR (α := α) (paramShapes := paramShapes) (inShape := inShape)
@@ -220,7 +219,7 @@ open NN.Verification.TorchLean
             (payload := payloadOfParamStore (α := α)
               (lowerForwardProgramToIR (α := α) (paramShapes := paramShapes) (inShape := inShape) (outShape :=
                 outShape) p params).ps)
-            (input := DVal.mk (α := α) inShape x) (i := 1) (vals := #[DVal.mk (α := α) inShape x]) :=
+            (input := Spec.PackedTensor.mk (α := α) inShape x) (i := 1) (vals := #[Spec.PackedTensor.mk (α := α) inShape x]) :=
               by
       simpa [inputVal] using hDenoteAll0
     have hDenote' :
@@ -230,11 +229,11 @@ open NN.Verification.TorchLean
             (payload := payloadOfParamStore (α := α)
               (lowerForwardProgramToIR (α := α) (paramShapes := paramShapes) (inShape := inShape) (outShape :=
                 outShape) p params).ps)
-            (input := DVal.mk (α := α) inShape x) (i := 1) (vals := #[DVal.mk (α := α) inShape x])
+            (input := Spec.PackedTensor.mk (α := α) inShape x) (i := 1) (vals := #[Spec.PackedTensor.mk (α := α) inShape x])
           =
         evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out :=
           outShape) p params
-          #[DVal.mk (α := α) inShape x] := by
+          #[Spec.PackedTensor.mk (α := α) inShape x] := by
       simpa [inputVal, Except.bind, Except.pure, Pure.pure] using hDenote
     -- Rewrite `Graph.denoteAll` → `denoteAllFrom` → `evalForwardLetChainVals` on the lowered side.
     rw [hDenoteAll0', hDenote']
@@ -256,68 +255,16 @@ open NN.Verification.TorchLean
             inShape)
             (ss := []) (out := outShape) (g := p) (params := params) (vals := #[inputVal]) (vals' :=
               vals')
-            (hShapes := by simp [shapesOfVals, Ctx, inputVal, DVal.mk]) (hOk := by simp [hVals])
-        have hOutShape' :
-            (vals'[(outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out
-              := outShape) p).id]!).shape =
-              outShape := by
-          simpa [DVal.shape] using
-            shape_of_vals_of_hShapes (α := α) (vals := vals')
-              (idx := outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := [])
-                (out := outShape) p)
-              (hShapes := hShapes')
-        have hOutLt :
-            (outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out :=
-              outShape) p).id < vals'.size := by
-          have hLen : vals'.size = (Ctx inShape (finalShapes (α := α) (paramShapes := paramShapes)
-            (inShape := inShape)
-                (ss := []) (out := outShape) p)).length := by
-            have := congrArg List.length hShapes'
-            simpa [shapesOfVals_length] using this
-          have hIdx :
-              (outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out :=
-                outShape) p).id <
-                (Ctx inShape (finalShapes (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss
-                  := []) (out := outShape) p)).length :=
-            idx_id_lt_length (x := outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape)
-              (ss := []) (out := outShape) p)
-          simpa [hLen] using hIdx
-        -- In-bounds array lookup: `get?` returns `some (get!)`.
-        have hOutSome :
-            vals'[(outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out
-              := outShape) p).id]? =
-              some (vals'[(outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss :=
-                []) (out := outShape) p).id]!) := by
-          simp [getElem?_pos, hOutLt]
-        have hCond :
-            (vals'[(outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out
-              := outShape) p).id]!).fst =
-              outShape := by
-          simpa [DVal.shape] using hOutShape'
-        -- Rewrite the output lookup to the known in-bounds value and eliminate the dead
-        -- shape-mismatch branch.
-        cases hGet :
-            vals'[(outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out
-              := outShape) p).id]? with
-        | none =>
-            have hEq :
-                (none : Option (DVal α)) =
-                  some (vals'[(outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss :=
-                    []) (out := outShape) p).id]!) := by
-              simp [hGet] at hOutSome
-            cases hEq
-        | some out =>
-            have hOutEq :
-                out =
-                  vals'[(outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := [])
-                    (out := outShape) p).id]! := by
-              simp [hGet] at hOutSome
-              exact hOutSome
-            subst out
-            -- Both sides take the successful `get?` branch and the successful shape check under
-            -- `hCond`.
-            simp [getDVal?, hGet, hCond, DVal.shape, DVal.tensor, Bind.bind, Pure.pure, Except.pure,
-              Except.bind]
+            (hShapes := by simp [shapesOfVals, Ctx, inputVal]) (hOk := by simp [hVals])
+        let outIdx := outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape)
+          (ss := []) (out := outShape) p
+        let outVal := packedAt vals' outIdx hShapes'
+        have hOutSome : vals'[outIdx.id]? = some outVal := by
+          simpa [outVal] using getElem?_eq_some_packedAt vals' outIdx hShapes'
+        have hOutShape : outVal.shape = outShape := by
+          exact packedAt_shape vals' outIdx hShapes'
+        simp [getValue?, outIdx, hOutSome, hOutShape, Bind.bind, Except.bind,
+          Pure.pure, Except.pure]
 
 end Correctness
 

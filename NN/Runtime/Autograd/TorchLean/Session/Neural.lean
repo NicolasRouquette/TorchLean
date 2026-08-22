@@ -38,7 +38,7 @@ def linear {α : Type} (s : Session α) [Inhabited α] [Add α] [Mul α] [Zero �
   (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim outDim .scalar))
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inDim .scalar)) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim outDim .scalar)) := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.linear (α := α) sess (inDim := inDim) (outDim := outDim) w b x
   | .typedGraph sess =>
@@ -56,7 +56,7 @@ def mseLoss {α : Type} (s : Session α)
   {sh : Shape}
   (yhat target : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.mseLoss (α := α) sess (sh := sh) yhat target
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.mseLoss (α := α) sess (sh := sh) yhat target
@@ -72,7 +72,7 @@ def layerNorm {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   (gamma : _root_.Runtime.Autograd.Torch.TensorRef α (.dim embedDim .scalar))
   (beta : _root_.Runtime.Autograd.Torch.TensorRef α (.dim embedDim .scalar)) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim seqLen (.dim embedDim .scalar))) := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.layerNorm (α := α) sess
         (seqLen := seqLen) (embedDim := embedDim) (h_seq_pos := h_seq_pos) (h_embed_pos :=
@@ -96,7 +96,7 @@ def batchNormChannelFirst {α : Type} (s : Session α) [Context α] [DecidableEq
   (beta : _root_.Runtime.Autograd.Torch.TensorRef α (.dim channels .scalar)) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim channels (.dim height (.dim width .scalar))))
     := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.batchNormChannelFirst (α := α) sess
         (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h) (h_w :=
@@ -125,7 +125,7 @@ def conv {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (Shape.ofList (inC :: inSpatial.toList))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
     (Shape.ofList (outC :: (Spec.convOutSpatial inSpatial kernel stride padding).toList))) := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.conv (α := α) sess
         (d := d) (inC := inC) (outC := outC)
@@ -155,7 +155,7 @@ def convTranspose {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
     (Shape.ofList (outC :: (Spec.convTransposeOutSpatial inSpatial kernel stride padding).toList)))
     := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.convTranspose (α := α) sess
         (d := d) (inC := inC) (outC := outC)
@@ -184,7 +184,7 @@ def conv2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
     (.dim outC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
       (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.conv2d (α := α) sess
         (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
@@ -211,7 +211,7 @@ def convTranspose2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
     (.dim outC (.dim (Spec.convTransposeOutDim inH kH stride padding)
       (.dim (Spec.convTransposeOutDim inW kW stride padding) .scalar)))) := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.convTranspose2d (α := α) sess
         (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
@@ -239,7 +239,7 @@ def multiHeadAttention {α : Type} (s : Session α) [Context α]
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n (.dim dModel .scalar)))
   (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim n (.dim dModel .scalar))) := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.multiHeadAttention (α := α) sess
         (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim) (h1 := h1)

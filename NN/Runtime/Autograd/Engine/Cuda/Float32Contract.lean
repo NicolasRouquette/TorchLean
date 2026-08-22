@@ -191,7 +191,7 @@ theorem native_add_abs_error_of_isFinite
     _root_.abs
         (IEEE32Exec.toReal (fromNativeBits (native.addBits x y)) -
           (IEEE32Exec.toReal x + IEEE32Exec.toReal y)) ≤
-      eps₃₂ (IEEE32Exec.toReal x + IEEE32Exec.toReal y) := by
+      eps32 (IEEE32Exec.toReal x + IEEE32Exec.toReal y) := by
   have hx : fromNativeBits (native.addBits x y) = IEEE32Exec.add x y :=
     native_add_eq_ieee32 h x y
   rw [hx] at hfin ⊢
@@ -207,7 +207,7 @@ theorem native_mul_abs_error_of_isFinite
     _root_.abs
         (IEEE32Exec.toReal (fromNativeBits (native.mulBits x y)) -
           (IEEE32Exec.toReal x * IEEE32Exec.toReal y)) ≤
-      eps₃₂ (IEEE32Exec.toReal x * IEEE32Exec.toReal y) := by
+      eps32 (IEEE32Exec.toReal x * IEEE32Exec.toReal y) := by
   have hx : fromNativeBits (native.mulBits x y) = IEEE32Exec.mul x y :=
     native_mul_eq_ieee32 h x y
   rw [hx] at hfin ⊢
@@ -223,7 +223,7 @@ theorem native_div_abs_error_of_isFinite
     _root_.abs
         (IEEE32Exec.toReal (fromNativeBits (native.divBits x y)) -
           (IEEE32Exec.toReal x / IEEE32Exec.toReal y)) ≤
-      eps₃₂ (IEEE32Exec.toReal x / IEEE32Exec.toReal y) := by
+      eps32 (IEEE32Exec.toReal x / IEEE32Exec.toReal y) := by
   have hx : fromNativeBits (native.divBits x y) = IEEE32Exec.div x y :=
     native_div_eq_ieee32 h x y
   rw [hx] at hfin ⊢
@@ -239,7 +239,7 @@ theorem native_fma_abs_error_of_isFinite
     _root_.abs
         (IEEE32Exec.toReal (fromNativeBits (native.fmaBits x y z)) -
           (IEEE32Exec.toReal x * IEEE32Exec.toReal y + IEEE32Exec.toReal z)) ≤
-      eps₃₂ (IEEE32Exec.toReal x * IEEE32Exec.toReal y + IEEE32Exec.toReal z) := by
+      eps32 (IEEE32Exec.toReal x * IEEE32Exec.toReal y + IEEE32Exec.toReal z) := by
   have hx : fromNativeBits (native.fmaBits x y z) = IEEE32Exec.fma x y z :=
     native_fma_eq_ieee32 h x y z
   rw [hx] at hfin ⊢
@@ -255,7 +255,7 @@ theorem native_sqrt_abs_error_of_isFinite
     _root_.abs
         (IEEE32Exec.toReal (fromNativeBits (native.sqrtBits x)) -
           Real.sqrt (IEEE32Exec.toReal x)) ≤
-      eps₃₂ (Real.sqrt (IEEE32Exec.toReal x)) := by
+      eps32 (Real.sqrt (IEEE32Exec.toReal x)) := by
   have hx : fromNativeBits (native.sqrtBits x) = IEEE32Exec.sqrt x :=
     native_sqrt_eq_ieee32 h x
   rw [hx] at hfin ⊢

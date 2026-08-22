@@ -28,8 +28,8 @@ proofs.
   is within a computable propagated error budget of the spec evaluation.
 
 ## Reading guide
-1. `TList` and `EList`: heterogeneous runtime/spec contexts and aligned error vectors.
-2. `approxT` and `approxCtx`: the approximation predicates for a single tensor and a whole context.
+1. `Autograd.Algebra.TList` and `EList`: heterogeneous contexts and aligned error vectors.
+2. `approxTensor` and `approxCtx`: the approximation predicates for a single tensor and a whole context.
 3. `Idx`: a typed index into a context (so graph nodes can refer to earlier values safely).
 4. `FwdNode` / `FwdGraph`: local approximation lemmas and their composition over a snoc-list DAG.
 
@@ -49,34 +49,9 @@ namespace RuntimeApprox
 
 open Spec
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 
 noncomputable section
-
--- ---------------------------------------------------------------------------
--- Heterogeneous contexts (tensors indexed by a list of shapes)
--- ---------------------------------------------------------------------------
-
-/-
-We reuse the canonical `TList` implementation from the tape-style autograd algebra layer.
-This avoids duplicating the “heterogeneous context indexed by `List Shape`” encoding in multiple
-proof subsystems.
--/
-/--
-A heterogeneous context (one tensor per shape), indexed by a `List Shape`.
-
-This is just an alias of the canonical tape/autograd-algebra `TList` so that all the helper
-operations (`get`, `cast`, `snoc`, `unsnoc`, `add`, ...) are shared across proof subsystems.
--/
-abbrev TList (α : Type) (ss : List Shape) : Type :=
-  Proofs.Autograd.Algebra.TList α ss
-
-namespace TList
-
--- Re-export the most-used context operations so downstream files can stay in the `RuntimeApprox`
--- namespace without qualifying everything with `Proofs.Autograd.Algebra`.
-export Proofs.Autograd.Algebra.TList (get cast cast_rfl cast_cast snoc unsnoc zero add)
-
-end TList
 
 -- ---------------------------------------------------------------------------
 -- Error vectors aligned with contexts
@@ -179,12 +154,12 @@ end EList
 variable {α : Type}
 
 /-- Tensor-level approximation under a `toSpec : α → ℝ` mapping. -/
-def approxT {s : Shape} (toSpec : α → SpecScalar) (spec : SpecTensor s) (runtime : Tensor α s) (eps
+def approxTensor {s : Shape} (toSpec : α → SpecScalar) (spec : SpecTensor s) (runtime : Tensor α s) (eps
   : SpecScalar) : Prop :=
   approxWith (α := α) (toSpec := toSpec) (norm := linfNorm) spec runtime eps
 
 /--
-Scoped notation for tensor approximation (`approxT`).
+Scoped notation for tensor approximation (`approxTensor`).
 
 ```lean
 open scoped RuntimeApprox
@@ -192,31 +167,31 @@ spec ≈ᵀ[toSpec] runtime : eps
 ```
 -/
 scoped[RuntimeApprox] notation:50 spec " ≈ᵀ[" toSpec "] " runtime " : " eps =>
-  Proofs.RuntimeApprox.approxT (toSpec := toSpec) spec runtime eps
+  Proofs.RuntimeApprox.approxTensor (toSpec := toSpec) spec runtime eps
 
 /--
-Monotonicity of `approxTTol`: if you only loosen tolerances, an approximation stays valid.
+Monotonicity of `approxTensorWithTol`: if you only loosen tolerances, an approximation stays valid.
 -/
-lemma approxTTol_mono {s : Shape} {toSpec : α → SpecScalar}
+lemma approxTensorWithTol_mono {s : Shape} {toSpec : α → SpecScalar}
     {spec : SpecTensor s} {runtime : Tensor α s} {tol₁ tol₂ : ApproxTol}
     (habs : tol₁.abs ≤ tol₂.abs) (hrel : tol₁.rel ≤ tol₂.rel) (hslack : tol₁.slack ≤ tol₂.slack)
-    (h : approxTTol (toSpec := toSpec) spec runtime tol₁) :
-    approxTTol (toSpec := toSpec) spec runtime tol₂ :=
+    (h : approxTensorWithTol (toSpec := toSpec) spec runtime tol₁) :
+    approxTensorWithTol (toSpec := toSpec) spec runtime tol₂ :=
   approx_with_tol_mono (toSpec := toSpec) (norm := linfNorm)
     (spec := spec) (runtime := runtime) habs hrel hslack h
 
 /--
-`approxTTol` specialized to an absolute-only tolerance is equivalent to `approxT`.
+`approxTensorWithTol` specialized to an absolute-only tolerance is equivalent to `approxTensor`.
 
 This is mostly a convenience lemma for switching between the "tolerance" API and the plain
 `eps : ℝ` API.
 -/
-lemma approxTTol_absOnly_iff {s : Shape} {toSpec : α → SpecScalar}
+lemma approxTensorWithTol_absOnly_iff {s : Shape} {toSpec : α → SpecScalar}
     {spec : SpecTensor s} {runtime : Tensor α s} {eps : ℝ} (heps : 0 ≤ eps) :
-    approxTTol (toSpec := toSpec) spec runtime (ApproxTol.absOnly eps) ↔
-      approxT (toSpec := toSpec) spec runtime eps := by
+    approxTensorWithTol (toSpec := toSpec) spec runtime (ApproxTol.absOnly eps) ↔
+      approxTensor (toSpec := toSpec) spec runtime eps := by
   -- Reduce to the `approx_with` lemma.
-  simpa [approxT, approxTTol] using
+  simpa [approxTensor, approxTensorWithTol] using
     (approx_with_tol_absOnly_iff (toSpec := toSpec) (norm := linfNorm)
       (spec := spec) (runtime := runtime) heps)
 
@@ -225,7 +200,7 @@ def approxCtx (toSpec : α → SpecScalar) : {ss : List Shape} →
     TList SpecScalar ss → TList α ss → EList ss → Prop
   | [], .nil, .nil, .nil => True
   | _ :: ss, .cons x xs, .cons y ys, .cons e es =>
-      approxT (α := α) (toSpec := toSpec) x y e ∧ approxCtx (ss := ss) toSpec xs ys es
+      approxTensor (α := α) (toSpec := toSpec) x y e ∧ approxCtx (ss := ss) toSpec xs ys es
 
 /--
 Scoped notation for `approxCtx`.
@@ -268,7 +243,7 @@ lemma approxCtx_snoc {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shape}
     {xS : TList SpecScalar ss} {xR : TList α ss} {eps : EList ss}
     (hx : approxCtx (α := α) toSpec xS xR eps)
     {yS : SpecTensor τ} {yR : Tensor α τ} {e : SpecScalar}
-    (hy : approxT (α := α) (toSpec := toSpec) yS yR e) :
+    (hy : approxTensor (α := α) (toSpec := toSpec) yS yR e) :
     approxCtx (α := α) toSpec
       (TList.snoc (α := SpecScalar) (ss := ss) xS yS)
       (TList.snoc (α := α) (ss := ss) xR yR)
@@ -295,7 +270,7 @@ lemma approxCtx_snoc {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shape}
 lemma approxCtx_get {toSpec : α → SpecScalar} {Γ : List Shape}
     {xS : TList SpecScalar Γ} {xR : TList α Γ} {eps : EList Γ}
     (h : approxCtx (α := α) toSpec xS xR eps) (i : Fin Γ.length) :
-    approxT (α := α) (toSpec := toSpec)
+    approxTensor (α := α) (toSpec := toSpec)
       (TList.get (α := SpecScalar) xS i)
       (TList.get (α := α) xR i)
       (EList.get eps i) := by
@@ -315,7 +290,7 @@ lemma approxCtx_get {toSpec : α → SpecScalar} {Γ : List Shape}
                   | mk iVal hiVal =>
                       cases iVal with
                       | zero =>
-                          change approxT toSpec xSh xRh eh
+                          change approxTensor toSpec xSh xRh eh
                           exact h.1
                       | succ j =>
                           have := ih (xS := xSt) (xR := xRt) (eps := et) h.2
@@ -323,7 +298,7 @@ lemma approxCtx_get {toSpec : α → SpecScalar} {Γ : List Shape}
                           simpa [TList.get, EList.get] using this
 
 /--
-`approxCtx_get` expressed in terms of `approxTTol` with an absolute-only tolerance.
+`approxCtx_get` expressed in terms of `approxTensorWithTol` with an absolute-only tolerance.
 
 Many downstream theorems are stated using a tolerance record (`ApproxTol`) rather than a bare
 `eps : ℝ`. For absolute-only bounds, this lemma gives the bridge.
@@ -331,12 +306,12 @@ Many downstream theorems are stated using a tolerance record (`ApproxTol`) rathe
 lemma approxCtx_get_tolAbsOnly {toSpec : α → SpecScalar} {Γ : List Shape}
     {xS : TList SpecScalar Γ} {xR : TList α Γ} {eps : EList Γ}
     (h : approxCtx (α := α) toSpec xS xR eps) (i : Fin Γ.length) :
-    approxTTol (α := α) (toSpec := toSpec)
+    approxTensorWithTol (α := α) (toSpec := toSpec)
       (TList.get (α := SpecScalar) xS i)
       (TList.get (α := α) xR i)
       (ApproxTol.absOnly (EList.get eps i)) := by
   have hi :
-      approxT (α := α) (toSpec := toSpec)
+      approxTensor (α := α) (toSpec := toSpec)
         (TList.get (α := SpecScalar) xS i)
         (TList.get (α := α) xR i)
         (EList.get eps i) :=
@@ -345,9 +320,9 @@ lemma approxCtx_get_tolAbsOnly {toSpec : α → SpecScalar} {Γ : List Shape}
       (TList.get (α := SpecScalar) xS i)
       (TList.get (α := α) xR i)
       (EList.get eps i) := by
-    simpa [approxT] using hi
+    simpa [approxTensor] using hi
   simpa using
-    (approxT_to_approxTTol_absOnly (toSpec := toSpec)
+    (approxTensor_to_approxTensorWithTol_absOnly (toSpec := toSpec)
       (spec := (TList.get (α := SpecScalar) xS i))
       (runtime := (TList.get (α := α) xR i))
       (eps := (EList.get eps i)) this)
@@ -365,7 +340,7 @@ lemma approxCtx_unsnoc {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shap
           (TList.unsnoc (α := α) (ss := ss) (τ := τ) xR).1
           (EList.unsnoc (ss := ss) (τ := τ) eps).1
         ∧
-      approxT (α := α) (toSpec := toSpec)
+      approxTensor (α := α) (toSpec := toSpec)
           (TList.unsnoc (α := SpecScalar) (ss := ss) (τ := τ) xS).2
           (TList.unsnoc (α := α) (ss := ss) (τ := τ) xR).2
           (EList.unsnoc (ss := ss) (τ := τ) eps).2 := by
@@ -394,7 +369,7 @@ lemma approxCtx_unsnoc {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shap
           | cons xRh xRt =>
               cases eps with
               | cons eh et =>
-                  have hx : approxT (α := α) (toSpec := toSpec) xSh xRh eh := h.1
+                  have hx : approxTensor (α := α) (toSpec := toSpec) xSh xRh eh := h.1
                   have ht : approxCtx (α := α) toSpec xSt xRt et := h.2
                   have ih' := ih (xS := xSt) (xR := xRt) (eps := et) ht
                   refine And.intro ?_ ?_
@@ -424,13 +399,13 @@ def getIdxEps {Γ : List Shape} {s : Shape} (es : EList Γ) (idx : Idx Γ s) : �
 Context approximation implies approximation of any indexed entry.
 
 Informally: if every tensor in the runtime context is close to its spec counterpart (with an
-aligned error list `eps`), then reading any entry `idx : Idx Γ s` yields an `approxT` fact with the
+aligned error list `eps`), then reading any entry `idx : Idx Γ s` yields an `approxTensor` fact with the
 corresponding scalar bound `getIdxEps eps idx`.
 -/
 lemma approxCtx_getIdx {toSpec : α → SpecScalar} {Γ : List Shape} {s : Shape}
     {xS : TList SpecScalar Γ} {xR : TList α Γ} {eps : EList Γ}
     (h : approxCtx (α := α) toSpec xS xR eps) (idx : Idx Γ s) :
-    approxT (α := α) (toSpec := toSpec)
+    approxTensor (α := α) (toSpec := toSpec)
       (getIdx (α := SpecScalar) xS idx)
       (getIdx (α := α) xR idx)
       (getIdxEps (Γ := Γ) (s := s) eps idx) := by
@@ -454,7 +429,7 @@ Fields:
 - `sound`: the “local theorem” that justifies `bound`.
 
 Informally: if the whole input context is approximated (`approxCtx`), then this node’s output is
-approximated (`approxT`) with error at most `bound`.
+approximated (`approxTensor`) with error at most `bound`.
 -/
 structure FwdNode (toSpec : α → SpecScalar) (Γ : List Shape) (τ : Shape) where
   /-- Specification-level semantics of this node. -/
@@ -466,7 +441,7 @@ structure FwdNode (toSpec : α → SpecScalar) (Γ : List Shape) (τ : Shape) wh
   /-- Local approximation theorem for this node. -/
   sound : ∀ (xS : TList SpecScalar Γ) (xR : TList α Γ) (eps : EList Γ),
       approxCtx (α := α) toSpec xS xR eps →
-        approxT (α := α) (toSpec := toSpec) (forwardSpec xS) (forwardRuntime xR) (bound eps xR)
+        approxTensor (α := α) (toSpec := toSpec) (forwardSpec xS) (forwardRuntime xR) (bound eps xR)
 
 /--
 Forward-only SSA/DAG graph (nodes appended in topological order).
@@ -584,7 +559,7 @@ theorem eval_approx {Γ : List Shape} {ss : List Shape} (g : FwdGraph (α := α)
       let epsPrev := evalBounds (Γ := Γ) (ss := ssPrev) g epsIn xR
 
       have hy :
-          approxT (α := α) (toSpec := toSpec)
+          approxTensor (α := α) (toSpec := toSpec)
             (node.forwardSpec ctxS)
             (node.forwardRuntime ctxR)
             (node.bound epsPrev ctxR) :=

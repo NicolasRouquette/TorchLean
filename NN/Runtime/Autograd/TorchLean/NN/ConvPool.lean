@@ -52,7 +52,7 @@ def conv
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"Conv{d}d({inC}, {outC})"
     stateShapes := [KShape, bShape]
-    initState := Torch.tlistPair k0 b0
+    initState := .cons k0 (.cons b0 .nil)
     runtimeInit := some (.cons (TorchLean.Module.RuntimeInit.FloatInit.ofScheme kInit seedK)
       (.cons .zeros .nil))
     requiresGrad := [true, true]
@@ -95,7 +95,7 @@ def convTranspose
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"ConvTranspose{d}d({inC}, {outC})"
     stateShapes := [KShape, bShape]
-    initState := Torch.tlistPair k0 b0
+    initState := .cons k0 (.cons b0 .nil)
     runtimeInit := some (.cons (TorchLean.Module.RuntimeInit.FloatInit.ofScheme kInit seedK)
       (.cons .zeros .nil))
     requiresGrad := [true, true]
@@ -191,7 +191,7 @@ def conv2d
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"Conv2d({inC}, {outC}, {kH}x{kW})"
     stateShapes := [KShape, bShape]
-    initState := Torch.tlistPair k0 b0
+    initState := .cons k0 (.cons b0 .nil)
     runtimeInit := some (.cons (TorchLean.Module.RuntimeInit.FloatInit.ofScheme kInit seedK)
       (.cons .zeros .nil))
     requiresGrad := [true, true]
@@ -229,7 +229,7 @@ def convTranspose2d
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"ConvTranspose2d({inC}, {outC}, {kH}x{kW})"
     stateShapes := [KShape, bShape]
-    initState := Torch.tlistPair k0 b0
+    initState := .cons k0 (.cons b0 .nil)
     runtimeInit := some (.cons (TorchLean.Module.RuntimeInit.FloatInit.ofScheme kInit seedK)
       (.cons .zeros .nil))
     requiresGrad := [true, true]

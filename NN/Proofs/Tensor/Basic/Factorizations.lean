@@ -165,9 +165,9 @@ end FoldSnoc
 A structural fact about the executable `choleskyFn`, proved directly from the column fold: the entry
 above the diagonal is forced to `0` by the construction. -/
 
-/-- Reading an entry of a matrix tensor built by `ofMatFn` returns the underlying function value. -/
-theorem get2_ofMatFn {m k : Nat} (f : Fin m → Fin k → ℝ) (i : Fin m) (j : Fin k) :
-    Spec.get2 (Spec.ofMatFn f) i j = f i j := rfl
+/-- Reading an entry of a matrix tensor returns the underlying function value. -/
+theorem get2_matrix {m k : Nat} (f : Fin m → Fin k → ℝ) (i : Fin m) (j : Fin k) :
+    Spec.get2 (Spec.Tensor.matrix f) i j = f i j := rfl
 
 /-- The executable Cholesky factor is lower-triangular: entries strictly above the diagonal vanish. -/
 theorem choleskyFn_lower_triangular (A : Fin n → Fin n → ℝ) {i j : Fin n} (hij : i.val < j.val) :
@@ -180,7 +180,7 @@ theorem choleskyFn_lower_triangular (A : Fin n → Fin n → ℝ) {i j : Fin n} 
 theorem choleskySpec_lower_triangular (A : Spec.Tensor ℝ (.dim n (.dim n .scalar)))
     {i j : Fin n} (hij : i.val < j.val) :
     Spec.get2 (Spec.choleskySpec A) i j = 0 := by
-  rw [show Spec.choleskySpec A = Spec.ofMatFn (Spec.choleskyFn (Spec.toMatFn A)) from rfl,
-    get2_ofMatFn]
+  rw [show Spec.choleskySpec A = Spec.Tensor.matrix (Spec.choleskyFn (Spec.toMatFn A)) from rfl,
+    get2_matrix]
   exact choleskyFn_lower_triangular _ hij
 end Spec.Factorization

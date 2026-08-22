@@ -60,7 +60,7 @@ export _root_.Runtime.Autograd.Torch
 /-! ## Training helpers -/
 
 export _root_.Runtime.Autograd.Torch
-  (scalarOf tlistSingleton tlistPair tlistTriple tlistQuad trainCycleSGD meanLoss)
+  (trainCycleSGD meanLoss)
 
 namespace Init
 export _root_.Runtime.Autograd.Torch.Init (Scheme tensor xavierW kaimingW)
@@ -83,8 +83,7 @@ export _root_.Runtime.Autograd.TorchLean.Module
   (ObjectiveDef Objective)
 namespace RuntimeInit
 export _root_.Runtime.Autograd.TorchLean.Module.RuntimeInit
-  (FloatInit Plan xavierUniformForShape kaimingUniformForShape xavierLinearWeight
-   kaimingLinearWeight)
+  (FloatInit Plan xavierUniformForShape kaimingUniformForShape)
 end RuntimeInit
 export _root_.Runtime.Autograd.TorchLean.Module.Objective
   (create loss lossAndGradState gradState sgdStep initOptimizer optimizerStep state loadState)

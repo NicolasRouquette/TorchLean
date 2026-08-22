@@ -46,6 +46,8 @@ The output AST is `NN.Verification.ODE.Ast.Expr`.
 
 /-! ## Parser state and low-level helpers -/
 
+namespace Internal
+
 /--
 Parser state for scanning a `String` by byte-position.
 
@@ -60,9 +62,6 @@ abbrev State := TextCursor.Cursor
 /-- A fuel budget derived from the remaining input length (used to guarantee termination). -/
 @[inline] def fuelOf (st : State) : Nat := TextCursor.remainingFuel st
 
-/- ASCII whitespace predicate used by `skipWs`. -/
-namespace Internal
-
 /-- Internal: ASCII whitespace predicate used by `skipWs`. -/
 def isWs (c : Char) : Bool :=
   TextCursor.isWhitespace c
@@ -71,19 +70,13 @@ def isWs (c : Char) : Bool :=
 def skipWsFuel (fuel : Nat) (st : State) : State :=
   TextCursor.skipWhileFuel isWs fuel st
 
-end Internal
-
 /-- Skip ASCII whitespace (`' '`, `'\t'`, `'\n'`). -/
-def skipWs (st : State) : State := Internal.skipWsFuel (fuelOf st) st
+def skipWs (st : State) : State := skipWsFuel (fuelOf st) st
 
 /- Fuel-bounded implementation of `takeWhile`. -/
-namespace Internal
-
 /-- Internal: fuel-bounded implementation of `takeWhile`. -/
 def takeWhileFuel (fuel : Nat) (p : Char → Bool) (acc : String) (st : State) : String × State :=
   TextCursor.takeWhileFuel fuel p acc st
-
-end Internal
 
 /--
 Consume consecutive characters satisfying `p`, accumulating them into `acc`.
@@ -91,7 +84,7 @@ Consume consecutive characters satisfying `p`, accumulating them into `acc`.
 Returns the consumed text and the updated parser state.
 -/
 def takeWhile (p : Char → Bool) (acc : String) (st : State) : String × State :=
-  Internal.takeWhileFuel (fuelOf st) p acc st
+  takeWhileFuel (fuelOf st) p acc st
 
 /-- Parse a signed decimal number without exponent, e.g. `-12.34`. -/
 def parseNumber (st : State) : Except String (Float × State) :=
@@ -109,9 +102,6 @@ def parseIdent (st : State) : Except String (String × State) := do
 
 /-! ## Built-in constants and unary functions -/
 
-/- Interpret built-in constants like `pi` / `π`. -/
-namespace Internal
-
 /-- Internal: interpret built-in constants like `pi` / `π`. -/
 def constOfIdent? (id : String) : Option Float :=
   if id = "pi" ∨ id = "π" then some 3.14159265358979323846 else none
@@ -124,11 +114,7 @@ def applyFunc? (id : String) (arg : Expr) : Option Expr :=
   else if id = "log" then some (.log arg)
   else none
 
-end Internal
-
 /-! ## Recursive descent: expression/term/factor/unary/primary -/
-
-namespace Internal
 
 mutual
   /--
@@ -267,12 +253,12 @@ This is the user-facing entrypoint for the ODE verifier: it parses a string like
 `"sin(t) + u^2"` into an `Expr` (`NN.Verification.ODE.Ast.Expr`).
 -/
 def parseExpr (s : String) : Except String Expr :=
-  let st0 : State := { source := s }
+  let st0 : Internal.State := { source := s }
   -- Generous fuel: parsing depth is not proportional to input length in bytes.
-  let fuel := (fuelOf st0) * 16 + 32
+  let fuel := (Internal.fuelOf st0) * 16 + 32
   match Internal.parseExprFuel fuel st0 with
   | .ok (e, st) =>
-    let st' := skipWs st
+    let st' := Internal.skipWs st
     if st'.position = st'.source.rawEndPos then .ok e else .error "trailing input"
   | .error msg => .error msg
 

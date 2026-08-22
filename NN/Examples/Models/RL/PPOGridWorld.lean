@@ -137,8 +137,8 @@ def evalEvery : Nat := 50
 /-- Default evaluation episodes per checkpoint (can be overridden by `--eval-episodes`). -/
 def evalEpisodes : Nat := 20
 
-instance : Fact (0 < horizon) := ⟨by decide⟩
-instance : Fact (0 < nActions) := ⟨by decide⟩
+instance : NeZero horizon := ⟨by decide⟩
+instance : NeZero nActions := ⟨by decide⟩
 
 /-- The observation tensor shape used by this example: `[..., nStates]` one-hot vectors. -/
 def obsShape : Spec.Shape := shape![nStates]
@@ -283,16 +283,18 @@ def contract : rl.boundary.Contract obsShape nActions :=
 ## Model (Actor + Critic)
 -/
 
-def modelCfg : nn.models.PPOActorCriticConfig :=
+def modelCfg : nn.models.PPO.Config :=
   { obsDim := nStates, hiddenDim := hiddenDim, nActions := nActions }
 
 /-- Construct the actor network as an MLP mapping one-hot observations to action logits. -/
-def actorMk (pfx : Spec.Shape) : nn.Builder (nn.Sequential (pfx.appendDim nStates) (pfx.appendDim nActions)) :=
-  nn.models.ppoActor modelCfg pfx
+def actorMk (leading : Spec.Shape) :
+    nn.Builder (nn.Sequential (leading.appendDim nStates) (leading.appendDim nActions)) :=
+  nn.models.PPO.actor modelCfg leading
 
 /-- Construct the critic network as an MLP mapping one-hot observations to a scalar value estimate. -/
-def criticMk (pfx : Spec.Shape) : nn.Builder (nn.Sequential (pfx.appendDim nStates) (pfx.appendDim 1)) :=
-  nn.models.ppoCritic modelCfg pfx
+def criticMk (leading : Spec.Shape) :
+    nn.Builder (nn.Sequential (leading.appendDim nStates) (leading.appendDim 1)) :=
+  nn.models.PPO.critic modelCfg leading
 
 /-!
 ## Rollout collection (Lean-native environment)
@@ -361,8 +363,8 @@ def main (args : List String) : IO UInt32 := do
         -- `gwR_valid` is a Prop-level proof; it has no runtime cost.
         exact True.intro
 
-      let seedActor ← nn.freshSeed
-      let seedCritic ← nn.freshSeed
+      let seedActor ← rand.nextSeedGlobal
+      let seedCritic ← rand.nextSeedGlobal
       let actorObs : nn.Sequential stateShape logitsShape :=
         nn.build seedActor (actorMk .scalar)
       let criticObs : nn.Sequential stateShape valueShape :=

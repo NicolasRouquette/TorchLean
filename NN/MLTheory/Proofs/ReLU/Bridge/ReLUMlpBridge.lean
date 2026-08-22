@@ -59,7 +59,7 @@ lemma toVec_dim_toVec {n : Nat} (x : TensorVec n) :
   funext j
   cases x with
   | dim f =>
-    simp [toVec, Tensor.dimScalarEquiv, Tensor.toScalar]
+    simp [toVec, Tensor.dimScalarEquiv, Tensor.item]
 
 /-- Dot product $w\mathbin{\cdot}x$ for `w : Fin n → ℝ` and `x : TensorVec n`. -/
 noncomputable def dot {n : Nat} (w : Fin n → ℝ) (x : TensorVec n) : ℝ :=
@@ -103,12 +103,12 @@ noncomputable def matDim1Get {m : Nat} (A : Tensor ℝ (.dim m (.dim 1 .scalar))
   match A with
   | .dim rows =>
     match rows i with
-    | .dim cols => Tensor.toScalar (cols ⟨0, by decide⟩)
+    | .dim cols => Tensor.item (cols ⟨0, by decide⟩)
 
 /-- Extract the `i`-th entry of a vector-shaped tensor. -/
 noncomputable def vecGet {m : Nat} (v : Tensor ℝ (.dim m .scalar)) (i : Fin m) : ℝ :=
   match v with
-  | .dim f => Tensor.toScalar (f i)
+  | .dim f => Tensor.item (f i)
 
 /-- Specialized matrix-vector multiplication when the input is a scalar (dimension `1`). -/
 lemma mat_vec_mul_spec_dim1 {m : Nat} (A : Tensor ℝ (.dim m (.dim 1 .scalar))) (x : ℝ) :
@@ -130,17 +130,18 @@ lemma mat_vec_mul_spec_dim1 {m : Nat} (A : Tensor ℝ (.dim m (.dim 1 .scalar)))
       | scalar ak =>
         have hcol0 : cols 0 = Tensor.scalar ak := by
           simpa using hcol
-        simp [matDim1Get, hfin, hrow, hcol0, List.foldl, Tensor.toScalar]
+        simp [matDim1Get, hfin, hrow, hcol0, List.foldl, Tensor.item]
 
 set_option linter.auxLemma false in
 /--
-General matrix-vector multiplication for `matrixMN` and a vector written as `Tensor.dim`.
+General matrix-vector multiplication for `Tensor.matrix` and a vector written as `Tensor.dim`.
 
 This generalizes the 1-row dot-product lemma from `universal_approximation.lean` to arbitrary `m`.
 -/
-lemma mat_vec_mul_spec_matrixMN_vector
+lemma mat_vec_mul_spec_matrix_vector
     (m n : ℕ) (c : Fin m → Fin n → ℝ) (v : Fin n → ℝ) :
-    Spec.matVecMulSpec (matrixMN m n c) (Tensor.dim (fun j => Tensor.scalar (v j))) =
+    Spec.matVecMulSpec (Tensor.matrix (m := m) (n := n) c)
+        (Tensor.dim (fun j => Tensor.scalar (v j))) =
       Tensor.dim (fun i : Fin m => Tensor.scalar (∑ j : Fin n, c i j * v j)) := by
   classical
   cases m with
@@ -188,8 +189,8 @@ First layer for exact affine representability.
 Given an affine form $u(x)=w\mathbin{\cdot}x+b$, this layer outputs $[u(x),-u(x)]$.
 -/
 noncomputable def affineIdLayer1 {n : Nat} (w : Fin n → ℝ) (b : ℝ) : LinearSpec ℝ n 2 :=
-  { weights := matrixMN 2 n (fun i j => if i.1 = 0 then w j else -w j)
-    bias := vectorN 2 (fun i => if i.1 = 0 then b else -b) }
+  { weights := Tensor.matrix (m := 2) (n := n) (fun i j => if i.1 = 0 then w j else -w j)
+    bias := Tensor.vector (n := 2) (fun i => if i.1 = 0 then b else -b) }
 
 /--
 Second layer for exact affine representability.
@@ -199,8 +200,9 @@ $[\operatorname{ReLU}(u),\operatorname{ReLU}(-u)]$, this output layer computes
 $\operatorname{ReLU}(u)-\operatorname{ReLU}(-u)=u$.
 -/
 noncomputable def affineIdLayer2 : LinearSpec ℝ 2 1 :=
-  { weights := matrixMN 1 2 (fun _ j => if j.1 = 0 then (1 : ℝ) else (-1 : ℝ))
-    bias := vectorN 1 (fun _ => (0 : ℝ)) }
+  { weights := Tensor.matrix (m := 1) (n := 2)
+      (fun _ j => if j.1 = 0 then (1 : ℝ) else (-1 : ℝ))
+    bias := Tensor.vector (n := 1) (fun _ => (0 : ℝ)) }
 
 /-- Standard basis vector $e_i\in\mathbb{R}^n$. -/
 noncomputable def stdBasis {n : Nat} (i : Fin n) : Fin n → ℝ :=
@@ -236,7 +238,7 @@ theorem mlp_eval_affine_id {n : Nat} (w : Fin n → ℝ) (b : ℝ) (x : TensorVe
       funext j
       cases fj : f j with
       | scalar r =>
-        simp [toVec, Tensor.dimScalarEquiv, fj, Tensor.toScalar]
+        simp [toVec, Tensor.dimScalarEquiv, fj, Tensor.item]
   -- Compute the first linear layer output: `[u, -u]` where `u = dot w x + b`.
   have hz1 :
       Spec.linearSpec (α := ℝ) (affineIdLayer1 (n := n) w b) x =
@@ -244,16 +246,17 @@ theorem mlp_eval_affine_id {n : Nat} (w : Fin n → ℝ) (b : ℝ) (x : TensorVe
           Tensor.scalar (if i.1 = 0 then (dot w x + b) else -(dot w x + b))) := by
     -- Unfold `linear_spec` and use the generalized dot-product lemma.
     unfold Spec.linearSpec affineIdLayer1
-    -- Rewrite `x` to the canonical `Tensor.dim` form so `mat_vec_mul_spec_matrixMN_vector` applies.
+    -- Rewrite `x` to the canonical `Tensor.dim` form so `mat_vec_mul_spec_matrix_vector` applies.
     rw [hx]
     have hmv :
         Spec.matVecMulSpec
-            (matrixMN 2 n (fun i j => if i.1 = 0 then w j else -w j))
+            (Tensor.matrix (m := 2) (n := n)
+              (fun i j => if i.1 = 0 then w j else -w j))
             (Tensor.dim (fun j : Fin n => Tensor.scalar (toVec x j))) =
           Tensor.dim (fun i : Fin 2 =>
             Tensor.scalar (∑ j : Fin n, (if i.1 = 0 then w j else -w j) * toVec x j)) := by
       simpa using
-        (mat_vec_mul_spec_matrixMN_vector (m := 2) (n := n)
+        (mat_vec_mul_spec_matrix_vector (m := 2) (n := n)
           (c := fun i j => if i.1 = 0 then w j else -w j) (v := toVec x))
     rw [hmv]
     -- Now add the bias and simplify each coordinate.
@@ -286,13 +289,14 @@ theorem mlp_eval_affine_id {n : Nat} (w : Fin n → ℝ) (b : ℝ) (x : TensorVe
     unfold Spec.linearSpec affineIdLayer2
     -- Dot product in the final linear layer: `[1, -1] · [relu u, relu (-u)]`.
     have hmv2 :
-        Spec.matVecMulSpec (matrixMN 1 2 (fun _ j => if j.1 = 0 then (1 : ℝ) else (-1 : ℝ)))
+        Spec.matVecMulSpec (Tensor.matrix (m := 1) (n := 2)
+          (fun _ j => if j.1 = 0 then (1 : ℝ) else (-1 : ℝ)))
             (Tensor.dim (fun j : Fin 2 =>
               Tensor.scalar (if j.1 = 0 then relu (dot w x + b) else relu (-b + -dot w x)))) =
           Tensor.dim (fun _ : Fin 1 =>
             Tensor.scalar ((1 : ℝ) * relu (dot w x + b) + (-1 : ℝ) * relu (-b + -dot w x))) := by
       -- Use the 1-row lemma from the 1D ReLU approximation file.
-      have := UniversalApproximation.mat_vec_mul_spec_matrixMN_vector 2
+      have := UniversalApproximation.mat_vec_mul_spec_matrix_vector 2
         (c := fun j : Fin 2 => if j.1 = 0 then (1 : ℝ) else (-1 : ℝ))
         (v := fun j : Fin 2 => if j.1 = 0 then relu (dot w x + b) else relu (-b + -dot w x))
       simpa [Tensor.dim] using this
@@ -303,11 +307,11 @@ theorem mlp_eval_affine_id {n : Nat} (w : Fin n → ℝ) (b : ℝ) (x : TensorVe
     fin_cases i
     -- The scalar goal is exactly `relu u - relu (-u) = u` (after rewriting `a - b` as `a + -b`).
     have h := relu_sub_relu_neg (u := dot w x + b)
-    simpa [vectorN_eq_dim, Spec.Tensor.addSpec, Spec.Tensor.map2Spec, sub_eq_add_neg, relu,
-      Tensor.toScalar,
+    simpa [Tensor.vector, Spec.Tensor.addSpec, Spec.Tensor.map2Spec, sub_eq_add_neg, relu,
+      Tensor.item,
       neg_add, add_assoc, add_comm, add_left_comm, mul_assoc] using h
   -- Finish: `extract_scalar_output` picks the unique element of `Fin 1`.
-  simp [extractScalarOutput, hy, Tensor.toScalar]
+  simp [extractScalarOutput, hy, Tensor.item]
 
 /-- Exact representability of coordinate projections $x\mapsto x_i$ by a width-$2$ ReLU MLP. -/
 theorem mlp_eval_coord {n : Nat} (i : Fin n) (x : TensorVec n) :
@@ -334,8 +338,10 @@ an $n$-dimensional first layer that feeds $u=w\mathbin{\cdot}x+c$.
 -/
 noncomputable def liftLayer1From1d
     {n hidDim : Nat} (l1 : LinearSpec ℝ 1 hidDim) (w : Fin n → ℝ) (c : ℝ) : LinearSpec ℝ n hidDim :=
-  { weights := matrixMN hidDim n (fun i j => matDim1Get l1.weights i * w j)
-    bias := vectorN hidDim (fun i => matDim1Get l1.weights i * c + vecGet l1.bias i) }
+  { weights := Tensor.matrix (m := hidDim) (n := n)
+      (fun i j => matDim1Get l1.weights i * w j)
+    bias := Tensor.vector (n := hidDim)
+      (fun i => matDim1Get l1.weights i * c + vecGet l1.bias i) }
 
 /--
 Lifting lemma: the lifted $n$-dimensional MLP agrees with the one-dimensional MLP evaluated at
@@ -362,7 +368,7 @@ theorem mlp_eval_lift_from_1d
       funext j
       cases fj : f j with
       | scalar r =>
-        simp [toVec, Tensor.dimScalarEquiv, fj, Tensor.toScalar]
+        simp [toVec, Tensor.dimScalarEquiv, fj, Tensor.item]
   have hz1 :
       Spec.linearSpec (α := ℝ) (liftLayer1From1d (n := n) l1 w c) x =
         Spec.linearSpec (α := ℝ) l1 (Tensor.singleton (dot w x + c)) := by
@@ -376,16 +382,17 @@ theorem mlp_eval_lift_from_1d
       rw [hx]
       have hmv :
           Spec.matVecMulSpec
-              (matrixMN hidDim n (fun i j => matDim1Get l1.weights i * w j))
+              (Tensor.matrix (m := hidDim) (n := n)
+                (fun i j => matDim1Get l1.weights i * w j))
               (Tensor.dim (fun j : Fin n => Tensor.scalar (toVec x j))) =
             Tensor.dim (fun i : Fin hidDim =>
               Tensor.scalar (∑ j : Fin n, (matDim1Get l1.weights i * w j) * toVec x j)) := by
         simpa using
-          (mat_vec_mul_spec_matrixMN_vector (m := hidDim) (n := n)
+          (mat_vec_mul_spec_matrix_vector (m := hidDim) (n := n)
             (c := fun i j => matDim1Get l1.weights i * w j) (v := toVec x))
       rw [hmv]
       -- Add bias and factor out the constant scalar weight.
-      simp [Spec.Tensor.addSpec, Spec.Tensor.map2Spec, vectorN_eq_dim, dot, toVec_dim_toVec,
+      simp [Spec.Tensor.addSpec, Spec.Tensor.map2Spec, Tensor.vector, dot, toVec_dim_toVec,
         Finset.mul_sum,
         mul_assoc, mul_left_comm, mul_comm, add_assoc, add_comm]
     -- Right side: because the input is a singleton, mat-vec reduces to `a_i * u`.
@@ -407,7 +414,7 @@ theorem mlp_eval_lift_from_1d
         funext i
         cases hbi : fbias i with
         | scalar bi =>
-          simp [Spec.Tensor.map2Spec, vecGet, hbi, Tensor.toScalar]
+          simp [Spec.Tensor.map2Spec, vecGet, hbi, Tensor.item]
     -- Rewrite both sides to explicit `Tensor.dim` forms and compare pointwise.
     rw [hleft, hright]
     apply congrArg Tensor.dim

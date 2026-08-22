@@ -8,7 +8,7 @@ module
 
 public import NN.Runtime.RL.Core
 public import NN.Runtime.Autograd.TorchLean.NN
-public import NN.Spec.Models.CommonHelpers
+public import NN.Spec.Core.Tensor.Numerics
 
 /-!
 # PPO Rollouts (Discrete Actions)
@@ -118,7 +118,7 @@ Notes:
   Value targets (lambda-returns) are computed from the *unnormalized* advantages.
 -/
 def toActorCriticSample {obsShape : Shape} {nActions horizon : Nat}
-    [Fact (0 < horizon)] [Fact (0 < nActions)]
+    [NeZero horizon] [NeZero nActions]
     (gamma lam : α)
     (r : Rollout α obsShape nActions horizon) :
     IO (_root_.Runtime.Autograd.Torch.TList α
@@ -136,7 +136,7 @@ def toActorCriticSample {obsShape : Shape} {nActions horizon : Nat}
       simpa [statesArr, Array.size_map] using r.steps_size_eq_horizon
     simpa using this.symm
   let states : Tensor α (StateBatchShape horizon obsShape) :=
-    Tensor.ofArrayDim (n := horizon) (s := obsShape) statesArr hStates
+    Tensor.ofArray statesArr hStates
 
   let actionsOneHotArr : Array (Tensor α (.dim nActions .scalar)) :=
     steps.map (fun st => NN.Tensor.oneHot (α := α) nActions st.action)
@@ -145,7 +145,7 @@ def toActorCriticSample {obsShape : Shape} {nActions horizon : Nat}
       simpa [actionsOneHotArr, Array.size_map] using r.steps_size_eq_horizon
     simpa using this.symm
   let actionsOneHot : Tensor α (LogitsBatchShape horizon nActions) :=
-    Tensor.ofArrayDim (n := horizon) (s := .dim nActions .scalar) actionsOneHotArr hActHot
+    Tensor.ofArray actionsOneHotArr hActHot
 
   let oldLogProbArr : Array α := steps.map (fun st => st.oldLogProb)
   let hOldLP : horizon = oldLogProbArr.size := by
@@ -153,7 +153,7 @@ def toActorCriticSample {obsShape : Shape} {nActions horizon : Nat}
       simpa [oldLogProbArr, Array.size_map] using r.steps_size_eq_horizon
     simpa using this.symm
   let oldLogProb : Tensor α (ScalarBatchShape horizon) :=
-    Tensor.ofArray1D (α := α) (n := horizon) oldLogProbArr hOldLP
+    Tensor.ofArray (oldLogProbArr.map Tensor.scalar) (by simpa using hOldLP)
 
   let rewardsArr : Array α := steps.map (fun st => st.reward)
   let donesArr : Array Bool := steps.map (fun st => st.done)
@@ -178,13 +178,13 @@ def toActorCriticSample {obsShape : Shape} {nActions horizon : Nat}
     simpa using this.symm
 
   let rewards : Tensor α (.dim horizon .scalar) :=
-    Tensor.ofArray1D (α := α) (n := horizon) rewardsArr hRewards
+    Tensor.ofArray (rewardsArr.map Tensor.scalar) (by simpa using hRewards)
   let dones : Tensor Bool (.dim horizon .scalar) :=
-    Tensor.ofArray1D (α := Bool) (n := horizon) donesArr hDones
+    Tensor.ofArray (donesArr.map Tensor.scalar) (by simpa using hDones)
   let values : Tensor α (.dim horizon .scalar) :=
-    Tensor.ofArray1D (α := α) (n := horizon) valuesArr hValues
+    Tensor.ofArray (valuesArr.map Tensor.scalar) (by simpa using hValues)
   let nextValues : Tensor α (.dim horizon .scalar) :=
-    Tensor.ofArray1D (α := α) (n := horizon) nextValuesArr hNextValues
+    Tensor.ofArray (nextValuesArr.map Tensor.scalar) (by simpa using hNextValues)
 
   let advRaw :=
     Core.generalizedAdvantageEstimationVec (α := α) (n := horizon) gamma lam rewards values nextValues dones

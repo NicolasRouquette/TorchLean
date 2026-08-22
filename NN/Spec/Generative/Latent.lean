@@ -43,7 +43,7 @@ def expTensor {s : Shape} (x : Tensor α s) : Tensor α s :=
 
 /-- Elementwise $\tfrac12x$, written as a tensor helper to make VAE equations readable. -/
 def halfTensor {s : Shape} (x : Tensor α s) : Tensor α s :=
-  scaleSpec x Numbers.pointfive
+  scaleSpec x Numbers.half
 
 /--
 Diagonal-Gaussian reparameterization:
@@ -79,7 +79,7 @@ def diagonalGaussianKlToStandard
   let mu2 := mulSpec mu mu
   let ones := fill (α := α) (1 : α) latent
   let per := var + mu2 - ones - logvar
-  Numbers.pointfive * Spec.meanOver (s := latent) (Spec.toScalarSpec per)
+  Numbers.half * Spec.meanOver (s := latent) (Spec.toScalarSpec per)
 
 /-- A finite codebook for vector-quantized latent models. -/
 structure Codebook (α : Type) (numCodes : Nat) (latent : Shape) [Context α] where

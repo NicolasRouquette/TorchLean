@@ -24,6 +24,16 @@ open Numbers
 
 variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
 
+/-- Repeat a channel vector over every spatial position of a channel-first tensor. -/
+def broadcastChannelFirst {channels : Nat} (sSpatial : Shape)
+    (x : Tensor α (.dim channels .scalar)) : Tensor α (.dim channels sSpatial) :=
+  let spatialSize := Spec.Shape.size sSpatial
+  let sFlat : Shape := .dim channels (.dim spatialSize .scalar)
+  let expanded : Tensor α sFlat := broadcastAfterSum sFlat 1 x
+  have hSize : Spec.Shape.size sFlat = Spec.Shape.size (.dim channels sSpatial) := by
+    simp [sFlat, spatialSize, Spec.Shape.size]
+  reshapeSpec expanded hSize
+
 /-
   Batch Normalization (spec layer)
 
@@ -49,7 +59,7 @@ def batchNorm
   (x : Tensor α (.dim channels sSpatial))
   (gamma : Tensor α (.dim channels .scalar))
   (beta : Tensor α (.dim channels .scalar))
-  (epsilon : α := Numbers.epsilon)
+  (epsilon : α := Numbers.normalizationEpsilon)
   [Shape.WellFormed (.dim channels sSpatial)] :
   Tensor α (.dim channels sSpatial) :=
   let spatialSize : Nat := Spec.Shape.size sSpatial
@@ -64,52 +74,20 @@ def batchNorm
     simpa [spatialSize] using Shape.size_pos_of_well_formed (s := sSpatial) h_spatial_wf
   letI : Shape.WellFormed s_flat := ⟨⟨h_channels, ⟨h_spatialSize, trivial⟩⟩⟩
   let h_rank : Spec.Shape.rank s_flat > 0 := by simp [s_flat, Spec.Shape.rank]
-  let h_valid : Shape.valid_axis_inst (Spec.Shape.rank s_flat - 1) s_flat :=
-    Shape.validAxisLastAuto h_rank
-  let mean : Tensor α (.dim channels .scalar) := reduceMeanLastGeneral x2 h_valid
-  have cb_flat : Shape.CanBroadcastTo (.dim channels .scalar) s_flat := by
-    apply Shape.CanBroadcastTo.dim_eq
-    exact Shape.CanBroadcastTo.scalar_to_any (.dim spatialSize .scalar)
-  let centered := subSpec x2 (broadcastTo cb_flat mean)
+  let h_valid : Shape.HasNonemptyAxis (Spec.Shape.rank s_flat - 1) s_flat :=
+    Shape.inferNonemptyLastAxis h_rank
+  let mean : Tensor α (.dim channels .scalar) := reduceMeanLast x2 h_valid
+  let centered := subSpec x2 (broadcastAfterSum s_flat 1 mean)
   let centered_sq := mulSpec centered centered
-  let varianceRaw : Tensor α (.dim channels .scalar) := reduceMeanLastGeneral centered_sq h_valid
+  let varianceRaw : Tensor α (.dim channels .scalar) := reduceMeanLast centered_sq h_valid
   let variance := maxSpec varianceRaw (fill 0 (.dim channels .scalar))
-  have cb : Shape.CanBroadcastTo (.dim channels .scalar) (.dim channels sSpatial) := by
-    apply Shape.CanBroadcastTo.dim_eq
-    exact Shape.CanBroadcastTo.scalar_to_any sSpatial
-  normalizeCore
-    (s := .dim channels sSpatial)
-    (s_mean := .dim channels .scalar)
-    (s_var := .dim channels .scalar)
-    (s_gamma := .dim channels .scalar)
-    (s_beta := .dim channels .scalar)
-    (epsilon := epsilon)
-    (x := x)
-    (mean := mean)
-    (variance := variance)
-    (gamma := gamma)
-    (beta := beta)
-    (cb_mean := cb)
-    (cb_var := cb)
-    (cb_gamma := cb)
-    (cb_beta := cb)
-
-/--
-Alias: per-sample normalization over spatial axes ("InstanceNorm-style").
-
-The spec-level `batchNorm*` operators model the `N=1` case (no explicit batch axis and no running
-statistics update). Many ML codebases refer to that behavior as *instance normalization*.
-
-These aliases make that intent explicit without changing the existing API surface. -/
-def instanceNorm
-  {channels : Nat} {sSpatial : Shape}
-  (x : Tensor α (.dim channels sSpatial))
-  (gamma : Tensor α (.dim channels .scalar))
-  (beta : Tensor α (.dim channels .scalar))
-  (epsilon : α := Numbers.epsilon)
-  [Shape.WellFormed (.dim channels sSpatial)] :
-  Tensor α (.dim channels sSpatial) :=
-  batchNorm (x := x) (gamma := gamma) (beta := beta) (epsilon := epsilon)
+  let meanB := broadcastChannelFirst sSpatial mean
+  let varianceB := broadcastChannelFirst sSpatial variance
+  let gammaB := broadcastChannelFirst sSpatial gamma
+  let betaB := broadcastChannelFirst sSpatial beta
+  let centered := subSpec x meanB
+  let std := sqrtSpec (addSpec varianceB (fill epsilon (.dim channels sSpatial)))
+  addSpec (mulSpec (divSpec centered std) gammaB) betaB
 
 /-- `batchNorm` specialized to a single channel-first image `(C,H,W)`. -/
 def batchNorm2d
@@ -120,7 +98,7 @@ def batchNorm2d
   (h_c : channels > 0 := by norm_num)
   (h_h : height > 0 := by norm_num)
   (h_w : width > 0 := by norm_num)
-  (epsilon : α := Numbers.epsilon) :
+  (epsilon : α := Numbers.normalizationEpsilon) :
   Tensor α (.dim channels (.dim height (.dim width .scalar))) :=
   letI : Shape.WellFormed (.dim channels (.dim height (.dim width .scalar))) :=
     ⟨⟨h_c, ⟨h_h, ⟨h_w, trivial⟩⟩⟩⟩
@@ -144,7 +122,7 @@ def batchNorm2dJvp
   (_h_c : channels > 0 := by norm_num)
   (_h_h : height > 0 := by norm_num)
   (_h_w : width > 0 := by norm_num)
-  (epsilon : α := Numbers.epsilon) :
+  (epsilon : α := Numbers.normalizationEpsilon) :
   Tensor α (.dim channels (.dim height (.dim width .scalar))) :=
 
   let spatial_size := height * width
@@ -242,7 +220,7 @@ def batchNorm2dBackward
   (_h_c : channels > 0 := by norm_num)
   (_h_h : height > 0 := by norm_num)
   (_h_w : width > 0 := by norm_num)
-  (epsilon : α := Numbers.epsilon) :
+  (epsilon : α := Numbers.normalizationEpsilon) :
   (Tensor α (.dim channels (.dim height (.dim width .scalar))) ×  -- ∂L/∂x
    Tensor α (.dim channels .scalar) ×           -- ∂L/∂gamma
    Tensor α (.dim channels .scalar)) :=         -- ∂L/∂beta
@@ -437,29 +415,16 @@ def batchNormInference
   (runningVar : Tensor α (.dim channels .scalar))
   (gamma : Tensor α (.dim channels .scalar))
   (beta : Tensor α (.dim channels .scalar))
-  (epsilon : α := Numbers.epsilon) :
+  (epsilon : α := Numbers.normalizationEpsilon) :
   Tensor α (.dim channels sSpatial) :=
-  let s : Shape := .dim channels sSpatial
-  have cb : Shape.CanBroadcastTo (.dim channels .scalar) s := by
-    apply Shape.CanBroadcastTo.dim_eq
-    exact Shape.CanBroadcastTo.scalar_to_any sSpatial
   -- Clamp the variance to stay nonnegative in approximate numeric backends.
   let runningVar := maxSpec runningVar (fill 0 (.dim channels .scalar))
-  normalizeCore
-    (s := s)
-    (s_mean := .dim channels .scalar)
-    (s_var := .dim channels .scalar)
-    (s_gamma := .dim channels .scalar)
-    (s_beta := .dim channels .scalar)
-    (epsilon := epsilon)
-    (x := x)
-    (mean := runningMean)
-    (variance := runningVar)
-    (gamma := gamma)
-    (beta := beta)
-    (cb_mean := cb)
-    (cb_var := cb)
-    (cb_gamma := cb)
-    (cb_beta := cb)
+  let meanB := broadcastChannelFirst sSpatial runningMean
+  let varianceB := broadcastChannelFirst sSpatial runningVar
+  let gammaB := broadcastChannelFirst sSpatial gamma
+  let betaB := broadcastChannelFirst sSpatial beta
+  let centered := subSpec x meanB
+  let std := sqrtSpec (addSpec varianceB (fill epsilon (.dim channels sSpatial)))
+  addSpec (mulSpec (divSpec centered std) gammaB) betaB
 
 end Spec

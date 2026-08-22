@@ -66,7 +66,7 @@ variable {ss : List Shape}
 abbrev nil : TList ([] : List Shape) :=
   Proofs.Autograd.Algebra.TList.nil (α := ℝ)
 
-/-- Constructor alias for `TList.cons` specialized to `ℝ`. -/
+/-- Add a tensor to the front of a real-valued tensor context. -/
 abbrev cons {s : Shape} {ss : List Shape} (x : Tensor ℝ s) (xs : TList ss) : TList (s :: ss) :=
   Proofs.Autograd.Algebra.TList.cons (α := ℝ) (s := s) (ss := ss) x xs
 

@@ -271,10 +271,10 @@ instance : MathFunctions IEEE32Exec where
 
 /-- Numeric constants used by the spec library, instantiated at binary32. -/
 instance : Numbers IEEE32Exec where
-  neg_point_five := ofFloat (-0.5)
-  neg_one := ofFloat (-1)
-  pointone := ofFloat 0.1
-  pointfive := ofFloat 0.5
+  negHalf := ofFloat (-0.5)
+  negOne := ofFloat (-1)
+  oneTenth := ofFloat 0.1
+  half := ofFloat 0.5
   zero := posZero
   one := ofBits 0x3F800000
   two := ofFloat 2
@@ -282,8 +282,8 @@ instance : Numbers IEEE32Exec where
   four := ofFloat 4
   five := ofFloat 5
   ten := ofFloat 10
-  log10 := ofFloat (Float.log 10)
-  log10000 := ofFloat (Float.log 10000)
+  lnTen := ofFloat (Float.log 10)
+  lnTenThousand := ofFloat (Float.log 10000)
   epsilon := ofFloat (1e-6)
 
 end IEEE32Exec

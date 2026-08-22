@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Torch.TypedGraphSession
+public import NN.Runtime.Autograd.TorchLean.Functional.ShapeOps
 
 import Mathlib.Algebra.Order.Algebra
 
@@ -29,7 +30,7 @@ TorchLean exposes a **single API** with two execution modes selected at construc
 - `.typedGraph`: a session that records shape-indexed graph data while building the runtime
   tape, then executes via `Runtime.Autograd.Torch.Internal.TypedGraphSession`.
 
-Both modes use the same `Session` API; each operation dispatches through `Session.impl`.
+Both modes use the same `Session` API; each operation dispatches through `Session.state`.
 
 ## Typical Training Loop (PyTorch Analogy)
 
@@ -105,7 +106,7 @@ Eager-only session wrapper.
 
 This is the public eager-session record backed by the internal tape session
 `Runtime.Autograd.Torch.Internal.EagerSession`. Users normally interact with the unified `Session`
-API; this type exists to support execution-mode dispatch (`SessionImpl.eager`).
+API; this type exists to support execution-mode dispatch (`SessionState.eager`).
 -/
 structure EagerSession (α : Type) where
   /-- inner. -/
@@ -313,19 +314,6 @@ def bmm {α : Type} (s : EagerSession α) [Add α] [Mul α] [Zero α] [Decidable
     (n := n) (p := p) a b
 
 /--
-Concatenate two vectors along the only dimension (eager execution path).
-
-PyTorch analogy: `torch.cat([a, b], dim=0)` for 1D tensors.
--/
-def concatVectors {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
-  {n m : Nat}
-  (a : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar))
-  (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim m .scalar)) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim (n + m) .scalar)) :=
-  _root_.Runtime.Autograd.Torch.Internal.EagerSession.concatVectors (α := α) s.inner (n := n) (m :=
-    m) a b
-
-/--
 Concatenate along the outermost dimension (dimension 0) (eager execution path).
 
 PyTorch analogy: `torch.cat([a, b], dim=0)`.
@@ -345,7 +333,7 @@ PyTorch analogy: `x[start:start+len]` for the first dimension.
 -/
 def sliceLeadingAxisRange {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
   {n : Nat} {sh : Shape}
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n sh)) (start len : Nat) (h : len + start ≤
+  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n sh)) (start len : Nat) (h : start + len ≤
     n) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim len sh)) :=
   _root_.Runtime.Autograd.Torch.Internal.EagerSession.sliceLeadingAxisRange (α := α) s.inner (n := n) (sh :=
@@ -415,17 +403,27 @@ def tanh {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     (_root_.Runtime.Autograd.Torch.TensorRef α sh) :=
   _root_.Runtime.Autograd.Torch.Internal.EagerSession.tanh (α := α) (sh := sh) s.inner x
 
-/-- Elementwise softmax activation (eager execution path). -/
+/-- Softmax along an explicitly selected tensor dimension (eager execution path). -/
 def softmax {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
-  {sh : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) : IO
-    (_root_.Runtime.Autograd.Torch.TensorRef α sh) :=
-  _root_.Runtime.Autograd.Torch.Internal.EagerSession.softmax (α := α) (sh := sh) s.inner x
+    {sh : Shape} (axis : Nat) [Shape.AxisInBounds axis sh]
+    (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
+    IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) :=
+  let action : _root_.Runtime.Autograd.Torch.Internal.EagerM α
+      (_root_.Runtime.Autograd.Torch.TensorRef α sh) :=
+    F.softmax (m := _root_.Runtime.Autograd.Torch.Internal.EagerM α)
+      (α := α) (s := sh) axis x
+  action s.inner
 
-/-- Stable log-softmax along the last axis (eager execution path). -/
+/-- Stable log-softmax along an explicitly selected tensor dimension (eager execution path). -/
 def logSoftmax {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
-  {sh : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) : IO
-    (_root_.Runtime.Autograd.Torch.TensorRef α sh) :=
-  _root_.Runtime.Autograd.Torch.Internal.EagerSession.logSoftmax (α := α) (sh := sh) s.inner x
+    {sh : Shape} (axis : Nat) [Shape.AxisInBounds axis sh]
+    (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
+    IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) :=
+  let action : _root_.Runtime.Autograd.Torch.Internal.EagerM α
+      (_root_.Runtime.Autograd.Torch.TensorRef α sh) :=
+    F.logSoftmax (m := _root_.Runtime.Autograd.Torch.Internal.EagerM α)
+      (α := α) (s := sh) axis x
+  action s.inner
 
 /-- Elementwise softplus activation (eager execution path). -/
 def softplus {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
@@ -527,14 +525,14 @@ def broadcastTo {α : Type} (s : EagerSession α) [Inhabited α] [Add α] [Zero 
 
 /-- Reduce-sum along an axis (eager execution path). -/
 def reduceSum {α : Type} (s : EagerSession α) [Add α] [Zero α] [Inhabited α] [DecidableEq Shape]
-  {sh : Shape} (axis : Nat) [valid : Shape.valid_axis_inst axis sh] [wf : Shape.WellFormed sh]
+  {sh : Shape} (axis : Nat) [valid : Shape.HasNonemptyAxis axis sh] [wf : Shape.WellFormed sh]
   (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (shapeAfterSum sh axis)) :=
   _root_.Runtime.Autograd.Torch.Internal.EagerSession.reduceSum (α := α) (sh := sh) s.inner axis x
 
 /-- Reduce-mean along an axis (eager execution path). -/
 def reduceMean {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
-  {sh : Shape} (axis : Nat) [valid : Shape.valid_axis_inst axis sh] [wf : Shape.WellFormed sh]
+  {sh : Shape} (axis : Nat) [valid : Shape.HasNonemptyAxis axis sh] [wf : Shape.WellFormed sh]
   (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (shapeAfterSum sh axis)) :=
   _root_.Runtime.Autograd.Torch.Internal.EagerSession.reduceMean (α := α) (sh := sh) s.inner axis x
@@ -554,27 +552,27 @@ def gatherRow {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
     cols) s.inner x i
 
 /-- Gather a scalar from a vector using a `NatRef` index (eager execution path). -/
-def gatherScalarRef {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
+def gatherScalarRefOrZero {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
   {n : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar)) (i :
     _root_.Runtime.Autograd.Torch.NatRef) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) :=
-  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherScalarRef (α := α) (n := n) s.inner x
+  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherScalarRefOrZero (α := α) (n := n) s.inner x
     i
 
 /-- Gather a row from a matrix using a `NatRef` index (eager execution path). -/
-def gatherRowRef {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
+def gatherRowRefOrZero {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
   {rows cols : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim rows (.dim cols .scalar)))
     (i : _root_.Runtime.Autograd.Torch.NatRef) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim cols .scalar)) :=
-  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherRowRef (α := α) (rows := rows) (cols
+  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherRowRefOrZero (α := α) (rows := rows) (cols
     := cols) s.inner x i
 
 /-- Gather a scalar using a raw `Nat` index (eager execution path). -/
-def gatherScalarNat {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
+def gatherScalarNatOrZero {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
   {n : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar)) (i : Nat) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) :=
-  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherScalarNat (α := α) (n := n) s.inner x
+  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherScalarNatOrZero (α := α) (n := n) s.inner x
     i
 
 /--
@@ -582,37 +580,37 @@ Gather a vector of entries from a vector using an index tensor (eager execution 
 
 PyTorch analogy: `x[idx]` where `idx` is an integer tensor (1D).
 -/
-def gatherVecNat {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
+def gatherVecNatOrZero {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
   {n k : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar)) (idx : Tensor Nat
     (.dim k .scalar)) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim k .scalar)) :=
-  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherVecNat (α := α) (n := n) (k := k)
+  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherVecNatOrZero (α := α) (n := n) (k := k)
     s.inner x idx
 
 /-- Gather multiple rows from a matrix using an index tensor (eager execution path). -/
-def gatherRowsNat {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
+def gatherRowsNatOrZero {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
   {rows cols k : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim rows (.dim cols
     .scalar)))
   (idx : Tensor Nat (.dim k .scalar)) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim k (.dim cols .scalar))) :=
-  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherRowsNat (α := α)
+  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherRowsNatOrZero (α := α)
     (rows := rows) (cols := cols) (k := k) s.inner x idx
 
-/-- `gather_vec_nat`, but the indices are provided as a `NatVecRef` leaf (eager execution path). -/
-def gatherVecRef {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
+/-- `gather_vec_nat_or_zero`, but the indices are provided as a `NatVecRef` leaf (eager execution path). -/
+def gatherVecRefOrZero {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
   {n k : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar))
   (idx : _root_.Runtime.Autograd.Torch.NatVecRef k) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim k .scalar)) :=
-  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherVecRef (α := α) (n := n) (k := k)
+  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherVecRefOrZero (α := α) (n := n) (k := k)
     s.inner x idx
 
-/-- `gather_rows_nat`, but the indices are provided as a `NatVecRef` leaf (eager execution path). -/
-def gatherRowsRef {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
+/-- `gather_rows_nat_or_zero`, but the indices are provided as a `NatVecRef` leaf (eager execution path). -/
+def gatherRowsRefOrZero {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
   {rows cols k : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim rows (.dim cols
     .scalar)))
   (idx : _root_.Runtime.Autograd.Torch.NatVecRef k) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim k (.dim cols .scalar))) :=
-  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherRowsRef (α := α) (rows := rows) (cols
+  _root_.Runtime.Autograd.Torch.Internal.EagerSession.gatherRowsRefOrZero (α := α) (rows := rows) (cols
     := cols) (k := k) s.inner x idx
 
 /--
@@ -816,7 +814,7 @@ See the unified version `Session.backwardDenseAll` for the public API.
 def backwardDenseAll {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
   {sh : Shape} (out : _root_.Runtime.Autograd.Torch.TensorRef α sh) (seed : Tensor α sh) :
-  IO (Array (Runtime.AnyTensor α)) :=
+  IO (Array (Spec.PackedTensor α)) :=
   _root_.Runtime.Autograd.Torch.Internal.EagerSession.backwardDenseAll (α := α) (sh := sh) s.inner
     out seed
 
@@ -825,7 +823,7 @@ def backwardScalarDenseAll {α : Type} (s : EagerSession α) [Add α] [Zero α] 
   Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
   (loss : _root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) :
-  IO (Array (Runtime.AnyTensor α)) :=
+  IO (Array (Spec.PackedTensor α)) :=
   _root_.Runtime.Autograd.Torch.Internal.EagerSession.backwardScalarDenseAll (α := α) s.inner loss
 
 /--
@@ -836,7 +834,7 @@ PyTorch analogy: `optimizer.step()` for an SGD optimizer, with gradients supplie
 def sgdStepAll {α : Type} (s : EagerSession α)
   [Sub α] [Mul α] [Add α] [Zero α] [DecidableEq Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-  (lr : α) (grads : Array (Runtime.AnyTensor α)) : IO Unit :=
+  (lr : α) (grads : Array (Spec.PackedTensor α)) : IO Unit :=
   _root_.Runtime.Autograd.Torch.Internal.EagerSession.sgdStepAll (α := α) s.inner lr grads
 
 end EagerSession

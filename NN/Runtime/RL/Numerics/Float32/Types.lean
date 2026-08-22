@@ -8,7 +8,7 @@ module
 
 public import NN.Runtime.RL.Core
 public import NN.Runtime.RL.Boundary.Core
-public import NN.Spec.Models.CommonHelpers
+public import NN.Spec.Core.Tensor.Numerics
 public import NN.Floats.Interval.IEEEExec32
 
 /-!

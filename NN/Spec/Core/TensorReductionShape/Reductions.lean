@@ -54,9 +54,24 @@ def sumSpec {α : Type} [Add α] [Zero α] {s : Shape} (t : Tensor α s) : α :=
 def prodSpec {s : Shape} (t : Tensor α s) : α :=
   tensorFoldlSpec (· * ·) 1 t
 
-/-- Short name for `prodSpec`. -/
-abbrev productSpec {s : Shape} (t : Tensor α s) : α :=
-  prodSpec t
+/-- Index of the first maximal entry in a nonempty vector.
+
+The explicit nonemptiness hypothesis keeps the result total without inventing an index for an
+empty vector. Ties retain the smaller index, matching a left-to-right `argmax` traversal. -/
+def argmaxVector {n : Nat} (h : 0 < n) (x : Tensor α (.dim n .scalar)) : Fin n :=
+  let value (i : Fin n) :=
+    match get x i with
+    | .scalar a => a
+  let rec loop (i : Nat) (best : Fin n) : Fin n :=
+    if hi : i < n then
+      let current : Fin n := ⟨i, hi⟩
+      loop (i + 1) (if value current > value best then current else best)
+    else
+      best
+  termination_by n - i
+  decreasing_by
+    simpa using Nat.sub_succ_lt_self (a := n) (i := i) hi
+  loop 1 ⟨0, h⟩
 
 /-- Count the number of scalar entries in a tensor (= `Spec.Shape.size`). -/
 def countSpec {s : Shape} (t : Tensor α s) : Nat :=
@@ -104,6 +119,30 @@ def shapeAfterSum : Shape → Nat → Shape
   | .dim _ inner, 0 => inner
   | .dim n inner, Nat.succ k => .dim n (shapeAfterSum inner k)
 
+/-- Shape obtained by replacing the selected axis with a singleton dimension. -/
+def shapeAfterSumKeepDim : Shape → Nat → Shape
+  | .scalar, _ => .scalar
+  | .dim _ inner, 0 => .dim 1 inner
+  | .dim n inner, Nat.succ k => .dim n (shapeAfterSumKeepDim inner k)
+
+@[simp] theorem shape_after_sum_keep_dim_size (s : Shape) (axis : Nat) :
+    Shape.size (shapeAfterSumKeepDim s axis) = Shape.size (shapeAfterSum s axis) := by
+  induction s generalizing axis with
+  | scalar => simp [shapeAfterSumKeepDim, shapeAfterSum]
+  | dim n inner ih =>
+      cases axis with
+      | zero => simp [shapeAfterSumKeepDim, shapeAfterSum, Shape.size]
+      | succ axis => simp [shapeAfterSumKeepDim, shapeAfterSum, Shape.size, ih]
+
+@[simp] theorem shape_after_sum_keep_dim_rank (s : Shape) (axis : Nat) :
+    Shape.rank (shapeAfterSumKeepDim s axis) = Shape.rank s := by
+  induction s generalizing axis with
+  | scalar => simp [shapeAfterSumKeepDim, Shape.rank]
+  | dim n inner ih =>
+      cases axis with
+      | zero => simp [shapeAfterSumKeepDim, Shape.rank]
+      | succ axis => simp [shapeAfterSumKeepDim, Shape.rank, ih]
+
 /-- `simp` lemma: dropping axis 1 from a 2D `(nQ+1)×(nK+1)` shape yields `(nQ+1)`. -/
 @[simp]
 theorem shape_after_sum_dim_1 (nQ nK : Nat) :
@@ -150,41 +189,26 @@ theorem shape_after_sum_zero_alt
   shapeAfterSum (.dim n inner) 0 = inner := by
   simp [shapeAfterSum]
 
--- Helper function for reflexivity
-/-- Reflexive broadcast proof (`s` can broadcast to itself). -/
-def canBroadcastToRefl (s : Shape) : Shape.CanBroadcastTo s s :=
-  match s with
-  | .scalar => Shape.CanBroadcastTo.scalar_to_any .scalar
-  | .dim _ inner => Shape.CanBroadcastTo.dim_eq (canBroadcastToRefl inner)
+/-- Canonical broadcast from a keep-dimension reduction shape back to its input shape. -/
+def shapeAfterSumKeepDimBroadcast : (s : Shape) → (axis : Nat) →
+    Shape.CanBroadcastTo (shapeAfterSumKeepDim s axis) s
+  | .scalar, _ => .scalar
+  | .dim _ inner, 0 => .dim_1_to_n (Shape.CanBroadcastTo.refl inner)
+  | .dim _ inner, Nat.succ axis =>
+      letI : Shape.SameRank (shapeAfterSumKeepDim inner axis) inner :=
+        ⟨shape_after_sum_keep_dim_rank inner axis⟩
+      .dim_eq (shapeAfterSumKeepDimBroadcast inner axis)
 
-/-- Build a broadcast proof from the reduced shape back to the original shape.
+/-- Reinsert an axis dropped by `shapeAfterSum`, repeating the reduced tensor along that axis.
 
-We use this when a backward pass computes something in the reduced shape (e.g. a mean/variance) and
-we need to broadcast it back to match the original tensor shape.
--/
-def shapeAfterSumBroadcastBack
-  {s : Shape} (dim : Nat)
-  (valid : Shape.valid_axis_inst dim s)
-  (wf : Shape.WellFormed s) :
-  Shape.CanBroadcastTo (shapeAfterSum s dim) s :=
-match s, dim with
-| .scalar, _ =>
-  -- For scalar, shape_after_sum returns scalar
-  Shape.CanBroadcastTo.scalar_to_any .scalar
-| .dim n inner, 0 =>
-  -- When dim = 0, shape_after_sum (.dim n inner) 0 = inner
-  -- We need CanBroadcastTo inner (.dim n inner)
-  Shape.CanBroadcastTo.expand_dims (canBroadcastToRefl inner)
-| .dim n inner, Nat.succ k =>
-  -- When dim = k+1, shape_after_sum (.dim n inner) (k+1) = .dim n (shape_after_sum inner k)
-  -- We need CanBroadcastTo (.dim n (shape_after_sum inner k)) (.dim n inner)
-  let valid_inner : Shape.valid_axis_inst k inner := by
-    cases valid.proof with
-    | valid_succ h => exact ⟨h⟩
-
-  let inner_wf : Shape.WellFormed inner := ⟨wf.proof.right⟩
-
-  Shape.CanBroadcastTo.dim_eq (shapeAfterSumBroadcastBack k valid_inner inner_wf)
+This is deliberately separate from `broadcastTo`. Generic broadcasting aligns dimensions from the
+right, whereas a reduction backward pass must restore the exact axis that was removed. -/
+def broadcastAfterSum {α : Type} [Inhabited α] :
+    (s : Shape) → (axis : Nat) → Tensor α (shapeAfterSum s axis) → Tensor α s
+  | .scalar, _, x => x
+  | .dim n _, 0, x => Tensor.dim (fun _ : Fin n => x)
+  | .dim _ inner, Nat.succ axis, Tensor.dim xs =>
+      Tensor.dim (fun i => broadcastAfterSum inner axis (xs i))
 
 -- The compact proof below uses the product-shape lemmas already established above.
 
@@ -224,8 +248,7 @@ autograd for `expand` + elementwise ops.
 /-- Adjoint of `broadcastTo` under sum-reduction: collapse broadcasted dimensions by summing. -/
 def reduceFromBroadcastTo {α : Type} [Add α] [Zero α] :
   {s₁ s₂ : Shape} → Shape.CanBroadcastTo s₁ s₂ → Tensor α s₂ → Tensor α s₁
-| .scalar, s₂, Shape.CanBroadcastTo.scalar_to_any .(s₂), t =>
-    Tensor.scalar (sumSpec (α := α) (s := s₂) t)
+| .scalar, .scalar, Shape.CanBroadcastTo.scalar, t => t
 | .dim n s₁, .dim .(n) s₂, Shape.CanBroadcastTo.dim_eq tail, Tensor.dim xs =>
     Tensor.dim (fun i => reduceFromBroadcastTo (s₁ := s₁) (s₂ := s₂) tail (xs i))
 | .dim 1 s₁, .dim n s₂, Shape.CanBroadcastTo.dim_1_to_n tail, t =>
@@ -255,7 +278,7 @@ def reduceDim
   (f : ∀ {sliceShape : Shape}, Tensor α sliceShape → α)
   (axis : Nat)
   (x : Tensor α s)
-  (_h : Shape.reducibleAlong axis s) : Tensor α (shapeAfterSum s axis) :=
+  (_h : Shape.NonemptyAxis axis s) : Tensor α (shapeAfterSum s axis) :=
   -- Recurse until the selected axis becomes the outer axis. Returning `shapeAfterSum`
   -- directly keeps the shape change visible to Lean and avoids proof-carrying casts.
   let rec aux {inShape : Shape} (axisAdjusted : Nat) (t : Tensor α inShape) :
@@ -269,73 +292,32 @@ def reduceDim
 
 /-- Sum-reduction along a given axis. -/
 def reduceSum {α : Type} [Add α] [Zero α] {s : Shape} (axis : Nat) (t : Tensor α s) (h :
-  Shape.reducibleAlong axis s) :
+  Shape.NonemptyAxis axis s) :
     Tensor α (shapeAfterSum s axis) :=
   reduceDim sumSpec axis t h
 
-/-- Sum-reduction along `axis`, with axis validity inferred via `valid_axis_inst`. -/
-def reduceSumAuto {α : Type} [Add α] [Zero α] {s : Shape} (axis : Nat) [h : Shape.valid_axis_inst
-  axis s] (t : Tensor α s) :
-  Tensor α (shapeAfterSum s axis) :=
-  reduceSum axis t (Shape.proveReducibleAlong axis s h.proof)
-
 /-- Sum reduction on the leading axis is the corresponding first-dimension fold. -/
-theorem reduceSumAuto_zero_eq_reduceFirstDim {α : Type} [Add α] [Zero α]
+theorem reduceSum_zero_eq_reduceFirstDim {α : Type} [Add α] [Zero α]
     {n : Nat} {s : Shape} (h : 0 < n) (tensor : Tensor α (.dim n s)) :
-    reduceSumAuto (h := Shape.validAxisInstZeroAlt2 h) 0 tensor =
+    reduceSum 0 tensor (Shape.hasNonemptyAxisZeroOfPos h).proof =
       reduceFirstDim (fun {sliceShape} => sumSpec (s := sliceShape)) tensor := by
   rfl
 
 /-- Product-reduction along a given axis. -/
-def reduceProd {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.reducibleAlong axis s) :
+def reduceProd {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.NonemptyAxis axis s) :
     Tensor α (shapeAfterSum s axis) :=
   reduceDim prodSpec axis t h
 
-/-- Product-reduction along `axis` when you already have a `valid_axis` proof. -/
-def reduceProdAuto {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.valid_axis axis s) :
-    Tensor α (shapeAfterSum s axis) :=
-  reduceProd axis t (Shape.proveReducibleAlong axis s h)
-
-/-- Get the runtime size of the `k`-th dimension (0-based), if it exists. -/
-def getDimSize : Shape → Nat → Option Nat
-  | .scalar, _ => none
-  | .dim n _, 0 => some n
-  | .dim _ inner, k+1 => getDimSize inner k
-
 /-- Mean-reduction along a given axis. -/
-def reduceMean {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.reducibleAlong axis s) :
+def reduceMean {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.NonemptyAxis axis s) :
   Tensor α (shapeAfterSum s axis) :=
-  match s with
-  | .scalar => t
-  | .dim n inner =>
-    match axis with
-    | 0 =>
-      let summed := reduceSum 0 t h
-      mapSpec (fun x => x / (n : α)) summed
-    | Nat.succ k =>
-      let summed := reduceSum (Nat.succ k) t h
-      -- When reducing along an *inner* axis, divide by the size of the axis being reduced,
-      -- not the size of the output shape's leading dimension.
-      --
-      -- Example (2D): reducing axis=1 on shape `(seqLen, embedDim)` must divide by `embedDim`,
-      -- but `shape_after_sum inner 0 = scalar` has `dim_size = 1`.
-      --
-      -- PyTorch analogy: `torch.mean(x, dim=k)` divides by the length of that `dim`, even when
-      -- you reduce an inner axis of a higher-rank tensor.
-      let denomNat :=
-        match getDimSize inner k with
-        | some m => m
-        | none => 1
-      mapSpec (fun x => x / (denomNat : α)) summed
-
-/-- Mean-reduction along `axis`, with axis validity provided as a typeclass argument. -/
-def reduceMeanAuto {s : Shape} (axis : Nat) (h : Shape.valid_axis_inst axis s) (t : Tensor α s) :
-  Tensor α (shapeAfterSum s axis) :=
-  reduceMean axis t (Shape.proveReducibleAlong axis s h.proof)
+  let summed := reduceSum axis t h
+  letI : Shape.AxisInBounds axis s := h.toAxisInBounds
+  mapSpec (fun x => x / (Shape.axisSize s axis : α)) summed
 
 -- Reduce sum of squares (for variance)
 /-- Sum of squares reduced along an axis (helper for variance). -/
-def reduceSumSquared {n s} (axis : Nat) (t : Tensor α (.dim n s)) (h : Shape.reducibleAlong axis
+def reduceSumSquared {n s} (axis : Nat) (t : Tensor α (.dim n s)) (h : Shape.NonemptyAxis axis
   (.dim n s)) :
     Tensor α (shapeAfterSum (.dim n s) axis) :=
   reduceSum axis (mapSpec (fun x => x * x) t) h
@@ -347,7 +329,7 @@ catastrophic cancellation of $\mathbb{E}[X^2]-\mathbb{E}[X]^2$ when values are l
 clustered.
 -/
 def reduceVar
-  {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.reducibleAlong axis s) :
+  {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.NonemptyAxis axis s) :
   Tensor α (shapeAfterSum s axis) :=
   match s with
   | .scalar =>
@@ -369,26 +351,21 @@ def reduceVar
       match t with
       | Tensor.dim f =>
         -- Extract the proof that inner is reducible along axis k
-        let inner_reducible : Shape.reducibleAlong k inner := by
-          -- We know h : Shape.reducibleAlong (k + 1) (Shape.dim n inner)
-          -- This means reducibleAlong.tail (reducibleAlong k inner)
+        let inner_reducible : Shape.NonemptyAxis k inner := by
+          -- We know h : Shape.NonemptyAxis (k + 1) (Shape.dim n inner)
+          -- This means NonemptyAxis.succ (NonemptyAxis k inner)
           -- So we can extract the inner proof
           cases h with
-          | tail inner_h => exact inner_h
+          | succ inner_h => exact inner_h
 
         -- For each slice along the first dimension, compute variance along axis k
         let variance_slices : Fin n → Tensor α (shapeAfterSum inner k) :=
           fun i => reduceVar k (f i) inner_reducible
         Tensor.dim variance_slices
 
-/-- Variance-reduction along `axis`, with axis validity provided as a typeclass argument. -/
-def reduceVarAuto {s : Shape} (axis : Nat) (h : Shape.valid_axis_inst axis s) (t : Tensor α s) :
-  Tensor α (shapeAfterSum s axis) :=
-  reduceVar axis t (Shape.proveReducibleAlong axis s h.proof)
-
 /-- Min-reduction along a given axis. -/
 def reduceMin {s : Shape}
-  (axis : Nat) (t : Tensor α s) (h : Shape.reducibleAlong axis s) :
+  (axis : Nat) (t : Tensor α s) (h : Shape.NonemptyAxis axis s) :
   Tensor α (shapeAfterSum s axis) :=
   match s with
   | .scalar =>
@@ -421,9 +398,9 @@ def reduceMin {s : Shape}
       match t with
       | Tensor.dim f =>
         -- Extract the proof that inner is reducible along axis k
-        let inner_reducible : Shape.reducibleAlong k inner := by
+        let inner_reducible : Shape.NonemptyAxis k inner := by
           cases h with
-          | tail inner_h => exact inner_h
+          | succ inner_h => exact inner_h
 
         -- For each slice along the first dimension, compute min along axis k
         let min_slices : Fin n → Tensor α (shapeAfterSum inner k) :=
@@ -432,7 +409,7 @@ def reduceMin {s : Shape}
 
 /-- Max-reduction along a given axis. -/
 def reduceMax {s : Shape}
-  (axis : Nat) (t : Tensor α s) (h : Shape.reducibleAlong axis s) :
+  (axis : Nat) (t : Tensor α s) (h : Shape.NonemptyAxis axis s) :
   Tensor α (shapeAfterSum s axis) :=
   match s with
   | .scalar => t
@@ -454,100 +431,30 @@ def reduceMax {s : Shape}
     | Nat.succ k =>
       match t with
       | Tensor.dim f =>
-        let inner_reducible : Shape.reducibleAlong k inner := by
+        let inner_reducible : Shape.NonemptyAxis k inner := by
           cases h with
-          | tail inner_h => exact inner_h
+          | succ inner_h => exact inner_h
         let max_slices : Fin n → Tensor α (shapeAfterSum inner k) :=
           fun i => reduceMax k (f i) inner_reducible
         Tensor.dim max_slices
 
-/-- Max-reduction along `axis`, with axis validity inferred via `valid_axis_inst`. -/
-def reduceMaxAuto {s : Shape} (axis : Nat) [h : Shape.valid_axis_inst axis s] (t : Tensor α s) :
-  Tensor α (shapeAfterSum s axis) :=
-  reduceMax axis t (Shape.proveReducibleAlong axis s h.proof)
+/-- Mean-reduce an arbitrary-rank tensor along its innermost axis. -/
+def reduceMeanLast {s : Shape} (x : Tensor α s)
+    (h : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s) :
+    Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
+  reduceMean (Spec.Shape.rank s - 1) x h.proof
 
-/-- Reduce along the last axis of `s` (i.e. axis `rank s - 1`). -/
-def reduceLastDim {α : Type} [Context α] {s : Shape}
-  (f : ∀ {sliceShape : Shape}, Tensor α sliceShape → α)
-  (x : Tensor α s) (h : Shape.reducibleAlong (Spec.Shape.rank s - 1) s) :
-  Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceDim f (Spec.Shape.rank s - 1) x h
+/-- Variance-reduce an arbitrary-rank tensor along its innermost axis. -/
+def reduceVarLast {s : Shape} (x : Tensor α s)
+    (h : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s) :
+    Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
+  reduceVar (Spec.Shape.rank s - 1) x h.proof
 
-/-- Like `reduce_last_dim`, but infers axis validity via `valid_axis_inst`. -/
-def reduceLastDimAuto {α : Type} [Context α] {s : Shape}
-  (f : ∀ {sliceShape : Shape}, Tensor α sliceShape → α)
-  (x : Tensor α s) [h : Shape.valid_axis_inst (Spec.Shape.rank s - 1) s] :
-  Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceLastDim f x (Shape.proveReducibleAlong (Spec.Shape.rank s - 1) s h.proof)
-
--- Reduce mean along the last dimension of any tensor shape
-/-- Mean-reduce along the last axis. -/
-def reduceMeanLast {α : Type} [Context α] {s : Shape} (x : Tensor α s) (h : Shape.reducibleAlong
-  (Spec.Shape.rank s - 1) s) :
-  Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceDim meanSpec (Spec.Shape.rank s - 1) x h
-
--- Reduce sum along the last dimension of a 2D tensor (specialized version)
-/-- Sum-reduce along the last axis of a 2D tensor `(seqLen, embedDim)`. -/
-def reduceSumLast {seqLen embedDim : Nat} (x : Tensor α (.dim seqLen (.dim embedDim .scalar))) (h
-  : Shape.reducibleAlong (Spec.Shape.rank (.dim seqLen (.dim embedDim .scalar)) - 1) (.dim seqLen (.dim
-  embedDim .scalar))) :
-  Tensor α (.dim seqLen .scalar) :=
-  reduceLastDim sumSpec x h
-
-/-- Product-reduce along the last axis of a 2D tensor `(seqLen, embedDim)`. -/
-def reduceProdLast {seqLen embedDim : Nat} (x : Tensor α (.dim seqLen (.dim embedDim .scalar))) (h
-  : Shape.reducibleAlong (Spec.Shape.rank (.dim seqLen (.dim embedDim .scalar)) - 1) (.dim seqLen (.dim
-  embedDim .scalar))) :
-  Tensor α (.dim seqLen .scalar) :=
-  reduceLastDim prodSpec x h
-
-/-- Max-reduce along the last axis. -/
-def reduceMaxLast {s : Shape} (x : Tensor α s) (h : Shape.reducibleAlong (Spec.Shape.rank s - 1) s) :
-  Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceMax (Spec.Shape.rank s - 1) x h
-
-/-- Min-reduce along the last axis. -/
-def reduceMinLast {s : Shape} (x : Tensor α s) (h : Shape.reducibleAlong (Spec.Shape.rank s - 1) s) :
-  Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceMin (Spec.Shape.rank s - 1) x h
-
-/-- Variance-reduce along the last axis (specialized to a leading batch dimension). -/
-def reduceVarLast
-  {n : Nat} {s : Shape}
-  (x : Tensor α (.dim n s)) (h : Shape.reducibleAlong (Spec.Shape.rank (.dim n s) - 1) (.dim n s)) :
-  Tensor α (shapeAfterSum (.dim n s) (Spec.Shape.rank (.dim n s) - 1)) :=
-  reduceVar (Spec.Shape.rank (.dim n s) - 1) x h
-
-/-- Variance-reduce along the last axis (with axis validity as a typeclass argument). -/
-def reduceVarLastGeneral {n : Nat}  {s : Shape}
-  (x : Tensor α (.dim n s))
-  (h : Shape.valid_axis_inst (Spec.Shape.rank (.dim n s) - 1) (.dim n s))
-  : Tensor α (shapeAfterSum (.dim n s) (Spec.Shape.rank (.dim n s) - 1)) :=
-  reduceVarAuto (Spec.Shape.rank (.dim n s) - 1) h x
-
-/-- Mean-reduce along the last axis (with axis validity as a typeclass argument). -/
-def reduceMeanLastGeneral {s : Shape}
-  (x : Tensor α s)
-  (h : Shape.valid_axis_inst (Spec.Shape.rank s - 1) s)
-  : Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceMeanAuto (Spec.Shape.rank s - 1) h x
-
-/-- Mean-reduce along the last axis, specialized for proofs that assume well-formedness. -/
-def reduceMeanLastGeneralWf {s : Shape}
-  (x : Tensor α s)
-  [_h_wf : Shape.WellFormed s]
-  (_h_rank : Spec.Shape.rank s > 0)
-  (h_valid : Shape.valid_axis_inst (Spec.Shape.rank s - 1) s)
-  : Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceMean (Spec.Shape.rank s - 1) x (Shape.proveReducibleAlong (Spec.Shape.rank s - 1) s h_valid.proof)
-
-/-- Sum-reduce along the last axis (with axis validity inferred via `valid_axis_inst`). -/
-def reduceSumLastGeneral {s : Shape}
-  (x : Tensor α s)
-  [h : Shape.valid_axis_inst (Spec.Shape.rank s - 1) s]
-  : Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceSumAuto (Spec.Shape.rank s - 1) x
+/-- Sum-reduce an arbitrary-rank tensor along its innermost axis. -/
+def reduceSumLast {s : Shape} (x : Tensor α s)
+    [h : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s] :
+    Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
+  reduceSum (Spec.Shape.rank s - 1) x h.proof
 
 -- Transpose operations live in the linear-algebra extension modules.
 end Tensor

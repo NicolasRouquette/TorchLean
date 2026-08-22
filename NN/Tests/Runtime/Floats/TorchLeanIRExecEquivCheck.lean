@@ -196,7 +196,7 @@ def checkBatchedAttentionLowering : IO Unit := do
   let params : Runtime.Autograd.Torch.TList Float paramShapes :=
     .cons wq (.cons wk (.cons wv (.cons wo .nil)))
   let mha : Spec.MultiHeadAttention Float numHeads dModel headDim :=
-    { Wq := wq, Wk := wk, Wv := wv, Wo := wo }
+    { queryWeight := wq, keyWeight := wk, valueWeight := wv, outputWeight := wo }
   let checkMask
       (label : String)
       (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) : IO Unit := do
@@ -227,7 +227,7 @@ def checkBatchedAttentionLowering : IO Unit := do
           s!"{label} attention lowering did not emit a hard-masked-softmax node"
     let yIR : Tensor Float inputShape ←
       match NN.IR.Graph.denote (α := Float) (g := lowered.graph) (payload := payload)
-          (input := NN.IR.DVal.mk (α := Float) inputShape x)
+          (input := Spec.PackedTensor.mk (α := Float) inputShape x)
           (outputId := lowered.outputId) with
       | .error e => throw <| IO.userError s!"{label} attention lowering denote failed: {e}"
       | .ok out =>
@@ -312,7 +312,7 @@ def run : IO Unit := do
   -- IR denotation at the lowered output node.
   let yIR : Tensor Float yShape ←
     match NN.IR.Graph.denote (α := Float) (g := c.graph) (payload := payload)
-        (input := NN.IR.DVal.mk (α := Float) xShape x) (outputId := c.outputId) with
+        (input := Spec.PackedTensor.mk (α := Float) xShape x) (outputId := c.outputId) with
     | .error e => throw <| IO.userError s!"torchlean_ir_exec_equiv_check: IR denote failed: {e}"
     | .ok out =>
         match NN.IR.Graph.expectShape (α := Float) (expected := yShape) out with

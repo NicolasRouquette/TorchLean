@@ -263,7 +263,7 @@ Correctness of the derivative spec for `Activation.Math.logisticSpec`.
 
 This is the scalar logistic formula `exp x / (exp x + 1)`. It is not named
 `softmax`: a one-entry softmax is always `1`, while TorchLean's actual axis-normalizing softmax is
-the tensor-level `Activation.softmaxSpec` in `NN/Spec/Layers/Activation.lean`.
+the tensor-level `Activation.softmaxLastSpec` in `NN/Spec/Layers/Activation.lean`.
 -/
 theorem logistic_deriv_correct (x : ℝ) :
   HasDerivAt Activation.Math.logisticSpec (Activation.Math.logisticDerivSpec x) x := by

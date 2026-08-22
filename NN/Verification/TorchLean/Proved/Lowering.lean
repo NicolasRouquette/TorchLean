@@ -116,9 +116,9 @@ def lowerNode
           parents := [x.id]
           kind := .conv2d inC outC kH kW stride padding
           outShape := outShape }
-      let spec : Spec.Conv2DSpec inC outC kH kW stride padding α hIn hKH hKW :=
+      let spec : Spec.Conv2dSpec inC outC kH kW stride padding α hIn hKH hKW :=
         { kernel := kT, bias := bT }
-      let cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α :=
+      let cfg : NN.IR.Conv2dParams α :=
         { inC := inC, outC := outC, kH := kH, kW := kW
           stride := stride, padding := padding
           inH := inH, inW := inW

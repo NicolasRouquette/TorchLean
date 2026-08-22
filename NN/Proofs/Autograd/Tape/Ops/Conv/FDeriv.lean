@@ -15,7 +15,7 @@ public import Mathlib.Data.Fintype.BigOperators
 /-!
 # FDeriv
 
-Analytic (`HasFDerivAt`/`fderiv`) correctness for a **Conv2D**-shaped bilinear map.
+Analytic (`HasFDerivAt`/`fderiv`) correctness for a **Conv2d**-shaped bilinear map.
 
 This file adds a proof-only node constructor that treats convolution as a bilinear map
 in `(kernel, input)` plus a linear bias broadcast, and defines its VJP as the adjoint of
@@ -40,7 +40,7 @@ open scoped BigOperators
 
 noncomputable section
 
-namespace Conv2D
+namespace Conv2d
 
 
 -- We use the standard flattening order induced by `finProdFinEquiv`, with casts for reassociation.
@@ -64,31 +64,31 @@ private def idx4 {OC IC KH KW : Nat} (oc : Fin OC) (ic : Fin IC) (di : Fin KH) (
 private abbrev vecSize (n : Nat) : Nat :=
   Spec.Shape.size (.dim n .scalar)
 
--- Indices for `toVecT`/`ofVecT` on 3D/4D shapes.
-/-- Flattened index for `toVecT`/`ofVecT` on shape `.dim C (.dim H (.dim W .scalar))`. -/
+-- Indices for `tensorToVec`/`vecToTensor` on 3D/4D shapes.
+/-- Flattened index for `tensorToVec`/`vecToTensor` on shape `.dim C (.dim H (.dim W .scalar))`. -/
 private def idx3S {C H W : Nat} (c : Fin C) (i : Fin H) (j : Fin W) :
     Fin (Spec.Shape.size (.dim C (.dim H (.dim W .scalar)))) :=
   Fin.cast (by simp [Spec.Shape.size]) (idx3 (C := C) (H := H) (W := W) c i j)
 
-/-- Flattened index for `toVecT`/`ofVecT` on shape `.dim OC (.dim IC (.dim KH (.dim KW .scalar)))`.
+/-- Flattened index for `tensorToVec`/`vecToTensor` on shape `.dim OC (.dim IC (.dim KH (.dim KW .scalar)))`.
   -/
 private def idx4S {OC IC KH KW : Nat} (oc : Fin OC) (ic : Fin IC) (di : Fin KH) (dj : Fin KW) :
     Fin (Spec.Shape.size (.dim OC (.dim IC (.dim KH (.dim KW .scalar))))) :=
   Fin.cast (by simp [Spec.Shape.size]) (idx4 (OC := OC) (IC := IC) (KH := KH) (KW := KW) oc ic di dj)
 
-/-- `toVecT` on scalar tensors always returns the scalar value (the only coordinate is `0`). -/
-private lemma toVecT_scalar_apply (x : ℝ) (i : Fin (Spec.Shape.size Shape.scalar)) :
-    toVecT (t := (Tensor.scalar x : Tensor ℝ Shape.scalar)) i = x := by
-  simpa [toVecT, toVecE, Spec.Tensor.flattenSpec, Spec.Shape.size, Spec.toVec] using
+/-- `tensorToVec` on scalar tensors always returns the scalar value (the only coordinate is `0`). -/
+private lemma tensorToVec_scalar_apply (x : ℝ) (i : Fin (Spec.Shape.size Shape.scalar)) :
+    tensorToVec (t := (Tensor.scalar x : Tensor ℝ Shape.scalar)) i = x := by
+  simpa [tensorToVec, toVecE, Spec.Tensor.flattenSpec, Spec.Shape.size, Spec.toVec] using
     (euclideanEquiv_symm_ofLp
       (n := Spec.Shape.size Shape.scalar)
       (f := fun _ : Fin (Spec.Shape.size Shape.scalar) => x)
       (i := i))
 
-/-- Relate 1D tensor `toVecT` coordinates to `get_at_or_zero` via the scalar last-axis encoding. -/
-private lemma toVecT_get1
+/-- Relate 1D tensor `tensorToVec` coordinates to `get_at_or_zero` via the scalar last-axis encoding. -/
+private lemma tensorToVec_get1
     {C : Nat} (A : Tensor ℝ (.dim C .scalar)) (c : Fin C) :
-    toVecT (t := A) (Fin.cast (by simp [Spec.Shape.size]) c) =
+    tensorToVec (t := A) (Fin.cast (by simp [Spec.Shape.size]) c) =
       getAtOrZero A [c.val] := by
   classical
   cases C with
@@ -100,12 +100,12 @@ private lemma toVecT_get1
           have hmposSc : 0 < Spec.Shape.size Shape.scalar := by
             simp [Spec.Shape.size]
           have hinner :
-              toVecT (t := (Tensor.dim f : Tensor ℝ (.dim (Nat.succ C) .scalar)))
+              tensorToVec (t := (Tensor.dim f : Tensor ℝ (.dim (Nat.succ C) .scalar)))
                   (finProdFinEquiv (c, k0))
                 =
-              toVecT (t := f c) k0 := by
+              tensorToVec (t := f c) k0 := by
             simpa using
-              (toVecT_dim_apply (n := Nat.succ C) (s := Shape.scalar)
+              (tensorToVec_dim_apply (n := Nat.succ C) (s := Shape.scalar)
                 (hmpos := hmposSc) (f := f) (p := (c, k0)))
           have hidx :
               Fin.cast (by simp) c = finProdFinEquiv (c, k0) := by
@@ -113,35 +113,35 @@ private lemma toVecT_get1
             simp [finProdFinEquiv, k0]
           cases hcell : f c with
           | scalar x =>
-              have hsc : toVecT (t := (Tensor.scalar x : Tensor ℝ Shape.scalar)) k0 = x :=
-                toVecT_scalar_apply (x := x) (i := k0)
+              have hsc : tensorToVec (t := (Tensor.scalar x : Tensor ℝ Shape.scalar)) k0 = x :=
+                tensorToVec_scalar_apply (x := x) (i := k0)
               have hget :
                   getAtOrZero (Tensor.dim f) [c.val] = x := by
                 simp [hcell, c.isLt]
               calc
-                toVecT (t := (Tensor.dim f : Tensor ℝ (.dim (Nat.succ C) .scalar)))
+                tensorToVec (t := (Tensor.dim f : Tensor ℝ (.dim (Nat.succ C) .scalar)))
                     (Fin.cast (by simp [Spec.Shape.size]) c)
                     =
-                  toVecT (t := (Tensor.dim f : Tensor ℝ (.dim (Nat.succ C) .scalar)))
+                  tensorToVec (t := (Tensor.dim f : Tensor ℝ (.dim (Nat.succ C) .scalar)))
                     (finProdFinEquiv (c, k0)) := by
                       exact congrArg
-                        (fun z => toVecT (t := (Tensor.dim f : Tensor ℝ (.dim (Nat.succ C)
+                        (fun z => tensorToVec (t := (Tensor.dim f : Tensor ℝ (.dim (Nat.succ C)
                           .scalar))) z)
                         hidx
-                _ = toVecT (t := f c) k0 := hinner
+                _ = tensorToVec (t := f c) k0 := hinner
                 _ = x := by simpa [hcell] using hsc
                 _ = getAtOrZero (Tensor.dim f) [c.val] := by exact hget.symm
 
-/-- `get_at_or_zero` on an `ofVecT`-constructed 1D tensor reads back the corresponding flattened
+/-- `get_at_or_zero` on an `vecToTensor`-constructed 1D tensor reads back the corresponding flattened
   entry. -/
-private lemma get1_ofVecT
+private lemma get1_vecToTensor
     {C : Nat} (v : Vec (Spec.Shape.size (.dim C .scalar))) (c : Fin C) :
-    getAtOrZero (ofVecT (s := .dim C .scalar) v) [c.val] =
+    getAtOrZero (vecToTensor (s := .dim C .scalar) v) [c.val] =
       v (Fin.cast (by simp [Spec.Shape.size]) c) := by
   have htv :=
     congrArg (fun w => w (Fin.cast (by simp [Spec.Shape.size]) c))
-      (toVecT_ofVecT (s := .dim C .scalar) v)
-  exact (toVecT_get1 (A := ofVecT (s := .dim C .scalar) v) c).symm.trans htv
+      (tensorToVec_vecToTensor (s := .dim C .scalar) v)
+  exact (tensorToVec_get1 (A := vecToTensor (s := .dim C .scalar) v) c).symm.trans htv
 
 private lemma idx3S_eq_nested
     {C H W : Nat} (c : Fin C) (i : Fin H) (j : Fin W) :
@@ -158,11 +158,11 @@ private lemma idx4S_eq_nested
   apply Fin.ext
   simp [idx4S, idx4, Spec.Shape.size, finProdFinEquiv, Fin.cast]
 
-/-- Relate 3D tensor `toVecT` coordinates to `get_at_or_zero` via the `idx3S` index encoding. -/
-private lemma toVecT_get3
+/-- Relate 3D tensor `tensorToVec` coordinates to `get_at_or_zero` via the `idx3S` index encoding. -/
+private lemma tensorToVec_get3
     {C H W : Nat} (A : Tensor ℝ (.dim C (.dim H (.dim W .scalar))))
     (c : Fin C) (i : Fin H) (j : Fin W) :
-    toVecT (t := A) (idx3S (C := C) (H := H) (W := W) c i j) =
+    tensorToVec (t := A) (idx3S (C := C) (H := H) (W := W) c i j) =
       getAtOrZero A [c.val, i.val, j.val] := by
   classical
   cases W with
@@ -181,56 +181,56 @@ private lemma toVecT_get3
           simp [Spec.Shape.size]
         let k0 : Fin 1 := 0
         have hmposSc : 0 < Spec.Shape.size Shape.scalar := by simp [Spec.Shape.size]
-        -- peel all three dims using `toVecT_dim_apply`
+        -- peel all three dims using `tensorToVec_dim_apply`
         have houter :
-            toVecT (t := (Tensor.dim fC : Tensor ℝ (.dim C (.dim (Nat.succ H) (.dim (Nat.succ W)
+            tensorToVec (t := (Tensor.dim fC : Tensor ℝ (.dim C (.dim (Nat.succ H) (.dim (Nat.succ W)
               .scalar)))))
                 (finProdFinEquiv (c, finProdFinEquiv (i, j')))
               =
-            toVecT (t := fC c) (finProdFinEquiv (i, j')) := by
+            tensorToVec (t := fC c) (finProdFinEquiv (i, j')) := by
           simpa using
-            (toVecT_dim_apply (n := C) (s := .dim (Nat.succ H) (.dim (Nat.succ W) .scalar))
+            (tensorToVec_dim_apply (n := C) (s := .dim (Nat.succ H) (.dim (Nat.succ W) .scalar))
               (hmpos := hmposHW) (f := fC) (p := (c, finProdFinEquiv (i, j'))))
         cases hrow : fC c with
         | dim fH =>
           have hmid :
-              toVecT (t := (Tensor.dim fH : Tensor ℝ (.dim (Nat.succ H) (.dim (Nat.succ W)
+              tensorToVec (t := (Tensor.dim fH : Tensor ℝ (.dim (Nat.succ H) (.dim (Nat.succ W)
                 .scalar))))
                   (finProdFinEquiv (i, j'))
                 =
-              toVecT (t := fH i) j' := by
+              tensorToVec (t := fH i) j' := by
             simpa using
-              (toVecT_dim_apply (n := Nat.succ H) (s := .dim (Nat.succ W) .scalar)
+              (tensorToVec_dim_apply (n := Nat.succ H) (s := .dim (Nat.succ W) .scalar)
                 (hmpos := hmposW) (f := fH) (p := (i, j')))
           cases hcol : fH i with
           | dim fW =>
             have hinner :
-                toVecT (t := (Tensor.dim fW : Tensor ℝ (.dim (Nat.succ W) Shape.scalar)))
+                tensorToVec (t := (Tensor.dim fW : Tensor ℝ (.dim (Nat.succ W) Shape.scalar)))
                     (finProdFinEquiv (j, k0))
                   =
-                toVecT (t := fW j) k0 := by
+                tensorToVec (t := fW j) k0 := by
               simpa using
-                (toVecT_dim_apply (n := Nat.succ W) (s := Shape.scalar)
+                (tensorToVec_dim_apply (n := Nat.succ W) (s := Shape.scalar)
                   (hmpos := hmposSc) (f := fW) (p := (j, k0)))
             have hjidx : finProdFinEquiv (j, k0) = j' := by
               apply Fin.ext
               simp [j', k0, finProdFinEquiv]
             -- rewrite the last axis using `hinner` and `hjidx`
             have hlast :
-                toVecT (t := (Tensor.dim fW : Tensor ℝ (.dim (Nat.succ W) Shape.scalar))) j' =
-                  toVecT (t := fW j) k0 := by
+                tensorToVec (t := (Tensor.dim fW : Tensor ℝ (.dim (Nat.succ W) Shape.scalar))) j' =
+                  tensorToVec (t := fW j) k0 := by
               -- rewrite `j'` to `finProdFinEquiv (j,k0)` and apply `hinner`
               have hcast :=
-                congrArg (fun z => toVecT (t := (Tensor.dim fW : Tensor ℝ (.dim (Nat.succ W)
+                congrArg (fun z => tensorToVec (t := (Tensor.dim fW : Tensor ℝ (.dim (Nat.succ W)
                   Shape.scalar))) z) hjidx.symm
               exact hcast.trans hinner
-            -- compute the `toVecT` entry by chaining the peels
+            -- compute the `tensorToVec` entry by chaining the peels
             have htv :
-                toVecT (t := (Tensor.dim fC : Tensor ℝ (.dim C (.dim (Nat.succ H) (.dim (Nat.succ W)
+                tensorToVec (t := (Tensor.dim fC : Tensor ℝ (.dim C (.dim (Nat.succ H) (.dim (Nat.succ W)
                   .scalar)))))
                     (idx3S (C := C) (H := Nat.succ H) (W := Nat.succ W) c i j)
                   =
-                toVecT (t := fW j) k0 := by
+                tensorToVec (t := fW j) k0 := by
               have hidx :
                   idx3S (C := C) (H := Nat.succ H) (W := Nat.succ W) c i j =
                     finProdFinEquiv (c, finProdFinEquiv (i, j')) := by
@@ -241,62 +241,62 @@ private lemma toVecT_get3
                 exact (idx3S_eq_nested (c := c) (i := i) (j := j)).trans <|
                   congrArg (fun z => finProdFinEquiv (c, z)) hinnerIdx
               calc
-                toVecT
+                tensorToVec
                     (t := (Tensor.dim fC : Tensor ℝ (.dim C (.dim (Nat.succ H) (.dim (Nat.succ W)
                       .scalar)))))
                     (idx3S (C := C) (H := Nat.succ H) (W := Nat.succ W) c i j)
                     =
-                  toVecT
+                  tensorToVec
                     (t := (Tensor.dim fC : Tensor ℝ (.dim C (.dim (Nat.succ H) (.dim (Nat.succ W)
                       .scalar)))))
                     (finProdFinEquiv (c, finProdFinEquiv (i, j'))) := by
                       exact congrArg
                         (fun z =>
-                          toVecT
+                          tensorToVec
                             (t := (Tensor.dim fC :
                               Tensor ℝ (.dim C (.dim (Nat.succ H) (.dim (Nat.succ W) .scalar)))))
                             z)
                         hidx
-                _ = toVecT (t := fC c) (finProdFinEquiv (i, j')) := houter
-                _ = toVecT (t := (Tensor.dim fH : Tensor ℝ (.dim (Nat.succ H) (.dim (Nat.succ W)
+                _ = tensorToVec (t := fC c) (finProdFinEquiv (i, j')) := houter
+                _ = tensorToVec (t := (Tensor.dim fH : Tensor ℝ (.dim (Nat.succ H) (.dim (Nat.succ W)
                   .scalar))))
                       (finProdFinEquiv (i, j')) := by simp [hrow]
-                _ = toVecT (t := fH i) j' := hmid
-                _ = toVecT (t := (Tensor.dim fW : Tensor ℝ (.dim (Nat.succ W) Shape.scalar))) j' :=
+                _ = tensorToVec (t := fH i) j' := hmid
+                _ = tensorToVec (t := (Tensor.dim fW : Tensor ℝ (.dim (Nat.succ W) Shape.scalar))) j' :=
                   by simp [hcol]
-                _ = toVecT (t := fW j) k0 := hlast
+                _ = tensorToVec (t := fW j) k0 := hlast
             -- compute the RHS `get_at_or_zero` by unfolding the tensor structure
             cases hcell : fW j with
             | scalar x =>
               have hget :
                   getAtOrZero (Tensor.dim fC) [c.val, i.val, j.val] = x := by
                 simp [hrow, hcol, hcell, c.isLt, i.isLt, j.isLt]
-              -- `toVecT (Tensor.scalar x) k0 = x`
-              have hsc : toVecT (t := (Tensor.scalar x : Tensor ℝ Shape.scalar)) k0 = x :=
-                toVecT_scalar_apply (x := x) (i := k0)
+              -- `tensorToVec (Tensor.scalar x) k0 = x`
+              have hsc : tensorToVec (t := (Tensor.scalar x : Tensor ℝ Shape.scalar)) k0 = x :=
+                tensorToVec_scalar_apply (x := x) (i := k0)
               simpa [htv, hget, hcell] using hsc
 
-/-- `get_at_or_zero` on an `ofVecT`-constructed 3D tensor reads back the corresponding flattened
+/-- `get_at_or_zero` on an `vecToTensor`-constructed 3D tensor reads back the corresponding flattened
   entry. -/
-private lemma get3_ofVecT
+private lemma get3_vecToTensor
     {C H W : Nat} (v : Vec (Spec.Shape.size (.dim C (.dim H (.dim W .scalar)))))
     (c : Fin C) (i : Fin H) (j : Fin W) :
-    getAtOrZero (ofVecT (s := .dim C (.dim H (.dim W .scalar))) v) [c.val, i.val, j.val] =
+    getAtOrZero (vecToTensor (s := .dim C (.dim H (.dim W .scalar))) v) [c.val, i.val, j.val] =
       v (idx3S (C := C) (H := H) (W := W) c i j) := by
   have htv :=
     congrArg (fun w => w (idx3S (C := C) (H := H) (W := W) c i j))
-      (toVecT_ofVecT (s := .dim C (.dim H (.dim W .scalar))) v)
-  -- Use `toVecT_get3` to rewrite the LHS into a `toVecT` entry, then substitute using
-  -- `toVecT_ofVecT`.
+      (tensorToVec_vecToTensor (s := .dim C (.dim H (.dim W .scalar))) v)
+  -- Use `tensorToVec_get3` to rewrite the LHS into a `tensorToVec` entry, then substitute using
+  -- `tensorToVec_vecToTensor`.
   have hget :=
-    (toVecT_get3 (A := ofVecT (s := .dim C (.dim H (.dim W .scalar))) v) c i j).symm
+    (tensorToVec_get3 (A := vecToTensor (s := .dim C (.dim H (.dim W .scalar))) v) c i j).symm
   simpa using hget.trans htv
 
-/-- Relate 4D kernel `toVecT` coordinates to `get_at_or_zero` via the `idx4S` index encoding. -/
-private lemma toVecT_get4
+/-- Relate 4D kernel `tensorToVec` coordinates to `get_at_or_zero` via the `idx4S` index encoding. -/
+private lemma tensorToVec_get4
     {OC IC KH KW : Nat} (K : Tensor ℝ (.dim OC (.dim IC (.dim KH (.dim KW .scalar)))))
     (oc : Fin OC) (ic : Fin IC) (di : Fin KH) (dj : Fin KW) :
-    toVecT (t := K) (idx4S (OC := OC) (IC := IC) (KH := KH) (KW := KW) oc ic di dj) =
+    tensorToVec (t := K) (idx4S (OC := OC) (IC := IC) (KH := KH) (KW := KW) oc ic di dj) =
       getAtOrZero K [oc.val, ic.val, di.val, dj.val] := by
   classical
   cases KW with
@@ -322,58 +322,58 @@ private lemma toVecT_get4
           let k0 : Fin 1 := 0
           have hmposSc : 0 < Spec.Shape.size Shape.scalar := by simp [Spec.Shape.size]
           have houter :
-              toVecT (t := (Tensor.dim fOC : Tensor ℝ (.dim OC (.dim (Nat.succ IC) (.dim (Nat.succ
+              tensorToVec (t := (Tensor.dim fOC : Tensor ℝ (.dim OC (.dim (Nat.succ IC) (.dim (Nat.succ
                 KH) (.dim (Nat.succ KW) .scalar))))))
                   (finProdFinEquiv (oc, finProdFinEquiv (ic, finProdFinEquiv (di, dj'))))
                 =
-              toVecT (t := fOC oc) (finProdFinEquiv (ic, finProdFinEquiv (di, dj'))) := by
+              tensorToVec (t := fOC oc) (finProdFinEquiv (ic, finProdFinEquiv (di, dj'))) := by
             simpa using
-              (toVecT_dim_apply (n := OC) (s := .dim (Nat.succ IC) (.dim (Nat.succ KH) (.dim
+              (tensorToVec_dim_apply (n := OC) (s := .dim (Nat.succ IC) (.dim (Nat.succ KH) (.dim
                 (Nat.succ KW) .scalar)))
                 (hmpos := hmposInner) (f := fOC) (p := (oc, finProdFinEquiv (ic, finProdFinEquiv
                   (di, dj')))))
           cases hIC : fOC oc with
           | dim fIC =>
             have hIC' :
-                toVecT (t := (Tensor.dim fIC : Tensor ℝ (.dim (Nat.succ IC) (.dim (Nat.succ KH)
+                tensorToVec (t := (Tensor.dim fIC : Tensor ℝ (.dim (Nat.succ IC) (.dim (Nat.succ KH)
                   (.dim (Nat.succ KW) .scalar)))))
                     (finProdFinEquiv (ic, finProdFinEquiv (di, dj')))
                   =
-                toVecT (t := fIC ic) (finProdFinEquiv (di, dj')) := by
+                tensorToVec (t := fIC ic) (finProdFinEquiv (di, dj')) := by
               simpa using
-                (toVecT_dim_apply (n := Nat.succ IC) (s := .dim (Nat.succ KH) (.dim (Nat.succ KW)
+                (tensorToVec_dim_apply (n := Nat.succ IC) (s := .dim (Nat.succ KH) (.dim (Nat.succ KW)
                   .scalar))
                   (hmpos := hmposKH) (f := fIC) (p := (ic, finProdFinEquiv (di, dj'))))
             cases hKH : fIC ic with
             | dim fKH =>
               have hKH' :
-                  toVecT (t := (Tensor.dim fKH : Tensor ℝ (.dim (Nat.succ KH) (.dim (Nat.succ KW)
+                  tensorToVec (t := (Tensor.dim fKH : Tensor ℝ (.dim (Nat.succ KH) (.dim (Nat.succ KW)
                     .scalar))))
                       (finProdFinEquiv (di, dj'))
                     =
-                  toVecT (t := fKH di) dj' := by
+                  tensorToVec (t := fKH di) dj' := by
                 simpa using
-                  (toVecT_dim_apply (n := Nat.succ KH) (s := .dim (Nat.succ KW) .scalar)
+                  (tensorToVec_dim_apply (n := Nat.succ KH) (s := .dim (Nat.succ KW) .scalar)
                     (hmpos := hmposKW) (f := fKH) (p := (di, dj')))
               cases hKW' : fKH di with
               | dim fKW =>
                 have hinner :
-                    toVecT (t := (Tensor.dim fKW : Tensor ℝ (.dim (Nat.succ KW) Shape.scalar)))
+                    tensorToVec (t := (Tensor.dim fKW : Tensor ℝ (.dim (Nat.succ KW) Shape.scalar)))
                         (finProdFinEquiv (dj, k0))
                       =
-                    toVecT (t := fKW dj) k0 := by
+                    tensorToVec (t := fKW dj) k0 := by
                   simpa using
-                    (toVecT_dim_apply (n := Nat.succ KW) (s := Shape.scalar)
+                    (tensorToVec_dim_apply (n := Nat.succ KW) (s := Shape.scalar)
                       (hmpos := hmposSc) (f := fKW) (p := (dj, k0)))
                 have hjidx : finProdFinEquiv (dj, k0) = dj' := by
                   apply Fin.ext
                   simp [dj', k0, finProdFinEquiv]
                 have hlast :
-                    toVecT (t := (Tensor.dim fKW : Tensor ℝ (.dim (Nat.succ KW) Shape.scalar))) dj'
+                    tensorToVec (t := (Tensor.dim fKW : Tensor ℝ (.dim (Nat.succ KW) Shape.scalar))) dj'
                       =
-                      toVecT (t := fKW dj) k0 := by
+                      tensorToVec (t := fKW dj) k0 := by
                   have hcast :=
-                    congrArg (fun z => toVecT (t := (Tensor.dim fKW : Tensor ℝ (.dim (Nat.succ KW)
+                    congrArg (fun z => tensorToVec (t := (Tensor.dim fKW : Tensor ℝ (.dim (Nat.succ KW)
                       Shape.scalar))) z) hjidx.symm
                   exact hcast.trans hinner
                 have hidx :
@@ -392,14 +392,14 @@ private lemma toVecT_get4
                   exact (idx4S_eq_nested (oc := oc) (ic := ic) (di := di) (dj := dj)).trans <|
                     congrArg (fun z => finProdFinEquiv (oc, z)) hic
                 have htv :
-                    toVecT (t := (Tensor.dim fOC : Tensor ℝ (.dim OC (.dim (Nat.succ IC) (.dim
+                    tensorToVec (t := (Tensor.dim fOC : Tensor ℝ (.dim OC (.dim (Nat.succ IC) (.dim
                       (Nat.succ KH) (.dim (Nat.succ KW) .scalar))))))
                         (idx4S (OC := OC) (IC := Nat.succ IC) (KH := Nat.succ KH) (KW := Nat.succ
                           KW) oc ic di dj)
                       =
-                    toVecT (t := fKW dj) k0 := by
+                    tensorToVec (t := fKW dj) k0 := by
                   calc
-                    toVecT
+                    tensorToVec
                           (t :=
                             (Tensor.dim fOC :
                               Tensor ℝ
@@ -409,57 +409,57 @@ private lemma toVecT_get4
                           (idx4S (OC := OC) (IC := Nat.succ IC) (KH := Nat.succ KH) (KW := Nat.succ
                             KW) oc ic di dj)
                         =
-                      toVecT (t := (Tensor.dim fOC : Tensor ℝ (.dim OC (.dim (Nat.succ IC) (.dim
+                      tensorToVec (t := (Tensor.dim fOC : Tensor ℝ (.dim OC (.dim (Nat.succ IC) (.dim
                         (Nat.succ KH) (.dim (Nat.succ KW) .scalar))))))
                         (finProdFinEquiv (oc, finProdFinEquiv (ic, finProdFinEquiv (di, dj')))) :=
                           by
                           exact congrArg
                             (fun z =>
-                              toVecT
+                              tensorToVec
                                 (t := (Tensor.dim fOC :
                                   Tensor ℝ (.dim OC (.dim (Nat.succ IC) (.dim (Nat.succ KH) (.dim
                                     (Nat.succ KW) .scalar))))))
                                 z)
                             hidx
-                    _ = toVecT (t := fOC oc) (finProdFinEquiv (ic, finProdFinEquiv (di, dj'))) :=
+                    _ = tensorToVec (t := fOC oc) (finProdFinEquiv (ic, finProdFinEquiv (di, dj'))) :=
                       houter
-                    _ = toVecT (t := (Tensor.dim fIC : Tensor ℝ (.dim (Nat.succ IC) (.dim (Nat.succ
+                    _ = tensorToVec (t := (Tensor.dim fIC : Tensor ℝ (.dim (Nat.succ IC) (.dim (Nat.succ
                       KH) (.dim (Nat.succ KW) .scalar)))))
                           (finProdFinEquiv (ic, finProdFinEquiv (di, dj'))) := by
                           simp [hIC]
-                    _ = toVecT (t := fIC ic) (finProdFinEquiv (di, dj')) := hIC'
-                    _ = toVecT (t := (Tensor.dim fKH : Tensor ℝ (.dim (Nat.succ KH) (.dim (Nat.succ
+                    _ = tensorToVec (t := fIC ic) (finProdFinEquiv (di, dj')) := hIC'
+                    _ = tensorToVec (t := (Tensor.dim fKH : Tensor ℝ (.dim (Nat.succ KH) (.dim (Nat.succ
                       KW) .scalar))))
                           (finProdFinEquiv (di, dj')) := by
                           simp [hKH]
-                    _ = toVecT (t := fKH di) dj' := hKH'
-                    _ = toVecT (t := (Tensor.dim fKW : Tensor ℝ (.dim (Nat.succ KW) Shape.scalar)))
+                    _ = tensorToVec (t := fKH di) dj' := hKH'
+                    _ = tensorToVec (t := (Tensor.dim fKW : Tensor ℝ (.dim (Nat.succ KW) Shape.scalar)))
                       dj' := by
                           simp [hKW']
-                    _ = toVecT (t := fKW dj) k0 := hlast
+                    _ = tensorToVec (t := fKW dj) k0 := hlast
                 cases hcell : fKW dj with
                 | scalar x =>
                   have hget :
                       getAtOrZero (Tensor.dim fOC) [oc.val, ic.val, di.val, dj.val] = x := by
                     simp [hIC, hKH, hKW', hcell, oc.isLt, ic.isLt, di.isLt, dj.isLt]
-                  have hsc : toVecT (t := (Tensor.scalar x : Tensor ℝ Shape.scalar)) k0 = x :=
-                    toVecT_scalar_apply (x := x) (i := k0)
+                  have hsc : tensorToVec (t := (Tensor.scalar x : Tensor ℝ Shape.scalar)) k0 = x :=
+                    tensorToVec_scalar_apply (x := x) (i := k0)
                   simpa [htv, hget, hcell] using hsc
 
-/-- `get_at_or_zero` on an `ofVecT`-constructed 4D tensor reads back the corresponding flattened
+/-- `get_at_or_zero` on an `vecToTensor`-constructed 4D tensor reads back the corresponding flattened
   entry. -/
-private lemma get4_ofVecT
+private lemma get4_vecToTensor
     {OC IC KH KW : Nat} (v : Vec (Spec.Shape.size (.dim OC (.dim IC (.dim KH (.dim KW .scalar))))))
     (oc : Fin OC) (ic : Fin IC) (di : Fin KH) (dj : Fin KW) :
-    getAtOrZero (ofVecT (s := .dim OC (.dim IC (.dim KH (.dim KW .scalar)))) v)
+    getAtOrZero (vecToTensor (s := .dim OC (.dim IC (.dim KH (.dim KW .scalar)))) v)
         [oc.val, ic.val, di.val, dj.val]
       =
     v (idx4S (OC := OC) (IC := IC) (KH := KH) (KW := KW) oc ic di dj) := by
   have htv :=
     congrArg (fun w => w (idx4S (OC := OC) (IC := IC) (KH := KH) (KW := KW) oc ic di dj))
-      (toVecT_ofVecT (s := .dim OC (.dim IC (.dim KH (.dim KW .scalar)))) v)
+      (tensorToVec_vecToTensor (s := .dim OC (.dim IC (.dim KH (.dim KW .scalar)))) v)
   have hget :=
-    (toVecT_get4 (K := ofVecT (s := .dim OC (.dim IC (.dim KH (.dim KW .scalar)))) v) oc ic di
+    (tensorToVec_get4 (K := vecToTensor (s := .dim OC (.dim IC (.dim KH (.dim KW .scalar)))) v) oc ic di
       dj).symm
   simpa using hget.trans htv
 
@@ -686,13 +686,13 @@ private def convBilin
   abbrev outW {IW KW stride padding : Nat} : Nat :=
     Shape.slidingWindowOutDim IW KW stride padding
 
-  /-- Shape of the Conv2D kernel parameter `K` (a `OC × IC × KH × KW` tensor). -/
+  /-- Shape of the Conv2d kernel parameter `K` (a `OC × IC × KH × KW` tensor). -/
   abbrev sK (OC IC KH KW : Nat) : Shape := .dim OC (.dim IC (.dim KH (.dim KW .scalar)))
-  /-- Shape of the Conv2D bias parameter `b` (a length-`OC` vector). -/
+  /-- Shape of the Conv2d bias parameter `b` (a length-`OC` vector). -/
   abbrev sB (OC : Nat) : Shape := .dim OC .scalar
-  /-- Shape of the Conv2D input `X` (a `IC × IH × IW` tensor). -/
+  /-- Shape of the Conv2d input `X` (a `IC × IH × IW` tensor). -/
   abbrev sX (IC IH IW : Nat) : Shape := .dim IC (.dim IH (.dim IW .scalar))
-  /-- Shape of the Conv2D output `Y` (a `OC × OH × OW` tensor). -/
+  /-- Shape of the Conv2d output `Y` (a `OC × OH × OW` tensor). -/
   abbrev sY (OC OH OW : Nat) : Shape := .dim OC (.dim OH (.dim OW .scalar))
 
   private lemma size_sK (OC IC KH KW : Nat) :
@@ -730,21 +730,21 @@ private def convBilin
     apply Fin.ext
     rfl
 
-  private lemma get_at_or_zero_ofVecT_sX_eq_getInput
+  private lemma get_at_or_zero_vecToTensor_sX_eq_getInput
       {IC IH IW : Nat} (xRaw : Vec (IC * (IH * IW))) (ic : Fin IC) (p q : Nat) :
       let xShape : Vec (Spec.Shape.size (sX IC IH IW)) := castVec (size_sX IC IH IW).symm xRaw
-      getAtOrZero (ofVecT (s := sX IC IH IW) xShape) [ic.val, p, q]
+      getAtOrZero (vecToTensor (s := sX IC IH IW) xShape) [ic.val, p, q]
         =
       getInput (IC := IC) (IH := IH) (IW := IW) xRaw ic p q := by
     intro xShape
     classical
     by_cases hp : p < IH
     · by_cases hq : q < IW
-      · -- In-bounds: reduce to `get3_ofVecT` then map the index through the `castVec`.
+      · -- In-bounds: reduce to `get3_vecToTensor` then map the index through the `castVec`.
         let iFin : Fin IH := ⟨p, hp⟩
         let jFin : Fin IW := ⟨q, hq⟩
         have hget :=
-          get3_ofVecT (v := xShape) (c := ic) (i := iFin) (j := jFin)
+          get3_vecToTensor (v := xShape) (c := ic) (i := iFin) (j := jFin)
         -- Rewrite the RHS `getInput` to the raw index form.
         have hInput : getInput (IC := IC) (IH := IH) (IW := IW) xRaw ic p q =
             xRaw (idx3 (C := IC) (H := IH) (W := IW) ic iFin jFin) := by
@@ -760,23 +760,23 @@ private def convBilin
             congrArg xRaw (idx3S_cast_size_sX (IC := IC) (IH := IH) (IW := IW) ic iFin jFin)
         simpa [hInput, hxShape] using hget
       · -- `q` out of bounds: both sides are `0`.
-        simp [getInput, hp, hq, ofVecT, Spec.Tensor.unflattenSpec, ofVecE, Spec.ofVec,
+        simp [getInput, hp, hq, vecToTensor, Spec.Tensor.unflattenSpec, ofVecE, Spec.ofVec,
           xShape, ic.isLt, sX]
     · -- `p` out of bounds: both sides are `0`.
-      simp [getInput, hp, ofVecT, Spec.Tensor.unflattenSpec, ofVecE, Spec.ofVec,
+      simp [getInput, hp, vecToTensor, Spec.Tensor.unflattenSpec, ofVecE, Spec.ofVec,
         xShape, ic.isLt, sX]
 
-  private lemma get_at_or_zero_ofVecT_sK_eq_idx4
+  private lemma get_at_or_zero_vecToTensor_sK_eq_idx4
       {OC IC KH KW : Nat} (kRaw : Vec (OC * (IC * (KH * KW))))
       (oc : Fin OC) (ic : Fin IC) (di : Fin KH) (dj : Fin KW) :
       let kShape : Vec (Spec.Shape.size (sK OC IC KH KW)) := castVec (size_sK OC IC KH KW).symm kRaw
-      getAtOrZero (ofVecT (s := sK OC IC KH KW) kShape) [oc.val, ic.val, di.val, dj.val]
+      getAtOrZero (vecToTensor (s := sK OC IC KH KW) kShape) [oc.val, ic.val, di.val, dj.val]
         =
       kRaw (idx4 (OC := OC) (IC := IC) (KH := KH) (KW := KW) oc ic di dj) := by
     intro kShape
     classical
     have hget :=
-      get4_ofVecT (v := kShape) (oc := oc) (ic := ic) (di := di) (dj := dj)
+      get4_vecToTensor (v := kShape) (oc := oc) (ic := ic) (di := di) (dj := dj)
     have hk :
         kShape (idx4S (OC := OC) (IC := IC) (KH := KH) (KW := KW) oc ic di dj) =
           kRaw (idx4 (OC := OC) (IC := IC) (KH := KH) (KW := KW) oc ic di dj) := by
@@ -788,7 +788,7 @@ private def convBilin
       a * (if P then 0 else if Q then 0 else b) = (if P then 0 else if Q then 0 else a * b) := by
     by_cases hP : P <;> by_cases hQ : Q <;> simp [hP, hQ]
 
-  private lemma cast_toVecT_conv2d_spec_noBias_eq_convNoBiasVec
+  private lemma cast_tensorToVec_conv2d_spec_noBias_eq_convNoBiasVec
       {IC OC KH KW stride padding IH IW : Nat}
       {h1 : IC ≠ 0} {h2 : KH ≠ 0} {h3 : KW ≠ 0}
       (kRaw : Vec (OC * (IC * (KH * KW))))
@@ -797,11 +797,11 @@ private def convBilin
       let OW := outW (IW := IW) (KW := KW) (stride := stride) (padding := padding)
       let kShape : Vec (Spec.Shape.size (sK OC IC KH KW)) := castVec (size_sK OC IC KH KW).symm kRaw
       let xShape : Vec (Spec.Shape.size (sX IC IH IW)) := castVec (size_sX IC IH IW).symm xRaw
-      let dKernel : Tensor ℝ (sK OC IC KH KW) := ofVecT (s := sK OC IC KH KW) kShape
-      let input : Tensor ℝ (sX IC IH IW) := ofVecT (s := sX IC IH IW) xShape
-      let layerK : Spec.Conv2DSpec IC OC KH KW stride padding ℝ h1 h2 h3 :=
+      let dKernel : Tensor ℝ (sK OC IC KH KW) := vecToTensor (s := sK OC IC KH KW) kShape
+      let input : Tensor ℝ (sX IC IH IW) := vecToTensor (s := sX IC IH IW) xShape
+      let layerK : Spec.Conv2dSpec IC OC KH KW stride padding ℝ h1 h2 h3 :=
         { kernel := dKernel, bias := fill (0 : ℝ) (sB OC) }
-      castVec (size_sY OC OH OW) (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) input))
+      castVec (size_sY OC OH OW) (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) input))
         =
       convNoBiasVec (IC := IC) (OC := OC) (KH := KH) (KW := KW) (stride := stride) (padding :=
         padding) (IH := IH)
@@ -827,11 +827,11 @@ private def convBilin
         simpa using h'.symm
       simpa [hip] using this
 
-    -- padding read in terms of `getInput` (using the already-proved bridge for `ofVecT`)
+    -- padding read in terms of `getInput` (using the already-proved bridge for `vecToTensor`)
     have hpad :
         ∀ ic : Fin IC, ∀ p q : Nat,
           getAtOrZero
-              (Proofs.Autograd.Conv2D.paddedInput (inC := IC) (inH := IH) (inW := IW) (padding :=
+              (Proofs.Autograd.Conv2d.paddedInput (inC := IC) (inH := IH) (inW := IW) (padding :=
                 padding) input)
               [ic.val, p, q]
             =
@@ -839,7 +839,7 @@ private def convBilin
            else getInput (IC := IC) (IH := IH) (IW := IW) xRaw ic (p - padding) (q - padding)) := by
       intro ic p q
       have h :=
-        Proofs.Autograd.Conv2D.get_at_or_zero_paddedInput (inC := IC) (inH := IH) (inW := IW)
+        Proofs.Autograd.Conv2d.get_at_or_zero_paddedInput (inC := IC) (inH := IH) (inW := IW)
           (padding := padding)
           (img := input) (c := ic) (p := p) (q := q)
       by_cases hPQ : p < padding ∨ q < padding
@@ -849,7 +849,7 @@ private def convBilin
               =
             getInput (IC := IC) (IH := IH) (IW := IW) xRaw ic (p - padding) (q - padding) := by
           simpa [input, xShape] using
-            (get_at_or_zero_ofVecT_sX_eq_getInput (xRaw := xRaw) (ic := ic) (p := p - padding) (q :=
+            (get_at_or_zero_vecToTensor_sX_eq_getInput (xRaw := xRaw) (ic := ic) (p := p - padding) (q :=
               q - padding))
         simp [hPQ, h, hx']
 
@@ -862,28 +862,28 @@ private def convBilin
             ∑ dj : Fin KW,
               getAtOrZero dKernel [oc.val, ic.val, di.val, dj.val] *
                 getAtOrZero
-                  (Proofs.Autograd.Conv2D.paddedInput (inC := IC) (inH := IH) (inW := IW) (padding
+                  (Proofs.Autograd.Conv2d.paddedInput (inC := IC) (inH := IH) (inW := IW) (padding
                     := padding) input)
                   [ic.val, oi.val * stride + di.val, oj.val * stride + dj.val] := by
-      simpa [Proofs.Autograd.Conv2D.outH, Proofs.Autograd.Conv2D.outW, outH, outW, layerK] using
-        (Proofs.Autograd.Conv2D.conv2d_spec_noBias_get (dKernel := dKernel) (input := input) (oc :=
+      simpa [Proofs.Autograd.Conv2d.outH, Proofs.Autograd.Conv2d.outW, outH, outW, layerK] using
+        (Proofs.Autograd.Conv2d.conv2d_spec_noBias_get (dKernel := dKernel) (input := input) (oc :=
           oc) (i := oi)
           (j := oj))
 
-    -- now rewrite `toVecT` to `get_at_or_zero`, then simplify to the explicit `convNoBiasVec`
+    -- now rewrite `tensorToVec` to `get_at_or_zero`, then simplify to the explicit `convNoBiasVec`
     -- formula
     have htv :
-        (castVec (size_sY OC OH OW) (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK)
+        (castVec (size_sY OC OH OW) (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK)
           input))) ip
           =
         getAtOrZero (Spec.conv2dSpec (α := ℝ) (layer := layerK) input) [oc.val, oi.val, oj.val]
           := by
-      -- rewrite the casted index into the 3D coordinate and use `toVecT_get3`
+      -- rewrite the casted index into the 3D coordinate and use `tensorToVec_get3`
       have h :=
-        (toVecT_get3
+        (tensorToVec_get3
           (A := Spec.conv2dSpec (α := ℝ) (layer := layerK) input) (c := oc) (i := oi) (j := oj))
       have h' :
-          toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) input) (Fin.cast (size_sY OC OH
+          tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) input) (Fin.cast (size_sY OC OH
             OW).symm ip)
             =
           getAtOrZero (Spec.conv2dSpec (α := ℝ) (layer := layerK) input) [oc.val, oi.val,
@@ -894,7 +894,7 @@ private def convBilin
 
     -- finish: expand `hget` and normalize each summand
     calc
-      (castVec (size_sY OC OH OW) (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) input)))
+      (castVec (size_sY OC OH OW) (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) input)))
         ip
           =
         getAtOrZero (Spec.conv2dSpec (α := ℝ) (layer := layerK) input) [oc.val, oi.val, oj.val]
@@ -905,20 +905,20 @@ private def convBilin
             ∑ dj : Fin KW,
               getAtOrZero dKernel [oc.val, ic.val, di.val, dj.val] *
                 getAtOrZero
-                  (Proofs.Autograd.Conv2D.paddedInput (inC := IC) (inH := IH) (inW := IW) (padding
+                  (Proofs.Autograd.Conv2d.paddedInput (inC := IC) (inH := IH) (inW := IW) (padding
                     := padding) input)
                   [ic.val, oi.val * stride + di.val, oj.val * stride + dj.val] := hget
       _ = _ := by
         -- unfold `convNoBiasVec` and rewrite kernel/padding reads
         simp [convNoBiasVec, p, oc, oi, oj, hpad, ite_or_eq_ite2, dKernel, kShape,
-          get_at_or_zero_ofVecT_sK_eq_idx4]
+          get_at_or_zero_vecToTensor_sK_eq_idx4]
 
-  private lemma cast_toVecT_biasBroadcast_eq_biasBroadcastVec
+  private lemma cast_tensorToVec_biasBroadcast_eq_biasBroadcastVec
       {OC OH OW : Nat} (bRaw : Vec OC) :
       let bShape : Vec (Spec.Shape.size (sB OC)) := castVec (size_sB OC).symm bRaw
-      let db : Tensor ℝ (sB OC) := ofVecT (s := sB OC) bShape
+      let db : Tensor ℝ (sB OC) := vecToTensor (s := sB OC) bShape
       castVec (size_sY OC OH OW)
-          (toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+          (tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
             db))
         =
       biasBroadcastVec (OC := OC) (OH := OH) (OW := OW) bRaw := by
@@ -943,7 +943,7 @@ private def convBilin
     -- compute the broadcast entry and reduce it to the underlying bias vector
     have hdb : getAtOrZero db [oc.val] = bRaw oc := by
       have hget1 :=
-        get1_ofVecT (v := bShape) (c := oc)
+        get1_vecToTensor (v := bShape) (c := oc)
       have hbShape :
           bShape (Fin.cast (by simp [Spec.Shape.size]) oc) = bRaw oc := by
         have hidx :
@@ -957,22 +957,22 @@ private def convBilin
     -- finish by rewriting the casted index to a 3D coordinate and evaluating one broadcast entry
     have htv :
         (castVec (size_sY OC OH OW)
-            (toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW :=
+            (tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW :=
               OW) db))) ip
           =
-        getAtOrZero (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+        getAtOrZero (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
           db)
           [oc.val, oi.val, oj.val] := by
       have h :=
-        (toVecT_get3
-          (A := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW) db)
+        (tensorToVec_get3
+          (A := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW) db)
           (c := oc) (i := oi) (j := oj))
       have h' :
-          toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+          tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
             db)
               (Fin.cast (size_sY OC OH OW).symm ip)
             =
-          getAtOrZero (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW :=
+          getAtOrZero (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW :=
             OW) db)
             [oc.val, oi.val, oj.val] := by
         rw [hcast]
@@ -981,14 +981,14 @@ private def convBilin
 
     calc
       (castVec (size_sY OC OH OW)
-          (toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+          (tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
             db))) ip
           =
-        getAtOrZero (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+        getAtOrZero (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
           db)
           [oc.val, oi.val, oj.val] := htv
       _ = getAtOrZero db [oc.val] := by
-          simp [Proofs.Autograd.Conv2D.biasBroadcast, oc.isLt, oi.isLt, oj.isLt]
+          simp [Proofs.Autograd.Conv2d.biasBroadcast, oc.isLt, oi.isLt, oj.isLt]
       _ = bRaw oc := hdb
       _ = biasBroadcastVec (OC := OC) (OH := OH) (OW := OW) bRaw ip := by
           simp [biasBroadcastVec, p, oc]
@@ -1032,7 +1032,7 @@ private def convBilin
     (Graph.castCLM (h := size_sX IC IH IW)).comp (CtxVec.getCLM (Γ := Γ) (s := sX IC IH IW)
       inputIdx)
 
-  /-- Conv2D’s bilinear map, packaged as `kernel →L (input →L output)`. -/
+  /-- Conv2d’s bilinear map, packaged as `kernel →L (input →L output)`. -/
   private def Bmul
       {IC OC KH KW stride padding IH IW : Nat}
       (OH OW : Nat) :
@@ -1045,7 +1045,7 @@ private def convBilin
   private def Bbias {OC OH OW : Nat} : Vec OC →L[ℝ] Vec (OC * (OH * OW)) :=
     biasBroadcastCLM (OC := OC) (OH := OH) (OW := OW)
 
-  /-- Flattened Conv2D forward map, reading kernel/bias/input out of the `CtxVec` by index. -/
+  /-- Flattened Conv2d forward map, reading kernel/bias/input out of the `CtxVec` by index. -/
   private def forwardVec
       {Γ : List Shape} {IC OC KH KW stride padding IH IW : Nat}
       (kernelIdx : Idx Γ (sK OC IC KH KW))
@@ -1089,7 +1089,7 @@ private def convBilin
           (Bbias (OC := OC) (OH := OH) (OW := OW)).comp (projBCLM (Γ := Γ) (OC := OC) biasIdx)
       (Graph.castCLM (h := (size_sY OC OH OW).symm)).comp D0
 
-  /-- Proof-only Conv2D node whose VJP is `(fderiv forward)†`. -/
+  /-- Proof-only Conv2d node whose VJP is `(fderiv forward)†`. -/
   private def node
       {Γ : List Shape}
       {IC OC KH KW stride padding IH IW : Nat}
@@ -1117,7 +1117,7 @@ private def convBilin
           simpa [deriv0] using
             (ContinuousLinearMap.adjoint_inner_right (A := deriv0 x) (x := dx) (y := δ)).symm)
 
-  /-- Proof-only Conv2D node whose VJP is `Spec.conv2d_backward_spec` (runtime-style). -/
+  /-- Proof-only Conv2d node whose VJP is `Spec.conv2d_backward_spec` (runtime-style). -/
   private def nodeSpecBackward
       {Γ : List Shape}
       {IC OC KH KW stride padding IH IW : Nat}
@@ -1147,22 +1147,22 @@ private def convBilin
           let kShape : Vec (Spec.Shape.size (sK OC IC KH KW)) := castVec (size_sK OC IC KH KW).symm kRaw
           let bShape : Vec (Spec.Shape.size (sB OC)) := castVec (size_sB OC).symm bRaw
           let xShape : Vec (Spec.Shape.size (sX IC IH IW)) := castVec (size_sX IC IH IW).symm xRaw
-          let kernelT : Tensor ℝ (sK OC IC KH KW) := ofVecT (s := sK OC IC KH KW) kShape
-          let biasT : Tensor ℝ (sB OC) := ofVecT (s := sB OC) bShape
-          let inputT : Tensor ℝ (sX IC IH IW) := ofVecT (s := sX IC IH IW) xShape
-          let layer : Spec.Conv2DSpec IC OC KH KW stride padding ℝ h1 h2 h3 :=
+          let kernelT : Tensor ℝ (sK OC IC KH KW) := vecToTensor (s := sK OC IC KH KW) kShape
+          let biasT : Tensor ℝ (sB OC) := vecToTensor (s := sB OC) bShape
+          let inputT : Tensor ℝ (sX IC IH IW) := vecToTensor (s := sX IC IH IW) xShape
+          let layer : Spec.Conv2dSpec IC OC KH KW stride padding ℝ h1 h2 h3 :=
             { kernel := kernelT, bias := biasT }
           let δT : Tensor ℝ (sY OC (outH (IH := IH) (KH := KH) (stride := stride) (padding :=
             padding))
             (outW (IW := IW) (KW := KW) (stride := stride) (padding := padding))) :=
-              ofVecT (s := sY OC (outH (IH := IH) (KH := KH) (stride := stride) (padding :=
+              vecToTensor (s := sY OC (outH (IH := IH) (KH := KH) (stride := stride) (padding :=
                 padding))
                 (outW (IW := IW) (KW := KW) (stride := stride) (padding := padding))) δ
           let grads := Spec.conv2dBackwardSpec (α := ℝ) (layer := layer) (input := inputT)
             (grad_output := δT)
-          CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (toVecT (t := grads.1)) +
-            (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (toVecT (t := grads.2.1)) +
-              CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (toVecT (t := grads.2.2))))
+          CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (tensorToVec (t := grads.1)) +
+            (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (tensorToVec (t := grads.2.1)) +
+              CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (tensorToVec (t := grads.2.2))))
         (correct_inner := by
           intro x dx δ
           -- unpack raw vectors and build the corresponding spec tensors
@@ -1179,21 +1179,21 @@ private def convBilin
             dkRaw
           let dbShape : Vec (Spec.Shape.size (sB OC)) := castVec (size_sB OC).symm dbRaw
           let dxShape : Vec (Spec.Shape.size (sX IC IH IW)) := castVec (size_sX IC IH IW).symm dxRaw
-          let kernelT : Tensor ℝ (sK OC IC KH KW) := ofVecT (s := sK OC IC KH KW) kShape
-          let biasT : Tensor ℝ (sB OC) := ofVecT (s := sB OC) bShape
-          let inputT : Tensor ℝ (sX IC IH IW) := ofVecT (s := sX IC IH IW) xShape
-          let dKernelT : Tensor ℝ (sK OC IC KH KW) := ofVecT (s := sK OC IC KH KW) dkShape
-          let dBiasT : Tensor ℝ (sB OC) := ofVecT (s := sB OC) dbShape
-          let dInputT : Tensor ℝ (sX IC IH IW) := ofVecT (s := sX IC IH IW) dxShape
-          let layer : Spec.Conv2DSpec IC OC KH KW stride padding ℝ h1 h2 h3 :=
+          let kernelT : Tensor ℝ (sK OC IC KH KW) := vecToTensor (s := sK OC IC KH KW) kShape
+          let biasT : Tensor ℝ (sB OC) := vecToTensor (s := sB OC) bShape
+          let inputT : Tensor ℝ (sX IC IH IW) := vecToTensor (s := sX IC IH IW) xShape
+          let dKernelT : Tensor ℝ (sK OC IC KH KW) := vecToTensor (s := sK OC IC KH KW) dkShape
+          let dBiasT : Tensor ℝ (sB OC) := vecToTensor (s := sB OC) dbShape
+          let dInputT : Tensor ℝ (sX IC IH IW) := vecToTensor (s := sX IC IH IW) dxShape
+          let layer : Spec.Conv2dSpec IC OC KH KW stride padding ℝ h1 h2 h3 :=
             { kernel := kernelT, bias := biasT }
-          let layerK : Spec.Conv2DSpec IC OC KH KW stride padding ℝ h1 h2 h3 :=
+          let layerK : Spec.Conv2dSpec IC OC KH KW stride padding ℝ h1 h2 h3 :=
             { kernel := dKernelT, bias := fill (0 : ℝ) (sB OC) }
-          let layer0 : Spec.Conv2DSpec IC OC KH KW stride padding ℝ h1 h2 h3 :=
+          let layer0 : Spec.Conv2dSpec IC OC KH KW stride padding ℝ h1 h2 h3 :=
             { kernel := kernelT, bias := fill (0 : ℝ) (sB OC) }
           let OH := outH (IH := IH) (KH := KH) (stride := stride) (padding := padding)
           let OW := outW (IW := IW) (KW := KW) (stride := stride) (padding := padding)
-          let δT : Tensor ℝ (sY OC OH OW) := ofVecT (s := sY OC OH OW) δ
+          let δT : Tensor ℝ (sY OC OH OW) := vecToTensor (s := sY OC OH OW) δ
           let grads := Spec.conv2dBackwardSpec (α := ℝ) (layer := layer) (input := inputT)
             (grad_output := δT)
 
@@ -1201,12 +1201,12 @@ private def convBilin
           have hjvp :
                     (deriv0 x) dx
                       =
-                    (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec (sY OC
+                    (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec (sY OC
                       OH OW).size) +
-                      ((toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH)
+                      ((tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH)
                         (outW := OW) dBiasT) :
                           Vec (sY OC OH OW).size) +
-                        (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) : Vec (sY
+                        (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) : Vec (sY
                           OC OH OW).size)) := by
               -- `deriv0` expands to the bilinear JVP in `(dKernel, dInput)` plus bias.
               have hbilin :
@@ -1263,7 +1263,7 @@ private def convBilin
                           (add_left_comm (a := castVec hOut v) (b := castVec hOut u) (c := castVec
                             hOut w))
 
-              -- Convert the three vector terms to `toVecT` of the corresponding spec tensors using
+              -- Convert the three vector terms to `tensorToVec` of the corresponding spec tensors using
               -- the bridge lemmas.
               have hK :
                   castVec (size_sY OC OH OW).symm
@@ -1271,14 +1271,14 @@ private def convBilin
                       := padding)
                         (IH := IH) (IW := IW) OH OW dkRaw) xRaw))
                     =
-                  toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) := by
+                  tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) := by
                 have hcast :=
-                  cast_toVecT_conv2d_spec_noBias_eq_convNoBiasVec
+                  cast_tensorToVec_conv2d_spec_noBias_eq_convNoBiasVec
                     (IC := IC) (OC := OC) (KH := KH) (KW := KW) (stride := stride) (padding :=
                       padding) (IH := IH)
                     (IW := IW) (h1 := h1) (h2 := h2) (h3 := h3) dkRaw xRaw
                 have hto :
-                    toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) =
+                    tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) =
                       castVec (size_sY OC OH OW).symm
                         (convNoBiasVec (IC := IC) (OC := OC) (KH := KH) (KW := KW)
                           (stride := stride) (padding := padding) (IH := IH) (IW := IW) dkRaw xRaw
@@ -1296,7 +1296,7 @@ private def convBilin
                         (stride := stride) (padding := padding) (IH := IH) (IW := IW) dkRaw xRaw OH
                           OW) := by
                     simp [Bmul]
-                  _ = toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) := by
+                  _ = tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) := by
                     simpa using hto.symm
 
               have hX :
@@ -1305,14 +1305,14 @@ private def convBilin
                       := padding)
                         (IH := IH) (IW := IW) OH OW kRaw) dxRaw))
                     =
-                  toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) := by
+                  tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) := by
                 have hcast :=
-                  cast_toVecT_conv2d_spec_noBias_eq_convNoBiasVec
+                  cast_tensorToVec_conv2d_spec_noBias_eq_convNoBiasVec
                     (IC := IC) (OC := OC) (KH := KH) (KW := KW) (stride := stride) (padding :=
                       padding) (IH := IH)
                     (IW := IW) (h1 := h1) (h2 := h2) (h3 := h3) kRaw dxRaw
                 have hto :
-                    toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) =
+                    tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) =
                       castVec (size_sY OC OH OW).symm
                         (convNoBiasVec (IC := IC) (OC := OC) (KH := KH) (KW := KW)
                           (stride := stride) (padding := padding) (IH := IH) (IW := IW) kRaw dxRaw
@@ -1330,18 +1330,18 @@ private def convBilin
                         (stride := stride) (padding := padding) (IH := IH) (IW := IW) kRaw dxRaw OH
                           OW) := by
                     simp [Bmul]
-                  _ = toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) := by
+                  _ = tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) := by
                     simpa using hto.symm
 
               have hB :
                   castVec (size_sY OC OH OW).symm (Bbias (OC := OC) (OH := OH) (OW := OW) dbRaw)
                     =
-                  toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW
+                  tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW
                     := OW) dBiasT) := by
-                have hcast := cast_toVecT_biasBroadcast_eq_biasBroadcastVec (OC := OC) (OH := OH)
+                have hcast := cast_tensorToVec_biasBroadcast_eq_biasBroadcastVec (OC := OC) (OH := OH)
                   (OW := OW) dbRaw
                 have hto :
-                    toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH)
+                    tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH)
                       (outW := OW) dBiasT) =
                       castVec (size_sY OC OH OW).symm (biasBroadcastVec (OC := OC) (OH := OH) (OW :=
                         OW) dbRaw) := by
@@ -1354,7 +1354,7 @@ private def convBilin
                       OW) dbRaw) := by
                     simp [Bbias]
                   _ =
-                    toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH)
+                    tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH)
                       (outW := OW) dBiasT) := by
                     simpa using hto.symm
 
@@ -1382,23 +1382,23 @@ private def convBilin
                       (castVec (size_sY OC OH OW).symm b + castVec (size_sY OC OH OW).symm c) :=
                         hadd
                 _ =
-                      (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec (sY OC
+                      (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec (sY OC
                         OH OW).size) +
-                        ((toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH :=
+                        ((tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH :=
                           OH) (outW := OW) dBiasT) :
                             Vec (sY OC OH OW).size) +
-                          (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) : Vec
+                          (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) : Vec
                             (sY OC OH OW).size)) := by
                       have hKa : castVec (size_sY OC OH OW).symm a =
-                          (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec
+                          (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec
                             (sY OC OH OW).size) := by
                         simpa [a] using hK
                       have hXb : castVec (size_sY OC OH OW).symm b =
-                          (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) : Vec
+                          (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) : Vec
                             (sY OC OH OW).size) := by
                         simpa [b] using hX
                       have hBc : castVec (size_sY OC OH OW).symm c =
-                          toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH :=
+                          tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH :=
                             OH) (outW := OW) dBiasT) := by
                         simpa [c] using hB
                       -- Rewrite each summand, then reorder the inner two terms.
@@ -1407,19 +1407,19 @@ private def convBilin
                               (castVec (size_sY OC OH OW).symm b + castVec (size_sY OC OH OW).symm
                                 c)
                             =
-                          (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec
+                          (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec
                             (sY OC OH OW).size) +
-                              ((toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) :
+                              ((tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) :
                                 Vec (sY OC OH OW).size) +
-                                toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH
+                                tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH
                                   := OH) (outW := OW) dBiasT)) := by
                             simp [hKa, hXb, hBc]
                         _ =
-                          (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec
+                          (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec
                             (sY OC OH OW).size) +
-                              (toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH
+                              (tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH
                                 := OH) (outW := OW) dBiasT) +
-                                (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) :
+                                (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) :
                                   Vec (sY OC OH OW).size)) := by
                             simp [add_left_comm, add_comm]
 
@@ -1429,34 +1429,34 @@ private def convBilin
                   =
                 dot (Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) δT
                   +
-                dot (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC)
+                dot (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC)
                   (outH := OH) (outW := OW) dBiasT) δT
                   +
                 dot (Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) δT := by
             have hKdot :
-                inner ℝ (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT)) δ
+                inner ℝ (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT)) δ
                   =
                 dot (Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) δT := by
-              simpa [δT, toVecT_ofVecT] using
-                (dot_eq_inner_toVecT (a := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) (b :=
+              simpa [δT, tensorToVec_vecToTensor] using
+                (dot_eq_inner_tensorToVec (a := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) (b :=
                   δT)).symm
             have hBdot :
-                inner ℝ (toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH)
+                inner ℝ (tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH)
                   (outW := OW) dBiasT)) δ
                   =
-                dot (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+                dot (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
                   dBiasT) δT := by
-              simpa [δT, toVecT_ofVecT] using
-                (dot_eq_inner_toVecT
-                  (a := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+              simpa [δT, tensorToVec_vecToTensor] using
+                (dot_eq_inner_tensorToVec
+                  (a := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
                     dBiasT)
                   (b := δT)).symm
             have hXdot :
-                inner ℝ (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT)) δ
+                inner ℝ (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT)) δ
                   =
                 dot (Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) δT := by
-              simpa [δT, toVecT_ofVecT] using
-                (dot_eq_inner_toVecT (a := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) (b
+              simpa [δT, tensorToVec_vecToTensor] using
+                (dot_eq_inner_tensorToVec (a := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) (b
                   := δT)).symm
             -- Rewrite `((deriv0 x) dx)` using `hjvp`, split the inner product across additions,
             -- then convert each term.
@@ -1464,26 +1464,26 @@ private def convBilin
               inner ℝ ((deriv0 x) dx) δ
                   =
                 inner ℝ
-                  ((toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec (sY OC OH
+                  ((tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) : Vec (sY OC OH
                     OW).size) +
-                    ((toVecT
-                        (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW
+                    ((tensorToVec
+                        (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW
                           := OW) dBiasT) :
                         Vec (sY OC OH OW).size) +
-                      (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) : Vec (sY
+                      (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) : Vec (sY
                         OC OH OW).size)))
                   δ := by
                     simp [hjvp]
               _ =
-                inner ℝ (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT)) δ +
-                  (inner ℝ (toVecT (t := Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH :=
+                inner ℝ (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT)) δ +
+                  (inner ℝ (tensorToVec (t := Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH :=
                     OH) (outW := OW) dBiasT)) δ +
-                    inner ℝ (toVecT (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT)) δ)
+                    inner ℝ (tensorToVec (t := Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT)) δ)
                       := by
                     simp [inner_add_left]
               _ =
                 dot (Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) δT +
-                  dot (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+                  dot (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
                     dBiasT) δT +
                   dot (Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) δT := by
                     simp [hKdot, hBdot, hXdot, add_assoc]
@@ -1493,16 +1493,16 @@ private def convBilin
               dot (addSpec
                     (Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT)
                     (addSpec
-                      (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+                      (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
                         dBiasT)
                       (Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT)))
                   δT
                 =
               dot dKernelT grads.1 + dot dBiasT grads.2.1 + dot dInputT grads.2.2 := by
             -- apply the established dot-bridge theorem
-            simpa [Proofs.Autograd.Conv2D.outH, Proofs.Autograd.Conv2D.outW, outH, outW, layerK,
+            simpa [Proofs.Autograd.Conv2d.outH, Proofs.Autograd.Conv2d.outW, outH, outW, layerK,
               layer0, grads] using
-              (Proofs.Autograd.Conv2D.conv2d_backward_spec_dot
+              (Proofs.Autograd.Conv2d.conv2d_backward_spec_dot
                 (layer := layer) (input := inputT) (δ := δT) (dKernel := dKernelT) (dBias := dBiasT)
                   (dInput := dInputT))
 
@@ -1512,7 +1512,7 @@ private def convBilin
               dot (addSpec
                     (Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT)
                     (addSpec
-                      (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+                      (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
                         dBiasT)
                       (Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT)))
                   δT := by
@@ -1522,14 +1522,14 @@ private def convBilin
               inner ℝ ((deriv0 x) dx) δ
                   =
                 dot (Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT) δT +
-                  dot (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+                  dot (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
                     dBiasT) δT +
                   dot (Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT) δT := hleft
               _ =
                 dot (addSpec
                       (Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT)
                       (addSpec
-                        (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+                        (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
                           dBiasT)
                         (Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT)))
                     δT := by
@@ -1538,64 +1538,64 @@ private def convBilin
           -- Right side: context dot with the assembled VJP equals the sum of three dots.
           have hright :
               inner ℝ dx
-                  (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (toVecT (t := grads.1)) +
-                    (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (toVecT (t := grads.2.1)) +
-                      CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (toVecT (t := grads.2.2))))
+                  (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (tensorToVec (t := grads.1)) +
+                    (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (tensorToVec (t := grads.2.1)) +
+                      CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (tensorToVec (t := grads.2.2))))
                 =
               dot dKernelT grads.1 + dot dBiasT grads.2.1 + dot dInputT grads.2.2 := by
             -- expand the inner across the context sum, and use `CtxVec.inner_get_single` +
-            -- `dot_eq_inner_toVecT`
+            -- `dot_eq_inner_tensorToVec`
             have hk :
-                inner ℝ dx (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (toVecT (t :=
+                inner ℝ dx (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (tensorToVec (t :=
                   grads.1)))
                   =
                 dot dKernelT grads.1 := by
               have h1' := (CtxVec.inner_get_single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx dx
-                (toVecT (t := grads.1)))
+                (tensorToVec (t := grads.1)))
               -- rewrite `CtxVec.get` in terms of `dkShape`
               have hget : CtxVec.get (Γ := Γ) (s := sK OC IC KH KW) kernelIdx dx = dkShape := by
                 simp [dkShape, dkRaw, projK, castVec_castVec]
               -- dot = inner after vectorization
-              simp [h1', hget, dKernelT, dkShape, dot_eq_inner_toVecT]
+              simp [h1', hget, dKernelT, dkShape, dot_eq_inner_tensorToVec]
             have hb :
-                inner ℝ dx (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (toVecT (t := grads.2.1)))
+                inner ℝ dx (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (tensorToVec (t := grads.2.1)))
                   =
                 dot dBiasT grads.2.1 := by
-              have h1' := (CtxVec.inner_get_single (Γ := Γ) (s := sB OC) biasIdx dx (toVecT (t :=
+              have h1' := (CtxVec.inner_get_single (Γ := Γ) (s := sB OC) biasIdx dx (tensorToVec (t :=
                 grads.2.1)))
               have hget : CtxVec.get (Γ := Γ) (s := sB OC) biasIdx dx = dbShape := by
                 simp [dbShape, dbRaw, projB, castVec_castVec]
-              simp [h1', hget, dBiasT, dbShape, dot_eq_inner_toVecT]
+              simp [h1', hget, dBiasT, dbShape, dot_eq_inner_tensorToVec]
             have hx :
-                inner ℝ dx (CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (toVecT (t :=
+                inner ℝ dx (CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (tensorToVec (t :=
                   grads.2.2)))
                   =
                 dot dInputT grads.2.2 := by
-              have h1' := (CtxVec.inner_get_single (Γ := Γ) (s := sX IC IH IW) inputIdx dx (toVecT
+              have h1' := (CtxVec.inner_get_single (Γ := Γ) (s := sX IC IH IW) inputIdx dx (tensorToVec
                 (t := grads.2.2)))
               have hget : CtxVec.get (Γ := Γ) (s := sX IC IH IW) inputIdx dx = dxShape := by
                 simp [dxShape, dxRaw, projX, castVec_castVec]
-              simp [h1', hget, dInputT, dxShape, dot_eq_inner_toVecT]
+              simp [h1', hget, dInputT, dxShape, dot_eq_inner_tensorToVec]
             -- combine the pieces (avoid a heavy `simp` with commutativity on large terms)
             calc
               inner ℝ dx
-                  (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (toVecT (t := grads.1)) +
-                    (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (toVecT (t := grads.2.1)) +
-                      CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (toVecT (t := grads.2.2))))
+                  (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (tensorToVec (t := grads.1)) +
+                    (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (tensorToVec (t := grads.2.1)) +
+                      CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (tensorToVec (t := grads.2.2))))
                   =
-                inner ℝ dx (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (toVecT (t :=
+                inner ℝ dx (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (tensorToVec (t :=
                   grads.1))) +
                   inner ℝ dx
-                    (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (toVecT (t := grads.2.1)) +
-                      CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (toVecT (t := grads.2.2)))
+                    (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (tensorToVec (t := grads.2.1)) +
+                      CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (tensorToVec (t := grads.2.2)))
                         := by
                   simp [inner_add_right]
               _ =
-                inner ℝ dx (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (toVecT (t :=
+                inner ℝ dx (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (tensorToVec (t :=
                   grads.1))) +
-                  (inner ℝ dx (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (toVecT (t :=
+                  (inner ℝ dx (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (tensorToVec (t :=
                     grads.2.1))) +
-                    inner ℝ dx (CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (toVecT (t :=
+                    inner ℝ dx (CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (tensorToVec (t :=
                       grads.2.2)))) := by
                   simp [inner_add_right]
               _ =
@@ -1611,15 +1611,15 @@ private def convBilin
               dot (addSpec
                     (Spec.conv2dSpec (α := ℝ) (layer := layerK) inputT)
                     (addSpec
-                      (Proofs.Autograd.Conv2D.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
+                      (Proofs.Autograd.Conv2d.biasBroadcast (outC := OC) (outH := OH) (outW := OW)
                         dBiasT)
                       (Spec.conv2dSpec (α := ℝ) (layer := layer0) dInputT)))
                   δT := hleft'
             _ = dot dKernelT grads.1 + dot dBiasT grads.2.1 + dot dInputT grads.2.2 := hdot
             _ = inner ℝ dx
-                  (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (toVecT (t := grads.1)) +
-                    (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (toVecT (t := grads.2.1)) +
-                      CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (toVecT (t := grads.2.2))))
+                  (CtxVec.single (Γ := Γ) (s := sK OC IC KH KW) kernelIdx (tensorToVec (t := grads.1)) +
+                    (CtxVec.single (Γ := Γ) (s := sB OC) biasIdx (tensorToVec (t := grads.2.1)) +
+                      CtxVec.single (Γ := Γ) (s := sX IC IH IW) inputIdx (tensorToVec (t := grads.2.2))))
                         := by
                     simpa using hright.symm)
 
@@ -1760,7 +1760,7 @@ private def convBilin
         -- `jvpVec` is definitional to applying `deriv0 xV`.
         simp [node, Node.jvpVec_ofVec, deriv0]
 
-    /-- `NodeFDerivCorrect` for the runtime-style Conv2D node (`vjp = conv2d_backward_spec`).
+    /-- `NodeFDerivCorrect` for the runtime-style Conv2d node (`vjp = conv2d_backward_spec`).
 
     This is the *analytic* assumption needed by the global theorem
     `Graph.backpropVec_eq_adjoint_fderiv`: it only talks about `forwardVec`/`jvpVec`, so it
@@ -1809,7 +1809,7 @@ private def convBilin
       · intro xV dxV
         simp [nodeSpecBackward, Node.jvpVec_ofVec, deriv0]
 
-    end Conv2D
+    end Conv2d
 
     end
 

@@ -328,7 +328,7 @@ Sum-reduce along `axis`.
 PyTorch comparison: `torch.sum(x, dim=axis)`.
 -/
 def reduceSum {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [Inhabited α] [DecidableEq Shape]
-  {sh : Shape} (axis : Nat) [valid : Shape.valid_axis_inst axis sh] [wf : Shape.WellFormed sh]
+  {sh : Shape} (axis : Nat) [valid : Shape.HasNonemptyAxis axis sh] [wf : Shape.WellFormed sh]
   (x : TensorRef α sh) : IO (TensorRef α (shapeAfterSum sh axis)) :=
   commitGraphM (α := α) s (β := TensorRef α (shapeAfterSum sh axis)) (fun {Γ} {ss} xv nat g => do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
@@ -344,7 +344,7 @@ Mean-reduce along `axis`.
 PyTorch comparison: `torch.mean(x, dim=axis)`.
 -/
 def reduceMean {α : Type} (s : TypedGraphSession α) [Context α] [DecidableEq Shape]
-  {sh : Shape} (axis : Nat) [valid : Shape.valid_axis_inst axis sh] [wf : Shape.WellFormed sh]
+  {sh : Shape} (axis : Nat) [valid : Shape.HasNonemptyAxis axis sh] [wf : Shape.WellFormed sh]
   (x : TensorRef α sh) : IO (TensorRef α (shapeAfterSum sh axis)) :=
   commitGraphM (α := α) s (β := TensorRef α (shapeAfterSum sh axis)) (fun {Γ} {ss} xv nat g => do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
@@ -392,7 +392,7 @@ Read a `Nat` from the nat-environment.
 Out-of-bounds reads return `0` (total function), which is convenient for modeling "possibly invalid"
 indices without throwing.
 -/
-def natAt (d : NatEnv) (id : Nat) : Nat :=
+def natAtOrZero (d : NatEnv) (id : Nat) : Nat :=
   match d[id]? with
   | some v => v
   | none => 0
@@ -400,10 +400,10 @@ def natAt (d : NatEnv) (id : Nat) : Nat :=
 /--
 Read a length-`k` vector of `Nat`s starting at `start` from the nat-environment.
 
-Out-of-bounds reads fall back to `0` elementwise via `natAt`.
+Out-of-bounds reads fall back to `0` elementwise via `natAtOrZero`.
 -/
-def natVecAt {k : Nat} (d : NatEnv) (start : Nat) : Tensor Nat (.dim k .scalar) :=
-  Tensor.dim (fun i => Tensor.scalar (natAt d (start + i.val)))
+def natVecAtOrZero {k : Nat} (d : NatEnv) (start : Nat) : Tensor Nat (.dim k .scalar) :=
+  Tensor.dim (fun i => Tensor.scalar (natAtOrZero d (start + i.val)))
 
 /--
 Dynamic gather of a scalar from a 1D vector using a runtime `NatRef` index.
@@ -412,28 +412,28 @@ Out-of-range indices produce `0` instead of raising.
 PyTorch comparison: similar to `x[i]` where `i` is a Python integer, except PyTorch raises on
 out-of-range while this definition totalizes the behavior for ease of reasoning.
 -/
-def gatherScalarRef {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq Shape]
+def gatherScalarRefOrZero {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq Shape]
   {n : Nat} (x : TensorRef α (.dim n .scalar)) (i : NatRef) : IO (TensorRef α Shape.scalar) :=
   commitGraphM (α := α) s (β := TensorRef α Shape.scalar) (fun {Γ} {ss} xv nat g => do
     let ix ← mkIdxOrThrow (_α := α) (Γ := Γ) (ss := ss) x.id (.dim n .scalar)
     let node : _root_.Proofs.Autograd.Algebra.NodeData α NatEnv (Γ ++ ss) Shape.scalar :=
       { forward := fun ctx d =>
           let xv := _root_.Proofs.Autograd.Algebra.getIdx (α := α) (xs := ctx) ix
-          let j := natAt d i.id
+          let j := natAtOrZero d i.id
           if hj : j < n then
             getAtSpec xv ⟨j, hj⟩
           else
             Tensor.scalar 0
         jvp := fun _ctx dctx d =>
           let dx := _root_.Proofs.Autograd.Algebra.getIdx (α := α) (xs := dctx) ix
-          let j := natAt d i.id
+          let j := natAtOrZero d i.id
           if hj : j < n then
             getAtSpec dx ⟨j, hj⟩
           else
             Tensor.scalar 0
         vjp := fun _ctx d δ =>
-          let gVal : α := Tensor.toScalar δ
-          let j := natAt d i.id
+          let gVal : α := Tensor.item δ
+          let j := natAtOrZero d i.id
           if _hj : j < n then
             let dx : Tensor α (.dim n .scalar) :=
               Tensor.dim (fun k => Tensor.scalar (if decide (k.val = j) then gVal else 0))
@@ -454,7 +454,7 @@ Out-of-range indices yield a zero row.
 PyTorch comparison: similar to `x[i]` for 2D tensors with runtime `i`, but PyTorch raises on
 out-of-range whereas this definition is totalized for ease of reasoning.
 -/
-def gatherRowRef {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq Shape]
+def gatherRowRefOrZero {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq Shape]
   {rows cols : Nat} (x : TensorRef α (.dim rows (.dim cols .scalar))) (i : NatRef) :
   IO (TensorRef α (.dim cols .scalar)) :=
   commitGraphM (α := α) s (β := TensorRef α (.dim cols .scalar)) (fun {Γ} {ss} xv nat g => do
@@ -464,20 +464,20 @@ def gatherRowRef {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq S
     let node : _root_.Proofs.Autograd.Algebra.NodeData α NatEnv (Γ ++ ss) outS :=
       { forward := fun ctx d =>
           let xv := _root_.Proofs.Autograd.Algebra.getIdx (α := α) (xs := ctx) ix
-          let j := natAt d i.id
+          let j := natAtOrZero d i.id
           if hj : j < rows then
             getAtSpec xv ⟨j, hj⟩
           else
             fill (0 : α) outS
         jvp := fun _ctx dctx d =>
           let dx := _root_.Proofs.Autograd.Algebra.getIdx (α := α) (xs := dctx) ix
-          let j := natAt d i.id
+          let j := natAtOrZero d i.id
           if hj : j < rows then
             getAtSpec dx ⟨j, hj⟩
           else
             fill (0 : α) outS
         vjp := fun _ctx d δ =>
-          let j := natAt d i.id
+          let j := natAtOrZero d i.id
           let dx : Tensor α inS :=
             if _hj : j < rows then
               Tensor.dim (fun r =>
@@ -502,7 +502,7 @@ Out-of-range indices yield `0`. In the VJP, gradients are accumulated for repeat
 PyTorch comparison: related to `torch.gather` / advanced indexing, but with totalized out-of-range
 behavior.
 -/
-def gatherVecRef {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [DecidableEq Shape]
+def gatherVecRefOrZero {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [DecidableEq Shape]
   {n k : Nat} (x : TensorRef α (.dim n .scalar)) (idx : NatVecRef k) :
   IO (TensorRef α (.dim k .scalar)) :=
   commitGraphM (α := α) s (β := TensorRef α (.dim k .scalar)) (fun {Γ} {ss} xv nat g => do
@@ -512,7 +512,7 @@ def gatherVecRef {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [Deci
     let node : _root_.Proofs.Autograd.Algebra.NodeData α NatEnv (Γ ++ ss) outS :=
       { forward := fun ctx d =>
           let xv := _root_.Proofs.Autograd.Algebra.getIdx (α := α) (xs := ctx) ix
-          let idxT := natVecAt (k := k) d idx.start
+          let idxT := natVecAtOrZero (k := k) d idx.start
           match idxT with
           | Tensor.dim f =>
               Tensor.dim (fun j =>
@@ -524,7 +524,7 @@ def gatherVecRef {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [Deci
                       Tensor.scalar 0)
         jvp := fun _ctx dctx d =>
           let dx := _root_.Proofs.Autograd.Algebra.getIdx (α := α) (xs := dctx) ix
-          let idxT := natVecAt (k := k) d idx.start
+          let idxT := natVecAtOrZero (k := k) d idx.start
           match idxT with
           | Tensor.dim f =>
               Tensor.dim (fun j =>
@@ -535,7 +535,7 @@ def gatherVecRef {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [Deci
                     else
                       Tensor.scalar 0)
         vjp := fun _ctx d δ =>
-          let idxT := natVecAt (k := k) d idx.start
+          let idxT := natVecAtOrZero (k := k) d idx.start
           let dx : Tensor α inS :=
             Tensor.dim (fun iFin =>
               let sum : α :=
@@ -568,7 +568,7 @@ rows (scatter-add semantics), including accumulation for repeated indices.
 PyTorch comparison: similar to `torch.index_select(x, dim=0, index=...)` or advanced indexing on
 the first dimension, but with totalized out-of-range behavior.
 -/
-def gatherRowsRef {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [DecidableEq Shape]
+def gatherRowsRefOrZero {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [DecidableEq Shape]
   {rows cols k : Nat} (x : TensorRef α (.dim rows (.dim cols .scalar))) (idx : NatVecRef k) :
   IO (TensorRef α (.dim k (.dim cols .scalar))) :=
   commitGraphM (α := α) s (β := TensorRef α (.dim k (.dim cols .scalar))) (fun {Γ} {ss} xv nat g =>
@@ -580,7 +580,7 @@ def gatherRowsRef {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [Dec
     let node : _root_.Proofs.Autograd.Algebra.NodeData α NatEnv (Γ ++ ss) outS :=
       { forward := fun ctx d =>
           let xv := _root_.Proofs.Autograd.Algebra.getIdx (α := α) (xs := ctx) ix
-          let idxT := natVecAt (k := k) d idx.start
+          let idxT := natVecAtOrZero (k := k) d idx.start
           match idxT with
           | Tensor.dim f =>
               Tensor.dim (fun j =>
@@ -592,7 +592,7 @@ def gatherRowsRef {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [Dec
                       fill (0 : α) rowS)
         jvp := fun _ctx dctx d =>
           let dx := _root_.Proofs.Autograd.Algebra.getIdx (α := α) (xs := dctx) ix
-          let idxT := natVecAt (k := k) d idx.start
+          let idxT := natVecAtOrZero (k := k) d idx.start
           match idxT with
           | Tensor.dim f =>
               Tensor.dim (fun j =>
@@ -603,7 +603,7 @@ def gatherRowsRef {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [Dec
                     else
                       fill (0 : α) rowS)
         vjp := fun _ctx d δ =>
-          let idxT := natVecAt (k := k) d idx.start
+          let idxT := natVecAtOrZero (k := k) d idx.start
           let dx : Tensor α inS :=
             Tensor.dim (fun rFin =>
               let rowGrad : Tensor α rowS :=
@@ -631,11 +631,11 @@ Gather a scalar from a 1D vector using a raw `Nat` index.
 PyTorch comparison: like `x[i]` with an integer index, but this operation is recorded into the
 shape-indexed graph so it remains explicit during lowering.
 -/
-def gatherScalarNat {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq Shape]
+def gatherScalarNatOrZero {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq Shape]
   {n : Nat} (x : TensorRef α (.dim n .scalar)) (i : Nat) : IO (TensorRef α Shape.scalar) :=
   commitGraphM (α := α) s (β := TensorRef α Shape.scalar) (fun {Γ} {ss} xv nat g => do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
-      (Runtime.Autograd.TypedGraph.GraphM.gatherScalarNat (α := α) (Γ := Γ) (n := n) { id := x.id }
+      (Runtime.Autograd.TypedGraph.GraphM.gatherScalarNatOrZero (α := α) (Γ := Γ) (n := n) { id := x.id }
         i)
       ss g
     let ⟨ss', g'⟩ := st'
@@ -647,12 +647,12 @@ Gather `k` scalars from a 1D vector using an explicit index tensor.
 
 PyTorch comparison: related to `torch.gather` / advanced indexing with an integer index tensor.
 -/
-def gatherVecNat {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [DecidableEq Shape]
+def gatherVecNatOrZero {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [DecidableEq Shape]
   {n k : Nat} (x : TensorRef α (.dim n .scalar)) (idx : Tensor Nat (.dim k .scalar)) :
   IO (TensorRef α (.dim k .scalar)) :=
   commitGraphM (α := α) s (β := TensorRef α (.dim k .scalar)) (fun {Γ} {ss} xv nat g => do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
-      (Runtime.Autograd.TypedGraph.GraphM.gatherVecNat (α := α) (Γ := Γ) (n := n) (k := k) { id :=
+      (Runtime.Autograd.TypedGraph.GraphM.gatherVecNatOrZero (α := α) (Γ := Γ) (n := n) (k := k) { id :=
         x.id } (fun _ => idx))
       ss g
     let ⟨ss', g'⟩ := st'
@@ -664,14 +664,14 @@ Gather `k` rows from a 2D tensor using an explicit index tensor.
 
 PyTorch comparison: similar to `torch.index_select(x, dim=0, index=...)` or advanced indexing.
 -/
-def gatherRowsNat {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [DecidableEq Shape]
+def gatherRowsNatOrZero {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [DecidableEq Shape]
   {rows cols k : Nat} (x : TensorRef α (.dim rows (.dim cols .scalar))) (idx : Tensor Nat (.dim k
     .scalar)) :
   IO (TensorRef α (.dim k (.dim cols .scalar))) :=
   commitGraphM (α := α) s (β := TensorRef α (.dim k (.dim cols .scalar))) (fun {Γ} {ss} xv nat g =>
     do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
-      (Runtime.Autograd.TypedGraph.GraphM.gatherRowsNat (α := α) (Γ := Γ) (rows := rows) (cols :=
+      (Runtime.Autograd.TypedGraph.GraphM.gatherRowsNatOrZero (α := α) (Γ := Γ) (rows := rows) (cols :=
         cols) (k := k) { id := x.id } (fun _ => idx))
       ss g
     let ⟨ss', g'⟩ := st'

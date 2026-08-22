@@ -171,7 +171,7 @@ TorchLean's trainer packages the same lifecycle:
 ```
 def trainer :=
   Trainer.new model
-    { task := .oneHotCrossEntropy
+    { task := .oneHotCrossEntropy 1
       optimizer := optim.adam { lr := 0.001 }
       seed := 2026 }
 

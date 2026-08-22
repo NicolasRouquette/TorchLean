@@ -8,7 +8,7 @@ module
 
 public import NN.MLTheory.CROWN.Graph
 public import NN.Runtime.PyTorch.Import.Core
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 public import NN.Verification.Util.FloatApprox
 public import NN.Verification.Util.Json
 public import NN.Verification.Util.Tensor

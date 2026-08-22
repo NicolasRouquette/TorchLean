@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Proofs.Autograd.Runtime.Any
+public import NN.Proofs.Autograd.Runtime.PackedTensor
 
 /-!
 # Link
@@ -56,7 +56,7 @@ open Runtime.Autograd
 /--
 Extend a tape with leaf nodes for every tensor in the input context `Γ`.
 
-Each leaf has `requires_grad = true` and `backward = ok []`, so the runtime backward loop treats
+Each leaf has `requiresGrad = true` and `backward = ok []`, so the runtime backward loop treats
 them as gradient accumulation slots but never produces parent contributions from them.
 -/
 def addLeaves {α : Type} (t : Tape α) : {Γ : List Shape} → TList α Γ → Tape α
@@ -66,15 +66,15 @@ def addLeaves {α : Type} (t : Tape α) : {Γ : List Shape} → TList α Γ → 
       addLeaves (t := t') (Γ := Γ) xs
 
 /--
-Turn a value-only `AnyTensor` into a runtime leaf node.
+Turn a packed value into a runtime leaf node.
 
 This is the node-level counterpart of `addLeaves`: it has no parents and contributes nothing in
 backward.
 -/
-def leafNodeOfAny {α : Type} (v : Runtime.AnyTensor α) : Runtime.Autograd.Node α :=
+def leafNodeOfPacked {α : Type} (v : Spec.PackedTensor α) : Runtime.Autograd.Node α :=
   { name := none
     value := v
-    requires_grad := true
+    requiresGrad := true
     parents := []
     backward := fun _ => .ok [] }
 
@@ -88,32 +88,32 @@ theorem size_addLeaves {α : Type} (t : Tape α) :
         := xs),
         Nat.add_assoc, Nat.add_comm, Array.size_push]
 
-/-- `addLeaves` appends `leafNodeOfAny` nodes for each element of the input context, in order. -/
+/-- `addLeaves` appends `leafNodeOfPacked` nodes for each element of the input context, in order. -/
 theorem nodes_addLeaves {α : Type} (t : Tape α) :
     {Γ : List Shape} → (x : TList α Γ) →
       (addLeaves (α := α) (t := t) (Γ := Γ) x).nodes =
-        t.nodes ++ (TList.toAnyArray (α := α) (ss := Γ) x).map (leafNodeOfAny (α := α))
+        t.nodes ++ (TList.toPackedArray (α := α) (ss := Γ) x).map (leafNodeOfPacked (α := α))
   | [], .nil => by
-      simp [addLeaves, TList.toAnyArray, TList.toAnyList]
+      simp [addLeaves, TList.toPackedArray, TList.toPackedList]
   | _ :: Γ, .cons x xs => by
       simp [addLeaves, Tape.leaf, Tape.addNode,
         nodes_addLeaves (t := { nodes := t.nodes.push _ }) (Γ := Γ) (x := xs),
-        leafNodeOfAny, TList.toAnyArray_cons (α := α) (ss := Γ) x xs,
+        leafNodeOfPacked, TList.toPackedArray_cons (α := α) (ss := Γ) x xs,
         Array.map_append, Array.append_singleton_assoc]
 
-/-- Value projection of `nodes_addLeaves`: `node.value` agrees with `toAnyArray` for added leaves.
+/-- Value projection of `nodes_addLeaves`: `node.value` agrees with `toPackedArray` for added leaves.
   -/
 theorem addLeaves_values {α : Type} (t : Tape α) :
     {Γ : List Shape} → (x : TList α Γ) →
       (addLeaves (α := α) (t := t) (Γ := Γ) x).nodes.map (fun node => node.value) =
-        t.nodes.map (fun node => node.value) ++ TList.toAnyArray (α := α) (ss := Γ) x
+        t.nodes.map (fun node => node.value) ++ TList.toPackedArray (α := α) (ss := Γ) x
   | [], .nil => by
-      simp [addLeaves, TList.toAnyArray, TList.toAnyList]
+      simp [addLeaves, TList.toPackedArray, TList.toPackedList]
   | _ :: Γ, .cons x xs => by
       -- unfold one `leaf` push and use the induction hypothesis on the remaining leaves
       simp [addLeaves, Tape.leaf, Tape.addNode,
         addLeaves_values (t := { nodes := t.nodes.push _ }) (Γ := Γ) (x := xs),
-        TList.toAnyArray, TList.toAnyList]
+        TList.toPackedArray, TList.toPackedList]
 
 /--
 Lower an executable graph (`GraphData`) to a runtime tape by evaluating forward nodes and storing
@@ -135,14 +135,14 @@ def lowerGraphDataToTape {α : Type} {Δ : Type} [DecidableEq Shape]
       let y := node.forward ctxPrev d
       let runtimeNode : Runtime.Autograd.Node α :=
         { name := some "typed-graph"
-          value := Runtime.Autograd.AnyTensor.mk y
-          requires_grad := true
+          value := Spec.PackedTensor.ofTensor y
+          requiresGrad := true
           parents := []
-          backward := fun dLdyAny => by
-            if h : dLdyAny.s = τ then
-              let dLdy : Tensor α τ := Tensor.castShape dLdyAny.t h
+          backward := fun dLdyPacked => by
+            if h : dLdyPacked.shape = τ then
+              let dLdy : Tensor α τ := dLdyPacked.cast h
               let contribs := node.vjp ctxPrev d dLdy
-              exact .ok (TList.toIndexedAnyList (α := α) (ss := Γ ++ ssPrev) contribs 0)
+              exact .ok (TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev) contribs 0)
             else
               exact .error "autograd: upstream gradient shape mismatch"
         }
@@ -156,7 +156,7 @@ def lowerGraphDataToTape {α : Type} {Δ : Type} [DecidableEq Shape]
 ### Forward-pass correspondence
 
 The next lemmas show that `lowerGraphDataToTape` preserves executable forward semantics, and that the
-resulting runtime tape contains exactly the evaluated context (erased to `AnyTensor`) in order.
+resulting runtime tape contains exactly the evaluated context as packed tensors in order.
 -/
 
 /-- The context returned by `lowerGraphDataToTape` agrees with `GraphData.eval`. -/
@@ -171,13 +171,13 @@ theorem lowerGraphDataToTape_ctx_eq_eval {α : Type} {Δ : Type} [DecidableEq Sh
       rename_i ssPrev τ
       simp [lowerGraphDataToTape, GraphData.eval, ih]
 
-/-- The lowered tape's `.value` array is `GraphData.eval` erased to `AnyTensor`, in the same order.
+/-- The lowered tape's `.value` array is `GraphData.eval` packed in the same order.
   -/
 theorem lowerGraphDataToTape_values_eq {α : Type} {Δ : Type} [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d : Δ) :
     (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.map (fun node =>
       node.value) =
-      TList.toAnyArray (α := α) (ss := Γ ++ ss) (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss :=
+      TList.toPackedArray (α := α) (ss := Γ ++ ss) (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss :=
         ss) g x d).2 := by
   induction g with
   | nil =>
@@ -219,14 +219,14 @@ def lowerGraphToTape {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring �
       let y := node.forward ctxPrev d
       let runtimeNode : Runtime.Autograd.Node α :=
         { name := some "proof-carrying-graph"
-          value := Runtime.Autograd.AnyTensor.mk y
-          requires_grad := true
+          value := Spec.PackedTensor.ofTensor y
+          requiresGrad := true
           parents := []
-          backward := fun dLdyAny => by
-            if h : dLdyAny.s = τ then
-              let dLdy : Tensor α τ := Tensor.castShape dLdyAny.t h
+          backward := fun dLdyPacked => by
+            if h : dLdyPacked.shape = τ then
+              let dLdy : Tensor α τ := dLdyPacked.cast h
               let contribs := node.vjp ctxPrev d dLdy
-              exact .ok (TList.toIndexedAnyList (α := α) (ss := Γ ++ ssPrev) contribs 0)
+              exact .ok (TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev) contribs 0)
             else
               exact .error "autograd: upstream gradient shape mismatch"
         }
@@ -248,11 +248,11 @@ theorem lowerGraphToTape_ctx_eq_eval {α : Type} {Δ : Type} [DecidableEq Shape]
       rename_i ssPrev τ
       simp [lowerGraphToTape, Graph.eval, ih]
 
-/-- The lowered tape's `.value` array is `Graph.eval` erased to `AnyTensor`, in the same order. -/
+/-- The lowered tape's `.value` array is `Graph.eval` packed in the same order. -/
 theorem lowerGraphToTape_values_eq {α : Type} {Δ : Type} [DecidableEq Shape] [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d : Δ) :
     (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.map (fun node => node.value) =
-      TList.toAnyArray (α := α) (ss := Γ ++ ss) (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g
+      TList.toPackedArray (α := α) (ss := Γ ++ ss) (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g
         x d).2 := by
   induction g with
   | nil =>

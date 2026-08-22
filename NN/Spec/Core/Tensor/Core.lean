@@ -57,6 +57,14 @@ inductive Tensor (α : Type) : Shape → Type where
   /-- Construct an outer dimension from its shape-indexed entries. -/
   | dim : ∀ {n s}, (Fin n → Tensor α s) → Tensor α (.dim n s)
 
+/-- Return the value stored in a scalar tensor. -/
+def Tensor.item {α : Type} : Tensor α .scalar → α
+  | .scalar value => value
+
+/-- Extracting the value of a scalar constructor returns that value. -/
+@[simp] theorem Tensor.item_scalar {α : Type} (value : α) :
+    (Tensor.scalar value).item = value := rfl
+
 /-!
 ## Runtime note: materialization
 
@@ -116,35 +124,18 @@ def shapeOf {α : Type} : ∀ {s : Shape}, Tensor α s → Shape
   | .dim 0 s', _ => .dim 0 s'            -- empty dimension
   | .dim (n'+1) _, .dim f => .dim (n'+1) (shapeOf (f ⟨0, Nat.zero_lt_succ n'⟩))
 
-/-- Extract the scalar value from a scalar tensor. -/
-def Tensor.toScalar {α : Type} : Tensor α .scalar → α
-  | .scalar x => x
-
-/-- Inject a scalar into a scalar tensor. -/
-def Tensor.ofScalar {α : Type} (x : α) : Tensor α .scalar := .scalar x
-
-/-- `toScalar (ofScalar x) = x`. -/
-@[simp]
-lemma Tensor.toScalar_ofScalar {α : Type} (x : α) :
-    Tensor.toScalar (Tensor.ofScalar x) = x := rfl
-
-/-- `toScalar` is the identity on the scalar tensor constructor. -/
-@[simp]
-lemma Tensor.toScalar_scalar {α : Type} (x : α) :
-    Tensor.toScalar (Tensor.scalar x) = x := rfl
-
-/-- `ofScalar (toScalar t) = t` for scalar tensors. -/
-@[simp]
-lemma Tensor.ofScalar_toScalar {α : Type} (x : Tensor α .scalar) :
-    Tensor.ofScalar (Tensor.toScalar x) = x :=
-  by cases x; rfl
+/-- Rebuilding a scalar tensor from its item returns the original tensor. -/
+@[simp] theorem Tensor.scalar_item {α : Type} (x : Tensor α .scalar) :
+    Tensor.scalar x.item = x := by
+  cases x
+  rfl
 
 /-- Equivalence between `Tensor α .scalar` and `α` (useful to reuse algebra instances). -/
 def Tensor.scalarEquiv (α : Type) : Tensor α .scalar ≃ α where
-  toFun := Tensor.toScalar
-  invFun := Tensor.ofScalar
-  left_inv := Tensor.ofScalar_toScalar
-  right_inv := Tensor.toScalar_ofScalar
+  toFun := Tensor.item
+  invFun := Tensor.scalar
+  left_inv := Tensor.scalar_item
+  right_inv := Tensor.item_scalar
 
 /-- `AddCommMonoid` on scalar tensors, transported from `α` via `Tensor.scalarEquiv`. -/
 instance {α : Type} [AddCommMonoid α] : AddCommMonoid (Tensor α .scalar) :=
@@ -154,8 +145,8 @@ instance {α : Type} [AddCommMonoid α] : AddCommMonoid (Tensor α .scalar) :=
 def Tensor.dimScalarEquiv {α : Type} (n : Nat) : Tensor α (.dim n .scalar) ≃ (Fin n → α) :=
 Equiv.mk
   (fun t i => match t with
-              | Tensor.dim f => Tensor.toScalar (f i))
-  (fun f => Tensor.dim (fun i => Tensor.ofScalar (f i)))
+              | Tensor.dim f => Tensor.item (f i))
+  (fun f => Tensor.dim (fun i => Tensor.scalar (f i)))
   (by
     intro t
     cases t
@@ -324,7 +315,7 @@ namespace Tensor
 
 /-- Extract the `i`-th entry from a vector tensor. -/
 def vecGet {α : Type} {n : Nat} (x : Tensor α (.dim n .scalar)) (i : Fin n) : α :=
-  Tensor.toScalar (_root_.Spec.get x i)
+  Tensor.item (_root_.Spec.get x i)
 
 /-- Reading a vector constructed coordinatewise returns the selected scalar. -/
 @[simp] theorem vecGet_dim {α : Type} {n : Nat} (values : Fin n → α) (i : Fin n) :
@@ -460,41 +451,98 @@ Slice a contiguous range along the first axis.
 This is the spec-level analogue of `t[start : start+len]` in array/tensor libraries.
 -/
 def sliceRangeSpec {α : Type} {n : Nat} {s : Shape}
-  (t : Tensor α (.dim n s)) (start : Nat) (len : Nat) (h : len + start ≤ n) :
+  (t : Tensor α (.dim n s)) (start : Nat) (len : Nat) (h : start + len ≤ n) :
   Tensor α (.dim len s) :=
   Tensor.dim (fun i : Fin len =>
-    get t (Fin.mk (i.val + start)
-                  (Nat.lt_of_lt_of_le (Nat.add_lt_add_right i.isLt start) h)))
+    get t (Fin.mk (start + i.val)
+      (Nat.lt_of_lt_of_le (Nat.add_lt_add_left i.isLt start) h)))
 
--- Helper: collect elements at index `j` from all batch elements.
-/-!
-`collect_at_index_spec` is a "transpose-like" helper that pulls a fixed position out of every
-batch entry.
+/-! ## Scalar maps and pointwise predicates -/
 
-This is a small but surprisingly useful building block in attention-like code and dataset
-manipulations, where you frequently want to reorganize `(batch, n, ...)` into `(n, batch, ...)`
-without committing to a concrete memory layout.
--/
-/--
-Collect the `j`-th element from each batch entry, producing a tensor with batch dimension moved to
-  the end.
+/-- Map a scalar function across a tensor, preserving its shape. -/
+def mapTensor {α β : Type} : ∀ {s : Shape}, (α → β) → Tensor α s → Tensor β s
+  | .scalar, f, Tensor.scalar x => Tensor.scalar (f x)
+  | .dim _ _, f, Tensor.dim values => Tensor.dim fun i => mapTensor f (values i)
 
-This is a small "transpose-like" helper used in attention-like code and dataset reshaping.
--/
-def collectAtIndexSpec {β : Type} {b n : Nat} {shape : Shape}
-      (f : Fin b → Tensor β (.dim n shape)) (j : Fin n) :
-      Tensor β (shape.appendDim b) :=
-      match shape with
-      | .scalar =>
-        Tensor.dim fun i =>
-          match f i with
-          | Tensor.dim g => g j
-      | .dim _ _ =>
-        Tensor.dim fun k =>
-          collectAtIndexSpec
-            (fun i =>
-              match f i with
-              | Tensor.dim g => g j
-            ) k
+namespace Tensor
+
+/-- `Forall p x` means that every scalar entry of `x` satisfies `p`. -/
+def Forall {α : Type} (p : α → Prop) : {s : Shape} → Tensor α s → Prop
+  | .scalar, Tensor.scalar x => p x
+  | .dim n s, Tensor.dim values => ∀ i : Fin n, Forall p (s := s) (values i)
+
+/-- `Forall₂ r x y` means that corresponding entries of `x` and `y` satisfy `r`. -/
+def Forall₂ {α β : Type} (r : α → β → Prop) :
+    {s : Shape} → Tensor α s → Tensor β s → Prop
+  | .scalar, Tensor.scalar x, Tensor.scalar y => r x y
+  | .dim n s, Tensor.dim xs, Tensor.dim ys =>
+      ∀ i : Fin n, Forall₂ r (s := s) (xs i) (ys i)
+
+@[simp] theorem forall_scalar {α : Type} {p : α → Prop} {x : α} :
+    Forall p (Tensor.scalar x) ↔ p x := Iff.rfl
+
+@[simp] theorem forall_dim {α : Type} {p : α → Prop} {n : Nat} {s : Shape}
+    {values : Fin n → Tensor α s} :
+    Forall p (Tensor.dim values) ↔ ∀ i, Forall p (values i) := Iff.rfl
+
+@[simp] theorem forall₂_scalar {α β : Type} {r : α → β → Prop} {x : α} {y : β} :
+    Forall₂ r (Tensor.scalar x) (Tensor.scalar y) ↔ r x y := Iff.rfl
+
+@[simp] theorem forall₂_dim {α β : Type} {r : α → β → Prop} {n : Nat} {s : Shape}
+    {xs : Fin n → Tensor α s} {ys : Fin n → Tensor β s} :
+    Forall₂ r (Tensor.dim xs) (Tensor.dim ys) ↔ ∀ i, Forall₂ r (xs i) (ys i) := Iff.rfl
+
+/-- The predicate that is always true holds at every tensor coordinate. -/
+theorem forall_true {α : Type} {s : Shape} (x : Tensor α s) :
+    Forall (fun _ => True) x := by
+  induction s with
+  | scalar =>
+      cases x
+      trivial
+  | dim _ _ ih =>
+      cases x with
+      | dim values =>
+          intro i
+          exact ih (values i)
+
+/-- Transport a pointwise property through a scalar map. -/
+theorem forall_mapTensor {α β : Type} {p : α → Prop} {q : β → Prop}
+    {f : α → β} {s : Shape} {x : Tensor α s}
+    (hx : Forall p x) (hf : ∀ a, p a → q (f a)) :
+    Forall q (mapTensor f x) := by
+  induction s with
+  | scalar =>
+      cases x with
+      | scalar a => exact hf a (by simpa using hx)
+  | dim _ _ ih =>
+      cases x with
+      | dim values =>
+          intro i
+          exact ih (hx i)
+
+/-- Replicating a scalar satisfying `p` produces a tensor satisfying `p` everywhere. -/
+theorem forall_replicate {α : Type} {p : α → Prop} {s : Shape} {x : α}
+    (hx : p x) : Forall p (Spec.replicate (s := s) (Tensor.scalar x)) := by
+  induction s with
+  | scalar => exact hx
+  | dim _ _ ih =>
+      intro _
+      exact ih
+
+end Tensor
+
+/-! ## Conversion to host values -/
+
+/-- Flatten a tensor to a row-major list. -/
+def toList {α : Type} : ∀ {s : Shape}, Tensor α s → List α
+  | .scalar, Tensor.scalar x => [x]
+  | .dim n _, Tensor.dim values =>
+      (List.finRange n).flatMap fun i => toList (values i)
+
+/-- Render a tensor recursively using the scalar `ToString` instance. -/
+def pretty {α : Type} [ToString α] : ∀ {s : Shape}, Tensor α s → String
+  | .scalar, Tensor.scalar x => toString x
+  | .dim n _, Tensor.dim values =>
+      "[" ++ String.intercalate ", " ((List.finRange n).map fun i => pretty (values i)) ++ "]"
 
 end Spec

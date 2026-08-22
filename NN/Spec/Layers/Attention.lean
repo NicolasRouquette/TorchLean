@@ -257,7 +257,7 @@ def scaledDotProductAttention
   let scaledScores := scaleSpec scores (1 / scale)
   let attentionWeights :=
     match ctx.mask with
-    | none => Activation.softmaxSpec scaledScores
+    | none => Activation.softmaxLastSpec scaledScores
     | some m => hardMaskedSoftmaxSpec scaledScores m
   matMulSpec attentionWeights ctx.V
 
@@ -283,7 +283,7 @@ def scaledDotProductAttentionBackward
   let scaledScores := scaleSpec scores (1 / scale)
   let attentionWeights :=
     match ctx.mask with
-    | none => Activation.softmaxSpec scaledScores
+    | none => Activation.softmaxLastSpec scaledScores
     | some m => hardMaskedSoftmaxSpec scaledScores m
 
   -- Backprop through `Out = A V`.
@@ -331,7 +331,7 @@ def scaledDotProductAttentionJvp
   let dScaledScores := scaleSpec dScores (1 / scale)
   let attentionWeights :=
     match ctx.mask with
-    | none => Activation.softmaxSpec scaledScores
+    | none => Activation.softmaxLastSpec scaledScores
     | some m => hardMaskedSoftmaxSpec scaledScores m
   let dAttentionWeights :=
     softmaxBackwardFromWeightsSpec attentionWeights dScaledScores
@@ -349,20 +349,18 @@ PyTorch analogy: this corresponds to the four linear maps used in attention bloc
 - `Wq`, `Wk`, `Wv` project `dModel -> (numHeads * headDim)`
 - `Wo` projects `(numHeads * headDim) -> dModel`
 
-This spec keeps them as explicit matrices (no bias terms) to keep the math simple and to make the
-gradients easy to audit.
+This spec keeps them as explicit matrices, without bias terms, so the parameterization remains
+visible in statements about the forward and derivative maps.
 -/
   structure MultiHeadAttention (α : Type) (numHeads dModel headDim : Nat) where
-    /-- Wq. -/
-    Wq : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))
-    -- Query projection: dModel × (numHeads * headDim)
-    /-- Wk. -/
-    Wk : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))  -- Key projection
-    /-- Wv. -/
-    Wv : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))  -- Value projection
-    /-- Wo. -/
-    Wo : Tensor α (.dim (numHeads * headDim) (.dim dModel .scalar))
-    -- Output projection: (numHeads * headDim) × dModel
+    /-- Query projection from `dModel` to all attention heads. -/
+    queryWeight : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))
+    /-- Key projection from `dModel` to all attention heads. -/
+    keyWeight : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))
+    /-- Value projection from `dModel` to all attention heads. -/
+    valueWeight : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))
+    /-- Projection from the concatenated heads back to `dModel`. -/
+    outputWeight : Tensor α (.dim (numHeads * headDim) (.dim dModel .scalar))
 
 /-
   Split tensor into multiple attention heads
@@ -435,9 +433,9 @@ High-level structure:
   let h : numHeads * headDim = numHeads * headDim := by rfl
 
   -- Project inputs to big Q, K, V
-  let Q := matMulSpec x mha.Wq
-  let K := matMulSpec x mha.Wk
-  let V := matMulSpec x mha.Wv
+  let Q := matMulSpec x mha.queryWeight
+  let K := matMulSpec x mha.keyWeight
+  let V := matMulSpec x mha.valueWeight
 
     -- Split heads: we represent heads as the outer axis `(numHeads, n, headDim)`.
     let QHeads := splitHeadsSpec Q numHeads headDim h
@@ -461,14 +459,14 @@ High-level structure:
       headDim) attentionHeads
 
     -- Final output projection: back to (seqLen, dModel)
-    matMulSpec concatenated mha.Wo
+    matMulSpec concatenated mha.outputWeight
 
   /-- Multi-head attention backward pass.
 
   Returns gradients for input `x` and all projection matrices `(Wq,Wk,Wv,Wo)`.
   We recompute forward intermediates locally so we don’t rely on a global tape.
   -/
-def MultiHeadAttentionBackward
+def multiHeadAttentionBackward
   {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
   (mha : MultiHeadAttention α numHeads dModel headDim)
@@ -483,9 +481,9 @@ def MultiHeadAttentionBackward
   ) :=
 
   -- Forward recomputation for intermediate values:
-  let Q := matMulSpec x mha.Wq
-  let K := matMulSpec x mha.Wk
-  let V := matMulSpec x mha.Wv
+  let Q := matMulSpec x mha.queryWeight
+  let K := matMulSpec x mha.keyWeight
+  let V := matMulSpec x mha.valueWeight
 
   let h : numHeads * headDim = numHeads * headDim := by rfl
   let QHeads := splitHeadsSpec Q numHeads headDim h
@@ -507,7 +505,8 @@ def MultiHeadAttentionBackward
     headDim) attentionHeads
 
   -- Backprop through output projection Wo:
-  let (grad_concat, grad_Wo) := matMulBackwardSpec concatenated mha.Wo grad_output
+  let (grad_concat, gradOutputWeight) :=
+    matMulBackwardSpec concatenated mha.outputWeight grad_output
 
   -- Backprop through combine-heads (reshape/swap):
   let grad_attentionHeads := splitHeadsSpec grad_concat numHeads headDim h
@@ -554,14 +553,14 @@ def MultiHeadAttentionBackward
     grad_VHeads
 
   -- Backprop through input projections:
-  let (grad_x_Q, grad_Wq) := matMulBackwardSpec x mha.Wq grad_Q
-  let (grad_x_K, grad_Wk) := matMulBackwardSpec x mha.Wk grad_K
-  let (grad_x_V, grad_Wv) := matMulBackwardSpec x mha.Wv grad_V
+  let (gradXQuery, gradQueryWeight) := matMulBackwardSpec x mha.queryWeight grad_Q
+  let (gradXKey, gradKeyWeight) := matMulBackwardSpec x mha.keyWeight grad_K
+  let (gradXValue, gradValueWeight) := matMulBackwardSpec x mha.valueWeight grad_V
 
   -- Sum grads w.r.t. x from Q, K, V branches:
-  let grad_x := addSpec (addSpec grad_x_Q grad_x_K) grad_x_V
+  let gradX := addSpec (addSpec gradXQuery gradXKey) gradXValue
 
-  (grad_x, grad_Wq, grad_Wk, grad_Wv, grad_Wo)
+  (gradX, gradQueryWeight, gradKeyWeight, gradValueWeight, gradOutputWeight)
 
 /--
 Forward-mode JVP for multi-head attention.
@@ -576,7 +575,7 @@ The rule follows the same computational graph as `MultiHeadAttention.forward`:
 Attention forward-mode AD is explicit at the spec layer rather than hidden behind a runtime-only
 implementation.
 -/
-def MultiHeadAttentionJvp
+def multiHeadAttentionJvp
   {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
   (mha dmha : MultiHeadAttention α numHeads dModel headDim)
@@ -584,13 +583,13 @@ def MultiHeadAttentionJvp
   (mask : Option (Tensor Bool (.dim n (.dim n .scalar)))) :
   Tensor α (.dim n (.dim dModel .scalar)) :=
 
-  let Q := matMulSpec x mha.Wq
-  let K := matMulSpec x mha.Wk
-  let V := matMulSpec x mha.Wv
+  let Q := matMulSpec x mha.queryWeight
+  let K := matMulSpec x mha.keyWeight
+  let V := matMulSpec x mha.valueWeight
 
-  let dQ := addSpec (matMulSpec dx mha.Wq) (matMulSpec x dmha.Wq)
-  let dK := addSpec (matMulSpec dx mha.Wk) (matMulSpec x dmha.Wk)
-  let dV := addSpec (matMulSpec dx mha.Wv) (matMulSpec x dmha.Wv)
+  let dQ := addSpec (matMulSpec dx mha.queryWeight) (matMulSpec x dmha.queryWeight)
+  let dK := addSpec (matMulSpec dx mha.keyWeight) (matMulSpec x dmha.keyWeight)
+  let dV := addSpec (matMulSpec dx mha.valueWeight) (matMulSpec x dmha.valueWeight)
 
   let h : numHeads * headDim = numHeads * headDim := by rfl
   let QHeads := splitHeadsSpec Q numHeads headDim h
@@ -628,7 +627,8 @@ def MultiHeadAttentionJvp
   let dConcatenated := combineHeadsSpec (α := α) (n := n) (numHeads := numHeads) (headDim :=
     headDim) dAttentionHeads
 
-  addSpec (matMulSpec dConcatenated mha.Wo) (matMulSpec concatenated dmha.Wo)
+  addSpec (matMulSpec dConcatenated mha.outputWeight)
+    (matMulSpec concatenated dmha.outputWeight)
 
 /-- Self-attention on a single sequence.
 

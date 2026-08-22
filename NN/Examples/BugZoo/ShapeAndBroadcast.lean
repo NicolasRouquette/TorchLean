@@ -94,7 +94,7 @@ abbrev RowShape : Spec.Shape :=
 /-- Sum over the outer axis of a `2 × 3` tensor, dropping that axis and producing a row vector. -/
 def reduceRows {α : Type} [Add α] [Zero α] (x : Spec.Tensor α MatrixShape) :
     Spec.Tensor α RowShape :=
-  Spec.Tensor.reduceSumAuto 0 x
+  Spec.Tensor.reduceSum 0 x Spec.Shape.NonemptyAxis.zero
 
 /--
 Evidence that a row vector can be broadcast back across the outer dimension of a `2 × 3` matrix.
@@ -104,12 +104,17 @@ dropped a dimension, any later expansion is an explicit broadcast, not an accide
 -/
 def rowBroadcastToMatrix : Spec.Shape.CanBroadcastTo RowShape MatrixShape :=
   Spec.Shape.CanBroadcastTo.expand_dims
-    (Spec.Shape.CanBroadcastTo.dim_eq (Spec.Shape.CanBroadcastTo.scalar_to_any .scalar))
+    (Spec.Shape.CanBroadcastTo.dim_eq Spec.Shape.CanBroadcastTo.scalar)
 
 /-- Broadcast a row vector to every row of a `2 × 3` matrix, using the evidence above. -/
 def broadcastRowToMatrix {α : Type} [Inhabited α] (x : Spec.Tensor α RowShape) :
     Spec.Tensor α MatrixShape :=
   Spec.Tensor.broadcastTo rowBroadcastToMatrix x
+
+/-- The inferred broadcast follows NumPy/PyTorch's right-aligned convention. -/
+def inferredRowBroadcastToMatrix {α : Type} [Inhabited α] (x : Spec.Tensor α RowShape) :
+    Spec.Tensor α MatrixShape :=
+  Spec.Tensor.broadcastTo Spec.Shape.BroadcastTo.proof x
 
 /-- The first row of an explicit broadcast is definitionally the original row. -/
 @[simp] theorem broadcastRowToMatrix_firstRow {α : Type} [Inhabited α]
@@ -119,5 +124,39 @@ def broadcastRowToMatrix {α : Type} [Inhabited α] (x : Spec.Tensor α RowShape
   cases x with
   | dim xs =>
       rfl
+
+/-- Inference and the explicit right-aligned witness compute the same matrix. -/
+theorem inferredRowBroadcastToMatrix_eq {α : Type} [Inhabited α]
+    (x : Spec.Tensor α RowShape) :
+    inferredRowBroadcastToMatrix x = broadcastRowToMatrix x := by
+  cases x
+  rfl
+
+/-!
+The dimensions in the preceding example are different, so a reversed alignment convention would
+fail rather than compute a different tensor. The square example below is the sharper regression:
+both axes have length two, but NumPy/PyTorch broadcasting still requires the vector to align with
+the final axis.
+-/
+
+abbrev SquareVectorShape : Spec.Shape :=
+  .dim 2 .scalar
+
+abbrev SquareMatrixShape : Spec.Shape :=
+  .dim 2 (.dim 2 .scalar)
+
+/-- Broadcast a length-two vector across the rows of a `2 x 2` matrix. -/
+def inferredSquareBroadcast {α : Type} [Inhabited α]
+    (x : Spec.Tensor α SquareVectorShape) : Spec.Tensor α SquareMatrixShape :=
+  Spec.Tensor.broadcastTo Spec.Shape.BroadcastTo.proof x
+
+/-- The inferred square broadcast is right-aligned: each matrix row is the source vector. -/
+theorem inferredSquareBroadcast_rows {α : Type} [Inhabited α]
+    (x : Spec.Tensor α SquareVectorShape) :
+    match inferredSquareBroadcast x with
+    | Spec.Tensor.dim rows =>
+        rows ⟨0, by decide⟩ = x ∧ rows ⟨1, by decide⟩ = x := by
+  cases x
+  exact ⟨rfl, rfl⟩
 
 end NN.Examples.BugZoo.ShapeAndBroadcast

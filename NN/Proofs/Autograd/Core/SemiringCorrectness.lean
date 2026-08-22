@@ -233,30 +233,6 @@ section
 variable {α : Type} [CommSemiring α] [Sub α] [Div α] [Coe Nat α]
 
 /--
-Basic mean-squared error (MSE) scalar value:
-
-$\operatorname{mse}(\widehat y,y)
-=\sum_i(\widehat y_i-y_i)^2/\operatorname{meanDenom}$.
-
-This local definition is used only to define the loss `OpSpec`.
--/
-def mseSpecBasic {s : Shape} (predicted target : Tensor α s) : α :=
-  let diff := subSpec (α := α) (s := s) predicted target
-  let squared := mulSpec (α := α) (s := s) diff diff
-  let sum := sumSpec (α := α) (s := s) squared
-  sum / (Spec.meanDenom s : α)
-
-/--
-Gradient of `mse_spec_basic` with respect to `predicted`, as a tensor of the same shape.
-
-Up to conventions, this is `2*(predicted-target)/meanDenom`.
--/
-def mseDerivSpecBasic {s : Shape} (predicted target : Tensor α s) : Tensor α s :=
-  let diff := subSpec (α := α) (s := s) predicted target
-  let two : α := (1 : α) + 1
-  scaleSpec (α := α) (s := s) diff (two / (Spec.meanDenom s : α))
-
-/--
 Correctness of mean-squared error loss (MSE) as an `OpSpecCorrect`.
 
 The MSE correctness declaration assumes extra operations (`Sub`, `Div`, and coercions from
@@ -268,19 +244,19 @@ def mseLossCorrect {s : Shape} (target : Tensor α s) :
   OpSpecCorrect (α := α) s Shape.scalar :=
 {
   op :=
-    { forward := fun yhat => Tensor.scalar (mseSpecBasic (α := α) (s := s) yhat target)
+    { forward := fun yhat => Tensor.scalar (Spec.mseSpec (α := α) yhat target)
       backward := fun yhat dLdy =>
-        let g := Tensor.toScalar dLdy
-        scaleSpec (α := α) (s := s) (mseDerivSpecBasic (α := α) (s := s) yhat target) g
+        let g := Tensor.item dLdy
+        scaleSpec (α := α) (s := s) (Spec.mseDerivSpec (α := α) yhat target) g
     }
   jvp := fun yhat dyhat =>
-    let grad := mseDerivSpecBasic (α := α) (s := s) yhat target
+    let grad := Spec.mseDerivSpec (α := α) yhat target
     Tensor.scalar (dot (α := α) (s := s) dyhat grad)
   correct := by
     intro yhat dyhat δ
     cases δ with
     | scalar g =>
-      set grad := mseDerivSpecBasic (α := α) (s := s) yhat target
+      set grad := Spec.mseDerivSpec (α := α) yhat target
       have hscale :=
         TensorAlgebra.dot_scale_right (α := α) (s := s) (a := dyhat) (b := grad) (k := g)
       -- LHS: ⟪⟪dyhat, grad⟫, g⟫ = (⟪dyhat, grad⟫) * g

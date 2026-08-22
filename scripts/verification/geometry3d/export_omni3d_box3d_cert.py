@@ -150,7 +150,7 @@ def export_cert(payload: Any, args: argparse.Namespace) -> dict[str, Any]:
         K[6], K[7], K[8], 0.0,
     ]
 
-    bbox = _as_float_list(_field(instance, ("bbox", "bbox2D", "bbox2d"), ctx="instance"), name="bbox")
+    bbox = _as_float_list(_field(instance, ("bbox", "bbox2d", "bbox2d"), ctx="instance"), name="bbox")
     corners = _as_float_list(
         _field(instance, ("bbox3D", "bbox3d", "corners3d", "corners_3d"), ctx="instance"),
         name="bbox3D",

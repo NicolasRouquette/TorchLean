@@ -13,13 +13,13 @@ public import NN.Spec.Module.Linear
 /-!
 # MLP (spec wiring example)
 
-This file defines a 2-layer MLP by composing `SpecChain`s from module specs:
+This file defines a 2-layer MLP by composing `Spec.Module.Chain`s from module specs:
 
 `Linear → ReLU → Linear` (optionally followed by a softmax head).
 
 The file is organized around module wiring rather than re-implementing matrix multiplications
-directly. `Linear` and `ReLU` come from the spec layer and are composed through `NNModuleSpec` /
-`SpecChain`, matching the usual PyTorch workflow: define a few modules, then run a forward pass.
+directly. `Linear` and `ReLU` come from the spec layer and are composed through `Spec.Module` /
+`Spec.Module.Chain`, matching the usual PyTorch workflow: define a few modules, then run a forward pass.
 -/
 
 @[expose] public section
@@ -29,10 +29,10 @@ namespace Examples
 
 open Spec
 open Tensor
-open ModSpec
+open Spec.Module
 open Activation
 
-/-- A 2-layer MLP as a `SpecChain`:
+/-- A 2-layer MLP as a `Spec.Module.Chain`:
 
 `Linear(inDim → hidDim)` then `ReLU` then `Linear(hidDim → outDim)`.
 
@@ -43,13 +43,13 @@ def mlpSpec
   {inDim hidDim outDim : Nat}
   (l1 : Spec.LinearSpec α inDim hidDim)
   (l2 : Spec.LinearSpec α hidDim outDim) :
-  SpecChain α (.dim inDim .scalar) (.dim outDim .scalar) :=
-  let linear1 := Spec.LinearModuleSpec (α:=α) l1
-  let relu    := Spec.ReLUModuleSpec (α:=α) (.dim hidDim .scalar)
-  let linear2 := Spec.LinearModuleSpec (α:=α) l2
-  SpecChain.single linear1
-    |>.composeRight relu
-    |>.composeRight linear2
+  Spec.Module.Chain α (.dim inDim .scalar) (.dim outDim .scalar) :=
+  let linear1 := Spec.Module.linear (α:=α) l1
+  let relu    := Spec.Module.relu (α:=α) (.dim hidDim .scalar)
+  let linear2 := Spec.Module.linear (α:=α) l2
+  Spec.Module.Chain.single linear1
+    |>.append relu
+    |>.append linear2
 
 /-- MLP with a softmax head (`Linear → ReLU → Linear → Softmax`).
 
@@ -63,15 +63,15 @@ def mlpWithSoftmaxSpec
   {inDim hidDim outDim : Nat}
   (l1 : Spec.LinearSpec α inDim hidDim)
   (l2 : Spec.LinearSpec α hidDim outDim) :
-  SpecChain α (.dim inDim .scalar) (.dim outDim .scalar) :=
-  let linear1 := Spec.LinearModuleSpec (α:=α) l1
-  let relu    := Spec.ReLUModuleSpec (α:=α) (.dim hidDim .scalar)
-  let linear2 := Spec.LinearModuleSpec (α:=α) l2
-  let softmax := Spec.SoftmaxModuleSpec (α:=α) (.dim outDim .scalar)
-  SpecChain.single linear1
-    |>.composeRight relu
-    |>.composeRight linear2
-    |>.composeRight softmax
+  Spec.Module.Chain α (.dim inDim .scalar) (.dim outDim .scalar) :=
+  let linear1 := Spec.Module.linear (α:=α) l1
+  let relu    := Spec.Module.relu (α:=α) (.dim hidDim .scalar)
+  let linear2 := Spec.Module.linear (α:=α) l2
+  let softmax := Spec.Module.softmax (α := α) (.dim outDim .scalar) 0
+  Spec.Module.Chain.single linear1
+    |>.append relu
+    |>.append linear2
+    |>.append softmax
 
 /-- Run the MLP forward on a single input vector. -/
 def mlpForward
@@ -82,7 +82,7 @@ def mlpForward
   (x : Tensor α (.dim inDim .scalar)) :
   Tensor α (.dim outDim .scalar) :=
   let net := mlpSpec (α:=α) l1 l2
-  SpecChain.forward (α:=α) net x
+  Spec.Module.Chain.forward (α:=α) net x
 
 /-- Backward pass for the 2-layer MLP.
 Returns (∂L/∂W1, ∂L/∂b1, ∂L/∂W2, ∂L/∂b2, ∂L/∂x).
@@ -122,10 +122,10 @@ def mlpBackward
   (dW1, db1, dW2, db2, dX)
 
 /-
-Phase 1: Composition correctness (shape + functional) for the MLP SpecChain.
+Phase 1: Composition correctness (shape + functional) for the MLP Spec.Module.Chain.
 This lemma states that evaluating the composed chain equals the sequential computation.
 -/
-/-- The composed `SpecChain` forward equals the hand-written `Linear → ReLU → Linear`
+/-- The composed `Spec.Module.Chain` forward equals the hand-written `Linear → ReLU → Linear`
 computation. -/
 theorem mlp_spec_forward_eq
   {α : Type} [Context α]
@@ -133,14 +133,14 @@ theorem mlp_spec_forward_eq
   (l1 : Spec.LinearSpec α inDim hidDim)
   (l2 : Spec.LinearSpec α hidDim outDim)
   (x : Tensor α (.dim inDim .scalar)) :
-  SpecChain.forward (α:=α)
+  Spec.Module.Chain.forward (α:=α)
     (mlpSpec (α:=α) l1 l2) x
   =
   let z1 := Spec.linearSpec (α:=α) l1 x
   let a1 := Activation.reluSpec z1
   Spec.linearSpec (α:=α) l2 a1 := by
-  dsimp [SpecChain.forward, mlpSpec, SpecChain.composeRight, NNModuleSpec.forward]
-  dsimp [Spec.LinearModuleSpec, Spec.ReLUModuleSpec]
+  dsimp [Spec.Module.Chain.forward, mlpSpec, Spec.Module.Chain.append, Spec.Module.forward]
+  dsimp [Spec.Module.linear, Spec.Module.relu]
 
 
 /-Phase 2: Symbolic gradient verification via OpSpec composition.

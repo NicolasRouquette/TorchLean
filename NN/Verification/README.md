@@ -69,8 +69,11 @@ BatchNorm, CHW pooling, reshape-based LayerNorm, graph input/detach, and scalar 
 by the PyTorch/ONNX path.
 
 For payload-backed imported ops, the bridge records both the helper evaluator contract and the
-actual one-step `Graph.evalAt` success path. `Eval.Coverage` keeps a checked list of the IR
-constructor families covered by those local evaluator lemmas.
+actual one-step `Graph.evalAt` success path. The
+`NN.Verification.TorchLean.Proved.Correctness.Eval` import collects the concrete evaluator modules
+for elementwise, shape, reduction, permutation, linear-algebra, softmax, payload, and lowering
+facts. The imported theorems, rather than a separate coverage declaration, are the current record
+of proved evaluator support.
 
 ## Public Imports
 

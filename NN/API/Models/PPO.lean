@@ -26,44 +26,46 @@ open Spec Tensor
 
 namespace nn
 namespace models
+namespace PPO
 
 /-- Configuration for a simple PPO actor/critic pair over vector observations. -/
-structure PPOActorCriticConfig where
+structure Config where
   obsDim : Nat
   hiddenDim : Nat
   nActions : Nat
 deriving Repr
 
-/-- Actor input shape: observation vectors with a caller-chosen prefix shape. -/
-abbrev ppoActorInShape (cfg : PPOActorCriticConfig) (pfx : Spec.Shape) : Spec.Shape :=
-  pfx.appendDim cfg.obsDim
+/-- Observation shape with arbitrary leading axes. -/
+abbrev inputShape (cfg : Config) (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.appendDim cfg.obsDim
 
-/-- Actor output shape: action logits with the same prefix shape. -/
-abbrev ppoActorOutShape (cfg : PPOActorCriticConfig) (pfx : Spec.Shape) : Spec.Shape :=
-  pfx.appendDim cfg.nActions
+/-- Action-logit shape with the same leading axes as the observations. -/
+abbrev actorOutputShape (cfg : Config) (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.appendDim cfg.nActions
 
-/-- Critic output shape: one scalar value per prefixed observation. -/
-abbrev ppoCriticOutShape (_cfg : PPOActorCriticConfig) (pfx : Spec.Shape) : Spec.Shape :=
-  pfx.appendDim 1
+/-- Value-estimate shape with the same leading axes as the observations. -/
+abbrev criticOutputShape (_cfg : Config) (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.appendDim 1
 
 /-- Actor MLP mapping observations to action logits. -/
-def ppoActor (cfg : PPOActorCriticConfig) (pfx : Spec.Shape) :
-    nn.Builder (nn.Sequential (ppoActorInShape cfg pfx) (ppoActorOutShape cfg pfx)) :=
+def actor (cfg : Config) (leading : Spec.Shape := .scalar) :
+    nn.Builder (nn.Sequential (inputShape cfg leading) (actorOutputShape cfg leading)) :=
   nn.Sequential![
-    linear cfg.obsDim cfg.hiddenDim (pfx := pfx),
+    linear cfg.obsDim cfg.hiddenDim (leading := leading),
     nn.tanh,
-    linear cfg.hiddenDim cfg.nActions (pfx := pfx)
+    linear cfg.hiddenDim cfg.nActions (leading := leading)
   ]
 
 /-- Critic MLP mapping observations to a scalar value estimate. -/
-def ppoCritic (cfg : PPOActorCriticConfig) (pfx : Spec.Shape) :
-    nn.Builder (nn.Sequential (ppoActorInShape cfg pfx) (ppoCriticOutShape cfg pfx)) :=
+def critic (cfg : Config) (leading : Spec.Shape := .scalar) :
+    nn.Builder (nn.Sequential (inputShape cfg leading) (criticOutputShape cfg leading)) :=
   nn.Sequential![
-    linear cfg.obsDim cfg.hiddenDim (pfx := pfx),
+    linear cfg.obsDim cfg.hiddenDim (leading := leading),
     nn.tanh,
-    linear cfg.hiddenDim 1 (pfx := pfx)
+    linear cfg.hiddenDim 1 (leading := leading)
   ]
 
+end PPO
 end models
 end nn
 

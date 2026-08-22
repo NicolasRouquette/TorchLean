@@ -226,29 +226,29 @@ compose the scalar bounds for `exp`, `+`, and `safeLog`.
 Per-entry bound tensor for `softplusR`.
 
 This is the elementwise lifting of `softplus_bound_scalar`, used with `linf_norm` in
-`approxT_softplus_spec`.
+`approxTensor_softplus_spec`.
 -/
 def softplusBoundTensor {s : Shape} (eps : ℝ) (xR : Tensor R s) : SpecTensor s :=
   mapSpec (fun a => softplusBoundScalar (β := β) (fexp := fexp) (rnd := rnd) a eps)
     (tensorToSpec (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xR)
 
 /--
-`approxT` bound for `softplus` lifted to arbitrary tensor shapes.
+`approxTensor` bound for `softplus` lifted to arbitrary tensor shapes.
 
 This is the tensor-level wrapper around `approx_softplus_nf`, built via
-  `approxT_map_spec_of_scalar_bound`.
+  `approxTensor_map_spec_of_scalar_bound`.
 -/
-theorem approxT_softplus_spec {s : Shape} :
+theorem approxTensor_softplus_spec {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mapSpec (s := s) (Activation.Math.softplusSpec (α := ℝ)) xS)
           (mapSpec (s := s) (softplusR (β := β) (fexp := fexp) (rnd := rnd)) xR)
           (linfNorm (softplusBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps xR))
             := by
   intro xS xR eps hx
   have h :=
-    approxT_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+    approxTensor_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
       rnd))
       (s := s)
       (fS := Activation.Math.softplusSpec (α := ℝ))
@@ -481,22 +481,22 @@ def safeLogSoftplusBoundTensor {s : Shape} (ε eps : ℝ) (xR : Tensor R s) : Sp
     (tensorToSpec (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xR)
 
 /--
-`approxT` bound for `safe_log` lifted to arbitrary tensor shapes.
+`approxTensor` bound for `safe_log` lifted to arbitrary tensor shapes.
 
 This is the tensor-level wrapper around `approx_safe_log_nf`, built via
-  `approxT_map_spec_of_scalar_bound`.
+  `approxTensor_map_spec_of_scalar_bound`.
 -/
-theorem approxT_safe_log_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
+theorem approxTensor_safe_log_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mapSpec (s := s) (fun x => Activation.Math.safeLogSpec (α := ℝ) x ε) xS)
           (mapSpec (s := s) (safeLogSoftplusR (β := β) (fexp := fexp) (rnd := rnd) ε) xR)
           (linfNorm (safeLogSoftplusBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) ε eps xR))
             := by
   intro xS xR eps hx
   have h :=
-    approxT_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+    approxTensor_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
       rnd))
       (s := s)
       (fS := fun x => Activation.Math.safeLogSpec (α := ℝ) x ε)

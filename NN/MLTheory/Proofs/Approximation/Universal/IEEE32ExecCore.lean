@@ -49,7 +49,7 @@ the shape boundary explicit instead of hiding the `Fin 1` index proof at every c
 -/
 def extractScalarOutputIeee32exec (t : Tensor IEEE32Exec (.dim 1 .scalar)) : IEEE32Exec :=
   match t with
-  | .dim f => Tensor.toScalar (f ⟨0, by decide⟩)
+  | .dim f => Tensor.item (f ⟨0, by decide⟩)
 
 /--
 Evaluate a two-layer ReLU MLP over executable IEEE binary32 semantics.

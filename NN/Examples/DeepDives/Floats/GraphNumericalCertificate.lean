@@ -82,8 +82,8 @@ def payload : NN.IR.Payload IEEE32Exec where
       none
 
 /-- A concrete input (`1.25`) inside the declared input interval. -/
-def input : NN.IR.DVal IEEE32Exec :=
-  NN.IR.DVal.mk .scalar (.scalar (IEEE32Exec.ofBits 0x3fa00000))
+def input : Spec.PackedTensor IEEE32Exec :=
+  Spec.PackedTensor.mk .scalar (.scalar (IEEE32Exec.ofBits 0x3fa00000))
 
 /-- Replay the same graph using the bit-level IEEE32 interpreter and check every intermediate. -/
 def replay : Except String CheckedExecution := do
@@ -166,8 +166,8 @@ def reductionSources : Array SourceRange := #[
   { nodeId := 0, enclosure := interval 0xbf800000 0x40000000 }
 ]
 
-def reductionInput : NN.IR.DVal IEEE32Exec :=
-  NN.IR.DVal.mk (.dim 3 .scalar) <| .dim fun i =>
+def reductionInput : Spec.PackedTensor IEEE32Exec :=
+  Spec.PackedTensor.mk (.dim 3 .scalar) <| .dim fun i =>
     match i.1 with
     | 0 => .scalar (IEEE32Exec.ofBits 0x3f800000)
     | 1 => .scalar (IEEE32Exec.ofBits 0xbf000000)
@@ -213,8 +213,8 @@ def matmulPayload : NN.IR.Payload IEEE32Exec where
     else
       none
 
-def matmulInput : NN.IR.DVal IEEE32Exec :=
-  NN.IR.DVal.mk (.dim 2 (.dim 2 .scalar)) <| .dim fun i => .dim fun j =>
+def matmulInput : Spec.PackedTensor IEEE32Exec :=
+  Spec.PackedTensor.mk (.dim 2 (.dim 2 .scalar)) <| .dim fun i => .dim fun j =>
     if i = j then .scalar IEEE32Exec.posOne else .scalar IEEE32Exec.negOne
 
 def matmulReplay : Except String CheckedExecution := do
@@ -245,8 +245,8 @@ def sqrtSources : Array SourceRange := #[
   { nodeId := 0, enclosure := interval 0xc0800000 0x41100000 }
 ]
 
-def sqrtInput : NN.IR.DVal IEEE32Exec :=
-  NN.IR.DVal.mk .scalar (.scalar (IEEE32Exec.ofBits 0xc0800000))
+def sqrtInput : Spec.PackedTensor IEEE32Exec :=
+  Spec.PackedTensor.mk .scalar (.scalar (IEEE32Exec.ofBits 0xc0800000))
 
 def sqrtReplay : Except String CheckedExecution := do
   let certificate <-
@@ -282,8 +282,8 @@ def layerNormSources : Array SourceRange := #[
   { nodeId := 0, enclosure := interval 0xc0000000 0x40000000 }
 ]
 
-def layerNormInput : NN.IR.DVal IEEE32Exec :=
-  NN.IR.DVal.mk (.dim 2 (.dim 3 .scalar)) <| .dim fun row => .dim fun column =>
+def layerNormInput : Spec.PackedTensor IEEE32Exec :=
+  Spec.PackedTensor.mk (.dim 2 (.dim 3 .scalar)) <| .dim fun row => .dim fun column =>
     match row.1, column.1 with
     | 0, 0 => .scalar IEEE32Exec.negOne
     | 0, 1 => .scalar IEEE32Exec.posZero
@@ -320,8 +320,8 @@ def activationSources : Array SourceRange := #[
   { nodeId := 0, enclosure := interval 0xc0800000 0x40800000 }
 ]
 
-def activationInput : NN.IR.DVal IEEE32Exec :=
-  NN.IR.DVal.mk .scalar (.scalar (IEEE32Exec.ofBits 0xc0800000))
+def activationInput : Spec.PackedTensor IEEE32Exec :=
+  Spec.PackedTensor.mk .scalar (.scalar (IEEE32Exec.ofBits 0xc0800000))
 
 def activationReplay : Except String CheckedExecution := do
   let certificate <-
@@ -347,8 +347,8 @@ def softmaxSources : Array SourceRange := #[
   { nodeId := 0, enclosure := interval 0xc0000000 0x40000000 }
 ]
 
-def softmaxInput : NN.IR.DVal IEEE32Exec :=
-  NN.IR.DVal.mk (.dim 3 .scalar) <| .dim fun i =>
+def softmaxInput : Spec.PackedTensor IEEE32Exec :=
+  Spec.PackedTensor.mk (.dim 3 .scalar) <| .dim fun i =>
     match i.1 with
     | 0 => .scalar IEEE32Exec.posOne
     | 1 => .scalar IEEE32Exec.posZero
@@ -453,14 +453,14 @@ def mlpPayload : NN.IR.Payload IEEE32Exec where
     | 8 => some { n := 1, v := mlpOutputBiasFlat }
     | _ => none
 
-def mlpInput : NN.IR.DVal IEEE32Exec :=
+def mlpInput : Spec.PackedTensor IEEE32Exec :=
   let value : Spec.Tensor IEEE32Exec (.dim 1 (.dim 2 .scalar)) :=
     .dim fun _ => .dim fun column =>
       if column.1 = 0 then
         .scalar (IEEE32Exec.ofBits 0x3f000000) -- 0.5
       else
         .scalar IEEE32Exec.negOne
-  NN.IR.DVal.mk mlpInputShape (by simpa [mlpInputShape] using value)
+  Spec.PackedTensor.mk mlpInputShape (by simpa [mlpInputShape] using value)
 
 /-- Generate the operation-local range trace and bind it to the checked CPU capsule plan. -/
 def mlpCertificate : Except String CheckedCertificate :=

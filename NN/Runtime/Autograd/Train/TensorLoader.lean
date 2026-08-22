@@ -39,18 +39,18 @@ Build a length-`n` vector from a list, with a length check.
 This is the safe list boundary for dependent tensor shapes: callers bring ordinary runtime data,
 and the loader either proves the length matches `n` internally or returns a tagged error.
 -/
-def vectorOfList {a : Type} [Zero a]
+def vectorOfList {a : Type}
   (tag : String) (n : Nat) (xs : List a) : Result (Tensor a (.dim n .scalar)) := by
   if hLen : xs.length = n then
     -- Use `List.get` via a casted `Fin` index: the length check guarantees in-bounds access.
     let f : Fin n → a := fun i =>
       xs.get (Fin.cast hLen.symm i)
-    exact .ok (vectorN n f)
+    exact .ok (Tensor.vector f)
   else
     exact .error (tagError tag s!"expected {n} entries, got {xs.length}")
 
 /-- Build a length-`n` vector from an `Array`, using the same checks as `vectorOfList`. -/
-def vectorOfArray {a : Type} [Zero a]
+def vectorOfArray {a : Type}
   (tag : String) (n : Nat) (xs : Array a) : Result (Tensor a (.dim n .scalar)) :=
   vectorOfList (tag := tag) (n := n) xs.toList
 
@@ -60,7 +60,7 @@ Build an `m×n` matrix from a list of `m` rows, each of length `n`.
 Both dimensions are checked before constructing the dependent tensor. If a row has the wrong
 length, the error reports the first bad row so data issues are easier to diagnose.
 -/
-def matrixOfLists {a : Type} [Zero a]
+def matrixOfLists {a : Type}
   (tag : String) (m n : Nat) (rows : List (List a)) :
   Result (Tensor a (.dim m (.dim n .scalar))) := by
   if hRows : rows.length = m then
@@ -86,7 +86,7 @@ def matrixOfLists {a : Type} [Zero a]
         have hRowLen : row.length = n := hAll row (get_mem rows i')
         let j' : Fin row.length := Fin.cast hRowLen.symm j
         row.get j'
-      exact .ok (matrixMN m n f)
+      exact .ok (Tensor.matrix f)
     else
       -- Try to report the first offending row for a more actionable error message.
       let rec findBad : Nat → List (List a) → Option (Nat × Nat)
@@ -132,13 +132,6 @@ def datasetOfPairs {a b : Type}
     exact .ok (Dataset.ofList (List.zip xs ys))
   else
     exact .error (tagError tag s!"length mismatch: {xs.length} vs {ys.length}")
-
-/-- Convert list-rows into a dataset of length-`n` vectors. -/
-def datasetOfListVectors {a : Type} [Zero a]
-  (tag : String) (n : Nat) (rows : List (List a)) :
-  Result (Dataset (Tensor a (.dim n .scalar))) := do
-  let tensors <- rows.mapM (fun row => vectorOfList (tag := tag) (n := n) row)
-  pure (Dataset.ofList tensors)
 
 /-- Pair datasets succeed exactly as `List.zip` when the two sides have the same length. -/
 @[simp] theorem datasetOfPairs_eq_ok {a b : Type}

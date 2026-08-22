@@ -72,7 +72,7 @@ def defaultTrainRows : Nat := 128
 def defaultTestRows : Nat := 32
 
 /-- Spec.Shape-level FNO configuration shared by the constructor and sample loaders. -/
-def modelCfg : nn.models.FNOConfig 1 :=
+def modelCfg : nn.models.FnoConfig 1 :=
   { spatial := Vector.replicate 1 grid
     modes := Vector.replicate 1 modes
     spatialNonzero := by intro i; fin_cases i; decide
@@ -83,10 +83,10 @@ def modelCfg : nn.models.FNOConfig 1 :=
     seed := 0 }
 
 /-- Model input shape: one sampled initial condition on the fixed grid. -/
-abbrev σ : Spec.Shape := .dim grid .scalar
+abbrev σ : Spec.Shape := modelCfg.inputShape
 
 /-- Model output shape: one predicted terminal solution on the same grid. -/
-abbrev τ : Spec.Shape := .dim grid .scalar
+abbrev τ : Spec.Shape := modelCfg.outputShape
 
 /-- Directory where the preparation script writes Burgers tensors by default. -/
 def defaultDir : System.FilePath := "data/real/fno"
@@ -167,22 +167,30 @@ def logNotes (cfg : BurgersOptions) (spectralPath : String) (device : String) : 
 end BurgersOptions
 
 def mkModel : nn.Builder (nn.Sequential σ τ) :=
-  by
-    simpa [σ, τ, nn.models.fnoInShape, nn.models.fnoOutShape, modelCfg,
-      Vector.replicate, Spec.Shape.ofList] using nn.models.fno modelCfg
+  nn.models.fno modelCfg
 
 /-- Load one fixed-grid Burgers split as supervised TorchLean samples. -/
 def loadDataset
     (xPath yPath : System.FilePath) (n : Nat) :
-    IO (Data.Dataset (SupervisedSample Float σ τ)) := do
+    IO (Data.Dataset (Sample.Supervised Float σ τ)) := do
   let samples ← ModelZoo.orThrow exeName =<<
     Data.loadSupervisedNpy xPath yPath n [grid] [grid]
-  pure <| Data.fromList samples.toList
+  pure <| _root_.Runtime.Autograd.Train.Dataset.ofList samples.toList
 
 /-- Write one FNO prediction row to CSV for the companion plotting script. -/
 def writePredictionProbe (plotCsv : System.FilePath)
     (x target prediction : Spec.Tensor Float σ) : IO Unit := do
-  Data.writeVectorPredictionCsv plotCsv x target prediction
+  let rows := (List.finRange grid).map (fun i =>
+    let denom := Float.ofNat (Nat.max 1 (grid - 1))
+    let xpos := Float.ofNat i.val / denom
+    [toString i.val, toString xpos, toString (Spec.Tensor.vecGet x i),
+      toString (Spec.Tensor.vecGet target i), toString (Spec.Tensor.vecGet prediction i)])
+  if let some parent := plotCsv.parent then
+    IO.FS.createDirAll parent
+  let header := ["i", "x", "input", "target", "prediction"]
+  let lines := String.intercalate "\n" ((String.intercalate "," header) :: rows.map
+    (String.intercalate ",")) ++ "\n"
+  IO.FS.writeFile plotCsv lines
   IO.println s!"  wrote prediction CSV: {plotCsv}"
   IO.println s!"  plot with: python3 NN/Examples/Data/plot_fno1d_burgers.py --csv {plotCsv}"
 
@@ -201,9 +209,9 @@ def writeMetricLog (dest : Training.LogDestination) (hist : Training.MetricHisto
 /-- Loaded train/test splits before evaluation prefixes and cycling streams are derived. -/
 structure LoadedData where
   /-- Training split as supervised samples. -/
-  train : Data.Dataset (SupervisedSample Float σ τ)
+  train : Data.Dataset (Sample.Supervised Float σ τ)
   /-- Held-out split as supervised samples. -/
-  test : Data.Dataset (SupervisedSample Float σ τ)
+  test : Data.Dataset (Sample.Supervised Float σ τ)
 
 /-- Validate paths and load both Burgers splits. -/
 def loadData (cfg : BurgersOptions) :
@@ -215,15 +223,15 @@ def loadData (cfg : BurgersOptions) :
 
 /-- Deterministic evaluation prefixes and cycling stream derived from the loaded train/test sets. -/
 structure EvalData where
-  trainDatasetSamples : List (SupervisedSample Float σ τ)
-  testDatasetSamples : List (SupervisedSample Float σ τ)
+  trainDatasetSamples : List (Sample.Supervised Float σ τ)
+  testDatasetSamples : List (Sample.Supervised Float σ τ)
   trainSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
   testSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
-  reportTrainDatasetSamples : List (SupervisedSample Float σ τ)
-  reportTestDatasetSamples : List (SupervisedSample Float σ τ)
+  reportTrainDatasetSamples : List (Sample.Supervised Float σ τ)
+  reportTestDatasetSamples : List (Sample.Supervised Float σ τ)
   reportTrainSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
   reportTestSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
-  trainCycle : Nat → SupervisedSample Float σ τ
+  trainCycle : Nat → Sample.Supervised Float σ τ
 
 /--
 Convert loaded Burgers datasets into the common runtime/evaluation view used by both execution
@@ -235,8 +243,8 @@ The fused CUDA path:
 - emit the same train/test MSE metric history.
 -/
 def mkEvalData (cfg : BurgersOptions) (data : LoadedData) : IO EvalData := do
-  let trainDatasetSamples := Data.toList data.train
-  let testDatasetSamples := Data.toList data.test
+  let trainDatasetSamples := data.train.toList
+  let testDatasetSamples := data.test.toList
   let trainSamples := trainDatasetSamples.map Sample.toPair
   let testSamples := testDatasetSamples.map Sample.toPair
   let trainCycle ← ModelZoo.orThrow exeName <|

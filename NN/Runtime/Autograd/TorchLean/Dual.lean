@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Proofs.Autograd.Tape.Algebra.Soundness
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 
 import Mathlib.Algebra.Order.Algebra
 
@@ -127,10 +127,10 @@ instance {α : Type} [Context α] : Coe Nat (Dual α) where
 
 /-- Lift TorchLean's numeric literals (`Numbers`) into dual numbers with zero tangent. -/
 instance {α : Type} [Context α] : Numbers (Dual α) where
-  neg_point_five := ⟨Numbers.neg_point_five, 0⟩
-  neg_one := ⟨Numbers.neg_one, 0⟩
-  pointone := ⟨Numbers.pointone, 0⟩
-  pointfive := ⟨Numbers.pointfive, 0⟩
+  negHalf := ⟨Numbers.negHalf, 0⟩
+  negOne := ⟨Numbers.negOne, 0⟩
+  oneTenth := ⟨Numbers.oneTenth, 0⟩
+  half := ⟨Numbers.half, 0⟩
   one := ⟨Numbers.one, 0⟩
   zero := ⟨Numbers.zero, 0⟩
   two := ⟨Numbers.two, 0⟩
@@ -138,8 +138,8 @@ instance {α : Type} [Context α] : Numbers (Dual α) where
   four := ⟨Numbers.four, 0⟩
   five := ⟨Numbers.five, 0⟩
   ten := ⟨Numbers.ten, 0⟩
-  log10 := ⟨Numbers.log10, 0⟩
-  log10000 := ⟨Numbers.log10000, 0⟩
+  lnTen := ⟨Numbers.lnTen, 0⟩
+  lnTenThousand := ⟨Numbers.lnTenThousand, 0⟩
   epsilon := ⟨Numbers.epsilon, 0⟩
 
 /-- Forward-mode chain rule implementations for `MathFunctions` over dual numbers. -/
@@ -185,7 +185,7 @@ instance {α : Type} [Context α] : Pow (Dual α) (Dual α) where
 
 /-- Lift a scalar `Context` to dual numbers by deciding comparisons on primals. -/
 instance {α : Type} [Context α] : Context (Dual α) where
-  decidable_gt := fun x y => (Context.decidable_gt) x.re y.re
+  decidableGT := fun x y => (Context.decidableGT) x.re y.re
 
 end Dual
 

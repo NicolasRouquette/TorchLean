@@ -34,36 +34,6 @@ Direct control over runners, callbacks, data streams, and optimization steps. Th
 crossing into a second API namespace.
 -/
 
-/--
-Count correct predictions in a one-hot labeled **batched** dataset.
-
-Minibatch analogue of `accuracyOneHot`. The task already has a leading batch axis, so the
-implementation scores each row independently and accumulates totals.
-
-Returns `(correct, total)` where `total = batch * numBatches`.
--/
-def Runner.accuracyOneHotBatch
-    {σ : Spec.Shape} {classes batch : Nat}
-    {task : SeqTask (.dim batch σ) (.dim batch (.dim classes .scalar))}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
-    (runner : Runner α task)
-    (samples : List (TorchLean.Sample.Batch α batch σ (.dim classes .scalar)))
-      :
-    IO (Nat × Nat) := do
-  let mut correct : Nat := 0
-  let mut total : Nat := 0
-  for s in samples do
-    let xBatch := TorchLean.Sample.x s
-    let yBatch := TorchLean.Sample.y s
-    let logitsBatch ← Runner.run (task := task) runner xBatch
-    for i in List.finRange batch do
-      let logits := Spec.getAtSpec logitsBatch i
-      let target := Spec.getAtSpec yBatch i
-      if let some true := _root_.TorchLean.Metrics.correctOneHot? logits target then
-        correct := correct + 1
-      total := total + 1
-  pure (correct, total)
-
 /-- Callback event fired after each training step. -/
 structure StepEvent (α : Type) where
   /-- Current epoch number. -/
@@ -251,7 +221,7 @@ def Objective.meanLoss {σ τ : Spec.Shape} {n : Nat} {stateShapes : List Spec.S
     let sample ← TorchLean.CLI.orThrow "train.scalarModule.meanLoss" <|
       TorchLean.Data.collateSupervised (α := α) (σ := σ) (τ := τ) n rawBatch
     let lossTensor ← TorchLean.Module.loss module sample .nil
-    let loss := Spec.Tensor.toScalar lossTensor
+    let loss := Spec.Tensor.item lossTensor
     total := total + loss
     count := count + 1
   if count = 0 then
@@ -273,16 +243,17 @@ def Runner.meanLossLoader {σ τ : Spec.Shape} {n : Nat}
     (runner : Runner α task) (loader : TorchLean.Data.BatchLoader α n σ τ) : IO α :=
   Objective.meanLoss runner.module loader
 
-/-- One-hot accuracy over a typed minibatch loader without materializing all collated batches. -/
+/-- One-hot accuracy along `axis` over a typed minibatch loader. -/
 def Runner.accuracyOneHotLoader
-    {σ : Spec.Shape} {classes batch : Nat}
-    {task : SeqTask (.dim batch σ) (.dim batch (.dim classes .scalar))}
+    {σ τ : Spec.Shape} {batch : Nat}
+    {task : SeqTask (.dim batch σ) (.dim batch τ)}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task)
-    (loader : TorchLean.Data.BatchLoader α batch σ (.dim classes .scalar)) :
+    (axis : Nat) [Spec.Shape.AxisInBounds axis τ]
+    (loader : TorchLean.Data.BatchLoader α batch σ τ) :
     IO (Nat × Nat) := do
   let evalLoader : TorchLean.Data.DataLoader
-      (TorchLean.Sample.Supervised α σ (.dim classes .scalar)) :=
+      (TorchLean.Sample.Supervised α σ τ) :=
     { loader.loader with shuffle := false, dropLast := true }
   let (_dlNext, rawBatches) ←
     match TorchLean.Data.epoch "Runner.accuracyOneHotLoader" evalLoader with
@@ -292,8 +263,8 @@ def Runner.accuracyOneHotLoader
   let mut total : Nat := 0
   for rawBatch in rawBatches do
     let sample ← TorchLean.CLI.orThrow "Runner.accuracyOneHotLoader" <|
-      TorchLean.Data.collateSupervised (α := α) (σ := σ) (τ := .dim classes .scalar) batch rawBatch
-    let (c, t) ← runner.accuracyOneHotBatch [sample]
+      TorchLean.Data.collateSupervised (α := α) (σ := σ) (τ := τ) batch rawBatch
+    let (c, t) ← runner.accuracyOneHot (axis + 1) [sample]
     correct := correct + c
     total := total + t
   pure (correct, total)
@@ -340,7 +311,7 @@ def Objective.trainLoader {σ τ : Spec.Shape} {n : Nat} {stateShapes : List Spe
       let sample ← TorchLean.CLI.orThrow "train.scalarModule.trainLoader" <|
         TorchLean.Data.collateSupervised (α := α) (σ := σ) (τ := τ) n rawBatch
       let lossTensor ← TorchLean.Module.loss module sample .nil
-      let loss := Spec.Tensor.toScalar lossTensor
+      let loss := Spec.Tensor.item lossTensor
       callbacks.onStep { epoch := epochIdx, step := globalStep, loss := loss }
       optState ← TorchLean.Module.optimizerStep module optimizer optState sample .nil
       globalStep := globalStep + 1
@@ -393,7 +364,7 @@ def Objective.trainLoaderSteps
         let sample ← TorchLean.CLI.orThrow "train.scalarModule.trainLoaderSteps" <|
           TorchLean.Data.collateSupervised (α := α) (σ := σ) (τ := τ) n rawBatch
         let lossTensor ← TorchLean.Module.loss module sample .nil
-        let loss := Spec.Tensor.toScalar lossTensor
+        let loss := Spec.Tensor.item lossTensor
         callbacks.onStep { epoch := epochIdx, step := globalStep, loss := loss }
         optState ← TorchLean.Module.optimizerStep module optimizer optState sample .nil
         globalStep := globalStep + 1
@@ -429,7 +400,7 @@ def Objective.trainStream {inputShapes : List Spec.Shape} {stateShapes : List Sp
     IO (_root_.TorchLean.Trainer.Manual.TrainReport α) := do
   let sample0 ← stream.sample 0
   let beforeTensor ← TorchLean.Module.loss module sample0 .nil
-  let before := Spec.Tensor.toScalar beforeTensor
+  let before := Spec.Tensor.item beforeTensor
   callbacks.onTrainStart
 
   let mut optState ← TorchLean.Module.initOptimizer module optimizer
@@ -437,14 +408,14 @@ def Objective.trainStream {inputShapes : List Spec.Shape} {stateShapes : List Sp
   for step in [0:steps] do
     let sample ← stream.sample step
     let lossTensor ← TorchLean.Module.loss module sample .nil
-    let loss := Spec.Tensor.toScalar lossTensor
+    let loss := Spec.Tensor.item lossTensor
     callbacks.onStep { epoch := 0, step := step, loss := loss }
     optState ← TorchLean.Module.optimizerStep module optimizer optState sample .nil
 
   callbacks.onEpochEnd { epoch := 0, steps := steps }
   let sampleAfter ← stream.sample steps
   let afterTensor ← TorchLean.Module.loss module sampleAfter .nil
-  let after := Spec.Tensor.toScalar afterTensor
+  let after := Spec.Tensor.item afterTensor
   let report := { before := before, after := after }
   callbacks.onTrainEnd report
   pure report
@@ -552,23 +523,12 @@ def Runner.trainLoader {σ τ : Spec.Shape} {n : Nat}
 namespace Report
 
 /-!
-### Small Reporting Helpers (IO)
+### Training reports
 
-These definitions factor out common "print a loss/accuracy table" patterns for runnable model
-commands.
-They do not affect semantics: they only call the underlying runner functions and print
-human-facing summaries. Public examples should reach them through `Trainer.Manual` only when the
-ordinary `Trainer.new` / `trainer.train` API is too small for the example.
+The high-level trainer uses this function to print the same mean-loss report before and after a run.
 -/
 
-/-- Print a titled list of named report lines. -/
-def probes {β : Type} (title : String) (values : List β) (lineOf : β → IO String) : IO Unit :=
-  do
-  IO.println title
-  for value in values do
-    IO.println (← lineOf value)
-
-/-- Convenience: mean loss on a dataset, printed with a label. -/
+/-- Print the mean loss of a dataset with a label. -/
 def meanLoss
     {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
@@ -577,135 +537,6 @@ def meanLoss
     (label : String) : IO Unit := do
   let loss ← _root_.TorchLean.Trainer.Manual.Runner.meanLossDataset (task := task) runner dataset
   IO.println s!"mean_loss({label}) = {loss}"
-
-/-- Convenience: mean loss on a typed minibatch loader, streamed batch by batch. -/
-def meanLossLoader
-    {σ τ : Spec.Shape} {batch : Nat} {task : SeqTask (.dim batch σ) (.dim batch τ)}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
-    (runner : Runner α task)
-    (loader : TorchLean.Data.BatchLoader α batch σ τ)
-    (label : String) : IO Unit := do
-  let loss ← runner.meanLossLoader loader
-  IO.println s!"mean_loss({label}) = {loss}"
-
-/--
-Convenience: mean loss on a typed minibatch loader for an already-instantiated runtime module.
-
-Use this in direct CUDA/runtime examples to avoid building a `Runner` only for logging.  The data
-path is still the same public loader path: `TorchLean.Data.batchLoader` plus `TorchLean.Data.collateSupervised`.
--/
-def Objective.meanLoss
-    {σ τ : Spec.Shape} {batch : Nat} {stateShapes : List Spec.Shape}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
-    (module : TorchLean.Module.Objective α stateShapes [Spec.Shape.dim batch σ, Spec.Shape.dim
-      batch τ])
-    (loader : TorchLean.Data.BatchLoader α batch σ τ)
-    (label : String) : IO Unit := do
-  let loss ← TorchLean.Trainer.Manual.Objective.meanLoss module loader
-  IO.println s!"mean_loss({label}) = {loss}"
-
-/--
-Report predicted classes on a list of named inputs.
-
-Each entry is `(name, x, expectedClass)`.
-If `includeLogits := true`, also prints the raw model outputs.
--/
-def classProbes
-    {σ : Spec.Shape} {classes : Nat} {task : SeqTask σ (.dim classes .scalar)}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
-    (runner : Runner α task)
-    (probes : List (String × Spec.Tensor α σ × Nat))
-    (title : String := "predictions")
-    (includeLogits : Bool := false) : IO Unit := do
-  Report.probes title probes (fun (name, x, expected) => do
-    let logits ← Runner.run (task := task) runner x
-    let pred? := _root_.TorchLean.Metrics.argmax? logits
-    let predStr :=
-      match pred? with
-      | some k => toString k.val
-      | none => "none"
-    let logitsStr :=
-      if includeLogits then
-        s!" logits={Spec.pretty logits}"
-      else
-        ""
-    pure s!"  {name}: expected={expected} predicted={predStr}{logitsStr}")
-
-/--
-Report predicted classes on a list of named inputs, for a **batched** model.
-
-This expects inputs of the *unbatched* input shape `σ` and replicates each one across the batch
-axis, then reports the prediction for row 0.
--/
-def classProbesBatch
-    {σ : Spec.Shape} {classes batch : Nat} {task : SeqTask (.dim batch σ) (.dim batch
-      (.dim classes .scalar))}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
-    (runner : Runner α task)
-    (probes : List (String × Spec.Tensor α σ × Nat))
-    (title : String := "predictions")
-    (includeLogits : Bool := false) : IO Unit := do
-  Report.probes title probes (fun (name, xSingle, expected) => do
-    let xBatch : Spec.Tensor α (.dim batch σ) :=
-      Spec.Tensor.dim (fun _ => xSingle)
-    let logitsBatch ← Runner.run (task := task) runner xBatch
-    -- If `batch = 0`, there is no row to display. That case is not meaningful for training anyway.
-    match List.finRange batch with
-    | [] =>
-        pure s!"  {name}: batch=0 (no prediction)"
-    | i0 :: _ =>
-        let logits0 := Spec.getAtSpec logitsBatch i0
-        let pred? := _root_.TorchLean.Metrics.argmax? logits0
-        let predStr :=
-          match pred? with
-          | some k => toString k.val
-          | none => "none"
-        let logitsStr :=
-          if includeLogits then
-            s!" logits={Spec.pretty logits0}"
-          else
-            ""
-        pure s!"  {name}: expected={expected} predicted={predStr}{logitsStr}")
-
-/-- Convenience: mean loss + one-hot accuracy on a dataset, printed with a label. -/
-def oneHotMetrics
-    {σ : Spec.Shape} {classes : Nat} {task : SeqTask σ (.dim classes .scalar)}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
-    (runner : Runner α task)
-    (dataset : _root_.Runtime.Autograd.Train.Dataset
-      (TorchLean.Sample.Supervised α σ (.dim classes .scalar)))
-    (label : String) : IO Unit := do
-  let loss ← _root_.TorchLean.Trainer.Manual.Runner.meanLossDataset (task := task) runner dataset
-  let (correct, total) ← Runner.accuracyOneHot (task := task) runner dataset.toList
-  IO.println s!"mean_loss({label}) = {loss}"
-  IO.println s!"accuracy({label}) = {correct}/{total}"
-
-/-- Batched variant of `oneHotMetrics`. -/
-def oneHotMetricsBatch
-    {σ : Spec.Shape} {classes batch : Nat}
-    {task : SeqTask (.dim batch σ) (.dim batch (.dim classes .scalar))}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
-    (runner : Runner α task)
-    (dataset : _root_.Runtime.Autograd.Train.Dataset
-      (TorchLean.Sample.Batch α batch σ (.dim classes .scalar)))
-    (label : String) : IO Unit := do
-  let loss ← _root_.TorchLean.Trainer.Manual.Runner.meanLossDataset (task := task) runner dataset
-  let (correct, total) ← runner.accuracyOneHotBatch dataset.toList
-  IO.println s!"mean_loss({label}) = {loss}"
-  IO.println s!"accuracy({label}) = {correct}/{total}"
-
-/-- Loader variant of `oneHotMetricsBatch`, streaming through minibatches. -/
-def oneHotMetricsLoader
-    {σ : Spec.Shape} {classes batch : Nat}
-    {task : SeqTask (.dim batch σ) (.dim batch (.dim classes .scalar))}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
-    (runner : Runner α task)
-    (loader : TorchLean.Data.BatchLoader α batch σ (.dim classes .scalar))
-    (label : String) : IO Unit := do
-  let loss ← runner.meanLossLoader loader
-  let (correct, total) ← runner.accuracyOneHotLoader loader
-  IO.println s!"mean_loss({label}) = {loss}"
-  IO.println s!"accuracy({label}) = {correct}/{total}"
 
 end Report
 
@@ -731,11 +562,13 @@ def Objective.trainLoaderReport
   let memHooks ← cudaMemWatchCallbacks (α := α) opts watchEvery steps
   let hooks : Callbacks α :=
     (onTrainStart (α := α) do
-      Report.Objective.meanLoss module loader "train(before)")
+      let loss ← Objective.meanLoss module loader
+      IO.println s!"mean_loss(train(before)) = {loss}")
     ++ extraCallbacks
     ++ memHooks
-    ++ onTrainEnd (α := α) (fun _ =>
-      Report.Objective.meanLoss module loader "train(after)")
+    ++ onTrainEnd (α := α) (fun _ => do
+      let loss ← Objective.meanLoss module loader
+      IO.println s!"mean_loss(train(after)) = {loss}")
   Objective.trainLoaderSteps module optimizer steps loader hooks
 
 /--

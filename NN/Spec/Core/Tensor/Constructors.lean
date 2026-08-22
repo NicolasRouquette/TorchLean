@@ -54,58 +54,24 @@ def fill {α : Type} (value : α): (s : Shape) → Tensor α s
     get2 (fill value (.dim m (.dim n .scalar))) i j = value := by
   rfl
 
-/-- Scalar constructor (explicit name).
+namespace Tensor
 
-PyTorch analogy: a `0`-dim tensor holding one value.
--/
-def scalarTensor {α : Type} (value : α) : Tensor α .scalar :=
-  Tensor.scalar value
-
-/-- Vector constructor from a `Fin n → α` function.
+/-- Construct a vector from its coordinate function.
 
 PyTorch analogy: `torch.tensor([...])` with shape `(n,)`, but our input is a function, not a list.
 -/
-def vectorTensor {α : Type} {n : Nat} (values : Fin n → α) : Tensor α (.dim n .scalar) :=
+def vector {α : Type} {n : Nat} (values : Fin n → α) : Tensor α (.dim n .scalar) :=
   Tensor.dim (fun i => Tensor.scalar (values i))
 
-/-- Matrix constructor from an `Fin m → Fin n → α` function.
+/-- Construct a matrix from its row and column coordinate function.
 
 PyTorch analogy: `torch.tensor([...]).reshape(m, n)` (again, function input rather than a list).
 -/
-def matrixTensor {α : Type} {m n : Nat} (values : Fin m → Fin n → α) : Tensor α (.dim m (.dim n
-  .scalar)) :=
-  Tensor.dim (fun i => vectorTensor (fun j => values i j))
+def matrix {α : Type} {m n : Nat} (values : Fin m → Fin n → α) :
+    Tensor α (.dim m (.dim n .scalar)) :=
+  Tensor.dim (fun i => vector (fun j => values i j))
 
-/-- Generic `dim` constructor for call sites that build tensors one axis at a time. -/
-def nDArrayTensor {α : Type} : ∀ {n : Nat} {s : Shape}, (Fin n → Tensor α s) → Tensor α (.dim n
-  s)
-  | _, _, values => Tensor.dim values
-
-/--
-Generic vector creation that works with any type (handles `n = 0`).
-
-Why this exists:
-- For `n = 0`, a function `Fin 0 → α` is fine (it has no inputs), but it can be awkward at call
-  sites. This helper makes the intent explicit and keeps patterns uniform.
-- The `0` case is definitionally a tensor with an empty outer dimension (so the function body is
-  never evaluated).
--/
-def vectorN {α : Type} [Zero α] (n : Nat) (f : Fin n → α) : Tensor α (.dim n .scalar) :=
-  match n with
-  | 0   => Tensor.dim (fun _ => Tensor.scalar (Zero.zero : α))
-  | _   => Tensor.dim (fun i => Tensor.scalar (f i))
-
-/-- Generic matrix creation that works with any type. -/
-def matrixMN {α : Type} [Zero α] (m n : Nat) (f : Fin m → Fin n → α) :
-  Tensor α (.dim m (.dim n .scalar)) :=
-  Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (f i j)))
-
-/-- Build a length-`n` vector from a `Fin n → scalar` function.
-
-This is a small wrapper that reads nicely at call sites where we already have scalar tensors.
--/
-def generate {α : Type} (n : ℕ) (f : Fin n → Tensor α .scalar) : Tensor α (.dim n .scalar) :=
-  Tensor.dim (fun i => f i)
+end Tensor
 
 /-- A singleton vector.
 
@@ -133,39 +99,13 @@ def padLeft {α : Type} [Context α]
     let inner := padLeft x
     .dim (fun _ => inner)  -- Only 1 element along new dim
 
-/--
-Build a vector tensor from an array.
+/-- Build one tensor dimension from an array of inner tensors.
 
-The caller provides an explicit proof that the target length matches the array size, so mismatches
-are visible at call sites.
+The explicit size proof prevents silent truncation or padding. Taking tensors as array elements
+makes this constructor independent of rank: use scalar tensors for a vector, vectors for a matrix,
+or arbitrary inner tensors for higher-rank values.
 -/
-def Tensor.ofArray1D {α : Type} {n : Nat} (xs : Array α) (h : n = xs.size) :
-    Tensor α (.dim n .scalar) :=
-  Tensor.dim (fun i : Fin n =>
-    Tensor.scalar (xs[i.val]'(by simpa [h] using i.2)))
-
-/--
-Build a matrix tensor from a flat array (row-major).
-
-PyTorch analogy: `xss.reshape(m, n)` assuming `xss` is laid out row-major.
--/
-def Tensor.ofArray2D {α : Type} [Inhabited α] {m n : Nat} (xss : Array α) (_ : m * n = xss.size):
-  Tensor α (.dim m (.dim n .scalar)) :=
-  Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (xss.getD (i.val * n + j.val)
-    (Inhabited.default))))
-
-/--
-Build a tensor with one leading dimension from an array of inner tensors.
-
-This is the "tensor-of-tensors" analogue of `Tensor.ofArray1D`:
-
-- input: `Array (Tensor α s)` of length `n`
-- output: `Tensor α (.dim n s)`
-
-We require an explicit proof that the array size matches `n` so callers do not silently
-drop/pad data.
--/
-def Tensor.ofArrayDim {α : Type} {n : Nat} {s : Shape}
+def Tensor.ofArray {α : Type} {n : Nat} {s : Shape}
     (xs : Array (Tensor α s)) (_h : n = xs.size) : Tensor α (.dim n s) :=
   Tensor.dim (fun i : Fin n =>
     xs[i.val]'(by simpa [_h] using i.2))
@@ -179,5 +119,65 @@ def Tensor.vecToCol {α : Type} {n : Nat}
     (v : Tensor α (.dim n .scalar)) : Tensor α (.dim n (.dim 1 .scalar)) :=
   Tensor.dim (fun i : Fin n =>
     Tensor.dim (fun _ : Fin 1 => get v i))
+
+/-! ## Constant and list-backed constructors -/
+
+/-- A zero-filled tensor of shape `s`. -/
+def zeros (α : Type) [Zero α] (s : Shape) : Tensor α s :=
+  fill (0 : α) s
+
+/-- A one-filled tensor of shape `s`. -/
+def ones (α : Type) [One α] (s : Shape) : Tensor α s :=
+  fill (1 : α) s
+
+/-- A filled tensor satisfies every pointwise property satisfied by its value. -/
+theorem Tensor.forall_fill {α : Type} {p : α → Prop} {s : Shape} {x : α}
+    (hx : p x) : Tensor.Forall p (Spec.fill x s) := by
+  induction s with
+  | scalar => exact hx
+  | dim _ _ ih =>
+      intro _
+      exact ih
+
+/-- Build a vector from a list, retaining the list length in its shape. -/
+def vectorFromList {α : Type} (xs : List α) : Tensor α (.dim xs.length .scalar) :=
+  Tensor.dim fun i => Tensor.scalar (xs.get i)
+
+/-- Build a matrix when every row has the same length; reject ragged input. -/
+def matrixFromRows? {α : Type} (rows : List (List α)) :
+    Option (Tensor α (.dim rows.length
+      (.dim (Option.getD (rows.head?.map List.length) 0) .scalar))) :=
+  match rows with
+  | [] => some (Tensor.dim fun i => nomatch i)
+  | first :: rest =>
+      let allRows := first :: rest
+      let columnCount := first.length
+      if hRectangular : ∀ row ∈ allRows, row.length = columnCount then
+        some <| Tensor.dim fun i =>
+          let row := allRows.get i
+          have hLength : row.length = columnCount :=
+            hRectangular row (List.get_mem allRows i)
+          Tensor.vector fun j =>
+            have hIndex : j.val < row.length := by simpa [hLength] using j.isLt
+            row.get ⟨j.val, hIndex⟩
+      else
+        none
+
+/-- Return the greatest row length, or zero for an empty list. -/
+def maxRowLength {α : Type} (rows : List (List α)) : Nat :=
+  rows.foldl (fun n row => Nat.max n row.length) 0
+
+/-- Resize every row to `columnCount`, padding short rows with `default`. -/
+def matrixFromRowsResize {α : Type} [Inhabited α]
+    (columnCount : Nat) (rows : List (List α)) :
+    Tensor α (.dim rows.length (.dim columnCount .scalar)) :=
+  Tensor.dim fun i =>
+    let row := rows.getD i.val []
+    Tensor.vector fun j => row.getD j.val default
+
+/-- Pad every row on the right to the length of the longest row. -/
+def matrixFromRowsPadRight {α : Type} [Inhabited α] (rows : List (List α)) :
+    Tensor α (.dim rows.length (.dim (maxRowLength rows) .scalar)) :=
+  matrixFromRowsResize (maxRowLength rows) rows
 
 end Spec

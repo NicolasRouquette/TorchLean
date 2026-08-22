@@ -7,61 +7,42 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Layers.Activation
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 
 /-!
-# Activation module wrappers
+# Activation modules
 
-The activation specs in `NN/Spec/Layers/Activation.lean` define the pure tensor functions
-(`relu_spec`, `sigmoid_spec`, ...). We wrap them as `NNModuleSpec`s so we can compose them via
-`SpecChain` and attach simple export/pretty-print metadata.
-
-Note: activations are shape-preserving, so the `export_func.dimensions` field uses `(0, 0)` as
-metadata meaning “not applicable”.
-
-In PyTorch you'd reach for `nn.ReLU()`, `torch.sigmoid`, `torch.tanh`, and `torch.softmax(dim=-1)`;
-these wrappers exist for the same reason, just as pure, typed `NNModuleSpec`s.
+Shape-preserving activation specifications packaged for module composition.
 -/
 
 @[expose] public section
 
 
-namespace Spec
+namespace Spec.Module
 
 open Tensor
-open ModSpec
-open Activation
 
 variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
 
-/-- ReLU as a shape-preserving `NNModuleSpec`. -/
-def ReLUModuleSpec {α : Type} [Zero α] [Max α] (s : Shape) : NNModuleSpec α s s :=
-{ forward := fun x => Activation.reluSpec x, kind := "ReLU", export_func := {
-  toPyTorch := "nn.ReLU()",
-  dimensions := (0, 0)  -- ReLU preserves shape
-} }
+/-- ReLU as a shape-preserving module. -/
+def relu {α : Type} [Zero α] [Max α] (s : Shape) : Spec.Module α s s :=
+  { forward := Activation.reluSpec, kind := "ReLU", pythonExpr := "nn.ReLU()" }
 
-/-- Sigmoid as a shape-preserving `NNModuleSpec`. -/
-def SigmoidModuleSpec (s : Shape) : NNModuleSpec α s s :=
-{ forward := fun x => Activation.sigmoidSpec x, kind := "Sigmoid", export_func := {
-  toPyTorch := "nn.Sigmoid()",
-  dimensions := (0, 0)  -- sigmoid preserves shape
-} }
+/-- Sigmoid as a shape-preserving module. -/
+def sigmoid (s : Shape) : Spec.Module α s s :=
+  { forward := Activation.sigmoidSpec, kind := "Sigmoid", pythonExpr := "nn.Sigmoid()" }
 
-/-- Tanh as a shape-preserving `NNModuleSpec`. -/
-def TanhModuleSpec (s : Shape) : NNModuleSpec α s s :=
-{ forward := fun x => Activation.tanhSpec x, kind := "Tanh", export_func := {
-  toPyTorch := "nn.Tanh()",
-  dimensions := (0, 0)  -- tanh preserves shape
-} }
+/-- Hyperbolic tangent as a shape-preserving module. -/
+def tanh (s : Shape) : Spec.Module α s s :=
+  { forward := Activation.tanhSpec, kind := "Tanh", pythonExpr := "nn.Tanh()" }
 
-/-- Softmax along the last axis (matches `Activation.softmax_spec`).
+/-- Softmax along an explicitly selected tensor dimension.
 
-In PyTorch terms: `torch.softmax(x, dim=-1)`. -/
-def SoftmaxModuleSpec (s : Shape) : NNModuleSpec α s s :=
-{ forward := fun x => Activation.softmaxSpec x, kind := "Softmax", export_func := {
-  toPyTorch := "nn.Softmax(dim=-1)",
-  dimensions := (0, 0)  -- softmax preserves shape
-} }
+In PyTorch terms: `torch.softmax(x, dim=axis)`. -/
+def softmax (s : Shape) (axis : Nat) [Shape.AxisInBounds axis s] :
+    Spec.Module α s s :=
+  { forward := Activation.softmaxSpec axis
+    kind := "Softmax"
+    pythonExpr := s!"nn.Softmax(dim={axis})" }
 
-end Spec
+end Spec.Module

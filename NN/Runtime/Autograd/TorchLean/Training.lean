@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Torch.Utils
+public import NN.Runtime.Autograd.Torch.ScalarTrainer
 public import NN.Runtime.Autograd.TorchLean.Optim
 
 /-!
@@ -63,7 +63,7 @@ def trainCycleOptim
               pure (st', lossTensor)
         st := st'
         if logEvery != 0 && step % logEvery = 0 then
-          IO.println s!"step {step}: loss={_root_.Runtime.Autograd.Torch.scalarOf lossTensor}"
+          IO.println s!"step {step}: loss={lossTensor.item}"
       pure st
 
 end TorchLean

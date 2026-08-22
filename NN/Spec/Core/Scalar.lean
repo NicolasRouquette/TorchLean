@@ -35,7 +35,4 @@ abbrev SpecScalar := ℝ
 /-- Spec tensors are Real-typed tensors. -/
 abbrev SpecTensor (s : Shape) := Tensor SpecScalar s
 
-/-- Use the existing `Context` for `SpecScalar` when needed. -/
-abbrev SpecContext := Context SpecScalar
-
 end Spec

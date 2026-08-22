@@ -225,27 +225,27 @@ optional-space number runs, optional-space non-space/non-letter/non-number runs,
 followed by non-space, and finally a plain whitespace run. The fuel argument keeps this definition
 total; `pretokenize` supplies enough fuel for the whole input.
 -/
-def pretokenizeAux : Nat → List Char → List String
+def pretokenizeWithFuel : Nat → List Char → List String
   | 0, _ => []
   | _fuel + 1, [] => []
   | fuel + 1, xs =>
       match consumeContraction? xs with
-      | some (tok, rest) => tok :: pretokenizeAux fuel rest
+      | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
       | none =>
           match consumeClassRun? .letter xs with
-          | some (tok, rest) => tok :: pretokenizeAux fuel rest
+          | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
           | none =>
               match consumeClassRun? .number xs with
-              | some (tok, rest) => tok :: pretokenizeAux fuel rest
+              | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
               | none =>
                   match consumeClassRun? .other xs with
-                  | some (tok, rest) => tok :: pretokenizeAux fuel rest
+                  | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
                   | none =>
                       match consumeLookaheadWhitespace? xs with
-                      | some (tok, rest) => tok :: pretokenizeAux fuel rest
+                      | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
                       | none =>
                           match consumeWhitespaceRun? xs with
-                          | some (tok, rest) => tok :: pretokenizeAux fuel rest
+                          | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
                           | none => []
 
 end Internal
@@ -253,7 +253,7 @@ end Internal
 /-- Split a string into GPT-2-style pre-token fragments. -/
 def pretokenize (s : String) : List String :=
   let cs := s.toList
-  Internal.pretokenizeAux (cs.length + 1) cs
+  Internal.pretokenizeWithFuel (cs.length + 1) cs
 
 /-! ## BPE Merging -/
 
@@ -332,7 +332,7 @@ def decodeOrEmpty (tok : Tokenizer) (ids : List Nat) : String :=
   | .error _ => ""
 
 /-- Adapt a loaded GPT-2 BPE tokenizer to the generic text-tokenizer interface. -/
-def asTextTokenizer (tok : Tokenizer) : TorchLean.text.Tokenizer where
+def Tokenizer.toTextTokenizer (tok : Tokenizer) : TorchLean.text.Tokenizer where
   vocabSize := tok.vocab.size
   encode := fun s =>
     match encode tok s with
@@ -341,14 +341,6 @@ def asTextTokenizer (tok : Tokenizer) : TorchLean.text.Tokenizer where
   decode := decodeOrEmpty tok
 
 /-! ## File Loading -/
-
-/-- Parse GPT-2 `vocab.json` as an array of `(token, id)` entries. -/
-def parseVocab (j : Json) : Except String (Array VocabEntry) := do
-  let o ← TorchLean.Json.expectObjE "vocab.json" j
-  let entries := Std.TreeMap.Raw.toList o
-  entries.toArray.mapM (fun (tok, idJ) => do
-    let id ← TorchLean.Json.expectNatE s!"vocab id for {repr tok}" idJ
-    pure { token := tok, id := id })
 
 /-!
 The standard GPT-2 `vocab.json` is a single flat JSON object from token strings to numeric ids.
@@ -360,8 +352,8 @@ including `\uXXXX` escapes for byte-to-unicode code points.
 
 namespace Internal
 
-/-- Safe character lookup used by the specialized `vocab.json` parser. -/
-def charAtD (cs : Array Char) (i : Nat) : Char :=
+/-- Read a character for the specialized `vocab.json` parser, using NUL past the input boundary. -/
+def charAtOrNull (cs : Array Char) (i : Nat) : Char :=
   cs.getD i '\x00'
 
 /-- Skip JSON whitespace in the specialized GPT-2 vocabulary parser. -/
@@ -369,8 +361,8 @@ def skipJsonWs (cs : Array Char) (i : Nat) : Nat :=
   Id.run do
     let mut j := i
     while j < cs.size &&
-        (charAtD cs j == ' ' || charAtD cs j == '\n' ||
-          charAtD cs j == '\r' || charAtD cs j == '\t') do
+        (charAtOrNull cs j == ' ' || charAtOrNull cs j == '\n' ||
+          charAtOrNull cs j == '\r' || charAtOrNull cs j == '\t') do
       j := j + 1
     return j
 
@@ -388,10 +380,10 @@ def hexVal? (c : Char) : Option Nat :=
 
 /-- Parse four hexadecimal digits starting at `i`. -/
 def parseHex4? (cs : Array Char) (i : Nat) : Option Nat := do
-  let a ← hexVal? (charAtD cs i)
-  let b ← hexVal? (charAtD cs (i + 1))
-  let c ← hexVal? (charAtD cs (i + 2))
-  let d ← hexVal? (charAtD cs (i + 3))
+  let a ← hexVal? (charAtOrNull cs i)
+  let b ← hexVal? (charAtOrNull cs (i + 1))
+  let c ← hexVal? (charAtOrNull cs (i + 2))
+  let d ← hexVal? (charAtOrNull cs (i + 3))
   some (((a * 16 + b) * 16 + c) * 16 + d)
 
 /-- Combine a JSON UTF-16 surrogate pair into one Unicode code point. -/
@@ -399,14 +391,14 @@ def combineSurrogate (hi lo : Nat) : Nat :=
   0x10000 + ((hi - 0xD800) * 0x400) + (lo - 0xDC00)
 
 /-- Fuel-bounded worker for JSON string parsing with escape handling. -/
-def parseJsonStringAux (cs : Array Char) : Nat → Nat → List Char →
+def parseJsonStringWithFuel (cs : Array Char) : Nat → Nat → List Char →
     Except String (String × Nat)
   | 0, _, _ => TorchLean.Json.fail "vocab.json: string parser exhausted fuel"
   | fuel + 1, i, acc =>
       if i ≥ cs.size then
         TorchLean.Json.fail "vocab.json: unterminated JSON string"
       else
-        let c := charAtD cs i
+        let c := charAtOrNull cs i
         if c == '"' then
           pure (String.ofList acc.reverse, i + 1)
         else if c == '\\' then
@@ -414,15 +406,15 @@ def parseJsonStringAux (cs : Array Char) : Nat → Nat → List Char →
           if j ≥ cs.size then
             TorchLean.Json.fail "vocab.json: unterminated JSON escape"
           else
-            match charAtD cs j with
-            | '"' => parseJsonStringAux cs fuel (j + 1) ('"' :: acc)
-            | '\\' => parseJsonStringAux cs fuel (j + 1) ('\\' :: acc)
-            | '/' => parseJsonStringAux cs fuel (j + 1) ('/' :: acc)
-            | 'b' => parseJsonStringAux cs fuel (j + 1) ('\x08' :: acc)
-            | 'f' => parseJsonStringAux cs fuel (j + 1) ('\x0c' :: acc)
-            | 'n' => parseJsonStringAux cs fuel (j + 1) ('\n' :: acc)
-            | 'r' => parseJsonStringAux cs fuel (j + 1) ('\r' :: acc)
-            | 't' => parseJsonStringAux cs fuel (j + 1) ('\t' :: acc)
+            match charAtOrNull cs j with
+            | '"' => parseJsonStringWithFuel cs fuel (j + 1) ('"' :: acc)
+            | '\\' => parseJsonStringWithFuel cs fuel (j + 1) ('\\' :: acc)
+            | '/' => parseJsonStringWithFuel cs fuel (j + 1) ('/' :: acc)
+            | 'b' => parseJsonStringWithFuel cs fuel (j + 1) ('\x08' :: acc)
+            | 'f' => parseJsonStringWithFuel cs fuel (j + 1) ('\x0c' :: acc)
+            | 'n' => parseJsonStringWithFuel cs fuel (j + 1) ('\n' :: acc)
+            | 'r' => parseJsonStringWithFuel cs fuel (j + 1) ('\r' :: acc)
+            | 't' => parseJsonStringWithFuel cs fuel (j + 1) ('\t' :: acc)
             | 'u' =>
                 match parseHex4? cs (j + 1) with
                 | none => TorchLean.Json.fail "vocab.json: invalid unicode escape"
@@ -430,26 +422,26 @@ def parseJsonStringAux (cs : Array Char) : Nat → Nat → List Char →
                     let afterHi := j + 5
                     if 0xD800 ≤ hi && hi ≤ 0xDBFF &&
                         afterHi + 5 < cs.size &&
-                        charAtD cs afterHi == '\\' && charAtD cs (afterHi + 1) == 'u' then
+                        charAtOrNull cs afterHi == '\\' && charAtOrNull cs (afterHi + 1) == 'u' then
                       match parseHex4? cs (afterHi + 2) with
                       | some lo =>
                           if 0xDC00 ≤ lo && lo ≤ 0xDFFF then
-                            parseJsonStringAux cs fuel (afterHi + 6)
+                            parseJsonStringWithFuel cs fuel (afterHi + 6)
                               (Char.ofNat (combineSurrogate hi lo) :: acc)
                           else
                             TorchLean.Json.fail "vocab.json: invalid low surrogate"
                       | none => TorchLean.Json.fail "vocab.json: invalid low surrogate escape"
                     else
-                      parseJsonStringAux cs fuel afterHi (Char.ofNat hi :: acc)
+                      parseJsonStringWithFuel cs fuel afterHi (Char.ofNat hi :: acc)
             | esc => TorchLean.Json.fail s!"vocab.json: unsupported escape \\{esc}"
         else
-          parseJsonStringAux cs fuel (i + 1) (c :: acc)
+          parseJsonStringWithFuel cs fuel (i + 1) (c :: acc)
 
 /-- Parse a JSON string beginning at index `i`. -/
 def parseJsonStringAt (cs : Array Char) (i : Nat) : Except String (String × Nat) := do
-  if charAtD cs i != '"' then
+  if charAtOrNull cs i != '"' then
     TorchLean.Json.fail "vocab.json: expected JSON string"
-  parseJsonStringAux cs (cs.size - i + 1) (i + 1) []
+  parseJsonStringWithFuel cs (cs.size - i + 1) (i + 1) []
 
 /-- Parse a natural-number literal beginning at index `i`. -/
 def parseNatAt (cs : Array Char) (i : Nat) : Except String (Nat × Nat) := do
@@ -457,7 +449,7 @@ def parseNatAt (cs : Array Char) (i : Nat) : Except String (Nat × Nat) := do
   let mut n := 0
   let mut seen := false
   while j < cs.size do
-    let c := charAtD cs j
+    let c := charAtOrNull cs j
     if '0' ≤ c && c ≤ '9' then
       n := n * 10 + (c.toNat - '0'.toNat)
       j := j + 1
@@ -477,21 +469,21 @@ def parseVocabTextLoop (cs : Array Char) : Nat → Nat → Array VocabEntry →
       let i := skipJsonWs cs i
       if i ≥ cs.size then
         TorchLean.Json.fail "vocab.json: unexpected end of file"
-      else if charAtD cs i == '}' then
+      else if charAtOrNull cs i == '}' then
         pure acc
       else
         let (tok, i) ← parseJsonStringAt cs i
         let i := skipJsonWs cs i
-        if charAtD cs i != ':' then
+        if charAtOrNull cs i != ':' then
           TorchLean.Json.fail "vocab.json: expected ':'"
         else
           let i := skipJsonWs cs (i + 1)
           let (id, i) ← parseNatAt cs i
           let i := skipJsonWs cs i
           let acc := acc.push { token := tok, id := id }
-          if charAtD cs i == ',' then
+          if charAtOrNull cs i == ',' then
             parseVocabTextLoop cs fuel (i + 1) acc
-          else if charAtD cs i == '}' then
+          else if charAtOrNull cs i == '}' then
             pure acc
           else
             TorchLean.Json.fail "vocab.json: expected ',' or '}'"
@@ -502,7 +494,7 @@ end Internal
 def parseVocabText (s : String) : Except String (Array VocabEntry) := do
   let cs := s.toList.toArray
   let i := Internal.skipJsonWs cs 0
-  if Internal.charAtD cs i != '{' then
+  if Internal.charAtOrNull cs i != '{' then
     TorchLean.Json.fail "vocab.json: expected top-level object"
   Internal.parseVocabTextLoop cs (cs.size + 1) (i + 1) #[]
 
@@ -532,27 +524,27 @@ def mkTokenizer (vocab : Array VocabEntry) (merges : Array MergeRank) : Tokenize
 
 namespace Internal
 
-/-- Parse one non-comment `merges.txt` line with its rank. -/
-def parseMergeLine? (rank : Nat) (line : String) : Option MergeRank :=
+/-- Parse one `merges.txt` line with its rank, preserving comments and blank lines as `none`. -/
+def parseMergeLine (rank : Nat) (line : String) : Except String (Option MergeRank) :=
   let s := line.trimAscii.toString
   if s.isEmpty || String.isPrefixOf "#" s then
-    none
+    pure none
   else
-    match s.splitOn " " with
-    | [a, b] => some { left := a, right := b, rank := rank }
-    | _ => none
+    let fields :=
+      (s.split fun c => c = ' ' || c = '\t').toList.map (·.toString) |>.filter (· ≠ "")
+    match fields with
+    | [a, b] => pure (some { left := a, right := b, rank := rank })
+    | _ => TorchLean.Json.fail
+        s!"merges.txt line {rank + 1}: expected two whitespace-separated symbols"
 
 end Internal
 
-/-- Parse GPT-2 `merges.txt`. Invalid non-comment lines are ignored conservatively. -/
-def parseMerges (s : String) : Array MergeRank :=
+/-- Parse GPT-2 `merges.txt`, rejecting malformed non-comment lines. -/
+def parseMerges (s : String) : Except String (Array MergeRank) := do
   let lines := s.splitOn "\n"
-  (List.zip (List.range lines.length) lines).foldl
-    (fun acc p =>
-      match Internal.parseMergeLine? p.1 p.2 with
-      | some m => acc.push m
-      | none => acc)
-    #[]
+  let parsed ← (List.zip (List.range lines.length) lines).mapM
+    (fun p => Internal.parseMergeLine p.1 p.2)
+  pure (parsed.filterMap id).toArray
 
 /-- Load GPT-2 BPE files directly in Lean. -/
 def load (vocabJson mergesTxt : System.FilePath) : IO Tokenizer := do
@@ -560,7 +552,10 @@ def load (vocabJson mergesTxt : System.FilePath) : IO Tokenizer := do
     match parseVocabText (← IO.FS.readFile vocabJson) with
     | .ok v => pure v
     | .error e => throw <| IO.userError e
-  let merges ← parseMerges <$> IO.FS.readFile mergesTxt
+  let merges ←
+    match parseMerges (← IO.FS.readFile mergesTxt) with
+    | .ok m => pure m
+    | .error e => throw <| IO.userError e
   pure <| mkTokenizer vocab merges
 
 /-- Load GPT-2 BPE files while printing progress for larger `vocab.json` / `merges.txt` assets. -/
@@ -576,7 +571,10 @@ def loadWithProgress (tag : String) (vocabJson mergesTxt : System.FilePath) : IO
   IO.eprintln s!"{tag}: parsed BPE vocab entries={vocab.size}"
   IO.eprintln s!"{tag}: reading BPE merges.txt"
   let mergesText ← IO.FS.readFile mergesTxt
-  let merges := parseMerges mergesText
+  let merges ←
+    match parseMerges mergesText with
+    | .ok m => pure m
+    | .error e => throw <| IO.userError e
   IO.eprintln s!"{tag}: parsed BPE merges={merges.size}"
   IO.eprintln s!"{tag}: building BPE lookup maps"
   let tok := mkTokenizer vocab merges

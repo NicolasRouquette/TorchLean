@@ -27,11 +27,9 @@ public import NN.Runtime.Autograd.TorchLean.Optim
 public import NN.Runtime.Autograd.TorchLean.Random
 public import NN.Runtime.Autograd.TorchLean.Session
 public import NN.Runtime.Autograd.Train
-public import NN.Runtime.Autograd.Utils
 public import NN.Runtime.Context
 public import NN.Runtime.Optim
 public import NN.Runtime.PyTorch
-public import NN.Runtime.Scalar
 public import NN.Runtime.Training.Log
 
 /-!

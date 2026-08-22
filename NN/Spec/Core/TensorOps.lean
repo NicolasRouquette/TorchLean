@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Core.Context
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 
 /-!
 # Elementwise tensor operations (`Spec.Tensor.*_spec`)
@@ -69,7 +69,7 @@ omit [Context α] in
 omit [Context α] in
 /-- Extracting a scalar after an elementwise map applies the scalar function once. -/
 @[simp] theorem toScalar_mapSpec (f : α → α) (x : Tensor α .scalar) :
-    (mapSpec f x).toScalar = f x.toScalar := by
+    (mapSpec f x).item = f x.item := by
   cases x
   rfl
 
@@ -163,7 +163,7 @@ def mulSpec {α : Type} [Mul α] {s : Shape} (T₁ T₂ : Tensor α s) : Tensor 
 /-- Scalar extraction commutes with pointwise tensor multiplication. -/
 @[simp] theorem toScalar_mulSpec {α : Type} [Mul α]
     (left right : Tensor α .scalar) :
-    (mulSpec left right).toScalar = left.toScalar * right.toScalar := by
+    (mulSpec left right).item = left.item * right.item := by
   cases left
   cases right
   rfl
@@ -284,7 +284,7 @@ def invSpec {s : Shape} (x : Tensor α s) : Tensor α s :=
 
 /-- Scalar extraction commutes with coordinatewise reciprocal. -/
 @[simp] theorem toScalar_invSpec (x : Tensor α .scalar) :
-    (invSpec x).toScalar = 1 / x.toScalar := by
+    (invSpec x).item = 1 / x.item := by
   cases x
   rfl
 
@@ -385,19 +385,6 @@ def updateSpec {α : Type} {n : ℕ} {s : Shape} :
          (updateTensorSpec (values ⟨i, h⟩) rest new_val))
     else
       .dim values  -- Index out of bounds, return original
-
-/-- Slice a vector `[start, start+len)` (with a proof that the slice stays in-bounds). -/
-def sliceVectorSpec {α : Type} {n : Nat}
-  (v : Tensor α (.dim n .scalar))
-  (start len : Nat) (h : start + len ≤ n := by decide) :
-  Tensor α (.dim len .scalar) :=
-  match v with
-  | .dim f =>
-    .dim fun i =>
-      f ⟨start + i.val, Nat.lt_of_lt_of_le
-          (Nat.add_lt_add_left i.is_lt start)
-          h⟩
-
 
 end Tensor
 end Spec

@@ -73,27 +73,6 @@ def bmm {α : Type} (s : EagerSession α) [Add α] [Mul α] [Zero α] [Decidable
     pure (some { id := id })
   dispatchCudaOpt (α := α) s .matmul cpu cuda
 
-/-- Concatenate two vectors along dim 0. PyTorch: `torch.cat([a,b], dim=0)`. -/
-def concatVectors {α : Type} (s : EagerSession α) [Context α]
-  [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
-  {n m : Nat}
-  (a : TensorRef α (.dim n .scalar))
-  (b : TensorRef α (.dim m .scalar)) :
-  IO (TensorRef α (.dim (n + m) .scalar)) := do
-  let cpu := do
-    let t0 ← s.tape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.concatVectors (t := t0) (n := n) (m := m) a.id
-      b.id)
-    s.tape.set t1
-    pure { id := id }
-  let cuda := do
-    let t0 ← s.cudaTape.get
-    let (t1, id) ← okOrThrow <|
-      Runtime.Autograd.Cuda.Tape.concatVectors (t := t0) (n := n) (m := m) a.id b.id
-    s.cudaTape.set t1
-    pure (some { id := id })
-  dispatchCudaOpt (α := α) s .concat cpu cuda
-
 /-- Concatenate along dim 0 for tensors with leading dimension. PyTorch: `torch.cat(..., dim=0)`. -/
 def concatLeadingAxis {α : Type} (s : EagerSession α) [DecidableEq Shape]
   {n m : Nat} {sh : Shape}
@@ -117,7 +96,7 @@ def concatLeadingAxis {α : Type} (s : EagerSession α) [DecidableEq Shape]
 /-- Slice along dim 0: `x[start:start+len]`. PyTorch: standard slicing. -/
 def sliceLeadingAxisRange {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
   {n : Nat} {sh : Shape}
-  (x : TensorRef α (.dim n sh)) (start len : Nat) (h : len + start ≤ n) :
+  (x : TensorRef α (.dim n sh)) (start len : Nat) (h : start + len ≤ n) :
   IO (TensorRef α (.dim len sh)) := do
   let cpu := do
     let t0 ← s.tape.get

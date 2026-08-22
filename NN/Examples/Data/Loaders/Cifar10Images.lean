@@ -196,7 +196,7 @@ def main (args : List String) : IO Unit := do
   let run ← Trainer.RunConfig.parseRuntimeArgsOrThrow label args
     { optimizer := optim.adam { lr := lr } }
   let trainer := Trainer.new (mkModel (batch := eb.batch)) <|
-    Trainer.Config.fromRunConfig run .oneHotCrossEntropy (seed := seed)
+    Trainer.Config.fromRunConfig run (.oneHotCrossEntropy 1) (seed := seed)
 
   IO.println "== CIFAR10-style NPY CNN tutorial =="
   IO.println s!"data_dir   = {dataDir}"
@@ -241,6 +241,6 @@ def main (args : List String) : IO Unit := do
     trained.printSummary
     let blank : Tensor Float (.dim channels (.dim height (.dim width .scalar))) :=
       Tensor.fill 0.0 (.dim channels (.dim height (.dim width .scalar)))
-    trained.printPrediction "blank" (Tensor.repeatBatch eb.batch blank)
+    trained.printPrediction "blank" (Spec.Tensor.dim (fun _ : Fin eb.batch => blank))
 
 end NN.Examples.Data.Loaders.Cifar10Images

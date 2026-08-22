@@ -96,7 +96,7 @@ private def tapeDotColored {α : Type} (t : Tape α) (outId : Nat)
           "#ffdddd"
         else if hasGrad i then
           "#ddffea"
-        else if n.requires_grad then
+        else if n.requiresGrad then
           "#fff3cc"
         else
           "#f7f7f7"
@@ -111,11 +111,11 @@ private def nodeHtml {α : Type} [ToString α] (id : Nat) (n : Node α) : ProofW
   <details style={json% {"margin": "6px 0"}}>
     <summary>
       {monospace (toString id ++ ": " ++ n.name.getD "(unnamed)")} {pill
-        s!"requires_grad={n.requires_grad}"} {pill s!"parents={n.parents}"}
-      {pill s!"shape={dimsString n.value.s}"}
+        s!"requiresGrad={n.requiresGrad}"} {pill s!"parents={n.parents}"}
+      {pill s!"shape={dimsString n.value.shape}"}
     </summary>
     <div style={json% {"margin-top": "8px", "padding-left": "10px"}}>
-      {anyTensorHtml (α := α) n.value}
+      {packedTensorHtml (α := α) n.value}
     </div>
   </details>
 
@@ -158,8 +158,8 @@ def tapeHtml {α : Type} [ToString α] (t : Tape α) (maxDotChars : Nat := 6000)
 
 /-- Render per-node gradient tensors from a completed backward pass. -/
 private def gradsTableHtml {α : Type} [ToString α] (t : Tape α)
-    (grads : Std.HashMap Nat (Runtime.AnyTensor α)) : ProofWidgets.Html :=
-  let entries : List (Nat × Runtime.AnyTensor α) := grads.toList;
+    (grads : Std.HashMap Nat (Spec.PackedTensor α)) : ProofWidgets.Html :=
+  let entries : List (Nat × Spec.PackedTensor α) := grads.toList;
   <div style={json% {"margin-top": "10px"}}>
     <div style={json% {"display": "flex", "gap": "8px", "flex-wrap": "wrap", "margin-bottom":
       "8px"}}>
@@ -169,13 +169,13 @@ private def gradsTableHtml {α : Type} [ToString α] (t : Tape α)
       {... (entries.toArray).map (fun (id, g) =>
         <details style={json% {"margin": "6px 0"}}>
           <summary>
-            {monospace s!"node {id}"} {pill s!"shape={dimsString g.s}"}
+            {monospace s!"node {id}"} {pill s!"shape={dimsString g.shape}"}
             {match t.getNode? id with
               | none => errBadge "missing node"
               | some n => okBadge (n.name.getD "(unnamed)")}
           </summary>
           <div style={json% {"margin-top": "8px", "padding-left": "10px"}}>
-            {anyTensorHtml (α := α) g}
+            {packedTensorHtml (α := α) g}
           </div>
         </details>)}
     </div>
@@ -189,18 +189,18 @@ private def listPreviewNat (maxElems : Nat) (xs : List Nat) : String :=
 
 /-- Summarize gradient coverage over nodes that require gradients. -/
 private def gradCoverageHtml {α : Type} (t : Tape α) (outId : Nat)
-    (grads : Std.HashMap Nat (Runtime.AnyTensor α)) : ProofWidgets.Html :=
+    (grads : Std.HashMap Nat (Spec.PackedTensor α)) : ProofWidgets.Html :=
   let pairs : List (Nat × Node α) := List.zip (List.range t.nodes.size) t.nodes.toList
-  let req : List Nat := pairs.filter (fun (_, n) => n.requires_grad) |>.map (·.1)
+  let req : List Nat := pairs.filter (fun (_, n) => n.requiresGrad) |>.map (·.1)
   let leaf : List Nat := pairs.filter (fun (_, n) => n.parents.isEmpty) |>.map (·.1)
   let hasGrad (i : Nat) : Bool := (grads.get? i).isSome
   let got : List Nat := req.filter (fun i => hasGrad i)
   let missing : List Nat := req.filter (fun i => !hasGrad i)
-  let missingLeaves : List Nat := leaf.filter (fun i => (t.getNode? i).map (·.requires_grad) |>.getD
+  let missingLeaves : List Nat := leaf.filter (fun i => (t.getNode? i).map (·.requiresGrad) |>.getD
     false) |>.filter (fun i => !hasGrad i)
   <details «open»={false}>
     <summary>
-      {pill "Grad coverage"} {pill s!"outId={outId}"} {pill s!"requires_grad={req.length}"} {pill
+      {pill "Grad coverage"} {pill s!"outId={outId}"} {pill s!"requiresGrad={req.length}"} {pill
         s!"gotGrad={got.length}"} {pill s!"missing={missing.length}"}
     </summary>
     <div style={json% {"margin-top": "8px", "display": "grid", "grid-template-columns": "1fr",
@@ -209,7 +209,7 @@ private def gradCoverageHtml {α : Type} (t : Tape α) (outId : Nat)
       <div>{pill "missing leaves"} {monospace (listPreviewNat 30 missingLeaves)}</div>
         <div style={json% {"opacity": 0.8}}>
           {.text
-          ("Tip: missing grads usually means a `requires_grad=false` break, " ++
+          ("Tip: missing grads usually means a `requiresGrad=false` break, " ++
             "a disconnected tape, or choosing a non-scalar output id.")}
         </div>
       </div>
@@ -272,7 +272,7 @@ This viewer runs reverse-mode and renders a step-by-step trace in reverse id ord
 /-- Render a reverse-pass trace for a tape, starting from a scalar output node `outId`. -/
 def tapeTraceHtml {α : Type} [ToString α] [Add α] [One α] [DecidableEq Shape]
     (t : Tape α) (outId : Nat) : ProofWidgets.Html :=
-  let seed : Runtime.AnyTensor α := AnyTensor.mk (Tensor.scalar (1 : α))
+  let seed : Spec.PackedTensor α := Spec.PackedTensor.ofTensor (Tensor.scalar (1 : α))
   match Tape.backwardDense (α := α) (t := t) outId seed with
   | .error msg =>
       <div style={json% {"display": "grid", "grid-template-columns": "1fr", "gap": "10px"}}>
@@ -283,7 +283,7 @@ def tapeTraceHtml {α : Type} [ToString α] [Add α] [One α] [DecidableEq Shape
         </div>
       </div>
   | .ok dense =>
-      let getGrad (id : Nat) : Option (Runtime.AnyTensor α) :=
+      let getGrad (id : Nat) : Option (Spec.PackedTensor α) :=
         match dense[id]? with
         | none => none
         | some g? => g?
@@ -297,27 +297,27 @@ def tapeTraceHtml {α : Type} [ToString α] [Add α] [One α] [DecidableEq Shape
             let status : ProofWidgets.Html :=
               match g? with
               | none =>
-                  if node.requires_grad then warnBadge "no upstream grad" else pill
-                    "requires_grad=false"
+                  if node.requiresGrad then warnBadge "no upstream grad" else pill
+                    "requiresGrad=false"
               | some _ => okBadge "has upstream grad"
             ;
             <details style={json% {"margin": "6px 0"}}>
               <summary>
                 {monospace s!"{id}: {node.name.getD "(unnamed)"}"} {pill s!"parents={node.parents}"}
-                  {pill s!"shape={dimsString node.value.s}"} {status}
+                  {pill s!"shape={dimsString node.value.shape}"} {status}
               </summary>
               <div style={json% {"margin-top": "8px", "padding-left": "10px", "display": "grid",
                 "grid-template-columns": "1fr", "gap": "10px"}}>
                 <div>
                   {pill "forward value"}
-                  <div style={json% {"margin-top": "6px"}}>{anyTensorHtml (α := α) node.value}</div>
+                  <div style={json% {"margin-top": "6px"}}>{packedTensorHtml (α := α) node.value}</div>
                 </div>
                 {match g? with
                   | none => ProofWidgets.Html.text ""
                   | some g =>
                       <div>
                         {pill "upstream dL/dy"}
-                        <div style={json% {"margin-top": "6px"}}>{anyTensorHtml (α := α) g}</div>
+                        <div style={json% {"margin-top": "6px"}}>{packedTensorHtml (α := α) g}</div>
                       </div>}
                 {match g? with
                   | none => ProofWidgets.Html.text ""
@@ -331,9 +331,9 @@ def tapeTraceHtml {α : Type} [ToString α] [Add α] [One α] [DecidableEq Shape
                             contribs.toArray.map (fun (pid, pg) =>
                               <details style={json% {"margin": "6px 0"}}>
                                 <summary>{monospace s!"parent {pid}"} {pill
-                                  s!"shape={dimsString pg.s}"}</summary>
+                                  s!"shape={dimsString pg.shape}"}</summary>
                                 <div style={json% {"margin-top": "6px", "padding-left": "10px"}}>
-                                  {anyTensorHtml (α := α) pg}
+                                  {packedTensorHtml (α := α) pg}
                                 </div>
                               </details>)
                           ;

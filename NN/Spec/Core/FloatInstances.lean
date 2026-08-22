@@ -42,7 +42,7 @@ noncomputable instance : Context (NF β fexp rnd) where
   pow a b :=
     (checkedRealPow (β := β) (fexp := fexp) (rnd := rnd) a b).getD
       (ofReal (β := β) (fexp := fexp) (rnd := rnd) 0)
-  decidable_gt := Classical.decRel _
+  decidableGT := Classical.decRel _
 
 end NF
 
@@ -50,7 +50,7 @@ namespace IEEE754.IEEE32Exec
 
 /-- Use executable binary32 arithmetic as a TorchLean specification scalar. -/
 instance : Context IEEE32Exec where
-  decidable_gt := fun x y => inferInstanceAs (Decidable (x > y))
+  decidableGT := fun x y => inferInstanceAs (Decidable (x > y))
 
 end IEEE754.IEEE32Exec
 end TorchLean.Floats

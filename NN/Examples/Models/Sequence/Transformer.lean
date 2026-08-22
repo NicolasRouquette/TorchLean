@@ -58,8 +58,7 @@ def ffnHidden : Nat := 4
 
 /-- API-level encoder configuration shared by shapes and the constructor. -/
 def cfg : nn.models.TransformerEncoderConfig :=
-  { batch := batch
-    seqLen := seqLen
+  { seqLen := seqLen
     dModel := dModel
     numHeads := numHeads
     headDim := headDim
@@ -67,7 +66,7 @@ def cfg : nn.models.TransformerEncoderConfig :=
 
 /-- Input shape: a batch of sequence rows with `dModel` features per token. -/
 abbrev σ :=
-  nn.models.transformerEncoderShape cfg
+  cfg.shape (.dim batch .scalar)
 
 /-- Output shape matches the input because this command trains a reconstruction objective. -/
 abbrev τ :=
@@ -75,10 +74,10 @@ abbrev τ :=
 
 /-- One reusable transformer encoder block from the public model API. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.transformerEncoder cfg (by decide) (by decide)
+  nn.models.transformerEncoder cfg (.dim batch .scalar) (by decide) (by decide)
 
 /-- Build one reconstruction sample from the loaded corpus prefix. -/
-def sample (corpus : String) : SupervisedSample Float σ τ :=
+def sample (corpus : String) : Sample.Supervised Float σ τ :=
   let s := Data.CausalLM.byteBatch (α := Float) batch seqLen dModel
     (corpus.take (seqLen + 1)).toString
   Sample.mk (Spec.Tensor.materialize (Sample.x s)) (Spec.Tensor.materialize (Sample.y s))

@@ -189,7 +189,7 @@ def affSquare (l u : α) : α × α × α × α :=
   let slope_sec := l + u
   let bias_sec := -(l * u)  -- Secant: y = (l+u)x - lu
   -- Tangent at midpoint
-  let mid := (l + u) * Numbers.pointfive
+  let mid := (l + u) * Numbers.half
   let slope_tan := Numbers.two * mid
   let bias_tan := -(mid * mid)
   (slope_tan, bias_tan, slope_sec, bias_sec)

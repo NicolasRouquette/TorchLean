@@ -21,7 +21,8 @@ about and convenient for proofs, but it can feel verbose in user code.
 closer to the "define ops; then call backward" ergonomics users expect from frameworks
 like PyTorch.
 
-For training scripts/tests, also see `NN.Runtime.Autograd.Utils` which provides small helpers
+For training scripts and tests, see `NN.Runtime.Autograd.Train`, which provides dataset and
+optimizer helpers, and `NN.Runtime.Autograd.Torch.ScalarTrainer`, which provides packed adapters
 for common patterns (reading scalar losses, extracting typed grads, simple SGD loops).
 
 ## Main declarations
@@ -80,14 +81,14 @@ def setTape (t : Tape α) : TapeM α Unit :=
 /--
 Create a leaf node holding a concrete tensor value.
 
-A leaf is the "input tensor" analogue: it has no parents. Setting `requires_grad := true`
+A leaf is the "input tensor" analogue: it has no parents. Setting `requiresGrad := true`
 corresponds to PyTorch tensors created with `requires_grad=True`.
 -/
 def leaf {s : Shape}
-  (value : Tensor α s) (name : Option String := none) (requires_grad : Bool := true) :
+  (value : Tensor α s) (name : Option String := none) (requiresGrad : Bool := true) :
   TapeM α Nat := do
   let t ← get
-  let (t', id) := Tape.leaf (t := t) value (name := name) (requires_grad := requires_grad)
+  let (t', id) := Tape.leaf (t := t) value (name := name) (requiresGrad := requiresGrad)
   set t'
   pure id
 
@@ -194,16 +195,6 @@ def matmul {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Pro
   {m n p : Nat} (aId bId : Nat) : TapeM α Nat := do
   let t ← get
   let (t', id) ← liftM (Tape.matmul (t := t) (m := m) (n := n) (p := p) aId bId)
-  set t'
-  pure id
-
-/-- StateT wrapper around `Tape.concat_vectors`. PyTorch comparison: `torch.cat([a,b], dim=0)` for
-  vectors. -/
-def concatVectors {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq
-  Shape]
-  {n m : Nat} (aId bId : Nat) : TapeM α Nat := do
-  let t ← get
-  let (t', id) ← liftM (Tape.concatVectors (t := t) (n := n) (m := m) aId bId)
   set t'
   pure id
 
@@ -392,12 +383,12 @@ def tanh {α : Type} [Context α] [DecidableEq Shape]
   set t'
   pure id
 
-/-- StateT wrapper around `Tape.softmax` (last-axis). PyTorch comparison: `torch.softmax(x,
+/-- StateT wrapper around `Tape.softmaxLast`. PyTorch comparison: `torch.softmax(x,
   dim=-1)`. -/
-def softmax {α : Type} [Context α] [DecidableEq Shape]
+def softmaxLast {α : Type} [Context α] [DecidableEq Shape]
   {s : Shape} (xId : Nat) : TapeM α Nat := do
   let t ← get
-  let (t', id) ← liftM (Tape.softmax (t := t) (s := s) xId)
+  let (t', id) ← liftM (Tape.softmaxLast (t := t) (s := s) xId)
   set t'
   pure id
 
@@ -456,7 +447,7 @@ def sum {α : Type} [Add α] [Zero α] [DecidableEq Shape]
  gradient tensors.
  -/
 def backwardScalar {α : Type} [Add α] [One α] [DecidableEq Shape]
-  (outId : Nat) : TapeM α (Std.HashMap Nat (Runtime.AnyTensor α)) := do
+  (outId : Nat) : TapeM α (Std.HashMap Nat (Spec.PackedTensor α)) := do
   let t ← get
   liftM (Tape.backwardScalar (t := t) outId)
 

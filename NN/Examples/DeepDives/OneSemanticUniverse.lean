@@ -145,7 +145,7 @@ def evalOut
     Except String (Spec.Tensor α Spec.Shape.scalar) :=
       do
   let payload := mkPayload (α := α) p
-  let input : DVal α := DVal.mk (α := α) xShape x
+  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) xShape x
   let v ← NN.IR.Graph.denote (α := α) (g := g) (payload := payload) (input := input) (outputId := 5)
   NN.IR.Graph.expectShape (α := α) (expected := Spec.Shape.scalar) v
 
@@ -186,7 +186,7 @@ def referenceInputFloat : Spec.Tensor Float xShape :=
 
 def xBoxOf (α : Type) [_root_.Context α] [Runtime.FromFloat α] (eps : Float) : Box α xShape :=
   let x0 : Spec.Tensor α xShape :=
-    _root_.TorchLean.Tensor.castFloat Runtime.ofFloat referenceInputFloat
+    _root_.TorchLean.Tensor.map Runtime.ofFloat referenceInputFloat
   let r : α := Runtime.ofFloat eps
   let rad : Spec.Tensor α xShape := Spec.fill (α := α) r xShape
   { lo := Spec.Tensor.subSpec (α := α) x0 rad
@@ -229,7 +229,7 @@ def showIEEECheck (samples : Nat) : IO Unit := do
 
   -- Evaluate at the center point.
   let referenceInputIEEE : Spec.Tensor IEEE32Exec xShape :=
-    _root_.TorchLean.Tensor.castFloat Runtime.ofFloat referenceInputFloat
+    _root_.TorchLean.Tensor.map Runtime.ofFloat referenceInputFloat
   match evalOut (α := IEEE32Exec) pIEEE referenceInputIEEE with
   | .error msg => throw <| IO.userError msg
   | .ok y0 =>

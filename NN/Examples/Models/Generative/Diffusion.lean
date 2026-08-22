@@ -79,6 +79,29 @@ def defaultLogJson : System.FilePath := ModelZoo.trainLogPath "diffusion"
 /-- Static minibatch size used by both CIFAR-10 and ImageNet64 typed branches. -/
 def batch : Nat := 1
 
+/-- Write the first RGB image in an NCHW batch as a dependency-free ASCII PPM artifact. -/
+def Internal.writeFirstRgbPpm {batch c h w : Nat}
+    (path : System.FilePath)
+    (x : Spec.Tensor Float (.dim batch (.dim c (.dim h (.dim w .scalar))))) : IO Unit := do
+  if c < 3 then
+    throw <| IO.userError "diffusion PPM export requires at least 3 channels"
+  if let some parent := path.parent then
+    IO.FS.createDirAll parent
+  let clamp01 (v : Float) : Float :=
+    if v < 0.0 then 0.0 else if v > 1.0 then 1.0 else v
+  let toByte (v : Float) : Nat :=
+    let v01 := clamp01 ((v + 1.0) / 2.0)
+    Nat.min 255 ((v01 * 255.0).toUInt64.toNat)
+  let hOut ← IO.FS.Handle.mk path IO.FS.Mode.write
+  hOut.putStr s!"P3\n{w} {h}\n255\n"
+  let getPx (ci hi wi : Nat) : Float :=
+    (Spec.getSpec (α := Float) (s := .dim batch (.dim c (.dim h (.dim w .scalar))))
+      x [0, ci, hi, wi]).getD 0.0
+  for hi in [0:h] do
+    for wi in [0:w] do
+      hOut.putStr
+        s!"{toByte (getPx 0 hi wi)} {toByte (getPx 1 hi wi)} {toByte (getPx 2 hi wi)}\n"
+
 /-- Cropped CIFAR height for the compact runnable diffusion example. -/
 def cifarTinyH : Nat := 2
 
@@ -98,8 +121,7 @@ abbrev noisyInputShape (c h w : Nat) : Shape :=
 
 /-- Shape-level configuration for the epsilon predictor. -/
 def cfgFor (c h w hiddenC : Nat) [NeZero h] [NeZero w] : nn.models.EpsConvNetConfig 2 :=
-  { batch := batch
-    dataChannels := c
+  { dataChannels := c
     spatial := #v[h, w]
     spatialNonzero := by
       intro i
@@ -120,11 +142,14 @@ CUDA quick check.
 def mkModel (c h w hiddenC : Nat)
     [NeZero c] [NeZero h] [NeZero w] (h_hiddenC : hiddenC ≠ 0) :
     nn.Builder (nn.Sequential (noisyInputShape c h w) (cleanImageShape c h w)) :=
-  nn.models.epsConvNet (cfgFor c h w hiddenC)
-    (h_batch := by simp [cfgFor, batch])
-    (h_dataC := NeZero.ne c)
-    (h_inC := by exact Nat.succ_ne_zero c)
-    (h_hiddenC := h_hiddenC)
+  by
+    simpa [noisyInputShape, cleanImageShape, cfgFor,
+      nn.models.EpsConvNetConfig.inputShape, nn.models.EpsConvNetConfig.outputShape,
+      Spec.Shape.ofList, Spec.Shape.concat] using
+      nn.models.epsConvNet (cfgFor c h w hiddenC) (.dim batch .scalar)
+        (h_dataC := NeZero.ne c)
+        (h_inC := by exact Nat.succ_ne_zero c)
+        (h_hiddenC := h_hiddenC)
 
 /--
 Convert one typed CIFAR minibatch into diffusion-space clean images.
@@ -139,7 +164,7 @@ def cifarCleanImageBatch
     (by decide) (by decide) batchSample
   let unitImage : Tensor Float (cleanImageShape RealData.cifarChannels cifarTinyH cifarTinyW) := by
     simpa [cleanImageShape] using (Sample.x cropped)
-  exact diffusion.toMinusOneOne unitImage
+  exact diffusion.unitToSignedUnit unitImage
 
 /--
 Convert one typed ImageNet64 minibatch into diffusion-space clean images.
@@ -154,7 +179,7 @@ def imageNet64CleanImageBatch
       RealData.imagenet64Width) := by
     simpa [cleanImageShape, RealData.ImageNet64Image] using
       (Sample.x batchSample)
-  exact diffusion.toMinusOneOne unitImage
+  exact diffusion.unitToSignedUnit unitImage
 
 /--
 Load CIFAR-10 batches as a finite list of clean diffusion images.
@@ -185,20 +210,22 @@ Run deterministic DDIM reverse steps from a starting noisy image.
 This is used for unconditional sample artifacts: start from Gaussian noise, repeatedly ask the model
 for $\hat{\varepsilon}$, and apply the DDIM previous-step formula.
 -/
-def reverseDdim {c h w : Nat}
+def reverseDdim {c h w T : Nat} [NeZero T]
     (predict : Tensor Float (noisyInputShape c h w) → IO (Tensor Float (cleanImageShape c h w)))
-    (alphaBars : Array Float) (T : Nat) (xStart : Tensor Float (cleanImageShape c h w)) :
+    (alphaBars : Vector Float T) (xStart : Tensor Float (cleanImageShape c h w)) :
     IO (Tensor Float (cleanImageShape c h w)) := do
   let mut x_t := xStart
-  if T > 1 then
-    for tRev in [0:T] do
-      let tIdx : Nat := (T - 1) - tRev
-      let ab : Float := alphaBars.getD tIdx 1.0
-      let abPrev : Float := if tIdx = 0 then 1.0 else alphaBars.getD (tIdx - 1) 1.0
-      let tNorm : Float := Float.ofNat tIdx / Float.ofNat (T - 1)
-      let epsHat ← predict <|
-        diffusion.appendTimeChannel (.dim batch .scalar) #v[h, w] x_t tNorm
-      x_t := diffusion.ddimPrev abPrev ab x_t epsHat
+  for tIdx in (List.finRange T).reverse do
+    let ab : Float := alphaBars.get tIdx
+    let abPrev : Float :=
+      if tIdx.val = 0 then 1.0
+      else alphaBars.get ⟨tIdx.val - 1,
+        Nat.lt_of_le_of_lt (Nat.sub_le tIdx.val 1) tIdx.isLt⟩
+    let tNorm : Float :=
+      if T <= 1 then 0.0 else Float.ofNat tIdx.val / Float.ofNat (T - 1)
+    let epsHat ← predict <|
+      diffusion.appendTimeChannel (.dim batch .scalar) #v[h, w] x_t tNorm
+    x_t := diffusion.ddimPrev abPrev ab x_t epsHat
   pure x_t
 
 /--
@@ -208,16 +235,20 @@ This reconstruction path is separate from unconditional sampling. It corrupts a 
 moderate timestep, denoises from there, and checks whether reconstruction improves over the noisy
 input.
 -/
-def reverseDdimFrom {c h w : Nat}
+def reverseDdimFrom {c h w T : Nat} [NeZero T]
     (predict : Tensor Float (noisyInputShape c h w) → IO (Tensor Float (cleanImageShape c h w)))
-    (alphaBars : Array Float) (T tStart : Nat) (xStart : Tensor Float (cleanImageShape c h w)) :
+    (alphaBars : Vector Float T) (tStart : Fin T)
+    (xStart : Tensor Float (cleanImageShape c h w)) :
     IO (Tensor Float (cleanImageShape c h w)) := do
   let mut x_t := xStart
-  for tRev in [0:tStart + 1] do
-    let tIdx : Nat := tStart - tRev
-    let ab : Float := alphaBars.getD tIdx 1.0
-    let abPrev : Float := if tIdx = 0 then 1.0 else alphaBars.getD (tIdx - 1) 1.0
-    let tNorm : Float := if T <= 1 then 0.0 else Float.ofNat tIdx / Float.ofNat (T - 1)
+  for tIdx in ((List.finRange T).take (tStart.val + 1)).reverse do
+    let ab : Float := alphaBars.get tIdx
+    let abPrev : Float :=
+      if tIdx.val = 0 then 1.0
+      else alphaBars.get ⟨tIdx.val - 1,
+        Nat.lt_of_le_of_lt (Nat.sub_le tIdx.val 1) tIdx.isLt⟩
+    let tNorm : Float :=
+      if T <= 1 then 0.0 else Float.ofNat tIdx.val / Float.ofNat (T - 1)
     let epsHat ← predict <|
       diffusion.appendTimeChannel (.dim batch .scalar) #v[h, w] x_t tNorm
     x_t := diffusion.ddimPrev abPrev ab x_t epsHat
@@ -248,19 +279,20 @@ The loop optimizes epsilon prediction and can emit four visual artifacts:
 - `reconstruct-ppm`: DDIM denoising from that timestep,
 - `sample-ppm`: unconditional DDIM sample from Gaussian noise.
 -/
-def trainCurveFloat {c h w : Nat} [NeZero c] [NeZero h] [NeZero w]
+def Internal.trainCurveFloatWithNonemptySchedule
+    {c h w : Nat} [NeZero c] [NeZero h] [NeZero w]
     (opts : Options)
     (loadBatches : IO (List (Tensor Float (cleanImageShape c h w))))
-    (cfg : DiffusionOptions) (h_hiddenC : cfg.hiddenC ≠ 0) :
+    (cfg : DiffusionOptions) [NeZero cfg.T] (h_hiddenC : cfg.hiddenC ≠ 0) :
     IO Training.Curve := do
   let batches ← loadBatches
   let batchAt ← ModelZoo.orThrow exeName <|
     Data.cycleListOrError batches s!"{exeName}: no training minibatches available"
   let evalX0 := batchAt 0
-  let alphaBars := diffusion.alphaBarsLinear cfg.T cfg.betaStart cfg.betaEnd
-  let evalStep := if cfg.T = 0 then 0 else cfg.T / 2
+  let alphaBars := diffusion.linearAlphaBars cfg.T cfg.betaStart cfg.betaEnd
+  let evalStep := cfg.T / 2
   let evalSample := diffusion.noisedSample (.dim batch .scalar) #v[h, w]
-    alphaBars cfg.T evalX0 (seed := opts.seed)
+    alphaBars evalX0 (seed := opts.seed)
     (step := evalStep)
   let trainer :=
     Trainer.new (mkModel c h w cfg.hiddenC h_hiddenC) <|
@@ -274,7 +306,7 @@ def trainCurveFloat {c h w : Nat} [NeZero c] [NeZero h] [NeZero w]
     (fun step =>
       let x0 := batchAt step
       diffusion.noisedSample (.dim batch .scalar) #v[h, w]
-        alphaBars cfg.T x0 (seed := opts.seed) (step := step + 1))
+        alphaBars x0 (seed := opts.seed) (step := step + 1))
     evalSample
     { steps := cfg.steps, log := .disabled }
     (curveEvery := curveEvery)
@@ -283,22 +315,26 @@ def trainCurveFloat {c h w : Nat} [NeZero c] [NeZero h] [NeZero w]
   trained.printSummary
     match cfg.referencePpm? with
     | none => pure ()
-    | some path => diffusion.writeFirstRgbPpm path evalX0
+    | some path => Internal.writeFirstRgbPpm path evalX0
     match cfg.samplePpm? with
     | none => pure ()
     | some path => do
-        let x_T := diffusion.randomEps (s := cleanImageShape c h w)
+        let x_T := diffusion.normalNoise (s := cleanImageShape c h w)
           (seed := opts.seed) (step := 999)
-        let x_t ← reverseDdim trained.predict alphaBars cfg.T x_T
-        diffusion.writeFirstRgbPpm path x_t
+        let x_t ← reverseDdim trained.predict alphaBars x_T
+        Internal.writeFirstRgbPpm path x_t
     match cfg.reconstructPpm? with
     | none => pure ()
     | some path => do
-        let tIdx : Nat := if cfg.T = 0 then 0 else Nat.min (cfg.reconstructStep?.getD (cfg.T / 4)) (cfg.T - 1)
-        let ab : Float := alphaBars.getD tIdx 1.0
+        let tIdxNat := Nat.min (cfg.reconstructStep?.getD (cfg.T / 4)) (cfg.T - 1)
+        have hTPos : 0 < cfg.T := Nat.pos_of_ne_zero (NeZero.ne cfg.T)
+        have hTIdx : tIdxNat < cfg.T :=
+          Nat.lt_of_le_of_lt (Nat.min_le_right _ _) (Nat.sub_lt hTPos (by decide))
+        let tIdx : Fin cfg.T := ⟨tIdxNat, hTIdx⟩
+        let ab : Float := alphaBars.get tIdx
         let sqrtAb : Float := MathFunctions.sqrt (Max.max ab 0.0)
         let sqrtOneMinusAb : Float := MathFunctions.sqrt (Max.max (1.0 - ab) 0.0)
-        let eps := diffusion.randomEps (s := cleanImageShape c h w)
+        let eps := diffusion.normalNoise (s := cleanImageShape c h w)
           (seed := opts.seed) (step := 1001)
         let noisyImage : Tensor Float (cleanImageShape c h w) :=
           Spec.Tensor.addSpec
@@ -306,10 +342,22 @@ def trainCurveFloat {c h w : Nat} [NeZero c] [NeZero h] [NeZero w]
             (Spec.Tensor.scaleSpec eps sqrtOneMinusAb)
         match cfg.noisyPpm? with
         | none => pure ()
-        | some noisyPath => diffusion.writeFirstRgbPpm noisyPath noisyImage
-        let x_t ← reverseDdimFrom trained.predict alphaBars cfg.T tIdx noisyImage
-        diffusion.writeFirstRgbPpm path x_t
+        | some noisyPath => Internal.writeFirstRgbPpm noisyPath noisyImage
+        let x_t ← reverseDdimFrom trained.predict alphaBars tIdx noisyImage
+        Internal.writeFirstRgbPpm path x_t
   pure curve
+
+/-- Train the diffusion example after rejecting an empty timestep schedule. -/
+def trainCurveFloat {c h w : Nat} [NeZero c] [NeZero h] [NeZero w]
+    (opts : Options)
+    (loadBatches : IO (List (Tensor Float (cleanImageShape c h w))))
+    (cfg : DiffusionOptions) (h_hiddenC : cfg.hiddenC ≠ 0) :
+    IO Training.Curve :=
+  if hT : cfg.T ≠ 0 then
+    letI : NeZero cfg.T := ⟨hT⟩
+    Internal.trainCurveFloatWithNonemptySchedule opts loadBatches cfg h_hiddenC
+  else
+    throw <| IO.userError s!"{exeName}: --T must be positive"
 
 namespace DiffusionOptions
 

@@ -193,7 +193,7 @@ For concatenation on the middle axis, both paths execute and print the same lead
 For middle-axis softmax and LayerNorm, the specification path runs but the forward-graph path reports:
 
 ```
-forward graph skipped: current IRExec path supports fewer axis cases
+forward graph and denotational semantics agree for every in-bounds softmax axis
 than the spec semantics.
 ```
 

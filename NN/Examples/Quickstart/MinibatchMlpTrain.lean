@@ -58,8 +58,7 @@ def outDim : Nat := 1
 
 /-- Batched MLP `2 -> 8 -> 1` built from the public model constructor. -/
 def mkModel {batch : Nat} : nn.Builder (nn.Sequential (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar))) :=
-  nn.models.mlpRelu
-    { batch := batch, inDim := inDim, hidDim := hidDim, outDim := outDim }
+  nn.blocks.mlp inDim outDim { hidden := [hidDim] } (.dim batch .scalar)
 
 /-- Command-line help for the minibatch MLP quickstart. -/
 def usage : String :=
@@ -91,8 +90,8 @@ def main (args : List String) : IO Unit := do
     _root_.NN.Examples.Data.SamplePaths.takeDataDir args
   let (seed, args) ← CLI.seed "MinibatchMLPTrain" args
   let (batch, args) ← CLI.positiveNatFlag "MinibatchMLPTrain" args "batch" 5
-  let (csvPath, args) ← CLI.pathFlagDefault "MinibatchMLPTrain" args "csv"
-    (_root_.NN.Examples.Data.SamplePaths.regressionCsv dataDir)
+  let (csvPath, args) ← CLI.orThrow "MinibatchMLPTrain" <|
+    CLI.takePathFlagDefault args "csv" (_root_.NN.Examples.Data.SamplePaths.regressionCsv dataDir)
   let parsed ←
     _root_.NN.Examples.Quickstart.parseRuntimeTrain
       "MinibatchMLPTrain" args defaultLogJson 30 (optim.adam { lr := 0.05 })

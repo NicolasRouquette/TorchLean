@@ -291,25 +291,6 @@ def bmm {α : Type} (s : TypedGraphSession α) [Add α] [Mul α] [Zero α] [Deci
     pure ({ id := v.id }, st1))
 
 /--
-Concatenate two 1D vectors along dimension 0.
-
-PyTorch comparison: `torch.cat([a, b], dim=0)` for 1D tensors.
--/
-def concatVectors {α : Type} (s : TypedGraphSession α) [Context α] [DecidableEq Shape]
-  {n m : Nat}
-  (a : TensorRef α (.dim n .scalar))
-  (b : TensorRef α (.dim m .scalar)) :
-  IO (TensorRef α (.dim (n + m) .scalar)) :=
-  commitGraphM (α := α) s (β := TensorRef α (.dim (n + m) .scalar)) (fun {Γ} {ss} x nat g => do
-    let (v, st') ← runGraphM (α := α) (Γ := Γ)
-      (Runtime.Autograd.TypedGraph.GraphM.concatVectors (α := α) (Γ := Γ) (n := n) (m := m) { id :=
-        a.id } { id := b.id })
-      ss g
-    let ⟨ss', g'⟩ := st'
-    let st1 : TypedGraphSessionState α := { Γ := Γ, x := x, nat := nat, ss := ss', g := g' }
-    pure ({ id := v.id }, st1))
-
-/--
 Concatenate two tensors along dimension 0.
 
 PyTorch comparison: `torch.cat([a, b], dim=0)`.
@@ -336,7 +317,7 @@ PyTorch comparison: `x[start:start+len]` for tensors with a leading dimension.
 -/
 def sliceLeadingAxisRange {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq Shape]
   {n : Nat} {sh : Shape}
-  (x : TensorRef α (.dim n sh)) (start len : Nat) (h : len + start ≤ n) :
+  (x : TensorRef α (.dim n sh)) (start len : Nat) (h : start + len ≤ n) :
   IO (TensorRef α (.dim len sh)) :=
   commitGraphM (α := α) s (β := TensorRef α (.dim len sh)) (fun {Γ} {ss} xv nat g => do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)

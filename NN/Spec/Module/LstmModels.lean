@@ -12,9 +12,9 @@ public import NN.Spec.Module.Linear
 public import NN.Spec.Module.Rnn
 
 /-!
-# LSTM models (spec)
+# Long Short-Term Memory Models
 
-Higher‑level LSTM architectures built from module specs (`SpecChain`), including:
+Higher‑level LSTM architectures built from module specs (`Spec.Module.Chain`), including:
 
 - sequence‑to‑sequence outputs,
 - classifier heads (many‑to‑one),
@@ -34,16 +34,18 @@ References (math + PyTorch behavior):
 
 @[expose] public section
 
-
 namespace Spec
 
 open Tensor
-open ModSpec
+open Recurrent
+open Spec.Module
 
 variable {α : Type} [Context α]
 
+namespace Lstm
+
 /-!
-## “Fully implemented” LSTM models
+## Model and gradient types
 
 The LSTM model layer exposes first-class model objects with:
 
@@ -51,8 +53,7 @@ The LSTM model layer exposes first-class model objects with:
 - a standard training objective, and
 - an explicit reverse-mode / BPTT backward pass producing parameter gradients.
 
-The declarations below provide those “full” APIs for the simple LSTM models in this file by reusing the
-gate-aware BPTT implementation in `NN/Spec/Layers/Lstm.lean`.
+The backward functions reuse the gate-aware implementation in `NN.Spec.Layers.Lstm`.
 -/
 
 /-! ### Gradient records -/
@@ -64,10 +65,10 @@ This is the natural gradient bundle for `Spec.LinearSpec` (PyTorch analogue: `to
 with `dW` matching the weight shape `[outDim, inDim]` and `db` matching `[outDim]`.
 -/
 structure LinearGrads (α : Type) (inDim outDim : Nat) where
-  /-- d W. -/
-  dW : Tensor α (.dim outDim (.dim inDim .scalar))
-  /-- db. -/
-  db : Tensor α (.dim outDim .scalar)
+  /-- Gradient of the weight matrix. -/
+  weight : Tensor α (.dim outDim (.dim inDim .scalar))
+  /-- Gradient of the bias. -/
+  bias : Tensor α (.dim outDim .scalar)
 
 /--
 Gate-wise gradients for an LSTM cell.
@@ -76,124 +77,141 @@ This matches the parameterization used by `Spec.LSTMSpec` (see `NN/Spec/Layers/L
 gate has a weight matrix of shape `[hiddenSize, inputSize + hiddenSize]` applied to a concatenated
 vector, plus a bias of shape `[hiddenSize]`.
 -/
-structure LSTMGrads (α : Type) (inputSize hiddenSize : Nat) where
-  /-- d forget weights. -/
-  d_forget_weights : WeightMatrix α hiddenSize (inputSize + hiddenSize)
-  /-- d forget bias. -/
-  d_forget_bias    : HiddenVector α hiddenSize
-  /-- d input weights. -/
-  d_input_weights  : WeightMatrix α hiddenSize (inputSize + hiddenSize)
-  /-- d input bias. -/
-  d_input_bias     : HiddenVector α hiddenSize
-  /-- d candidate weights. -/
-  d_candidate_weights : WeightMatrix α hiddenSize (inputSize + hiddenSize)
-  /-- d candidate bias. -/
-  d_candidate_bias    : HiddenVector α hiddenSize
-  /-- d output weights. -/
-  d_output_weights : WeightMatrix α hiddenSize (inputSize + hiddenSize)
-  /-- d output bias. -/
-  d_output_bias    : HiddenVector α hiddenSize
+structure CellGrads (α : Type) (inputSize hiddenSize : Nat) where
+  /-- Gradient of the forget-gate weight matrix. -/
+  forgetWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  /-- Gradient of the forget-gate bias. -/
+  forgetBias : HiddenVector α hiddenSize
+  /-- Gradient of the input-gate weight matrix. -/
+  inputWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  /-- Gradient of the input-gate bias. -/
+  inputBias : HiddenVector α hiddenSize
+  /-- Gradient of the candidate-state weight matrix. -/
+  candidateWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  /-- Gradient of the candidate-state bias. -/
+  candidateBias : HiddenVector α hiddenSize
+  /-- Gradient of the output-gate weight matrix. -/
+  outputWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  /-- Gradient of the output-gate bias. -/
+  outputBias : HiddenVector α hiddenSize
 
 /--
-Parameter gradients for `SimpleLSTMModel`.
+Parameter gradients for `Lstm.Model`.
 
 This bundles the LSTM cell gradients and the time-distributed linear head gradients.
 -/
-structure SimpleLSTMModelGrads (α : Type) (inputSize hiddenSize outputSize : Nat) where
-  /-- lstm. -/
-  lstm : LSTMGrads α inputSize hiddenSize
-  /-- output layer. -/
-  output_layer : LinearGrads α hiddenSize outputSize
+structure Grads (α : Type) (inputSize hiddenSize outputSize : Nat) where
+  /-- Gradients of the recurrent cell. -/
+  cell : CellGrads α inputSize hiddenSize
+  /-- Gradients of the output projection. -/
+  output : LinearGrads α hiddenSize outputSize
 
--- Simple LSTM model using SpecChain (following MLP pattern)
+/-- Parameter gradients for an LSTM classifier. -/
+structure ClassifierGrads (α : Type) (inputSize hiddenSize numClasses : Nat) where
+  /-- Gradients of the recurrent cell. -/
+  cell : CellGrads α inputSize hiddenSize
+  /-- Gradients of the classifier head. -/
+  classifier : LinearGrads α hiddenSize numClasses
+
 /--
-Sequence-to-sequence LSTM model as a `SpecChain`: LSTM over time, then a per-timestep linear head.
+Sequence-to-sequence LSTM model as a `Spec.Module.Chain`: LSTM over time, then a per-timestep linear head.
 
 PyTorch analogue: `nn.LSTM` producing an output sequence, followed by `nn.linear` applied at each
 time step.
 -/
-def simpleLstmModelSpec
+def sequence
   {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   {seqLen inputSize hiddenSize outputSize : Nat}
-  (lstm_spec : LSTMSpec α inputSize hiddenSize)
+  (lstmSpec : LSTMSpec α inputSize hiddenSize)
   (linearSpec : LinearSpec α hiddenSize outputSize) :
-  SpecChain α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
-  let lstm_module := LSTMModuleSpec lstm_spec
-  let linear_module := LinearSeqModuleSpec linearSpec
-  SpecChain.single lstm_module
-    |>.composeRight linear_module
+  Spec.Module.Chain α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
+  let lstmModule := Spec.Module.lstm lstmSpec
+  let linearModule := Spec.Module.mapLeading (Spec.Module.linear linearSpec)
+  Spec.Module.Chain.single lstmModule
+    |>.append linearModule
 
--- LSTM classifier (many-to-one) using SpecChain
 /--
-Many-to-one LSTM classifier as a `SpecChain`.
+Many-to-one LSTM classifier as a `Spec.Module.Chain`.
 
 This runs an LSTM over the sequence and applies a linear classifier head to the final hidden state.
 PyTorch analogue: `nn.LSTM` + `nn.linear`, taking the last output/hidden.
 -/
-def lstmClassifierModelSpec
+def classifier
   {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   {seqLen inputSize hiddenSize numClasses : Nat}
-  (lstm_spec : LSTMSpec α inputSize hiddenSize)
-  (classifier_spec : LinearSpec α hiddenSize numClasses)
+  (lstmSpec : LSTMSpec α inputSize hiddenSize)
+  (classifierHead : LinearSpec α hiddenSize numClasses)
   (h : seqLen ≠ 0) :
-  SpecChain α (.dim seqLen (.dim inputSize .scalar)) (.dim numClasses .scalar) :=
-  let lstm_module := LSTMModuleSpec lstm_spec
-  let classifier_module := LinearClassifierModuleSpec classifier_spec h
-  SpecChain.single lstm_module
-    |>.composeRight classifier_module
+  Spec.Module.Chain α (.dim seqLen (.dim inputSize .scalar)) (.dim numClasses .scalar) :=
+  let lstmModule := Spec.Module.lstm lstmSpec
+  let lastOutput := Spec.Module.selectLeading (⟨Nat.pred seqLen, Nat.pred_lt h⟩)
+  let classifierModule := Spec.Module.linear classifierHead
+  Spec.Module.Chain.single lstmModule
+    |>.append lastOutput
+    |>.append classifierModule
 
--- Multi-layer LSTM using SpecChain composition
 /--
 Two-layer LSTM stack (sequence-to-sequence), followed by a per-timestep linear head.
 
 The second LSTM consumes the hidden stream produced by the first.
 -/
-def multilayerLstmSpec
+def stacked
   {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   {seqLen inputSize hiddenSize outputSize : Nat}
-  (lstm1_spec : LSTMSpec α inputSize hiddenSize)
-  (lstm2_spec : LSTMSpec α hiddenSize hiddenSize)
+  (firstSpec : LSTMSpec α inputSize hiddenSize)
+  (secondSpec : LSTMSpec α hiddenSize hiddenSize)
   (linearSpec : LinearSpec α hiddenSize outputSize) :
-  SpecChain α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
-  let lstm1_module := LSTMModuleSpec lstm1_spec
-  let lstm2_module := LSTMModuleSpec lstm2_spec
-  let linear_module := LinearSeqModuleSpec linearSpec
-  SpecChain.single lstm1_module
-    |>.composeRight lstm2_module
-    |>.composeRight linear_module
+  Spec.Module.Chain α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
+  let firstModule := Spec.Module.lstm firstSpec
+  let secondModule := Spec.Module.lstm secondSpec
+  let linearModule := Spec.Module.mapLeading (Spec.Module.linear linearSpec)
+  Spec.Module.Chain.single firstModule
+    |>.append secondModule
+    |>.append linearModule
 
--- LSTM language model using SpecChain
 /--
-Simple LSTM language-model pipeline as a `SpecChain`: embedding, LSTM core, and output projection.
+Simple LSTM language-model pipeline as a `Spec.Module.Chain`: embedding, LSTM core, and output projection.
 
 In this spec layer we represent the embedding/projection as `LinearSpec`s (often used with one-hot
 token vectors). PyTorch analogue: `nn.Embedding` (conceptually) + `nn.LSTM` + `nn.linear`.
 -/
-def lstmLanguageModelSpec
+def languageModel
   {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   {seqLen vocabSize hiddenSize : Nat}
-  (embedding_spec : LinearSpec α vocabSize hiddenSize)
-  (lstm_spec : LSTMSpec α hiddenSize hiddenSize)
-  (output_spec : LinearSpec α hiddenSize vocabSize) :
-  SpecChain α (.dim seqLen (.dim vocabSize .scalar)) (.dim seqLen (.dim vocabSize .scalar)) :=
-  let embedding_module := LinearSeqModuleSpec embedding_spec
-  let lstm_module := LSTMModuleSpec lstm_spec
-  let output_module := LinearSeqModuleSpec output_spec
-  SpecChain.single embedding_module
-    |>.composeRight lstm_module
-    |>.composeRight output_module
+  (embeddingSpec : LinearSpec α vocabSize hiddenSize)
+  (lstmSpec : LSTMSpec α hiddenSize hiddenSize)
+  (outputSpec : LinearSpec α hiddenSize vocabSize) :
+  Spec.Module.Chain α (.dim seqLen (.dim vocabSize .scalar)) (.dim seqLen (.dim vocabSize .scalar)) :=
+  let embeddingModule := Spec.Module.mapLeading (Spec.Module.linear embeddingSpec)
+  let lstmModule := Spec.Module.lstm lstmSpec
+  let outputModule := Spec.Module.mapLeading (Spec.Module.linear outputSpec)
+  Spec.Module.Chain.single embeddingModule
+    |>.append lstmModule
+    |>.append outputModule
+
+/-- Bidirectional LSTM followed by a classifier on the final concatenated state. -/
+def bidirectionalClassifier
+  {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+  {seqLen inputSize hiddenSize numClasses : Nat}
+  (forwardSpec backwardSpec : LSTMSpec α inputSize hiddenSize)
+  (classifierHead : LinearSpec α (hiddenSize + hiddenSize) numClasses)
+  (h : seqLen ≠ 0) :
+  Spec.Module.Chain α (.dim seqLen (.dim inputSize .scalar)) (.dim numClasses .scalar) :=
+  Spec.Module.Chain.single (Spec.Module.bidirectionalLstm forwardSpec backwardSpec)
+    |>.append (Spec.Module.selectLeading (⟨Nat.pred seqLen, Nat.pred_lt h⟩))
+    |>.append (Spec.Module.linear classifierHead)
 
 -- Basic LSTM model with single layer
 /--
 Bundle of parameters for a single-layer LSTM model with a linear output head.
 
-This is a direct record representation (as opposed to the `SpecChain` representation above).
+This is a direct record representation (as opposed to the `Spec.Module.Chain` representation above).
 -/
-structure SimpleLSTMModel (α : Type) (inputSize hiddenSize outputSize : Nat) where
-  /-- lstm. -/
+structure Model (α : Type) (inputSize hiddenSize outputSize : Nat) where
+  /-- Recurrent cell parameters. -/
   lstm : LSTMSpec α inputSize hiddenSize
-  /-- output layer. -/
-  output_layer : LinearSpec α hiddenSize outputSize
+  /-- Linear output projection. -/
+  outputLayer : LinearSpec α hiddenSize outputSize
 
 -- Multi-layer LSTM model
 /--
@@ -201,13 +219,13 @@ Bundle of parameters for a multi-layer LSTM model with a linear output head.
 
 The first layer consumes `inputSize`, and all subsequent layers consume `hiddenSize`.
 -/
-structure MultiLayerLSTMModel (α : Type) (inputSize hiddenSize outputSize numLayers : Nat) where
-  /-- first layer. -/
-  first_layer : LSTMSpec α inputSize hiddenSize
-  /-- hidden layers. -/
-  hidden_layers : (i : Fin (numLayers - 1)) → LSTMSpec α hiddenSize hiddenSize
-  /-- output layer. -/
-  output_layer : LinearSpec α hiddenSize outputSize
+structure StackedModel (α : Type) (inputSize hiddenSize outputSize numLayers : Nat) where
+  /-- First recurrent layer, whose input may differ from the hidden width. -/
+  firstLayer : LSTMSpec α inputSize hiddenSize
+  /-- Remaining recurrent layers. -/
+  hiddenLayers : Fin (numLayers - 1) → LSTMSpec α hiddenSize hiddenSize
+  /-- Linear output projection. -/
+  outputLayer : LinearSpec α hiddenSize outputSize
 
 -- LSTM model for classification (many-to-one)
 /--
@@ -215,10 +233,10 @@ Bundle of parameters for a many-to-one LSTM classifier.
 
 The classifier head is applied to the final hidden state.
 -/
-structure LSTMClassifier (α : Type) (inputSize hiddenSize numClasses : Nat) where
-  /-- lstm. -/
+structure Classifier (α : Type) (inputSize hiddenSize numClasses : Nat) where
+  /-- Recurrent cell parameters. -/
   lstm : LSTMSpec α inputSize hiddenSize
-  /-- classifier. -/
+  /-- Linear classifier head. -/
   classifier : LinearSpec α hiddenSize numClasses
 
 -- LSTM model for sequence generation (many-to-many)
@@ -227,13 +245,13 @@ Bundle of parameters for a many-to-many LSTM generator (language-model style).
 
 This includes an (embedding) linear map, recurrent core, and output projection back to vocabulary.
 -/
-structure LSTMGenerator (α : Type) (vocabSize hiddenSize : Nat) where
-  /-- embedding. -/
-  embedding : LinearSpec α vocabSize hiddenSize  -- Simple embedding layer
-  /-- lstm. -/
+structure Generator (α : Type) (vocabSize hiddenSize : Nat) where
+  /-- Token projection used by this one-hot specification. -/
+  embedding : LinearSpec α vocabSize hiddenSize
+  /-- Recurrent cell parameters. -/
   lstm : LSTMSpec α hiddenSize hiddenSize
-  /-- output projection. -/
-  output_projection : LinearSpec α hiddenSize vocabSize
+  /-- Projection from hidden states to vocabulary logits. -/
+  outputProjection : LinearSpec α hiddenSize vocabSize
 
 /--
 Bundle of parameters for a bidirectional LSTM model with an output head.
@@ -241,13 +259,13 @@ Bundle of parameters for a bidirectional LSTM model with an output head.
 The head consumes the concatenation of forward and backward hidden states.
 PyTorch analogue: `nn.LSTM(..., bidirectional=true)` plus a linear projection.
 -/
-structure BiLSTMModel (α : Type) (inputSize hiddenSize outputSize : Nat) where
-  /-- forward lstm. -/
-  forward_lstm : LSTMSpec α inputSize hiddenSize
-  /-- backward lstm. -/
-  backward_lstm : LSTMSpec α inputSize hiddenSize
-  /-- output layer. -/
-  output_layer : LinearSpec α (hiddenSize + hiddenSize) outputSize
+structure BidirectionalModel (α : Type) (inputSize hiddenSize outputSize : Nat) where
+  /-- Recurrent cell for the original sequence order. -/
+  forwardLstm : LSTMSpec α inputSize hiddenSize
+  /-- Recurrent cell for the reversed sequence order. -/
+  backwardLstm : LSTMSpec α inputSize hiddenSize
+  /-- Projection from concatenated forward and backward states. -/
+  outputLayer : LinearSpec α (hiddenSize + hiddenSize) outputSize
 
 /--
 Bundle of parameters for a stacked LSTM language model with deterministic dropout.
@@ -255,165 +273,157 @@ Bundle of parameters for a stacked LSTM language model with deterministic dropou
 This model uses a list of LSTM layers (all with `hiddenSize` input/output) and applies a
 evaluation-mode dropout step between the recurrent stack and the output projection.
 -/
-structure LSTMLanguageModel (α : Type) (vocabSize hiddenSize : Nat) where
-  /-- embedding. -/
+structure LanguageModel (α : Type) (vocabSize hiddenSize : Nat) where
+  /-- Token projection used by this one-hot specification. -/
   embedding : LinearSpec α vocabSize hiddenSize
-  /-- lstm layers. -/
-  lstm_layers : List (LSTMSpec α hiddenSize hiddenSize)
-  /-- output projection. -/
-  output_projection : LinearSpec α hiddenSize vocabSize
-  /-- dropout rate. -/
-  dropout_rate : α
+  /-- Recurrent layers, ordered from input to output. -/
+  layers : List (LSTMSpec α hiddenSize hiddenSize)
+  /-- Projection from hidden states to vocabulary logits. -/
+  outputProjection : LinearSpec α hiddenSize vocabSize
+  /-- Dropout probability used between the recurrent stack and output projection. -/
+  dropoutRate : α
 
 -- Forward pass for simple LSTM model
 /--
-One-step forward pass for `SimpleLSTMModel`.
+One-step forward pass for `Lstm.Model`.
 
 Given an input vector and the previous LSTM state `(hidden, cell)`, compute `(output, new_state)`.
 PyTorch analogue: `nn.LSTMCell` step followed by a `nn.linear` head.
 -/
-def simpleLstmForward {inputSize hiddenSize outputSize : Nat}
-  (model : SimpleLSTMModel α inputSize hiddenSize outputSize)
+def Model.forward {inputSize hiddenSize outputSize : Nat}
+  (model : Model α inputSize hiddenSize outputSize)
   (input : Tensor α (.dim inputSize .scalar))
   (state : LSTMState α hiddenSize) :
   (Tensor α (.dim outputSize .scalar) × LSTMState α hiddenSize) :=
-  let new_state := lstmCellSpec model.lstm input state
-  let output := linearSpec model.output_layer new_state.hidden
-  (output, new_state)
+  let nextState := lstmCellSpec model.lstm input state
+  let output := linearSpec model.outputLayer nextState.hidden
+  (output, nextState)
 
 -- Forward pass for simple LSTM model on sequences
 /--
-Sequence forward pass for `SimpleLSTMModel`.
+Sequence forward pass for `Lstm.Model`.
 
 Runs the LSTM over all timesteps (time-major), applies the output head to each hidden state, and
 returns `(outputs, final_state)`.
 -/
-def simpleLstmSequenceForward {seqLen inputSize hiddenSize outputSize : Nat}
-  (model : SimpleLSTMModel α inputSize hiddenSize outputSize)
+def Model.forwardSequence {seqLen inputSize hiddenSize outputSize : Nat}
+  (model : Model α inputSize hiddenSize outputSize)
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (initial_state : LSTMState α hiddenSize) :
+  (initialState : LSTMState α hiddenSize) :
   (Tensor α (.dim seqLen (.dim outputSize .scalar)) × LSTMState α hiddenSize) :=
-  let (hidden_states, final_state) := lstmSequenceSpec model.lstm inputs initial_state
-  -- Apply output layer to each hidden state
-  let outputs := mapSequenceSpec (linearSpec model.output_layer) hidden_states
-  (outputs, final_state)
+  let (hiddenStates, finalState) := lstmSequenceSpec model.lstm inputs initialState
+  let outputs := Tensor.mapLeading (.dim seqLen .scalar)
+    (linearSpec model.outputLayer) hiddenStates
+  (outputs, finalState)
 
 /-!
 ### Backward pass (BPTT) for the simple LSTM sequence model
 
-This is the model-level analogue of `Spec.lstm_sequence_backward_spec`. The only extra work we do
+This is the model-level analogue of `Spec.lstmSequenceBackwardSpec`. The only extra work we do
 here is to backprop through the per-timestep output projection and feed its gradient into the LSTM
 sequence backward pass.
 -/
 
-namespace LSTMModels.Internal
+namespace Internal
 
 /-- Backprop through the time-distributed linear head and produce hidden-state gradients. -/
 def timeDistributedLinearBackward
   {seqLen hiddenSize outputSize : Nat}
   (layer : LinearSpec α hiddenSize outputSize)
   (hiddens : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (grad_outputs : Tensor α (.dim seqLen (.dim outputSize .scalar))) :
+  (outputGrad : Tensor α (.dim seqLen (.dim outputSize .scalar))) :
   (LinearGrads α hiddenSize outputSize × Tensor α (.dim seqLen (.dim hiddenSize .scalar))) :=
-  let step (acc : LinearGrads α hiddenSize outputSize × List (Tensor α (.dim hiddenSize .scalar)))
-    (i : Fin seqLen) :=
-    let (accLin, accDH) := acc
+  let step (i : Fin seqLen) (acc : LinearGrads α hiddenSize outputSize) :=
     let hi := get hiddens i
-    let dYi := get grad_outputs i
-    let (dW, db, dH) := linearBackwardSpec layer hi dYi
-    ({ dW := addSpec accLin.dW dW, db := addSpec accLin.db db }, dH :: accDH)
+    let outputGradI := get outputGrad i
+    let (weightGrad, biasGrad, hiddenGrad) := linearBackwardSpec layer hi outputGradI
+    ({ weight := addSpec acc.weight weightGrad
+       bias := addSpec acc.bias biasGrad }, hiddenGrad)
   let init : LinearGrads α hiddenSize outputSize := {
-    dW := fill 0 (.dim outputSize (.dim hiddenSize .scalar)),
-    db := fill 0 (.dim outputSize .scalar)
+    weight := fill 0 (.dim outputSize (.dim hiddenSize .scalar)),
+    bias := fill 0 (.dim outputSize .scalar)
   }
-  let (linGrads, dH_rev) := (List.finRange seqLen).foldl step (init, [])
-  let dH_list := dH_rev.reverse
-  let dH :=
-    match dH_list with
-    | [] => fill 0 (.dim seqLen (.dim hiddenSize .scalar))
-    | h :: _ => Tensor.dim (fun i => dH_list.getD i.val h)
-  (linGrads, dH)
+  let (linearGrads, hiddenGrads) := Sequence.mapAccum seqLen init step
+  (linearGrads, Tensor.dim hiddenGrads.get)
 
-end LSTMModels.Internal
+end Internal
 
-open LSTMModels.Internal
+open Internal
 
 /--
-Backward pass for `simple_lstm_sequence_forward`.
+Backward pass for `Lstm.Model.forwardSequence`.
 
 Returns:
-- parameter gradients (`SimpleLSTMModelGrads`)
+- parameter gradients (`Lstm.Grads`)
 - gradient w.r.t. input sequence (`dInputs`)
 - gradient w.r.t. initial recurrent state (`dInitialState`)
 -/
-def simpleLstmBackward
+def Model.backward
   {seqLen inputSize hiddenSize outputSize : Nat}
-  (model : SimpleLSTMModel α inputSize hiddenSize outputSize)
+  (model : Model α inputSize hiddenSize outputSize)
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (initial_state : LSTMState α hiddenSize)
-  (grad_outputs : Tensor α (.dim seqLen (.dim outputSize .scalar))) :
-  (SimpleLSTMModelGrads α inputSize hiddenSize outputSize ×
+  (initialState : LSTMState α hiddenSize)
+  (outputGrad : Tensor α (.dim seqLen (.dim outputSize .scalar))) :
+  (Grads α inputSize hiddenSize outputSize ×
     Tensor α (.dim seqLen (.dim inputSize .scalar)) ×
     LSTMState α hiddenSize) :=
-  let (hiddens, _final) := lstmSequenceSpec model.lstm inputs initial_state
-  let (headGrads, dH) := timeDistributedLinearBackward (α := α) (seqLen := seqLen)
-    (hiddenSize := hiddenSize) (outputSize := outputSize) model.output_layer hiddens grad_outputs
-  let (dWf, dbf, dWi, dbi, dWc, dbc, dWo, dbo, dInputs, dInit) :=
-    lstmSequenceBackwardSpec model.lstm inputs initial_state dH
-  let lstmGrads : LSTMGrads α inputSize hiddenSize :=
-    { d_forget_weights := dWf, d_forget_bias := dbf
-      d_input_weights := dWi, d_input_bias := dbi
-      d_candidate_weights := dWc, d_candidate_bias := dbc
-      d_output_weights := dWo, d_output_bias := dbo }
-  ({ lstm := lstmGrads, output_layer := headGrads }, dInputs, dInit)
+  let (hiddens, _) := lstmSequenceSpec model.lstm inputs initialState
+  let (headGrads, hiddenGrad) := timeDistributedLinearBackward (α := α) (seqLen := seqLen)
+    (hiddenSize := hiddenSize) (outputSize := outputSize) model.outputLayer hiddens outputGrad
+  let (forgetWeight, forgetBias, inputWeight, inputBias, candidateWeight, candidateBias,
+       outputWeight, outputBias, inputGrad, initialStateGrad) :=
+    lstmSequenceBackwardSpec model.lstm inputs initialState hiddenGrad
+  let cell : CellGrads α inputSize hiddenSize :=
+    { forgetWeight, forgetBias, inputWeight, inputBias, candidateWeight, candidateBias,
+      outputWeight, outputBias }
+  ({ cell, output := headGrads }, inputGrad, initialStateGrad)
 
 /--
 MSE loss for the simple LSTM sequence model.
 
-This runs `simple_lstm_sequence_forward` and compares the predicted output sequence against
-`targets` using `mse_spec`.
+This runs `Lstm.Model.forwardSequence` and compares the predicted output sequence against
+`targets` using `mseSpec`.
 -/
-def simpleLstmMseLoss
+def Model.mseLoss
   {seqLen inputSize hiddenSize outputSize : Nat}
-  (model : SimpleLSTMModel α inputSize hiddenSize outputSize)
+  (model : Model α inputSize hiddenSize outputSize)
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
   (targets : Tensor α (.dim seqLen (.dim outputSize .scalar)))
-  (initial_state : LSTMState α hiddenSize) : α :=
-  let (pred, _st) := simpleLstmSequenceForward model inputs initial_state
-  mseSpec pred targets
+  (initialState : LSTMState α hiddenSize) : α :=
+  let (prediction, _) := model.forwardSequence inputs initialState
+  mseSpec prediction targets
 
 /--
 Compute `(loss, grads)` for the simple LSTM sequence model under MSE.
 
 This is the “full training API” building block: an optimizer (SGD/Adam) can consume these grads.
 -/
-def simpleLstmMseGrad
+def Model.mseGrad
   {seqLen inputSize hiddenSize outputSize : Nat}
-  (model : SimpleLSTMModel α inputSize hiddenSize outputSize)
+  (model : Model α inputSize hiddenSize outputSize)
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
   (targets : Tensor α (.dim seqLen (.dim outputSize .scalar)))
-  (initial_state : LSTMState α hiddenSize) :
-  (α × SimpleLSTMModelGrads α inputSize hiddenSize outputSize) :=
-  let (pred, _st) := simpleLstmSequenceForward model inputs initial_state
-  let loss := mseSpec pred targets
-  let dPred := mseDerivSpec pred targets
-  let (grads, _dInputs, _dInit) := simpleLstmBackward (α := α) model inputs initial_state dPred
+  (initialState : LSTMState α hiddenSize) :
+  (α × Grads α inputSize hiddenSize outputSize) :=
+  let (prediction, _) := model.forwardSequence inputs initialState
+  let loss := mseSpec prediction targets
+  let predictionGrad := mseDerivSpec prediction targets
+  let (grads, _, _) := model.backward inputs initialState predictionGrad
   (loss, grads)
 
 -- Forward pass for LSTM classifier (many-to-one)
 /--
-Forward pass for an `LSTMClassifier` (many-to-one).
+Forward pass for an `Lstm.Classifier` (many-to-one).
 
 This uses the final hidden state of the LSTM sequence as the classifier input.
 -/
-def lstmClassifierForward {seqLen inputSize hiddenSize numClasses : Nat}
-  (model : LSTMClassifier α inputSize hiddenSize numClasses)
+def Classifier.forward {seqLen inputSize hiddenSize numClasses : Nat}
+  (model : Classifier α inputSize hiddenSize numClasses)
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (initial_state : LSTMState α hiddenSize) :
+  (initialState : LSTMState α hiddenSize) :
   Tensor α (.dim numClasses .scalar) :=
-  let (_, final_state) := lstmSequenceSpec model.lstm inputs initial_state
-  -- Use final hidden state for classification
-  linearSpec model.classifier final_state.hidden
+  let (_, finalState) := lstmSequenceSpec model.lstm inputs initialState
+  linearSpec model.classifier finalState.hidden
 
 /-!
 ### Backward for the classifier head (many-to-one)
@@ -423,65 +433,62 @@ that is zero everywhere except the last timestep.
 -/
 
 /--
-Backward pass for an `LSTMClassifier` (many-to-one).
+Backward pass for an `Lstm.Classifier` (many-to-one).
 
 This backprops through the classifier head, then runs an LSTM sequence backward pass where the
 hidden-state gradient is zero at all timesteps except the last.
 -/
-def lstmClassifierBackward
+def Classifier.backward
   {seqLen inputSize hiddenSize numClasses : Nat}
-  (model : LSTMClassifier α inputSize hiddenSize numClasses)
+  (model : Classifier α inputSize hiddenSize numClasses)
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (initial_state : LSTMState α hiddenSize)
-  (grad_logits : Tensor α (.dim numClasses .scalar)) :
-  (LinearGrads α hiddenSize numClasses ×
-    LSTMGrads α inputSize hiddenSize ×
-    Tensor α (.dim seqLen (.dim inputSize .scalar))) :=
-  let (hiddens, _final) := lstmSequenceSpec model.lstm inputs initial_state
-  -- final hidden = last hidden in the sequence (or 0 if empty)
-  let final_hidden :=
+  (initialState : LSTMState α hiddenSize)
+  (logitGrad : Tensor α (.dim numClasses .scalar)) :
+  (ClassifierGrads α inputSize hiddenSize numClasses ×
+    Tensor α (.dim seqLen (.dim inputSize .scalar)) × LSTMState α hiddenSize) :=
+  let (hiddens, _) := lstmSequenceSpec model.lstm inputs initialState
+  let finalHidden :=
     if h0 : seqLen = 0 then
       fill 0 (.dim hiddenSize .scalar)
     else
       get hiddens ⟨seqLen - 1, by
         have : seqLen - 1 < seqLen := Nat.sub_lt (Nat.pos_of_ne_zero h0) (by decide : 0 < 1)
         simpa using this⟩
-  let (dWc, dbc, dFinalHidden) := linearBackwardSpec model.classifier final_hidden grad_logits
-  let linGrads : LinearGrads α hiddenSize numClasses := { dW := dWc, db := dbc }
-  let dH :=
+  let (classifierWeight, classifierBias, finalHiddenGrad) :=
+    linearBackwardSpec model.classifier finalHidden logitGrad
+  let classifierGrads : LinearGrads α hiddenSize numClasses :=
+    { weight := classifierWeight, bias := classifierBias }
+  let hiddenGrad :=
     if h0 : seqLen = 0 then
       fill 0 (.dim seqLen (.dim hiddenSize .scalar))
     else
       Tensor.dim (fun i =>
-        if _ : i.val = seqLen - 1 then dFinalHidden else fill 0 (.dim hiddenSize .scalar))
-  let (dWf, dbf, dWi, dbi, dWg, dbg, dWo, dbo, dInputs, _dInit) :=
-    lstmSequenceBackwardSpec model.lstm inputs initial_state dH
-  let lstmGrads : LSTMGrads α inputSize hiddenSize :=
-    { d_forget_weights := dWf, d_forget_bias := dbf
-      d_input_weights := dWi, d_input_bias := dbi
-      d_candidate_weights := dWg, d_candidate_bias := dbg
-      d_output_weights := dWo, d_output_bias := dbo }
-  (linGrads, lstmGrads, dInputs)
+        if _ : i.val = seqLen - 1 then finalHiddenGrad else fill 0 (.dim hiddenSize .scalar))
+  let (forgetWeight, forgetBias, inputWeight, inputBias, candidateWeight, candidateBias,
+       outputWeight, outputBias, inputGrad, initialStateGrad) :=
+    lstmSequenceBackwardSpec model.lstm inputs initialState hiddenGrad
+  let cell : CellGrads α inputSize hiddenSize :=
+    { forgetWeight, forgetBias, inputWeight, inputBias, candidateWeight, candidateBias,
+      outputWeight, outputBias }
+  ({ cell, classifier := classifierGrads }, inputGrad, initialStateGrad)
 
 -- Forward pass for LSTM generator (many-to-many)
 /--
-Forward pass for an `LSTMGenerator` (many-to-many).
+Forward pass for an `Lstm.Generator` (many-to-many).
 
 This applies an embedding linear map to each token vector, runs the LSTM, and projects each hidden
 state back into vocabulary space.
 -/
-def lstmGeneratorForward {seqLen vocabSize hiddenSize : Nat}
-  (model : LSTMGenerator α vocabSize hiddenSize)
-  (input_tokens : Tensor α (.dim seqLen (.dim vocabSize .scalar)))
-  (initial_state : LSTMState α hiddenSize) :
+def Generator.forward {seqLen vocabSize hiddenSize : Nat}
+  (model : Generator α vocabSize hiddenSize)
+  (inputTokens : Tensor α (.dim seqLen (.dim vocabSize .scalar)))
+  (initialState : LSTMState α hiddenSize) :
   (Tensor α (.dim seqLen (.dim vocabSize .scalar)) × LSTMState α hiddenSize) :=
-  -- Apply embedding to input tokens
-  let embedded := mapSequenceSpec (linearSpec model.embedding) input_tokens
-  -- Process through LSTM
-  let (hidden_states, final_state) := lstmSequenceSpec model.lstm embedded initial_state
-  -- Project back to vocabulary space
-  let outputs := mapSequenceSpec (linearSpec model.output_projection) hidden_states
-  (outputs, final_state)
+  let embedded := Tensor.mapLeading (.dim seqLen .scalar) (linearSpec model.embedding) inputTokens
+  let (hiddenStates, finalState) := lstmSequenceSpec model.lstm embedded initialState
+  let outputs := Tensor.mapLeading (.dim seqLen .scalar)
+    (linearSpec model.outputProjection) hiddenStates
+  (outputs, finalState)
 
 -- Forward pass for bidirectional LSTM
 /--
@@ -490,197 +497,153 @@ Forward pass for a bidirectional LSTM model (time-major).
 This runs a forward LSTM on the sequence, a backward LSTM on the reversed sequence, concatenates
 the two hidden streams per timestep, and applies an output head.
 -/
-def bilstmForward {seqLen inputSize hiddenSize outputSize : Nat}
-  (model : BiLSTMModel α inputSize hiddenSize outputSize)
+def BidirectionalModel.forward {seqLen inputSize hiddenSize outputSize : Nat}
+  (model : BidirectionalModel α inputSize hiddenSize outputSize)
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (forward_state : LSTMState α hiddenSize)
-  (backward_state : LSTMState α hiddenSize) :
+  (forwardState : LSTMState α hiddenSize)
+  (backwardState : LSTMState α hiddenSize) :
   Tensor α (.dim seqLen (.dim outputSize .scalar)) :=
-  -- Forward pass
-  let (forward_states, _) := lstmSequenceSpec model.forward_lstm inputs forward_state
-  -- Backward pass (reverse inputs)
-  let reversed_inputs := reverseSequenceSpec inputs
-  let (backward_states_rev, _) := lstmSequenceSpec model.backward_lstm reversed_inputs
-    backward_state
-  let backward_states := reverseSequenceSpec backward_states_rev
-  -- Concatenate forward and backward states
-  let combined_states := concatSequenceSpec forward_states backward_states
-  -- Apply output layer
-  mapSequenceSpec (linearSpec model.output_layer) combined_states
+  let (forwardStates, _) := lstmSequenceSpec model.forwardLstm inputs forwardState
+  let reversedInputs := Tensor.reverseLeadingAxis inputs
+  let (reversedBackwardStates, _) :=
+    lstmSequenceSpec model.backwardLstm reversedInputs backwardState
+  let backwardStates := Tensor.reverseLeadingAxis reversedBackwardStates
+  let combinedStates := Tensor.zipWithLeading (.dim seqLen .scalar)
+    (.dim (hiddenSize + hiddenSize) .scalar)
+    Tensor.concatLeadingAxisSpec forwardStates backwardStates
+  Tensor.mapLeading (.dim seqLen .scalar) (linearSpec model.outputLayer) combinedStates
 
 -- Multi-layer LSTM forward pass (stack multiple LSTM layers)
 /--
-Forward pass for a `MultiLayerLSTMModel` (stacked LSTM layers).
+Forward pass for a `Lstm.StackedModel`.
 
 This runs the first layer on the input sequence, then threads the resulting hidden stream through
 each additional hidden layer, and finally applies the output head per timestep.
 -/
-def multilayerLstmForward {seqLen inputSize hiddenSize outputSize numLayers : Nat}
-  (model : MultiLayerLSTMModel α inputSize hiddenSize outputSize numLayers)
+def StackedModel.forward {seqLen inputSize hiddenSize outputSize numLayers : Nat}
+  (model : StackedModel α inputSize hiddenSize outputSize numLayers)
   (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (initial_states : Fin numLayers → LSTMState α hiddenSize) (h : numLayers > 0) :
+  (initialStates : Fin numLayers → LSTMState α hiddenSize) (hLayers : 0 < numLayers) :
   (Tensor α (.dim seqLen (.dim outputSize .scalar)) × (Fin numLayers → LSTMState α hiddenSize)) :=
-  -- Process through each layer sequentially with explicit case splitting
-  let rec process_hidden_layers (layer : Nat)
-    (layer_input : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
+  let rec processHiddenLayers (layer : Nat)
+    (layerInput : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
     (states : Fin numLayers → LSTMState α hiddenSize) :
     (Tensor α (.dim seqLen (.dim hiddenSize .scalar)) × (Fin numLayers → LSTMState α hiddenSize)) :=
     if hLayer : layer < numLayers - 1 then
-      let layer_idx : Fin (numLayers - 1) := ⟨layer, hLayer⟩
-      have h_state : layer + 1 < numLayers := by
-        have h_state' : layer + 1 ≤ numLayers - 1 := Nat.succ_le_of_lt hLayer
-        exact lt_of_le_of_lt h_state' (Nat.sub_one_lt (Nat.ne_of_gt h))
-      let state_idx : Fin numLayers := ⟨layer + 1, h_state⟩
-      let (layer_output, new_state) :=
-        -- For hidden layers, we know the input size is hiddenSize
-        lstmSequenceSpec (model.hidden_layers layer_idx) layer_input (states state_idx)
-      let updated_states := Function.update states state_idx new_state
-      process_hidden_layers (layer + 1) layer_output updated_states
+      let layerIndex : Fin (numLayers - 1) := ⟨layer, hLayer⟩
+      have hState : layer + 1 < numLayers := by
+        have hState' : layer + 1 ≤ numLayers - 1 := Nat.succ_le_of_lt hLayer
+        exact lt_of_le_of_lt hState' (Nat.sub_one_lt (Nat.ne_of_gt hLayers))
+      let stateIndex : Fin numLayers := ⟨layer + 1, hState⟩
+      let (layerOutput, nextState) :=
+        lstmSequenceSpec (model.hiddenLayers layerIndex) layerInput (states stateIndex)
+      let updatedStates := Function.update states stateIndex nextState
+      processHiddenLayers (layer + 1) layerOutput updatedStates
     else
-      (layer_input, states)
+      (layerInput, states)
 
-  -- Handle the first layer (layer 0) with explicit inputSize type
-  let first_layer_idx : Fin numLayers := ⟨0, h⟩
-  let (first_output, first_new_state) :=
-    -- For layer 0, we know the input size is inputSize
-    lstmSequenceSpec model.first_layer inputs (initial_states first_layer_idx)
-  let updated_initial_states := Function.update initial_states first_layer_idx first_new_state
+  let firstLayerIndex : Fin numLayers := ⟨0, hLayers⟩
+  let (firstOutput, firstState) :=
+    lstmSequenceSpec model.firstLayer inputs (initialStates firstLayerIndex)
+  let updatedInitialStates := Function.update initialStates firstLayerIndex firstState
 
-  let (final_hidden, final_states) := process_hidden_layers 0 first_output updated_initial_states
-  let outputs := mapSequenceSpec (linearSpec model.output_layer) final_hidden
-  (outputs, final_states)
+  let (finalHidden, finalStates) := processHiddenLayers 0 firstOutput updatedInitialStates
+  let outputs := Tensor.mapLeading (.dim seqLen .scalar)
+    (linearSpec model.outputLayer) finalHidden
+  (outputs, finalStates)
 
 -- LSTM Language Model forward pass with teacher forcing
 /--
-Forward pass for `LSTMLanguageModel` (teacher forcing, time-major).
+Forward pass for `Lstm.LanguageModel` (teacher forcing, time-major).
 
 This runs the embedding, then a stack of LSTM layers with provided initial states, applies
 evaluation-mode dropout (`dropoutInferenceSpec`), and projects to vocabulary logits.
 -/
-def lstmLmForward {seqLen vocabSize hiddenSize : Nat}
-  (model : LSTMLanguageModel α vocabSize hiddenSize)
-  (input_tokens : Tensor α (.dim seqLen (.dim vocabSize .scalar)))
-  (initial_states : List (LSTMState α hiddenSize)) :
-  (Tensor α (.dim seqLen (.dim vocabSize .scalar)) × List (LSTMState α hiddenSize)) :=
-  -- Apply embedding
-  let embedded := mapSequenceSpec (linearSpec model.embedding) input_tokens
-
-  -- Process through LSTM layers sequentially
-  let rec process_lstm_layers (layers : List (LSTMSpec α hiddenSize hiddenSize))
+def LanguageModel.forward {seqLen vocabSize hiddenSize : Nat}
+  (model : LanguageModel α vocabSize hiddenSize)
+  (inputTokens : Tensor α (.dim seqLen (.dim vocabSize .scalar)))
+  (initialStates : List (LSTMState α hiddenSize)) :
+  Option (Tensor α (.dim seqLen (.dim vocabSize .scalar)) × List (LSTMState α hiddenSize)) := do
+  let embedded :=
+    Tensor.mapLeading (.dim seqLen .scalar) (linearSpec model.embedding) inputTokens
+  let rec processLayers (layers : List (LSTMSpec α hiddenSize hiddenSize))
     (states : List (LSTMState α hiddenSize))
-    (layer_input : Tensor α (.dim seqLen (.dim hiddenSize .scalar))) :
-    (Tensor α (.dim seqLen (.dim hiddenSize .scalar)) × List (LSTMState α hiddenSize)) :=
+    (layerInput : Tensor α (.dim seqLen (.dim hiddenSize .scalar))) :
+    Option (Tensor α (.dim seqLen (.dim hiddenSize .scalar)) × List (LSTMState α hiddenSize)) :=
     match layers, states with
-    | [], [] => (layer_input, [])
-    | layer :: rest_layers, state :: rest_states =>
-      let (layer_output, new_state) := lstmSequenceSpec layer layer_input state
-      let (final_output, final_states) := process_lstm_layers rest_layers rest_states layer_output
-      (final_output, new_state :: final_states)
-    | _, _ => (layer_input, states) -- Mismatched lists
+    | [], [] => some (layerInput, [])
+    | layer :: remainingLayers, state :: remainingStates => do
+      let (layerOutput, nextState) := lstmSequenceSpec layer layerInput state
+      let (finalOutput, finalStates) ←
+        processLayers remainingLayers remainingStates layerOutput
+      pure (finalOutput, nextState :: finalStates)
+    | _, _ => none
+  let (lstmOutput, finalStates) ← processLayers model.layers initialStates embedded
+  let droppedOutput := dropoutInferenceSpec (p := model.dropoutRate) lstmOutput
+  let logits := Tensor.mapLeading (.dim seqLen .scalar)
+    (linearSpec model.outputProjection) droppedOutput
+  pure (logits, finalStates)
 
-  let (lstm_output, final_states) := process_lstm_layers model.lstm_layers initial_states embedded
-
-  -- Evaluation-mode dropout.
-  let dropped_output := dropoutInferenceSpec (p := model.dropout_rate) lstm_output
-
-  -- Project to vocabulary
-  let logits := mapSequenceSpec (linearSpec model.output_projection) dropped_output
-
-  (logits, final_states)
-
--- Attention-based LSTM (simplified attention mechanism)
 /--
-Attention-style LSTM model bundle.
+Package `Lstm.Model` as a shape-indexed module.
 
-This record defines the parameters for an encoder/decoder LSTM with learned attention scores.
-Forward passes can choose additive, dot-product, or domain-specific attention semantics while
-sharing this typed parameter bundle.
+The Python expression records the intended runtime analogue; `forward` remains the mathematical
+meaning of the module.
 -/
-structure AttentionLSTMModel (α : Type) (inputSize hiddenSize outputSize : Nat) where
-  /-- encoder lstm. -/
-  encoder_lstm : LSTMSpec α inputSize hiddenSize
-  /-- decoder lstm. -/
-  decoder_lstm : LSTMSpec α (inputSize + hiddenSize) hiddenSize  -- Input + context
-  /-- attention weights. -/
-  attention_weights : LinearSpec α (hiddenSize + hiddenSize) 1   -- For attention scoring
-  /-- output layer. -/
-  output_layer : LinearSpec α hiddenSize outputSize
-
--- Module specifications for integration with NNModuleSpec system
-
--- Convert SimpleLSTMModel to NNModuleSpec
-/--
-Package `SimpleLSTMModel` as an `NNModuleSpec`.
-
-This is used to plug the spec model into the common module pipeline. The `export_func.toPyTorch`
-field is documentation-oriented and indicates the intended PyTorch analogue.
--/
-def simpleLSTMToModuleSpec {seqLen inputSize hiddenSize outputSize : Nat}
-  (model : SimpleLSTMModel α inputSize hiddenSize outputSize) :
-  NNModuleSpec α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
+def Model.toModule {seqLen inputSize hiddenSize outputSize : Nat}
+  (model : Model α inputSize hiddenSize outputSize) :
+  Spec.Module α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
 {
   forward := fun inputs =>
-    let initial_state : LSTMState α hiddenSize := {
+    let initialState : LSTMState α hiddenSize := {
       hidden := fill 0 (.dim hiddenSize .scalar),
       cell := fill 0 (.dim hiddenSize .scalar)
     }
-    (simpleLstmSequenceForward model inputs initial_state).1,
+    (model.forwardSequence inputs initialState).1,
   kind := "SimpleLSTM",
-  export_func := {
-    toPyTorch :=
-      s!"SimpleLSTM(input_size={inputSize}, hidden_size={hiddenSize}, output_size={outputSize})",
-    dimensions := (inputSize, outputSize)
-  }
+  pythonExpr := s!"SimpleLSTM(input_size={inputSize}, hidden_size={hiddenSize}, output_size={outputSize})"
 }
 
--- Convert LSTMClassifier to NNModuleSpec
 /--
-Package `LSTMClassifier` as an `NNModuleSpec`.
+Package `Lstm.Classifier` as an `Spec.Module`.
 
 PyTorch analogue: `nn.LSTM` feeding a `nn.linear` classifier head.
 -/
-def lstmClassifierToModuleSpec {seqLen inputSize hiddenSize numClasses : Nat}
-  (model : LSTMClassifier α inputSize hiddenSize numClasses) :
-  NNModuleSpec α (.dim seqLen (.dim inputSize .scalar)) (.dim numClasses .scalar) :=
+def Classifier.toModule {seqLen inputSize hiddenSize numClasses : Nat}
+  (model : Classifier α inputSize hiddenSize numClasses) :
+  Spec.Module α (.dim seqLen (.dim inputSize .scalar)) (.dim numClasses .scalar) :=
 {
   forward := fun inputs =>
-    let initial_state : LSTMState α hiddenSize := {
+    let initialState : LSTMState α hiddenSize := {
       hidden := fill 0 (.dim hiddenSize .scalar),
       cell := fill 0 (.dim hiddenSize .scalar)
     }
-    lstmClassifierForward model inputs initial_state,
+    model.forward inputs initialState,
   kind := "LSTMClassifier",
-  export_func := {
-    toPyTorch :=
-      s!"LSTMClassifier(input_size={inputSize}, hidden_size={hiddenSize}, " ++
-        s!"num_classes={numClasses})",
-    dimensions := (inputSize, numClasses)
-  }
+  pythonExpr := s!"LSTMClassifier(input_size={inputSize}, hidden_size={hiddenSize}, " ++
+        s!"num_classes={numClasses})"
 }
 
--- Convert BiLSTMModel to NNModuleSpec
 /--
-Package `BiLSTMModel` as an `NNModuleSpec`.
+Package `Lstm.BidirectionalModel` as an `Spec.Module`.
 
 PyTorch analogue: `nn.LSTM(..., bidirectional=true)` feeding a per-timestep linear head.
 -/
-def biLSTMToModuleSpec {seqLen inputSize hiddenSize outputSize : Nat}
-  (model : BiLSTMModel α inputSize hiddenSize outputSize) :
-  NNModuleSpec α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
+def BidirectionalModel.toModule {seqLen inputSize hiddenSize outputSize : Nat}
+  (model : BidirectionalModel α inputSize hiddenSize outputSize) :
+  Spec.Module α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
 {
   forward := fun inputs =>
-    let initial_state : LSTMState α hiddenSize := {
+    let initialState : LSTMState α hiddenSize := {
       hidden := fill 0 (.dim hiddenSize .scalar),
       cell := fill 0 (.dim hiddenSize .scalar)
     }
-    bilstmForward model inputs initial_state initial_state,
+    model.forward inputs initialState initialState,
   kind := "BiLSTM",
-  export_func := {
-    toPyTorch :=
-      s!"SimpleLSTM(input_size={inputSize}, hidden_size={hiddenSize}, output_size={outputSize}, " ++
-        s!"bidirectional=True)",
-    dimensions := (inputSize, outputSize)
-  }
+  pythonExpr := s!"SimpleLSTM(input_size={inputSize}, hidden_size={hiddenSize}, output_size={outputSize}, " ++
+        s!"bidirectional=True)"
 }
+
+end Lstm
 
 end Spec

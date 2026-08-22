@@ -9,7 +9,7 @@ module
 public import NN.Proofs.Tensor.Basic
 public import NN.Proofs.Utils.List
 public import NN.Spec.Layers.Conv
-public import NN.Spec.Layers.Utils
+public import NN.Spec.Layers.Conv.TwoD.Padding
 
 public import Mathlib.Algebra.BigOperators.Ring.Finset
 public import Mathlib.Data.Fintype.BigOperators
@@ -17,18 +17,18 @@ public import Mathlib.Data.Fintype.BigOperators
 /-!
 # BackwardDot
 
-`Conv2D` backward dot-level correctness (bridge lemma).
+`Conv2d` backward dot-level correctness (bridge lemma).
 
-The runtime autograd engine (`NN.Runtime.Autograd.Engine`) computes Conv2D gradients via the
+The runtime autograd engine (`NN.Runtime.Autograd.Engine`) computes Conv2d gradients via the
 handwritten spec:
 
 * `Spec.conv2d_backward_spec` (kernel/bias/input)
 
-For the **analytic** spec-level theorem over `ℝ`, Conv2D is already covered via `fderiv`/adjoints in:
+For the **analytic** spec-level theorem over `ℝ`, Conv2d is already covered via `fderiv`/adjoints in:
 
 * `NN.Proofs.Autograd.Tape.Ops.Conv.FDeriv`
 
-That file provides a proof-only Conv2D node whose VJP is `(fderiv forward)†`, so any DAG using it
+That file provides a proof-only Conv2d node whose VJP is `(fderiv forward)†`, so any DAG using it
 is covered by the global theorem `Graph.backpropVec_eq_adjoint_fderiv`.
 
 What remains here is the dot/adjointness bridge:
@@ -42,7 +42,7 @@ Here `(gK, gB, gX)` is the tuple returned by `Spec.conv2d_backward_spec` for $\d
 
 The padding-related rewrites needed for the input-gradient proof are factored into:
 
-* `NN/Spec/Layers/Utils.lean` (`get_at_or_zero_pad_multi_channel*` lemmas)
+* `NN/Spec/Layers/Conv/TwoD/Padding.lean` (`getAtOrZero_padChannelsFirst2d*` lemmas)
 -/
 
 @[expose] public section
@@ -50,7 +50,7 @@ The padding-related rewrites needed for the input-gradient proof are factored in
 
 namespace Proofs
 namespace Autograd
-namespace Conv2D
+namespace Conv2d
 
 open Spec
 open Tensor
@@ -151,7 +151,7 @@ def biasBroadcast {outC outH outW : Nat} (db : Tensor ℝ (.dim outC .scalar)) :
 lemma conv2d_bias_deriv_get
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
+    (layer : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3)
     (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (δ : Spec.Tensor ℝ (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar))))
     (oc : Fin outC) :
@@ -176,7 +176,7 @@ lemma conv2d_bias_deriv_get
         acc + ∑ j : Fin (Shape.slidingWindowOutDim inW kW stride padding), getAtOrZero δ [oc.val, i.val,
           j.val] := by
     intro i acc
-    -- Use `foldl_add_init` then `Spec.finRange_foldl_add_eq_finset_sum`.
+    -- Use `foldl_add_init` then `List.finRange_foldl_add_eq_finset_sum`.
     have h1 :=
       List.foldl_add_init (l := List.finRange (Shape.slidingWindowOutDim inW kW stride padding))
         (f := fun j : Fin (Shape.slidingWindowOutDim inW kW stride padding) => getAtOrZero δ [oc.val,
@@ -190,7 +190,7 @@ lemma conv2d_bias_deriv_get
         ∑ j : Fin (Shape.slidingWindowOutDim inW kW stride padding), getAtOrZero δ [oc.val, i.val, j.val]
           := by
       simpa using
-        (Spec.finRange_foldl_add_eq_finset_sum
+        (List.finRange_foldl_add_eq_finset_sum
           (f := fun j : Fin (Shape.slidingWindowOutDim inW kW stride padding) =>
             getAtOrZero δ [oc.val, i.val, j.val]))
     simpa [h2] using h1
@@ -219,18 +219,18 @@ lemma conv2d_bias_deriv_get
       funext acc i
       simpa using (houtW i acc)
     -- Convert.
-    simp [hstep, Spec.finRange_foldl_add_eq_finset_sum]
+    simp [hstep, List.finRange_foldl_add_eq_finset_sum]
 
   -- Finish by `simp`ing the definition back to the fold we rewrote (and normalizing away the
   -- `tensor_cast` inserted by `conv2d_bias_deriv_spec`).
-  simpa [Spec.convBiasDerivSpec, Spec.Private.foldlIndices, Spec.convOutSpatial,
+  simpa [Spec.convBiasDerivSpec, Spec.Conv.Internal.foldlIndices, Spec.convOutSpatial,
     Spec.Shape.slidingWindowOutDim,
     Vector.get, Vector.toList, oc.isLt] using houtH
 
 lemma dot_biasBroadcast_eq_dot_bias_deriv
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
+    (layer : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3)
     (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (db : Tensor ℝ (.dim outC .scalar))
     (δ : Spec.Tensor ℝ (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :
@@ -467,7 +467,7 @@ lemma sum_fourth_first
     _ = ∑ d : δ, ∑ a : α, ∑ b : β, ∑ c : γ, f a b c d :=
       sum_comm (fun a d => ∑ b : β, ∑ c : γ, f a b c d)
 
-/-- Reorder the eight indices used when expanding the Conv2D input adjoint. -/
+/-- Reorder the eight indices used when expanding the Conv2d input adjoint. -/
 lemma sum_eight_conv_input_order
     {α β γ δ ε ζ η θ : Type}
     [Fintype α] [Fintype β] [Fintype γ] [Fintype δ]
@@ -525,7 +525,7 @@ lemma sum_eight_conv_input_order
       exact sum_third_first (fun b c h => f a b c d e z g h)
 
 -- ---------------------------------------------------------------------------
--- Conv2D padding helper (matches the spec's `if padding = 0 then cast else pad`)
+-- Conv2d padding helper (matches the spec's `if padding = 0 then cast else pad`)
 -- ---------------------------------------------------------------------------
 
 /-!
@@ -547,7 +547,7 @@ def paddedInput {inC inH inW padding : Nat}
       (by simp; rw [h4])
       input
   else
-    padMultiChannel input padding
+    padChannelsFirst2d input padding
 
 lemma get_at_or_zero_paddedInput
     {inC inH inW padding : Nat}
@@ -562,16 +562,16 @@ lemma get_at_or_zero_paddedInput
   · subst h0
     -- No padding: the cast is definitional and the `if` condition is always false.
     simp [paddedInput]
-  · -- Positive padding: reduce to `get_at_or_zero_pad_multi_channel`.
+  · -- Positive padding: reduce to `getAtOrZero_padChannelsFirst2d`.
     simpa [paddedInput, h0] using
-      (Spec.get_at_or_zero_pad_multi_channel (α := ℝ) (img := img) (c := c) (p := p) (q := q)
-        (padding := padding))
+      (Spec.getAtOrZero_padChannelsFirst2d (α := ℝ) (input := img) (channel := c) (row := p)
+        (col := q) (padding := padding))
 
 lemma mkInputIdx_match_eq_paddedInput
     {inC inH inW stride padding : Nat}
     (img : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))) (c : Fin inC)
     (oi di oj dj : Nat) :
-    (match Private.mkInputIdx? [oi, oj] [di, dj] [stride, stride] [padding, padding] with
+    (match Spec.Conv.Internal.mkInputIdx? [oi, oj] [di, dj] [stride, stride] [padding, padding] with
       | none => (0 : ℝ)
       | some inIdx => getAtOrZero img (c.val :: inIdx))
       =
@@ -581,10 +581,10 @@ lemma mkInputIdx_match_eq_paddedInput
   -- Expand the RHS using the explicit padded-input read formula.
   rw [get_at_or_zero_paddedInput (img := img) (c := c) (p := oi * stride + di) (q := oj * stride + dj)]
   by_cases h0 : oi * stride + di < padding
-  · simp [Private.mkInputIdx?, h0]
+  · simp [Spec.Conv.Internal.mkInputIdx?, h0]
   · by_cases h1 : oj * stride + dj < padding
-    · simp [Private.mkInputIdx?, h0, h1]
-    · simp [Private.mkInputIdx?, h0, h1]
+    · simp [Spec.Conv.Internal.mkInputIdx?, h0, h1]
+    · simp [Spec.Conv.Internal.mkInputIdx?, h0, h1]
 
 lemma sum_shift_eq_paddedInput
     {inC inH inW padding : Nat}
@@ -793,7 +793,7 @@ lemma conv2d_spec_noBias_get
     (dKernel : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))))
     (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (oc : Fin outC) (i : Fin (outH inH kH stride padding)) (j : Fin (outW inW kW stride padding)) :
-    let layerK : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    let layerK : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := dKernel, bias := fill (0 : ℝ) (.dim outC .scalar) }
     getAtOrZero (Spec.conv2dSpec (α := ℝ) (layer := layerK) input) [oc.val, i.val, j.val]
       =
@@ -813,7 +813,7 @@ lemma conv2d_spec_noBias_get
     simpa [outW] using j.isLt
   -- Peel the requested output entry and convert the nested `finRange` folds into `Finset` sums.
   simp [outH, outW, layerK, fill, getAtOrZero, oc.isLt, hi, hj,
-    Spec.finRange_foldl_add_acc]
+    List.finRange_foldl_add_acc]
   -- Rewrite the `mkInputIdx?`-based read into the `paddedInput` helper, then commute the product
   -- so the summand matches the statement (`kernel * paddedInput`).
   refine Finset.sum_congr (M := ℝ)
@@ -831,7 +831,7 @@ lemma conv2d_spec_noBias_get
   -- Expand the match using `hread`, then commute the scalar product so the summand matches the
   -- statement’s `kernel * paddedInput` order.
   calc
-    (match Private.mkInputIdx? [i.val, j.val] [di.val, dj.val] [stride, stride] [padding, padding] with
+    (match Spec.Conv.Internal.mkInputIdx? [i.val, j.val] [di.val, dj.val] [stride, stride] [padding, padding] with
         | none => 0
         | some inIdx => getAtOrZero input (ic.val :: inIdx)) *
         getAtOrZero dKernel [oc.val, ic.val, di.val, dj.val]
@@ -856,7 +856,7 @@ lemma conv2d_spec_noBias_get
 lemma conv2d_kernel_deriv_get
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
+    (layer : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3)
     (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (δ : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar))))
     (oc : Fin outC) (ic : Fin inC) (di : Fin kH) (dj : Fin kW) :
@@ -873,7 +873,7 @@ lemma conv2d_kernel_deriv_get
   classical
   unfold Spec.conv2dKernelDerivSpec
   simp (config := { maxSteps := 2000000 })
-    [Spec.finRange_foldl_add_acc, outH, outW]
+    [List.finRange_foldl_add_acc, outH, outW]
   apply Finset.sum_congr
   · rfl
   intro i _
@@ -888,7 +888,7 @@ lemma conv2d_kernel_deriv_get
 lemma conv2d_input_deriv_get
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
+    (layer : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3)
     (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (δ : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar))))
     (ic : Fin inC) (i : Fin inH) (j : Fin inW) :
@@ -911,12 +911,12 @@ lemma conv2d_input_deriv_get
   classical
   unfold Spec.conv2dInputDerivSpec
   simp only [getAtOrZero, ic.isLt, i.isLt, j.isLt, ↓reduceDIte]
-  simp only [Spec.finRange_foldl_add_acc, zero_add]
+  simp only [List.finRange_foldl_add_acc, zero_add]
   rfl
 
 
 end
 
-end Conv2D
+end Conv2d
 end Autograd
 end Proofs

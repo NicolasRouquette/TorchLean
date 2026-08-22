@@ -75,7 +75,7 @@ def run : IO Unit := do
 
   let args : TorchLean.TensorPack Float (Runtime.Autograd.TorchLean.NN.Seq.stateShapes model ++ [xShape])
     :=
-    tensorpack! w1, b1, w2, b2, x
+    TensorPack! w1, b1, w2, b2, x
 
   let yTorch : Tensor Float yShape :=
     _root_.Runtime.Autograd.Torch.TypedGraph.forward graph args

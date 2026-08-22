@@ -39,6 +39,7 @@ namespace Spec
 
 open Tensor
 open Activation
+open Recurrent
 
 variable {α : Type} [Context α]
 
@@ -50,21 +51,21 @@ blocks.
 -/
 structure LSTMSpec (α : Type) (inputSize hiddenSize : Nat) where
   /-- Forget-gate weights for `f_t = sigmoid(W_f [x_t; h_{t-1}] + b_f)`. -/
-  forget_weights : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  forgetWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
   /-- Forget-gate bias. -/
-  forget_bias    : HiddenVector α hiddenSize
+  forgetBias : HiddenVector α hiddenSize
   /-- Input-gate weights for `i_t = sigmoid(W_i [x_t; h_{t-1}] + b_i)`. -/
-  input_weights  : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  inputWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
   /-- Input-gate bias. -/
-  input_bias     : HiddenVector α hiddenSize
+  inputBias : HiddenVector α hiddenSize
   /-- Candidate/cell-proposal weights for `g_t = tanh(W_g [x_t; h_{t-1}] + b_g)`. -/
-  candidate_weights : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  candidateWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
   /-- Candidate/cell-proposal bias. -/
-  candidate_bias    : HiddenVector α hiddenSize
+  candidateBias : HiddenVector α hiddenSize
   /-- Output-gate weights for `o_t = sigmoid(W_o [x_t; h_{t-1}] + b_o)`. -/
-  output_weights : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  outputWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
   /-- Output-gate bias. -/
-  output_bias    : HiddenVector α hiddenSize
+  outputBias : HiddenVector α hiddenSize
 
 /-- LSTM recurrent state: hidden vector `h_t` and cell vector `c_t`. -/
 structure LSTMState (α : Type) (hiddenSize : Nat) where
@@ -89,23 +90,23 @@ def lstmCellSpec {inputSize hiddenSize : Nat}
   --   h_t = o_t ⊙ tanh(c_t)                        (exposed hidden state)
   --
   -- The `cell` component is what lets information persist over long ranges.
-  let concat := concatVectorsSpec input prev_state.hidden
+  let concat := concatLeadingAxisSpec input prev_state.hidden
 
   -- Forget gate: f_t = σ(W_f @ [x_t; h_{t-1}] + b_f)
-  let forget_gate := sigmoidSpec (addSpec (matVecMulSpec lstm.forget_weights concat)
-    lstm.forget_bias)
+  let forget_gate := sigmoidSpec (addSpec (matVecMulSpec lstm.forgetWeight concat)
+    lstm.forgetBias)
 
   -- Input gate: i_t = σ(W_i @ [x_t; h_{t-1}] + b_i)
-  let input_gate := sigmoidSpec (addSpec (matVecMulSpec lstm.input_weights concat)
-    lstm.input_bias)
+  let input_gate := sigmoidSpec (addSpec (matVecMulSpec lstm.inputWeight concat)
+    lstm.inputBias)
 
   -- Candidate values: ĉ_t = tanh(W_c @ [x_t; h_{t-1}] + b_c)
-  let candidate := tanhSpec (addSpec (matVecMulSpec lstm.candidate_weights concat)
-    lstm.candidate_bias)
+  let candidate := tanhSpec (addSpec (matVecMulSpec lstm.candidateWeight concat)
+    lstm.candidateBias)
 
   -- Output gate: o_t = σ(W_o @ [x_t; h_{t-1}] + b_o)
-  let output_gate := sigmoidSpec (addSpec (matVecMulSpec lstm.output_weights concat)
-    lstm.output_bias)
+  let output_gate := sigmoidSpec (addSpec (matVecMulSpec lstm.outputWeight concat)
+    lstm.outputBias)
 
   -- Cell state: c_t = f_t ⊙ c_{t-1} + i_t ⊙ ĉ_t
   let new_cell := addSpec (mulSpec forget_gate prev_state.cell) (mulSpec input_gate candidate)
@@ -121,29 +122,10 @@ def lstmSequenceSpec {seqLen inputSize hiddenSize : Nat}
   (inputs : SequenceTensor α seqLen (.dim inputSize .scalar))
   (initial_state : LSTMState α hiddenSize) :
   (SequenceTensor α seqLen (.dim hiddenSize .scalar) × LSTMState α hiddenSize) :=
-  -- Spec semantics: run the cell over time, carrying `(h_t, c_t)` forward.
-  -- A runtime can implement the same semantics with a tight loop and its own caching strategy.
-  let rec process_sequence (t : Nat) (prev_state : LSTMState α hiddenSize)
-    : (LSTMState α hiddenSize × List (HiddenVector α hiddenSize)) :=
-    if h : t < seqLen then
-      let input_t := getAtSpec inputs ⟨t, h⟩
-      let state_t := lstmCellSpec lstm input_t prev_state
-      let (final_state, rest_outputs) := process_sequence (t + 1) state_t
-      (final_state, state_t.hidden :: rest_outputs)
-    else
-      (prev_state, [])
-
-  let (final_state, outputs_rev) := process_sequence 0 initial_state
-  let outputs := outputs_rev.reverse
-  -- Convert list to tensor
-  let output_tensor := match outputs with
-  | [] =>
-      -- Convention for `seqLen = 0`: there are no outputs, and the eliminator gives us a
-      -- function `Fin 0 -> _` anyway.
-      Tensor.dim (fun _ => initial_state.hidden)
-  | h :: _ => Tensor.dim (fun i => outputs.getD i.val h)
-
-  (output_tensor, final_state)
+  let (finalState, outputs) := Sequence.mapAccum seqLen initial_state fun i previous =>
+    let state := lstmCellSpec lstm (getAtSpec inputs i) previous
+    (state, state.hidden)
+  (Tensor.dim outputs.get, finalState)
 
 /-- Batched wrapper around `lstmSequenceSpec` (runs one sequence per batch element). -/
 def lstmBatchedSpec {batchSize seqLen inputSize hiddenSize : Nat}
@@ -189,11 +171,11 @@ def lstmCellSpecWithIntermediates {inputSize hiddenSize : Nat}
    HiddenVector α hiddenSize ×             -- input gate i_t
    HiddenVector α hiddenSize ×             -- candidate g_t
    HiddenVector α hiddenSize) :=           -- output gate o_t
-  let concat := concatVectorsSpec input prev_state.hidden
-  let f := sigmoidSpec (addSpec (matVecMulSpec lstm.forget_weights concat) lstm.forget_bias)
-  let i := sigmoidSpec (addSpec (matVecMulSpec lstm.input_weights concat) lstm.input_bias)
-  let g := tanhSpec (addSpec (matVecMulSpec lstm.candidate_weights concat) lstm.candidate_bias)
-  let o := sigmoidSpec (addSpec (matVecMulSpec lstm.output_weights concat) lstm.output_bias)
+  let concat := concatLeadingAxisSpec input prev_state.hidden
+  let f := sigmoidSpec (addSpec (matVecMulSpec lstm.forgetWeight concat) lstm.forgetBias)
+  let i := sigmoidSpec (addSpec (matVecMulSpec lstm.inputWeight concat) lstm.inputBias)
+  let g := tanhSpec (addSpec (matVecMulSpec lstm.candidateWeight concat) lstm.candidateBias)
+  let o := sigmoidSpec (addSpec (matVecMulSpec lstm.outputWeight concat) lstm.outputBias)
   let c := addSpec (mulSpec f prev_state.cell) (mulSpec i g)
   let h := mulSpec o (tanhSpec c)
   (⟨h, c⟩, f, i, g, o)
@@ -233,7 +215,7 @@ def lstmCellBackwardSpec {inputSize hiddenSize : Nat}
     WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×
     WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ) :=
 
-  let concat := concatVectorsSpec input prev_state.hidden
+  let concat := concatLeadingAxisSpec input prev_state.hidden
 
   let tanh_c := tanhSpec state.cell
   let tanh_c_deriv := subSpec (fill 1 (.dim hiddenSize .scalar)) (mulSpec tanh_c tanh_c)
@@ -266,14 +248,14 @@ def lstmCellBackwardSpec {inputSize hiddenSize : Nat}
   let dWo := outerProductSpec dO_pre concat
   let dbo := dO_pre
 
-  let dConcat_f := vecMatMulSpec dF_pre lstm.forget_weights
-  let dConcat_i := vecMatMulSpec dI_pre lstm.input_weights
-  let dConcat_c := vecMatMulSpec dG_pre lstm.candidate_weights
-  let dConcat_o := vecMatMulSpec dO_pre lstm.output_weights
+  let dConcat_f := vecMatMulSpec dF_pre lstm.forgetWeight
+  let dConcat_i := vecMatMulSpec dI_pre lstm.inputWeight
+  let dConcat_c := vecMatMulSpec dG_pre lstm.candidateWeight
+  let dConcat_o := vecMatMulSpec dO_pre lstm.outputWeight
   let dConcat := addSpec (addSpec dConcat_f dConcat_i) (addSpec dConcat_c dConcat_o)
 
-  let dInput := sliceVectorSpec dConcat 0 inputSize (by simp)
-  let dPrevHidden := sliceVectorSpec dConcat inputSize hiddenSize (by simp)
+  let dInput := sliceRangeSpec dConcat 0 inputSize (by simp)
+  let dPrevHidden := sliceRangeSpec dConcat inputSize hiddenSize (by simp)
 
   ( dInput, ⟨dPrevHidden, dC_prev⟩
   , dWf, dbf, dWi, dbi, dWc, dbc, dWo, dbo )
@@ -300,102 +282,39 @@ def lstmSequenceBackwardSpec {seqLen inputSize hiddenSize : Nat}
     LSTMState α hiddenSize ) :=
     -- dInitialState
 
-  -- Forward pass with intermediates.
-  let rec forward_collect (t : Nat) (st : LSTMState α hiddenSize) :
-      (LSTMState α hiddenSize ×
-        List (LSTMState α hiddenSize) ×
-        List (HiddenVector α hiddenSize) ×
-        List (HiddenVector α hiddenSize) ×
-        List (HiddenVector α hiddenSize) ×
-        List (HiddenVector α hiddenSize)) :=
-    if h : t < seqLen then
-      let input_t := getAtSpec inputs ⟨t, h⟩
-      let (st', f, i, g, o) := lstmCellSpecWithIntermediates lstm input_t st
-      let (st_final, states, fs, is, gs, os) := forward_collect (t + 1) st'
-      (st_final, st' :: states, f :: fs, i :: is, g :: gs, o :: os)
-    else
-      (st, [], [], [], [], [])
+  let (_, saved) := Sequence.mapAccum seqLen initial_state fun index state =>
+    let (next, forget, input, candidate, output) :=
+      lstmCellSpecWithIntermediates lstm (getAtSpec inputs index) state
+    (next, (next, forget, input, candidate, output))
 
-  let (_final, states_rev, fs_rev, is_rev, gs_rev, os_rev) := forward_collect 0 initial_state
-  let states := states_rev.reverse
-  let fs := fs_rev.reverse
-  let is := is_rev.reverse
-  let gs := gs_rev.reverse
-  let os := os_rev.reverse
-
-  let state_seq : List (LSTMState α hiddenSize) := states
-  let f_seq := fs
-  let i_seq := is
-  let g_seq := gs
-  let o_seq := os
-
-  let rec backward_step (t : Nat) (_h_t : t ≤ seqLen)
-      (dH_next : HiddenVector α hiddenSize)
-      (dC_next : HiddenVector α hiddenSize)
-      (acc_inputs : List (InputVector α inputSize))
-      (accWf : WeightMatrix α hiddenSize (inputSize + hiddenSize)) (accbf : HiddenVector α
-        hiddenSize)
-      (accWi : WeightMatrix α hiddenSize (inputSize + hiddenSize)) (accbi : HiddenVector α
-        hiddenSize)
-      (accWc : WeightMatrix α hiddenSize (inputSize + hiddenSize)) (accbc : HiddenVector α
-        hiddenSize)
-      (accWo : WeightMatrix α hiddenSize (inputSize + hiddenSize)) (accbo : HiddenVector α
-        hiddenSize) :
-      (List (InputVector α inputSize) × HiddenVector α hiddenSize × HiddenVector α hiddenSize ×
-        WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×
-        WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×
-        WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×
-        WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize) :=
-    if ht : t > 0 then
-      let time_idx := t - 1
-      have h_pred : t - 1 < t := by
-        simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt ht)
-      have h_time : time_idx < seqLen := lt_of_lt_of_le h_pred _h_t
-      let input_t := getAtSpec inputs ⟨time_idx, h_time⟩
-      let grad_h_t := getAtSpec grad_hiddens ⟨time_idx, h_time⟩
-      let total_dH := addSpec grad_h_t dH_next
-
-      let st_t := state_seq.getD time_idx initial_state
-      let prev_st :=
-        if hprev : time_idx > 0 then
-          state_seq.getD (time_idx - 1) initial_state
-        else
-          initial_state
-
-      let f_t := f_seq.getD time_idx (fill 0 (.dim hiddenSize .scalar))
-      let i_t := i_seq.getD time_idx (fill 0 (.dim hiddenSize .scalar))
-      let g_t := g_seq.getD time_idx (fill 0 (.dim hiddenSize .scalar))
-      let o_t := o_seq.getD time_idx (fill 0 (.dim hiddenSize .scalar))
-
-      let (dInput_t, dPrevState, dWf_t, dbf_t, dWi_t, dbi_t, dWc_t, dbc_t, dWo_t, dbo_t) :=
-        lstmCellBackwardSpec lstm input_t prev_st st_t f_t i_t g_t o_t total_dH dC_next
-
-      have h_t' : t - 1 ≤ seqLen := le_trans (Nat.sub_le t 1) _h_t
-      backward_step (t - 1) h_t' dPrevState.hidden dPrevState.cell (dInput_t :: acc_inputs)
-        (addSpec accWf dWf_t) (addSpec accbf dbf_t)
-        (addSpec accWi dWi_t) (addSpec accbi dbi_t)
-        (addSpec accWc dWc_t) (addSpec accbc dbc_t)
-        (addSpec accWo dWo_t) (addSpec accbo dbo_t)
-    else
-      (acc_inputs, dH_next, dC_next, accWf, accbf, accWi, accbi, accWc, accbc, accWo, accbo)
-
-  let (dInputs_list, dH0, dC0, dWf, dbf, dWi, dbi, dWc, dbc, dWo, dbo) :=
-    backward_step seqLen le_rfl (fill 0 (.dim hiddenSize .scalar)) (fill 0 (.dim hiddenSize
-      .scalar)) []
-      (fill 0 (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))) (fill 0 (.dim hiddenSize
-        .scalar))
-      (fill 0 (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))) (fill 0 (.dim hiddenSize
-        .scalar))
-      (fill 0 (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))) (fill 0 (.dim hiddenSize
-        .scalar))
-      (fill 0 (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))) (fill 0 (.dim hiddenSize
-        .scalar))
-
-  let dInputs :=
-    match dInputs_list with
-    | [] => fill 0 (.dim seqLen (.dim inputSize .scalar))
-    | h :: _ => Tensor.dim (fun i => dInputs_list.getD i.val h)
-
-  (dWf, dbf, dWi, dbi, dWc, dbc, dWo, dbo, dInputs, ⟨dH0, dC0⟩)
+  let zeroHidden := fill 0 (.dim hiddenSize .scalar)
+  let zeroWeights := fill 0 (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))
+  let initial :=
+    (⟨zeroHidden, zeroHidden⟩, zeroWeights, zeroHidden, zeroWeights, zeroHidden, zeroWeights,
+      zeroHidden, zeroWeights, zeroHidden)
+  let (result, dInputs) := Sequence.mapAccumRight seqLen initial fun index state =>
+    let (dNext, forgetWeights, forgetBias, inputWeights, inputBias, candidateWeights,
+        candidateBias, outputWeights, outputBias) := state
+    let (current, forget, inputGate, candidate, output) := saved.get index
+    let previous :=
+      if h : index.val > 0 then
+        have hp : index.val - 1 < seqLen := by grind
+        let (previous, _, _, _, _) := saved.get ⟨index.val - 1, hp⟩
+        previous
+      else
+        initial_state
+    let totalHidden := addSpec (getAtSpec grad_hiddens index) dNext.hidden
+    let (dInput, dPrevious, dForgetWeights, dForgetBias, dInputWeights, dInputBias,
+        dCandidateWeights, dCandidateBias, dOutputWeights, dOutputBias) :=
+      lstmCellBackwardSpec lstm (getAtSpec inputs index) previous current forget inputGate candidate
+        output totalHidden dNext.cell
+    ((dPrevious, addSpec forgetWeights dForgetWeights, addSpec forgetBias dForgetBias,
+      addSpec inputWeights dInputWeights, addSpec inputBias dInputBias,
+      addSpec candidateWeights dCandidateWeights, addSpec candidateBias dCandidateBias,
+      addSpec outputWeights dOutputWeights, addSpec outputBias dOutputBias), dInput)
+  let (dInitialState, dForgetWeights, dForgetBias, dInputWeights, dInputBias, dCandidateWeights,
+      dCandidateBias, dOutputWeights, dOutputBias) := result
+  (dForgetWeights, dForgetBias, dInputWeights, dInputBias, dCandidateWeights, dCandidateBias,
+    dOutputWeights, dOutputBias, Tensor.dim dInputs.get, dInitialState)
 
 end Spec

@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Models.CommonHelpers
+public import NN.Spec.Core.Tensor.Numerics
 
 /-!
 # PCA (spec model)
@@ -124,7 +124,7 @@ Algorithm:
 
 1. compute the mean and center the data,
 2. form the covariance matrix `C = (1/(n-1)) Xᵀ X`,
-3. run 20 power-iteration steps from the all-ones vector,
+3. run `iterations` power-iteration steps from the all-ones vector,
 4. orient the resulting vector deterministically so results are reproducible.
 
 The output has exactly one component. This is an executable approximation, not a theorem that the
@@ -133,15 +133,16 @@ an error analysis. Numerical libraries generally use SVD or a convergent eigenso
 -/
 def pcaFitLeadingComponentApproxSpec {nSamples inDim : Nat}
   (data : Tensor α (.dim nSamples (.dim inDim .scalar)))
+  (iterations : Nat)
   (hSamples : 1 < nSamples) (hDim : 0 < inDim) :
   PCASpec α inDim 1 :=
   -- Compute mean
-  have inst : Shape.valid_axis_inst 0 (Shape.dim nSamples (Shape.dim inDim Shape.scalar)) := by
-    apply Shape.validAxisInstZeroAlt
+  have inst : Shape.HasNonemptyAxis 0 (Shape.dim nSamples (Shape.dim inDim Shape.scalar)) := by
+    apply Shape.hasNonemptyAxisZeroOfNe
     intro h
     subst nSamples
     simp at hSamples
-  let mean := reduceMeanAuto 0 inst data
+  let mean := reduceMean 0 data inst.proof
 
   -- Center the data
   let centeredData := Tensor.dim (fun i => subSpec (get data i) mean)
@@ -151,8 +152,9 @@ def pcaFitLeadingComponentApproxSpec {nSamples inDim : Nat}
   let covariance := matMulSpec (matrixTransposeSpec centeredData) centeredData
   let covarianceScaled := scaleSpec covariance (1 / (nSamples - 1 : α))
 
-  let (eigenvalue, eigenvector) := leadingEigenpairPowerIterationApproxSpec covarianceScaled
-  let first := toScalar (get eigenvector ⟨0, hDim⟩)
+  let (eigenvalue, eigenvector) :=
+    powerIterationLeadingEigenpairSpec covarianceScaled iterations
+  let first := item (get eigenvector ⟨0, hDim⟩)
   let sign : α := if first < 0 then -1 else 1
   let oriented := scaleSpec eigenvector sign
 
@@ -183,9 +185,9 @@ def pcaReconstructionErrorSpec {inDim outDim : Nat}
   let reconstructed := pcaInverseSpec m reduced
   let error := subSpec input reconstructed
   let squaredError := squareSpec error
-  have inst : Shape.valid_axis_inst 0 (Shape.dim inDim Shape.scalar) := by
-    apply Shape.validAxisInstZeroAlt h
-  toScalar (reduceSumAuto 0 squaredError)
+  have inst : Shape.HasNonemptyAxis 0 (Shape.dim inDim Shape.scalar) := by
+    apply Shape.hasNonemptyAxisZeroOfNe h
+  item (reduceSum 0 squaredError inst.proof)
 
 /-- Cumulative explained variance, obtained by prefix-summing `explainedVariance`. -/
 def pcaCumulativeExplainedVarianceSpec {α : Type} [Add α] [Zero α]

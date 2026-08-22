@@ -12,7 +12,7 @@ public import NN.Runtime.Autograd.TorchLean
 public import NN.Spec.Layers.PositionalEncoding
 
 import Mathlib.Algebra.Order.Algebra
-import NN.Spec.Core.Utils
+import NN.Spec.Core.Tensor.API
 import NN.Spec.Core.TensorReductionShape.Reductions
 
 @[expose] public section
@@ -67,7 +67,7 @@ def andThen {σ τ υ : Spec.Shape} (first : IndexedModel σ τ) (rest : Sequent
     IndexedModel σ υ where
   kind := s!"{first.kind} → Sequential"
   stateShapes := first.stateShapes ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes rest
-  initState := tensorpack.append first.initState
+  initState := TensorPack.append first.initState
     (_root_.Runtime.Autograd.TorchLean.NN.Seq.initState rest)
   runtimeInit :=
     match first.runtimeInit, _root_.Runtime.Autograd.TorchLean.NN.Seq.runtimeInit? rest with
@@ -135,6 +135,8 @@ def createWithMode {σ τ υ : Spec.Shape}
   { initState := model.initState
     runtimeInit := model.runtimeInit
     requiresGrad := model.requiresGrad
+    validateNatInputs := fun
+      | .cons input .nil => model.validateInput input
     loss := fun {α} => by
       intro _ _
       exact fun {m} _ _ =>
@@ -262,7 +264,7 @@ def model {vocab embedDim : Nat} (table : Embedding vocab embedDim) (inputShape 
   let weightShape : Spec.Shape := .dim vocab (.dim embedDim .scalar)
   { kind := s!"Embedding({vocab}, {embedDim})"
     stateShapes := [weightShape]
-    initState := tensorpack! table.initialWeight
+    initState := TensorPack! table.initialWeight
     runtimeInit := some table.runtimeInit
     requiresGrad := [table.requiresGrad]
     validateInput := fun tokenIds =>
@@ -278,18 +280,9 @@ def model {vocab embedDim : Nat} (table : Embedding vocab embedDim) (inputShape 
           (ss := [inputShape])
           (fun natInputs =>
             match natInputs with
-            | .cons tokenIds .nil => do
-                let flatIds := _root_.Runtime.Autograd.Torch.mapNatTensor (m := m) (α := α)
-                  (fun x => Spec.Tensor.reshapeSpec
-                    (s₁ := inputShape) (s₂ := .dim inputShape.size .scalar) x (by
-                      simp [Spec.Shape.size])) tokenIds
-                let rows ← _root_.Runtime.Autograd.TorchLean.F.embeddingRowsNat
-                  (m := m) (α := α) (vocab := vocab) (dim := embedDim)
-                  (k := inputShape.size) weight flatIds
-                _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-                  (s₁ := .dim inputShape.size (.dim embedDim .scalar))
-                  (s₂ := inputShape.appendDim embedDim) rows (by
-                    simp [Spec.Shape.size_appendDim, Spec.Shape.size])) }
+            | .cons tokenIds .nil =>
+                _root_.Runtime.Autograd.TorchLean.F.embeddingNatOrZero
+                  (m := m) (α := α) (vocab := vocab) (dim := embedDim) weight tokenIds) }
 
 end Embedding
 
@@ -362,8 +355,8 @@ The leading “prefix” dimensions are treated as a batch (they are flattened t
 the affine map is applied once, and the result is reshaped back).
 -/
 def linearWith (inDim outDim : Nat) (cfg : Linear) (seedW seedB : Nat := 0)
-    (pfx : Spec.Shape := Spec.Shape.scalar) :
-    Sequential (pfx.appendDim inDim) (pfx.appendDim outDim) :=
+    (leading : Spec.Shape := Spec.Shape.scalar) :
+    Sequential (leading.appendDim inDim) (leading.appendDim outDim) :=
   let WShape : Spec.Shape := .dim outDim (.dim inDim .scalar)
   let bShape : Spec.Shape := .dim outDim .scalar
   let weightInit := cfg.weightInit?.getD (.xavierUniform inDim outDim)
@@ -371,11 +364,11 @@ def linearWith (inDim outDim : Nat) (cfg : Linear) (seedW seedB : Nat := 0)
     (s := WShape) (sch := weightInit) (seed := seedW)
   let b0 : Spec.Tensor Float bShape := _root_.Runtime.Autograd.Torch.Init.tensor
     (s := bShape) (sch := cfg.biasInit) (seed := seedB)
-  let batch : Nat := Spec.Shape.size pfx
+  let batch : Nat := Spec.Shape.size leading
   of
     { kind := s!"Linear({inDim}, {outDim})"
       stateShapes := [WShape, bShape]
-      initState := tensorpack! w0, b0
+      initState := TensorPack! w0, b0
       runtimeInit := some (.cons
         (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.FloatInit.ofScheme weightInit seedW)
         (.cons
@@ -385,39 +378,39 @@ def linearWith (inDim outDim : Nat) (cfg : Linear) (seedW seedB : Nat := 0)
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun w b x =>
-            let sIn : Spec.Shape := pfx.appendDim inDim
-            let sOut : Spec.Shape := pfx.appendDim outDim
+            let sIn : Spec.Shape := leading.appendDim inDim
+            let sOut : Spec.Shape := leading.appendDim outDim
             ((do
-              let x2D ←
+              let x2d ←
                 _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
                   (s₁ := sIn)
                   (s₂ := .dim batch (.dim inDim .scalar))
                   x (by
-                    -- size(sIn) = size(pfx) * inDim = batch * inDim = size(Mat batch inDim)
+                    -- size(sIn) = size(leading) * inDim = batch * inDim = size(Mat batch inDim)
                     simp [sIn, batch, Spec.Shape.size_appendDim, Spec.Shape.size])
 
               let wT ←
                 _root_.Runtime.Autograd.Torch.transpose2d (m := m) (α := α)
                   (mDim := outDim) (nDim := inDim) w
               let y ← _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
-                (mDim := batch) (nDim := inDim) (pDim := outDim) x2D wT
-              let y2D ←
+                (mDim := batch) (nDim := inDim) (pDim := outDim) x2d wT
+              let y2d ←
                 _root_.Runtime.Autograd.TorchLean.F.addB (m := m) (α := α)
                   (t := .dim batch (.dim outDim .scalar)) y b
               _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := .dim batch (.dim outDim .scalar))
                 (s₂ := sOut)
-                y2D (by
-                  -- size(Mat batch outDim) = batch * outDim = size(pfx) * outDim = size(sOut)
+                y2d (by
+                  -- size(Mat batch outDim) = batch * outDim = size(leading) * outDim = size(sOut)
                   simp [sOut, batch, Spec.Shape.size_appendDim, Spec.Shape.size])
             ) : m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sOut))
     }
 
 /-- Linear layer with Xavier-uniform weights and zero bias. -/
 def linear (inDim outDim : Nat) (seedW seedB : Nat := 0)
-    (pfx : Spec.Shape := Spec.Shape.scalar) :
-    Sequential (pfx.appendDim inDim) (pfx.appendDim outDim) :=
-  linearWith inDim outDim {} seedW seedB pfx
+    (leading : Spec.Shape := Spec.Shape.scalar) :
+    Sequential (leading.appendDim inDim) (leading.appendDim outDim) :=
+  linearWith inDim outDim {} seedW seedB leading
 
 /--
 Vanilla RNN layer (time-major sequence, no batch axis).
@@ -444,11 +437,9 @@ def rnn (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
 /--
 GRU layer (time-major sequence, no batch axis).
 
-This is implemented by unrolling `seqLen` steps using existing TorchLean ops, so it runs on both
-CPU and CUDA backends.
-
-PyTorch analogy: `torch.nn.GRU(inputSize, hiddenSize)` with `batch_first=false`, specialized to a
-single batch element.
+This is implemented by unrolling `seqLen` Cho-style steps using existing TorchLean ops, so it runs
+on both CPU and CUDA backends. PyTorch uses a different reset-after candidate parameterization;
+its GRU checkpoints are not directly compatible with this constructor.
 -/
 def gru (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
     Sequential
@@ -497,17 +488,17 @@ This is not an indexed embedding: it multiplies the final input axis by a traina
 `embedding` for integer token ids.
 -/
 def oneHotEmbedding (vocab embedDim : Nat) (cfg : Embedding.Config := {})
-    (pfx : Spec.Shape := Spec.Shape.scalar) :
-    Sequential (pfx.appendDim vocab) (pfx.appendDim embedDim) :=
+    (leading : Spec.Shape := Spec.Shape.scalar) :
+    Sequential (leading.appendDim vocab) (leading.appendDim embedDim) :=
   let WShape : Spec.Shape := .dim vocab (.dim embedDim .scalar)
   let w0 : Spec.Tensor Float WShape :=
     _root_.Runtime.Autograd.Torch.Init.tensor
       (s := WShape) (sch := cfg.weightInit) (seed := cfg.seed)
-  let batch : Nat := Spec.Shape.size pfx
+  let batch : Nat := Spec.Shape.size leading
   of
     { kind := s!"OneHotEmbedding({vocab}, {embedDim})"
       stateShapes := [WShape]
-      initState := tensorpack! w0
+      initState := TensorPack! w0
       runtimeInit := some (.cons
         (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.FloatInit.ofScheme
           cfg.weightInit cfg.seed) .nil)
@@ -515,25 +506,25 @@ def oneHotEmbedding (vocab embedDim : Nat) (cfg : Embedding.Config := {})
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun w x =>
-            let sIn : Spec.Shape := pfx.appendDim vocab
-            let sOut : Spec.Shape := pfx.appendDim embedDim
+            let sIn : Spec.Shape := leading.appendDim vocab
+            let sOut : Spec.Shape := leading.appendDim embedDim
             ((do
-              let x2D ←
+              let x2d ←
                 _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
                   (s₁ := sIn)
                   (s₂ := .dim batch (.dim vocab .scalar))
                   x (by
-                    -- size(sIn) = size(pfx) * vocab = batch * vocab
+                    -- size(sIn) = size(leading) * vocab = batch * vocab
                     simp [sIn, batch, Spec.Shape.size_appendDim, Spec.Shape.size])
               let y ←
                 _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
                   (mDim := batch) (nDim := vocab) (pDim := embedDim)
-                  x2D w
+                  x2d w
               _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := .dim batch (.dim embedDim .scalar))
                 (s₂ := sOut)
                 y (by
-                  -- size(Mat batch embedDim) = batch * embedDim = size(pfx) * embedDim = size(sOut)
+                  -- size(Mat batch embedDim) = batch * embedDim = size(leading) * embedDim = size(sOut)
                   simp [sOut, batch, Spec.Shape.size_appendDim, Spec.Shape.size])
             ) : m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sOut))
     }
@@ -560,8 +551,8 @@ def embedding (vocab embedDim : Nat) (cfg : Embedding.Config := {}) :
 /--
 Learned positional embedding configuration.
 
-This is a trainable parameter tensor of shape `(seqLen × embedDim)` that is broadcast across the
-leading batch dimension and added to the input.
+This is a trainable parameter tensor of shape `(seqLen × embedDim)` that is broadcast across any
+leading dimensions and added to the input.
 -/
 structure LearnedPositionalEmbedding where
   /-- Seed for deterministic initialization. -/
@@ -570,22 +561,27 @@ structure LearnedPositionalEmbedding where
   posInit : _root_.Runtime.Autograd.Torch.Init.Scheme := .uniform (-0.02) 0.02
 
 /--
-Add learned positional embeddings to a batched `(batch × seqLen × embedDim)` tensor.
+Add learned positional embeddings to the `(seqLen × embedDim)` suffix of a tensor.
 
 PyTorch analogue: `x + pos[:seqLen]` where `pos` is a parameter table.
 -/
-def learnedPositionalEmbedding {batch seqLen embedDim : Nat} (cfg : LearnedPositionalEmbedding := {}) :
+def learnedPositionalEmbedding (leading : Spec.Shape := .scalar) {seqLen embedDim : Nat}
+    (cfg : LearnedPositionalEmbedding := {}) :
     Sequential
-      (.dim batch (.dim seqLen (.dim embedDim .scalar)))
-      (.dim batch (.dim seqLen (.dim embedDim .scalar))) :=
+      (leading.concat (.dim seqLen (.dim embedDim .scalar)))
+      (leading.concat (.dim seqLen (.dim embedDim .scalar))) :=
   let posShape : Spec.Shape := .dim seqLen (.dim embedDim .scalar)
-  let xShape : Spec.Shape := .dim batch posShape
+  let xShape : Spec.Shape := leading.concat posShape
   let pos0 : Spec.Tensor Float posShape :=
     _root_.Runtime.Autograd.Torch.Init.tensor (s := posShape) (sch := cfg.posInit) (seed := cfg.seedPos)
+  letI : Spec.Shape.BroadcastTo posShape xShape :=
+    ⟨Spec.Shape.CanBroadcastTo.prependTarget leading posShape⟩
+  letI : Spec.Shape.BroadcastTo xShape xShape :=
+    ⟨Spec.Shape.CanBroadcastTo.refl xShape⟩
   of
     { kind := "LearnedPositionalEmbedding"
       stateShapes := [posShape]
-      initState := tensorpack! pos0
+      initState := TensorPack! pos0
       runtimeInit := some (.cons
         (_root_.Runtime.Autograd.TorchLean.Module.RuntimeInit.FloatInit.ofScheme
           cfg.posInit cfg.seedPos) .nil)
@@ -593,7 +589,7 @@ def learnedPositionalEmbedding {batch seqLen embedDim : Nat} (cfg : LearnedPosit
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun pos x =>
-            -- Broadcast `(seqLen × embedDim)` positional embeddings across the leading `batch` axis.
+            -- Broadcast the positional table across every leading axis.
             (_root_.Runtime.Autograd.TorchLean.F.addB (m := m) (α := α)
               (s₁ := posShape) (s₂ := xShape) (t := xShape) pos x)
     }
@@ -609,30 +605,34 @@ structure SinusoidalPositionalEncoding where
   startPos : Nat := 0
 
 /--
-Add sinusoidal positional encodings to a batched `(batch × seqLen × embedDim)` tensor.
+Add sinusoidal positional encodings to the `(seqLen × embedDim)` suffix of a tensor.
 
 Implementation:
 - precompute `PE : (seqLen × embedDim)` at initialization time (stored as a non-trainable buffer),
-- broadcast it across the leading `batch` axis and add to the input.
+- broadcast it across every leading axis and add it to the input.
 -/
-def sinusoidalPositionalEncoding {batch seqLen embedDim : Nat}
+def sinusoidalPositionalEncoding (leading : Spec.Shape := .scalar) {seqLen embedDim : Nat}
     (cfg : SinusoidalPositionalEncoding := {}) :
     Sequential
-      (.dim batch (.dim seqLen (.dim embedDim .scalar)))
-      (.dim batch (.dim seqLen (.dim embedDim .scalar))) :=
+      (leading.concat (.dim seqLen (.dim embedDim .scalar)))
+      (leading.concat (.dim seqLen (.dim embedDim .scalar))) :=
   let peShape : Spec.Shape := .dim seqLen (.dim embedDim .scalar)
-  let xShape : Spec.Shape := .dim batch peShape
+  let xShape : Spec.Shape := leading.concat peShape
   let pe0 : Spec.Tensor Float peShape :=
     Spec.sinusoidalPositionalEncodingSpec (α := Float) seqLen embedDim cfg.startPos
+  letI : Spec.Shape.BroadcastTo peShape xShape :=
+    ⟨Spec.Shape.CanBroadcastTo.prependTarget leading peShape⟩
+  letI : Spec.Shape.BroadcastTo xShape xShape :=
+    ⟨Spec.Shape.CanBroadcastTo.refl xShape⟩
   of
     { kind := "SinusoidalPositionalEncoding"
       stateShapes := [peShape]
-      initState := tensorpack! pe0
+      initState := TensorPack! pe0
       requiresGrad := [false]
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun pe x =>
-            -- Broadcast `PE : (seqLen × embedDim)` across the leading `batch` axis.
+            -- Broadcast `PE : (seqLen × embedDim)` across every leading axis.
             (_root_.Runtime.Autograd.TorchLean.F.addB (m := m) (α := α)
               (s₁ := peShape) (s₂ := xShape) (t := xShape) pe x)
     }
@@ -642,12 +642,12 @@ Rotary positional embedding (RoPE) configuration.
 
 `startPos` is an absolute-position offset for KV-cache decoding.
 -/
-structure RoPE where
+structure RotaryEmbeddingConfig where
   /-- Absolute position offset for the first row of RoPE angles. -/
   startPos : Nat := 0
 
 /--
-Apply RoPE to a batched multi-head tensor `(batch × numHeads × seqLen × headDim)`.
+Apply RoPE to the `(seqLen × headDim)` suffix of a tensor.
 
 This matches the standard identity:
 
@@ -656,18 +656,19 @@ $$
   = x \odot \cos + \operatorname{rotatePairs}(x) \odot \sin
 $$
 
-where `cos`/`sin` depend only on `(pos, dim)` and broadcast across `(batch, numHeads)`.
+where `cos` and `sin` depend only on `(pos, dim)` and broadcast across every leading axis.
 
 Notes:
 - This layer is *differentiable* (gradients flow through the rotation), but it has no trainable
   parameters; the precomputed `cos`/`sin` tables are stored as non-trainable buffers.
 - The pure spec version is in `NN.Spec.Layers.PositionalEncoding` (`Spec.rope_apply_heads_spec`).
 -/
-def rope {batch numHeads seqLen headDim : Nat} (cfg : RoPE := {}) :
+def rope (leading : Spec.Shape := .scalar) {seqLen headDim : Nat}
+    (cfg : RotaryEmbeddingConfig := {}) :
     Sequential
-      (.dim batch (.dim numHeads (.dim seqLen (.dim headDim .scalar))))
-      (.dim batch (.dim numHeads (.dim seqLen (.dim headDim .scalar)))) :=
-  let xShape : Spec.Shape := .dim batch (.dim numHeads (.dim seqLen (.dim headDim .scalar)))
+      (leading.concat (.dim seqLen (.dim headDim .scalar)))
+      (leading.concat (.dim seqLen (.dim headDim .scalar))) :=
+  let xShape : Spec.Shape := leading.concat (.dim seqLen (.dim headDim .scalar))
   let csShape : Spec.Shape := .dim seqLen (.dim headDim .scalar)
 
   -- Precompute cos/sin tables (as Float buffers). These depend only on `(seqLen, headDim, startPos)`.
@@ -690,33 +691,37 @@ def rope {batch numHeads seqLen headDim : Nat} (cfg : RoPE := {}) :
           idx - 1
       Spec.Tensor.scalar out)
 
+  letI : Spec.Shape.BroadcastTo csShape xShape :=
+    ⟨Spec.Shape.CanBroadcastTo.prependTarget leading csShape⟩
+  letI : Spec.Shape.BroadcastTo xShape xShape :=
+    ⟨Spec.Shape.CanBroadcastTo.refl xShape⟩
+
   of
     { kind := "RoPE"
       stateShapes := [csShape, csShape]
-      initState := tensorpack! cos0, sin0
+      initState := TensorPack! cos0, sin0
       requiresGrad := [false, false]
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun cos sin x =>
             ((do
             -- Rotate last-dim pairs by a fixed 2D permutation/sign pattern.
-            let rowsFold : Nat := batch * numHeads * seqLen
+            let rowsFold : Nat := Spec.Shape.size leading * seqLen
             let flatShape : Spec.Shape := .dim rowsFold (.dim headDim .scalar)
 
             let x2d ←
               _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := xShape) (s₂ := flatShape)
                 x (by
-                  -- size(xShape) = batch * numHeads * seqLen * headDim = rowsFold * headDim = size(flatShape)
-                  simp [xShape, flatShape, rowsFold, Spec.Shape.size,
-                    Nat.mul_left_comm, Nat.mul_comm])
+                  simp [xShape, flatShape, rowsFold, Spec.Shape.size_concat,
+                    Spec.Shape.size, Nat.mul_assoc])
 
             let xT ←
               _root_.Runtime.Autograd.Torch.transpose2d (m := m) (α := α)
                 (mDim := rowsFold) (nDim := headDim) x2d
 
             let xPerm ←
-              _root_.Runtime.Autograd.Torch.gatherRowsNat (m := m) (α := α)
+              _root_.Runtime.Autograd.Torch.gatherRowsNatOrZero (m := m) (α := α)
                 (rows := headDim) (cols := rowsFold) (k := headDim)
                 xT (_root_.Runtime.Autograd.Torch.natTensorConst (m := m) (α := α) permIdx)
 
@@ -742,8 +747,8 @@ def rope {batch numHeads seqLen headDim : Nat} (cfg : RoPE := {}) :
               _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := flatShape) (s₂ := xShape)
                 xRot2d (by
-                  simp [xShape, flatShape, rowsFold, Spec.Shape.size,
-                    Nat.mul_left_comm, Nat.mul_comm])
+                  simp [xShape, flatShape, rowsFold, Spec.Shape.size_concat,
+                    Spec.Shape.size, Nat.mul_assoc])
 
             -- Apply the RoPE formula with broadcasting of `cos/sin : (seqLen × headDim)`.
             let xCos ←
@@ -773,9 +778,12 @@ def sigmoid {s : Spec.Shape} : Sequential s s :=
 /-- Elementwise tanh. PyTorch analogue: `torch.nn.Tanh` / `torch.tanh`. -/
 def tanh {s : Spec.Shape} : Sequential s s :=
   of <| _root_.Runtime.Autograd.TorchLean.NN.tanh (s := s)
-/-- Softmax over the final axis, analogous to `torch.softmax(x, dim := -1)`. -/
-def softmaxLast {s : Spec.Shape} : Sequential s s :=
-  of <| _root_.Runtime.Autograd.TorchLean.NN.softmaxLast (s := s)
+/-- Softmax over any valid tensor dimension. -/
+def softmax {s : Spec.Shape} (axis : Nat) [Spec.Shape.AxisInBounds axis s] : Sequential s s :=
+  of <| _root_.Runtime.Autograd.TorchLean.NN.softmax (s := s) axis
+/-- Stable log-softmax over any valid tensor dimension. -/
+def logSoftmax {s : Spec.Shape} (axis : Nat) [Spec.Shape.AxisInBounds axis s] : Sequential s s :=
+  of <| _root_.Runtime.Autograd.TorchLean.NN.logSoftmax (s := s) axis
 /-- Reduce-sum to a scalar. PyTorch analogue: `torch.sum`. -/
 def sum {s : Spec.Shape} : Sequential s Spec.Shape.scalar :=
   of <| _root_.Runtime.Autograd.TorchLean.NN.sum (s := s)
@@ -834,11 +842,3 @@ PyTorch analogue: `torch.nn.Dropout`.
 -/
 def dropout {s : Spec.Shape} (p : Float) (seed : Nat := 0) : Sequential s s :=
   of <| _root_.Runtime.Autograd.TorchLean.NN.dropout (s := s) p seed
-/--
-Convenience block: `Flatten -> Linear`.
-
-This is common for "image to classifier head" models.
--/
-def flattenLinear {s : Spec.Shape} (outDim : Nat) (seedW seedB : Nat := 0) :
-    Sequential s (.dim outDim .scalar) :=
-  compose (flatten (s := s)) (linear (Spec.Shape.size s) outDim seedW seedB)

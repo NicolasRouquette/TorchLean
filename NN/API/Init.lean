@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API.Tensor
-public import NN.Runtime.Autograd.Torch.Utils
+public import NN.Runtime.Autograd.Torch.Initialization
 
 /-!
 # Tensor Initialization
@@ -50,7 +50,8 @@ abbrev Scheme := _root_.Runtime.Autograd.Torch.Init.Scheme
 /--
 Initialize a `Float` tensor using the given scheme.
 
-This is the "raw" initializer; most user code should prefer `tensor` which casts into `α`.
+Most user code should prefer `tensor`, which casts the generated values into its chosen scalar
+semantics.
 -/
 def tensorFloat (sch : Scheme) (seed : Nat := 0) {s : Spec.Shape} : Spec.Tensor Float s :=
   _root_.Runtime.Autograd.Torch.Init.tensor (sch := sch) (seed := seed) (s := s)
@@ -62,10 +63,10 @@ then casting elementwise via `cast : Float → α`.
 def tensor {α : Type} [Context α] (cast : Float → α) (sch : Scheme) (seed : Nat := 0) :
     {s : Spec.Shape} → Spec.Tensor α s
   | .scalar =>
-      TorchLean.Tensor.castFloat cast
+      TorchLean.Tensor.map cast
         (tensorFloat (sch := sch) (seed := seed) (s := Spec.Shape.scalar))
   | .dim n s =>
-      TorchLean.Tensor.castFloat cast
+      TorchLean.Tensor.map cast
         (tensorFloat (sch := sch) (seed := seed) (s := Spec.Shape.dim n s))
 
 /--
@@ -75,7 +76,7 @@ PyTorch analogue: `torch.nn.init.xavier_uniform_` (for example).
 -/
 def xavierW {α : Type} [Context α] (cast : Float → α) (outDim inDim : Nat) (seed : Nat := 0) :
     Spec.Tensor α (.dim outDim (.dim inDim .scalar)) :=
-  TorchLean.Tensor.castFloat cast (_root_.Runtime.Autograd.Torch.Init.xavierW outDim inDim seed)
+  TorchLean.Tensor.map cast (_root_.Runtime.Autograd.Torch.Init.xavierW outDim inDim seed)
 
 /--
 Kaiming/He initializer for a linear weight matrix of shape `(outDim, inDim)`.
@@ -84,7 +85,7 @@ PyTorch analogue: `torch.nn.init.kaiming_uniform_` (for example).
 -/
 def kaimingW {α : Type} [Context α] (cast : Float → α) (outDim inDim : Nat) (seed : Nat := 0) :
     Spec.Tensor α (.dim outDim (.dim inDim .scalar)) :=
-  TorchLean.Tensor.castFloat cast (_root_.Runtime.Autograd.Torch.Init.kaimingW outDim inDim seed)
+  TorchLean.Tensor.map cast (_root_.Runtime.Autograd.Torch.Init.kaimingW outDim inDim seed)
 
 end Init
 end TorchLean

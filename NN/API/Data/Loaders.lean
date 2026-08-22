@@ -56,7 +56,7 @@ def collateSupervised {α : Type} {σ τ : Spec.Shape} (n : Nat)
       _root_.Spec.Tensor.dim (fun i =>
         match getSample i with
         | .cons _x (.cons y .nil) => y)
-    pure (tensorpack! xs, ys)
+    pure (TensorPack! xs, ys)
   else
     throw s!"collate: expected batch size {n}, got {batch.length}"
 
@@ -97,7 +97,7 @@ def batchedSupervised {α : Type} {σ τ : Spec.Shape} (n : Nat)
   let groups := chunkN n (_root_.Runtime.Autograd.Train.Dataset.toList ds)
   let full := groups.filter (fun g => g.length = n)
   let batches ← full.mapM (collateSupervised (α := α) (σ := σ) (τ := τ) n)
-  pure (fromList batches)
+  pure (_root_.Runtime.Autograd.Train.Dataset.ofList batches)
 
 namespace BatchLoader
 
@@ -163,7 +163,7 @@ def nonemptyEpoch {α : Type} {n : Nat} {σ τ : Spec.Shape}
   match batches with
   | _ :: _ => pure (dl', batches)
   | [] =>
-      throw s!"{name}: no full minibatch available (batch={n}, rows={Data.size dl.loader.dataset})"
+      throw s!"{name}: no full minibatch available (batch={n}, rows={dl.loader.dataset.size})"
 
 /-- Run one epoch and return its first full typed minibatch. -/
 def firstFullBatch {α : Type} {n : Nat} {σ τ : Spec.Shape}
@@ -213,10 +213,10 @@ def tabularCsvLoader {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.F
         (seed := seed) (dropLast := dropLast)
 
 /-- Build a batch loader when the batch size is only known at runtime. -/
-def loaderAny {α : Type} {σ τ : Spec.Shape}
+def someBatchLoader {α : Type} {σ τ : Spec.Shape}
     (ds : Dataset (TorchLean.Sample.Supervised α σ τ))
     (batchSize : Nat) (shuffle : Bool := false) (seed : Nat := 0) (dropLast : Bool := true) :
-    AnyBatchLoader α σ τ :=
+    SomeBatchLoader α σ τ :=
   ⟨batchSize, batchLoader (α := α) (σ := σ) (τ := τ) ds batchSize shuffle seed dropLast⟩
 
 end Data

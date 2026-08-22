@@ -25,7 +25,7 @@ be built on top of these monotonicity facts.
 namespace NN.MLTheory.Proofs.Hopfield
 
 open scoped BigOperators
-open _root_.NN.Spec
+open _root_.Spec
 
 open Spec.Hopfield
 

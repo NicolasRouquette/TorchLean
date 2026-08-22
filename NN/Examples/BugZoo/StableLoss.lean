@@ -28,7 +28,7 @@ failures: invalid domains for `log`, `sqrt`, division, `exp`, and related math A
 TorchLean cannot repair an arbitrary hand-written unstable loss after the fact. The design instead
 gives stable primitives and domain-aware variants a named place in the spec. For example,
 `crossEntropyLogitsSpec` is the logits API users should reach for: it is defined through
-`logSoftmaxSpec`, rather than through a fragile `softmax` followed by `log`. Likewise, `safedivSpec`
+`logSoftmaxLastSpec`, rather than through a fragile `softmax` followed by `log`. Likewise, `safedivSpec`
 and `safeDivOp` make epsilon-protected division explicit in the graph.
 
 Bug-shaped PyTorch sketches:
@@ -45,7 +45,7 @@ loss = -(target * torch.log_softmax(logits, dim=-1)).sum()
 TorchLean equivalent:
 
 ```lean
-Spec.crossEntropyLogitsSpec logits target
+Spec.crossEntropyLogitsSpec axis logits target
 ```
 
 For division/domain bugs:
@@ -78,31 +78,34 @@ This compact theorem is a useful contract: if a model uses `crossEntropyLogitsSp
 intended decomposition is stable-logits first, then target weighting and mean reduction. That is the
 TorchLean answer to the TensorFuzz-style broken-cross-entropy class inside the verified fragment.
 -/
-theorem crossEntropyLogits_uses_logSoftmax {s : Spec.Shape}
+theorem crossEntropyLogits_uses_logSoftmax {s : Spec.Shape} (axis : Nat)
+    [Spec.Shape.AxisInBounds axis s]
     {α : Type} [Context α]
     (logits target : Spec.Tensor α s) :
-    Spec.crossEntropyLogitsSpec logits target =
-      let logp := Activation.logSoftmaxSpec (α := α) (s := s) logits
+    Spec.crossEntropyLogitsSpec axis logits target =
+      let logp := Activation.logSoftmaxSpec (α := α) (s := s) axis logits
       let total := Spec.Tensor.sumSpec (Spec.Tensor.mulSpec target logp)
-      Spec.meanOverLastAxisSlices (s := s) (-total) := by
+      Spec.meanOverAxisSlices (s := s) axis (-total) := by
   rfl
 
 /--
 The logits-loss gradient spec is the familiar
 $\operatorname{softmax}(\mathrm{logits})-\mathrm{target}$, averaged over the
-non-class axes. The last axis is the class distribution and is summed, not averaged.
+non-class dimensions. The selected class dimension is summed, not averaged.
 
 Verified AD can only prove the gradient for the loss we actually specify. This theorem makes the
 specified training signal visible, so a future implementation can be checked against this contract
 instead of an informal “cross entropy” name.
 -/
-theorem crossEntropyLogitsDeriv_is_softmax_minus_target {s : Spec.Shape}
+theorem crossEntropyLogitsDeriv_is_softmax_minus_target {s : Spec.Shape} (axis : Nat)
+    [Spec.Shape.AxisInBounds axis s]
     {α : Type} [Context α]
     (logits target : Spec.Tensor α s) :
-    Spec.crossEntropyLogitsDerivSpec logits target =
+    Spec.crossEntropyLogitsDerivSpec axis logits target =
       Spec.Tensor.scaleSpec
-        (Spec.Tensor.subSpec (Activation.softmaxSpec (α := α) (s := s) logits) target)
-        (1 / (Spec.lastAxisMeanDenom s : α)) := by
+        (Spec.Tensor.subSpec
+          (Activation.softmaxSpec (α := α) (s := s) axis logits) target)
+        (1 / (Spec.axisMeanDenom s axis : α)) := by
   rfl
 
 /--
@@ -112,17 +115,18 @@ This is a different API from logits cross entropy. We keep both because the safe
 what the caller has: logits should use `crossEntropyLogitsSpec`; already-normalized probabilities
 should use the clipped probability form below.
 -/
-theorem crossEntropyProbabilities_clips_before_log {s : Spec.Shape}
+theorem crossEntropyProbabilities_clips_before_log {s : Spec.Shape} (axis : Nat)
+    [Spec.Shape.AxisInBounds axis s]
     {α : Type} [Context α]
     (predicted target : Spec.Tensor α s) (epsilon : α) :
-    Spec.crossEntropySpec predicted target epsilon =
+    Spec.crossEntropySpec axis predicted target epsilon =
       let clamp01 := fun x : α =>
         let x := if x > epsilon then x else epsilon
         if x < (1 : α) - epsilon then x else (1 : α) - epsilon
       let q := Spec.Tensor.mapSpec clamp01 predicted
       let logq := Spec.Tensor.logSpec q
       let total := Spec.Tensor.sumSpec (Spec.Tensor.mulSpec target logq)
-      Spec.meanOverLastAxisSlices (s := s) (-total) := by
+      Spec.meanOverAxisSlices (s := s) axis (-total) := by
   simp [Spec.crossEntropySpec]
 
 /-- Epsilon-protected division is a separate named tensor operation, not a hidden rewrite. -/

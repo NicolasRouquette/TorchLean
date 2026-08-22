@@ -31,7 +31,7 @@ namespace Session
 def add {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape] {sh : Shape}
   (a b : _root_.Runtime.Autograd.Torch.TensorRef α sh) : IO (_root_.Runtime.Autograd.Torch.TensorRef
     α sh) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.add (α := α) sess (sh := sh) a b
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.add (α := α) sess (sh := sh) a b
@@ -40,7 +40,7 @@ def add {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape] {sh 
 def sub {α : Type} (s : Session α) [Sub α] [Add α] [Zero α] [DecidableEq Shape] {sh : Shape}
   (a b : _root_.Runtime.Autograd.Torch.TensorRef α sh) : IO (_root_.Runtime.Autograd.Torch.TensorRef
     α sh) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.sub (α := α) sess (sh := sh) a b
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.sub (α := α) sess (sh := sh) a b
@@ -49,7 +49,7 @@ def sub {α : Type} (s : Session α) [Sub α] [Add α] [Zero α] [DecidableEq Sh
 def mul {α : Type} (s : Session α) [Mul α] [Add α] [Zero α] [DecidableEq Shape] {sh : Shape}
   (a b : _root_.Runtime.Autograd.Torch.TensorRef α sh) : IO (_root_.Runtime.Autograd.Torch.TensorRef
     α sh) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.mul (α := α) sess (sh := sh) a b
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.mul (α := α) sess (sh := sh) a b
@@ -63,7 +63,7 @@ def scale {α : Type} (s : Session α) [Mul α] [Add α] [Zero α] [DecidableEq 
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α] {sh : Shape}
   (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) (c : α) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.scale (α := α) sess (sh := sh) x c
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.scale (α := α) sess (sh := sh) x c
@@ -104,7 +104,7 @@ def dropout {α : Type} [Context α] [DecidableEq Shape]
     pure x
   else
     let keepProb : α := (1 : α) - p
-    have : Decidable (keepProb > (0 : α)) := (Context.decidable_gt) keepProb 0
+    have : Decidable (keepProb > (0 : α)) := (Context.decidableGT) keepProb 0
     if _h : keepProb > (0 : α) then
       let seedNat ← getNat (α := α) s rng.seed
       let ctrNat ← getNat (α := α) s rng.counter
@@ -117,7 +117,7 @@ def dropout {α : Type} [Context α] [DecidableEq Shape]
 
       let keepProbRef ← const (α := α) s (sh := Shape.scalar) (Tensor.scalar keepProb)
       let maskRef ←
-        match s.impl with
+        match s.state with
         | .eager sess =>
             _root_.Runtime.Autograd.Torch.Internal.EagerSession.bernoulliMask (α := α) sess.inner
               (sh := sh) keepProbRef opSeed
@@ -145,7 +145,7 @@ def abs {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α 
   Shape]
   {sh : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.abs (α := α) sess (sh := sh) x
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.abs (α := α) sess (sh := sh) x
@@ -155,7 +155,7 @@ def sqrt {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α
   Shape]
   {sh : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.sqrt (α := α) sess (sh := sh) x
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.sqrt (α := α) sess (sh := sh) x
@@ -166,7 +166,7 @@ def clamp {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : �
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
   {sh : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) (minVal maxVal : α) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.clamp (α := α) sess (sh := sh) x minVal maxVal
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.clamp (α := α) sess
@@ -177,7 +177,7 @@ def max {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α 
   Shape]
   {sh : Shape} (a b : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.max (α := α) sess (sh := sh) a b
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.max (α := α) sess (sh := sh) a b
@@ -187,7 +187,7 @@ def min {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α 
   Shape]
   {sh : Shape} (a b : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.min (α := α) sess (sh := sh) a b
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.min (α := α) sess (sh := sh) a b
@@ -202,7 +202,7 @@ def matmul {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   (a : _root_.Runtime.Autograd.Torch.TensorRef α (.dim m (.dim n .scalar)))
   (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n (.dim p .scalar))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim m (.dim p .scalar))) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.matmul (α := α) sess (m := m) (n := n) (p := p) a b
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.matmul (α := α) sess
@@ -218,23 +218,11 @@ def bmm {α : Type} (s : Session α) [Add α] [Mul α] [Zero α] [DecidableEq Sh
   (a : _root_.Runtime.Autograd.Torch.TensorRef α (.dim batch (.dim m (.dim n .scalar))))
   (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim batch (.dim n (.dim p .scalar)))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim batch (.dim m (.dim p .scalar)))) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.bmm (α := α) sess (batch := batch) (m := m) (n := n) (p := p) a b
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.bmm (α := α) sess (batch := batch) (m := m)
         (n := n) (p := p) a b
-
-/-- Concatenate two vectors along dimension 0 (dispatches by execution mode). -/
-def concatVectors {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
-  {n m : Nat}
-  (a : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar))
-  (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim m .scalar)) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim (n + m) .scalar)) := do
-  match s.impl with
-  | .eager sess => EagerSession.concatVectors (α := α) sess (n := n) (m := m) a b
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.concatVectors (α := α) sess
-        (n := n) (m := m) a b
 
 /-- Concatenate along the outermost dimension (dimension 0) (dispatches to eager vs typed graph
   backend). -/
@@ -243,7 +231,7 @@ def concatLeadingAxis {α : Type} (s : Session α) [Context α] [DecidableEq Sha
   (a : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n sh))
   (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim m sh)) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim (n + m) sh)) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.concatLeadingAxis (α := α) sess (n := n) (m := m) (sh := sh) a b
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.concatLeadingAxis (α := α) sess (n := n) (m := m)
@@ -256,10 +244,10 @@ PyTorch analogy: `x[start:start+len]` for the first dimension.
 -/
 def sliceLeadingAxisRange {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
   {n : Nat} {sh : Shape}
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n sh)) (start len : Nat) (h : len + start ≤
+  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n sh)) (start len : Nat) (h : start + len ≤
     n) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim len sh)) := do
-  match s.impl with
+  match s.state with
   | .eager sess => EagerSession.sliceLeadingAxisRange (α := α) sess (n := n) (sh := sh) x start len h
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.sliceLeadingAxisRange (α := α) sess
@@ -275,7 +263,7 @@ def maxPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
     (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.maxPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
         (inC := inC) (stride := stride) (h1 := h1) (h2 := h2) x
@@ -296,7 +284,7 @@ def smoothMaxPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape
     α) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
     (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.smoothMaxPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
         (inC := inC) (stride := stride) (h1 := h1) (h2 := h2) x beta
@@ -315,7 +303,7 @@ def avgPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
     (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
-  match s.impl with
+  match s.state with
   | .eager sess =>
       EagerSession.avgPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
         (inC := inC) (stride := stride) h1 h2 x

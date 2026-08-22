@@ -100,9 +100,9 @@ def GCN2Spec.forward
     Spec.gcnLayerSpec (α := α) (n := n) (inDim := hidDim) (outDim := outDim)
       m.outputLayer hiddenFeatures
   have hn0 : n ≠ 0 := Nat.ne_of_gt h_n
-  have hLeadingAxis : Shape.valid_axis_inst 0 (Shape.dim n (Shape.dim outDim Shape.scalar)) :=
-    Shape.validAxisInstZeroAlt hn0
-  reduceMeanAuto 0 hLeadingAxis outputFeatures
+  have hLeadingAxis : Shape.HasNonemptyAxis 0 (Shape.dim n (Shape.dim outDim Shape.scalar)) :=
+    Shape.hasNonemptyAxisZeroOfNe hn0
+  reduceMean 0 outputFeatures hLeadingAxis.proof
 
 /-- Per-layer gradients returned by `GCNLayerSpec` backward.
 
@@ -159,7 +159,7 @@ def GCN2Spec.backward
   have hB : Shape.CanBroadcastTo (.dim outDim .scalar) (.dim n (.dim outDim .scalar)) := by
     apply Shape.CanBroadcastTo.expand_dims
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
+    exact Shape.CanBroadcastTo.scalar
 
   let outputFeatureGrad : Tensor α (.dim n (.dim outDim .scalar)) :=
     scaleSpec (broadcastTo hB grad_output) (1 / (n : α))

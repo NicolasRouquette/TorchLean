@@ -633,7 +633,7 @@ instance : Repr CheckedNodeRange where
   reprPrec r _ := repr r.toNodeRange
 
 /-- Check a dynamic graph value against the declared shape and interval of one certificate row. -/
-def dvalWithinRange (range : CheckedNodeRange) (value : NN.IR.DVal IEEE32Exec) : Bool :=
+def dvalWithinRange (range : CheckedNodeRange) (value : Spec.PackedTensor IEEE32Exec) : Bool :=
   if h : value.shape = range.outShape then
     tensorWithinRange range.enclosure (h ▸ value.tensor)
   else
@@ -641,14 +641,14 @@ def dvalWithinRange (range : CheckedNodeRange) (value : NN.IR.DVal IEEE32Exec) :
 
 /-- A real dynamic graph value has the shape declared by a certificate row and is enclosed by its
 interval. The equality witness makes the dependent tensor cast explicit. -/
-def RealDValEnclosed (range : CheckedNodeRange) (value : NN.IR.DVal Real) : Prop :=
+def RealPackedTensorEnclosed (range : CheckedNodeRange) (value : Spec.PackedTensor Real) : Prop :=
   ∃ h : value.shape = range.outShape,
     TensorEnclosed range.enclosure (h ▸ value.tensor)
 
 /-- Pointwise approximation relation for real and IEEE dynamic graph values at one certificate
 row. -/
-def DValErrorLe (range : CheckedNodeRange) (exact : NN.IR.DVal Real)
-    (computed : NN.IR.DVal IEEE32Exec) : Prop :=
+def PackedTensorErrorLe (range : CheckedNodeRange) (exact : Spec.PackedTensor Real)
+    (computed : Spec.PackedTensor IEEE32Exec) : Prop :=
   ∃ hexact : exact.shape = range.outShape,
     ∃ hcomputed : computed.shape = range.outShape,
       TensorErrorLe (intervalWidth range.enclosure)
@@ -657,10 +657,10 @@ def DValErrorLe (range : CheckedNodeRange) (exact : NN.IR.DVal Real)
 /-- One successful dynamic replay row yields a pointwise error bound whenever the corresponding
 real graph value has the proved enclosure. -/
 theorem dval_error_le_of_range_check {range : CheckedNodeRange}
-    {exact : NN.IR.DVal Real} {computed : NN.IR.DVal IEEE32Exec}
-    (hexact : RealDValEnclosed range exact)
+    {exact : Spec.PackedTensor Real} {computed : Spec.PackedTensor IEEE32Exec}
+    (hexact : RealPackedTensorEnclosed range exact)
     (hcomputed : dvalWithinRange range computed = true) :
-    DValErrorLe range exact computed := by
+    PackedTensorErrorLe range exact computed := by
   rcases hexact with ⟨hexactShape, hexactRange⟩
   unfold dvalWithinRange at hcomputed
   split at hcomputed
@@ -671,7 +671,7 @@ theorem dval_error_le_of_range_check {range : CheckedNodeRange}
 
 /-- List-level replay check. Its structural recursion is also the proof interface for composing
 per-node numerical guarantees over a complete execution trace. -/
-def executionWithinRangesList : List CheckedNodeRange -> List (NN.IR.DVal IEEE32Exec) -> Bool
+def executionWithinRangesList : List CheckedNodeRange -> List (Spec.PackedTensor IEEE32Exec) -> Bool
   | [], [] => true
   | range :: ranges, value :: values =>
       dvalWithinRange range value && executionWithinRangesList ranges values
@@ -679,12 +679,12 @@ def executionWithinRangesList : List CheckedNodeRange -> List (NN.IR.DVal IEEE32
 
 /-- Check every value produced by `IR.Graph.denoteAll` against the corresponding certificate row. -/
 def executionWithinRanges (ranges : Array CheckedNodeRange)
-    (values : Array (NN.IR.DVal IEEE32Exec)) : Bool :=
+    (values : Array (Spec.PackedTensor IEEE32Exec)) : Bool :=
   executionWithinRangesList ranges.toList values.toList
 
 /-- Proof-level meaning of a complete successful IEEE replay trace. -/
 theorem executionWithinRangesList_eq_true_iff
-    (ranges : List CheckedNodeRange) (values : List (NN.IR.DVal IEEE32Exec)) :
+    (ranges : List CheckedNodeRange) (values : List (Spec.PackedTensor IEEE32Exec)) :
     executionWithinRangesList ranges values = true <->
       List.Forall₂ (fun range value => dvalWithinRange range value = true) ranges values := by
   induction ranges generalizing values with
@@ -696,18 +696,18 @@ theorem executionWithinRangesList_eq_true_iff
 
 /-- Graph-wide pointwise approximation evidence, one row per intermediate value. -/
 inductive ExecutionErrorTrace :
-    List CheckedNodeRange -> List (NN.IR.DVal Real) -> List (NN.IR.DVal IEEE32Exec) -> Prop
+    List CheckedNodeRange -> List (Spec.PackedTensor Real) -> List (Spec.PackedTensor IEEE32Exec) -> Prop
   | nil : ExecutionErrorTrace [] [] []
   | cons {range ranges exact exacts computed computeds} :
-      DValErrorLe range exact computed ->
+      PackedTensorErrorLe range exact computed ->
       ExecutionErrorTrace ranges exacts computeds ->
       ExecutionErrorTrace (range :: ranges) (exact :: exacts) (computed :: computeds)
 
 /-- Compose real enclosure proofs and successful IEEE replay checks into an error trace. -/
 theorem executionErrorTrace_of_enclosed
-    {ranges : List CheckedNodeRange} {exact : List (NN.IR.DVal Real)}
-    {computed : List (NN.IR.DVal IEEE32Exec)}
-    (hexact : List.Forall₂ RealDValEnclosed ranges exact)
+    {ranges : List CheckedNodeRange} {exact : List (Spec.PackedTensor Real)}
+    {computed : List (Spec.PackedTensor IEEE32Exec)}
+    (hexact : List.Forall₂ RealPackedTensorEnclosed ranges exact)
     (hcomputed : List.Forall₂
       (fun range value => dvalWithinRange range value = true) ranges computed) :
     ExecutionErrorTrace ranges exact computed := by
@@ -723,9 +723,9 @@ theorem executionErrorTrace_of_enclosed
 
 /-- Array-facing whole-trace theorem used by checked graph executions. -/
 theorem execution_error_trace_of_check
-    {ranges : Array CheckedNodeRange} {exact : Array (NN.IR.DVal Real)}
-    {computed : Array (NN.IR.DVal IEEE32Exec)}
-    (hexact : List.Forall₂ RealDValEnclosed ranges.toList exact.toList)
+    {ranges : Array CheckedNodeRange} {exact : Array (Spec.PackedTensor Real)}
+    {computed : Array (Spec.PackedTensor IEEE32Exec)}
+    (hexact : List.Forall₂ RealPackedTensorEnclosed ranges.toList exact.toList)
     (hcomputed : executionWithinRanges ranges computed = true) :
     ExecutionErrorTrace ranges.toList exact.toList computed.toList :=
   executionErrorTrace_of_enclosed hexact <|
@@ -863,7 +863,7 @@ abbrev RangeTransferResult := Prod RangeRule IEEE32Exec.Interval32
 
 /-- Executable range transfer for one operation family.
 
-The proof-facing meaning of the resulting row remains `RealDValEnclosed`; local soundness lemmas
+The proof-facing meaning of the resulting row remains `RealPackedTensorEnclosed`; local soundness lemmas
 for interval arithmetic and NF approximation are kept in their mathematical modules. The contract
 contains only executable dispatch and a stable key, so serializable certificates cannot inject
 proof evidence.
@@ -1143,7 +1143,7 @@ def layerNormContract : GraphRangeContract where
         requireFixedLeftReduction context.plan node
         let input <- parentNodeRange context.ranges parent
         let (_, normalizedSize) <-
-          match OpContracts.layerNorm2DParams axis input.outShape with
+          match OpContracts.layerNormMatrixDims axis input.outShape with
           | .ok dims => pure dims
           | .error message =>
               throw s!"numerical certificate: node {node.id} layernorm: {message}"
@@ -1153,7 +1153,7 @@ def layerNormContract : GraphRangeContract where
         let centered := IEEE32Exec.Interval32.sub input.enclosure mean
         let squared := (IEEE32Exec.Interval32.mul centered centered).relu
         let variance := meanLeftRange normalizedSize squared
-        let epsilon : IEEE32Exec := Numbers.epsilon
+        let epsilon : IEEE32Exec := Numbers.normalizationEpsilon
         let stabilized := IEEE32Exec.Interval32.add variance
           (IEEE32Exec.Interval32.point epsilon)
         if nonnegativeEndpoint stabilized.lo && nonnegativeEndpoint stabilized.hi then
@@ -1371,11 +1371,11 @@ instance : Repr CheckedCertificate where
 intermediate value against a checked numerical certificate. -/
 structure CheckedExecution where
   certificate : CheckedCertificate
-  values : Array (NN.IR.DVal IEEE32Exec)
+  values : Array (Spec.PackedTensor IEEE32Exec)
   withinRanges : executionWithinRanges certificate.ranges values = true
 
 /-- Convert an accepted kernel plan and checked range trace into raw certificate data. -/
-def toRaw (profile : BackendProfile) (registry : GraphRangeRegistry)
+def ofCheckedTrace (profile : BackendProfile) (registry : GraphRangeRegistry)
     (sources : Array SourceRange)
     (ranges : Array CheckedNodeRange) (plan : AcceptedGraphKernelPlan) : GraphNumericalCertificate :=
   { profileName := profile.name
@@ -1398,7 +1398,7 @@ def generateWith (registry : GraphRangeRegistry) (profile : BackendProfile)
   let checkedSources <- checkSources sources
   let plan <- acceptedPlan profile graph
   let ranges <- buildRangeTraceWith registry graph checkedSources plan
-  pure (toRaw profile registry sources ranges plan)
+  pure (ofCheckedTrace profile registry sources ranges plan)
 
 /-- Generate a canonical certificate using TorchLean's built-in numerical contracts. -/
 def generate (profile : BackendProfile) (graph : Graph) (sources : Array SourceRange) :
@@ -1459,7 +1459,7 @@ selected when the graph is replanned. The audit is not runtime provenance and do
 those kernels produced the imported values.
 -/
 def executeIEEE32 (payload : NN.IR.Payload IEEE32Exec)
-    (input : NN.IR.DVal IEEE32Exec) (certificate : CheckedCertificate) :
+    (input : Spec.PackedTensor IEEE32Exec) (certificate : CheckedCertificate) :
     Except String CheckedExecution := do
   let values <- certificate.graph.denoteAll payload input
   if h : executionWithinRanges certificate.ranges values then
@@ -1476,13 +1476,13 @@ structure CheckedRealExecution (certificate : CheckedCertificate) where
   /-- Real-valued constants and external tensors used by the graph execution. -/
   payload : NN.IR.Payload Real
   /-- Real-valued graph input. -/
-  input : NN.IR.DVal Real
+  input : Spec.PackedTensor Real
   /-- Complete real-valued node trace, in graph order. -/
-  values : Array (NN.IR.DVal Real)
+  values : Array (Spec.PackedTensor Real)
   /-- Evidence that `values` is exactly the graph's denotational execution trace. -/
   denotation : certificate.graph.denoteAll payload input = .ok values
   /-- Pointwise evidence that every real node value lies in its checked interval. -/
-  enclosed : List.Forall₂ RealDValEnclosed certificate.ranges.toList values.toList
+  enclosed : List.Forall₂ RealPackedTensorEnclosed certificate.ranges.toList values.toList
 
 namespace CheckedExecution
 

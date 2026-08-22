@@ -38,8 +38,8 @@ def layerNorm {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : em
   (t : Tape) (xId gammaId betaId : Nat) : Result (Tape × Nat) := do
   have _ := h_seq_pos
   have _ := h_embed_pos
-  let rows32 ← u32 seqLen
-  let cols32 ← u32 embedDim
+  let rows32 ← AnyBuffer.natToU32Checked seqLen
+  let cols32 ← AnyBuffer.natToU32Checked embedDim
   let x ← requireValue (t := t) xId (.dim seqLen (.dim embedDim .scalar))
   let gamma ← requireValue (t := t) gammaId (.dim embedDim .scalar)
   let beta ← requireValue (t := t) betaId (.dim embedDim .scalar)
@@ -51,7 +51,7 @@ def layerNorm {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : em
   let node : Node :=
     { name := some "layer_norm"
       value := { s := outShape, buf := y }
-      requires_grad := true
+      requiresGrad := true
       parents := [xId, gammaId, betaId]
       cleanup := [xHat, invStd]
       backward := fun dLdyAny => do
@@ -78,11 +78,11 @@ def batchNormChannelFirst
   have _ := h_c
   have _ := h_h
   have _ := h_w
-  let rows32 ← u32 channels
+  let rows32 ← AnyBuffer.natToU32Checked channels
   let cols : Nat := height * width
   if cols = 0 then
     throw "autograd: batchnorm_channel_first: height*width = 0"
-  let cols32 ← u32 cols
+  let cols32 ← AnyBuffer.natToU32Checked cols
   let xShape : Shape := .dim channels (.dim height (.dim width .scalar))
   let x ← requireValue (t := t) xId xShape
   let gamma ← requireValue (t := t) gammaId (.dim channels .scalar)
@@ -109,7 +109,7 @@ def batchNormChannelFirst
   let node : Node :=
     { name := some "batchnorm_channel_first"
       value := { s := xShape, buf := y }
-      requires_grad := true
+      requiresGrad := true
       parents := [xId, gammaId, betaId]
       cleanup :=
         [ sum1, mean, meanB, centered, centered2, varSum, var, epsVec, varEps
@@ -160,7 +160,7 @@ This covers:
 - 3D batched softmax (`(batch, rows, cols)`) by folding `batch*rows` into `rows`.
 -/
 
-def softmax {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
+def softmaxLast {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
   match s with
   | .scalar =>
       let _x ← requireValue (t := t) xId Shape.scalar
@@ -169,7 +169,7 @@ def softmax {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
       let node : Node :=
         { name := some "softmax"
           value := { s := Shape.scalar, buf := one }
-          requires_grad := true
+          requiresGrad := true
           parents := [xId]
           backward := fun dLdyAny => do
             let _ ← requireGrad dLdyAny Shape.scalar
@@ -183,7 +183,7 @@ def softmax {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
       let node : Node :=
         { name := some "softmax"
           value := { s := s, buf := yOwned.value }
-          requires_grad := true
+          requiresGrad := true
           parents := [xId]
           cleanup := yOwned.workspace
           backward := fun dLdyAny => do
@@ -193,7 +193,7 @@ def softmax {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
       pure (t.addNode node)
 
 /-- Stable log-softmax along the last axis, implemented directly on CUDA buffers. -/
-def logSoftmax {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
+def logSoftmaxLast {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
   match s with
   | .scalar =>
       let _x ← requireValue (t := t) xId Shape.scalar
@@ -202,7 +202,7 @@ def logSoftmax {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
       let node : Node :=
         { name := some "log_softmax"
           value := { s := Shape.scalar, buf := zero }
-          requires_grad := true
+          requiresGrad := true
           parents := [xId]
           backward := fun dLdyAny => do
             let _ ← requireGrad dLdyAny Shape.scalar
@@ -216,7 +216,7 @@ def logSoftmax {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
       let node : Node :=
         { name := some "log_softmax"
           value := { s := s, buf := yOwned.value }
-          requires_grad := true
+          requiresGrad := true
           parents := [xId]
           cleanup := yOwned.workspace
           backward := fun dLdyAny => do

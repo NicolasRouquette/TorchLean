@@ -120,7 +120,7 @@ def gcnLayerSpec {n inDim outDim : Nat}
   let hB : Shape.CanBroadcastTo (.dim outDim .scalar) (.dim n (.dim outDim .scalar)) := by
     apply Shape.CanBroadcastTo.expand_dims
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
+    exact Shape.CanBroadcastTo.scalar
   addSpec axw (broadcastTo hB layer.b)
 
 /-!
@@ -162,10 +162,8 @@ def gcnLayerBackwardSpec {n inDim outDim : Nat}
   let (dAx, dW) := matMulBackwardSpec ax layer.W grad_output
 
   -- Bias gradient: sum across the node axis.
-  let _ : Shape.valid_axis_inst 0 (Shape.dim n (Shape.dim outDim Shape.scalar)) :=
-    Shape.validAxisInstZeroAlt h_n
-  let db := reduceSumAuto (α := α) (s := Shape.dim n (Shape.dim outDim Shape.scalar)) 0
-    grad_output
+  let db := reduceSum (α := α) (s := Shape.dim n (Shape.dim outDim Shape.scalar)) 0
+    grad_output (Shape.hasNonemptyAxisZeroOfNe h_n).proof
 
   -- Backprop through the first matmul: A · X
   let (dA, dX) := matMulBackwardSpec layer.A x dAx

@@ -15,8 +15,8 @@ public import NN.Tests.Runtime.Cuda.Utils
 # CUDA Kernel Coverage: Gather / Scatter
 
 Compares CPU eager tape vs CUDA eager tape for:
-- `gather_vec_nat`
-- `gather_rows_nat`
+- `gather_vec_nat_or_zero`
+- `gather_rows_nat_or_zero`
 - `scatter_add_vec`
 - `scatter_add_row`
 -/
@@ -32,7 +32,7 @@ open Tensor
 open Runtime.Autograd
 
 def runGatherVec : IO Unit := do
-  IO.println "== gather_vec_nat =="
+  IO.println "== gather_vec_nat_or_zero =="
 
   let n : Nat := 5
   let k : Nat := 3
@@ -47,9 +47,9 @@ def runGatherVec : IO Unit := do
   let t0 : Tape Float := Tape.empty
   let (t1, xId) := Tape.leaf (t := t0) x (name := some "x")
   let (t2, yId) ← Utils.okOrThrow
-    (Tape.gatherVecNat (α := Float) (t := t1) (n := n) (k := k) xId idx)
+    (Tape.gatherVecNatOrZero (α := Float) (t := t1) (n := n) (k := k) xId idx)
   let yCpu ← Utils.cpuValue (s := sY) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) sY)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) sY)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := sX) gradsCpu xId
 
@@ -58,7 +58,7 @@ def runGatherVec : IO Unit := do
   let (t1c, xIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
     (name := some "x")
   let (t2c, yIdc) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.gatherVecNat (t := t1c) (n := n) (k := k) xIdc idx)
+    (Runtime.Autograd.Cuda.Tape.gatherVecNatOrZero (t := t1c) (n := n) (k := k) xIdc idx)
   let yCuda ← Utils.cudaValue (s := sY) t2c yIdc
   let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
     { s := sY, buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size sY)) 1.0 }
@@ -85,7 +85,7 @@ def runScatterVec : IO Unit := do
   let (t3, yId) ← Utils.okOrThrow
     (Tape.scatterAddVec (α := Float) (t := t2) (n := n) xId vId i)
   let yCpu ← Utils.cpuValue (s := sX) t3 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) sX)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) sX)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t3) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := sX) gradsCpu xId
   let dvCpu ← Utils.cpuGrad (s := Shape.scalar) gradsCpu vId
@@ -111,7 +111,7 @@ def runScatterVec : IO Unit := do
   Utils.assertTensorApprox (s := Shape.scalar) "scatter_add_vec dv" dvCuda dvCpu (tol := 1e-6)
 
 def runGatherRows : IO Unit := do
-  IO.println "== gather_rows_nat =="
+  IO.println "== gather_rows_nat_or_zero =="
 
   let rows : Nat := 3
   let cols : Nat := 2
@@ -131,9 +131,9 @@ def runGatherRows : IO Unit := do
   let t0 : Tape Float := Tape.empty
   let (t1, xId) := Tape.leaf (t := t0) x (name := some "x")
   let (t2, yId) ← Utils.okOrThrow
-    (Tape.gatherRowsNat (α := Float) (t := t1) (rows := rows) (cols := cols) (k := k) xId idx)
+    (Tape.gatherRowsNatOrZero (α := Float) (t := t1) (rows := rows) (cols := cols) (k := k) xId idx)
   let yCpu ← Utils.cpuValue (s := sY) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) sY)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) sY)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := sX) gradsCpu xId
 
@@ -142,7 +142,7 @@ def runGatherRows : IO Unit := do
   let (t1c, xIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
     (name := some "x")
   let (t2c, yIdc) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.gatherRowsNat (t := t1c) (rows := rows) (cols := cols) (k := k)
+    (Runtime.Autograd.Cuda.Tape.gatherRowsNatOrZero (t := t1c) (rows := rows) (cols := cols) (k := k)
       xIdc idx)
   let yCuda ← Utils.cudaValue (s := sY) t2c yIdc
   let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
@@ -177,7 +177,7 @@ def runScatterRow : IO Unit := do
   let (t3, yId) ← Utils.okOrThrow
     (Tape.scatterAddRow (α := Float) (t := t2) (rows := rows) (cols := cols) xId vId i)
   let yCpu ← Utils.cpuValue (s := sX) t3 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) sX)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) sX)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t3) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := sX) gradsCpu xId
   let dvCpu ← Utils.cpuGrad (s := shape![cols]) gradsCpu vId
@@ -212,30 +212,30 @@ def runOversizedIndexChecks : IO Unit := do
     Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
   let largestRepresentableIndex : Nat := (0xFFFFFFFF : UInt32).toNat
   let (maxIndexTape, maxIndexId) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.gatherScalarNat
+    (Runtime.Autograd.Cuda.Tape.gatherScalarNatOrZero
       (t := t1c) (n := 2) xIdc largestRepresentableIndex)
   let maxIndexValue ← Utils.cudaValue (s := Shape.scalar) maxIndexTape maxIndexId
-  Utils.assertApprox "gather_scalar_nat UInt32.max totalization"
-    (Tensor.toScalar maxIndexValue) 0.0 0.0
+  Utils.assertApprox "gather_scalar_nat_or_zero UInt32.max totalization"
+    (Tensor.item maxIndexValue) 0.0 0.0
 
   let oversizedIndex := UInt32.size
-  match Runtime.Autograd.Cuda.Tape.gatherScalarNat
+  match Runtime.Autograd.Cuda.Tape.gatherScalarNatOrZero
       (t := t1c) (n := 2) xIdc oversizedIndex with
-  | .ok _ => throw <| IO.userError "gather_scalar_nat accepted an index larger than UInt32"
+  | .ok _ => throw <| IO.userError "gather_scalar_nat_or_zero accepted an index larger than UInt32"
   | .error _ => pure ()
 
   let indices : Tensor Nat (shape![1]) := tensorOfList! [1] [oversizedIndex]
-  match Runtime.Autograd.Cuda.Tape.gatherVecNat
+  match Runtime.Autograd.Cuda.Tape.gatherVecNatOrZero
       (t := t1c) (n := 2) (k := 1) xIdc indices with
-  | .ok _ => throw <| IO.userError "gather_vec_nat accepted an index larger than UInt32"
+  | .ok _ => throw <| IO.userError "gather_vec_nat_or_zero accepted an index larger than UInt32"
   | .error _ => pure ()
 
   let matrix : Tensor Float (shape![1, 2]) := tensorOfList! [1, 2] [1.0, 2.0]
   let (t2c, matrixIdc) :=
     Runtime.Autograd.Cuda.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer matrix)
-  match Runtime.Autograd.Cuda.Tape.gatherRowsNat
+  match Runtime.Autograd.Cuda.Tape.gatherRowsNatOrZero
       (t := t2c) (rows := 1) (cols := 2) (k := 1) matrixIdc indices with
-  | .ok _ => throw <| IO.userError "gather_rows_nat accepted an index larger than UInt32"
+  | .ok _ => throw <| IO.userError "gather_rows_nat_or_zero accepted an index larger than UInt32"
   | .error _ => pure ()
 
 def run : IO Unit := do

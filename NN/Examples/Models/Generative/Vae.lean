@@ -43,14 +43,37 @@ Shared vector-image configuration.
 The runtime example uses the same flattened CIFAR data boundary as the other vector generative
 commands, while the VAE-specific output shape adds latent mean/log-variance proxy channels.
 -/
-def cfg : nn.models.VectorGenerativeConfig :=
-  nn.models.vectorGenerativeConfig 1 16 8 4
+def cfg : nn.models.DenseGenerative.Config :=
+  { dataDim := 16, hiddenDim := 8, latentDim := 4 }
+
+/-- Number of image vectors loaded for each training sample. -/
+def batch : Nat := 1
 
 /-- Input shape: a batch of flattened CIFAR image vectors. -/
-abbrev σ := nn.models.vectorDataShape cfg
+abbrev σ := cfg.dataShape (.dim batch .scalar)
 
 /-- Output shape: reconstruction plus latent regularization proxy channels. -/
-abbrev τ := nn.models.vectorVaeOutShape cfg
+abbrev τ := cfg.vaeOutputShape (.dim batch .scalar)
+
+namespace Internal
+
+/-- Reconstruction target followed by zero latent-statistic proxy channels. -/
+def target (x : Tensor Float σ) : Tensor Float τ :=
+  .dim fun bi =>
+    let row := Spec.getAtSpec x bi
+    .dim fun j =>
+      let value :=
+        if h : j.val < cfg.dataDim then
+          Tensor.item (Spec.get row ⟨j.val, h⟩)
+        else
+          0.0
+      .scalar value
+
+/-- Supervised sample used by this compact executable VAE path. -/
+def sample (x : Tensor Float σ) : Sample.Supervised Float σ τ :=
+  Sample.mk x (target x)
+
+end Internal
 
 /--
 Trainable VAE-style vector model.
@@ -59,11 +82,11 @@ The executable target is still an MSE-style supervised sample; the imported spec
 the VAE objective separately.
 -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.vectorVae cfg
+  nn.models.DenseGenerative.vae cfg (.dim batch .scalar)
 
 /-- Public singleton dataset for compact CIFAR reconstruction plus latent-stat targets. -/
 def data (flags : RealData.CifarModelTrainFlags) : Trainer.DataSource σ τ :=
-  RealData.cifarVectorDataset cfg (by decide) exeName (nn.models.vaeSample cfg)
+  RealData.cifarFeatureDataset batch cfg (by decide) exeName Internal.sample
     flags.xPath flags.yPath flags.nRows flags.seed
 
 /-- Train the compact VAE-style model with the public `Trainer` surface. -/
@@ -83,7 +106,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
     (data flags)
     (CLI.Training.OptimizerOptions.toTrainerOptions flags.toOptimizerOptions
       (title := "VAE-style CIFAR reconstruction")
-      (notes := RealData.cifarClassifierNotes cfg.batch flags #[s!"latentDim={cfg.latentDim}"]))
+      (notes := RealData.cifarClassifierNotes batch flags #[s!"latentDim={cfg.latentDim}"]))
 
 /--
 Executable entrypoint for the compact VAE-style run.

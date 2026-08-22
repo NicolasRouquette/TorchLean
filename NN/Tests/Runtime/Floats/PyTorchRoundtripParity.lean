@@ -145,23 +145,23 @@ def leanCnn : IO (Array Float) := do
   let j ← TorchLean.Json.parseFile cnnJson
   let some sd := Import.CNNPyTorch.loadCnnStateDict 1 2 3 3 8 j
     | throw (IO.userError "pytorch_roundtrip_parity: failed to load CNN state dict")
-  let conv1 : Conv2DSpec 1 2 3 3 1 1 Float (by decide) (by decide) (by decide) :=
+  let conv1 : Conv2dSpec 1 2 3 3 1 1 Float (by decide) (by decide) (by decide) :=
     { kernel := sd.convW1, bias := sd.convB1 }
-  let conv2 : Conv2DSpec 2 2 3 3 1 1 Float (by decide) (by decide) (by decide) :=
+  let conv2 : Conv2dSpec 2 2 3 3 1 1 Float (by decide) (by decide) (by decide) :=
     { kernel := sd.convW2, bias := sd.convB2 }
-  let pool1 : MaxPool2DSpec 2 2 2 (by decide) (by decide) (by decide) :=
+  let pool1 : MaxPool2dSpec 2 2 2 (by decide) (by decide) (by decide) :=
     {}
-  let pool2 : MaxPool2DSpec 2 2 2 (by decide) (by decide) (by decide) :=
+  let pool2 : MaxPool2dSpec 2 2 2 (by decide) (by decide) (by decide) :=
     {}
   let linear : LinearSpec Float 8 2 := { weights := sd.linearW, bias := sd.linearB }
-  let net := Models.cnnWithReluSpec (α := Float)
+  let net := Models.Cnn.withReluSpec (α := Float)
     (inH := 8) (inW := 8) conv1 conv2 pool1 pool2 linear
   let x : Tensor Float (.dim 1 (.dim 8 (.dim 8 .scalar))) :=
     Tensor.dim (fun _ =>
       Tensor.dim (fun i =>
         Tensor.dim (fun k =>
           Tensor.scalar (Float.ofNat (i.val * 8 + k.val + 1)))))
-  let y := ModSpec.SpecChain.forward (α := Float) net x
+  let y := Spec.Module.Chain.forward (α := Float) net x
   pure #[vecVal y ⟨0, by decide⟩, vecVal y ⟨1, by decide⟩]
 
 def leanTransformer : IO (Array Float) := do
@@ -169,21 +169,56 @@ def leanTransformer : IO (Array Float) := do
   let some sd := Import.TransformerPyTorch.loadTransformerEncoderStateDict 2 1 2 j
     | throw (IO.userError "pytorch_roundtrip_parity: failed to load Transformer state dict")
   let layer : TransformerEncoderLayer 1 2 2 Float :=
-    { mha := { Wq := sd.Wq, Wk := sd.Wk, Wv := sd.Wv, Wo := sd.Wo }
-      ffn := { W1 := sd.W1, W2 := sd.W2, b1 := sd.b1, b2 := sd.b2 }
-      norm1_gamma := sd.norm1_gamma
-      norm1_beta := sd.norm1_beta
-      norm2_gamma := sd.norm2_gamma
-      norm2_beta := sd.norm2_beta }
-  let encoder : TransformerEncoder 1 1 2 2 Float := { layers := [layer] }
+    { mha :=
+        { queryWeight := sd.queryWeight
+          keyWeight := sd.keyWeight
+          valueWeight := sd.valueWeight
+          outputWeight := sd.outputWeight }
+      ffn :=
+        { inputWeight := sd.feedForwardInputWeight
+          outputWeight := sd.feedForwardOutputWeight
+          inputBias := sd.feedForwardInputBias
+          outputBias := sd.feedForwardOutputBias }
+      norm1Scale := sd.norm1Scale
+      norm1Bias := sd.norm1Bias
+      norm2Scale := sd.norm2Scale
+      norm2Bias := sd.norm2Bias }
+  let encoder : TransformerEncoder 1 1 2 2 Float := { layers := #v[layer] }
   let x : Tensor Float (.dim 1 (.dim 2 .scalar)) := tensor! [[1.5, 1.5]]
   let y := TransformerEncoder.forward (seqLen := 1) (embedDim := 2)
     encoder x (by decide) (by decide)
   pure #[matVal y ⟨0, by decide⟩ ⟨0, by decide⟩,
     matVal y ⟨0, by decide⟩ ⟨1, by decide⟩]
 
+def parseJson! (source : String) : IO Json :=
+  match Json.parse source with
+  | .ok json => pure json
+  | .error error =>
+      throw <| IO.userError s!"pytorch_roundtrip_parity: invalid test JSON: {error}"
+
+/-- Check the wrapper rules before running the optional Python parity process. -/
+def checkImporterBoundaries : IO Unit := do
+  let collision ← parseJson! "{\"params\":{\"weight\":[1.0]},\"weight\":[9.0]}"
+  let some weights := Import.PyTorch.loadWeights? collision
+    | throw <| IO.userError "pytorch_roundtrip_parity: rejected valid wrapped weights"
+  let some weight := Import.PyTorch.getTensor? weights "weight" (.dim 1 .scalar)
+    | throw <| IO.userError "pytorch_roundtrip_parity: failed to parse wrapped weight"
+  unless vecVal weight ⟨0, by decide⟩ == 1.0 do
+    throw <| IO.userError "pytorch_roundtrip_parity: wrapper field shadowed a parameter"
+
+  let float32 ← parseJson!
+    "{\"params\":{\"weight\":[1.0]},\"meta\":{\"weight\":{\"dtype\":\"torch.float32\"}}}"
+  if (Import.PyTorch.loadWeights? float32).isNone then
+    throw <| IO.userError "pytorch_roundtrip_parity: rejected float32 metadata"
+
+  let float64 ← parseJson!
+    "{\"params\":{\"weight\":[1.0]},\"meta\":{\"weight\":{\"dtype\":\"torch.float64\"}}}"
+  if (Import.PyTorch.loadWeights? float64).isSome then
+    throw <| IO.userError "pytorch_roundtrip_parity: accepted unsupported float64 metadata"
+
 def run : IO Unit := do
   IO.println "pytorch_roundtrip_parity: begin"
+  checkImporterBoundaries
   if !(← pythonHasTorch) then
     IO.println "pytorch_roundtrip_parity: skipped (python package `torch` not installed)"
     return ()

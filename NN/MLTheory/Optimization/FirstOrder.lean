@@ -38,10 +38,10 @@ naturally over proof backends like `ℝ` where the laws are available from Mathl
 -/
 
 /--
-AdamW reduces to Adam when `weight_decay = 0` (parameter-update equality), over `ℝ`.
+AdamW reduces to Adam when `weightDecay = 0` (parameter-update equality), over `ℝ`.
 -/
 theorem update_weight_decay_zero_params_eq_adam_real {s : Shape}
-    (state : State ℝ s) (params grads : Tensor ℝ s) (hwd : state.weight_decay = 0) :
+    (state : State ℝ s) (params grads : Tensor ℝ s) (hwd : state.weightDecay = 0) :
     (update state params grads).2 =
       (Adam.update
           ({ lr := state.lr, beta1 := state.beta1, beta2 := state.beta2, epsilon := state.epsilon,
@@ -71,10 +71,10 @@ theorem update_weight_decay_zero_params_eq_adam_real {s : Shape}
         funext i
         simpa [Tensor.subSpec, Tensor.map2Spec, Spec.fill] using ih i
   cases state with
-  | mk lr beta1 beta2 epsilon weight_decay m v t =>
-      -- Now `weight_decay = 0` makes the decayed-parameter term a no-op.
-      -- We rewrite `weight_decay` first, then discharge the tensor equalities via the helpers.
-      have hwd' : weight_decay = 0 := by simpa using hwd
+  | mk lr beta1 beta2 epsilon weightDecay m v t =>
+      -- Now `weightDecay = 0` makes the decayed-parameter term a no-op.
+      -- We rewrite `weightDecay` first, then discharge the tensor equalities via the helpers.
+      have hwd' : weightDecay = 0 := by simpa using hwd
       -- `simp` doesn't know tensor algebra, but it will reduce the remaining goal to our helpers.
       simp [AdamW.update, Adam.update, hwd', scaleSpec_zero, subSpec_fill_zero]
 

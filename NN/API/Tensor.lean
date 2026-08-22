@@ -8,6 +8,8 @@ module
 
 public import NN.API.Runtime
 public import NN.API.Rand
+public import NN.Runtime.Autograd.TorchLean.Functional.ShapeOps
+public import NN.Spec.Core.Sequence
 public import NN.Spec.Core.TensorReductionShape
 
 /-!
@@ -42,32 +44,77 @@ TorchLean executable program directly, for example before lowering a hand-built 
 export _root_.Runtime.Autograd.TorchLean (RefTy)
 export _root_.Runtime.Autograd.Torch
   (const add sub mul scale abs sqrt clamp max min
-   broadcastTo reshape swapAdjacentAtDepth reduceSum reduceMean
-   gatherScalar gatherRow gatherScalarNat gatherVecNat gatherRowsNat scatterAddVec scatterAddRow
-   mm concatVectors
+   broadcastTo reshape reduceSum reduceMean
+   gatherScalar gatherRow gatherScalarNatOrZero gatherVecNatOrZero gatherRowsNatOrZero scatterAddVec scatterAddRow
+   mm
    maxPool avgPool smoothMaxPool
-   relu silu gelu sigmoid tanh softmax softplus exp log inv safeLog logSoftmax
+   relu silu gelu sigmoid tanh softplus exp log inv safeLog
    sum flatten linear mseLoss layerNorm multiHeadAttention conv convTranspose)
+
+/--
+Permute arbitrary tensor dimensions, checking the requested output shape.
+
+The list gives each output dimension's source dimension, as in `torch.permute`. The result is
+`none` when the list is not a permutation of all input dimensions or when its computed shape is not
+the expected result shape.
+-/
+def permute {α : Type} [Context α] [DecidableEq Spec.Shape]
+    {m : Type → Type} [Monad m]
+    [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)]
+    {s sOut : Spec.Shape} (axes : List Nat)
+    (x : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s) :
+    m (Option (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) sOut)) :=
+  _root_.Runtime.Autograd.TorchLean.F.permute (m := m) (α := α) axes x
+
+/--
+Permute arbitrary tensor dimensions and return the statically unknown result shape.
+
+Use this form at dynamic data boundaries. Statically shaped model code should normally use
+`permute`, whose expected result shape remains in the type.
+-/
+def permute? {α : Type} [Context α] [DecidableEq Spec.Shape]
+    {m : Type → Type} [Monad m]
+    [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)]
+    {s : Spec.Shape} (axes : List Nat)
+    (x : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s) :
+    m (Option (Σ s' : Spec.Shape,
+      _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s')) :=
+  _root_.Runtime.Autograd.TorchLean.F.permute? (m := m) (α := α) axes x
+
+/-- Apply softmax along any valid tensor dimension. -/
+def softmax {α : Type} [Context α] [DecidableEq Spec.Shape]
+    {m : Type → Type} [Monad m]
+    [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)]
+    {s : Spec.Shape} (axis : Nat) [Spec.Shape.AxisInBounds axis s]
+    (x : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s) :
+    m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s) :=
+  _root_.Runtime.Autograd.TorchLean.F.softmax (m := m) (α := α) axis x
+
+/-- Apply stable log-softmax along any valid tensor dimension. -/
+def logSoftmax {α : Type} [Context α] [DecidableEq Spec.Shape]
+    {m : Type → Type} [Monad m]
+    [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)]
+    {s : Spec.Shape} (axis : Nat) [Spec.Shape.AxisInBounds axis s]
+    (x : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s) :
+    m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s) :=
+  _root_.Runtime.Autograd.TorchLean.F.logSoftmax (m := m) (α := α) axis x
 
 end Ops
 
 namespace Shape
 
-export Spec.Shape (scalar size toList)
-
-/-- Construct a shape from its outermost-to-innermost dimensions. -/
-abbrev ofDims := NN.Tensor.shapeOfDims
+export Spec.Shape (scalar size toList ofList)
 
 end Shape
 
 namespace Tensor
 
-export Spec.Tensor (scalar dim vecGet toScalar)
+export Spec.Tensor
+  (scalar dim vecGet item mapLeading zipWithLeading sumLeadingAxis reverseLeadingAxis)
 export NN.Tensor
-  (shapeOfDims numelDims vector oneHot oneHotNatOrZero matrix? matrix matrixResize matrixPadRight
-   ofListOfLength ofList dynamicOfList fillOfDims zerosOfDims onesOfDims
-   float32Vector float32Matrix ieee32ExecVector ieee32ExecMatrix print)
-export Spec (vectorFromList matrixFromRows fill pretty)
+  (vector oneHot oneHotNatOrZero oneHotIndicesOrZero matrix? matrix matrixResize matrixPadRight
+   ofListOfLength ofList someTensorOfList fillOfDims zerosOfDims onesOfDims print)
+export Spec (vectorFromList matrixFromRows? fill pretty)
 
 /--
 Preserve `leading`, flatten the remaining source shape, and retain its first `takeDim` entries.
@@ -85,29 +132,13 @@ def flattenPrefix {α : Type} [Inhabited α]
     let flat := Spec.Tensor.flattenSpec x
     Spec.Tensor.dim (fun j =>
       let h : j.val < Shape.size source := Nat.lt_of_lt_of_le j.isLt hTake
-      Spec.Tensor.scalar (Spec.Tensor.toScalar (Spec.get flat ⟨j.val, h⟩)))
+      Spec.Tensor.scalar (Spec.Tensor.item (Spec.get flat ⟨j.val, h⟩)))
   | .dim _ rest =>
       Spec.Tensor.dim (fun i => flattenPrefix rest takeDim hTake (Spec.getAtSpec x i))
-
-/--
-Construct a fixed-length vector from an array using a default value for missing entries.
-
-Entries beyond the array use `fallback`; entries beyond length `n` are ignored. This constructor is
-useful at runtime data boundaries where the tensor length is fixed by a model type while the source
-array is checked or padded by the caller.
--/
-def vectorFromArrayD {α : Type} (n : Nat) (xs : Array α) (fallback : α) :
-    Spec.Tensor α (.dim n .scalar) :=
-  Spec.Tensor.dim fun i => Spec.Tensor.scalar (xs.getD i.val fallback)
 
 /-- Apply a scalar function pointwise while preserving the tensor shape. -/
 abbrev map {α β : Type} {s : Shape} (f : α → β) (x : Tensor α s) : Tensor β s :=
   Spec.mapTensor f x
-
-/-- Convert a `Float` tensor pointwise with an explicitly supplied scalar cast. -/
-def castFloat {α : Type} (cast : Float → α) {s : Shape} (t : Tensor Float s) :
-    Tensor α s :=
-  Spec.mapTensor cast t
 
 /--
 Construct a tensor from a flat list of `Float` values and convert each entry to the selected scalar
@@ -115,9 +146,9 @@ type. The list length must equal the product of `dims`.
 -/
 def fromFloatList {α : Type} [Context α]
     (cast : Float → α) (dims : List Nat) (xs : List Float) :
-    Except String (Tensor α (Shape.ofDims dims)) := do
+    Except String (Tensor α (Shape.ofList dims)) := do
   let tensor ← NN.Tensor.ofList (α := Float) dims xs
-  pure (castFloat cast tensor)
+  pure (map cast tensor)
 
 /--
 Generate a tensor from its flat element index and convert each generated `Float` to the selected
@@ -125,27 +156,16 @@ scalar type.
 -/
 def generateFromFloat {α : Type} [Context α]
     (cast : Float → α) (dims : List Nat) (f : Nat → Float) :
-    Tensor α (Shape.ofDims dims) :=
-  let xs := (List.range (NN.Tensor.numelDims dims)).map f
-  have hLength : xs.length = NN.Tensor.numelDims dims := by
+    Tensor α (Shape.ofList dims) :=
+  let xs := (List.range dims.prod).map f
+  have hLength : xs.length = dims.prod := by
     simp [xs]
-  castFloat cast (NN.Tensor.ofListOfLength (α := Float) (dims := dims) (xs := xs) hLength)
+  map cast (NN.Tensor.ofListOfLength (α := Float) (dims := dims) (xs := xs) hLength)
 
 /-- Generate a tensor of a statically known shape from its flat element index. -/
 def generateFromFloatShape {α : Type} [Context α]
     (cast : Float → α) (shape : Shape) (f : Nat → Float) : Tensor α shape := by
-  simpa [NN.Tensor.shapeOfDims_toList] using
-    (generateFromFloat (α := α) cast shape.toList f)
-
-/--
-Repeat one tensor across a fixed batch axis.
-
-Use this for classifier demos whose checked model consumes a whole batch, while the example wants to
-inspect one ordinary input.
--/
-def repeatBatch {α : Type} {s : Shape} (batch : Nat) (x : Tensor α s) :
-    Tensor α (.dim batch s) :=
-  Spec.Tensor.dim (fun _ => x)
+  simpa using (generateFromFloat (α := α) cast shape.toList f)
 
 /--
 Convert a runtime tensor back to a `Float` tensor inside `IO`.

@@ -326,7 +326,7 @@ theorem NeuralTruncationState.scaledBrackets_of_exponent_eq
 Discard `shift` low radix digits and transfer their information into the refined location.
 Positive shifts are the intended use; correctness theorems state that premise explicitly.
 -/
-noncomputable def neuralTruncateAux (β : NeuralRadix) (state : NeuralTruncationState)
+noncomputable def neuralTruncateBy (β : NeuralRadix) (state : NeuralTruncationState)
     (shift : ℤ) : NeuralTruncationState :=
   let power := neuralIntPower β shift
   let remainder := state.mantissa % power
@@ -349,7 +349,7 @@ theorem neuralIntPower_one_lt (β : NeuralRadix) {shift : ℤ} (hshift : 0 < shi
       exact Int.ofNat_lt.mpr (show 1 < β.base ^ n * β.base by nlinarith)
 
 /-- The truncated remainder is a valid cell index in the discarded radix block. -/
-theorem neuralTruncateAux_remainder_bounds (β : NeuralRadix)
+theorem neuralTruncateBy_remainder_bounds (β : NeuralRadix)
     (state : NeuralTruncationState) {shift : ℤ} (hshift : 0 < shift) :
     let power := neuralIntPower β shift
     0 ≤ state.mantissa % power ∧ state.mantissa % power < power := by
@@ -359,21 +359,21 @@ theorem neuralTruncateAux_remainder_bounds (β : NeuralRadix)
   exact ⟨Int.emod_nonneg _ hpower.ne', Int.emod_lt_of_pos _ hpower⟩
 
 /-- Mantissa reconstruction after one truncation step. -/
-theorem neuralTruncateAux_mantissa_decomposition (β : NeuralRadix)
+theorem neuralTruncateBy_mantissa_decomposition (β : NeuralRadix)
     (state : NeuralTruncationState) {shift : ℤ} (hshift : 0 < shift) :
     state.mantissa =
       state.mantissa % neuralIntPower β shift +
-        neuralIntPower β shift * (neuralTruncateAux β state shift).mantissa := by
+        neuralIntPower β shift * (neuralTruncateBy β state shift).mantissa := by
   have hpower : neuralIntPower β shift ≠ 0 := ne_of_gt
     (lt_trans Int.zero_lt_one (neuralIntPower_one_lt β hshift))
-  simpa [neuralTruncateAux, add_comm] using
+  simpa [neuralTruncateBy, add_comm] using
     (Int.emod_add_mul_ediv state.mantissa (neuralIntPower β shift)).symm
 
 /-- One positive truncation step preserves the represented real bracket and its refined location. -/
-theorem neuralTruncateAux_brackets (β : NeuralRadix) (state : NeuralTruncationState)
+theorem neuralTruncateBy_brackets (β : NeuralRadix) (state : NeuralTruncationState)
     {shift : ℤ} (hshift : 0 < shift) {x : ℝ}
     (hl : state.Brackets β x) :
-    (neuralTruncateAux β state shift).Brackets β x := by
+    (neuralTruncateBy β state shift).Brackets β x := by
   let power := neuralIntPower β shift
   let quotient := state.mantissa / power
   let remainder := state.mantissa % power
@@ -383,10 +383,10 @@ theorem neuralTruncateAux_brackets (β : NeuralRadix) (state : NeuralTruncationS
   have hpowerPos : 0 < power := lt_trans Int.zero_lt_one hpowerOne
   have hpowerReal : (power : ℝ) = neuralBpow β shift := by
     exact neuralIntPower_cast_eq_bpow β hshift.le
-  have hrem := neuralTruncateAux_remainder_bounds β state hshift
-  have hdecomp := neuralTruncateAux_mantissa_decomposition β state hshift
+  have hrem := neuralTruncateBy_remainder_bounds β state hshift
+  have hdecomp := neuralTruncateBy_mantissa_decomposition β state hshift
   have hdecomp' : state.mantissa = remainder + power * quotient := by
-    simpa [power, quotient, remainder, neuralTruncateAux] using hdecomp
+    simpa [power, quotient, remainder, neuralTruncateBy] using hdecomp
   have hstepPos : 0 < step := neuralBpow.pos β state.exponent
   have hlower :
       start + (remainder : ℝ) * step =
@@ -447,13 +447,13 @@ theorem neuralTruncateAux_brackets (β : NeuralRadix) (state : NeuralTruncationS
   rw [hglobalLower, hglobalUpper'] at hrefined
   change NeuralInbetween
     (neuralToReal (β := β) {
-      mantissa := (neuralTruncateAux β state shift).mantissa
-      exponent := (neuralTruncateAux β state shift).exponent })
+      mantissa := (neuralTruncateBy β state shift).mantissa
+      exponent := (neuralTruncateBy β state shift).exponent })
     (neuralToReal (β := β) {
-      mantissa := (neuralTruncateAux β state shift).mantissa + 1
-      exponent := (neuralTruncateAux β state shift).exponent })
-    x (neuralTruncateAux β state shift).location
-  simpa [neuralTruncateAux, power, quotient, remainder] using hrefined
+      mantissa := (neuralTruncateBy β state shift).mantissa + 1
+      exponent := (neuralTruncateBy β state shift).exponent })
+    x (neuralTruncateBy β state shift).location
+  simpa [neuralTruncateBy, power, quotient, remainder] using hrefined
 
 /-- Number of low radix digits discarded to reach the exponent selected by `fexp`. -/
 def neuralTruncationShift (β : NeuralRadix) (fexp : ℤ → ℤ)
@@ -464,7 +464,7 @@ def neuralTruncationShift (β : NeuralRadix) (fexp : ℤ → ℤ)
 noncomputable def neuralTruncate (β : NeuralRadix) (fexp : ℤ → ℤ)
     (state : NeuralTruncationState) : NeuralTruncationState :=
   let shift := neuralTruncationShift β fexp state
-  if 0 < shift then neuralTruncateAux β state shift else state
+  if 0 < shift then neuralTruncateBy β state shift else state
 
 /-- Format-driven truncation preserves the represented real bracket. -/
 theorem neuralTruncate_brackets (β : NeuralRadix) (fexp : ℤ → ℤ)
@@ -472,7 +472,7 @@ theorem neuralTruncate_brackets (β : NeuralRadix) (fexp : ℤ → ℤ)
     (neuralTruncate β fexp state).Brackets β x := by
   by_cases hshift : 0 < neuralTruncationShift β fexp state
   · rw [neuralTruncate, if_pos hshift]
-    exact neuralTruncateAux_brackets β state hshift hl
+    exact neuralTruncateBy_brackets β state hshift hl
   · rw [neuralTruncate, if_neg hshift]
     exact hl
 
@@ -492,7 +492,7 @@ theorem neuralTruncate_brackets_and_exponent
   · exact neuralTruncate_brackets β fexp state hl
   · by_cases hshift : 0 < neuralTruncationShift β fexp state
     · rw [neuralTruncate, if_pos hshift]
-      simp only [neuralTruncateAux, neuralTruncationShift]
+      simp only [neuralTruncateBy, neuralTruncationShift]
       linarith
     · rw [neuralTruncate, if_neg hshift]
       simp only [neuralTruncationShift] at hshift
@@ -521,7 +521,7 @@ noncomputable def neuralRoundTruncatedNearestEven
   simp only [neuralTruncate, neuralTruncationShift, neuralDigits_zero, Nat.cast_zero,
     zero_add, sub_pos]
   split_ifs
-  · simp [neuralTruncateAux]
+  · simp [neuralTruncateBy]
   · rfl
 
 section GenericFormat

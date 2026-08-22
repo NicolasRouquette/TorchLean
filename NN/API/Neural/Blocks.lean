@@ -25,26 +25,8 @@ namespace Internal
 namespace blocks
 
 
-/--
-Small set of activation choices for block builders.
-
-PyTorch module analogues:
-- `relu`    <-> `torch.nn.ReLU`
-- `gelu`    <-> `torch.nn.GELU`
-- `silu`    <-> `torch.nn.SiLU`
-- `tanh`    <-> `torch.nn.Tanh`
-- `sigmoid` <-> `torch.nn.Sigmoid`
--/
-inductive Activation where
-  | relu
-  | gelu
-  | silu
-  | tanh
-  | sigmoid
-deriving Repr, DecidableEq
-
-/-- Interpret an `Activation` as a TorchLean layer. -/
-def activation {s : Spec.Shape} : Activation → Sequential s s
+/-- Interpret an activation kind as a TorchLean layer. -/
+def activation {s : Spec.Shape} : _root_.Activation.Kind → Sequential s s
   | .relu => relu (s := s)
   | .gelu => gelu (s := s)
   | .silu => silu (s := s)
@@ -58,56 +40,47 @@ This builder produces a sequential stack of linear layers with activations and o
 
 PyTorch analogue: a hand-written `nn.Sequential(Linear(...), ReLU(), ..., Linear(...))`.
 -/
-structure MLP where
+structure MlpConfig where
   /-- Hidden layer widths (each entry creates a `Linear -> Activation` stage). -/
   hidden : List Nat := []
   /-- Activation used after each hidden linear layer. -/
-  activation : Activation := .relu
+  activation : _root_.Activation.Kind := .relu
   /-- Optional dropout probability after each activation. -/
   dropout? : Option Float := none
-  /-- Base seed used to deterministically initialize all linear layers (and dropout if present). -/
-  seedBase : Nat := 0
 
-/--
-Internal recursion for `mlp`.
-
-This builds the sequential stack stage-by-stage, threading a seed so each linear (and optional
-dropout) layer gets a deterministic initialization key.
--/
-def mlpGo (act : Activation) (dropout? : Option Float) :
+/-- Build the hidden stages of an MLP while assigning a distinct seed to each stateful layer. -/
+def mlpStages (leading : Spec.Shape) (act : _root_.Activation.Kind)
+    (dropout? : Option Float) :
     (inDim : Nat) → (hidden : List Nat) → (outDim : Nat) → (seed : Nat) →
-      Sequential (.dim inDim .scalar) (.dim outDim .scalar)
+      Sequential (leading.appendDim inDim) (leading.appendDim outDim)
   | inDim, [], outDim, seed =>
-      linear inDim outDim seed (seed + 1)
+      linear inDim outDim seed (seed + 1) leading
   | inDim, h :: hs, outDim, seed =>
-      let lin : Sequential (.dim inDim .scalar) (.dim h .scalar) :=
-        linear inDim h seed (seed + 1)
+      let hiddenShape := leading.appendDim h
+      let lin : Sequential (leading.appendDim inDim) hiddenShape :=
+        linear inDim h seed (seed + 1) leading
       let seed' := seed + 2
-      let actLayer : Sequential (.dim h .scalar) (.dim h .scalar) :=
-        activation (s := .dim h .scalar) act
-      let mid : Sequential (.dim h .scalar) (.dim h .scalar) × Nat :=
+      let actLayer : Sequential hiddenShape hiddenShape :=
+        activation (s := hiddenShape) act
+      let mid : Sequential hiddenShape hiddenShape × Nat :=
         match dropout? with
         | none => (actLayer, seed')
         | some p =>
-            ((seq! actLayer, dropout (s := .dim h .scalar) p (seed := seed')), seed' + 1)
+            ((seq! actLayer, dropout (s := hiddenShape) p (seed := seed')), seed' + 1)
       let rest :=
-        mlpGo act dropout? h hs outDim mid.snd
+        mlpStages leading act dropout? h hs outDim mid.snd
       seq! lin, mid.fst, rest
 
-/--
-Build an MLP as a sequential stack of linear layers and activations.
-
-This is a small PyTorch-shaped constructor: a typical call looks like:
-`TorchLean.nn.blocks.mlp 784 10 { hidden := [128, 128], activation := .relu }`.
--/
-def mlp (inDim outDim : Nat) (cfg : MLP := {}) :
-    Sequential (.dim inDim .scalar) (.dim outDim .scalar) :=
-  mlpGo cfg.activation cfg.dropout? inDim cfg.hidden outDim cfg.seedBase
+/-- Assemble an MLP from an explicit base seed for the public seeded builder. -/
+def mlpWithSeed (inDim outDim seed : Nat) (cfg : MlpConfig := {})
+    (leading : Spec.Shape := .scalar) :
+    Sequential (leading.appendDim inDim) (leading.appendDim outDim) :=
+  mlpStages leading cfg.activation cfg.dropout? inDim cfg.hidden outDim seed
 
 /-- Convolution followed by an activation and optional dropout. -/
 structure ConvAct (d : Nat) where
   conv : Conv d
-  activation : Activation := .relu
+  activation : _root_.Activation.Kind := .relu
   dropout? : Option Float := none
   seedDropout : Nat := 0
 
@@ -214,7 +187,7 @@ def addBranchesLayer {σ τ : Spec.Shape} (f g : Sequential σ τ) : Layer σ τ
   { kind := "AddBranches"
     stateShapes := psF ++ psG
     initState :=
-      _root_.TorchLean.tensorpack.append (α := Float) (ss₁ := psF) (ss₂ := psG)
+      _root_.TorchLean.TensorPack.append (α := Float) (ss₁ := psF) (ss₂ := psG)
         (_root_.Runtime.Autograd.TorchLean.NN.Seq.initState f) (_root_.Runtime.Autograd.TorchLean.NN.Seq.initState g)
     runtimeInit :=
       match _root_.Runtime.Autograd.TorchLean.NN.Seq.runtimeInit? f, _root_.Runtime.Autograd.TorchLean.NN.Seq.runtimeInit? g with
@@ -223,10 +196,10 @@ def addBranchesLayer {σ τ : Spec.Shape} (f g : Sequential σ τ) : Layer σ τ
     requiresGrad := _root_.Runtime.Autograd.TorchLean.NN.Seq.requiresGrad f ++ _root_.Runtime.Autograd.TorchLean.NN.Seq.requiresGrad
       g
     updateBuffers := some (fun mode {α} _ _ ps x => do
-      let (psFv, psGv) := _root_.TorchLean.tensorpack.split (α := α) (ss₁ := psF) (ss₂ := psG) ps
+      let (psFv, psGv) := _root_.TorchLean.TensorPack.split (α := α) (ss₁ := psF) (ss₂ := psG) ps
       let psFv' ← _root_.Runtime.Autograd.TorchLean.NN.Seq.updateBuffers (α := α) (model := f) mode psFv x
       let psGv' ← _root_.Runtime.Autograd.TorchLean.NN.Seq.updateBuffers (α := α) (model := g) mode psGv x
-      pure <| _root_.TorchLean.tensorpack.append (α := α) (ss₁ := psF) (ss₂ := psG) psFv' psGv'
+      pure <| _root_.TorchLean.TensorPack.append (α := α) (ss₁ := psF) (ss₂ := psG) psFv' psGv'
     )
     forward := fun mode {α} _ _ =>
       fun {m} _ _ =>
@@ -272,6 +245,6 @@ def addBranches {σ τ : Spec.Shape} (f g : Sequential σ τ) : Sequential σ τ
 
 /-- Apply an activation after adding two branches with the same output shape. -/
 def residualBlock {input output : Spec.Shape}
-    (main skip : Sequential input output) (act : Activation := .relu) :
+    (main skip : Sequential input output) (act : _root_.Activation.Kind := .relu) :
     Sequential input output :=
   seq! addBranches main skip, activation (s := output) act

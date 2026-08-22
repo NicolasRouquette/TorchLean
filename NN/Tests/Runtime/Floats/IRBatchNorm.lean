@@ -91,7 +91,7 @@ def unitObjective : FlatVec Float :=
   { n := Spec.Shape.size sNCHW
     v := Tensor.dim (fun i => Tensor.scalar (if decide (i.val = 0) then 1.0 else 0.0)) }
 
-def expectNCHW (label : String) (v : DVal Float) : IO (Tensor Float sNCHW) := do
+def expectNCHW (label : String) (v : Spec.PackedTensor Float) : IO (Tensor Float sNCHW) := do
   match v with
   | ⟨s, t⟩ =>
       if hs : s = sNCHW then
@@ -118,7 +118,7 @@ def run : IO Unit := do
 
   let yDenote ←
     match Graph.denote (α := Float) (g := graph) (payload := payload)
-        (input := DVal.mk (α := Float) sNCHW input) (outputId := 1) with
+        (input := Spec.PackedTensor.mk (α := Float) sNCHW input) (outputId := 1) with
     | .ok v => expectNCHW "ir_batchnorm denote" v
     | .error e => throw (IO.userError s!"ir_batchnorm: denote failed: {e}")
   checkTensor "ir_batchnorm denote" yDenote

@@ -129,8 +129,8 @@ def evalEpisodes : Nat := 5
 /-- Stop early if average return meets/exceeds this threshold. -/
 def solvedAvgReturn : Float := 475.0
 
-instance : Fact (0 < horizon) := ⟨by decide⟩
-instance : Fact (0 < nActions) := ⟨by decide⟩
+instance : NeZero horizon := ⟨by decide⟩
+instance : NeZero nActions := ⟨by decide⟩
 
 /-- The observation tensor shape used by this run: `[..., stateDim]`. -/
 def obsShape : Shape := shape![stateDim]
@@ -152,16 +152,18 @@ We use the public `TorchLean.nn` surface, which provides prefix-shape preserving
 if `x` has shape `[..., inDim]`, `nn.linear inDim outDim` maps it to `[..., outDim]`.
 -/
 
-def modelCfg : nn.models.PPOActorCriticConfig :=
+def modelCfg : nn.models.PPO.Config :=
   { obsDim := stateDim, hiddenDim := hiddenDim, nActions := nActions }
 
 /-- Construct the actor network as an MLP mapping observations to action logits. -/
-def actorMk (pfx : Shape) : nn.Builder (nn.Sequential (pfx.appendDim stateDim) (pfx.appendDim nActions)) :=
-  nn.models.ppoActor modelCfg pfx
+def actorMk (leading : Shape) :
+    nn.Builder (nn.Sequential (leading.appendDim stateDim) (leading.appendDim nActions)) :=
+  nn.models.PPO.actor modelCfg leading
 
 /-- Construct the critic network as an MLP mapping observations to a scalar value estimate. -/
-def criticMk (pfx : Shape) : nn.Builder (nn.Sequential (pfx.appendDim stateDim) (pfx.appendDim 1)) :=
-  nn.models.ppoCritic modelCfg pfx
+def criticMk (leading : Shape) :
+    nn.Builder (nn.Sequential (leading.appendDim stateDim) (leading.appendDim 1)) :=
+  nn.models.PPO.critic modelCfg leading
 
 /-!
 ## Gymnasium Bridge
@@ -216,9 +218,9 @@ def main (args : List String) : IO UInt32 := do
         rl.gym.client.spawn (obsShape := obsShape) (nActions := nActions) gymServerScript envId contract
       try
         -- Build actor/critic once from a single seed, then reuse them at both observation-time shapes
-        -- (`pfx = scalar`) and rollout-time batched shapes (`pfx = horizon`).
-        let seedActor ← nn.freshSeed
-        let seedCritic ← nn.freshSeed
+        -- (`leading = scalar`) and rollout-time batched shapes (`leading = horizon`).
+        let seedActor ← rand.nextSeedGlobal
+        let seedCritic ← rand.nextSeedGlobal
         let actorObs : nn.Sequential stateShape logitsShape :=
           nn.build seedActor (actorMk .scalar)
         let criticObs : nn.Sequential stateShape valueShape :=

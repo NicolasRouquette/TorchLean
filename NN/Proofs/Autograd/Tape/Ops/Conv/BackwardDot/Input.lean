@@ -9,7 +9,7 @@ module
 public import NN.Proofs.Autograd.Tape.Ops.Conv.BackwardDot.Kernel
 
 /-!
-# Conv2D input-gradient adjointness
+# Conv2d input-gradient adjointness
 
 This file proves the inner-product identity for the convolution input cotangent:
 
@@ -25,7 +25,7 @@ reindex the sums so every contribution to an input pixel is collected in the sam
 
 namespace Proofs
 namespace Autograd
-namespace Conv2D
+namespace Conv2d
 
 open Spec
 open Tensor
@@ -35,21 +35,21 @@ open scoped BigOperators
 noncomputable section
 
 /--
-Adjointness of the Conv2D forward map with respect to input perturbations.
+Adjointness of the Conv2d forward map with respect to input perturbations.
 
 The left side perturbs the input and pairs the resulting output perturbation with the output
 cotangent `δ`.  The right side pairs that same input perturbation with the specification-level input
-derivative.  This is the theorem used by the tape proof to justify the input-gradient part of Conv2D
+derivative.  This is the theorem used by the tape proof to justify the input-gradient part of Conv2d
 backpropagation.
 -/
 lemma dot_conv2d_input
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
+    (layer : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3)
     (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (dInput : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (δ : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar)))) :
-    let layer0 : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    let layer0 : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := layer.kernel, bias := fill (0 : ℝ) (.dim outC .scalar) }
     dot (Spec.conv2dSpec (α := ℝ) (layer := layer0) dInput) δ
       =
@@ -423,6 +423,6 @@ lemma dot_conv2d_input
 
 end
 
-end Conv2D
+end Conv2d
 end Autograd
 end Proofs

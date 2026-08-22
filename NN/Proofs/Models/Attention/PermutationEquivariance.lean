@@ -31,7 +31,7 @@ noncomputable section
 
 namespace NN.Proofs.Models.Attention
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 
 abbrev Shape := Spec.Shape
@@ -100,7 +100,7 @@ namespace SoftmaxEquivariance
 
 /-- Read the value of a scalar tensor. -/
 private abbrev scalarVal (t : Tensor ℝ .scalar) : ℝ :=
-  Spec.Tensor.toScalar t
+  Spec.Tensor.item t
 
 /-- Plain (unstabilized) softmax on a vector tensor. Proof helper. -/
 private def softmaxVecPlain {n : Nat} (t : Tensor ℝ (.dim n .scalar)) : Tensor ℝ (.dim n .scalar) :=
@@ -219,17 +219,17 @@ theorem softmax_vec_spec_reindexOuter {n : Nat} (σ : Equiv.Perm (Fin (Nat.succ 
 /-- Matrix last-axis softmax commutes with simultaneous row/column permutations (`permMatrix`). -/
 theorem softmax_spec_permMatrix {n : Nat} (σ : Equiv.Perm (Fin (Nat.succ n)))
     (A : Spec.Tensor ℝ (.dim (Nat.succ n) (.dim (Nat.succ n) .scalar))) :
-    Activation.softmaxSpec (α := ℝ) (s := .dim (Nat.succ n) (.dim (Nat.succ n) .scalar))
+    Activation.softmaxLastSpec (α := ℝ) (s := .dim (Nat.succ n) (.dim (Nat.succ n) .scalar))
         (permMatrix (α := ℝ) (n := Nat.succ n) σ A)
       =
     permMatrix (α := ℝ) (n := Nat.succ n) σ
-      (Activation.softmaxSpec (α := ℝ) (s := .dim (Nat.succ n) (.dim (Nat.succ n) .scalar)) A) := by
+      (Activation.softmaxLastSpec (α := ℝ) (s := .dim (Nat.succ n) (.dim (Nat.succ n) .scalar)) A) := by
   cases A with
   | dim rows =>
       apply congrArg Spec.Tensor.dim
       funext i
-      -- `softmax_spec` on matrices is rowwise, and `reindexCols` acts within each row.
-      simp [Activation.softmaxSpec, softmax_vec_spec_reindexOuter]
+      -- `softmaxLastSpec` on matrices is rowwise, and `reindexCols` acts within each row.
+      simp [Activation.softmaxLastSpec, softmax_vec_spec_reindexOuter]
 
 end SoftmaxEquivariance
 
@@ -463,13 +463,13 @@ theorem selfAttention_reindexOuter
 
         -- softmax commutes with `permMatrix`.
         have hWeights :
-            Activation.softmaxSpec (α := ℝ) (s := .dim (Nat.succ n') (.dim (Nat.succ n') .scalar))
+            Activation.softmaxLastSpec (α := ℝ) (s := .dim (Nat.succ n') (.dim (Nat.succ n') .scalar))
                 (permMatrix (α := ℝ) (n := Nat.succ n') σ
                   (Spec.Tensor.scaleSpec (matMulSpec Q (Spec.Tensor.matrixTransposeSpec K))
                     (Spec.attentionScaleDenom (α := ℝ) projDim)⁻¹))
               =
             permMatrix (α := ℝ) (n := Nat.succ n') σ
-              (Activation.softmaxSpec (α := ℝ) (s := .dim (Nat.succ n') (.dim (Nat.succ n') .scalar))
+              (Activation.softmaxLastSpec (α := ℝ) (s := .dim (Nat.succ n') (.dim (Nat.succ n') .scalar))
                 (Spec.Tensor.scaleSpec (matMulSpec Q (Spec.Tensor.matrixTransposeSpec K))
                   (Spec.attentionScaleDenom (α := ℝ) projDim)⁻¹)) := by
           simpa using
@@ -481,20 +481,20 @@ theorem selfAttention_reindexOuter
         have hOut :
             matMulSpec
                 (permMatrix (α := ℝ) (n := Nat.succ n') σ
-                  (Activation.softmaxSpec (α := ℝ) (s := .dim (Nat.succ n') (.dim (Nat.succ n') .scalar))
+                  (Activation.softmaxLastSpec (α := ℝ) (s := .dim (Nat.succ n') (.dim (Nat.succ n') .scalar))
                     (Spec.Tensor.scaleSpec (matMulSpec Q (Spec.Tensor.matrixTransposeSpec K))
                       (Spec.attentionScaleDenom (α := ℝ) projDim)⁻¹)))
                 (reindexOuter (α := ℝ) (n := Nat.succ n') (s := .dim projDim .scalar) σ V)
               =
             reindexOuter (α := ℝ) (n := Nat.succ n') (s := .dim projDim .scalar) σ
               (matMulSpec
-                (Activation.softmaxSpec (α := ℝ) (s := .dim (Nat.succ n') (.dim (Nat.succ n') .scalar))
+                (Activation.softmaxLastSpec (α := ℝ) (s := .dim (Nat.succ n') (.dim (Nat.succ n') .scalar))
                   (Spec.Tensor.scaleSpec (matMulSpec Q (Spec.Tensor.matrixTransposeSpec K))
                     (Spec.attentionScaleDenom (α := ℝ) projDim)⁻¹))
                 V) := by
           simpa using
             (mat_mul_permMatrix_reindexOuter (σ := σ)
-              (A := Activation.softmaxSpec (α := ℝ) (s := .dim (Nat.succ n') (.dim (Nat.succ n') .scalar))
+              (A := Activation.softmaxLastSpec (α := ℝ) (s := .dim (Nat.succ n') (.dim (Nat.succ n') .scalar))
                 (Spec.Tensor.scaleSpec (matMulSpec Q (Spec.Tensor.matrixTransposeSpec K))
                   (Spec.attentionScaleDenom (α := ℝ) projDim)⁻¹))
               (B := V))

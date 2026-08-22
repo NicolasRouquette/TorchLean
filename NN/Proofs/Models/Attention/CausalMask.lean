@@ -29,7 +29,7 @@ References:
 
 namespace NN.Proofs.Models.Attention
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 
 /-!
@@ -127,7 +127,7 @@ theorem hardMaskedSoftmaxVecSpec_blocked_eq_zero
         | scalar allowed =>
           have hallowed : allowed = false := by
             simpa [Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, hmask] using hblocked
-          change Spec.Tensor.toScalar
+          change Spec.Tensor.item
               (Spec.get
                 (Spec.hardMaskedSoftmaxVecSpec (Spec.Tensor.dim scoreRows)
                   (Spec.Tensor.dim maskRows)) j) = 0
@@ -135,10 +135,10 @@ theorem hardMaskedSoftmaxVecSpec_blocked_eq_zero
               (Spec.Tensor.dim maskRows) with
           | none =>
               simp [Spec.hardMaskedSoftmaxVecSpec, hmax, Spec.get, Spec.getAtSpec,
-                Spec.replicate, Spec.Tensor.toScalar]
+                Spec.replicate, Spec.Tensor.item]
           | some rowMax =>
               simp [Spec.hardMaskedSoftmaxVecSpec, hmax, Spec.get, Spec.getAtSpec,
-                map2Spec, divSpec, Spec.replicate, Spec.Tensor.toScalar, hscore, hmask, hallowed]
+                map2Spec, divSpec, Spec.replicate, Spec.Tensor.item, hscore, hmask, hallowed]
 
 /-- Any blocked coordinate of a row-wise hard-masked softmax matrix has exactly zero weight. -/
 theorem hardMaskedSoftmaxSpec_blocked_eq_zero
@@ -159,14 +159,14 @@ theorem hardMaskedSoftmaxSpec_blocked_eq_zero
           have hblockedVec :
               Spec.Tensor.vecGet (Spec.Tensor.dim maskCols) j = false := by
             simpa [Spec.get2, Spec.get, Spec.getAtSpec, Spec.Tensor.vecGet,
-              Spec.Tensor.toScalar, hmaskRow] using hblocked
+              Spec.Tensor.item, hmaskRow] using hblocked
           have hvec := hardMaskedSoftmaxVecSpec_blocked_eq_zero
             (Spec.Tensor.dim scoreCols) (Spec.Tensor.dim maskCols) j hblockedVec
           cases hout : Spec.hardMaskedSoftmaxVecSpec (Spec.Tensor.dim scoreCols)
               (Spec.Tensor.dim maskCols) with
           | dim outCols =>
               simpa [Spec.hardMaskedSoftmaxSpec, Spec.get2, Spec.get, Spec.getAtSpec,
-                Spec.Tensor.vecGet, Spec.Tensor.toScalar, hscoreRow, hmaskRow, hout] using hvec
+                Spec.Tensor.vecGet, Spec.Tensor.item, hscoreRow, hmaskRow, hout] using hvec
 
 /-- In exact hard-masked causal softmax, every strict-future attention weight is exactly zero. -/
 theorem hardMaskedSoftmaxSpec_causal_future_zero

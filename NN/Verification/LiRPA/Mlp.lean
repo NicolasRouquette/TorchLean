@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Verification.LiRPA.Common
+public import NN.Verification.LiRPA.ExampleInputs
 
 /-!
 # LiRPA MLP certificate checker
@@ -68,12 +68,12 @@ def seedParamsFloat : ParamStore Float :=
 
 /-- Add the example's natural input box of radius `eps` to a parameter store. -/
 def seedInputFloat (ps : ParamStore Float) (eps : Float) : ParamStore Float :=
-  NN.Verification.LiRPA.seedNaturalInputBox 0 3 eps ps
+  NN.Verification.LiRPA.ExampleInputs.seedNaturalInputBox 0 3 eps ps
 
 /-- Check an IBP certificate JSON file and throw an error if it does not match recomputed bounds. -/
 def verifyCert (path : String) : IO Unit := do
   let g := buildGraph
   let ps := seedInputFloat (seedParamsFloat) (eps := (1.0))
-  NN.Verification.LiRPA.checkIBPCert g ps (outId := 3) path
+  NN.Verification.IBPCert.checkOrThrow g ps (outId := 3) path
 
 end NN.Verification.LiRPA.Mlp

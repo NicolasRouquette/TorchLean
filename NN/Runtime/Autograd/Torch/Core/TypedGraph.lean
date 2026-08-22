@@ -55,13 +55,13 @@ executable form of the canonical operation-tagged `NN.IR.Graph`.
 -/
 
 /--
-Typed graph with differentiable tensor inputs `Γ`, auxiliary runtime input `Δ`, and tensor output
+Typed graph with differentiable tensor inputs `Γ`, non-differentiable runtime data `Δ`, and output
 of shape `τ`.
 
 `Δ` is reserved for non-differentiable data such as token ids, labels, gather indices, and masks.
 It affects evaluation but does not appear in the returned input gradients.
 -/
-structure TypedGraphWithAux (α : Type) (Δ : Type) (Γ : List Shape) (τ : Shape) where
+structure TypedGraphWithData (α : Type) (Δ : Type) (Γ : List Shape) (τ : Shape) where
   /-- Shapes of the recorded SSA nodes. -/
   nodeShapes : List Shape
   /-- Executable data for all recorded nodes. -/
@@ -69,30 +69,30 @@ structure TypedGraphWithAux (α : Type) (Δ : Type) (Γ : List Shape) (τ : Shap
   /-- Typed reference to the graph output, which may be an input or any recorded node. -/
   output : Proofs.Autograd.Algebra.Idx (Γ ++ nodeShapes) τ
 
-namespace TypedGraphWithAux
+namespace TypedGraphWithData
 
 /-- Evaluate the output tensor for leaf values `x` and auxiliary input `d`. -/
 def forward {α Δ : Type} {Γ : List Shape} {τ : Shape}
-    (c : TypedGraphWithAux α Δ Γ τ) (x : TList α Γ) (d : Δ) : Tensor α τ :=
+    (c : TypedGraphWithData α Δ Γ τ) (x : TList α Γ) (d : Δ) : Tensor α τ :=
   getIdx (Proofs.Autograd.Algebra.GraphData.eval (g := c.data) x d) c.output
 
 /-- Forward-mode Jacobian-vector product at `x`, with `d` held fixed. -/
 def jvp {α Δ : Type} {Γ : List Shape} {τ : Shape}
-    (c : TypedGraphWithAux α Δ Γ τ) (x dx : TList α Γ) (d : Δ) : Tensor α τ :=
+    (c : TypedGraphWithData α Δ Γ τ) (x dx : TList α Γ) (d : Δ) : Tensor α τ :=
   getIdx (Proofs.Autograd.Algebra.GraphData.jvpCtx (g := c.data) x dx d) c.output
 
 /-- Reverse-mode vector-Jacobian product with an explicit output cotangent seed. -/
 def vjpWithSeed {α Δ : Type} [Add α] [Zero α]
-    {Γ : List Shape} {τ : Shape} (c : TypedGraphWithAux α Δ Γ τ)
+    {Γ : List Shape} {τ : Shape} (c : TypedGraphWithData α Δ Γ τ)
     (x : TList α Γ) (d : Δ) (seedOut : Tensor α τ) : TList α Γ :=
   Proofs.Autograd.Algebra.GraphData.backpropCtx
     (α := α) (Δ := Δ) (Γ := Γ) (g := c.data) x d (TList.single c.output seedOut)
 
-end TypedGraphWithAux
+end TypedGraphWithData
 
 /-- Typed graph with no auxiliary, non-differentiable runtime inputs. -/
 abbrev TypedGraph (α : Type) (Γ : List Shape) (τ : Shape) : Type :=
-  TypedGraphWithAux α Unit Γ τ
+  TypedGraphWithData α Unit Γ τ
 
 /-- Scalar-output typed graph with no auxiliary, non-differentiable runtime inputs. -/
 abbrev TypedScalarGraph (α : Type) (Γ : List Shape) : Type :=
@@ -103,12 +103,12 @@ namespace TypedGraph
 /-- Evaluate the output tensor for leaf values `x`. -/
 def forward {α : Type} {Γ : List Shape} {τ : Shape}
   (c : TypedGraph α Γ τ) (x : TList α Γ) : Tensor α τ :=
-  TypedGraphWithAux.forward c x ()
+  TypedGraphWithData.forward c x ()
 
 /-- Forward-mode Jacobian-vector product (JVP) at `x` with tangent `dx`. -/
 def jvp {α : Type} {Γ : List Shape} {τ : Shape}
   (c : TypedGraph α Γ τ) (x dx : TList α Γ) : Tensor α τ :=
-  TypedGraphWithAux.jvp c x dx ()
+  TypedGraphWithData.jvp c x dx ()
 
 /--
 Reverse-mode vector-Jacobian product (VJP) with an explicit output cotangent seed.
@@ -119,7 +119,7 @@ PyTorch comparison: `out.backward(gradient=seedOut)` (for a tensor output).
 def vjpWithSeed {α : Type} [Add α] [Zero α]
     {Γ : List Shape} {τ : Shape}
     (c : TypedGraph α Γ τ) (x : TList α Γ) (seedOut : Tensor α τ) : TList α Γ :=
-  TypedGraphWithAux.vjpWithSeed c x () seedOut
+  TypedGraphWithData.vjpWithSeed c x () seedOut
 
 end TypedGraph
 
@@ -147,11 +147,11 @@ def backwardWithSeed {α : Type} [Add α] [Zero α]
 
 end TypedScalarGraph
 
-/-- Lower a graph builder with an auxiliary runtime environment into a reusable typed graph. -/
-def lowerToTypedGraphWithAux {α Δ : Type} [DecidableEq Shape] {Γ : List Shape} {τ : Shape}
+/-- Lower a graph builder with non-differentiable runtime data into a reusable typed graph. -/
+def lowerToTypedGraphWithData {α Δ : Type} [DecidableEq Shape] {Γ : List Shape} {τ : Shape}
     (build : Runtime.Autograd.TypedGraph.GraphM.MWith α Δ Γ
       (Runtime.Autograd.TypedGraph.GraphM.Var τ)) :
-    Runtime.Autograd.Result (TypedGraphWithAux α Δ Γ τ) := do
+    Runtime.Autograd.Result (TypedGraphWithData α Δ Γ τ) := do
   let (outVar, st) ← StateT.run build Runtime.Autograd.TypedGraph.GraphM.emptyWith
   let output ← Runtime.Autograd.TypedGraph.GraphM.mkIdx
     (_α := α) (Γ := Γ) st.1 outVar
@@ -167,7 +167,7 @@ def lowerScalarToTypedGraph {α : Type} [DecidableEq Shape] {Γ : List Shape}
     (build : Runtime.Autograd.TypedGraph.GraphM.M α Γ
       (Runtime.Autograd.TypedGraph.GraphM.Var Shape.scalar)) :
     Runtime.Autograd.Result (TypedScalarGraph α Γ) :=
-  lowerToTypedGraphWithAux (α := α) (Δ := Unit) (Γ := Γ) (τ := Shape.scalar) build
+  lowerToTypedGraphWithData (α := α) (Δ := Unit) (Γ := Γ) (τ := Shape.scalar) build
 
 /--
 Lower a tensor-output graph builder into a `TypedGraph`.
@@ -178,7 +178,7 @@ index and preserves its statically known output shape.
 def lowerToTypedGraph {α : Type} [DecidableEq Shape] {Γ : List Shape} {τ : Shape}
   (build : Runtime.Autograd.TypedGraph.GraphM.M α Γ (Runtime.Autograd.TypedGraph.GraphM.Var τ)) :
   Runtime.Autograd.Result (TypedGraph α Γ τ) :=
-  lowerToTypedGraphWithAux (α := α) (Δ := Unit) (Γ := Γ) (τ := τ) build
+  lowerToTypedGraphWithData (α := α) (Δ := Unit) (Γ := Γ) (τ := τ) build
 end Torch
 end Autograd
 end Runtime

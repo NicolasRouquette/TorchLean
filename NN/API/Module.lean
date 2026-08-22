@@ -6,8 +6,9 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Module.Command
-public import NN.API.Neural
+public import NN.API.Module.Execution
+public import NN.API.Neural.Builders
+public import NN.API.Tensor
 public import NN.API.Trainer.Manual.Core
 
 /-!
@@ -333,16 +334,16 @@ end Supervised
 /--
 Evaluate one supervised sample through a runtime module and return the scalar loss value.
 
-This packages the common public example pattern `Module.loss ...; Tensor.toScalar`.
+This packages the common public example pattern `Module.loss ...; Tensor.item`.
 -/
 def lossValue {σ τ : Shape} {α : Type}
     [_root_.Context α] [DecidableEq Shape]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (model : TorchLean.nn.Sequential σ τ)
     (m : Objective α (nn.stateShapes model) [σ, τ])
-    (sample : SupervisedSample α σ τ) : IO α := do
+    (sample : Sample.Supervised α σ τ) : IO α := do
   let loss ← loss (α := α) m sample .nil
-  pure (Tensor.toScalar loss)
+  pure (Tensor.item loss)
 
 /--
 Bind Adam state and updates to a concrete runtime module.
@@ -461,7 +462,7 @@ def makeSupervisedStep {α : Type} {σ τ : Shape}
     [_root_.Context α] [Runtime.FromFloat α] [DecidableEq Shape]
     {stateShapes : List Shape}
     (m : Objective α stateShapes [σ, τ])
-    (cfg : TorchLean.Trainer.Manual.OptimizerConfig) : IO (SupervisedSample α σ τ → IO Unit) := do
+    (cfg : TorchLean.Trainer.Manual.OptimizerConfig) : IO (Sample.Supervised α σ τ → IO Unit) := do
   makeOptimizerStep m cfg
 
 end Module

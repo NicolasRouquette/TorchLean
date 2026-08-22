@@ -92,41 +92,48 @@ def swapFirstTwoSpec {α : Type} {m n : Nat} {s : Shape}
         match f i with
         | .dim g => g j
 
-/-- Helper for swapping adjacent dims at a given depth (see `Shape.swapAdjacentAtDepth`). -/
-def swapAtDepthHelper {β : Type} {shape : Shape} (tensor : Tensor β shape) (d : Nat) :
+/-- Swap adjacent tensor axes at `depth` and `depth + 1`. -/
+def swapAdjacentAxes {β : Type} {shape : Shape} (tensor : Tensor β shape) (d : Nat) :
       Tensor β (shape.swapAdjacentAtDepth d) :=
       match d, shape, tensor with
       | 0, .dim m (.dim k rest), .dim g =>
-        -- Swap dimensions 0 and 1 at this level
+        -- Swap axes 0 and 1 at this level.
         .dim fun j =>
           .dim fun i =>
             match g i with
             | .dim h => h j
       | d + 1, .dim m rest, .dim g =>
-        -- Recurse deeper
-        .dim fun i => swapAtDepthHelper (g i) d
+        -- Preserve this axis and recurse into the remaining shape.
+        .dim fun i => swapAdjacentAxes (g i) d
       | _, .scalar, .scalar x =>
-        -- Scalar case - no change needed
+        -- A scalar has no axes to swap.
         by simp [Shape.swapAdjacentAtDepth]; exact .scalar x
       | 0, .dim _ .scalar, .dim g =>
-        -- Only one dimension at this level - no swap possible
+        -- A rank-one tensor has no adjacent pair at this level.
         .dim g
 
+/-- Apply adjacent-axis swaps while retaining the resulting shape in the return type. -/
+def permuteByAdjacentSwaps {β : Type} {s : Shape} (tensor : Tensor β s) :
+    (depths : List Nat) → Tensor β (s.applyAdjacentSwaps depths)
+  | [] => tensor
+  | depth :: depths =>
+      permuteByAdjacentSwaps (swapAdjacentAxes tensor depth) depths
+
 /-- Swapping at depth zero exchanges the two leading axes. -/
-@[simp] theorem swapAtDepthHelper_zero {β : Type} {m n : Nat} {s : Shape}
+@[simp] theorem swapAdjacentAxes_zero {β : Type} {m n : Nat} {s : Shape}
     (tensor : Tensor β (.dim m (.dim n s))) :
-    swapAtDepthHelper tensor 0 =
+    swapAdjacentAxes tensor 0 =
       .dim (fun j => .dim (fun i => _root_.Spec.get (_root_.Spec.get tensor i) j)) := by
   cases tensor
   rfl
 
 /-- Swap adjacent dimensions at a given depth inside a leading batch dimension. -/
-def swapAtDepthSpec {α : Type} {n : Nat} {s : Shape}
+def swapAdjacentAxesWithinLeading {α : Type} {n : Nat} {s : Shape}
   (t : Tensor α (.dim n s)) (depth : Nat) :
   Tensor α (.dim n (s.swapAdjacentAtDepth depth)) :=
   match t with
   | .dim f =>
-    .dim fun i => swapAtDepthHelper (f i) depth
+    .dim fun i => swapAdjacentAxes (f i) depth
 
 -- Backward pass for matrix multiplication
 /-- Backward pass for matrix multiplication: returns `(dA, dB)` given `dC`.

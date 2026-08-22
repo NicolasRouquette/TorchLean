@@ -63,11 +63,11 @@ def width (b : Box α s) : Tensor α s :=
 
 /-- Pointwise box center `(lo + hi)/2`. -/
 def center (b : Box α s) : Tensor α s :=
-  Tensor.scaleSpec (Tensor.addSpec b.lo b.hi) (Numbers.pointfive)
+  Tensor.scaleSpec (Tensor.addSpec b.lo b.hi) (Numbers.half)
 
 /-- Pointwise box radius `(hi - lo)/2`. -/
 def radius (b : Box α s) : Tensor α s :=
-  Tensor.scaleSpec (Tensor.subSpec b.hi b.lo) (Numbers.pointfive)
+  Tensor.scaleSpec (Tensor.subSpec b.hi b.lo) (Numbers.half)
 
 /--
 Boolean `a <= b` using only the backend's decidable `>` from `Context`.

@@ -111,13 +111,13 @@ abbrev τ : Shape :=
 /-- Public GPT-style causal Transformer constructor specialized to the byte-level config. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.CausalTransformer.oneHot
-    { batch := batch
-      seqLen := seqLen
+    { seqLen := seqLen
       vocab := vocab
       numHeads := numHeads
       headDim := headDim
       ffnHidden := ffnHidden
       layers := layers }
+    (.dim batch .scalar)
 
 /-- Command-local controls for GPT training, checkpointing, generation, and the prompt loop. -/
 structure TrainOptions extends
@@ -154,23 +154,15 @@ def parse (args : List String) (defaultSteps : Nat) :
 end TrainOptions
 
 /-- Build a batched causal-LM sample by repeating one token window across all rows. -/
-def mkSampleFromTokenIds (toks : List Nat) : SupervisedSample Float σ τ :=
+def mkSampleFromTokenIds (toks : List Nat) : Sample.Supervised Float σ τ :=
   Data.CausalLM.oneHotBatch (α := Float) batch seqLen vocab (toks.map (· % vocab))
     (padId := 0)
 
-/--
-Build a batch sample from per-row token windows.
-
-`idsByBatch[i]` is the `(seqLen + 1)`-token window for batch row `i`. If fewer than `batch` windows
-are provided, the final window is repeated to fill the batch.
--/
-def mkSampleBatchFromTokenIds (idsByBatch : Array (List Nat)) :
-    SupervisedSample Float σ τ :=
-  let fallback : List Nat := idsByBatch.getD 0 (List.replicate (seqLen + 1) 32)
-  let idsByBatch := idsByBatch.map (fun ids => ids.map (· % vocab))
-  let fallback := fallback.map (· % vocab)
-  Data.CausalLM.oneHotBatchFromRows
-    (α := Float) batch seqLen vocab idsByBatch fallback (padId := 0)
+/-- Build a batch sample from exactly one token window per batch row. -/
+def mkSampleBatchFromTokenIds (idsByBatch : Vector (List Nat) batch) :
+    Sample.Supervised Float σ τ :=
+  Data.CausalLM.oneHotBatchRows (α := Float) batch seqLen vocab
+    (fun i => (idsByBatch.get i).map (· % vocab)) (padId := 0)
 
 /--
 Parse GPT-2-specific data flags and return the training corpus plus remaining runtime flags.
@@ -183,7 +175,7 @@ def takeInputText (args : List String) : IO (String × List String) :=
 
 /-- Byte-token window used for reporting prompt/target text. -/
 def tokenWindowIds (input : String) (offset : Nat) : List Nat :=
-  text.tokenWindow text.Tokenizer.byte seqLen input (offset := offset) (padId := 32)
+  (text.tokenWindow text.Tokenizer.byte seqLen input (offset := offset) (padId := 32)).toList
 
 /-- Print a compact before/after language-model report for the first batch row. -/
 def printPredictionReport (label : String) (input : String) (logits : Tensor Float σ) :
@@ -195,9 +187,9 @@ def printPredictionReport (label : String) (input : String) (logits : Tensor Flo
 
 /-- Convert byte ids into the typed batched one-hot input tensor used for generation. -/
 def inputTensorFromIds (ids : List Nat) : Tensor Float σ :=
-  let (x2DF, _) := Data.CausalLM.oneHotPair (α := Float)
+  let (x2dF, _) := Data.CausalLM.oneHotPair (α := Float)
     (seqLen := seqLen) (vocab := vocab) (ids.map (· % vocab)) (padId := 0)
-  let x : Tensor Float σ := Spec.Tensor.dim (fun _bi => x2DF)
+  let x : Tensor Float σ := Spec.Tensor.dim (fun _bi => x2dF)
   x
 
 /--
@@ -229,7 +221,7 @@ partial def generateSampledFromIds
   let ids ←
     text.autoregressiveTokenIds seqLen 32 promptIds gen
       (fun padded predPos => do
-        let logits ← predict (inputTensorFromIds padded)
+        let logits ← predict (inputTensorFromIds padded.toList)
         pure (text.batchLogitScoresAt logits ⟨0, by decide⟩ predPos))
       (allowId := allowId)
       -- Keep the same "space" fallback convention across byte-level text commands.
@@ -249,14 +241,15 @@ end
 
 /-- Build a finite cyclic training set from corpus text, biased toward the prompt when present. -/
 def samplesFromCorpus (input _prompt : String) (windows : Nat) :
-    Array (SupervisedSample Float σ τ) :=
+    Array (Sample.Supervised Float σ τ) :=
   let toks := text.Tokenizer.byte.encode input
   let offs := (text.Corpus.promptAwareOffsets toks.length seqLen windows none).toArray
   offs.map (fun off =>
-    let idsByBatch : Array (List Nat) :=
-      Array.ofFn (fun i : Fin batch =>
+    let idsByBatch : Vector (List Nat) batch :=
+      Vector.ofFn (fun i =>
         let off' := (off + i.val * (seqLen / 2 + 1)) % Nat.max 1 (toks.length - (seqLen + 1))
-        text.tokenWindow text.Tokenizer.byte (seqLen + 1) input (offset := off') (padId := 32))
+        (text.tokenWindow text.Tokenizer.byte (seqLen + 1) input
+          (offset := off') (padId := 32)).toList)
     mkSampleBatchFromTokenIds idsByBatch)
 
 /--
@@ -305,8 +298,8 @@ def trainAndDecode (opts : Options) (input : String)
   let samples := samplesFromCorpus input train.prompt train.windows
   let reportSample := Data.CausalLM.byteBatch (α := Float) batch seqLen vocab train.prompt
   let run := Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := train.lr } }
-  let trainer := Trainer.new model <|
-    Trainer.Config.fromRunConfig run .oneHotCrossEntropy
+  let task : Trainer.Task σ τ := .oneHotCrossEntropy 2
+  let trainer := Trainer.new model (Trainer.Config.fromRunConfig run task)
   trainer.printInfo
 
   /-

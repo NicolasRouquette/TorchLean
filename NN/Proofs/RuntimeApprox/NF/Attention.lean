@@ -168,29 +168,29 @@ Both masked and unmasked attention use this prefix. Keeping it as one theorem al
 natural contract boundary for fused score kernels: a provider may replace the implementation as
 long as it supplies this same approximation statement.
 -/
-theorem approxT_scaledAttentionScores {nQ nK d : Nat}
+theorem approxTensor_scaledAttentionScores {nQ nK d : Nat}
     {qS : SpecTensor (.dim nQ (.dim d .scalar))}
     {kS : SpecTensor (.dim nK (.dim d .scalar))}
     {qR : Tensor R (.dim nQ (.dim d .scalar))}
     {kR : Tensor R (.dim nK (.dim d .scalar))}
     {scaleS : ℝ} {scaleR : R} {epsQ epsK epsScale : ℝ}
-    (hq : approxT (α := R)
+    (hq : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) qS qR epsQ)
-    (hk : approxT (α := R)
+    (hk : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) kS kR epsK)
     (hscale : abs (NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd) scaleR - scaleS) ≤
       epsScale) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (scaleSpec (matMulSpec qS (Tensor.matrixTransposeSpec kS)) scaleS)
       (scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR)
       (scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         epsQ epsK epsScale scaleR qR kR) := by
-  have hkT := NFBackend.approxT_matrix_transpose_spec
+  have hkT := NFBackend.approxTensor_matrix_transpose_spec
     (β := β) (fexp := fexp) (rnd := rnd) hk
-  have hscores := NFBackend.approxT_mat_mul_spec
+  have hscores := NFBackend.approxTensor_mat_mul_spec
     (β := β) (fexp := fexp) (rnd := rnd) hq hkT
-  have hscaled := NFBackend.approxT_scale_spec_of_approx
+  have hscaled := NFBackend.approxTensor_scale_spec_of_approx
     (β := β) (fexp := fexp) (rnd := rnd) scaleS scaleR hscores hscale
   simpa [scaledScoreErrorBound, scoreErrorBound] using hscaled
 
@@ -212,7 +212,7 @@ def outputErrorBound {nQ nK d : Nat} (epsQ epsK epsV epsScale : ℝ)
     (kR vR : Tensor R (.dim (Nat.succ nK) (.dim d .scalar))) : ℝ :=
   let scoresR := matMulSpec qR (Tensor.matrixTransposeSpec kR)
   let scaledR := scaleSpec scoresR scaleR
-  let weightsR := Activation.softmaxSpec scaledR
+  let weightsR := Activation.softmaxLastSpec scaledR
   linfNorm (NFBackend.matMulBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
     (m := nQ) (n := Nat.succ nK) (p := d)
     (weightErrorBound (β := β) (fexp := fexp) (rnd := rnd)
@@ -257,18 +257,18 @@ the all-blocked vector theorem remains available for APIs that intentionally per
 The selected allowed-row maxima and denominator margins are explicit certificate data, so no
 finite value is ever substituted for negative infinity.
 -/
-theorem approxT_hardMaskedScaledDotProductAttentionCore {nQ nK d : Nat}
+theorem approxTensor_hardMaskedScaledDotProductAttentionCore {nQ nK d : Nat}
     {qS : SpecTensor (.dim nQ (.dim d .scalar))}
     {kS vS : SpecTensor (.dim (Nat.succ nK) (.dim d .scalar))}
     {qR : Tensor R (.dim nQ (.dim d .scalar))}
     {kR vR : Tensor R (.dim (Nat.succ nK) (.dim d .scalar))}
     (mask : Tensor Bool (.dim nQ (.dim (Nat.succ nK) .scalar)))
     {scaleS : ℝ} {scaleR : R} {epsQ epsK epsV epsScale : ℝ}
-    (hq : approxT (α := R)
+    (hq : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) qS qR epsQ)
-    (hk : approxT (α := R)
+    (hk : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) kS kR epsK)
-    (hv : approxT (α := R)
+    (hv : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) vS vR epsV)
     (hscale : abs (NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd) scaleR - scaleS) ≤
       epsScale)
@@ -278,7 +278,7 @@ theorem approxT_hardMaskedScaledDotProductAttentionCore {nQ nK d : Nat}
       mask
       (scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         epsQ epsK epsScale scaleR qR kR)) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (matMulSpec
         (Spec.hardMaskedSoftmaxSpec
@@ -298,21 +298,21 @@ theorem approxT_hardMaskedScaledDotProductAttentionCore {nQ nK d : Nat}
   let epsWeights := maskedWeightErrorBound (β := β) (fexp := fexp) (rnd := rnd)
     evidence.eta evidence.epsMax evidence.rowMaxR
     epsQ epsK epsScale scaleR qR kR mask
-  have hscaled : approxT (α := R)
+  have hscaled : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       scaledS scaledR epsScaled := by
     simpa [scaledS, scaledR, epsScaled] using
-      (approxT_scaledAttentionScores (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_scaledAttentionScores (β := β) (fexp := fexp) (rnd := rnd)
         hq hk hscale)
-  have hweights : approxT (α := R)
+  have hweights : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       weightsS weightsR epsWeights := by
-    have h := AxisSoftmax.approxT_hardMaskedSoftmaxRowsSpec_of_max
+    have h := AxisSoftmax.approxTensor_hardMaskedSoftmaxRowsSpec_of_max
       (β := β) (fexp := fexp) (rnd := rnd)
       mask hscaled (by simpa [scaledS, scaledR, epsScaled] using evidence)
     simpa [weightsS, weightsR, epsWeights, maskedWeightErrorBound,
       scaledR, epsScaled] using h
-  have hout := NFBackend.approxT_mat_mul_spec
+  have hout := NFBackend.approxTensor_mat_mul_spec
     (β := β) (fexp := fexp) (rnd := rnd) hweights hv
   simpa [scaledS, scaledR, weightsS, weightsR, epsScaled, epsWeights,
     maskedOutputErrorBound] using hout
@@ -323,17 +323,17 @@ theorem approxT_hardMaskedScaledDotProductAttentionCore {nQ nK d : Nat}
 only nonlocal side condition introduced by stable softmax; it certifies that the accumulated
 denominator error remains below the exact lower bound one.
 -/
-theorem approxT_scaledDotProductAttentionCore {nQ nK d : Nat}
+theorem approxTensor_scaledDotProductAttentionCore {nQ nK d : Nat}
     {qS : SpecTensor (.dim nQ (.dim d .scalar))}
     {kS vS : SpecTensor (.dim (Nat.succ nK) (.dim d .scalar))}
     {qR : Tensor R (.dim nQ (.dim d .scalar))}
     {kR vR : Tensor R (.dim (Nat.succ nK) (.dim d .scalar))}
     {scaleS : ℝ} {scaleR : R} {epsQ epsK epsV epsScale : ℝ}
-    (hq : approxT (α := R)
+    (hq : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) qS qR epsQ)
-    (hk : approxT (α := R)
+    (hk : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) kS kR epsK)
-    (hv : approxT (α := R)
+    (hv : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) vS vR epsV)
     (hscale : abs (NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd) scaleR - scaleS) ≤
       epsScale)
@@ -343,13 +343,13 @@ theorem approxT_scaledDotProductAttentionCore {nQ nK d : Nat}
           epsQ epsK epsScale scaleR qR kR)
         (Spec.get
           (scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR) i) < 1) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (matMulSpec
-        (Activation.softmaxSpec
+        (Activation.softmaxLastSpec
           (scaleSpec (matMulSpec qS (Tensor.matrixTransposeSpec kS)) scaleS)) vS)
       (matMulSpec
-        (Activation.softmaxSpec
+        (Activation.softmaxLastSpec
           (scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR)) vR)
       (outputErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         epsQ epsK epsV epsScale scaleR qR kR vR) := by
@@ -362,24 +362,24 @@ theorem approxT_scaledDotProductAttentionCore {nQ nK d : Nat}
   let scaledR := scaleSpec scoresR scaleR
   let epsScaled := scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
     epsQ epsK epsScale scaleR qR kR
-  let weightsS := Activation.softmaxSpec scaledS
-  let weightsR := Activation.softmaxSpec scaledR
+  let weightsS := Activation.softmaxLastSpec scaledS
+  let weightsR := Activation.softmaxLastSpec scaledR
   let epsWeights := weightErrorBound (β := β) (fexp := fexp) (rnd := rnd)
     epsQ epsK epsScale scaleR qR kR
 
-  have hscaled : approxT (α := R)
+  have hscaled : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       scaledS scaledR epsScaled := by
     simpa [scaledS, scaledR, scoresS, scoresR, kTS, kTR, epsScaled] using
-      (approxT_scaledAttentionScores (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_scaledAttentionScores (β := β) (fexp := fexp) (rnd := rnd)
         hq hk hscale)
-  have hweights : approxT (α := R)
+  have hweights : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       weightsS weightsR epsWeights := by
-    have h := AxisSoftmax.approxT_softmaxRowsSpec (β := β) (fexp := fexp) (rnd := rnd)
+    have h := AxisSoftmax.approxTensor_softmaxRowsSpec (β := β) (fexp := fexp) (rnd := rnd)
       hscaled (by simpa [scaledR, epsScaled] using hdenom)
     simpa [weightsS, weightsR, epsWeights, weightErrorBound, scaledR, epsScaled] using h
-  have hout := NFBackend.approxT_mat_mul_spec (β := β) (fexp := fexp) (rnd := rnd) hweights hv
+  have hout := NFBackend.approxTensor_mat_mul_spec (β := β) (fexp := fexp) (rnd := rnd) hweights hv
   simpa [kTS, kTR, scoresS, scoresR, scaledS, scaledR, weightsS, weightsR,
     epsScores, epsScaled, epsWeights, outputErrorBound] using hout
 
@@ -389,19 +389,19 @@ This theorem is stated directly over `Spec.AttentionContext`, so model proofs do
 reconstruct the core expression by hand. The scale approximation and row-denominator checks are
 the numerical evidence attached to the runtime context.
 -/
-theorem approxT_scaledDotProductAttention_unmasked {nQ nK d : Nat}
+theorem approxTensor_scaledDotProductAttention_unmasked {nQ nK d : Nat}
     {hQ : nQ ≠ 0} {hK : Nat.succ nK ≠ 0}
     (ctxS : Spec.AttentionContext ℝ nQ (Nat.succ nK) d hQ hK)
     (ctxR : Spec.AttentionContext R nQ (Nat.succ nK) d hQ hK)
     {epsQ epsK epsV epsScale : ℝ}
     (hmaskS : ctxS.mask = none) (hmaskR : ctxR.mask = none)
-    (hq : approxT (α := R)
+    (hq : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       ctxS.Q ctxR.Q epsQ)
-    (hk : approxT (α := R)
+    (hk : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       ctxS.K ctxR.K epsK)
-    (hv : approxT (α := R)
+    (hv : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       ctxS.V ctxR.V epsV)
     (hscale :
@@ -417,13 +417,13 @@ theorem approxT_scaledDotProductAttention_unmasked {nQ nK d : Nat}
             (scaleSpec
               (matMulSpec ctxR.Q (Tensor.matrixTransposeSpec ctxR.K))
               (1 / Spec.attentionScaleDenom (α := R) d)) i) < 1) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.scaledDotProductAttention ctxS) (Spec.scaledDotProductAttention ctxR)
       (outputErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         epsQ epsK epsV epsScale (1 / Spec.attentionScaleDenom (α := R) d)
         ctxR.Q ctxR.K ctxR.V) := by
-  have hcore := approxT_scaledDotProductAttentionCore
+  have hcore := approxTensor_scaledDotProductAttentionCore
     (β := β) (fexp := fexp) (rnd := rnd)
     (qS := ctxS.Q) (kS := ctxS.K) (vS := ctxS.V)
     (qR := ctxR.Q) (kR := ctxR.K) (vR := ctxR.V)
@@ -438,20 +438,20 @@ The row certificate is tied to the scaled score matrices in the two contexts. Th
 cannot be replayed against a different mask, scale, or set of parameters merely because the tensor
 shapes happen to agree.
 -/
-theorem approxT_scaledDotProductAttention_masked {nQ nK d : Nat}
+theorem approxTensor_scaledDotProductAttention_masked {nQ nK d : Nat}
     {hQ : nQ ≠ 0} {hK : Nat.succ nK ≠ 0}
     (ctxS : Spec.AttentionContext ℝ nQ (Nat.succ nK) d hQ hK)
     (ctxR : Spec.AttentionContext R nQ (Nat.succ nK) d hQ hK)
     (mask : Tensor Bool (.dim nQ (.dim (Nat.succ nK) .scalar)))
     {epsQ epsK epsV epsScale : ℝ}
     (hmaskS : ctxS.mask = some mask) (hmaskR : ctxR.mask = some mask)
-    (hq : approxT (α := R)
+    (hq : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       ctxS.Q ctxR.Q epsQ)
-    (hk : approxT (α := R)
+    (hk : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       ctxS.K ctxR.K epsK)
-    (hv : approxT (α := R)
+    (hv : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       ctxS.V ctxR.V epsV)
     (hscale :
@@ -467,14 +467,14 @@ theorem approxT_scaledDotProductAttention_masked {nQ nK d : Nat}
       mask
       (scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         epsQ epsK epsScale (1 / Spec.attentionScaleDenom (α := R) d) ctxR.Q ctxR.K)) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.scaledDotProductAttention ctxS) (Spec.scaledDotProductAttention ctxR)
       (maskedOutputErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         evidence.eta evidence.epsMax evidence.rowMaxR
         epsQ epsK epsV epsScale (1 / Spec.attentionScaleDenom (α := R) d)
         ctxR.Q ctxR.K ctxR.V mask) := by
-  have hcore := approxT_hardMaskedScaledDotProductAttentionCore
+  have hcore := approxTensor_hardMaskedScaledDotProductAttentionCore
     (β := β) (fexp := fexp) (rnd := rnd)
     (qS := ctxS.Q) (kS := ctxS.K) (vS := ctxS.V)
     (qR := ctxR.Q) (kR := ctxR.K) (vR := ctxR.V)
@@ -490,19 +490,19 @@ This corollary discharges the scale-coefficient approximation with
 `approx_canonicalAttentionScale`; callers provide only tensor approximation hypotheses and the two
 checkable safety margins for square root and row normalization.
 -/
-theorem approxT_scaledDotProductAttention_unmasked_canonical {nQ nK d : Nat}
+theorem approxTensor_scaledDotProductAttention_unmasked_canonical {nQ nK d : Nat}
     {hQ : nQ ≠ 0} {hK : Nat.succ nK ≠ 0}
     (ctxS : Spec.AttentionContext ℝ nQ (Nat.succ nK) (Nat.succ d) hQ hK)
     (ctxR : Spec.AttentionContext R nQ (Nat.succ nK) (Nat.succ d) hQ hK)
     {epsQ epsK epsV : ℝ}
     (hmaskS : ctxS.mask = none) (hmaskR : ctxR.mask = none)
-    (hq : approxT (α := R)
+    (hq : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       ctxS.Q ctxR.Q epsQ)
-    (hk : approxT (α := R)
+    (hk : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       ctxS.K ctxR.K epsK)
-    (hv : approxT (α := R)
+    (hv : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       ctxS.V ctxR.V epsV)
     (hscaleMargin : dimensionSqrtError (β := β) (fexp := fexp) (rnd := rnd) d < 1)
@@ -515,7 +515,7 @@ theorem approxT_scaledDotProductAttention_unmasked_canonical {nQ nK d : Nat}
             (scaleSpec
               (matMulSpec ctxR.Q (Tensor.matrixTransposeSpec ctxR.K))
               (1 / Spec.attentionScaleDenom (α := R) (Nat.succ d))) i) < 1) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.scaledDotProductAttention ctxS) (Spec.scaledDotProductAttention ctxR)
       (outputErrorBound (β := β) (fexp := fexp) (rnd := rnd)
@@ -523,7 +523,7 @@ theorem approxT_scaledDotProductAttention_unmasked_canonical {nQ nK d : Nat}
         (canonicalScaleErrorBound (β := β) (fexp := fexp) (rnd := rnd) d)
         (1 / Spec.attentionScaleDenom (α := R) (Nat.succ d))
         ctxR.Q ctxR.K ctxR.V) := by
-  exact approxT_scaledDotProductAttention_unmasked
+  exact approxTensor_scaledDotProductAttention_unmasked
     (β := β) (fexp := fexp) (rnd := rnd)
     ctxS ctxR hmaskS hmaskR hq hk hv
     (approx_canonicalAttentionScale (β := β) (fexp := fexp) (rnd := rnd) d hscaleMargin)

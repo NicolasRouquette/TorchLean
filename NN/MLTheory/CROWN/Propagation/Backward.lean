@@ -376,7 +376,7 @@ def computeSigmoidRelax (n : Nat) (preB : Box α (.dim n .scalar)) : LayerRelax 
         -- Secant line for upper bound, tangent at midpoint for lower
         let slope_sec := if u > l + Numbers.epsilon then (σu - σl) / (u - l) else σl * (Numbers.one
           - σl)
-        let mid := (l + u) * Numbers.pointfive
+        let mid := (l + u) * Numbers.half
         let σmid := Activation.Math.sigmoidSpec (α:=α) mid
         let slope_tan := σmid * (Numbers.one - σmid)
         let relax : NeuronRelax α :=
@@ -399,7 +399,7 @@ def computeTanhRelax (n : Nat) (preB : Box α (.dim n .scalar)) : LayerRelax α 
         -- Secant for one bound, tangent for other
         let slope_sec := if u > l + Numbers.epsilon then (tu - tl) / (u - l) else Numbers.one - tl *
           tl
-        let mid := (l + u) * Numbers.pointfive
+        let mid := (l + u) * Numbers.half
         let tmid := Activation.Math.tanhSpec (α:=α) mid
         let slope_tan := Numbers.one - tmid * tmid
         let relax : NeuronRelax α :=

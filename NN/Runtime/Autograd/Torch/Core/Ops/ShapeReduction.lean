@@ -191,7 +191,7 @@ def broadcastTo {α : Type} (s : EagerSession α) [Inhabited α] [Add α] [Zero 
 
 /-- Sum-reduce along `axis`. PyTorch: `torch.sum(x, dim=axis)`. -/
 def reduceSum {α : Type} (s : EagerSession α) [Add α] [Zero α] [Inhabited α] [DecidableEq Shape]
-  {sh : Shape} (axis : Nat) [valid : Shape.valid_axis_inst axis sh] [wf : Shape.WellFormed sh]
+  {sh : Shape} (axis : Nat) [valid : Shape.HasNonemptyAxis axis sh] [wf : Shape.WellFormed sh]
   (x : TensorRef α sh) : IO (TensorRef α (shapeAfterSum sh axis)) := do
   let cpu := do
     let t0 ← s.tape.get
@@ -208,7 +208,7 @@ def reduceSum {α : Type} (s : EagerSession α) [Add α] [Zero α] [Inhabited α
 
 /-- Mean-reduce along `axis`. PyTorch: `torch.mean(x, dim=axis)`. -/
 def reduceMean {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
-  {sh : Shape} (axis : Nat) [valid : Shape.valid_axis_inst axis sh] [wf : Shape.WellFormed sh]
+  {sh : Shape} (axis : Nat) [valid : Shape.HasNonemptyAxis axis sh] [wf : Shape.WellFormed sh]
   (x : TensorRef α sh) : IO (TensorRef α (shapeAfterSum sh axis)) := do
   let cpu := do
     let t0 ← s.tape.get

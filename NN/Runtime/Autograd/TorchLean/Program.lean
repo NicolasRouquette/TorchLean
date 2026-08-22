@@ -49,22 +49,21 @@ end RefList
 /-! The execution-polymorphic surface shared by eager and typed graph execution. -/
 export _root_.Runtime.Autograd.Torch
   (const add sub mul scale abs sqrt clamp max min
-   broadcastTo reshape transpose2d transpose3dFirstToLast transpose3dLastToFirst
-     transpose3dLastTwo swapAdjacentAtDepth
+   broadcastTo reshape transpose2d swapAdjacentAtDepth
    reduceSum reduceMean
-   gatherScalar gatherRow gatherScalarNat gatherVecNat gatherRowsNat scatterAddVec
+   gatherScalar gatherRow gatherScalarNatOrZero gatherVecNatOrZero gatherRowsNatOrZero scatterAddVec
      scatterAddRow
-   mm bmm concatVectors concatLeadingAxis sliceLeadingAxisRange
+   mm bmm concatLeadingAxis sliceLeadingAxisRange
    maxPool avgPool smoothMaxPool
    maxPool2d maxPool2dPad smoothMaxPool2d avgPool2d avgPool2dPad
-   relu silu gelu sigmoid tanh softmax softplus exp log inv detach safeLog logSoftmax
+   relu silu gelu sigmoid tanh softmaxLast softplus exp log inv detach safeLog logSoftmaxLast
    sum flatten
    linear mseLoss layerNorm batchNormChannelFirst multiHeadAttention batchedMultiHeadAttention
    conv convTranspose conv2d convTranspose2d
    randUniform bernoulliMask)
 
 
-/-! ## User-facing type aliases (to reduce annotation noise) -/
+/-! ## Operation-reference notation -/
 
 /-- An operation reference to a tensor of shape `s`.
 
@@ -76,26 +75,8 @@ abbrev RefTy (m : Type → Type) (α : Type)
     (s : Shape) : Type :=
   _root_.Runtime.Autograd.Torch.Ops.Ref (m := m) (α := α) s
 
-/-- SiLU activation
-($x\mapsto x\,\operatorname{sigmoid}(x)$), as an execution-polymorphic definition.
-
-PyTorch analogy: `torch.nn.functional.silu`.
--/
-def silu {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {s : Shape} (x : RefTy (m := m) (α := α) s) : m (RefTy (m := m) (α := α) s) :=
-  _root_.Runtime.Autograd.Torch.silu (m := m) (α := α) (s := s) x
-
-/-- GELU activation, as an execution-polymorphic definition.
-
-PyTorch analogy: `torch.nn.functional.gelu`.
--/
-def gelu {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {s : Shape} (x : RefTy (m := m) (α := α) s) : m (RefTy (m := m) (α := α) s) :=
-  _root_.Runtime.Autograd.Torch.gelu (m := m) (α := α) (s := s) x
-
-namespace Private
+namespace LeadingAxis
+namespace Internal
 
 /-! ## Batch-first derived ops -/
 
@@ -109,7 +90,7 @@ Map a per-sample op over the leading batch dimension.
 This adapts the shared leading-axis traversal to the TorchLean `Ops` interface. It is a convenience
 for lifting single-sample operations, such as convolution, to batch-first tensors.
 -/
-def mapBatch0 {α : Type} [Context α] [DecidableEq Shape]
+def mapLeadingAxis {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {batch : Nat} {s t : Shape}
     (x : RefTy (m := m) (α := α) (.dim batch s))
@@ -117,12 +98,8 @@ def mapBatch0 {α : Type} [Context α] [DecidableEq Shape]
     m (RefTy (m := m) (α := α) (.dim batch t)) :=
   _root_.Runtime.Autograd.Torch.mapLeadingAxis (m := m) (α := α) f x
 
-/-- Convert a boolean tensor mask to a `{0,1}` tensor (same shape). -/
-def boolMask01 {α : Type} [Context α] : ∀ {s : Shape}, Tensor Bool s → Tensor α s
-  | .scalar, .scalar b => .scalar (if b then (1 : α) else 0)
-  | .dim _ _, .dim f => .dim (fun i => boolMask01 (s := _) (f i))
-
-end Private
+end Internal
+end LeadingAxis
 
 /-! ## Batch-first primitives (TorchLean user-facing) -/
 
@@ -145,7 +122,7 @@ def conv {α : Type} [Context α] [DecidableEq Shape]
     m (RefTy (m := m) (α := α)
       (.dim batch
         (Shape.ofList (outC :: (Spec.convOutSpatial inSpatial kernel stride padding).toList)))) :=
-  Private.mapBatch0 (m := m) (α := α)
+  LeadingAxis.Internal.mapLeadingAxis (m := m) (α := α)
     (batch := batch) (s := Shape.ofList (inC :: inSpatial.toList))
     (t := Shape.ofList (outC :: (Spec.convOutSpatial inSpatial kernel stride padding).toList))
     input
@@ -175,7 +152,7 @@ def convTranspose {α : Type} [Context α] [DecidableEq Shape]
       (.dim batch
         (Shape.ofList (outC ::
           (Spec.convTransposeOutSpatial inSpatial kernel stride padding).toList)))) :=
-  Private.mapBatch0 (m := m) (α := α)
+  LeadingAxis.Internal.mapLeadingAxis (m := m) (α := α)
     (batch := batch) (s := Shape.ofList (inC :: inSpatial.toList))
     (t := Shape.ofList (outC :: (Spec.convTransposeOutSpatial inSpatial kernel stride padding).toList))
     input
@@ -197,7 +174,7 @@ def maxPool {α : Type} [Context α] [DecidableEq Shape]
     m (RefTy (m := m) (α := α)
       (.dim batch (Shape.ofList (C :: (Spec.poolOutSpatialPad inSpatial kernel stride padding).toList))))
     :=
-  Private.mapBatch0 (m := m) (α := α)
+  LeadingAxis.Internal.mapLeadingAxis (m := m) (α := α)
     (batch := batch) (s := Shape.ofList (C :: inSpatial.toList))
     (t := Shape.ofList (C :: (Spec.poolOutSpatialPad inSpatial kernel stride padding).toList))
     input
@@ -217,7 +194,7 @@ def avgPool {α : Type} [Context α] [DecidableEq Shape]
     m (RefTy (m := m) (α := α)
       (.dim batch (Shape.ofList (C :: (Spec.poolOutSpatialPad inSpatial kernel stride padding).toList))))
     :=
-  Private.mapBatch0 (m := m) (α := α)
+  LeadingAxis.Internal.mapLeadingAxis (m := m) (α := α)
     (batch := batch) (s := Shape.ofList (C :: inSpatial.toList))
     (t := Shape.ofList (C :: (Spec.poolOutSpatialPad inSpatial kernel stride padding).toList))
     input
@@ -238,7 +215,7 @@ def smoothMaxPool {α : Type} [Context α] [DecidableEq Shape]
     m (RefTy (m := m) (α := α)
       (.dim batch (Shape.ofList (C :: (Spec.poolOutSpatialPad inSpatial kernel stride padding).toList))))
     :=
-  Private.mapBatch0 (m := m) (α := α)
+  LeadingAxis.Internal.mapLeadingAxis (m := m) (α := α)
     (batch := batch) (s := Shape.ofList (C :: inSpatial.toList))
     (t := Shape.ofList (C :: (Spec.poolOutSpatialPad inSpatial kernel stride padding).toList))
     input
@@ -247,38 +224,22 @@ def smoothMaxPool {α : Type} [Context α] [DecidableEq Shape]
         (d := d) (C := C) (inSpatial := inSpatial) (kernel := kernel) (stride := stride)
         (padding := padding) (hKernel := hKernel) x temp)
 
-/--
-Batched layer normalization over the last axis.
-
-Input shape: `(N, seqLen, embedDim)`.
--/
+/-- Layer normalization over the final axis of a matrix, including an empty row axis. -/
 def layerNorm {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {batch seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : embedDim > 0)
-    (x : RefTy (m := m) (α := α) (.dim batch (.dim seqLen (.dim embedDim .scalar))))
-    (gamma : RefTy (m := m) (α := α) (.dim embedDim .scalar))
-    (beta : RefTy (m := m) (α := α) (.dim embedDim .scalar)) :
-    m (RefTy (m := m) (α := α) (.dim batch (.dim seqLen (.dim embedDim .scalar)))) :=
-  match batch with
+    {rows width : Nat} (hWidth : width > 0)
+    (x : RefTy (m := m) (α := α) (.dim rows (.dim width .scalar)))
+    (gamma : RefTy (m := m) (α := α) (.dim width .scalar))
+    (beta : RefTy (m := m) (α := α) (.dim width .scalar)) :
+    m (RefTy (m := m) (α := α) (.dim rows (.dim width .scalar))) :=
+  match rows with
   | 0 =>
       _root_.Runtime.Autograd.Torch.const (m := m) (α := α)
-        (s := .dim 0 (.dim seqLen (.dim embedDim .scalar)))
-        (Private.emptyLeadingAxis (α := α) (.dim seqLen (.dim embedDim .scalar)))
-  | batch + 1 => do
-      let rows := (batch + 1) * seqLen
-      have h_rows_pos : rows > 0 := Nat.mul_pos (Nat.succ_pos batch) h_seq_pos
-      let xRows ←
-        _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-          (s₁ := .dim (batch + 1) (.dim seqLen (.dim embedDim .scalar)))
-          (s₂ := .dim rows (.dim embedDim .scalar)) x (by
-            simp [rows, Spec.Shape.size, Nat.mul_assoc])
-      let yRows ←
-        _root_.Runtime.Autograd.Torch.layerNorm (m := m) (α := α)
-          (seqLen := rows) (embedDim := embedDim) h_rows_pos h_embed_pos xRows gamma beta
-      _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-        (s₁ := .dim rows (.dim embedDim .scalar))
-        (s₂ := .dim (batch + 1) (.dim seqLen (.dim embedDim .scalar))) yRows (by
-          simp [rows, Spec.Shape.size, Nat.mul_assoc])
+        (s := .dim 0 (.dim width .scalar))
+        (LeadingAxis.Internal.emptyLeadingAxis (α := α) (.dim width .scalar))
+  | rows + 1 =>
+      _root_.Runtime.Autograd.Torch.layerNorm (m := m) (α := α)
+        (seqLen := rows + 1) (embedDim := width) (Nat.succ_pos rows) hWidth x gamma beta
 
 /--
 Batched multi-head self-attention.
@@ -300,7 +261,7 @@ def multiHeadAttention {α : Type} [Context α] [DecidableEq Shape]
   | 0 =>
       _root_.Runtime.Autograd.Torch.const (m := m) (α := α)
         (s := .dim 0 (.dim n (.dim dModel .scalar)))
-        (Private.emptyLeadingAxis (α := α) (.dim n (.dim dModel .scalar)))
+        (LeadingAxis.Internal.emptyLeadingAxis (α := α) (.dim n (.dim dModel .scalar)))
   | batch + 1 =>
       _root_.Runtime.Autograd.Torch.batchedMultiHeadAttention (m := m) (α := α)
         (batch := batch + 1) (n := n) (numHeads := numHeads) (dModel := dModel)
@@ -324,24 +285,6 @@ def multiHeadAttentionOutputBias {α : Type} [Context α] [DecidableEq Shape]
     Shape.BroadcastTo.proof bo
   _root_.Runtime.Autograd.Torch.add (m := m) (α := α)
     (s := .dim batch (.dim n (.dim dModel .scalar))) y boFull
-
-/-- Batched affine layer on matrices: $y=xW^\mathsf{T}+b$, with shape
-`(N, inDim)` for $x$. -/
-def linear2d {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {batch inDim outDim : Nat}
-    (w : RefTy (m := m) (α := α) (.dim outDim (.dim inDim .scalar)))
-    (b : RefTy (m := m) (α := α) (.dim outDim .scalar))
-    (x : RefTy (m := m) (α := α) (.dim batch (.dim inDim .scalar))) :
-    m (RefTy (m := m) (α := α) (.dim batch (.dim outDim .scalar))) := do
-  let wT ← _root_.Runtime.Autograd.Torch.transpose2d (m := m) (α := α)
-    (mDim := outDim) (nDim := inDim) w
-  let y0 ← _root_.Runtime.Autograd.Torch.mm (m := m) (α := α)
-    (mDim := batch) (nDim := inDim) (pDim := outDim) x wT
-  let bB ← _root_.Runtime.Autograd.Torch.broadcastTo (m := m) (α := α)
-    (s₁ := .dim outDim .scalar) (s₂ := .dim batch (.dim outDim .scalar))
-    Shape.BroadcastTo.proof b
-  _root_.Runtime.Autograd.Torch.add (m := m) (α := α) (s := .dim batch (.dim outDim .scalar)) y0 bB
 
 /-- A TorchLean program is execution-polymorphic: it can run in any `m` that implements `Ops`.
 

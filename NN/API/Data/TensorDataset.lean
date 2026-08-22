@@ -49,16 +49,6 @@ def unbatch {β : Type} {n : Nat} :
   | _s :: ss, .cons x xs, i =>
       .cons (Spec.getAtSpec x i) (unbatch (β := β) (ss := ss) xs i)
 
-/-- Convert a shape-indexed `TensorPack` of `Float` tensors to the runtime scalar type `α`. -/
-def castFloat {α : Type} [_root_.TorchLean.Runtime.FromFloat α] :
-    {ss : List Spec.Shape} →
-      _root_.TorchLean.TensorPack Float ss →
-      _root_.TorchLean.TensorPack α ss
-  | [], .nil => .nil
-  | _s :: ss, .cons x xs =>
-      .cons (Spec.mapTensor (_root_.TorchLean.Runtime.ofFloat (α := α)) x)
-        (castFloat (ss := ss) xs)
-
 /--
 Build a dataset by slicing a *batched* `TensorPack` along the leading batch axis. This gives the
 typed counterpart of a tensor dataset built from several aligned arrays.
@@ -66,7 +56,8 @@ typed counterpart of a tensor dataset built from several aligned arrays.
 def ofBatched {β : Type} {n : Nat} {ss : List Spec.Shape}
     (xs : _root_.TorchLean.TensorPack β (ss.map (fun s => Spec.Shape.dim n s))) :
     Dataset (_root_.TorchLean.TensorPack β ss) :=
-  fromList <| (List.finRange n).map fun i => unbatch (β := β) (n := n) (ss := ss) xs i
+  _root_.Runtime.Autograd.Train.Dataset.ofList <|
+    (List.finRange n).map fun i => unbatch (β := β) (n := n) (ss := ss) xs i
 
 /--
 Float-to-`α` variant of `ofBatched`, for data loaded from disk.
@@ -75,10 +66,12 @@ def ofBatchedFloat {α : Type} [_root_.TorchLean.Runtime.FromFloat α]
     {n : Nat} {ss : List Spec.Shape}
     (xs : _root_.TorchLean.TensorPack Float (ss.map (fun s => Spec.Shape.dim n s))) :
     Dataset (_root_.TorchLean.TensorPack α ss) :=
+  let converted := _root_.TorchLean.TensorPack.map
+    (fun x => Spec.mapTensor (_root_.TorchLean.Runtime.ofFloat (α := α)) x) xs
   let samples : List (_root_.TorchLean.TensorPack α ss) :=
     (List.finRange n).map (fun i =>
-      castFloat (α := α) (unbatch (β := Float) (n := n) (ss := ss) xs i))
-  fromList samples
+      unbatch (β := α) (n := n) (ss := ss) converted i)
+  _root_.Runtime.Autograd.Train.Dataset.ofList samples
 
 /--
 Supervised dataset from two batched tensors `X : (n, σ)` and `Y : (n, τ)` by slicing the leading batch axis.
@@ -92,7 +85,7 @@ def supervised {α : Type}
     (Y : Spec.Tensor α (.dim n τ)) :
     Dataset (_root_.TorchLean.TensorPack α [σ, τ]) :=
   ofBatched (β := α) (n := n) (ss := [σ, τ])
-    (tensorpack! X, Y)
+    (TensorPack! X, Y)
 
 /-- Float-to-`α` variant of `supervised`, for data loaded from disk. -/
 def supervisedFloat {α : Type} [_root_.TorchLean.Runtime.FromFloat α]
@@ -101,7 +94,7 @@ def supervisedFloat {α : Type} [_root_.TorchLean.Runtime.FromFloat α]
     (Y : Spec.Tensor Float (.dim n τ)) :
     Dataset (_root_.TorchLean.TensorPack α [σ, τ]) :=
   ofBatchedFloat (α := α) (n := n) (ss := [σ, τ])
-    (tensorpack! X, Y)
+    (TensorPack! X, Y)
 
 end TensorDataset
 end Data

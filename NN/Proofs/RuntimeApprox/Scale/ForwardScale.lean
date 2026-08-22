@@ -29,6 +29,7 @@ namespace RuntimeApprox
 
 open Spec
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 open scoped NNReal
 
 noncomputable section
@@ -42,7 +43,7 @@ structure FwdNodeScale (toSpec : α → SpecScalar) (Γ : List Shape) (τ : Shap
   scaleSound : ∀ (ctxS : TList SpecScalar Γ) (ctxR : TList α Γ) (epsCtx : EList Γ) (bCtx : BList Γ),
       approxCtx (α := α) toSpec ctxS ctxR epsCtx →
       scaleCtx (α := α) toSpec ctxS ctxR bCtx →
-        scaleT (α := α) (toSpec := toSpec) (forwardSpec ctxS) (forwardRuntime ctxR) (scaleBound bCtx
+        scaleTensor (α := α) (toSpec := toSpec) (forwardSpec ctxS) (forwardRuntime ctxR) (scaleBound bCtx
           ctxR)
 
 /-- Forward graph with scale-aware nodes. -/
@@ -131,7 +132,7 @@ theorem eval_scale {Γ : List Shape} {ss : List Shape} (g : FwdGraphScale (α :=
           (toFwdGraph (α := α) g) xS xR epsIn hε
 
       have hb :
-          scaleT (α := α) (toSpec := toSpec)
+          scaleTensor (α := α) (toSpec := toSpec)
             (node.forwardSpec ctxS)
             (node.forwardRuntime ctxR)
             (node.scaleBound bPrev ctxR) :=

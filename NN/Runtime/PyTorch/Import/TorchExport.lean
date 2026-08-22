@@ -65,6 +65,8 @@ structure CapturedGraph where
   outputId : Nat
   deriving Repr
 
+namespace Internal
+
 /--
 Shape metadata for a PyTorch/FX value before it has been lowered to TorchLean's tensor-only IR.
 
@@ -143,10 +145,6 @@ def parseNatList (ctx : String) (j : Json) : Except String (List Nat) := do
   let xs ← jsonArray ctx j
   xs.toList.mapM (jsonNat ctx)
 
-/-- Convert a list of dimensions into TorchLean's nested `Shape` representation. -/
-def shapeOfDims (dims : List Nat) : Shape :=
-  dims.foldr Shape.dim Shape.scalar
-
 /--
 Parse a shape encoded as a dimension list.
 
@@ -156,7 +154,7 @@ Examples:
 - `[2, 3]` means `Shape.dim 2 (Shape.dim 3 Shape.scalar)`.
 -/
 def parseShape (ctx : String) (j : Json) : Except String Shape := do
-  pure (shapeOfDims (← parseNatList ctx j))
+  pure (Shape.ofList (← parseNatList ctx j))
 
 /-- Parse a node's parent id list. -/
 def parseParents (ctx : String) (j : Json) : Except String (List Nat) :=
@@ -274,16 +272,6 @@ def parseOpKind (ctx : String) (outShape : Shape) (o : StateDict) : Except Strin
   | "mse_loss" => pure .mseLoss
   | other => throw s!"PyTorch graph import: {ctx}: unsupported TorchLean IR op kind `{other}`"
 
-/-- Parse one node object from the graph JSON format. -/
-def parseNode (j : Json) : Except String Node := do
-  let o ← jsonObject "node" j
-  let id ← natField "node" "id" o
-  let ctx := s!"node[{id}]"
-  let outShape ← shapeField ctx "shape" o
-  let parents ← parseParents s!"{ctx}.parents" (← field ctx "parents" o)
-  let kind ← parseOpKind ctx outShape o
-  pure { id := id, parents := parents, kind := kind, outShape := outShape }
-
 /-- Parse one raw PyTorch/FX value node. -/
 def parseValueNode (j : Json) : Except String CapturedValueNode := do
   let o ← jsonObject "node" j
@@ -295,7 +283,7 @@ def parseValueNode (j : Json) : Except String CapturedValueNode := do
   pure { id := id, parents := parents, kind := kind, valueShape := valueShape, raw := o }
 
 /-- Parse the graph object into the PyTorch/FX value-level graph, before tensor lowering. -/
-def parseValueGraphUnchecked (j : Json) : Except String CapturedValueGraph := do
+def parseValueGraph (j : Json) : Except String CapturedValueGraph := do
   let o ← jsonObject "root" j
   match field? "format" o with
   | some (.str "torchlean.ir.v1") => pure ()
@@ -479,9 +467,11 @@ def lowerValueGraph (vg : CapturedValueGraph) : Except String CapturedGraph := d
     | none => throw s!"PyTorch graph import: output id {vg.outputId} out of bounds"
   pure { graph := { nodes := tensorNodes }, inputId := inputId, outputId := outputId }
 
-/-- Parse the graph object and lower PyTorch/FX values to the tensor IR without validation. -/
-def parseGraphUnchecked (j : Json) : Except String CapturedGraph := do
-  lowerValueGraph (← parseValueGraphUnchecked j)
+/-- Parse the graph object and lower PyTorch/FX values to the tensor IR. -/
+def parseGraph (j : Json) : Except String CapturedGraph := do
+  lowerValueGraph (← parseValueGraph j)
+
+end Internal
 
 /--
 Parse and validate a captured PyTorch graph.
@@ -494,7 +484,7 @@ Success means:
 - declared output shapes match `NN.IR.Infer`.
 -/
 def parseGraph (j : Json) : Except String CapturedGraph := do
-  match parseGraphUnchecked j with
+  match Internal.parseGraph j with
   | .error e => .error e
   | .ok cg =>
       match cg.graph.checkShapes with
@@ -515,7 +505,7 @@ quote when it receives a graph artifact through this importer.
 -/
 theorem parseGraph_wellShaped {j : Json} {cg : CapturedGraph}
     (h : parseGraph j = .ok cg) : cg.graph.WellShaped := by
-  cases hparse : parseGraphUnchecked j with
+  cases hparse : Internal.parseGraph j with
   | error e =>
       have hbad : Except.error e = Except.ok cg := by
         simp [parseGraph, hparse] at h

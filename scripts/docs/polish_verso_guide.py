@@ -583,6 +583,10 @@ main p > img:only-child {
 }
 
 @media screen and (max-width: 700px) {
+  #bp-style-switcher {
+    display: none !important;
+  }
+
   main h1 .permalink-widget {
     display: none;
   }

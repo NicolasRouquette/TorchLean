@@ -316,8 +316,8 @@ theorem choleskySpec_reconstruction (A : Spec.Tensor ℝ (.dim n (.dim n .scalar
       = ∑ k, Spec.get2 (Spec.choleskySpec A) i k * Spec.get2 (Spec.choleskySpec A) j k := by
   have hg : ∀ a b, Spec.get2 (Spec.choleskySpec A) a b = Spec.choleskyFn (Spec.toMatFn A) a b := by
     intro a b
-    rw [show Spec.choleskySpec A = Spec.ofMatFn (Spec.choleskyFn (Spec.toMatFn A)) from rfl,
-      Spec.Factorization.get2_ofMatFn]
+    rw [show Spec.choleskySpec A = Spec.Tensor.matrix (Spec.choleskyFn (Spec.toMatFn A)) from rfl,
+      Spec.Factorization.get2_matrix]
   simp only [hg]
   show Spec.toMatFn A i j = _
   refine (choleskyFn_dot (Spec.toMatFn A) (fun a b => hsymm a b) (fun b => ?_) i j).symm

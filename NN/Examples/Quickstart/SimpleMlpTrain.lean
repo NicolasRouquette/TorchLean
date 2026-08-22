@@ -68,14 +68,18 @@ def target (x1 x2 : Float) : Float :=
   let relu (x : Float) := if x < 0.0 then 0.0 else x
   (0.8 * relu (x1 + x2)) - (0.4 * relu (x2 - x1)) + 0.2
 
-/--
-Build the tutorial dataset at the runtime-selected scalar type.
+/-- Evaluate the scalar target on one shape-indexed input row. -/
+def targetTensor (x : Tensor Float (.dim inDim .scalar)) :
+    Tensor Float (.dim outDim .scalar) :=
+  let x1 := Tensor.item (_root_.Spec.get x ⟨0, by decide⟩)
+  let x2 := Tensor.item (_root_.Spec.get x ⟨1, by decide⟩)
+  Tensor.dim fun _ => Tensor.scalar (target x1 x2)
 
-`Data.regressionGrid` keeps shape-indexed tensor slicing out of the first training example.
-The underlying value is still a TorchLean supervised dataset with checked input/output shapes.
--/
+/-- Build the tutorial dataset at the runtime-selected scalar type. -/
 def buildDataset : Trainer.DataSource (.dim inDim .scalar) (.dim outDim .scalar) :=
-  Data.regressionGrid (-1.0) 1.0 5 target
+  let inputs := Data.Synthetic.squareGrid (-1.0) 1.0 5
+  let targets := Tensor.mapLeading (.dim (5 * 5) .scalar) targetTensor inputs
+  Data.tensorDataset inputs targets
 
 /-- Command-line help for the simple MLP quickstart. -/
 def usage : String :=
@@ -116,8 +120,10 @@ def main (args : List String) : IO Unit := do
   IO.println s!"steps = {parsed.train.steps}"
 
   let probes := [
-    Trainer.Probe.point "center" 0.0 0.0 (some (toString (target 0.0 0.0))),
-    Trainer.Probe.point "heldout" 0.25 (-0.75) (some (toString (target 0.25 (-0.75))))
+    Trainer.Probe.ofFloatTensor "center" (Tensor.vector (α := Float) [0.0, 0.0])
+      "x=(0.0,0.0)" (some (toString (target 0.0 0.0))),
+    Trainer.Probe.ofFloatTensor "heldout" (Tensor.vector (α := Float) [0.25, -0.75])
+      "x=(0.25,-0.75)" (some (toString (target 0.25 (-0.75))))
   ]
   let trained ← trainer.train buildDataset parsed.trainOptions probes
   trained.printSummary

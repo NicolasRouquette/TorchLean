@@ -265,8 +265,8 @@ def stepWithHistory
   let gated := y * siluVec z
   (h', vecMatMulSpec gated m.outProj)
 
-/-- Internal recurrent runner carrying the causal convolution history. -/
-def runListAux
+/-- Recurrent runner from an existing state and newest-first convolution history. -/
+def runListWithHistory
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
     (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar)))
     (history : List (Tensor α (.dim innerDim .scalar))) :
@@ -278,7 +278,7 @@ def runListAux
       let zPath := m.projectZ x
       let history' := xPath :: history
       let (h1, y) := m.stepWithHistory h0 history' zPath
-      let (hN, ys) := m.runListAux h1 history' xs
+      let (hN, ys) := m.runListWithHistory h1 history' xs
       (hN, y :: ys)
 
 /-- Run a sequence through the full selective Mamba block. -/
@@ -287,13 +287,13 @@ def runList
     (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar))) :
     List (Tensor α (.dim inputDim .scalar)) →
     Tensor α (.dim innerDim (.dim stateDim .scalar)) × List (Tensor α (.dim outputDim .scalar)) :=
-  m.runListAux h0 []
+  m.runListWithHistory h0 []
 
-@[simp] theorem runListAux_nil
+@[simp] theorem runListWithHistory_nil
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
     (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar)))
     (history : List (Tensor α (.dim innerDim .scalar))) :
-    m.runListAux h0 history [] = (h0, []) := by
+    m.runListWithHistory h0 history [] = (h0, []) := by
   rfl
 
 @[simp] theorem runList_nil
@@ -303,17 +303,17 @@ def runList
   rfl
 
 /-- The full Mamba recurrent pass emits one output token per input token. -/
-theorem runListAux_outputs_length
+theorem runListWithHistory_outputs_length
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
     (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar)))
     (history : List (Tensor α (.dim innerDim .scalar)))
     (xs : List (Tensor α (.dim inputDim .scalar))) :
-    (m.runListAux h0 history xs).2.length = xs.length := by
+    (m.runListWithHistory h0 history xs).2.length = xs.length := by
   induction xs generalizing h0 history with
   | nil =>
       simp
   | cons x rest ih =>
-      simp [runListAux, ih]
+      simp [runListWithHistory, ih]
 
 /-- The public full Mamba runner emits one output token per input token. -/
 theorem runList_outputs_length
@@ -321,7 +321,7 @@ theorem runList_outputs_length
     (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar)))
     (xs : List (Tensor α (.dim inputDim .scalar))) :
     (m.runList h0 xs).2.length = xs.length := by
-  simpa [runList] using m.runListAux_outputs_length h0 [] xs
+  simpa [runList] using m.runListWithHistory_outputs_length h0 [] xs
 
 end SelectiveMambaBlockSpec
 

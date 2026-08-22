@@ -48,8 +48,7 @@ namespace Condition1
 
 open IEEE32Exec
 
-/-- Alias for the executable float format used throughout this file (`IEEE32Exec`). -/
-abbrev F : Type := IEEE32Exec
+local notation "F" => IEEE32Exec
 
  /-! ### Float-format constants for IEEE binary32 -/
 
@@ -289,7 +288,7 @@ def BoxIn {d : Nat} (a b : F) (B : I.Box d) : Prop :=
 
 /-- The canonical cube domain `[-1,1]^d`. -/
 def CubeBox {d : Nat} (B : I.Box d) : Prop :=
-  BoxIn (a := Numbers.neg_one) (b := Numbers.one) B
+  BoxIn (a := Numbers.negOne) (b := Numbers.one) B
 
 /-- Ideal abstraction `h♯(B)`: interval hull of the direct image `h(γ(B))` (computed over the finite
   concretization). -/
@@ -519,7 +518,7 @@ Premise: the separating activation condition yields exact threshold-indicator ne
 -/
 def separatingActivationYieldsThresholdNetworksOnCube (σ : F → F) : Prop :=
   ∀ w : Condition1.Witness σ,
-    Separability.SeparableOn σ (a := Numbers.neg_one) (b := Numbers.one) w.η (σ w.c2)
+    Separability.SeparableOn σ (a := Numbers.negOne) (b := Numbers.one) w.η (σ w.c2)
 
 /--
 Premise: separability yields a σ-network whose interval semantics equals the direct-image hull.
@@ -548,9 +547,9 @@ theorem exactIntervalSemantics_universalOnCube_of_condition1_and_separableOn (σ
           exactIntervalSemanticsUniversalOnCube σ := by
   intro hcond hL2 hL3 d h hnan
   rcases hcond with ⟨w⟩
-  have hsep : Separability.SeparableOn σ (a := Numbers.neg_one) (b := Numbers.one) w.η (σ w.c2) :=
+  have hsep : Separability.SeparableOn σ (a := Numbers.negOne) (b := Numbers.one) w.η (σ w.c2) :=
     hL2 w
-  rcases hL3 (a := Numbers.neg_one) (b := Numbers.one) (η := w.η) (K := σ w.c2) hsep (d := d) (h :=
+  rcases hL3 (a := Numbers.negOne) (b := Numbers.one) (η := w.η) (K := σ w.c2) hsep (d := d) (h :=
     h) hnan with
     ⟨n, hn⟩
   refine ⟨n, ?_⟩

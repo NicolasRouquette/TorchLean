@@ -44,40 +44,13 @@ def linear (inDim outDim : Nat) (seedW seedB : Nat := 0) :
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"Linear({inDim}, {outDim})"
     stateShapes := [WShape, bShape]
-    initState := Torch.tlistPair w0 b0
+    initState := .cons w0 (.cons b0 .nil)
     runtimeInit := some (.cons (.xavierUniform inDim outDim seedW) (.cons .zeros .nil))
     requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun w b x =>
           TorchLean.linear (m := m) (α := α) (inDim := inDim) (outDim := outDim) w b x
-  }
-
-/--
-Batched / matrix-valued affine layer: $y=xW^\mathsf{T}+b$.
-
-Input shape: `(batch × inDim)`. Output shape: `(batch × outDim)`.
-
-PyTorch analogy: `torch.nn.Linear(inDim, outDim)` applied to a 2D tensor.
--/
-def linear2d (batch inDim outDim : Nat) (seedW seedB : Nat := 0) :
-    Layer (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar)) :=
-  let WShape : Shape := .dim outDim (.dim inDim .scalar)
-  let bShape : Shape := .dim outDim .scalar
-  let w0 : Tensor Float WShape := Torch.Init.xavierW (outDim := outDim) (inDim := inDim) (seed :=
-    seedW)
-  let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
-  { kind := s!"Linear2d({inDim}, {outDim})"
-    stateShapes := [WShape, bShape]
-    initState := Torch.tlistPair w0 b0
-    runtimeInit := some (.cons (.xavierUniform inDim outDim seedW) (.cons .zeros .nil))
-    requiresGrad := [true, true]
-    forward := fun _ {α} _ _ =>
-      fun {m} _ _ =>
-        fun w b x =>
-          TorchLean.linear2d (m := m) (α := α)
-            (batch := batch) (inDim := inDim) (outDim := outDim)
-            w b x
   }
 
 /--
@@ -105,7 +78,7 @@ def rnn (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
   let b0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { kind := s!"RNN({inputSize}, {hiddenSize})"
     stateShapes := [WShape, bShape]
-    initState := Torch.tlistPair w0 b0
+    initState := .cons w0 (.cons b0 .nil)
     runtimeInit := some (.cons (.xavierUniform (inputSize + hiddenSize) hiddenSize seedW)
       (.cons .zeros .nil))
     requiresGrad := [true, true]
@@ -122,7 +95,7 @@ def rnn (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
           let (_, out) ← (List.finRange seqLen).foldlM (init := (h0, out0)) (fun st t => do
             let (hPrev, outPrev) := st
             let x_t ← TorchLean.gatherRow (m := m) (α := α) (rows := seqLen) (cols := inputSize) xs t
-            let concat ← TorchLean.concatVectors (m := m) (α := α)
+            let concat ← TorchLean.concatLeadingAxis (m := m) (α := α) (s := .scalar)
               (nDim := inputSize) (mDim := hiddenSize) x_t hPrev
             let pre ← TorchLean.linear (m := m) (α := α)
               (inDim := inputSize + hiddenSize) (outDim := hiddenSize)
@@ -137,12 +110,9 @@ def rnn (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
 /--
 GRU layer (time-major sequence, no batch axis).
 
-This is an unrolled GRU using the standard gate equations (reset/update/candidate), with
-$h_{-1}=0$.
-
-PyTorch analogy: `torch.nn.GRU(inputSize, hiddenSize)` with `batch_first=false`, specialized to a
-single batch element.
-Docs: https://docs.pytorch.org/docs/stable/generated/torch.nn.GRU.html
+This is an unrolled, time-major Cho-style GRU with $h_{-1}=0$. The reset gate is applied before the
+candidate's hidden-state linear map. That differs from PyTorch's reset-after parameterization, so
+PyTorch GRU weights require an explicit conversion rather than direct loading.
 -/
 def gru (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
     Layer (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim hiddenSize .scalar)) :=
@@ -160,7 +130,7 @@ def gru (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
     hiddenSize) (seed := seedW + 2)
   let bNew0 : Tensor Float bShape := Torch.Init.tensor (s := bShape) (sch := .zeros) (seed :=
     seedB + 2)
-  { kind := s!"GRU({inputSize}, {hiddenSize})"
+  { kind := s!"ChoGRU({inputSize}, {hiddenSize})"
     stateShapes := [WShape, bShape, WShape, bShape, WShape, bShape]
     initState := .cons wReset0 (.cons bReset0 (.cons wUpdate0 (.cons bUpdate0 (.cons wNew0 (.cons bNew0 .nil)))))
     runtimeInit := some <| .cons (.xavierUniform (inputSize + hiddenSize) hiddenSize (seedW + 0)) <|
@@ -185,7 +155,7 @@ def gru (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
           let (_, out) ← (List.finRange seqLen).foldlM (init := (h0, out0)) (fun st t => do
             let (hPrev, outPrev) := st
             let x_t ← TorchLean.gatherRow (m := m) (α := α) (rows := seqLen) (cols := inputSize) xs t
-            let concat ← TorchLean.concatVectors (m := m) (α := α)
+            let concat ← TorchLean.concatLeadingAxis (m := m) (α := α) (s := .scalar)
               (nDim := inputSize) (mDim := hiddenSize) x_t hPrev
             let r_pre ← TorchLean.linear (m := m) (α := α)
               (inDim := inputSize + hiddenSize) (outDim := hiddenSize)
@@ -196,7 +166,7 @@ def gru (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
               wUpdate bUpdate concat
             let z ← TorchLean.sigmoid (m := m) (α := α) (s := .dim hiddenSize .scalar) z_pre
             let r_hPrev ← TorchLean.mul (m := m) (α := α) (s := .dim hiddenSize .scalar) r hPrev
-            let concat2 ← TorchLean.concatVectors (m := m) (α := α)
+            let concat2 ← TorchLean.concatLeadingAxis (m := m) (α := α) (s := .scalar)
               (nDim := inputSize) (mDim := hiddenSize) x_t r_hPrev
             let n_pre ← TorchLean.linear (m := m) (α := α)
               (inDim := inputSize + hiddenSize) (outDim := hiddenSize)
@@ -279,7 +249,7 @@ def mamba (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
               (inDim := inputSize) (outDim := hiddenSize) wIn bIn x_t
             let u ← _root_.Runtime.Autograd.Torch.silu
               (m := m) (α := α) (s := .dim hiddenSize .scalar) uPre
-            let concat ← TorchLean.concatVectors (m := m) (α := α)
+            let concat ← TorchLean.concatLeadingAxis (m := m) (α := α) (s := .scalar)
               (nDim := inputSize) (mDim := hiddenSize) x_t hPrev
             let deltaPre ← TorchLean.linear (m := m) (α := α)
               (inDim := inputSize + hiddenSize) (outDim := hiddenSize)
@@ -356,7 +326,7 @@ def lstm (seqLen inputSize hiddenSize : Nat) (seedW seedB : Nat := 0) :
           let (_, _, out) ← (List.finRange seqLen).foldlM (init := (h0, c0, out0)) (fun st t => do
             let (hPrev, cPrev, outPrev) := st
             let x_t ← TorchLean.gatherRow (m := m) (α := α) (rows := seqLen) (cols := inputSize) xs t
-            let concat ← TorchLean.concatVectors (m := m) (α := α)
+            let concat ← TorchLean.concatLeadingAxis (m := m) (α := α) (s := .scalar)
               (nDim := inputSize) (mDim := hiddenSize) x_t hPrev
             let f_pre ← TorchLean.linear (m := m) (α := α)
               (inDim := inputSize + hiddenSize) (outDim := hiddenSize)

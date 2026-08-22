@@ -14,11 +14,11 @@ public import NN.Proofs.Autograd.Tape.Core.FDeriv
 
 Two independent developments meet in this file.
 
-* The **runtime link** (`Runtime/Link/BackwardGraph.lean`) proves that the tape engine's dense
+* The **runtime link** (`NN.Proofs.Autograd.Runtime.Link.BackwardGraph`) proves that the tape engine's dense
   reverse pass (`Tape.backwardDenseFrom`) agrees with the algebraic model's full backpropagation
   `backpropAllCtx`, over any commutative semiring carrier and an arbitrary non-differentiable
   environment `Δ`.
-* The **analytic tape model** (`Tape/Core/FDeriv.lean`) proves that reverse-mode accumulation
+* The **analytic tape model** (`NN.Proofs.Autograd.Tape.Core.FDeriv`) proves that reverse-mode accumulation
   computes the adjoint of the Fréchet derivative of the forward evaluation, over `ℝ`.
 
 The two developments are stated on *different graph types*: the algebraic
@@ -103,13 +103,13 @@ theorem flattenCtx_cast {Γ₁ Γ₂ : List Shape} (h : Γ₁ = Γ₂) (xs : TLi
   cases h
   simp
 
-/-- Vectorization is additive: `toVecT` maps `addSpec` to vector addition. -/
-theorem toVecT_addSpec {s : Shape} (a b : Tensor ℝ s) :
-    toVecT (t := addSpec a b) = toVecT (t := a) + toVecT (t := b) := by
+/-- Vectorization is additive: `tensorToVec` maps `addSpec` to vector addition. -/
+theorem tensorToVec_addSpec {s : Shape} (a b : Tensor ℝ s) :
+    tensorToVec (t := addSpec a b) = tensorToVec (t := a) + tensorToVec (t := b) := by
   refine ext_inner_right ℝ ?_
   intro w
-  have hw : w = toVecT (t := ofVecT (s := s) w) := (toVecT_ofVecT (s := s) w).symm
-  rw [hw, ← dot_eq_inner_toVecT, inner_add_left, ← dot_eq_inner_toVecT, ← dot_eq_inner_toVecT,
+  have hw : w = tensorToVec (t := vecToTensor (s := s) w) := (tensorToVec_vecToTensor (s := s) w).symm
+  rw [hw, ← dot_eq_inner_tensorToVec, inner_add_left, ← dot_eq_inner_tensorToVec, ← dot_eq_inner_tensorToVec,
     dot_add_left]
 
 /-- The context inner product is additive in its left argument. -/
@@ -147,14 +147,14 @@ theorem flattenCtx_add {Γ : List Shape} (u v : TList Γ) :
 /-- `flattenCtx` maps `TList.snoc` to `snocCtx`. -/
 theorem flattenCtx_snoc {Γ : List Shape} {τ : Shape} (xs : TList Γ) (y : Tensor ℝ τ) :
     flattenCtx (Γ := Γ ++ [τ]) (TList.snoc xs y)
-      = snocCtx (Γ := Γ) (τ := τ) (flattenCtx xs) (toVecT (t := y)) := by
+      = snocCtx (Γ := Γ) (τ := τ) (flattenCtx xs) (tensorToVec (t := y)) := by
   induction Γ with
   | nil =>
     cases xs
     change flattenCtx (TList.cons y TList.nil) = _
     rw [flattenCtx_cons, flattenCtx_nil]
     let h : ctxSize [] + τ.size = τ.size + ctxSize [] := by simp [ctxSize]
-    change appendVec (toVecT y) 0 = castVec h (appendVec 0 (toVecT y))
+    change appendVec (tensorToVec y) 0 = castVec h (appendVec 0 (tensorToVec y))
     apply PiLp.ext
     intro i
     induction i using Fin.addCases with
@@ -176,7 +176,7 @@ theorem flattenCtx_snoc {Γ : List Shape} {τ : Shape} (xs : TList Γ) (y : Tens
 /-- `flattenCtx` maps `TList.unsnoc` to `unsnocCtx`. -/
 theorem unsnocCtx_flattenCtx {Γ : List Shape} {τ : Shape} (w : TList (Γ ++ [τ])) :
     unsnocCtx (Γ := Γ) (τ := τ) (flattenCtx w)
-      = (flattenCtx (TList.unsnoc w).1, toVecT (t := (TList.unsnoc w).2)) := by
+      = (flattenCtx (TList.unsnoc w).1, tensorToVec (t := (TList.unsnoc w).2)) := by
   conv_lhs => rw [← Algebra.TList.snoc_unsnoc (α := ℝ) (ss := Γ) (τ := τ) (xs := w)]
   rw [flattenCtx_snoc, unsnocCtx_snocCtx]
 
@@ -184,19 +184,19 @@ namespace Node
 
 /-- The vectorized forward map, evaluated on a flattened context. -/
 theorem forwardVec_flattenCtx {Γ : List Shape} {τ : Shape} (node : Node Γ τ) (x : TList Γ) :
-    node.forwardVec (Γ := Γ) (τ := τ) (flattenCtx x) = toVecT (t := node.forward x) := by
+    node.forwardVec (Γ := Γ) (τ := τ) (flattenCtx x) = tensorToVec (t := node.forward x) := by
   simp [Node.forwardVec]
 
 /-- The vectorized JVP, evaluated on flattened contexts. -/
 theorem jvpVec_flattenCtx {Γ : List Shape} {τ : Shape} (node : Node Γ τ) (x dx : TList Γ) :
     node.jvpVec (Γ := Γ) (τ := τ) (flattenCtx x) (flattenCtx dx)
-      = toVecT (t := node.jvp x dx) := by
+      = tensorToVec (t := node.jvp x dx) := by
   simp [Node.jvpVec]
 
 /-- The vectorized VJP, evaluated on a flattened context and a vectorized cotangent. -/
 theorem vjpVec_flattenCtx {Γ : List Shape} {τ : Shape} (node : Node Γ τ) (x : TList Γ)
     (δ : Tensor ℝ τ) :
-    node.vjpVec (Γ := Γ) (τ := τ) (flattenCtx x) (toVecT (t := δ))
+    node.vjpVec (Γ := Γ) (τ := τ) (flattenCtx x) (tensorToVec (t := δ))
       = flattenCtx (node.vjp x δ) := by
   simp [Node.vjpVec]
 
@@ -524,8 +524,8 @@ theorem backwardDenseFrom_lowerGraphToTape_adjoint_fderiv [DecidableEq Shape] {s
     (seed : TList ℝ (Γ ++ ss)) (hg : GraphFDerivCorrect (Γ := Γ) (toReal g d0)) :
     Runtime.Autograd.Tape.backwardDenseFrom
         (t := (lowerGraphToTape (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1)
-        (grads0 := TList.toAnyArray (α := ℝ) (ss := Γ ++ ss) seed)
-      = .ok (TList.toAnyArray (α := ℝ) (ss := Γ ++ ss)
+        (grads0 := TList.toPackedArray (α := ℝ) (ss := Γ ++ ss) seed)
+      = .ok (TList.toPackedArray (α := ℝ) (ss := Γ ++ ss)
           (backpropAllCtx (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0 seed))
     ∧ flattenCtx (TList.takeLeft (backpropAllCtx (α := ℝ) g x d0 seed))
       = (fderiv ℝ (_root_.Proofs.Autograd.Graph.evalVec (toReal g d0))
@@ -541,8 +541,8 @@ theorem backwardDenseFrom_lowerGraphToTape_adjoint_fderiv_at [DecidableEq Shape]
     (hg : GraphFDerivCorrectAt (Γ := Γ) (toReal g d0) (flattenCtx x)) :
     Runtime.Autograd.Tape.backwardDenseFrom
         (t := (lowerGraphToTape (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1)
-        (grads0 := TList.toAnyArray (α := ℝ) (ss := Γ ++ ss) seed)
-      = .ok (TList.toAnyArray (α := ℝ) (ss := Γ ++ ss)
+        (grads0 := TList.toPackedArray (α := ℝ) (ss := Γ ++ ss) seed)
+      = .ok (TList.toPackedArray (α := ℝ) (ss := Γ ++ ss)
           (backpropAllCtx (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0 seed))
     ∧ flattenCtx (TList.takeLeft (backpropAllCtx (α := ℝ) g x d0 seed))
       = (fderiv ℝ (_root_.Proofs.Autograd.Graph.evalVec (toReal g d0))

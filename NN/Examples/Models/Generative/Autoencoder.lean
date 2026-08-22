@@ -32,32 +32,32 @@ def exeName : String := "torchlean autoencoder"
 def defaultLogJson : System.FilePath := ModelZoo.trainLogPath "autoencoder"
 
 /--
-Shared vector-image configuration.
-
-The compact config fixes the CIFAR batch size, flattened image dimension, and latent width used by
-the vector generative examples, so autoencoder/VAE/VQ-VAE/GAN runs use the same data boundary.
+Dense autoencoder dimensions shared by the model and data boundary.
 -/
-def cfg : nn.models.VectorGenerativeConfig :=
-  nn.models.vectorGenerativeConfig 1 16 8 4
+def cfg : nn.models.DenseGenerative.Config :=
+  { dataDim := 16, hiddenDim := 8, latentDim := 4 }
+
+/-- Number of image vectors loaded for each training sample. -/
+def batch : Nat := 1
 
 /-- Input shape: a batch of flattened CIFAR image vectors. -/
-abbrev σ := nn.models.vectorDataShape cfg
+abbrev σ := cfg.dataShape (.dim batch .scalar)
 
 /-- Target shape: the same flattened image-vector batch, because this is reconstruction. -/
-abbrev τ := nn.models.vectorDataShape cfg
+abbrev τ := cfg.dataShape (.dim batch .scalar)
 
 /--
-Trainable vector autoencoder.
+Trainable dense autoencoder.
 
 The architecture is defined in the public model API. The command chooses the dataset, optimizer,
 runtime options, and logging path.
 -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.vectorAutoencoder cfg
+  nn.models.DenseGenerative.autoencoder cfg (.dim batch .scalar)
 
 /-- Public singleton dataset for compact CIFAR reconstruction. -/
 def data (flags : RealData.CifarModelTrainFlags) : Trainer.DataSource σ τ :=
-  RealData.cifarVectorDataset cfg (by decide) exeName (nn.models.reconstructionSample cfg)
+  RealData.cifarFeatureDataset batch cfg (by decide) exeName (fun x ↦ Sample.mk x x)
     flags.xPath flags.yPath flags.nRows flags.seed
 
 /-- Train the compact autoencoder with the public `Trainer` surface. -/
@@ -77,7 +77,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
     (data flags)
     (CLI.Training.OptimizerOptions.toTrainerOptions flags.toOptimizerOptions
       (title := "Autoencoder CIFAR reconstruction")
-      (notes := RealData.cifarClassifierNotes cfg.batch flags))
+      (notes := RealData.cifarClassifierNotes batch flags))
 
 /--
 Executable entrypoint for CIFAR reconstruction.

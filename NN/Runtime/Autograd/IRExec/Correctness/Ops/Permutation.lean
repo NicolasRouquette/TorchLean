@@ -16,8 +16,8 @@ Semantic-preservation lemmas for permutation-style operators in the IR-to-forwar
 This file covers the IR `.permute perm` node kind. The lowering pass lowers a permutation to a
 swap-depth program (a list of axis swaps). The proof below mirrors that lowering: it validates the
 permutation witness and computed swaps, constructs the forward-graph closure in terms of
-`applySwapsTensor`, then rewrites the IR evaluator's `permuteDVal` to the same swap-based
-implementation via `permuteDVal_eq_applySwapsTensor`.
+`applySwapsTensor`, then rewrites the IR evaluator's `permutePackedTensor` to the same swap-based
+implementation via `permutePackedTensor_eq_applySwapsTensor`.
 
 Build note: permutation proofs are slow because a permutation changes both tensor data and the type
 level shape. The proof therefore has to relate a dynamic IR permutation to the lowered swap program
@@ -52,18 +52,18 @@ theorem buildFrom_denoteAllFrom_permute
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := NN.IR.DVal.mk (α := α) inShape x)
+          (input := Spec.PackedTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := NN.IR.DVal.mk (α := α) inShape x)
+      (input := Spec.PackedTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (NN.IR.DVal α) :=
+  let vals0 : Array (Spec.PackedTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
   let ctx : TList α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : NN.IR.DVal α := NN.IR.DVal.mk (α := α) inShape x
+  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
 
   unfold buildFrom at hBuild
   simp (config := { failIfUnchanged := false }) [hi, hN, hk] at hBuild
@@ -127,28 +127,27 @@ theorem buildFrom_denoteAllFrom_permute
                                 simpa [st1, nodeData] using hBuild
                               have hTail := ih st1 hRec
                               have hGet :
-                                  vals0[pId]! =
-                                    NN.IR.DVal.mk (α := α) pNode.outShape
-                                      (getIdx (α := α) (xs := ctx) ip) := by
+                                  vals0[pId]? = some (Spec.PackedTensor.mk (α := α) pNode.outShape
+                                      (getIdx (α := α) (xs := ctx) ip)) := by
                                 simpa [vals0, ctx] using
-                                  (denoteAllState_get_mkIdx (inShape := inShape) (ss := ss)
+                                  (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
                                     (gd := gd) (x := x) (pid := pId) (s := pNode.outShape) (idx := ip)
                                     hIdx)
                               have hEval :
                                   NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                                       (input := input) (vals := vals0) (i := i) =
-                                    .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.eval ctx)) := by
-                                -- `evalAt` uses `permuteDVal`; rewrite it to swaps + `applySwapsTensor`.
+                                    .ok (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+                                -- `evalAt` uses `permutePackedTensor`; rewrite it to swaps + `applySwapsTensor`.
                                 have hPermute :
-                                    NN.IR.Graph.permuteDVal (α := α)
-                                        (v := NN.IR.DVal.mk (α := α) pNode.outShape
+                                    NN.IR.Graph.permutePackedTensor (α := α)
+                                        (v := Spec.PackedTensor.mk (α := α) pNode.outShape
                                           (getIdx (α := α) (xs := ctx) ip)) perm =
                                       .ok
-                                        (NN.IR.DVal.mk (α := α) (swapShapeBySwaps pNode.outShape swaps)
+                                        (Spec.PackedTensor.mk (α := α) (swapShapeBySwaps pNode.outShape swaps)
                                           (applySwapsTensor (α := α) (s := pNode.outShape) (swaps := swaps)
                                             (getIdx (α := α) (xs := ctx) ip))) := by
                                   simpa using
-                                    (permuteDVal_eq_applySwapsTensor (α := α)
+                                    (permutePackedTensor_eq_applySwapsTensor (α := α)
                                       (t := getIdx (α := α) (xs := ctx) ip) (perm := perm)
                                       (expected := expected) (swaps := swaps) hPerm (by
                                         -- `simp` normalizes `.ok`/`.error` to `Except.ok`/`Except.error`.
@@ -156,31 +155,31 @@ theorem buildFrom_denoteAllFrom_permute
                                 -- Now simplify `evalAt` with the computed permutation and parent lookup.
                                 have hShape : swapShapeBySwaps pNode.outShape swaps = n.outShape := by
                                   simpa [sFinal] using (hFinal.trans hOut)
-                                -- Rewrite the `permuteDVal` call to `.ok _` so the monadic bind reduces.
+                                -- Rewrite the `permutePackedTensor` call to `.ok _` so the monadic bind reduces.
                                 have hPermute' :
-                                    NN.IR.Graph.permuteDVal (α := α)
-                                        (v := (⟨pNode.outShape, getIdx (α := α) (xs := ctx) ip⟩ : NN.IR.DVal α))
+                                    NN.IR.Graph.permutePackedTensor (α := α)
+                                        (v := (⟨pNode.outShape, getIdx (α := α) (xs := ctx) ip⟩ : Spec.PackedTensor α))
                                         perm =
                                       .ok
-                                        (NN.IR.DVal.mk (α := α) (swapShapeBySwaps pNode.outShape swaps)
+                                        (Spec.PackedTensor.mk (α := α) (swapShapeBySwaps pNode.outShape swaps)
                                           (applySwapsTensor (α := α) (s := pNode.outShape) (swaps := swaps)
                                             (getIdx (α := α) (xs := ctx) ip))) := by
-                                  simpa [NN.IR.DVal.mk] using hPermute
+                                  simpa [Spec.PackedTensor.mk] using hPermute
                                 -- `simp`/`rw` are syntax-sensitive; package `hPermute'` in the implicit-argument
                                 -- form that actually appears inside the `evalAt` do-block.
                                 have hPermute0 :
-                                    NN.IR.Graph.permuteDVal (α := α) (v := (⟨pNode.outShape, getIdx ctx ip⟩ : NN.IR.DVal α))
+                                    NN.IR.Graph.permutePackedTensor (α := α) (v := (⟨pNode.outShape, getIdx ctx ip⟩ : Spec.PackedTensor α))
                                         perm =
                                       .ok
-                                        (NN.IR.DVal.mk (α := α) (swapShapeBySwaps pNode.outShape swaps)
+                                        (Spec.PackedTensor.mk (α := α) (swapShapeBySwaps pNode.outShape swaps)
                                           (applySwapsTensor (α := α) (s := pNode.outShape) (swaps := swaps)
                                             (getIdx ctx ip))) := by
-                                  simpa [NN.IR.DVal.mk] using hPermute'
-                                -- Expand `evalAt` to the permute branch, rewrite `permuteDVal` by `hPermute'`,
+                                  simpa [Spec.PackedTensor.mk] using hPermute'
+                                -- Expand `evalAt` to the permute branch, rewrite `permutePackedTensor` by `hPermute'`,
                                 -- then discharge the dependent shape check via `hShape`.
                                 simp (config := { failIfUnchanged := false })
                                   [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet, throw_eq_error]
-                                -- Rewrite the `permuteDVal` call to its computed `.ok` value, reduce the
+                                -- Rewrite the `permutePackedTensor` call to its computed `.ok` value, reduce the
                                 -- `Except` do-block, and select the success branch using `hShape`.
                                 erw [hPermute0]
                                 simp (config := { failIfUnchanged := false })

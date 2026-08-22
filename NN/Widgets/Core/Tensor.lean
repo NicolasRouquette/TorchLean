@@ -8,7 +8,7 @@ module
 
 public meta import NN.Runtime.Context
 public meta import NN.Spec.Core.Tensor
-public meta import NN.Spec.Core.Utils
+public meta import NN.Spec.Core.Tensor.API
 public meta import NN.Widgets.Core.UI
 public meta import ProofWidgets.Component.HtmlDisplay
 public meta import ProofWidgets.Demos.Macro
@@ -35,7 +35,7 @@ introducing any custom JavaScript or external build step.
 ## Main definitions
 
 - `tensorHtml`: shape-aware renderer for typed tensors.
-- `anyTensorHtml`: same renderer for runtime shape-erased tensors.
+- `packedTensorHtml`: the same renderer for shape-erased tensors.
 - `tensorStatsHtml`: compact scalar summary (min/max/mean/norms).
 - `#tensor_view`, `#anytensor_view`, `#tensor_stats_view`: command entry points.
 
@@ -289,10 +289,10 @@ def tensorHtml {α : Type} [ToString α] {s : Shape} (t : Tensor α s)
 ## Runtime Wrappers
 -/
 
-/-- Render a `Runtime.AnyTensor` (shape-erased runtime tensor) with the same UI as `tensorHtml`. -/
-def anyTensorHtml {α : Type} [ToString α] (v : Runtime.AnyTensor α)
+/-- Render a `Spec.PackedTensor` with the same UI as `tensorHtml`. -/
+def packedTensorHtml {α : Type} [ToString α] (v : Spec.PackedTensor α)
     (maxRows : Nat := 16) (maxCols : Nat := 16) (maxElems : Nat := 64) : ProofWidgets.Html :=
-  tensorHtml (α := α) (s := v.s) v.t (maxRows := maxRows) (maxCols := maxCols) (maxElems :=
+  tensorHtml (α := α) (s := v.shape) v.tensor (maxRows := maxRows) (maxCols := maxCols) (maxElems :=
     maxElems)
 
 /-!
@@ -373,7 +373,7 @@ macro "#tensor_view " t:term : command =>
   Lean.TSyntax.mkInfoCanonical <$> `(#html (tensorHtml $t))
 
 macro "#anytensor_view " v:term : command =>
-  Lean.TSyntax.mkInfoCanonical <$> `(#html (anyTensorHtml $v))
+  Lean.TSyntax.mkInfoCanonical <$> `(#html (packedTensorHtml $v))
 
 macro "#tensor_stats_view " t:term : command =>
   Lean.TSyntax.mkInfoCanonical <$> `(#html (tensorStatsHtml $t))

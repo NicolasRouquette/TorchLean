@@ -143,7 +143,7 @@ Elementwise "safe log" that protects against `log(0)` by adding a small `ε` int
 Spec semantics: `log(softplus(x) + ε)`.
 -/
 def safeLog {s : Shape} (t : Tape) (xId : Nat) (ε : Float) : Result (Tape × Nat) := do
-  let n ← numelU32 s
+  let n ← AnyBuffer.numelU32 s
   unary (t := t) "safe_log" xId s s
     (forward := fun x =>
       let epsBuf := Buffer.full n ε
@@ -162,7 +162,7 @@ def safeLog {s : Shape} (t : Tape) (xId : Nat) (ε : Float) : Result (Tape × Na
 
 /-- Elementwise sigmoid (logistic). -/
 def sigmoid {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let n ← numelU32 s
+  let n ← AnyBuffer.numelU32 s
   unary (t := t) "sigmoid" xId s s
     (forward := fun x => sigmoidBuf x n)
     (backward := fun x dLdy =>
@@ -175,7 +175,7 @@ def sigmoid {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
 
 /-- Pointwise hyperbolic tangent node. -/
 def tanh {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let n ← numelU32 s
+  let n ← AnyBuffer.numelU32 s
   unary (t := t) "tanh" xId s s
     (forward := fun x => tanhBuf x n)
     (backward := fun x dLdy =>
@@ -199,7 +199,7 @@ def gelu {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) :=
 
 /-- Pointwise softplus node with sigmoid derivative. -/
 def softplus {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let n ← numelU32 s
+  let n ← AnyBuffer.numelU32 s
   unary (t := t) "softplus" xId s s
     (forward := fun x => softplusBuf x n)
     (backward := fun x dLdy =>

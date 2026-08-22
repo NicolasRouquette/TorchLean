@@ -308,7 +308,7 @@ lemma get2_mat_mul_spec {m n p : Nat}
       -- Unfold the matrix multiplication at `(i,j)` and convert the `finRange` fold to a
       -- `Finset.sum`.
       simp [matMulSpec, get2_eq, get_eq]
-      -- Put the fold into the canonical `s + f k` form to apply `finRange_foldl_add_eq_finset_sum`.
+      -- Put the fold into the canonical `s + f k` form to apply `List.finRange_foldl_add_eq_finset_sum`.
       let f : Fin n → ℝ := fun k =>
         matMulSpec.match_3 (motive := fun _ _ => ℝ) (rowsA i) (rowsB k) (fun colsA colsB =>
           matMulSpec.match_1 (motive := fun _ _ => ℝ) (colsA k) (colsB j) (fun a b => a * b))
@@ -330,7 +330,7 @@ lemma get2_mat_mul_spec {m n p : Nat}
               | scalar b =>
                 simp [f, hrowA, hrowB, hA, hB]
       have hsum : (List.finRange n).foldl (fun s k => s + f k) 0 = ∑ k : Fin n, f k :=
-        finRange_foldl_add_eq_finset_sum (f := f)
+        List.finRange_foldl_add_eq_finset_sum (f := f)
       rw [hfun, hsum]
       refine Finset.sum_congr rfl ?_
       intro k _
@@ -497,7 +497,7 @@ theorem dot_eq_tensorAlgebra_dot {s : Shape} (a b : Tensor ℝ s) :
                   (fun acc i => acc + Proofs.TensorAlgebra.dot (α := ℝ) (fa i) (fb i)) 0 =
                 ∑ i : Fin n, Proofs.TensorAlgebra.dot (α := ℝ) (fa i) (fb i) := by
             simpa using
-              (finRange_foldl_add_eq_finset_sum
+              (List.finRange_foldl_add_eq_finset_sum
                 (f := fun i : Fin n => Proofs.TensorAlgebra.dot (α := ℝ) (fa i) (fb i)))
           calc
             dot (Tensor.dim fa) (Tensor.dim fb)

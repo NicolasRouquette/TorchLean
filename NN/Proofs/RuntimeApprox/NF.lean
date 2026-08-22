@@ -12,6 +12,7 @@ public import NN.Proofs.RuntimeApprox.NF.Conv
 public import NN.Proofs.RuntimeApprox.NF.ConvBackward
 public import NN.Proofs.RuntimeApprox.NF.ConvForward
 public import NN.Proofs.RuntimeApprox.NF.EndToEnd
+public import NN.Proofs.RuntimeApprox.NF.FoldLemmas
 public import NN.Proofs.RuntimeApprox.NF.Linalg
 public import NN.Proofs.RuntimeApprox.NF.Normalization
 public import NN.Proofs.RuntimeApprox.NF.Ops
@@ -19,7 +20,6 @@ public import NN.Proofs.RuntimeApprox.NF.Optimizers
 public import NN.Proofs.RuntimeApprox.NF.ReductionOps
 public import NN.Proofs.RuntimeApprox.NF.ShapeOps
 public import NN.Proofs.RuntimeApprox.NF.SoftmaxAxis
-public import NN.Proofs.RuntimeApprox.NF.Utils
 
 /-!
 # NF Runtime Approximation Backend
@@ -28,7 +28,7 @@ Proof-relevant rounded tensor/operator approximation for `NF`.
 
 `NF` wraps real values and inserts an explicit `neural_round` step after primitive arithmetic. The
 modules collected here prove local bounds for elementwise ops, reductions, shape-only ops, linear
-algebra, Conv2D forward/backward, and graph-level end-to-end execution.
+algebra, Conv2d forward/backward, and graph-level end-to-end execution.
 
 File roles:
 - `Ops`: scalar and elementwise tensor bounds, plus primitive `FwdNode` constructors.
@@ -36,7 +36,7 @@ File roles:
 - `ReductionOps`: row/column reductions used by normalization and attention.
 - `ShapeOps`: value-preserving tensor rearrangements such as replication/broadcasting.
 - `BackwardOps`: VJP bounds and `RevNode` constructors for reverse-mode composition.
-- `Conv`, `ConvForward`, `ConvBackward`: Conv2D shared error algebra plus forward/backward bounds.
+- `Conv`, `ConvForward`, `ConvBackward`: Conv2d shared error algebra plus forward/backward bounds.
 - `SoftmaxAxis`: stable last-axis softmax and its rounded VJP.
 - `Attention`: scaled-dot-product attention as one composition of the shared operator contracts.
 - `Normalization`: rank-generic affine-normalization traces with explicit denominator margins.

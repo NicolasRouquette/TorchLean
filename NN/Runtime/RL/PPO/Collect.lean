@@ -63,7 +63,7 @@ The caller provides:
 The API supports the “typed graph + parameters” calling convention used throughout TorchLean.
 -/
 def collectRolloutSessionWith {obsShape : Shape} {nActions horizon : Nat} {Sess : Type}
-    [Fact (0 < horizon)] [Fact (0 < nActions)]
+    [NeZero horizon] [NeZero nActions]
     (start : IO Sess)
     (observe : Sess → Tensor Float obsShape)
     (stepChecked : Sess → Fin nActions → IO (Boundary.Transition obsShape nActions × Sess))
@@ -123,7 +123,7 @@ def collectRolloutSessionWith {obsShape : Shape} {nActions horizon : Nat} {Sess 
 Collect a fixed-horizon rollout from a unified `Runtime.RL.Session.CheckedSession`.
 -/
 def collectRolloutCheckedSessionWith {obsShape : Shape} {nActions horizon : Nat}
-    [Fact (0 < horizon)] [Fact (0 < nActions)]
+    [NeZero horizon] [NeZero nActions]
     (sess : Session.CheckedSession obsShape nActions)
     (castObs : Float → α)
     (castReward : Float → α)
@@ -146,7 +146,7 @@ Collect a fixed-horizon rollout from a Gymnasium subprocess environment.
 This specializes `collectRolloutSessionWith` to `Gymnasium.Session`.
 -/
 def collectRolloutWith {obsShape : Shape} {nActions horizon : Nat}
-    [Fact (0 < horizon)] [Fact (0 < nActions)]
+    [NeZero horizon] [NeZero nActions]
     (castObs : Float → α)
     (castReward : Float → α)
     (gym : Gymnasium.Client obsShape nActions)

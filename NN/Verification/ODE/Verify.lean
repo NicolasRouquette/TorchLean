@@ -346,7 +346,7 @@ private def buildDerivativeGraph1D {α : Type} [Context α]
               let st ← get
               let d1 ← derivativeId st i p1
               let sinz ← pushNode [p1] .sin outShape
-              let neg1 ← mkConstFill outShape Numbers.neg_one
+              let neg1 ← mkConstFill outShape Numbers.negOne
               let negsin ← pushNode [neg1, sinz] .mul_elem outShape
               let did ← pushNode [negsin, d1] .mul_elem outShape
               setDerivativeId i did
@@ -918,7 +918,8 @@ Recursive verifier for a segment interval.
 If `verifyInterval` fails on `I`, this splits the interval and recurses until either verification
 succeeds everywhere or we hit `(depth = 0)` / the `minWidth` cutoff.
 -/
-private partial def verifySegmentAux {α : Type} [Context α] [BoundOps α] [DecidableEq Shape]
+private partial def verifySegmentRecursive {α : Type} [Context α] [BoundOps α]
+    [DecidableEq Shape]
     [ToString α]
     (ofFloat : Float → α) (rhs : Expr) (mL mU : Model α) (I : Interval) (cfg : ODEVerifierSettings) (depth :
       Nat) : IO Bool := do
@@ -933,9 +934,9 @@ private partial def verifySegmentAux {α : Type} [Context α] [BoundOps α] [Dec
       pure false
     else
       let (I1, I2) := I.split
-      let ok1 ← verifySegmentAux (α := α) ofFloat rhs mL mU I1 cfg (depth - 1)
+      let ok1 ← verifySegmentRecursive (α := α) ofFloat rhs mL mU I1 cfg (depth - 1)
       if ok1 then
-        verifySegmentAux (α := α) ofFloat rhs mL mU I2 cfg (depth - 1)
+        verifySegmentRecursive (α := α) ofFloat rhs mL mU I2 cfg (depth - 1)
       else
         pure false
 
@@ -943,7 +944,7 @@ private partial def verifySegmentAux {α : Type} [Context α] [BoundOps α] [Dec
 Verify a full certificate segment: check initial conditions at `t0`, then recursively verify the
   time interval.
 
-This loads both corridor networks (lower/upper) and then runs `verifySegmentAux` on `seg.t`.
+This loads both corridor networks and then recursively verifies `seg.t`.
 -/
   private def verifySegmentWith {α : Type} [Context α] [BoundOps α] [DecidableEq Shape]
     [ToString α]
@@ -972,7 +973,7 @@ This loads both corridor networks (lower/upper) and then runs `verifySegmentAux`
     IO.eprintln s!"[ODE] FAIL initial order: uL(t0)∈{showPair bL0.u} not ≤ uU(t0)∈{showPair bU0.u}"
     return false
   IO.println s!"[ODE] initial OK at t0={seg.t.lo}"
-  verifySegmentAux (α := α) ofFloat rhs mL mU seg.t cfg cfg.maxDepth
+  verifySegmentRecursive (α := α) ofFloat rhs mL mU seg.t cfg cfg.maxDepth
 
 /--
 Run verification for a parsed certificate file.

@@ -35,7 +35,7 @@ def reconErr : Float := maxMatErr A (mm L (tr L))
 
 -- Inspect the diagonal of the factor.
 #guard_msgs (drop info) in
-#eval vecToList (Spec.ofVecFn (fun i : Fin 3 => Spec.get2 L i i))
+#eval vecToList (Spec.Tensor.vector (fun i : Fin 3 => Spec.get2 L i i))
 
 -- Compiled assertion: the factorization reconstructs A (fails the build otherwise).
 #guard_msgs (drop info) in

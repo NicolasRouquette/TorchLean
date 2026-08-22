@@ -254,16 +254,16 @@ Record softmax (shape-preserving).
 PyTorch comparison: `torch.softmax(x, dim=...)` (dimension convention is chosen by the underlying
   tape op).
 -/
-def softmax {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
+def softmaxLast {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
   {sh : Shape} (x : TensorRef α sh) : IO (TensorRef α sh) := do
   let cpu := do
     let t0 ← s.tape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.softmax (t := t0) (s := sh) x.id)
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.softmaxLast (t := t0) (s := sh) x.id)
     s.tape.set t1
     pure { id := id }
   let cuda := do
     let t0 ← s.cudaTape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.softmax (t := t0) (s := sh) x.id)
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.softmaxLast (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
     pure (some { id := id })
   dispatchCudaOpt (α := α) s .softmax cpu cuda
@@ -273,16 +273,16 @@ Record stable log-softmax (shape-preserving, last-axis convention).
 
 PyTorch comparison: `torch.nn.functional.log_softmax(x, dim=-1)`.
 -/
-def logSoftmax {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
+def logSoftmaxLast {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
   {sh : Shape} (x : TensorRef α sh) : IO (TensorRef α sh) := do
   let cpu := do
     let t0 ← s.tape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.logSoftmax (t := t0) (s := sh) x.id)
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.logSoftmaxLast (t := t0) (s := sh) x.id)
     s.tape.set t1
     pure { id := id }
   let cuda := do
     let t0 ← s.cudaTape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.logSoftmax (t := t0) (s := sh) x.id)
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.logSoftmaxLast (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
     pure (some { id := id })
   dispatchCudaOpt (α := α) s .logSoftmax cpu cuda

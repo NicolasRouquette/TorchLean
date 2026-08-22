@@ -41,8 +41,8 @@ def layerNorm {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → 
   let y := Spec.layerNorm (x := x) (gamma := gamma) (beta := beta) h_seq_pos h_embed_pos
   let node : Node α :=
     { name := some "layer_norm"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId, gammaId, betaId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim seqLen (.dim embedDim .scalar)) dLdyAny
@@ -50,9 +50,9 @@ def layerNorm {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → 
           Spec.layerNormBackward (h_seq_pos := h_seq_pos) (h_embed_pos := h_embed_pos)
             (x := x) (gamma := gamma) (_beta := beta) (grad_output := dLdy)
         pure [
-          (xId, AnyTensor.mk dx),
-          (gammaId, AnyTensor.mk dgamma),
-          (betaId, AnyTensor.mk dbeta)
+          (xId, Spec.PackedTensor.ofTensor dx),
+          (gammaId, Spec.PackedTensor.ofTensor dgamma),
+          (betaId, Spec.PackedTensor.ofTensor dbeta)
         ]
     }
   pure (t.addNode node)
@@ -75,8 +75,8 @@ def batchNormChannelFirst {α : Type} [Context α] [DecidableRel ((· > ·) : α
   let y := Spec.batchNorm2d (x := x) (gamma := gamma) (beta := beta) h_c h_h h_w
   let node : Node α :=
     { name := some "batchnorm_channel_first"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId, gammaId, betaId]
       backward := fun dLdyAny => do
         let dLdy ←
@@ -85,9 +85,9 @@ def batchNormChannelFirst {α : Type} [Context α] [DecidableRel ((· > ·) : α
           Spec.batchNorm2dBackward (x := x) (gamma := gamma)
             (grad_output := dLdy) h_c h_h h_w
         pure [
-          (xId, AnyTensor.mk dx),
-          (gammaId, AnyTensor.mk dgamma),
-          (betaId, AnyTensor.mk dbeta)
+          (xId, Spec.PackedTensor.ofTensor dx),
+          (gammaId, Spec.PackedTensor.ofTensor dgamma),
+          (betaId, Spec.PackedTensor.ofTensor dbeta)
         ]
     }
   pure (t.addNode node)
@@ -116,24 +116,24 @@ def multiHeadAttention {α : Type} [Context α] [DecidableRel ((· > ·) : α �
     (s:=.dim (numHeads * headDim) (.dim dModel .scalar)) woId
   let x ← requireValue (α:=α) (t:=t) (s:=.dim n (.dim dModel .scalar)) xId
   let mha : Spec.MultiHeadAttention α numHeads dModel headDim :=
-    { Wq := wq, Wk := wk, Wv := wv, Wo := wo }
+    { queryWeight := wq, keyWeight := wk, valueWeight := wv, outputWeight := wo }
   let y := Spec.MultiHeadAttention.forward (n := n) (h1 := h1) (mha := mha) (x := x) (mask := mask)
   let node : Node α :=
     { name := some "multi_head_attention"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [wqId, wkId, wvId, woId, xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim n (.dim dModel .scalar)) dLdyAny
         let (dx, dWq, dWk, dWv, dWo) :=
-          Spec.MultiHeadAttentionBackward (h1 := h1) (mha := mha) (x := x) (mask := mask)
+          Spec.multiHeadAttentionBackward (h1 := h1) (mha := mha) (x := x) (mask := mask)
             (grad_output := dLdy)
         pure [
-          (xId, AnyTensor.mk dx),
-          (wqId, AnyTensor.mk dWq),
-          (wkId, AnyTensor.mk dWk),
-          (wvId, AnyTensor.mk dWv),
-          (woId, AnyTensor.mk dWo)
+          (xId, Spec.PackedTensor.ofTensor dx),
+          (wqId, Spec.PackedTensor.ofTensor dWq),
+          (wkId, Spec.PackedTensor.ofTensor dWk),
+          (wvId, Spec.PackedTensor.ofTensor dWv),
+          (woId, Spec.PackedTensor.ofTensor dWo)
         ]
     }
   pure (t.addNode node)

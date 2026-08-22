@@ -58,16 +58,16 @@ def softmaxBoundTensor {s : Shape} (eps : ℝ) (xR : Tensor R s) : SpecTensor s 
   Spec.mapTensor (softmaxBoundScalar (β := β) (fexp := fexp) (rnd := rnd) eps) xR
 
 /--
-`approxT` bound for the scalar logistic NF node lifted to arbitrary tensor shapes.
+`approxTensor` bound for the scalar logistic NF node lifted to arbitrary tensor shapes.
 
 This is the tensor-level wrapper around the scalar `exp`/`+`/`div` bound, using the usual
   `linf_norm`
 lifting for dimensioned tensors.
 -/
-theorem approxT_softmax_spec {s : Shape} :
+theorem approxTensor_softmax_spec {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mapSpec (s := s) (Activation.Math.logisticSpec (α := ℝ)) xS)
           (mapSpec (s := s) (Activation.Math.logisticSpec (α := R)) xR)
           (linfNorm (softmaxBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps xR)) :=
@@ -80,7 +80,7 @@ theorem approxT_softmax_spec {s : Shape} :
           cases xR with
           | scalar xR =>
               have hx' :=
-                (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                   (x := x) (xR := xR) (eps := eps)).1 hx
               let numR : R := MathFunctions.exp xR
               let denomR : R := numR + (1 : R)
@@ -117,7 +117,7 @@ theorem approxT_softmax_spec {s : Shape} :
                   tensorLinfNorm, MathFunctions.abs] using
                   (le_abs_self (softmaxBoundScalar (β := β) (fexp := fexp) (rnd := rnd) eps xR))
               exact
-                (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                   (x := Activation.Math.logisticSpec (α := ℝ) x)
                   (xR := Activation.Math.logisticSpec (α := R) xR)
                   (eps := linfNorm (softmaxBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
@@ -145,7 +145,7 @@ theorem approxT_softmax_spec {s : Shape} :
                       ≤ B := by
                 intro i
                 have hx_i :=
-                  approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                  approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                     (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := eps) hx i
                 have hih := ih (xS := xSf i) (xR := xRf i) hx_i
                 have hB_ge :
@@ -163,7 +163,7 @@ theorem approxT_softmax_spec {s : Shape} :
                           (mapSpec (s := s) (Activation.Math.logisticSpec (α := R)) (xRf i)))
                       ≤ linfNorm (softmaxBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                         (s := s) eps (xRf i)) := by
-                  simpa [approxT, approxWith] using hih
+                  simpa [approxTensor, approxWith] using hih
                 exact le_trans hdist hB_ge
               have hf :
                   ∀ i ∈ List.finRange n,
@@ -204,7 +204,7 @@ theorem approxT_softmax_spec {s : Shape} :
                             (mapSpec (s := s) (Activation.Math.logisticSpec (α := R)) (xRf i)))))
                     0 (List.finRange n) ≤ B
                 exact hfold
-              simpa [approxT, approxWith, B] using this
+              simpa [approxTensor, approxWith, B] using this
 end NFBackend
 
 end

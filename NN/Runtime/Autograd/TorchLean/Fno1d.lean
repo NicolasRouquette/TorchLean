@@ -104,7 +104,7 @@ def matAffine
   let b0 : Tensor Float bShape :=
     Torch.Init.tensor (s := bShape) (sch := .zeros) (seed := seedB)
   { stateShapes := [WShape, bShape]
-    initState := Torch.tlistPair w0 b0
+    initState := .cons w0 (.cons b0 .nil)
     runtimeInit := some (.cons (.uniform (-0.1) 0.1 seedW) (.cons .zeros .nil))
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
@@ -190,7 +190,7 @@ def block
   let midLen : Nat := grid - 2 * modes
 
   { stateShapes := [wLowShape, wHighShape, wSkipShape, bSkipShape]
-    initState := Torch.tlistQuad wLow0 wHigh0 wSkip0 bSkip0
+    initState := .cons wLow0 (.cons wHigh0 (.cons wSkip0 (.cons bSkip0 .nil)))
     runtimeInit := some <| .cons (.uniform (-0.05) 0.05 seed) <|
       .cons (.uniform (-0.05) 0.05 (seed + 1)) <|
       .cons (.uniform (-0.05) 0.05 (seed + 2)) <| .cons .zeros .nil
@@ -219,8 +219,8 @@ def block
                 (nDim := grid) (s := .dim width .scalar)
                 (start := grid - modes) (len := modes)
                 (by
-                  -- modes + (grid - modes) = grid
-                  simp [Nat.add_sub_of_le hModes'] ) xHat
+                  -- `(grid - modes) + modes = grid` because `modes ≤ grid`.
+                  simpa using (Nat.sub_add_cancel hModes').le) xHat
 
             -- Mode-wise linear maps using `bmm`
             let xLow3 ← (reshapeModesMatToBmmIn (modes := modes) (width := width)).forward .eval
@@ -394,10 +394,6 @@ by examples and by CUDA parity checks.
 -/
 
 
-abbrev vec (n : Nat) : Shape := .dim n .scalar
-/-- Matrix shape abbreviation used by the real-valued FNO reference path. -/
-abbrev mat (m n : Nat) : Shape := .dim m (.dim n .scalar)
-
 /-- Cosine part of the DFT matrix (unnormalized). -/
 def dftCosMatrix {α : Type} [Context α] (n : Nat) : Tensor α (mat n n) :=
   Tensor.dim (fun k =>
@@ -470,7 +466,7 @@ def block
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun wLowRe wLowIm wHighRe wHighIm wSkip bSkip x =>
-          (show m (_root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α) (mat grid width)) from do
+          (show m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (mat grid width)) from do
             let fCos ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) (s := mat grid grid)
               (dftCosMatrix (α := α) grid)
             let fNegSin ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) (s := mat grid grid)
@@ -493,14 +489,14 @@ def block
               (by simpa using hModes') xHatIm
             let highRe ← _root_.Runtime.Autograd.Torch.sliceLeadingAxisRange (m := m) (α := α)
               (nDim := grid) (s := .dim width .scalar) (start := grid - modes) (len := modes)
-              (by simp [Nat.add_sub_of_le hModes']) xHatRe
+              (by simpa using (Nat.sub_add_cancel hModes').le) xHatRe
             let highIm ← _root_.Runtime.Autograd.Torch.sliceLeadingAxisRange (m := m) (α := α)
               (nDim := grid) (s := .dim width .scalar) (start := grid - modes) (len := modes)
-              (by simp [Nat.add_sub_of_le hModes']) xHatIm
+              (by simpa using (Nat.sub_add_cancel hModes').le) xHatIm
 
             let mulModes
-                (xr xi : _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α) (mat modes width))
-                (wr wi : _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α)
+                (xr xi : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (mat modes width))
+                (wr wi : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
                   (_root_.Runtime.Autograd.TorchLean.NN.FNO1D.spectralWShape modes width)) := do
               let hIn :
                   Spec.Shape.size (mat modes width) = Spec.Shape.size (.dim modes (.dim 1 (.dim width .scalar))) := by
@@ -544,7 +540,7 @@ def block
               (nDim := modes + midLen) (mDim := modes) (s := .dim width .scalar) yLowMidRe yHighRe
             let yHatIm' ← _root_.Runtime.Autograd.Torch.concatLeadingAxis (m := m) (α := α)
               (nDim := modes + midLen) (mDim := modes) (s := .dim width .scalar) yLowMidIm yHighIm
-            let yHatRe : _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α) (mat grid width) := by
+            let yHatRe : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (mat grid width) := by
               have hSum : (modes + midLen) + modes = grid := by
                 dsimp [midLen]
                 calc
@@ -555,7 +551,7 @@ def block
                   _ = (2 * modes) + (grid - 2 * modes) := by simp [two_mul, Nat.add_assoc]
                   _ = grid := by simpa using (Nat.add_sub_of_le hModes)
               simpa [mat, hSum] using yHatRe'
-            let yHatIm : _root_.Runtime.Autograd.TorchLean.NN.Seq.RefT (m := m) (α := α) (mat grid width) := by
+            let yHatIm : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (mat grid width) := by
               have hSum : (modes + midLen) + modes = grid := by
                 dsimp [midLen]
                 calc

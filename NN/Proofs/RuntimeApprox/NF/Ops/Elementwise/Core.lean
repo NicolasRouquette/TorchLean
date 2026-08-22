@@ -40,7 +40,7 @@ Per-entry bound tensor for addition.
 
 `add_bound_tensor epsx epsy xR yR` computes an elementwise error budget for `xR + yR`. Its
   `linf_norm`
-is used as the output epsilon in `approxT_add_spec`.
+is used as the output epsilon in `approxTensor_add_spec`.
 -/
 def addBoundTensor {s : Shape} (epsx epsy : ℝ) (xR yR : Tensor R s) : SpecTensor s :=
   map2Spec
@@ -146,7 +146,7 @@ def tanhBoundTensor {s : Shape} (_eps : ℝ) (xR : Tensor R s) : SpecTensor s :=
 /--
 Per-entry bound tensor for `safeLog`.
 
-`safeLog_bound_tensor ε eps xR` is the elementwise bound used by `approxT_safeLog_spec`, combining a
+`safeLog_bound_tensor ε eps xR` is the elementwise bound used by `approxTensor_safeLog_spec`, combining a
 `(1/ε)` Lipschitz propagation term with one rounding-ULP term.
 -/
 def safeLogBoundTensor {s : Shape} (ε eps : ℝ) (xR : Tensor R s) : SpecTensor s :=
@@ -157,15 +157,15 @@ def safeLogBoundTensor {s : Shape} (ε eps : ℝ) (xR : Tensor R s) : SpecTensor
     (tensorToSpec (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xR)
 
 /--
-`approxT` bound for clamped log (`safeLog`) lifted to arbitrary tensor shapes.
+`approxTensor` bound for clamped log (`safeLog`) lifted to arbitrary tensor shapes.
 
 This is the tensor-level wrapper around `approx_safeLog_nf`, using
-  `approxT_map_spec_of_scalar_bound`.
+  `approxTensor_map_spec_of_scalar_bound`.
 -/
-theorem approxT_safeLog_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
+theorem approxTensor_safeLog_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mapSpec (s := s) (safeLog (ε := ε)) xS)
           (mapSpec (s := s) (safeLogR (β := β) (fexp := fexp) (rnd := rnd) ε) xR)
           (linfNorm (safeLogBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) ε eps xR))
@@ -178,7 +178,7 @@ theorem approxT_safeLog_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
           cases xR with
           | scalar xR =>
               have hx' :=
-                (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                   (x := x) (xR := xR) (eps := eps)).1 hx
               have h :=
                 approx_safeLog_nf (β := β) (fexp := fexp) (rnd := rnd) (x := x) (xR := xR) (eps :=
@@ -199,9 +199,9 @@ theorem approxT_safeLog_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
                   RuntimeApprox.linfNorm, tensorDistance,
                     NN.MLTheory.Robustness.Spec.tensorDistance.tensor_sub,
                   tensorLinfNorm, MathFunctions.abs, safeLog] using le_abs_self _
-              -- Wrap back into `approxT`.
+              -- Wrap back into `approxTensor`.
               exact
-                (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                   (x := safeLog (ε := ε) x)
                   (xR := safeLogR (β := β) (fexp := fexp) (rnd := rnd) ε xR)
                   (eps := linfNorm
@@ -232,7 +232,7 @@ theorem approxT_safeLog_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
                             i)))
                       ≤ B := by
                 intro i
-                have hx_i := approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
+                have hx_i := approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
                   := rnd)) hx i
                 have hih := ih (xS := xSf i) (xR := xRf i) hx_i
                 have hB_ge :
@@ -254,7 +254,7 @@ theorem approxT_safeLog_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
                       ≤ linfNorm
                         (safeLogBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) ε eps
                           (xRf i)) := by
-                  simpa [approxT, approxWith] using hih
+                  simpa [approxTensor, approxWith] using hih
                 exact le_trans hdist hB_ge
               have hf :
                   ∀ i ∈ List.finRange n,
@@ -299,7 +299,7 @@ theorem approxT_safeLog_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
                                   (xRf i)))))
                         0 (List.finRange n) ≤ B
                     exact hfold
-              simpa [approxT, approxWith, B] using this
+              simpa [approxTensor, approxWith, B] using this
 end NFBackend
 
 end

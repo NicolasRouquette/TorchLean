@@ -156,7 +156,7 @@ target shape.
 look mathematically harmless but fail numerically. The classic sketch is `softmax` followed by
 `log`: if a probability rounds to zero, the log path can produce infinities and downstream NaNs.
 TorchLean keeps two APIs separate. Logits should use `crossEntropyLogitsSpec`, which unfolds through
-`logSoftmaxSpec`; probability inputs use the clipped probability form `crossEntropySpec`.
+`logSoftmaxLastSpec`; probability inputs use the clipped probability form `crossEntropySpec`.
 
 The checked hooks are small. `crossEntropyLogits_uses_logSoftmax` says that the logits
 loss really takes the stable logits path. `crossEntropyProbabilities_clips_before_log` says that the

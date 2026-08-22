@@ -29,9 +29,9 @@ namespace Tape
 
 /-- Matrix multiply node for tensors of shape `(m,n)` and `(n,p)`. -/
 def matmul {m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tape × Nat) := do
-  let m32 ← u32 m
-  let n32 ← u32 n
-  let p32 ← u32 p
+  let m32 ← AnyBuffer.natToU32Checked m
+  let n32 ← AnyBuffer.natToU32Checked n
+  let p32 ← AnyBuffer.natToU32Checked p
   let one32 : UInt32 := 1
   let σ₁ : Shape := .dim m (.dim n .scalar)
   let σ₂ : Shape := .dim n (.dim p .scalar)
@@ -45,10 +45,10 @@ def matmul {m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tape × Nat) := do
 
 /-- Batched matrix multiply for `(batch,m,n) × (batch,n,p)` CUDA buffers. -/
 def bmm {batch m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tape × Nat) := do
-  let b32 ← u32 batch
-  let m32 ← u32 m
-  let n32 ← u32 n
-  let p32 ← u32 p
+  let b32 ← AnyBuffer.natToU32Checked batch
+  let m32 ← AnyBuffer.natToU32Checked m
+  let n32 ← AnyBuffer.natToU32Checked n
+  let p32 ← AnyBuffer.natToU32Checked p
   let σ₁ : Shape := .dim batch (.dim m (.dim n .scalar))
   let σ₂ : Shape := .dim batch (.dim n (.dim p .scalar))
   let τ : Shape := .dim batch (.dim m (.dim p .scalar))
@@ -80,9 +80,9 @@ def spectralConv1dRfft {grid width modes : Nat}
     throw "autograd: spectralConv1dRfft: width must be positive"
   if modes > grid / 2 + 1 then
     throw "autograd: spectralConv1dRfft: modes exceeds rfft frequency count"
-  let grid32 ← u32 grid
-  let width32 ← u32 width
-  let modes32 ← u32 modes
+  let grid32 ← AnyBuffer.natToU32Checked grid
+  let width32 ← AnyBuffer.natToU32Checked width
+  let modes32 ← AnyBuffer.natToU32Checked modes
   let xShape : Shape := .dim grid (.dim width .scalar)
   let wShape : Shape := .dim modes (.dim width (.dim width .scalar))
   let x ← requireValue (t := t) xId xShape
@@ -92,7 +92,7 @@ def spectralConv1dRfft {grid width modes : Nat}
   let node : Node :=
     { name := some "spectralConv1dRfft"
       value := { s := xShape, buf := y }
-      requires_grad := true
+      requiresGrad := true
       parents := [xId, wReId, wImId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny xShape
@@ -111,8 +111,8 @@ def spectralConv1dRfft {grid width modes : Nat}
 
 /-- Linear layer: `y = W·x + b` with `W : (outDim,inDim)`, `x : inDim`, `b : outDim`. -/
 def linear {outDim inDim : Nat} (t : Tape) (wId bId xId : Nat) : Result (Tape × Nat) := do
-  let out32 ← u32 outDim
-  let in32 ← u32 inDim
+  let out32 ← AnyBuffer.natToU32Checked outDim
+  let in32 ← AnyBuffer.natToU32Checked inDim
   let one32 : UInt32 := 1
   let wBuf ← requireValue (t := t) wId (.dim outDim (.dim inDim .scalar))
   let bBuf ← requireValue (t := t) bId (.dim outDim .scalar)
@@ -122,7 +122,7 @@ def linear {outDim inDim : Nat} (t : Tape) (wId bId xId : Nat) : Result (Tape ×
   let node : Node :=
     { name := some "linear"
       value := { s := .dim outDim .scalar, buf := yBuf }
-      requires_grad := true
+      requiresGrad := true
       parents := [wId, bId, xId]
       cleanup := [wx]
       backward := fun dLdyAny => do
@@ -149,7 +149,7 @@ def mseLoss {s : Shape} (t : Tape) (yhatId targetId : Nat) : Result (Tape × Nat
   let node : Node :=
     { name := some "mse_loss"
       value := { s := Shape.scalar, buf := mean }
-      requires_grad := true
+      requiresGrad := true
       parents := [yhatId, targetId]
       cleanup := [diff, squared, sum]
       backward := fun dLdyAny => do

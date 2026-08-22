@@ -8,15 +8,16 @@ module
 
 public import NN.Proofs.RuntimeApprox.NF.BackwardOps
 public import NN.Proofs.RuntimeApprox.NF.ConvForward
-public import NN.Proofs.RuntimeApprox.NF.Utils
-public import NN.Spec.Layers.Utils
+public import NN.Proofs.RuntimeApprox.NF.FoldLemmas
+public import NN.Proofs.RuntimeApprox.NF.Ops
+public import NN.Spec.Layers.Conv.TwoD.Padding
 
 /-!
-# Conv2D Backward Approximation
+# Conv2d Backward Approximation
 
-NF (rounded) backend: Conv2D backward (VJP) runtime→spec approximation.
+NF (rounded) backend: Conv2d backward (VJP) runtime→spec approximation.
 
-This file proves soundness of explicit bounds for the three Conv2D gradients computed by
+This file proves soundness of explicit bounds for the three Conv2d gradients computed by
 `Spec.conv2d_backward_spec`:
 - kernel gradient
 - bias gradient
@@ -25,15 +26,15 @@ This file proves soundness of explicit bounds for the three Conv2D gradients com
 Each gradient has a different nested-indexing pattern, so the proof keeps the three bound families
 visible rather than hiding them behind one large opaque lemma.
 The important public objects are the tensor-level bounds (`conv2d*BoundTensor`), the approximation
-theorems (`approxT_conv2d_*_deriv_spec`), and `conv2dRevNode`, which packages Conv2D as a `RevNode`
+theorems (`approxTensor_conv2d_*_deriv_spec`), and `conv2dRevNode`, which packages Conv2d as a `RevNode`
 so it composes via `RevGraph.backprop_approx`.
 
-PyTorch analogue: these are the VJP/gradient computations produced by Autograd for Conv2D.
+PyTorch analogue: these are the VJP/gradient computations produced by Autograd for Conv2d.
 https://pytorch.org/docs/stable/autograd.html
 https://pytorch.org/docs/stable/generated/torch.nn.functional.conv2d.html
 
 ## Map of this file
-- Shared padding/read lemmas (to relate the padded-input branches to the original `approxT`
+- Shared padding/read lemmas (to relate the padded-input branches to the original `approxTensor`
   hypothesis).
 - Bias gradient bounds: `conv2dBiasPointBound`, `approx_conv2d_bias_point`, and tensor-lifted
   bound.
@@ -252,7 +253,7 @@ lemma specFold5_eq_threadFold5
   cases h
   rfl
 
-/-- Padded-input helper used by the Conv2D spec: cast when `padding = 0`, otherwise `padMultiChannel`. -/
+/-- Padded-input helper used by the Conv2d spec: cast when `padding = 0`, otherwise `padChannelsFirst2d`. -/
 def paddedInput {α : Type} [Context α] {inC inH inW padding : Nat}
     (img : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
     Spec.Tensor α (.dim inC (.dim (inH + 2 * padding) (.dim (inW + 2 * padding) .scalar))) :=
@@ -263,7 +264,7 @@ def paddedInput {α : Type} [Context α] {inC inH inW padding : Nat}
       (by simp; rw [h4])
       img
   else
-    Spec.padMultiChannel img padding
+    Spec.padChannelsFirst2d img padding
 
 lemma get_at_or_zero_paddedInput
     {α : Type} [Context α] {inC inH inW padding : Nat}
@@ -280,14 +281,14 @@ lemma get_at_or_zero_paddedInput
   · subst h0
     simp [paddedInput]
   · simpa [paddedInput, h0] using
-      (Spec.get_at_or_zero_pad_multi_channel (α := α) (img := img) (c := c) (p := p) (q := q)
-        (padding := padding))
+      (Spec.getAtOrZero_padChannelsFirst2d (α := α) (input := img) (channel := c) (row := p)
+        (col := q) (padding := padding))
 
 lemma mkInputIdx_match_eq_paddedInput
     {α : Type} [Context α] {inC inH inW stride padding : Nat}
     (img : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) (c : Fin inC)
     (oi di oj dj : Nat) :
-    (match Spec.Private.mkInputIdx? [oi, oj] [di, dj] [stride, stride] [padding, padding] with
+    (match Spec.Conv.Internal.mkInputIdx? [oi, oj] [di, dj] [stride, stride] [padding, padding] with
       | none => (0 : α)
       | some inIdx => getAtOrZero img (c.val :: inIdx))
       =
@@ -297,10 +298,10 @@ lemma mkInputIdx_match_eq_paddedInput
   -- Compare both sides via the explicit `paddedInput` read formula.
   rw [get_at_or_zero_paddedInput (img := img) (c := c) (p := oi * stride + di) (q := oj * stride + dj)]
   by_cases h0 : oi * stride + di < padding
-  · simp [Spec.Private.mkInputIdx?, h0]
+  · simp [Spec.Conv.Internal.mkInputIdx?, h0]
   · by_cases h1 : oj * stride + dj < padding
-    · simp [Spec.Private.mkInputIdx?, h0, h1]
-    · simp [Spec.Private.mkInputIdx?, h0, h1]
+    · simp [Spec.Conv.Internal.mkInputIdx?, h0, h1]
+    · simp [Spec.Conv.Internal.mkInputIdx?, h0, h1]
 
 lemma conv2dKernelFoldRead_eq_paddedFold
     {α : Type} [Context α] {inC outC inH inW outH outW stride padding : Nat}
@@ -310,7 +311,7 @@ lemma conv2dKernelFoldRead_eq_paddedFold
     (List.finRange outH).foldl (fun acc i =>
         (List.finRange outW).foldl (fun acc j =>
           acc +
-            (match Spec.Private.mkInputIdx? [i.val, j.val] [di, dj] [stride, stride]
+            (match Spec.Conv.Internal.mkInputIdx? [i.val, j.val] [di, dj] [stride, stride]
                 [padding, padding] with
               | none => 0
               | some inIdx => getAtOrZero input (in_ch.val :: inIdx)) *
@@ -327,7 +328,7 @@ lemma conv2dKernelFoldRead_eq_paddedFold
     (f := fun acc i =>
       (List.finRange outW).foldl (fun acc j =>
         acc +
-          (match Spec.Private.mkInputIdx? [i.val, j.val] [di, dj] [stride, stride]
+          (match Spec.Conv.Internal.mkInputIdx? [i.val, j.val] [di, dj] [stride, stride]
               [padding, padding] with
             | none => 0
             | some inIdx => getAtOrZero input (in_ch.val :: inIdx)) *
@@ -345,7 +346,7 @@ lemma conv2dKernelFoldRead_eq_paddedFold
   refine foldl_congr (l := List.finRange outW)
     (f := fun acc j =>
       acc +
-        (match Spec.Private.mkInputIdx? [i.val, j.val] [di, dj] [stride, stride]
+        (match Spec.Conv.Internal.mkInputIdx? [i.val, j.val] [di, dj] [stride, stride]
             [padding, padding] with
           | none => 0
           | some inIdx => getAtOrZero input (in_ch.val :: inIdx)) *
@@ -406,7 +407,7 @@ lemma entry_eq_scalar_get_at_or_zero4
                       simp [hi1, hi2, hi3, hi4, h1, h2, h3, h4]
 
 -- ---------------------------------------------------------------------------
--- Conv2D bias gradient: pointwise bound
+-- Conv2d bias gradient: pointwise bound
 -- ---------------------------------------------------------------------------
 
 

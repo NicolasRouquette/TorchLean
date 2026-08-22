@@ -105,7 +105,7 @@ Extract the single feature coordinate (entry $0$) from a length-$1$ feature tens
 def ExampleIEEE32Vec1.x0 (z : ExampleIEEE32Vec1) : IEEE32Exec :=
   match z.1 with
   | .dim f =>
-      (f ⟨0, by decide⟩).toScalar
+      (f ⟨0, by decide⟩).item
 
 /-- Label coordinate `y` of an `ExampleIEEE32Vec1` pair. -/
 @[simp] abbrev ExampleIEEE32Vec1.y (z : ExampleIEEE32Vec1) : IEEE32Exec := z.2

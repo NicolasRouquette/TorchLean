@@ -75,17 +75,15 @@ Implementation note: this uses `log_softmax` and a reduce-sum over the action ax
 -/
 def actionLogProbOneHotBatch
     {m : Type → Type} [Monad m] [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)]
-    {batch nActions : Nat}
-    [hBatch : Fact (0 < batch)] [hAct : Fact (0 < nActions)]
+    {batch nActions : Nat} [NeZero batch] [NeZero nActions]
     (logits : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch (.dim nActions .scalar)))
-    (actionOneHot : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch (.dim nActions .scalar)))
-    (ε : α := Numbers.epsilon) :
+    (actionOneHot : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch (.dim nActions .scalar))) :
     m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch .scalar)) := do
   let s : Shape := .dim batch (.dim nActions .scalar)
   let _ : Shape.WellFormed s := by infer_instance
-  let _ : Shape.valid_axis_inst 1 s :=
-    Shape.validAxisInstOne (h₁ := Nat.ne_of_gt hBatch.out) (h₂ := Nat.ne_of_gt hAct.out)
-  let logp ← logSoftmax (m := m) (α := α) (s := s) logits (ε := ε)
+  let _ : Shape.HasNonemptyAxis 1 s :=
+    Shape.hasNonemptyAxisOne (h₂ := NeZero.ne nActions)
+  let logp ← F.logSoftmax (m := m) (α := α) (s := s) 1 logits
   let masked ← mul (m := m) (α := α) (s := s) actionOneHot logp
   reduceSum (m := m) (α := α) (s := s) (axis := 1) masked
 
@@ -100,16 +98,14 @@ Output shape:
 -/
 def entropyMean
     {m : Type → Type} [Monad m] [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)]
-    {batch nActions : Nat}
-    [hBatch : Fact (0 < batch)] [hAct : Fact (0 < nActions)]
-    (logits : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch (.dim nActions .scalar)))
-    (ε : α := Numbers.epsilon) :
+    {batch nActions : Nat} [NeZero batch] [NeZero nActions]
+    (logits : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch (.dim nActions .scalar))) :
     m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) Shape.scalar) := do
   let s : Shape := .dim batch (.dim nActions .scalar)
   let _ : Shape.WellFormed s := by infer_instance
-  let _ : Shape.valid_axis_inst 1 s :=
-    Shape.validAxisInstOne (h₁ := Nat.ne_of_gt hBatch.out) (h₂ := Nat.ne_of_gt hAct.out)
-  let logp ← logSoftmax (m := m) (α := α) (s := s) logits (ε := ε)
+  let _ : Shape.HasNonemptyAxis 1 s :=
+    Shape.hasNonemptyAxisOne (h₂ := NeZero.ne nActions)
+  let logp ← F.logSoftmax (m := m) (α := α) (s := s) 1 logits
   let probs ← exp (m := m) (α := α) (s := s) logp
   let plogp ← mul (m := m) (α := α) (s := s) probs logp
   let sumActions ← reduceSum (m := m) (α := α) (s := s) (axis := 1) plogp
@@ -127,19 +123,17 @@ where `r_i = exp(logπ_new(a_i|s_i) - logπ_old(a_i|s_i))`.
 -/
 def ppoClippedObjectiveBatch
     {m : Type → Type} [Monad m] [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)]
-    {batch nActions : Nat}
-    [hBatch : Fact (0 < batch)] [hAct : Fact (0 < nActions)]
+    {batch nActions : Nat} [NeZero batch] [NeZero nActions]
     (newLogits : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch (.dim nActions .scalar)))
     (actionOneHot : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch (.dim nActions .scalar)))
     (oldLogProb : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch .scalar))
     (advantage : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch .scalar))
-    (clipEps : α := (1 : α) / ((5 : Nat) : α))
-    (ε : α := Numbers.epsilon) :
+    (clipEps : α := (1 : α) / ((5 : Nat) : α)) :
     m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch .scalar)) := do
   let sVec : Shape := .dim batch .scalar
   let newLogProb ←
     actionLogProbOneHotBatch (m := m) (α := α) (batch := batch) (nActions := nActions)
-      newLogits actionOneHot (ε := ε)
+      newLogits actionOneHot
   let diff ← sub (m := m) (α := α) (s := sVec) newLogProb oldLogProb
   let ratio ← exp (m := m) (α := α) (s := sVec) diff
   let clippedRatio ← clamp (m := m) (α := α) (s := sVec) ratio ((1 : α) - clipEps) ((1 : α) + clipEps)
@@ -156,8 +150,7 @@ This is the standard discrete-action PPO loss used in many reference implementat
 -/
 def ppoLossBatch
     {m : Type → Type} [Monad m] [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)]
-    {batch nActions : Nat}
-    [hBatch : Fact (0 < batch)] [hAct : Fact (0 < nActions)]
+    {batch nActions : Nat} [NeZero batch] [NeZero nActions]
     (newLogits : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch (.dim nActions .scalar)))
     (actionOneHot : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch (.dim nActions .scalar)))
     (oldLogProb : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch .scalar))
@@ -165,18 +158,16 @@ def ppoLossBatch
     (valuePred valueTarget : _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim batch (.dim 1 .scalar)))
     (clipEps : α := (1 : α) / ((5 : Nat) : α))
     (valueCoef : α := (1 : α) / ((2 : Nat) : α))
-    (entropyCoef : α := (1 : α) / ((100 : Nat) : α))
-    (ε : α := Numbers.epsilon) :
+    (entropyCoef : α := (1 : α) / ((100 : Nat) : α)) :
     m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) Shape.scalar) := do
   let obj ←
     ppoClippedObjectiveBatch (m := m) (α := α) (batch := batch) (nActions := nActions)
-      newLogits actionOneHot oldLogProb advantage (clipEps := clipEps) (ε := ε)
+      newLogits actionOneHot oldLogProb advantage (clipEps := clipEps)
   let objMean ← _root_.Runtime.Autograd.TorchLean.F.mean (m := m) (α := α) (s := .dim batch .scalar) obj
   let policyLoss ← scale (m := m) (α := α) (s := Shape.scalar) objMean (-1)
   let valueLoss ← _root_.TorchLean.Loss.mse (m := m) (α := α) (s := .dim batch (.dim 1 .scalar)) valuePred valueTarget
   let valueLossScaled ← scale (m := m) (α := α) (s := Shape.scalar) valueLoss valueCoef
-  let entropy ←
-    entropyMean (m := m) (α := α) (batch := batch) (nActions := nActions) newLogits (ε := ε)
+  let entropy ← entropyMean (m := m) (α := α) (batch := batch) (nActions := nActions) newLogits
   let entropyScaled ← scale (m := m) (α := α) (s := Shape.scalar) entropy entropyCoef
   let tmp ← add (m := m) (α := α) (s := Shape.scalar) policyLoss valueLossScaled
   sub (m := m) (α := α) (s := Shape.scalar) tmp entropyScaled
@@ -195,8 +186,7 @@ Bundle an actor and critic into an `ObjectiveDef` whose inputs are a PPO minibat
 The model state is `actor.state ++ critic.state`, and one optimizer step updates both models.
 -/
 def ppoActorCriticObjectiveDef
-    {stateShape : Shape} {batch nActions : Nat}
-    [hBatch : Fact (0 < batch)] [hAct : Fact (0 < nActions)]
+    {stateShape : Shape} {batch nActions : Nat} [NeZero batch] [NeZero nActions]
     (actor : _root_.Runtime.Autograd.TorchLean.NN.Seq stateShape (.dim batch (.dim nActions .scalar)))
     (critic : _root_.Runtime.Autograd.TorchLean.NN.Seq stateShape (.dim batch (.dim 1 .scalar))) :
     _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef

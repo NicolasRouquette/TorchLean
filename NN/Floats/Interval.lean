@@ -7,7 +7,6 @@ Authors: TorchLean Team
 module
 
 public import NN.Floats.Interval.FP32
-public import NN.Floats.Interval.Comparison
 public import NN.Floats.Interval.IEEEExec32
 public import NN.Floats.Interval.IEEEExec32Soundness
 public import NN.Floats.Interval.Quantized

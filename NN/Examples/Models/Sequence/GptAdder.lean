@@ -139,8 +139,7 @@ local instance : NeZero dModel := ⟨by decide⟩
 
 /-- GPT configuration shared by the typed shapes and model constructor. -/
 def cfg : nn.models.CausalTransformer.Config :=
-  { batch := batch
-    seqLen := seqLen
+  { seqLen := seqLen
     vocab := vocab
     numHeads := numHeads
     headDim := headDim
@@ -150,7 +149,7 @@ def cfg : nn.models.CausalTransformer.Config :=
 
 /-- Input shape: batched one-hot digit sequences. -/
 abbrev σ : Shape :=
-  nn.models.CausalTransformer.vocabularyShape cfg
+  nn.models.CausalTransformer.vocabularyShape cfg (.dim batch .scalar)
 
 /-- Output shape: one digit-logit row per input position. -/
 abbrev τ : Shape :=
@@ -158,7 +157,7 @@ abbrev τ : Shape :=
 
 /-- Compact GPT-style causal Transformer for digit addition. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.CausalTransformer.oneHot cfg
+  nn.models.CausalTransformer.oneHot cfg (.dim batch .scalar)
 
 /-- Cross-entropy summed over non-ignored adder targets, normalized like minGPT `ignore_index`. -/
 def adderLoss {α : Type} [_root_.Context α] [DecidableEq Shape]
@@ -166,7 +165,7 @@ def adderLoss {α : Type} [_root_.Context α] [DecidableEq Shape]
     (logits targetOneHot : Runtime.RefTy (m := m) (α := α) τ) :
     m (Runtime.RefTy (m := m) (α := α) Shape.scalar) := do
   let summed ← Loss.oneHotCrossEntropy
-    (m := m) (α := α) (s := τ) logits targetOneHot (reduction := .sum)
+    (m := m) (α := α) (s := τ) 2 logits targetOneHot (reduction := .sum)
   Ops.scale (m := m) (α := α) (s := Shape.scalar)
     summed ((1 : α) / (activeTargetCount : α))
 
@@ -228,16 +227,16 @@ Build one unbatched one-hot causal-LM sample for an addition row, then apply the
 ignored-prefix mask to its target matrix.
 -/
 def mkRowSample (a b : Nat) :
-    SupervisedSample Float (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim vocab .scalar)) :=
+    Sample.Supervised Float (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim vocab .scalar)) :=
   Sample.mapY maskAdderTargets <|
     Data.CausalLM.oneHotSample (α := Float) seqLen vocab (renderExample a b)
 
 /-- Build one supervised next-digit sample from an addition problem. -/
-def mkSample (a b : Nat) : SupervisedSample Float σ τ :=
+def mkSample (a b : Nat) : Sample.Supervised Float σ τ :=
   let row := mkRowSample a b
-  let x2D := Sample.x row
-  let y2D := Sample.y row
-  Sample.mk (Spec.Tensor.dim (fun _ => x2D)) (Spec.Tensor.dim (fun _ => y2D))
+  let x2d := Sample.x row
+  let y2d := Sample.y row
+  Sample.mk (Spec.Tensor.dim (fun _ => x2d)) (Spec.Tensor.dim (fun _ => y2d))
 
 /-- Deterministic exhaustive one-digit dataset order. -/
 def pairAt (i : Nat) : Nat × Nat :=
@@ -273,7 +272,7 @@ def parseProbeList (s : String) : Except String (List (Nat × Nat)) := do
   pure out
 
 /-- Build a batched supervised sample with one row per one-digit addition problem. -/
-def mkTrainSample (trainSplit : Bool) : SupervisedSample Float σ τ :=
+def mkTrainSample (trainSplit : Bool) : Sample.Supervised Float σ τ :=
   let row (bi : Fin batch) : Tensor Float (.dim seqLen (.dim vocab .scalar)) :=
     let (a, b) := trainPairAt trainSplit bi.val
     Sample.x <| mkRowSample a b
@@ -485,7 +484,7 @@ def intro (mode : CurriculumMode) (cfg : AdderOptions) : String :=
       "  curriculum=all 100 one-digit addition pairs"
 
 /-- Training sample corresponding to the selected curriculum. -/
-def sample (mode : CurriculumMode) (cfg : AdderOptions) : SupervisedSample Float σ τ :=
+def sample (mode : CurriculumMode) (cfg : AdderOptions) : Sample.Supervised Float σ τ :=
   match mode with
   | .overfitPair => mkSample cfg.a cfg.b
   | .trainSplit => mkTrainSample true
@@ -571,7 +570,7 @@ def trainAdderFloat (opts : Options) (trainOpts : AdderOptions) :
   the selected overfit pair.  The custom loss `adderLossProgram` preserves the minGPT-style
   ignore-prefix normalization while still moving the optimizer loop behind `trainer.train`.
   -/
-  let trainSample : SupervisedSample Float σ τ :=
+  let trainSample : Sample.Supervised Float σ τ :=
     CurriculumMode.sample mode trainOpts
   let trained ← trainer.train
     (Data.floatSamples [trainSample])

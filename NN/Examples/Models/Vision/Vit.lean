@@ -106,9 +106,8 @@ def headDim : Nat := 1
 def ffnHidden : Nat := 2
 
 /-- Shared ViT configuration used by shapes and the reusable public model constructor. -/
-def cfg : nn.models.ViTConfig 2 :=
-  { batch := batch
-    inChannels := inC
+def cfg : nn.models.VitConfig 2 :=
+  { inChannels := inC
     spatial := #v[inH, inW]
     patch :=
       { outChannels := dModel
@@ -122,9 +121,12 @@ def cfg : nn.models.ViTConfig 2 :=
     headDim := headDim
     ffnHidden := ffnHidden }
 
-abbrev σ : Shape := nn.models.vitInShape cfg
+/-- Leading sample axis used by this batched training example. -/
+abbrev batchShape : Shape := .dim batch .scalar
 
-abbrev τ : Shape := nn.models.vitOutShape cfg
+abbrev σ : Shape := cfg.inputShape batchShape
+
+abbrev τ : Shape := cfg.outputShape batchShape
 
 /--
 Compact ViT-style classifier from the public model API.
@@ -132,10 +134,10 @@ Compact ViT-style classifier from the public model API.
 The constructor builds patch embedding, token reshape, one encoder block, and the classifier head.
 -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.vit cfg
+  nn.models.vit cfg batchShape
     (hInChannels := by decide)
     (hSeqLen := by
-      norm_num [nn.models.ViTConfig.seqLen, nn.models.ViTConfig.patchSpatial, cfg,
+      norm_num [nn.models.VitConfig.seqLen, nn.models.VitConfig.patchSpatial, cfg,
         inH, inW, patchH, patchW, stride, padding,
         Spec.convOutSpatial, Spec.Shape.slidingWindowOutDim, Spec.Shape.ofList, Spec.Shape.size,
         Vector.get, Vector.toList, Vector.ofFn])
@@ -151,7 +153,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
     Trainer.new model <|
       Trainer.Config.fromRunConfig
         (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := flags.lr } })
-        .oneHotCrossEntropy
+        (.oneHotCrossEntropy 1)
         (seed := flags.seed)
   let trained ← trainer.train
     (Data.floatSamples batches)

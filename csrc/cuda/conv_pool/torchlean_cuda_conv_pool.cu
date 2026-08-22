@@ -1790,7 +1790,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_convtranspose2d_fwd(
     return torchlean_cuda_buffer_box(out);
   }
 
-  // Reuse the Conv2D dInput kernel: it computes transpose-convolution when we swap channel roles.
+  // Reuse the Conv2d dInput kernel: it computes transpose-convolution when we swap channel roles.
   // See notes in `Cuda.Ops.conv_transpose2d` for the shape correspondence.
   int grid = grid_for(outElems);
   conv2d_dinput_kernel<<<grid, kBlock>>>(kernel->data, input->data, out->data,

@@ -16,7 +16,7 @@ public import NN.Runtime.Autograd.Train.IoLoader.Npy
 
 The loader surface has three parts:
 
-- `IoLoader.Common` contains small shared parser utilities and safety limits.
+- `IoLoader.Parsing` contains the parser primitives and safety limits shared by those formats.
 - `IoLoader.Csv` contains CSV-to-tensor dataset readers.
 - `IoLoader.Npy` contains the supported NumPy `.npy` subset for vectors and matrices.
 

@@ -120,7 +120,7 @@ epsilon scalar is treated like any other rounded constant. The exact stabilized 
 the pointwise lower bound `η`; the two strict margin checks are directly computable from
 `normalizeCoreErrorTrace`.
 -/
-theorem approxT_normalizeCore
+theorem approxTensor_normalizeCore
     {s sMean sVar sGamma sBeta : Shape}
     (cbMean : Shape.CanBroadcastTo sMean s)
     (cbVar : Shape.CanBroadcastTo sVar s)
@@ -134,15 +134,15 @@ theorem approxT_normalizeCore
     {betaS : SpecTensor sBeta} {betaR : Tensor R sBeta}
     {epsX epsMean epsVariance epsGamma epsBeta epsEpsilon η : ℝ}
     (hη : 0 < η)
-    (hx : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       xS xR epsX)
-    (hmean : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (hmean : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       meanS meanR epsMean)
-    (hvariance : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (hvariance : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       varianceS varianceR epsVariance)
-    (hgamma : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (hgamma : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       gammaS gammaR epsGamma)
-    (hbeta : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (hbeta : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       betaS betaR epsBeta)
     (hepsilon :
       abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) epsilonR - epsilonS) ≤ epsEpsilon)
@@ -154,7 +154,7 @@ theorem approxT_normalizeCore
       epsX epsMean epsVariance epsGamma epsBeta epsEpsilon η
     trace.stabilizedError < η →
     trace.stdError < Real.sqrt η →
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (normalizeCore s sMean sVar sGamma sBeta epsilonS
           xS meanS varianceS gammaS betaS cbMean cbVar cbGamma cbBeta)
         (normalizeCore s sMean sVar sGamma sBeta epsilonR
@@ -201,21 +201,21 @@ theorem approxT_normalizeCore
       (mulBoundTensor (β := β) (fexp := fexp)
         normalizedError epsGamma normalizedR gammaBroadcastR)
 
-  have hmeanBroadcast := approxT_broadcastTo
+  have hmeanBroadcast := approxTensor_broadcastTo
     (β := β) (fexp := fexp) (rnd := rnd) cbMean hmean
-  have hvarianceBroadcast := approxT_broadcastTo
+  have hvarianceBroadcast := approxTensor_broadcastTo
     (β := β) (fexp := fexp) (rnd := rnd) cbVar hvariance
-  have hgammaBroadcast := approxT_broadcastTo
+  have hgammaBroadcast := approxTensor_broadcastTo
     (β := β) (fexp := fexp) (rnd := rnd) cbGamma hgamma
-  have hbetaBroadcast := approxT_broadcastTo
+  have hbetaBroadcast := approxTensor_broadcastTo
     (β := β) (fexp := fexp) (rnd := rnd) cbBeta hbeta
-  have hepsilonFill := approxT_fill_const
+  have hepsilonFill := approxTensor_fill_const
     (β := β) (fexp := fexp) (rnd := rnd) hepsilon (s := s)
-  have hcentered := approxT_sub_spec
+  have hcentered := approxTensor_sub_spec
     (β := β) (fexp := fexp) (rnd := rnd) hx hmeanBroadcast
-  have hstabilizedApprox := approxT_add_spec
+  have hstabilizedApprox := approxTensor_add_spec
     (β := β) (fexp := fexp) (rnd := rnd) hvarianceBroadcast hepsilonFill
-  have hstd := approxT_sqrt_spec_of_pos_lb
+  have hstd := approxTensor_sqrt_spec_of_pos_lb
     (β := β) (fexp := fexp) (rnd := rnd) η hη
     hstabilizedApprox hstabilized hstabilizedMargin
   have hstdLower : Tensor.Forall (fun z : ℝ => Real.sqrt η ≤ z) stdS := by
@@ -223,12 +223,12 @@ theorem approxT_normalizeCore
     intro z hz
     change Real.sqrt η ≤ Real.sqrt (max z 0)
     exact Real.sqrt_le_sqrt (le_trans hz (le_max_left z 0))
-  have hnormalized := approxT_div_spec_of_pos_lb
+  have hnormalized := approxTensor_div_spec_of_pos_lb
     (β := β) (fexp := fexp) (rnd := rnd) (Real.sqrt η)
     hcentered hstd hstdLower hstdMargin
-  have hscaled := approxT_mul_spec
+  have hscaled := approxTensor_mul_spec
     (β := β) (fexp := fexp) (rnd := rnd) hnormalized hgammaBroadcast
-  have houtput := approxT_add_spec
+  have houtput := approxTensor_add_spec
     (β := β) (fexp := fexp) (rnd := rnd) hscaled hbetaBroadcast
   simpa [normalizeCore, normalizeCoreErrorTrace, meanBroadcastS, meanBroadcastR,
     varianceBroadcastS, varianceBroadcastR, gammaBroadcastS, gammaBroadcastR,

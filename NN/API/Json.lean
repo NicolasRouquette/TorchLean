@@ -66,20 +66,6 @@ def expectArrayE (ctx : String) (j : Lean.Json) : Except String (Array Lean.Json
   | .arr xs => pure xs
   | _ => fail s!"{ctx}: expected array"
 
-/-- Parse an optional JSON boolean field with a default. -/
-def optionalBoolFieldE (ctx key : String) (default : Bool) (j : Lean.Json) :
-    Except String Bool := do
-  let o ← expectObjE ctx j
-  match Std.TreeMap.Raw.get? o key with
-  | none => pure default
-  | some (.bool b) => pure b
-  | some _ => fail s!"{ctx}.{key}: expected boolean"
-
-/-- Parse a JSON array of natural numbers. -/
-def expectNatArrayE (ctx : String) (j : Lean.Json) : Except String (Array Nat) := do
-  let xs ← expectArrayE ctx j
-  xs.mapIdxM (fun i x => expectNatE s!"{ctx}[{i}]" x)
-
 /-- Parse a JSON file from disk. -/
 def parseFile (path : System.FilePath) : IO Lean.Json := do
   let s ← IO.FS.readFile path

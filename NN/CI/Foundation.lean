@@ -8,12 +8,10 @@ module
 
 public import NN.API.Scalar
 public import NN.API.Data
-public import NN.API.Data.Transforms
 public import NN.API.Init
 public import NN.API.Macros
 public import NN.API.Neural
 public import NN.API.Runtime
-public import NN.API.Data.Bands
 public import NN.API.Data.Synthetic
 public import NN.API.Trainer.Scheduler
 public import NN.GraphSpec
@@ -36,12 +34,13 @@ public import NN.Spec.Core.TensorBridge
 public import NN.Spec.Core.TensorGrad
 public import NN.Spec.Core.TensorOps
 public import NN.Spec.Core.TensorReductionShape
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 public import NN.Spec.Dynamics.System
 public import NN.Spec.Dynamics.StateSpace
 public import NN.Spec.Layers.Activation
 public import NN.Spec.Layers.Attention
 public import NN.Spec.Layers.Conv
+public import NN.Spec.Layers.Conv.TwoD.Padding
 public import NN.Spec.Layers.Dropout
 public import NN.Spec.Layers.Embedding
 public import NN.Spec.Layers.FlashAttention
@@ -55,10 +54,9 @@ public import NN.Spec.Layers.Pooling
 public import NN.Spec.Layers.PositionalEncoding
 public import NN.Spec.Layers.Rnn
 public import NN.Spec.Layers.SelectiveScan
-public import NN.Spec.Layers.Utils
 public import NN.Spec.Models.Autoencoder
 public import NN.Spec.Models.Cnn
-public import NN.Spec.Models.CommonHelpers
+public import NN.Spec.Core.Tensor.Numerics
 public import NN.Spec.Models.Gmm
 public import NN.Spec.Models.Gnn
 public import NN.Spec.Models.GradientBoostedTrees
@@ -101,7 +99,7 @@ public import NN.Spec.Module.PositionalEncoding
 public import NN.Spec.Module.Rnn
 public import NN.Spec.Module.RnnModels
 public import NN.Spec.Module.Seq2seq
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 public import NN.Spec.Module.Svm
 public import NN.Tensor
 

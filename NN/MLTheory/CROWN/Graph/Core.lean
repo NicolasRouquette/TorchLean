@@ -56,7 +56,7 @@ namespace NN.MLTheory.CROWN
 open _root_.Spec
 open _root_.Spec.Tensor
 
-/-- Alias for the typed IR computation graph used by the CROWN/LiRPA engines. -/
+/-- Typed IR graph used by the CROWN/LiRPA engines. -/
 abbrev Graph := NN.IR.Graph
 
 namespace FlatBox
@@ -85,9 +85,9 @@ open NN.MLTheory.CROWN
 open NN.IR
 open Std
 
-/-- Alias for the IR node kind enumeration used by the graph engine. -/
+/-- IR operation kinds used by the graph engine. -/
 abbrev OpKind := NN.IR.OpKind
-/-- Alias for the IR node record used by the graph engine. -/
+/-- IR nodes used by the graph engine. -/
 abbrev Node := NN.IR.Node
 
 /--

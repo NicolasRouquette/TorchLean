@@ -42,8 +42,8 @@ def linear {α : Type} [Add α] [Mul α] [Zero α] [DecidableEq Shape]
   let y := Spec.linearSpec (α:=α) layer x
   let node : Node α :=
     { name := some "linear"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [wId, bId, xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim outDim .scalar) dLdyAny
@@ -51,9 +51,9 @@ def linear {α : Type} [Add α] [Mul α] [Zero α] [DecidableEq Shape]
         let db := Spec.linearBiasDerivSpec (α:=α) (dW) dLdy x
         let dx := Spec.linearInputDerivSpec (α:=α) W dLdy
         pure [
-          (wId, AnyTensor.mk dW),
-          (bId, AnyTensor.mk db),
-          (xId, AnyTensor.mk dx)
+          (wId, Spec.PackedTensor.ofTensor dW),
+          (bId, Spec.PackedTensor.ofTensor db),
+          (xId, Spec.PackedTensor.ofTensor dx)
         ]
     }
   pure (t.addNode node)
@@ -70,13 +70,13 @@ def matmul {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Pro
   let y := Spec.matMulSpec a b
   let node : Node α :=
     { name := some "matmul"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim m (.dim p .scalar)) dLdyAny
         let (dA, dB) := Spec.Tensor.matMulBackwardSpec a b dLdy
-        pure [(aId, AnyTensor.mk dA), (bId, AnyTensor.mk dB)]
+        pure [(aId, Spec.PackedTensor.ofTensor dA), (bId, Spec.PackedTensor.ofTensor dB)]
     }
   pure (t.addNode node)
 
@@ -92,38 +92,14 @@ def bmm {α : Type} [Add α] [Mul α] [Zero α] [DecidableEq Shape]
   let y := Spec.Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := n) (p := p) a b
   let node : Node α :=
     { name := some "bmm"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim batch (.dim m (.dim p .scalar))) dLdyAny
         let (dA, dB) := Spec.Tensor.bmmBackwardSpec (α := α) (batch := batch) (m := m) (n := n)
           (p := p) a b dLdy
-        pure [(aId, AnyTensor.mk dA), (bId, AnyTensor.mk dB)]
-    }
-  pure (t.addNode node)
-
-/--
-Concatenate two 1D vectors along dimension 0.
-
-PyTorch comparison: `torch.cat([a, b], dim=0)` for vectors.
--/
-def concatVectors {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq
-  Shape]
-  {n m : Nat} (t : Tape α) (aId bId : Nat) : Result (Tape α × Nat) := do
-  let a ← requireValue (α:=α) (t:=t) (s:=.dim n .scalar) aId
-  let b ← requireValue (α:=α) (t:=t) (s:=.dim m .scalar) bId
-  let y := Spec.Tensor.concatVectorsSpec a b
-  let node : Node α :=
-    { name := some "concat_vectors"
-      value := AnyTensor.mk y
-      requires_grad := true
-      parents := [aId, bId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := .dim (n + m) .scalar) dLdyAny
-        let dA := Spec.Tensor.sliceVectorSpec dLdy 0 n (by simp)
-        let dB := Spec.Tensor.sliceVectorSpec dLdy n m (by exact Nat.le_refl _)
-        pure [(aId, AnyTensor.mk dA), (bId, AnyTensor.mk dB)]
+        pure [(aId, Spec.PackedTensor.ofTensor dA), (bId, Spec.PackedTensor.ofTensor dB)]
     }
   pure (t.addNode node)
 
@@ -139,16 +115,16 @@ def concatLeadingAxis {α : Type} [DecidableEq Shape]
   let y := Spec.Tensor.concatLeadingAxisSpec (α := α) (n := n) (m := m) (s := s) a b
   let node : Node α :=
     { name := some "concat_leading_axis"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim (n + m) s) dLdyAny
         let dA := Spec.sliceRangeSpec (α := α) (n := n + m) (s := s) dLdy 0 n
           (by simp)
         let dB := Spec.sliceRangeSpec (α := α) (n := n + m) (s := s) dLdy n m
-          (by simp [Nat.add_comm])
-        pure [(aId, AnyTensor.mk dA), (bId, AnyTensor.mk dB)]
+          (by simp)
+        pure [(aId, Spec.PackedTensor.ofTensor dA), (bId, Spec.PackedTensor.ofTensor dB)]
     }
   pure (t.addNode node)
 
@@ -159,7 +135,7 @@ The proof argument `h` enforces bounds.
 PyTorch comparison: `x[start:start+len]` on tensors with a leading dimension.
 -/
 def sliceLeadingAxisRange {α : Type} [Zero α] [DecidableEq Shape]
-  {n : Nat} {s : Shape} (t : Tape α) (xId : Nat) (start len : Nat) (h : len + start ≤ n) :
+  {n : Nat} {s : Shape} (t : Tape α) (xId : Nat) (start len : Nat) (h : start + len ≤ n) :
   Result (Tape α × Nat) :=
   unary (α := α) (t := t) (σ := .dim n s) (τ := .dim len s)
     "slice_leading_axis_range" xId

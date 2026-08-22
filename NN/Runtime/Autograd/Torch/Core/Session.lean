@@ -47,7 +47,7 @@ runtime `Shape` (`Runtime.Autograd.Cuda.AnyBuffer`).
 
 The Torch eager front-end still presents the spec-level `Tensor α s` API, so in CUDA mode we need:
 - upload: `Tensor α s` -> `Cuda.AnyBuffer` (float32, contiguous, row-major)
-- download: `Cuda.AnyBuffer` -> `Runtime.AnyTensor α`
+- download: `Cuda.AnyBuffer` -> `Spec.PackedTensor α`
 
 The helper namespace gives CUDA bridge conversions stable call sites and a clear boundary.
 -/
@@ -57,8 +57,8 @@ namespace CudaBridge
 class TensorConv (α : Type) where
   /-- Upload a spec tensor to a CUDA `AnyBuffer` (float32). -/
   toAnyBuffer : {s : Shape} → Tensor α s → IO Runtime.Autograd.Cuda.AnyBuffer
-  /-- Download a CUDA `AnyBuffer` to a runtime `AnyTensor` (shape-erased). -/
-  ofAnyBuffer : Runtime.Autograd.Cuda.AnyBuffer → IO (Runtime.AnyTensor α)
+  /-- Download a CUDA `AnyBuffer` to a packed host tensor. -/
+  ofAnyBuffer : Runtime.Autograd.Cuda.AnyBuffer → IO (Spec.PackedTensor α)
   /-- Convert a scalar constant to a host `Float` for CUDA kernels (e.g. `scale`, `axpy`). -/
   toFloat : α → IO Float
 
@@ -76,8 +76,8 @@ instance (priority := 1000) : TensorConv Float where
       throw <| IO.userError
         s!"torch: cuda: bad buffer length (expected {Spec.Shape.size any.s}, got {a.size})"
     let t : Tensor Float any.s :=
-      Runtime.Autograd.Cuda.Convert.unflattenFloatUnsafe (s := any.s) a
-    pure { s := any.s, t := t }
+      Runtime.Autograd.Cuda.Convert.Internal.unflattenFloat (s := any.s) a 0
+    pure { shape := any.s, tensor := t }
   toFloat := fun x => pure x
 
 /-! #### Native Float32 implementation -/
@@ -95,8 +95,8 @@ instance (priority := 1000) : TensorConv Float32 where
       throw <| IO.userError
         s!"torch: cuda: bad buffer length (expected {Spec.Shape.size any.s}, got {a.size})"
     let asFloat : Tensor Float any.s :=
-      Runtime.Autograd.Cuda.Convert.unflattenFloatUnsafe (s := any.s) a
-    pure { s := any.s, t := Spec.mapTensor Float.toFloat32 asFloat }
+      Runtime.Autograd.Cuda.Convert.Internal.unflattenFloat (s := any.s) a 0
+    pure { shape := any.s, tensor := Spec.mapTensor Float.toFloat32 asFloat }
   toFloat := fun x => pure x.toFloat
 
 /-! #### Executable IEEE32 host scalar implementation -/
@@ -165,13 +165,13 @@ def syncParamCudaToHost {α : Type} [CudaBridge.TensorConv α] {sh : Shape} [Dec
         p.hostCurrent.set true
     | some any =>
         let anyHost ← CudaBridge.TensorConv.ofAnyBuffer (α := α) any
-        if h : anyHost.s = sh then
-          p.value.set (Tensor.castShape anyHost.t h)
+        if h : anyHost.shape = sh then
+          p.value.set (anyHost.cast h)
           p.hostCurrent.set true
         else
           throw <| IO.userError <|
             s!"torch: CUDA param sync shape mismatch (expected {Shape.pretty sh}, got "
-              ++ s!"{Shape.pretty anyHost.s})"
+              ++ s!"{Shape.pretty anyHost.shape})"
 
 /-- Store/update the CUDA mirror of a parameter and mark the host tensor stale. -/
 def setParamCudaValue {α : Type} {sh : Shape} (p : Param α sh)
@@ -327,7 +327,7 @@ def new {α : Type} (opts : Options := {}) : IO (EagerSession α) := do
 
 /-- Force-free a CUDA buffer allocation; the external finalizer is safe to call twice. -/
 def releaseCudaBuffer (b : Runtime.Autograd.Cuda.Buffer) : IO Unit := do
-  let released := Runtime.Autograd.Cuda.Buffer.release b
+  let released ← Runtime.Autograd.Cuda.Buffer.releaseIO b
   AnyParam.observeCudaCleanupFlag released
 
 /-- Force-release a shape-erased CUDA buffer. -/
@@ -482,23 +482,23 @@ def getValue {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : 
       | some v => pure v
       | none => throw <| IO.userError "torch: invalid tensor id (missing CUDA value)"
     let anyHost ← CudaBridge.TensorConv.ofAnyBuffer (α := α) any
-    if h : anyHost.s = sh then
-      pure (Tensor.castShape anyHost.t h)
+    if h : anyHost.shape = sh then
+      pure (anyHost.cast h)
     else
       throw <| IO.userError <|
         s!"torch: shape mismatch when reading value (expected {Shape.pretty sh}, got "
-          ++ s!"{Shape.pretty anyHost.s})"
+          ++ s!"{Shape.pretty anyHost.shape})"
   else
     let t ← s.tape.get
     let any ← match t.getValue? x.id with
       | some v => pure v
       | none => throw <| IO.userError "torch: invalid tensor id (missing value)"
-    if h : any.s = sh then
-      pure (Tensor.castShape any.t h)
+    if h : any.shape = sh then
+      pure (any.cast h)
     else
       throw <| IO.userError <|
         s!"torch: shape mismatch when reading value (expected {Shape.pretty sh}, got "
-          ++ s!"{Shape.pretty any.s})"
+          ++ s!"{Shape.pretty any.shape})"
 
 /--
 Record a constant leaf (non-differentiable) on the tape.
@@ -512,13 +512,13 @@ def const {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Sha
     let t0 ← s.cudaTape.get
     let (t1, id) :=
       Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := anyBuf) (name := name)
-        (requires_grad := false)
+        (requiresGrad := false)
     s.cudaTape.set t1
     pure { id := id }
   else
     let t0 ← s.tape.get
     let (t1, id) := Runtime.Autograd.Tape.leaf (t := t0) (s := sh) (value := v)
-      (name := name) (requires_grad := false)
+      (name := name) (requiresGrad := false)
     s.tape.set t1
     pure { id := id }
 
@@ -540,7 +540,7 @@ def detach {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Sh
       let node : Runtime.Autograd.Cuda.Node :=
         { name := name
           value := any'
-          requires_grad := false
+          requiresGrad := false
           parents := [x.id]
           backward := fun _ => .ok [] }
       let (t1, id) := Runtime.Autograd.Cuda.Tape.addNode t0 node
@@ -554,8 +554,8 @@ def detach {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Sh
     let t0 ← s.tape.get
     let node : Runtime.Autograd.Node α :=
       { name := name
-        value := Runtime.Autograd.AnyTensor.mk xVal
-        requires_grad := false
+        value := Spec.PackedTensor.ofTensor xVal
+        requiresGrad := false
         parents := [x.id]
         backward := fun _ => .ok [] }
     let (t1, id) := Runtime.Autograd.Tape.addNode t0 node
@@ -579,7 +579,7 @@ def randUniform {α : Type} [Context α] [CudaBridge.TensorConv α]
     let buf := Runtime.Autograd.Cuda.Buffer.randUniform n32 key
     let any : Runtime.Autograd.Cuda.AnyBuffer := { s := sh, buf := buf }
     let (t1, id) :=
-      Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := any) (name := name) (requires_grad := false)
+      Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := any) (name := name) (requiresGrad := false)
     s.cudaTape.set t1
     pure { id := id }
   let cpu := do
@@ -612,7 +612,7 @@ def bernoulliMask {α : Type} [Context α] [CudaBridge.TensorConv α]
     let buf := Runtime.Autograd.Cuda.Buffer.bernoulliMask n32 keepF key
     let any : Runtime.Autograd.Cuda.AnyBuffer := { s := sh, buf := buf }
     let (t1, id) :=
-      Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := any) (name := name) (requires_grad := false)
+      Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := any) (name := name) (requiresGrad := false)
     s.cudaTape.set t1
     pure { id := id }
   let cpu := do
@@ -662,7 +662,7 @@ def use {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape
       let t0 ← s.cudaTape.get
       let (t1, id) :=
         Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := anyBuf) (name := p.name)
-          (requires_grad := requiresGrad)
+          (requiresGrad := requiresGrad)
       s.cudaTape.set t1
       pure id
     else
@@ -671,7 +671,7 @@ def use {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape
       let t0 ← s.tape.get
       let (t1, id) :=
         Runtime.Autograd.Tape.leaf (t := t0) (s := sh)
-          (value := v) (name := p.name) (requires_grad := requiresGrad)
+          (value := v) (name := p.name) (requiresGrad := requiresGrad)
       s.tape.set t1
       pure id
   s.paramsByLeaf.modify (fun m => m.insert id (AnyParam.ofParam p))
@@ -681,7 +681,7 @@ def use {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape
 Record an external input tensor as a leaf on the tape.
 
 PyTorch comparison: like introducing a tensor into the autograd graph with a chosen
-`requires_grad` flag.
+`requiresGrad` flag.
 
 The session-level `gradEnabled` flag is a final gate on the caller's requested `requiresGrad`.
 This keeps inference helpers from accidentally building a trainable tape even when a lower-level
@@ -695,13 +695,13 @@ def input {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Sha
     let anyBuf ← CudaBridge.TensorConv.toAnyBuffer (α := α) (s := sh) v
     let t0 ← s.cudaTape.get
     let (t1, id) := Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := anyBuf)
-      (name := name) (requires_grad := requiresGrad)
+      (name := name) (requiresGrad := requiresGrad)
     s.cudaTape.set t1
     pure { id := id }
   else
     let t0 ← s.tape.get
     let (t1, id) := Runtime.Autograd.Tape.leaf (t := t0) (s := sh) (value := v)
-      (name := name) (requires_grad := requiresGrad)
+      (name := name) (requiresGrad := requiresGrad)
     s.tape.set t1
     pure { id := id }
 

@@ -94,7 +94,7 @@ theorem runtimeSum_entry_computed (i : Fin width) :
 
 /-- Sterbenz's lemma certifies the concrete binary32 subtraction $2-1$ as exact. -/
 theorem two_sub_one_exact :
-    round₃₂ ((2 : ℝ) - 1) = (2 : ℝ) - 1 := by
+    round32 ((2 : ℝ) - 1) = (2 : ℝ) - 1 := by
   have hOne : neuralGenericFormat binaryRadix fexp32 (1 : ℝ) := by
     simpa [neuralBpow, binaryRadix, NeuralRadix.toReal] using
       (neural_generic_format_bpow (β := binaryRadix) (fexp := fexp32) 0
@@ -137,7 +137,7 @@ theorem posOne_ulpExp : ulpExp? posOne = some (-23) := by
 
 /-- The computed exponent therefore denotes the mathematical ULP at `1.0`. -/
 theorem posOne_ulp :
-    neuralBpow binaryRadix (-23) = ulp₃₂ (toReal posOne) :=
+    neuralBpow binaryRadix (-23) = ulp32 (toReal posOne) :=
   neuralBpow_eq_ulp32_of_ulpExp?_eq_some posOne_ulpExp
 
 /-- NaN and infinity have no finite ULP exponent. -/
@@ -152,7 +152,7 @@ theorem posOne_absorbs_posMinSubnormal : absorbs posOne posMinSubnormal = true :
 The executable absorption result transports to the rounded-real binary32 specification.
 -/
 theorem posOne_add_posMinSubnormal_rounds_to_posOne :
-    round₃₂ (toReal posOne + toReal posMinSubnormal) = toReal posOne := by
+    round32 (toReal posOne + toReal posMinSubnormal) = toReal posOne := by
   exact round32_add_eq_left_of_absorbs_of_isFinite
     (by decide) (by decide) (by decide) posOne_absorbs_posMinSubnormal
 
@@ -235,7 +235,7 @@ theorem signedQuarterQuantizer_error (x : ℝ)
 
 /-- Four valid codes, represented with the same shape-indexed tensor used by TorchLean models. -/
 def quarterCodes : Spec.Tensor ℤ vectorShape :=
-  Spec.vectorTensor (fun i => i.val)
+  Spec.Tensor.vector (fun i => i.val)
 
 /-- Pointwise tensor Q/DQ is exact on an in-range code tensor. -/
 theorem quarterCodes_roundtrip :

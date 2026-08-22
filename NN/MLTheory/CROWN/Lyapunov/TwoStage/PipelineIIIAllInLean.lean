@@ -56,53 +56,43 @@ open NN.MLTheory.CROWN
 open NN.MLTheory.CROWN.Lyapunov.TwoStage.Core
 open NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils
 
-abbrev α : Type := IEEE32Exec
+local notation "Scalar" => IEEE32Exec
 
-abbrev xDim : Nat := Core.xDim
-abbrev uDim : Nat := Core.uDim
-
-abbrev xShape : Shape := Core.xShape
-abbrev uShape : Shape := Core.uShape
-
-abbrev paramShapes (width : Nat) : List Shape :=
-  Core.paramShapes width
-
-/-- Local alias for `ExecUtils.nat` (coercion `Nat → IEEE32Exec`). -/
-abbrev nat (k : Nat) : α := ExecUtils.nat k
 
 /-- Learning rate for the stage-1 and stage-2 SGD loops. -/
-def lr : α := ExecUtils.defaultLr
+def lr : Scalar := ExecUtils.defaultLr
 
 /-- PGD step size when searching for counterexample-ish inputs. -/
-def pgdStepSize : α := ExecUtils.defaultPgdStepSize
+def pgdStepSize : Scalar := ExecUtils.defaultPgdStepSize
 
 /-- Radius of the training box `[-rad, rad]^2` (also used for clamping PGD iterates). -/
-def rad : α := ExecUtils.defaultRad
+def rad : Scalar := ExecUtils.defaultRad
 
 /-- Half-width of the small box around the origin used for the final IBP/CROWN post-check. -/
-def epsCheck : α := ExecUtils.defaultEpsCheck
+def epsCheck : Scalar := ExecUtils.defaultEpsCheck
 
 def lossProg (width : Nat) :
     ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
-      TorchLean.Program β (paramShapes width ++ [xShape]) Shape.scalar :=
+      TorchLean.Program β (Core.paramShapes width ++ [Core.xShape]) Shape.scalar :=
   Core.lossProgram width
 
-def initParamsF (width : Nat) : _root_.TorchLean.TensorPack Float (paramShapes width) :=
-  let wC : Tensor Float (.dim uDim (.dim xDim .scalar)) :=
-    _root_.Runtime.Autograd.Torch.Init.xavierW uDim xDim (seed := 0)
-  let bC : Tensor Float (.dim uDim .scalar) :=
-    _root_.Runtime.Autograd.Torch.Init.tensor (s := .dim uDim .scalar) (sch := .zeros) (seed := 1)
-  let w1 : Tensor Float (.dim width (.dim xDim .scalar)) :=
-    _root_.Runtime.Autograd.Torch.Init.xavierW width xDim (seed := 2)
+def initParamsF (width : Nat) : _root_.TorchLean.TensorPack Float (Core.paramShapes width) :=
+  let wC : Tensor Float (.dim Core.uDim (.dim Core.xDim .scalar)) :=
+    _root_.Runtime.Autograd.Torch.Init.xavierW Core.uDim Core.xDim (seed := 0)
+  let bC : Tensor Float (.dim Core.uDim .scalar) :=
+    _root_.Runtime.Autograd.Torch.Init.tensor (s := .dim Core.uDim .scalar) (sch := .zeros)
+      (seed := 1)
+  let w1 : Tensor Float (.dim width (.dim Core.xDim .scalar)) :=
+    _root_.Runtime.Autograd.Torch.Init.xavierW width Core.xDim (seed := 2)
   let b1 : Tensor Float (.dim width .scalar) :=
     _root_.Runtime.Autograd.Torch.Init.tensor (s := .dim width .scalar) (sch := .zeros) (seed := 3)
   let w2 : Tensor Float (.dim 1 (.dim width .scalar)) :=
     _root_.Runtime.Autograd.Torch.Init.xavierW 1 width (seed := 4)
   let b2 : Tensor Float (.dim 1 .scalar) :=
     _root_.Runtime.Autograd.Torch.Init.tensor (s := .dim 1 .scalar) (sch := .zeros) (seed := 5)
-  tensorpack! wC, bC, w1, b1, w2, b2
+  TensorPack! wC, bC, w1, b1, w2, b2
 
-def objectiveDef (width : Nat) : TorchLean.Module.ObjectiveDef (paramShapes width) [xShape]
+def objectiveDef (width : Nat) : TorchLean.Module.ObjectiveDef (Core.paramShapes width) [Core.xShape]
   :=
   { initState := initParamsF width
     loss := Core.lossProgram width }
@@ -122,20 +112,21 @@ def run (width : Nat) (args : List String) : IO Unit := do
   IO.println
     s!"width={width} stage1Steps={stage1Steps} stage2Rounds={stage2Rounds} pgdSteps={pgdSteps}"
 
-  let mod ← TorchLean.Module.ObjectiveDef.instantiate (α := α) (objectiveDef width)
+  let mod ← TorchLean.Module.ObjectiveDef.instantiate (α := Scalar) (objectiveDef width)
     IEEE32Exec.ofFloat .typedGraph
   let tr := mod.trainer
   let cLoss ← TorchLean.Autodiff.lowerScalarToTypedGraph
-    (α := α) (paramShapes := paramShapes width) (inputShapes := [xShape]) (lossProg width)
+    (α := Scalar) (paramShapes := Core.paramShapes width) (inputShapes := [Core.xShape])
+      (lossProg width)
 
   -- Stage 1: initialization pass on random x in [-rad, rad]^2
   let mut seed : UInt64 := 1
   for i in [0:stage1Steps] do
     let (seed', x) := sampleStateVector seed rad
     seed := seed'
-    let xs : _root_.TorchLean.TensorPack α [xShape] := tensorpack! x
-    let currentLoss := _root_.Runtime.Autograd.Torch.scalarOf (←
-      _root_.Runtime.Autograd.Torch.ScalarTrainer.lossPacked tr xs .nil)
+    let xs : _root_.TorchLean.TensorPack Scalar [Core.xShape] := TensorPack! x
+    let currentLoss := (←
+      _root_.Runtime.Autograd.Torch.ScalarTrainer.lossPacked tr xs .nil).item
     _root_.Runtime.Autograd.Torch.ScalarTrainer.stepPacked tr lr xs .nil
     if i % 5 = 0 then
       IO.println s!"[stage1] step {i}: loss={currentLoss}"
@@ -149,9 +140,9 @@ def run (width : Nat) (args : List String) : IO Unit := do
     for _k in [0:pgdSteps] do
       x := LossAnalysis.projectedGradientStep
         width cLoss params x pgdStepSize rad
-    let xs : _root_.TorchLean.TensorPack α [xShape] := tensorpack! x
-    let lossFound := _root_.Runtime.Autograd.Torch.scalarOf (←
-      _root_.Runtime.Autograd.Torch.ScalarTrainer.lossPacked tr xs .nil)
+    let xs : _root_.TorchLean.TensorPack Scalar [Core.xShape] := TensorPack! x
+    let lossFound := (←
+      _root_.Runtime.Autograd.Torch.ScalarTrainer.lossPacked tr xs .nil).item
     _root_.Runtime.Autograd.Torch.ScalarTrainer.stepPacked tr lr xs .nil
     IO.println s!"[stage2] round {round}: loss={lossFound}"
 

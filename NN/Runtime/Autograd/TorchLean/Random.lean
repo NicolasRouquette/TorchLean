@@ -87,12 +87,12 @@ def sampleUnit {α : Type} [Context α] (u denom : Nat) : α :=
 /-- Decide whether to keep an element given `keepProb` and a sample `u ∈ [0, denom)`. -/
 def keepBit {α : Type} [Context α] (keepProb : α) (u denom : Nat) : α :=
   let uα : α := sampleUnit (α := α) u denom
-  have : Decidable (keepProb > uα) := (Context.decidable_gt) keepProb uα
+  have : Decidable (keepProb > uα) := (Context.decidableGT) keepProb uα
   if keepProb > uα then (1 : α) else (0 : α)
 
 /-! ### Uniform tensors -/
 
-/--
+/-
 Build a deterministic tensor with entries in `[0,1)` (discrete grid `u/denom`) with the requested
 shape.
 
@@ -100,7 +100,9 @@ This is keyed by:
 - `key` (typically derived from a seed and a counter), and
 - `linearOffset` (to make recursion order-insensitive).
 -/
-def uniformAux {α : Type} [Context α] (key : UInt64) :
+namespace Internal
+
+def uniform {α : Type} [Context α] (key : UInt64) :
     ∀ {s : Shape}, Nat → Tensor α s
   | .scalar, linearOffset =>
       let denom : Nat := (2:Nat) ^ 32
@@ -109,15 +111,17 @@ def uniformAux {α : Type} [Context α] (key : UInt64) :
   | .dim _n rest, linearOffset =>
       let block := Spec.Shape.size rest
       Tensor.dim (fun i =>
-        uniformAux (α := α) key (s := rest) (linearOffset + i.1 * block))
+        uniform (α := α) key (s := rest) (linearOffset + i.1 * block))
+
+end Internal
 
 /-- Build a uniform tensor over the whole shape, starting the deterministic stream at offset `0`. -/
 def uniform {α : Type} [Context α] (key : UInt64) {s : Shape} : Tensor α s :=
-  uniformAux (α := α) key (s := s) 0
+  Internal.uniform (α := α) key (s := s) 0
 
 /-! ### Mask construction -/
 
-/--
+/-
 Build a dropout-style mask with entries in `{0,1}` and the same shape as the target tensor.
 
 The mask is deterministic given:
@@ -125,7 +129,9 @@ The mask is deterministic given:
 - `keepProb` (probability of keeping a unit),
 - `linearOffset` (typically `0` for the whole tensor).
 -/
-def maskAux {α : Type} [Context α] (key : UInt64) (keepProb : α) :
+namespace Internal
+
+def mask {α : Type} [Context α] (key : UInt64) (keepProb : α) :
     ∀ {s : Shape}, Nat → Tensor α s
   | .scalar, linearOffset =>
       let denom : Nat := (2:Nat) ^ 32
@@ -134,11 +140,13 @@ def maskAux {α : Type} [Context α] (key : UInt64) (keepProb : α) :
   | .dim _n rest, linearOffset =>
       let block := Spec.Shape.size rest
       Tensor.dim (fun i =>
-        maskAux (α := α) key keepProb (s := rest) (linearOffset + i.1 * block))
+        mask (α := α) key keepProb (s := rest) (linearOffset + i.1 * block))
+
+end Internal
 
 /-- Build a dropout-style mask over the whole shape, starting the stream at offset `0`. -/
 def mask {α : Type} [Context α] (key : UInt64) (keepProb : α) {s : Shape} : Tensor α s :=
-  maskAux (α := α) key keepProb (s := s) 0
+  Internal.mask (α := α) key keepProb (s := s) 0
 
 /-! ### Standard normal tensors -/
 
@@ -176,24 +184,28 @@ def normalScalar {α : Type} [Context α] (key : UInt64) (linearIndex : Nat) : �
   let u2 : α := sampleUnit (α := α) u2n denom
   boxMullerCos (α := α) u1 u2
 
-/--
+/-
 Build a deterministic tensor with (approximate) standard normal entries.
 
-As with `uniformAux`, this is order-insensitive: the recursion uses `linearOffset` plus a
+The recursion is order-insensitive: it uses `linearOffset` plus a
 block-size multiplier so the same tensor shape always yields the same samples.
 -/
-def normalAux {α : Type} [Context α] (key : UInt64) :
+namespace Internal
+
+def normal {α : Type} [Context α] (key : UInt64) :
     ∀ {s : Shape}, Nat → Tensor α s
   | .scalar, linearOffset =>
       Tensor.scalar (normalScalar (α := α) key linearOffset)
   | .dim _n rest, linearOffset =>
       let block := Spec.Shape.size rest
       Tensor.dim (fun i =>
-        normalAux (α := α) key (s := rest) (linearOffset + i.1 * block))
+        normal (α := α) key (s := rest) (linearOffset + i.1 * block))
+
+end Internal
 
 /-- Build a standard-normal tensor over the whole shape, starting the stream at offset `0`. -/
 def normal {α : Type} [Context α] (key : UInt64) {s : Shape} : Tensor α s :=
-  normalAux (α := α) key (s := s) 0
+  Internal.normal (α := α) key (s := s) 0
 
 end Random
 end TorchLean

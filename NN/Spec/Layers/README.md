@@ -8,13 +8,14 @@ verification passes should be able to point back here when they need the mathema
 operation. For layers used by reverse-mode training, the spec layer also records derivative or VJP
 rules so the backward meaning is visible.
 
-Most models in `NN/Spec/Models/*` are built by composing these layer specs, sometimes through the
-`NN/Spec/Module/*` wrappers that provide the `NNModuleSpec` interface for `SpecChain`.
+Most models in `NN/Spec/Models/*` compose these layer definitions directly or package them as
+shape-indexed `Spec.Module`s and `Spec.Module.Chain`s.
 
 Files:
 
 - `Activation.lean`: scalar activation formulas under `Activation.Math`, tensor activation wrappers,
-  real last-axis softmax/log-softmax, and VJP specs.
+  axis-indexed softmax/log-softmax and their VJPs, plus final-axis primitives used by row-oriented
+  backends.
 - `Linear.lean`: fully connected layer spec ($y=Wx+b$) and gradients.
 - `Attention.lean`: scaled dot product attention and multihead attention with hard-mask semantics;
   blocked weights are exactly zero, and a fully blocked row evaluates to the zero vector

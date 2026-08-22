@@ -45,7 +45,7 @@ Why each optimizer has its own `State` structure:
   projection backend.
 - Keeping these as separate typed states makes impossible states unrepresentable. For example, an
   SGD state cannot accidentally contain a stale Adam `v` buffer, and AdamW cannot forget its
-  decoupled `weight_decay` coefficient.
+  decoupled `weightDecay` coefficient.
 
 The generic abstraction lives one layer up:
 - `Runtime.Autograd.TorchLean.Optim.Optimizer` packages `init`/`step` for shape-indexed parameter
@@ -346,7 +346,7 @@ structure AdamW.State (α : Type) (s : Shape) where
   /-- Numerical stability constant $\varepsilon$. -/
   epsilon : α
   /-- Weight decay coefficient `wd`. -/
-  weight_decay : α
+  weightDecay : α
   /-- First moment EMA. -/
   m : Tensor α s
   /-- Second moment EMA. -/
@@ -356,11 +356,11 @@ structure AdamW.State (α : Type) (s : Shape) where
 
 /-- Initialize AdamW state for a parameter tensor (moments start at `0`). -/
 def AdamW.init {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] {s : Shape}
-  (lr : α) (weight_decay : α) (beta1 : α) (beta2 : α) (epsilon : α) (_ : Tensor α s) : AdamW.State α
+  (lr : α) (weightDecay : α) (beta1 : α) (beta2 : α) (epsilon : α) (_ : Tensor α s) : AdamW.State α
     s :=
   {
     lr := lr,
-    weight_decay := weight_decay,
+    weightDecay := weightDecay,
     beta1 := beta1,
     beta2 := beta2,
     epsilon := epsilon,
@@ -397,7 +397,7 @@ def AdamW.update {α : Type} [Context α] [DecidableRel ((· > ·) : α → α �
   let adaptiveLR := OptimizerUtils.mkAdaptiveLR state.lr state.epsilon v_hat
 
   -- Decoupled weight decay on parameters, then the Adam step.
-  let decayedParams := subSpec params (scaleSpec params (state.lr * state.weight_decay))
+  let decayedParams := subSpec params (scaleSpec params (state.lr * state.weightDecay))
   let newParams := subSpec decayedParams (mulSpec adaptiveLR m_hat)
 
   ({ state with m := m', v := v', t := t' }, newParams)
@@ -441,9 +441,9 @@ One Adadelta step (returns updated state and parameters).
 Elementwise equations:
 
 - $v\gets\rho v+(1-\rho)g^2$,
-- $\Delta p\gets-\mathtt{lr}\,
+- $\Delta p\gets
   \dfrac{\sqrt{u+\varepsilon}}{\sqrt{v+\varepsilon}}\odot g$,
-- $p\gets p+\Delta p$,
+- $p\gets p-\mathtt{lr}\,\Delta p$,
 - $u\gets\rho u+(1-\rho)(\Delta p)^2$.
 
 The $\varepsilon$ placement is inside the RMS terms, matching Zeiler's Adadelta update.
@@ -459,10 +459,10 @@ def Adadelta.update {α : Type} [Context α] [DecidableRel ((· > ·) : α → �
   let rmsU := sqrtSpec (addSpec state.u epsT)
 
   let ratio := divSpec rmsU rmsV
-  let delta := scaleSpec (mulSpec ratio grads) (-state.lr)
-  let newParams := addSpec params delta
+  let update := mulSpec ratio grads
+  let newParams := subSpec params (scaleSpec update state.lr)
 
-  let newU := addSpec (scaleSpec state.u state.rho) (scaleSpec (squareSpec delta) (1 -
+  let newU := addSpec (scaleSpec state.u state.rho) (scaleSpec (squareSpec update) (1 -
     state.rho))
   ({ state with v := newV, u := newU }, newParams)
 

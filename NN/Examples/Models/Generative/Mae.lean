@@ -90,10 +90,9 @@ The command crops CIFAR images to `2×2`, uses one image patch, and reconstructs
 flattened image. That keeps MAE in the runnable quick-check suite while still checking the patch masking,
 patch embedding, transformer token, decoder, data loading, and CUDA training path.
 -/
-def cfg : nn.models.ViTMAEConfig 2 :=
+def cfg : nn.models.VitMaeConfig 2 :=
   { encoder :=
-      { batch := batch
-        inChannels := inC
+      { inChannels := inC
         spatial := #v[inH, inW]
         patch :=
           { outChannels := dModel
@@ -118,11 +117,14 @@ def maskPeriod : Nat := 4
 /-- Phase of the deterministic patch mask. Changing this selects a different patch-index class. -/
 def maskOffset : Nat := 0
 
+/-- Leading sample axis used by this batched training example. -/
+abbrev batchShape : Shape := .dim batch .scalar
+
 /-- Input shape: a real batched CIFAR image tensor. -/
-abbrev σ := nn.models.vitMaeInShape cfg
+abbrev σ := cfg.inputShape batchShape
 
 /-- Output shape: flattened image reconstruction. -/
-abbrev τ := nn.models.vitMaeOutShape cfg
+abbrev τ := cfg.outputShape batchShape
 
 /-- CIFAR-10 images are stored as `3 × 32 × 32` tensors. -/
 def cifarClasses : Nat := RealData.cifarClasses
@@ -134,11 +136,11 @@ The architecture lives in the public self-supervised model API; this example onl
 loads data, and trains it.
 -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.vitMaskedAutoencoder cfg
+  nn.models.vitMaskedAutoencoder cfg batchShape
     (h_inC := by decide)
     (h_seqLen := by
-      norm_num [nn.models.ViTMAEConfig.seqLen, nn.models.ViTConfig.seqLen,
-        nn.models.ViTConfig.patchSpatial, cfg, Spec.convOutSpatial,
+      norm_num [nn.models.VitMaeConfig.seqLen, nn.models.VitConfig.seqLen,
+        nn.models.VitConfig.patchSpatial, cfg, Spec.convOutSpatial,
         Spec.Shape.slidingWindowOutDim,
         inH, inW, patchH, patchW, stride, padding, Spec.Shape.ofList, Spec.Shape.size,
         Vector.get, Vector.toList, Vector.ofFn])
@@ -151,11 +153,11 @@ The input stays an image tensor with some patches zeroed out. The target is the 
 flattened to a vector because the current decoder head predicts a batched matrix.
 -/
 def mkMaeSample
-    (b : SupervisedSample Float
-      (.dim cfg.encoder.batch (.dim cfg.encoder.inChannels (.dim inH (.dim inW .scalar))))
-      (.dim cfg.encoder.batch (.dim RealData.cifarClasses .scalar))) :
-  SupervisedSample Float σ τ :=
-  ssl.BlockMAE.sample cfg.encoder.batch cfg.reconDim
+    (b : Sample.Supervised Float
+      (.dim batch (.dim cfg.encoder.inChannels (.dim inH (.dim inW .scalar))))
+      (.dim batch (.dim RealData.cifarClasses .scalar))) :
+  Sample.Supervised Float σ τ :=
+  ssl.BlockMAE.sample (.dim batch .scalar) cfg.reconDim
     #v[cfg.encoder.inChannels, inH, inW]
     #v[none, some patchH, some patchW]
     maskPeriod maskOffset (by decide) (Sample.x b)
@@ -167,12 +169,12 @@ Like the compact vector generative examples, the sample itself is loaded as `Flo
 data boundary, then cast into the runtime-selected scalar by the public dataset constructor.
 -/
 def data (flags : RealData.CifarModelTrainFlags) : Trainer.DataSource σ τ :=
-  Data.ioSingletonFloat do
-    let batch ←
-      RealData.loadCifarBatch exeName cfg.encoder.batch flags.nRows flags.seed
+  Data.singletonFloatIO do
+    let sampleBatch ←
+      RealData.loadCifarBatch exeName batch flags.nRows flags.seed
         flags.xPath flags.yPath
     pure <| mkMaeSample <|
-      RealData.cropCifarBatch cfg.encoder.batch inH inW (by decide) (by decide) batch
+      RealData.cropCifarBatch batch inH inW (by decide) (by decide) sampleBatch
 
 /-- Train the compact MAE model with the public `Trainer` surface. -/
 def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
@@ -191,7 +193,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
     (data flags)
     (CLI.Training.OptimizerOptions.toTrainerOptions flags.toOptimizerOptions
       (title := "MAE CIFAR masked reconstruction")
-      (notes := RealData.cifarClassifierNotes cfg.encoder.batch flags
+      (notes := RealData.cifarClassifierNotes batch flags
         #[s!"maskPeriod={maskPeriod}", s!"maskOffset={maskOffset}"]))
 
 /--

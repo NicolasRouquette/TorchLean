@@ -33,7 +33,7 @@ theorem round32_sub_exact_of_sterbenz {u v : ℝ}
     (hu : neuralGenericFormat binaryRadix fexp32 u)
     (hv : neuralGenericFormat binaryRadix fexp32 v)
     (hupos : 0 < u) (hvpos : 0 < v) (huv : u ≤ 2 * v) (hvu : v ≤ 2 * u) :
-    round₃₂ (u - v) = u - v := by
+    round32 (u - v) = u - v := by
   have hfmt : neuralGenericFormat binaryRadix fexp32 (u - v) :=
     neural_generic_format_FLT_sterbenz (-149) 24 (by decide) hupos hvpos huv hvu hu hv
   exact neural_round_preserves_generic (β := binaryRadix) (fexp := fexp32) rnd32 (u - v) hfmt
@@ -48,7 +48,7 @@ theorem sub_exact_of_sterbenz {a b : FP32}
     (hapos : 0 < a.val) (hbpos : 0 < b.val)
     (hab : a.val ≤ 2 * b.val) (hba : b.val ≤ 2 * a.val) :
     (a - b).val = a.val - b.val := by
-  change round₃₂ (a.val - b.val) = a.val - b.val
+  change round32 (a.val - b.val) = a.val - b.val
   exact round32_sub_exact_of_sterbenz ha hb hapos hbpos hab hba
 
 end FP32

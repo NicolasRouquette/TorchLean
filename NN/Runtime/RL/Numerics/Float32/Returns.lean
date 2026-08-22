@@ -249,7 +249,7 @@ def discountedReturnsChecked {n : Nat}
     (bootstrap : Float32Exec := (0 : Float32Exec)) :
     Except String (Tensor Float32Exec (.dim n .scalar)) := do
   let rArr : Array Float32Exec :=
-    Array.ofFn (fun i : Fin n => Tensor.toScalar (get rewards i))
+    Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
 
   let mut out : Array Float32Exec := Array.replicate n (0 : Float32Exec)
   let mut g : Float32Exec := bootstrap

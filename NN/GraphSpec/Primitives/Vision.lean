@@ -69,7 +69,7 @@ lists concatenate, giving a typed “ABI” for model parameters.
 namespace NN
 namespace GraphSpec
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 open NN.Tensor
 
@@ -104,7 +104,7 @@ def conv2d
     specFwd := fun {α} _ctx params x =>
       match params with
       | .cons k (.cons b .nil) =>
-          let layer : Spec.Conv2DSpec inC outC kH kW stride padding α h_inC h_kH h_kW :=
+          let layer : Spec.Conv2dSpec inC outC kH kW stride padding α h_inC h_kH h_kW :=
             { kernel := k, bias := b }
           Spec.conv2dSpec (α := α) (inH := inH) (inW := inW) layer x
     program := fun {α} _ctx _deq =>
@@ -126,7 +126,7 @@ def conv2d
   }
 
 /--
-MaxPool2D on `CHW` tensors (parameter-free).
+MaxPool2d on `CHW` tensors (parameter-free).
 
 Output shapes follow the standard pooling size formulas:
 
@@ -142,7 +142,7 @@ def maxPool2d
       (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))) :=
   { name := s!"max_pool2d(k={kH}x{kW},s={stride})"
     specFwd := fun {α} _ctx _params x =>
-      let layer : Spec.MaxPool2DSpec kH kW stride h_kH h_kW hStride := {}
+      let layer : Spec.MaxPool2dSpec kH kW stride h_kH h_kW hStride := {}
       Spec.maxPool2dMultiSpec (layer := layer) x
     program := fun {α} _ctx _deq =>
       fun {m} _ _ =>

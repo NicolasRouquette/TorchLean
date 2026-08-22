@@ -46,7 +46,7 @@ abbrev Result (α : Type) := Except String α
 /--
 Runtime, shape-erased CUDA buffer.
 
-This plays the same role as `Runtime.AnyTensor` in the CPU tape: it pairs runtime `Shape`
+This plays the same role as `Spec.PackedTensor` in the CPU tape: it pairs runtime `Shape`
 metadata with an opaque `Cuda.Buffer` handle.
 -/
 structure AnyBuffer where
@@ -132,7 +132,7 @@ structure Node where
   /-- Forward value computed at this node. -/
   value : AnyBuffer
   /-- Whether reverse-mode propagation should visit this node. -/
-  requires_grad : Bool := true
+  requiresGrad : Bool := true
   /-- Parent node ids (dependencies) in the tape. -/
   parents : List Nat := []
   /--
@@ -199,12 +199,12 @@ This low-level constructor records `value` without validating its external buffe
 an externally supplied `Buffer` must call `AnyBuffer.validate` first; tape operations validate
 their operands again when they retrieve values.
 -/
-def leaf (t : Tape) (value : AnyBuffer) (name : Option String := none) (requires_grad : Bool := true) :
+def leaf (t : Tape) (value : AnyBuffer) (name : Option String := none) (requiresGrad : Bool := true) :
     Tape × Nat :=
   t.addNode
     { name := name
       value := value
-      requires_grad := requires_grad
+      requiresGrad := requiresGrad
       parents := []
       backward := fun _ => .ok [] }
 
@@ -258,7 +258,7 @@ def unary
   let node : Node :=
     { name := some opName
       value := { s := τ, buf := y }
-      requires_grad := true
+      requiresGrad := true
       parents := [xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny τ
@@ -287,7 +287,7 @@ def binary
   let node : Node :=
     { name := some opName
       value := { s := τ, buf := y }
-      requires_grad := true
+      requiresGrad := true
       parents := [aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny τ
@@ -317,7 +317,7 @@ def addGradAll (t : Tape) (grads : Array AnyBuffer) (id : Nat) (g : AnyBuffer) :
   let node ← match t.getNode? id with
     | some n => pure n
     | none => throw "autograd: invalid parent id during backward"
-  if node.requires_grad = false then
+  if node.requiresGrad = false then
     let existing ← match grads[id]? with
       | some e => pure e
       | none => throw "autograd: internal error (gradient array out of bounds)"
@@ -377,7 +377,7 @@ def backwardDenseFromStep (t : Tape) (acc : Array AnyBuffer) (id : Nat) : Result
     let node ← match t.getNode? id with
       | some n => pure n
       | none => throw "autograd: internal error (node missing)"
-    if node.requires_grad = false then
+    if node.requiresGrad = false then
       pure acc
     else
       let dLdyAny ← match acc[id]? with
@@ -444,7 +444,7 @@ def backwardDenseReachableStep
     let node ← match t.getNode? id with
       | some n => pure n
       | none => throw "autograd: internal error (node missing)"
-    if node.requires_grad = false then
+    if node.requiresGrad = false then
       pure (reachable, grads)
     else
       let dLdyAny ← match grads[id]? with
@@ -541,7 +541,7 @@ def addSparseGrad (t : Tape) (gradsRef : IO.Ref SparseGradMap)
     | none =>
         releaseSparseBuffer g.buf
         throw <| IO.userError "autograd: invalid parent id during sparse CUDA backward"
-  if !node.requires_grad then
+  if !node.requiresGrad then
     releaseSparseBuffer g.buf
   else if _h : g.s = node.value.s then
     let contribution ← match AnyBuffer.validate { s := node.value.s, buf := g.buf } with
@@ -616,7 +616,7 @@ def backwardSparse (t : Tape) (outId : Nat) (seed : AnyBuffer)
             let node ← match t.getNode? id with
               | some node => pure node
               | none => throw <| IO.userError "autograd: internal sparse CUDA node missing"
-            if node.requires_grad then
+            if node.requiresGrad then
               let expectedSize := Spec.Shape.size node.value.s
               let actualSize := (← Buffer.sizeIO upstream.buf).toNat
               if actualSize != expectedSize then

@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Torch.Utils
+public import NN.Runtime.Autograd.Torch.Core
 public import NN.Runtime.Autograd.Train.Dataset
 
 /-!
@@ -16,7 +16,7 @@ Shape-indexed tensor packs and supervised samples.
 
 Main declarations:
 - `TorchLean.TensorPack`: a typed tuple of tensors.
-- `TorchLean.tensorpack.*`: constructors, projections, mapping, zipping, append, and split.
+- `TorchLean.TensorPack.*`: indexed access, mapping, zipping, append, and split.
 - `TorchLean.Sample.*`: supervised `(x, y)` samples and minibatch wrappers.
 
 These operations preserve the shapes carried by the underlying tensor-pack representation.
@@ -30,30 +30,7 @@ namespace TorchLean
 abbrev TensorPack (α : Type) (shapes : List Spec.Shape) :=
   _root_.Runtime.Autograd.Torch.TList α shapes
 
-namespace tensorpack
-
-/-- Construct a one-element tensor pack. -/
-abbrev singleton {α : Type} {s : Spec.Shape} (x : Spec.Tensor α s) : TensorPack α [s] :=
-  _root_.Runtime.Autograd.Torch.tlistSingleton x
-
-/-- Construct a two-element tensor pack. -/
-abbrev pair {α : Type} {s₁ s₂ : Spec.Shape}
-    (x₁ : Spec.Tensor α s₁) (x₂ : Spec.Tensor α s₂) :
-    TensorPack α [s₁, s₂] :=
-  _root_.Runtime.Autograd.Torch.tlistPair x₁ x₂
-
-/-- Construct a three-element tensor pack. -/
-abbrev triple {α : Type} {s₁ s₂ s₃ : Spec.Shape}
-    (x₁ : Spec.Tensor α s₁) (x₂ : Spec.Tensor α s₂) (x₃ : Spec.Tensor α s₃) :
-    TensorPack α [s₁, s₂, s₃] :=
-  _root_.Runtime.Autograd.Torch.tlistTriple x₁ x₂ x₃
-
-/-- Construct a four-element tensor pack. -/
-abbrev quad {α : Type} {s₁ s₂ s₃ s₄ : Spec.Shape}
-    (x₁ : Spec.Tensor α s₁) (x₂ : Spec.Tensor α s₂)
-    (x₃ : Spec.Tensor α s₃) (x₄ : Spec.Tensor α s₄) :
-    TensorPack α [s₁, s₂, s₃, s₄] :=
-  _root_.Runtime.Autograd.Torch.tlistQuad x₁ x₂ x₃ x₄
+namespace TensorPack
 
 /-- Map each tensor entry (shape-preserving). -/
 def map {α β : Type} (f : ∀ {s : Spec.Shape}, Spec.Tensor α s → Spec.Tensor β s) :
@@ -86,58 +63,12 @@ def split {α : Type} :
       let (xs₁, xs₂) := split (α := α) (ss₁ := ss₁) (ss₂ := ss₂) xs
       (.cons x xs₁, xs₂)
 
-/-- First element of a non-empty tensor pack. -/
-def first {α : Type} {s : Spec.Shape} {ss : List Spec.Shape} :
-    TensorPack α (s :: ss) → Spec.Tensor α s
-  | .cons x _ => x
+/-- Return the tensor at position `i`; its result shape is obtained from the pack's shape list. -/
+def get {α : Type} {ss : List Spec.Shape} (xs : TensorPack α ss) (i : Fin ss.length) :
+    Spec.Tensor α (ss.get i) :=
+  _root_.Proofs.Autograd.Algebra.TList.get xs i
 
-/-- Second element of a tensor pack with at least two entries. -/
-def second {α : Type} {s₀ s₁ : Spec.Shape} {ss : List Spec.Shape} :
-    TensorPack α (s₀ :: s₁ :: ss) → Spec.Tensor α s₁
-  | .cons _ (.cons x _) => x
-
-/-- Third element of a tensor pack with at least three entries. -/
-def third {α : Type} {s₀ s₁ s₂ : Spec.Shape} {ss : List Spec.Shape} :
-    TensorPack α (s₀ :: s₁ :: s₂ :: ss) → Spec.Tensor α s₂
-  | .cons _ (.cons _ (.cons x _)) => x
-
-/-- Fourth element of a tensor pack with at least four entries. -/
-def fourth {α : Type} {s₀ s₁ s₂ s₃ : Spec.Shape} {ss : List Spec.Shape} :
-    TensorPack α (s₀ :: s₁ :: s₂ :: s₃ :: ss) → Spec.Tensor α s₃
-  | .cons _ (.cons _ (.cons _ (.cons x _))) => x
-
-/-- Unpack a one-element tensor pack. -/
-def unpackSingleton {α : Type} {s : Spec.Shape} :
-    TensorPack α [s] → Spec.Tensor α s
-  | .cons x .nil => x
-
-/-- Unpack a two-element tensor pack into a Lean pair. -/
-def unpackPair {α : Type} {s₁ s₂ : Spec.Shape} :
-    TensorPack α [s₁, s₂] → (Spec.Tensor α s₁ × Spec.Tensor α s₂)
-  | .cons x₁ (.cons x₂ .nil) => (x₁, x₂)
-
-/-- Unpack a three-element tensor pack into a Lean triple. -/
-def unpackTriple {α : Type} {s₁ s₂ s₃ : Spec.Shape} :
-    TensorPack α [s₁, s₂, s₃] →
-      (Spec.Tensor α s₁ × Spec.Tensor α s₂ × Spec.Tensor α s₃)
-  | .cons x₁ (.cons x₂ (.cons x₃ .nil)) => (x₁, x₂, x₃)
-
-/-- Unpack a four-element tensor pack into a Lean tuple. -/
-def unpackQuad {α : Type} {s₁ s₂ s₃ s₄ : Spec.Shape} :
-    TensorPack α [s₁, s₂, s₃, s₄] →
-      (Spec.Tensor α s₁ × Spec.Tensor α s₂ × Spec.Tensor α s₃ × Spec.Tensor α s₄)
-  | .cons x₁ (.cons x₂ (.cons x₃ (.cons x₄ .nil))) => (x₁, x₂, x₃, x₄)
-
-/-- Construct a seven-element tensor pack. -/
-def septuple {α : Type}
-    {s₁ s₂ s₃ s₄ s₅ s₆ s₇ : Spec.Shape}
-    (x₁ : Spec.Tensor α s₁) (x₂ : Spec.Tensor α s₂) (x₃ : Spec.Tensor α s₃)
-    (x₄ : Spec.Tensor α s₄) (x₅ : Spec.Tensor α s₅) (x₆ : Spec.Tensor α s₆)
-    (x₇ : Spec.Tensor α s₇) :
-    TensorPack α [s₁, s₂, s₃, s₄, s₅, s₆, s₇] :=
-  .cons x₁ (.cons x₂ (.cons x₃ (.cons x₄ (.cons x₅ (.cons x₆ (.cons x₇ .nil))))))
-
-end tensorpack
+end TensorPack
 end TorchLean
 
 namespace TorchLean.Sample
@@ -153,7 +84,7 @@ abbrev Batch (α : Type) (n : Nat) (σ τ : Spec.Shape) :=
 /-- Build a supervised sample `(x, y)` as a two-tensor pack. -/
 def mk {α : Type} {σ τ : Spec.Shape} (x : Spec.Tensor α σ) (y : Spec.Tensor α τ) :
     Supervised α σ τ :=
-  TorchLean.tensorpack.pair x y
+  .cons x (.cons y .nil)
 
 /-- Build a batched supervised sample `(xBatch, yBatch)`. -/
 def batch {α : Type} {n : Nat} {σ τ : Spec.Shape}
@@ -163,16 +94,16 @@ def batch {α : Type} {n : Nat} {σ τ : Spec.Shape}
 
 /-- Extract the input tensor `x` from a supervised sample. -/
 def x {α : Type} {σ τ : Spec.Shape} (s : Supervised α σ τ) : Spec.Tensor α σ :=
-  TorchLean.tensorpack.first s
+  TorchLean.TensorPack.get s ⟨0, by simp⟩
 
 /-- Extract the target tensor `y` from a supervised sample. -/
 def y {α : Type} {σ τ : Spec.Shape} (s : Supervised α σ τ) : Spec.Tensor α τ :=
-  TorchLean.tensorpack.second s
+  TorchLean.TensorPack.get s ⟨1, by simp⟩
 
 /-- Unpack a supervised sample as the ordinary pair `(x, y)`. -/
 def toPair {α : Type} {σ τ : Spec.Shape} (s : Supervised α σ τ) :
     Spec.Tensor α σ × Spec.Tensor α τ :=
-  TorchLean.tensorpack.unpackPair s
+  (x s, y s)
 
 /-- `x` of a constructed supervised sample `mk x y` is `x`. -/
 @[simp] theorem x_mk {α : Type} {σ τ : Spec.Shape}
@@ -212,10 +143,3 @@ def mapXY {α : Type} {σ τ : Spec.Shape}
   mk (fx (x s)) (fy (y s))
 
 end TorchLean.Sample
-
-namespace TorchLean
-
-/-- One supervised-learning observation containing an input tensor and its target tensor. -/
-abbrev SupervisedSample := Sample.Supervised
-
-end TorchLean

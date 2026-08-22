@@ -8,7 +8,7 @@ module
 
 public import NN.API.TensorPack
 public import NN.API.Runtime
-public import NN.API.Neural.Heads
+public import NN.API.Neural.Builders
 
 import Mathlib.Algebra.Order.Algebra
 
@@ -82,13 +82,14 @@ def mse {τ : Spec.Shape}
     _root_.TorchLean.Loss.mse
       (m := m) (α := α) (s := τ) output target (reduction := reduction)
 
-/-- Cross-entropy between logits and one-hot targets. -/
+/-- Cross-entropy between logits and one-hot targets along the selected class dimension. -/
 def oneHotCrossEntropy {τ : Spec.Shape}
+    (axis : Nat) [Spec.Shape.AxisInBounds axis τ]
     (reduction : _root_.TorchLean.Loss.Reduction := .mean) :
     model.OutputLoss τ τ :=
   fun {α} _ _ => fun {m} _ _ logits target =>
     _root_.TorchLean.Loss.oneHotCrossEntropy
-      (m := m) (α := α) (s := τ) logits target (reduction := reduction)
+      (m := m) (α := α) (s := τ) axis logits target (reduction := reduction)
 
 /-- Stop gradients through the model output before evaluating `loss`. -/
 def detach {τ υ : Spec.Shape} (loss : model.OutputLoss τ υ) : model.OutputLoss τ υ :=
@@ -148,7 +149,7 @@ def gradState {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
     (α := α)
     (paramShapes := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes model)
     (inputShapes := [σ, υ])
-    (lossProgram model loss) state (tensorpack.pair x target)
+    (lossProgram model loss) state (.cons x (.cons target .nil))
 
 /-- Gradient of the loss w.r.t. the inputs (`x` and `target`). -/
 def gradInputs {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
@@ -161,7 +162,7 @@ def gradInputs {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
     (α := α)
     (paramShapes := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes model)
     (inputShapes := [σ, υ])
-    (lossProgram model loss) state (tensorpack.pair x target)
+    (lossProgram model loss) state (.cons x (.cons target .nil))
 
 /-- Convenience: gradient of the loss w.r.t. `x`. -/
 def gradX {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
@@ -171,7 +172,7 @@ def gradX {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
     (x : Spec.Tensor α σ) (target : Spec.Tensor α υ) :
     IO (Spec.Tensor α σ) := do
   let gxs ← gradInputs (model := model) (loss := loss) (α := α) state x target
-  pure (tensorpack.first gxs)
+  pure (TensorPack.get gxs ⟨0, by simp⟩)
 
 /-- Convenience: gradient of the loss w.r.t. the `target` argument. -/
 def gradTarget {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
@@ -181,7 +182,7 @@ def gradTarget {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
     (x : Spec.Tensor α σ) (target : Spec.Tensor α υ) :
     IO (Spec.Tensor α υ) := do
   let gxs ← gradInputs (model := model) (loss := loss) (α := α) state x target
-  pure (tensorpack.second gxs)
+  pure (TensorPack.get gxs ⟨1, by simp⟩)
 
 /--
 Forward+backward result for a scalar loss built from a model output.
@@ -220,7 +221,8 @@ def valueAndGrads {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
       (lossProgram model loss)
 
   let args : _root_.TorchLean.TensorPack α (stateShapes ++ [σ, υ]) :=
-    tensorpack.append (ss₁ := stateShapes) (ss₂ := [σ, υ]) state (tensorpack.pair x target)
+    TensorPack.append (ss₁ := stateShapes) (ss₂ := [σ, υ]) state
+      (.cons x (.cons target .nil))
 
   let value : Spec.Tensor α Spec.Shape.scalar :=
     _root_.Runtime.Autograd.Torch.TypedScalarGraph.forward (α := α) (Γ := stateShapes ++ [σ, υ]) c
@@ -231,13 +233,13 @@ def valueAndGrads {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
       args
 
   let (dps, dxys) :=
-    tensorpack.split (α := α) (ss₁ := stateShapes) (ss₂ := [σ, υ]) gAll
+    TensorPack.split (α := α) (ss₁ := stateShapes) (ss₂ := [σ, υ]) gAll
 
   pure
     { value := value
       dState := dps
-      dx := tensorpack.first dxys
-      dtarget := tensorpack.second dxys }
+      dx := TensorPack.get dxys ⟨0, by simp⟩
+      dtarget := TensorPack.get dxys ⟨1, by simp⟩ }
 
 /-- Return the scalar loss tensor together with gradients for the complete model state. -/
 def valueAndGradState {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
@@ -257,7 +259,7 @@ def valueAndGradStateScalar {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ
     (x : Spec.Tensor α σ) (target : Spec.Tensor α υ) :
     IO (α × State model α) := do
   let (valueT, dps) ← valueAndGradState (model := model) (loss := loss) (α := α) state x target
-  pure (Spec.Tensor.toScalar valueT, dps)
+  pure (Spec.Tensor.item valueT, dps)
 
 /-- Return `(loss_value, grad_x)`. -/
 def valueAndGradX {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
@@ -296,7 +298,7 @@ def vjpState {σ τ : Spec.Shape} (model : nn.Sequential σ τ)
     (inputShapes := [σ]) (τ := τ)
     (fun {β} _ _ =>
       _root_.Runtime.Autograd.TorchLean.NN.Seq.forward model (α := β))
-    state (tensorpack.singleton x) seedOut
+    state (.cons x .nil) seedOut
 
 /--
 VJP w.r.t. the model input.
@@ -315,7 +317,7 @@ def vjpInputs {σ τ : Spec.Shape} (model : nn.Sequential σ τ)
     (inputShapes := [σ]) (τ := τ)
     (fun {β} _ _ =>
       _root_.Runtime.Autograd.TorchLean.NN.Seq.forward model (α := β))
-    state (tensorpack.singleton x) seedOut
+    state (.cons x .nil) seedOut
 
 /-- Vector-Jacobian product with respect to the single model input tensor. -/
 def vjpInput {σ τ : Spec.Shape} (model : nn.Sequential σ τ)
@@ -324,7 +326,7 @@ def vjpInput {σ τ : Spec.Shape} (model : nn.Sequential σ τ)
     (x : Spec.Tensor α σ) (seedOut : Spec.Tensor α τ) :
     IO (Spec.Tensor α σ) := do
   let dxs ← vjpInputs (model := model) (α := α) state x seedOut
-  pure (tensorpack.unpackSingleton dxs)
+  pure (TensorPack.get dxs ⟨0, by simp⟩)
 
 /--
 Reverse-mode Jacobian (`jacrev`) of the model output with respect to model state.
@@ -343,7 +345,7 @@ def jacrevState {σ τ : Spec.Shape} (model : nn.Sequential σ τ)
     (inputShapes := [σ]) (τ := τ)
     (fun {β} _ _ =>
       _root_.Runtime.Autograd.TorchLean.NN.Seq.forward model (α := β))
-    state (tensorpack.singleton x)
+    state (.cons x .nil)
 
 /--
 Jacobian-vector product (JVP) of a scalar loss with respect to model state.
@@ -367,7 +369,7 @@ def jvpState {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
     (α := α)
     (paramShapes := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes model)
     (inputShapes := [σ, υ])
-    (lossProgram model loss) state (tensorpack.pair x target) vState
+    (lossProgram model loss) state (.cons x (.cons target .nil)) vState
 
 /--
 Hessian-vector product (HVP) of a scalar loss with respect to model state.
@@ -385,7 +387,7 @@ def hvpState {σ τ υ : Spec.Shape} (model : nn.Sequential σ τ) (loss :
     (α := α)
     (paramShapes := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes model)
     (inputShapes := [σ, υ])
-    (lossProgram model loss) state (tensorpack.pair x target) vState
+    (lossProgram model loss) state (.cons x (.cons target .nil)) vState
 end model
 
 namespace func
@@ -400,7 +402,7 @@ In PyTorch terms, this is the "functorch" style: differentiate plain functions, 
 -/
 
 /-- A scalar-polymorphic tensor function written against TorchLean's differentiable operations. -/
-abbrev Fn (σ τ : Spec.Shape) :=
+abbrev TensorFunction (σ τ : Spec.Shape) :=
   ∀ {α : Type}, [Context α] → [DecidableEq Spec.Shape] →
     {m : Type → Type} → [Monad m] →
       [_root_.Runtime.Autograd.Torch.Ops (m := m) (α := α)] →
@@ -408,7 +410,7 @@ abbrev Fn (σ τ : Spec.Shape) :=
       m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) τ)
 
 /-- Adapt a tensor function to the single-input program representation used by autograd. -/
-def forwardProgram {σ τ : Spec.Shape} (f : Fn σ τ) :
+def forwardProgram {σ τ : Spec.Shape} (f : TensorFunction σ τ) :
     ∀ {α : Type}, [Context α] → [DecidableEq Spec.Shape] →
       _root_.Runtime.Autograd.TorchLean.Program α [σ] τ :=
   fun {α} _ _ => fun {m} _ _ =>
@@ -421,7 +423,7 @@ def forwardProgram {σ τ : Spec.Shape} (f : Fn σ τ) :
         | .cons input .nil => f (α := α) (m := m) input)
 
 /-- Forward-mode Jacobian (`jacfwd`) for a pure tensor function. -/
-def jacfwd {σ τ : Spec.Shape} (f : Fn σ τ)
+def jacfwd {σ τ : Spec.Shape} (f : TensorFunction σ τ)
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (x : Spec.Tensor α σ) :
     IO (Array (Spec.Tensor α τ)) :=
@@ -429,7 +431,7 @@ def jacfwd {σ τ : Spec.Shape} (f : Fn σ τ)
     (α := α) (σ := σ) (τ := τ) (forwardProgram f) x
 
 /-- Hessian for a scalar-valued function. -/
-def hessian {σ : Spec.Shape} (f : Fn σ Spec.Shape.scalar)
+def hessian {σ : Spec.Shape} (f : TensorFunction σ Spec.Shape.scalar)
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (x : Spec.Tensor α σ) :
     IO (Array (Spec.Tensor α σ)) :=
@@ -437,7 +439,7 @@ def hessian {σ : Spec.Shape} (f : Fn σ Spec.Shape.scalar)
     (α := α) (σ := σ) (forwardProgram f) x
 
 /-- Vector-Jacobian product (VJP) for a pure function. -/
-def vjp {σ τ : Spec.Shape} (f : Fn σ τ)
+def vjp {σ τ : Spec.Shape} (f : TensorFunction σ τ)
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (x : Spec.Tensor α σ) (seedOut : Spec.Tensor α τ) :
     IO (Spec.Tensor α σ) := do
@@ -446,15 +448,15 @@ def vjp {σ τ : Spec.Shape} (f : Fn σ τ)
     _root_.Runtime.Autograd.TorchLean.Autodiff.vjpOutInputs (α := α)
       (paramShapes := ([] : List Spec.Shape)) (inputShapes := [σ]) (τ := τ)
       (forwardProgram (σ := σ) (τ := τ) f)
-      state (tensorpack.singleton x) seedOut
-  pure (tensorpack.unpackSingleton gxs)
+      state (.cons x .nil) seedOut
+  pure (TensorPack.get gxs ⟨0, by simp⟩)
 
 /--
 Reverse-mode Jacobian (`jacrev`) of a pure tensor function.
 
 Returns the Jacobian rows as an array of `doutput/dinput` tensors.
 -/
-def jacrev {σ τ : Spec.Shape} (f : Fn σ τ)
+def jacrev {σ τ : Spec.Shape} (f : TensorFunction σ τ)
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (x : Spec.Tensor α σ) :
     IO (Array (Spec.Tensor α σ)) := do
@@ -463,11 +465,11 @@ def jacrev {σ τ : Spec.Shape} (f : Fn σ τ)
     _root_.Runtime.Autograd.TorchLean.Autodiff.jacrevOutInputs (α := α)
       (paramShapes := ([] : List Spec.Shape)) (inputShapes := [σ]) (τ := τ)
       (forwardProgram (σ := σ) (τ := τ) f)
-      state (tensorpack.singleton x)
-  pure <| rows.map tensorpack.unpackSingleton
+      state (.cons x .nil)
+  pure <| rows.map fun xs => TensorPack.get xs ⟨0, by simp⟩
 
 /-- Gradient of a scalar-valued function w.r.t. its input. -/
-def grad {σ : Spec.Shape} (f : Fn σ Spec.Shape.scalar)
+def grad {σ : Spec.Shape} (f : TensorFunction σ Spec.Shape.scalar)
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (x : Spec.Tensor α σ) :
     IO (Spec.Tensor α σ) := do
@@ -476,11 +478,11 @@ def grad {σ : Spec.Shape} (f : Fn σ Spec.Shape.scalar)
     _root_.Runtime.Autograd.TorchLean.Autodiff.gradInputs (α := α)
       (paramShapes := ([] : List Spec.Shape)) (inputShapes := [σ])
       (forwardProgram (σ := σ) (τ := Spec.Shape.scalar) f)
-      state (tensorpack.singleton x)
-  pure (tensorpack.unpackSingleton gxs)
+      state (.cons x .nil)
+  pure (TensorPack.get gxs ⟨0, by simp⟩)
 
 /-- Return `(value, grad)` for a scalar-valued function at `x`. -/
-def valueAndGrad {σ : Spec.Shape} (f : Fn σ Spec.Shape.scalar)
+def valueAndGrad {σ : Spec.Shape} (f : TensorFunction σ Spec.Shape.scalar)
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (x : Spec.Tensor α σ) :
     IO (Spec.Tensor α Spec.Shape.scalar × Spec.Tensor α σ) := do
@@ -488,20 +490,20 @@ def valueAndGrad {σ : Spec.Shape} (f : Fn σ Spec.Shape.scalar)
     _root_.Runtime.Autograd.TorchLean.Autodiff.lowerScalarToTypedGraph (α := α)
       (paramShapes := ([] : List Spec.Shape)) (inputShapes := [σ])
       (forwardProgram (σ := σ) (τ := Spec.Shape.scalar) f)
-  let args : _root_.TorchLean.TensorPack α [σ] := tensorpack.singleton x
+  let args : _root_.TorchLean.TensorPack α [σ] := .cons x .nil
   let value : Spec.Tensor α Spec.Shape.scalar :=
     _root_.Runtime.Autograd.Torch.TypedScalarGraph.forward (α := α) (Γ := [σ]) c args
   let gAll : _root_.TorchLean.TensorPack α [σ] :=
     _root_.Runtime.Autograd.Torch.TypedScalarGraph.backward (α := α) (Γ := [σ]) c args
-  pure (value, tensorpack.unpackSingleton gAll)
+  pure (value, TensorPack.get gAll ⟨0, by simp⟩)
 
 /-- `valueAndGrad`, but convert the 0-dim value tensor to a scalar `α`. -/
-def valueAndGradScalar {σ : Spec.Shape} (f : Fn σ Spec.Shape.scalar)
+def valueAndGradScalar {σ : Spec.Shape} (f : TensorFunction σ Spec.Shape.scalar)
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (x : Spec.Tensor α σ) :
     IO (α × Spec.Tensor α σ) := do
   let (valueT, g) ← valueAndGrad (f := f) (α := α) x
-  pure (Spec.Tensor.toScalar valueT, g)
+  pure (Spec.Tensor.item valueT, g)
 end func
 
 end autograd

@@ -8,6 +8,7 @@ module
 
 public import NN.API.Scalar
 public import NN.API.CLI.Training
+public import NN.API.Module.Command
 public import NN.API.Trainer.Run
 
 /-!

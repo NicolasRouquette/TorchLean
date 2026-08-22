@@ -102,7 +102,7 @@ structure Optimizer (α : Type) [Context α] (paramShapes : List Shape) where
       IO (Option (State × Tensor α Shape.scalar)) :=
     fun {_inputShapes _natInputShapes} _tr _st _xs _natInputs => pure none
 
-namespace Private
+namespace Internal
 
 /-- Read a shape-independent field from the first optimizer state, or use `fallback` for no params. -/
 def firstStateValue {State : Type → Shape → Type} {α β : Type} (fallback : β)
@@ -151,7 +151,7 @@ def stepStateList {α : Type} [Context α] {State : Type → Shape → Type} :
       let rest ← stepStateList (α := α) (State := State) (ss := ss) updateOne ps sts gs
       pure (.cons st' rest)
 
-end Private
+end Internal
 
 /-! ## Concrete optimizers -/
 
@@ -163,21 +163,21 @@ PyTorch analogy: `torch.optim.SGD(lr=lr)` without momentum.
 def sgd {α : Type} [Context α] (lr : α) {paramShapes : List Shape} : Optimizer α paramShapes :=
   { State := StateList _root_.Optim.SGD.State α paramShapes
     init := fun ps =>
-      Private.initStateList (α := α) (State := _root_.Optim.SGD.State)
+      Internal.initStateList (α := α) (State := _root_.Optim.SGD.State)
         (initOne := fun {s} t => _root_.Optim.SGD.init (α := α) (s := s) lr t) ps
     step := fun st ps grads =>
-      Private.stepStateList (α := α) (State := _root_.Optim.SGD.State)
+      Internal.stepStateList (α := α) (State := _root_.Optim.SGD.State)
         (updateOne := fun {s} stOne params g =>
           (stOne, _root_.Optim.SGD.update (α := α) (s := s) stOne params g))
         ps st grads
     trainerStep? := fun {_inputShapes _natInputShapes} tr st xs natInputs => do
-      let currentLR := Private.firstStateValue lr (fun state => state.lr) st
+      let currentLR := Internal.firstStateValue lr (fun state => state.lr) st
       let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
         (β := Torch.Curried.Fn Nat _ (IO Unit)) (tr.step currentLR) xs
       Torch.Curried.uncurry (α := Nat) (β := IO Unit) stepWithNat natInputs
       pure (some st)
     trainerStepWithLoss? := fun {_inputShapes _natInputShapes} tr st xs natInputs => do
-      let currentLR := Private.firstStateValue lr (fun state => state.lr) st
+      let currentLR := Internal.firstStateValue lr (fun state => state.lr) st
       let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
         (β := Torch.Curried.Fn Nat _ (IO (Tensor α Shape.scalar)))
         (tr.stepWithLoss currentLR) xs
@@ -195,10 +195,10 @@ def momentumSGD {α : Type} [Context α] (lr momentum : α) {paramShapes : List 
   paramShapes :=
   { State := StateList _root_.Optim.MomentumSGD.State α paramShapes
     init := fun ps =>
-      Private.initStateList (α := α) (State := _root_.Optim.MomentumSGD.State)
+      Internal.initStateList (α := α) (State := _root_.Optim.MomentumSGD.State)
         (initOne := fun {s} t => _root_.Optim.MomentumSGD.init (α := α) (s := s) lr momentum t) ps
     step := fun st ps grads =>
-      Private.stepStateList (α := α) (State := _root_.Optim.MomentumSGD.State)
+      Internal.stepStateList (α := α) (State := _root_.Optim.MomentumSGD.State)
         (updateOne := fun {s} stOne params g => _root_.Optim.MomentumSGD.update (α := α) (s := s)
           stOne params g)
         ps st grads
@@ -213,10 +213,10 @@ def adagrad {α : Type} [Context α] (lr epsilon : α) {paramShapes : List Shape
   paramShapes :=
   { State := StateList _root_.Optim.AdaGrad.State α paramShapes
     init := fun ps =>
-      Private.initStateList (α := α) (State := _root_.Optim.AdaGrad.State)
+      Internal.initStateList (α := α) (State := _root_.Optim.AdaGrad.State)
         (initOne := fun {s} t => _root_.Optim.AdaGrad.init (α := α) (s := s) lr epsilon t) ps
     step := fun st ps grads =>
-      Private.stepStateList (α := α) (State := _root_.Optim.AdaGrad.State)
+      Internal.stepStateList (α := α) (State := _root_.Optim.AdaGrad.State)
         (updateOne := fun {s} stOne params g => _root_.Optim.AdaGrad.update (α := α) (s := s) stOne
           params g)
         ps st grads
@@ -232,10 +232,10 @@ def rmsprop {α : Type} [Context α] (lr decay epsilon : α) {paramShapes : List
   paramShapes :=
   { State := StateList _root_.Optim.RMSProp.State α paramShapes
     init := fun ps =>
-      Private.initStateList (α := α) (State := _root_.Optim.RMSProp.State)
+      Internal.initStateList (α := α) (State := _root_.Optim.RMSProp.State)
         (initOne := fun {s} t => _root_.Optim.RMSProp.init (α := α) (s := s) lr decay epsilon t) ps
     step := fun st ps grads =>
-      Private.stepStateList (α := α) (State := _root_.Optim.RMSProp.State)
+      Internal.stepStateList (α := α) (State := _root_.Optim.RMSProp.State)
         (updateOne := fun {s} stOne params g => _root_.Optim.RMSProp.update (α := α) (s := s) stOne
           params g)
         ps st grads
@@ -250,11 +250,11 @@ def adam {α : Type} [Context α]
     (lr beta1 beta2 epsilon : α) {paramShapes : List Shape} : Optimizer α paramShapes :=
   { State := StateList _root_.Optim.Adam.State α paramShapes
     init := fun ps =>
-      Private.initStateList (α := α) (State := _root_.Optim.Adam.State)
+      Internal.initStateList (α := α) (State := _root_.Optim.Adam.State)
         (initOne := fun {s} t => _root_.Optim.Adam.init (α := α) (s := s) lr beta1 beta2 epsilon t)
           ps
     step := fun st ps grads =>
-      Private.stepStateList (α := α) (State := _root_.Optim.Adam.State)
+      Internal.stepStateList (α := α) (State := _root_.Optim.Adam.State)
         (updateOne := fun {s} stOne params g => _root_.Optim.Adam.update (α := α) (s := s) stOne
           params g)
         ps st grads
@@ -262,7 +262,7 @@ def adam {α : Type} [Context α]
       match tr.adamStep? with
       | none => pure none
       | some step => do
-          let currentLR := Private.firstStateValue lr (fun state => state.lr) st
+          let currentLR := Internal.firstStateValue lr (fun state => state.lr) st
           let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
             (β := Torch.Curried.Fn Nat _ (IO Unit))
             (step currentLR beta1 beta2 epsilon) xs
@@ -272,7 +272,7 @@ def adam {α : Type} [Context α]
       match tr.adamStepWithLoss? with
       | none => pure none
       | some step => do
-          let currentLR := Private.firstStateValue lr (fun state => state.lr) st
+          let currentLR := Internal.firstStateValue lr (fun state => state.lr) st
           let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
             (β := Torch.Curried.Fn Nat _ (IO (Tensor α Shape.scalar)))
             (step currentLR beta1 beta2 epsilon) xs
@@ -291,11 +291,11 @@ def adamw {α : Type} [Context α]
     (lr weightDecay beta1 beta2 epsilon : α) {paramShapes : List Shape} : Optimizer α paramShapes :=
   { State := StateList _root_.Optim.AdamW.State α paramShapes
     init := fun ps =>
-      Private.initStateList (α := α) (State := _root_.Optim.AdamW.State)
+      Internal.initStateList (α := α) (State := _root_.Optim.AdamW.State)
         (initOne := fun {s} t => _root_.Optim.AdamW.init (α := α) (s := s) lr weightDecay beta1
           beta2 epsilon t) ps
     step := fun st ps grads =>
-      Private.stepStateList (α := α) (State := _root_.Optim.AdamW.State)
+      Internal.stepStateList (α := α) (State := _root_.Optim.AdamW.State)
         (updateOne := fun {s} stOne params g => _root_.Optim.AdamW.update (α := α) (s := s) stOne
           params g)
         ps st grads
@@ -303,7 +303,7 @@ def adamw {α : Type} [Context α]
       match tr.adamWStep? with
       | none => pure none
       | some step => do
-          let currentLR := Private.firstStateValue lr (fun state => state.lr) st
+          let currentLR := Internal.firstStateValue lr (fun state => state.lr) st
           let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
             (β := Torch.Curried.Fn Nat _ (IO Unit))
             (step currentLR weightDecay beta1 beta2 epsilon) xs
@@ -313,7 +313,7 @@ def adamw {α : Type} [Context α]
       match tr.adamWStepWithLoss? with
       | none => pure none
       | some step => do
-          let currentLR := Private.firstStateValue lr (fun state => state.lr) st
+          let currentLR := Internal.firstStateValue lr (fun state => state.lr) st
           let stepWithNat := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
             (β := Torch.Curried.Fn Nat _ (IO (Tensor α Shape.scalar)))
             (step currentLR weightDecay beta1 beta2 epsilon) xs
@@ -331,10 +331,10 @@ def adadelta {α : Type} [Context α]
     (lr rho epsilon : α) {paramShapes : List Shape} : Optimizer α paramShapes :=
   { State := StateList _root_.Optim.Adadelta.State α paramShapes
     init := fun ps =>
-      Private.initStateList (α := α) (State := _root_.Optim.Adadelta.State)
+      Internal.initStateList (α := α) (State := _root_.Optim.Adadelta.State)
         (initOne := fun {s} t => _root_.Optim.Adadelta.init (α := α) (s := s) lr rho epsilon t) ps
     step := fun st ps grads =>
-      Private.stepStateList (α := α) (State := _root_.Optim.Adadelta.State)
+      Internal.stepStateList (α := α) (State := _root_.Optim.Adadelta.State)
         (updateOne := fun {s} stOne params g => _root_.Optim.Adadelta.update (α := α) (s := s) stOne
           params g)
         ps st grads
@@ -358,10 +358,10 @@ def projectedSGD {α : Type} [Context α] (lr : α)
     {paramShapes : List Shape} : Optimizer α paramShapes :=
   { State := StateList (fun α s => _root_.Optim.GaLore.SGDState α s s) α paramShapes
     init := fun ps =>
-      Private.initStateList (α := α) (State := fun α s => _root_.Optim.GaLore.SGDState α s s)
+      Internal.initStateList (α := α) (State := fun α s => _root_.Optim.GaLore.SGDState α s s)
         (initOne := fun {s} _t => { lr := lr, projector := projector (s := s) }) ps
     step := fun st ps grads =>
-      Private.stepStateList (α := α)
+      Internal.stepStateList (α := α)
         (State := fun α s => _root_.Optim.GaLore.SGDState α s s)
         (updateOne := fun {s} stOne params g =>
           (stOne, _root_.Optim.GaLore.projectedSGDUpdate (α := α) (full := s) (low := s)
@@ -381,11 +381,11 @@ def muon {α : Type} [Context α] (lr momentum : α)
     {paramShapes : List Shape} : Optimizer α paramShapes :=
   { State := StateList _root_.Optim.Muon.State α paramShapes
     init := fun ps =>
-      Private.initStateList (α := α) (State := _root_.Optim.Muon.State)
+      Internal.initStateList (α := α) (State := _root_.Optim.Muon.State)
         (initOne := fun {s} t =>
           _root_.Optim.Muon.init (α := α) (s := s) lr momentum (orthogonalizer (s := s)) t) ps
     step := fun st ps grads =>
-      Private.stepStateList (α := α) (State := _root_.Optim.Muon.State)
+      Internal.stepStateList (α := α) (State := _root_.Optim.Muon.State)
         (updateOne := fun {s} stOne params g =>
           _root_.Optim.Muon.update (α := α) (s := s) stOne params g)
         ps st grads

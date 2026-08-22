@@ -24,68 +24,71 @@ open Proofs.Autograd.Algebra
 
 namespace NN
 
-/--
-Layer normalization over the last axis of a `(seqLen × embedDim)` activation.
-
-This learns `gamma` and `beta` vectors of shape `(embedDim)`, applied per token position.
-
-PyTorch analogy: `torch.nn.LayerNorm(embedDim)` applied to a sequence tensor.
--/
+/-- Layer normalization over the final axis of a tensor. -/
 def layerNorm
-    (batch seqLen embedDim : Nat)
-    {h_seq_pos : seqLen > 0} {h_embed_pos : embedDim > 0}
+    (leading : Shape) (width : Nat)
+    {hWidth : width > 0}
     (seedGamma seedBeta : Nat := 0) :
-    Layer (.dim batch (.dim seqLen (.dim embedDim .scalar)))
-      (.dim batch (.dim seqLen (.dim embedDim .scalar))) :=
-  let gammaShape : Shape := .dim embedDim .scalar
-  let betaShape : Shape := .dim embedDim .scalar
+    Layer (leading.appendDim width) (leading.appendDim width) :=
+  let gammaShape : Shape := .dim width .scalar
+  let betaShape : Shape := .dim width .scalar
   let gamma0 : Tensor Float gammaShape := Torch.Init.tensor (s := gammaShape) (sch := .ones) (seed
     := seedGamma)
   let beta0 : Tensor Float betaShape := Torch.Init.tensor (s := betaShape) (sch := .zeros) (seed :=
     seedBeta)
   { kind := "LayerNorm"
     stateShapes := [gammaShape, betaShape]
-    initState := Torch.tlistPair gamma0 beta0
+    initState := .cons gamma0 (.cons beta0 .nil)
     runtimeInit := some (.cons .ones (.cons .zeros .nil))
     requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun gamma beta x =>
-          TorchLean.layerNorm (m := m) (α := α)
-            (batch := batch) (seqLen := seqLen) (embedDim := embedDim)
-            (h_seq_pos := h_seq_pos) (h_embed_pos := h_embed_pos)
-            x gamma beta
+          (do
+            let rows := Shape.size leading
+            let xRows ← TorchLean.reshape (m := m) (α := α)
+              (s₁ := leading.appendDim width)
+              (s₂ := .dim rows (.dim width .scalar)) x (by
+                simp [rows, Shape.size_appendDim, Shape.size])
+            let yRows ← TorchLean.layerNorm (m := m) (α := α)
+              (rows := rows) (width := width) hWidth xRows gamma beta
+            TorchLean.reshape (m := m) (α := α)
+              (s₁ := .dim rows (.dim width .scalar))
+              (s₂ := leading.appendDim width) yRows (by
+                simp [rows, Shape.size_appendDim, Shape.size]) :
+            m (RefTy (m := m) (α := α) (leading.appendDim width)))
   }
 
-/--
-RMS normalization over the last axis of a `(seqLen × embedDim)` activation.
-
-This learns a `gamma` vector of shape `(embedDim)` and is commonly used in transformer models.
-
-PyTorch analogy: a typical RMSNorm implementation in `torch.nn`-style code (often a small custom
-`nn.Module`).
--/
+/-- Root-mean-square normalization over the final axis of a tensor. -/
 def rmsNorm
-    (batch seqLen embedDim : Nat)
-    {h_seq_pos : seqLen > 0} {h_embed_pos : embedDim > 0}
+    (leading : Shape) (width : Nat)
+    {hWidth : width > 0}
     (seedGamma : Nat := 0) :
-    Layer (.dim batch (.dim seqLen (.dim embedDim .scalar)))
-      (.dim batch (.dim seqLen (.dim embedDim .scalar))) :=
-  let gammaShape : Shape := .dim embedDim .scalar
+    Layer (leading.appendDim width) (leading.appendDim width) :=
+  let gammaShape : Shape := .dim width .scalar
   let gamma0 : Tensor Float gammaShape := Torch.Init.tensor (s := gammaShape) (sch := .ones) (seed
     := seedGamma)
   { kind := "RMSNorm"
     stateShapes := [gammaShape]
-    initState := Torch.tlistSingleton gamma0
+    initState := .cons gamma0 .nil
     runtimeInit := some (.cons .ones .nil)
     requiresGrad := [true]
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun gamma x =>
-          TorchLean.Norm.rmsNormLastBatched (m := m) (α := α)
-            (batch := batch) (seqLen := seqLen) (embedDim := embedDim)
-            (h_seq_pos := h_seq_pos) (h_embed_pos := h_embed_pos)
-            x gamma
+          (do
+            let rows := Shape.size leading
+            let xRows ← TorchLean.reshape (m := m) (α := α)
+              (s₁ := leading.appendDim width)
+              (s₂ := .dim rows (.dim width .scalar)) x (by
+                simp [rows, Shape.size_appendDim, Shape.size])
+            let yRows ← TorchLean.Norm.rmsNorm (m := m) (α := α)
+              (rows := rows) (width := width) hWidth xRows gamma
+            TorchLean.reshape (m := m) (α := α)
+              (s₁ := .dim rows (.dim width .scalar))
+              (s₂ := leading.appendDim width) yRows (by
+                simp [rows, Shape.size_appendDim, Shape.size]) :
+            m (RefTy (m := m) (α := α) (leading.appendDim width)))
   }
 
 /--
@@ -110,7 +113,7 @@ def batchNormChannelFirst
     seedBeta)
   { kind := "BatchNorm2d"
     stateShapes := [gammaShape, betaShape]
-    initState := Torch.tlistPair gamma0 beta0
+    initState := .cons gamma0 (.cons beta0 .nil)
     runtimeInit := some (.cons .ones (.cons .zeros .nil))
     requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
@@ -149,7 +152,7 @@ def batchNormChannelFirstEval
     seedVar)
   { kind := "BatchNorm2d(eval)"
     stateShapes := [gammaShape, betaShape, meanShape, varShape]
-    initState := Torch.tlistQuad gamma0 beta0 mean0 var0
+    initState := .cons gamma0 (.cons beta0 (.cons mean0 (.cons var0 .nil)))
     runtimeInit := some (.cons .ones (.cons .zeros (.cons .zeros (.cons .ones .nil))))
     requiresGrad := [true, true, false, false]
     forward := fun _ {α} _ _ =>
@@ -203,8 +206,9 @@ def batchNormChannelFirstMode
       | .train, .cons gamma (.cons beta (.cons runningMean (.cons runningVar (.cons momentumT
         .nil)))) =>
           let (batchMean, batchVar) := chwBatchStats x
+          let runningBatchVar := unbiasedRunningVariance batchVar (height * width)
           let nextMean := updateRunningVec runningMean batchMean momentumT
-          let nextVar := updateRunningVec runningVar batchVar momentumT
+          let nextVar := updateRunningVec runningVar runningBatchVar momentumT
           pure (.cons gamma (.cons beta (.cons nextMean (.cons nextVar (.cons momentumT .nil)))))
       | .train, _ => pure ps
     )
@@ -243,7 +247,7 @@ def instanceNorm2dNchw
     seedBeta)
   { kind := "InstanceNorm2d"
     stateShapes := [gammaShape, betaShape]
-    initState := Torch.tlistPair gamma0 beta0
+    initState := .cons gamma0 (.cons beta0 .nil)
     runtimeInit := some (.cons .ones (.cons .zeros .nil))
     requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
@@ -277,7 +281,7 @@ def groupNorm2dNchw
     seedBeta)
   { kind := s!"GroupNorm2d(groups={groups})"
     stateShapes := [gammaShape, betaShape]
-    initState := Torch.tlistPair gamma0 beta0
+    initState := .cons gamma0 (.cons beta0 .nil)
     runtimeInit := some (.cons .ones (.cons .zeros .nil))
     requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
@@ -310,7 +314,7 @@ def batchNorm2dNchw
     seedBeta)
   { kind := "BatchNorm2d"
     stateShapes := [gammaShape, betaShape]
-    initState := Torch.tlistPair gamma0 beta0
+    initState := .cons gamma0 (.cons beta0 .nil)
     runtimeInit := some (.cons .ones (.cons .zeros .nil))
     requiresGrad := [true, true]
     forward := fun _ {α} _ _ =>
@@ -363,8 +367,9 @@ def batchNorm2dNchwMode
       | .train, .cons gamma (.cons beta (.cons runningMean (.cons runningVar (.cons momentumT
         .nil)))) =>
           let (batchMean, batchVar) := nchwBatchStats x
+          let runningBatchVar := unbiasedRunningVariance batchVar (n * h * w)
           let nextMean := updateRunningVec runningMean batchMean momentumT
-          let nextVar := updateRunningVec runningVar batchVar momentumT
+          let nextVar := updateRunningVec runningVar runningBatchVar momentumT
           pure (.cons gamma (.cons beta (.cons nextMean (.cons nextVar (.cons momentumT .nil)))))
       | .train, _ => pure ps
     )

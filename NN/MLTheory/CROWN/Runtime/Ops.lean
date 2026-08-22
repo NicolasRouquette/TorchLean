@@ -174,7 +174,7 @@ def sin {n : Nat} (xB : Box α (.dim n .scalar)) : Box α (.dim n .scalar) :=
         let r := (u - l) / Numbers.two
         let base := MathFunctions.sin m
         let rawLo := base - r
-        Tensor.scalar (max Numbers.neg_one rawLo))
+        Tensor.scalar (max Numbers.negOne rawLo))
     let outHi := Tensor.dim (fun i =>
       match lo i, hi i with
       | Tensor.scalar l, Tensor.scalar u =>
@@ -196,7 +196,7 @@ def cos {n : Nat} (xB : Box α (.dim n .scalar)) : Box α (.dim n .scalar) :=
         let r := (u - l) / Numbers.two
         let base := MathFunctions.cos m
         let rawLo := base - r
-        Tensor.scalar (max Numbers.neg_one rawLo))
+        Tensor.scalar (max Numbers.negOne rawLo))
     let outHi := Tensor.dim (fun i =>
       match lo i, hi i with
       | Tensor.scalar l, Tensor.scalar u =>

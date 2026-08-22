@@ -236,7 +236,6 @@ def unicodeNumberRanges : Array (Nat × Nat) := #[
 
 namespace Internal
 
-/-- Binary search over sorted inclusive ranges. -/
 def inSortedRanges (ranges : Array (Nat × Nat)) (n lo hi : Nat) : Nat → Bool
   | 0 => false
   | fuel + 1 =>

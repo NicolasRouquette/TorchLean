@@ -13,7 +13,7 @@ public import NN.Tests.Runtime.Cuda.Utils
 import Batteries.Data.Vector.Lemmas
 
 /-!
-# CUDA Kernel Coverage: Conv2D + Pooling
+# CUDA Kernel Coverage: Conv2d + Pooling
 
 Compares CPU eager tape vs CUDA eager tape for:
 - `conv2d`
@@ -34,7 +34,7 @@ open Spec
 open Tensor
 open Runtime.Autograd
 
-/-- Input channel count used by the Conv2D/pooling CUDA coverage cases. -/
+/-- Input channel count used by the Conv2d/pooling CUDA coverage cases. -/
 abbrev inC : Nat := 1
 abbrev outC : Nat := 1
 abbrev kH : Nat := 2
@@ -140,7 +140,7 @@ def runConv3 : IO Unit := do
       (inSpatial := inSpatial3)
       kId bId xId (name := "conv[d=3]"))
   let yCpu ← Utils.cpuValue (s := outShape3) t4 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) outShape3)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) outShape3)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t4) yId seedCpu)
   let dKCpu ← Utils.cpuGrad (s := Shape.ofList (outC :: inC :: kernel3V.toList)) gradsCpu kId
   let dBCpu ← Utils.cpuGrad (s := shape![outC]) gradsCpu bId
@@ -192,7 +192,7 @@ def runMaxPool3 : IO Unit := do
       (inSpatial := inSpatial3) (kernel := kernel3V) (stride := stride3V) (padding := padding3V)
       (hKernel := hKernel3V) xId)
   let yCpu ← Utils.cpuValue (s := yShape) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) yShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) yShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := Shape.ofList (inC :: inSpatial3.toList)) gradsCpu xId
 
@@ -233,7 +233,7 @@ def runSmoothMaxPool3 : IO Unit := do
       (inSpatial := inSpatial3) (kernel := kernel3V) (stride := stride3V) (padding := padding3V)
       (hKernel := hKernel3V) xId beta)
   let yCpu ← Utils.cpuValue (s := yShape) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) yShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) yShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := Shape.ofList (inC :: inSpatial3.toList)) gradsCpu xId
 
@@ -273,7 +273,7 @@ def runAvgPool3 : IO Unit := do
       (inSpatial := inSpatial3) (kernel := kernel3V) (stride := stride3V) (padding := padding3V)
       (hKernel := hKernel3V) xId)
   let yCpu ← Utils.cpuValue (s := yShape) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) yShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) yShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := Shape.ofList (inC :: inSpatial3.toList)) gradsCpu xId
 
@@ -314,7 +314,7 @@ def runConv2d : IO Unit := do
       (inH := inH) (inW := inW) (h1 := hInC) (h2 := hKH) (h3 := hKW)
       kId bId xId)
   let yCpu ← Utils.cpuValue (s := yShape) t4 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) yShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) yShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t4) yId seedCpu)
   let dKCpu ← Utils.cpuGrad (s := shape![outC, inC, kH, kW]) gradsCpu kId
   let dBCpu ← Utils.cpuGrad (s := shape![outC]) gradsCpu bId
@@ -361,7 +361,7 @@ def runMaxPool : IO Unit := do
       (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
       (h1 := hKH) (h2 := hKW) xId)
   let yCpu ← Utils.cpuValue (s := yShape) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) yShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) yShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := shape![inC, inH, inW]) gradsCpu xId
 
@@ -401,7 +401,7 @@ def runMaxPoolPadNegative : IO Unit := do
       (kH := 2) (kW := 2) (inH := 1) (inW := 1) (inC := 1) (stride := 1) (padding := 1)
       (h1 := by decide) (h2 := by decide) xId)
   let yCpu ← Utils.cpuValue (s := yShape) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) yShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) yShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := shape![1, 1, 1]) gradsCpu xId
 
@@ -452,7 +452,7 @@ def runMaxPool3PadNegative : IO Unit := do
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
       (hKernel := hKernel) xId)
   let yCpu ← Utils.cpuValue (s := yShape) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) yShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) yShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := Shape.ofList [1, 1, 1, 1]) gradsCpu xId
 
@@ -493,7 +493,7 @@ def runSmoothMaxPool : IO Unit := do
       (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
       (h1 := hKH) (h2 := hKW) xId beta)
   let yCpu ← Utils.cpuValue (s := yShape) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) yShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) yShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := shape![inC, inH, inW]) gradsCpu xId
 
@@ -545,7 +545,7 @@ def runSmoothMaxPool2dStabilityCase (beta expectedSign : Float)
       (h1 := by decide) (h2 := by decide) xId beta)
   let yCpu ← Utils.cpuValue (s := yShape) t2 yId
   let gradsCpu ← Utils.okOrThrow
-    (Tape.backwardDenseAll (α := Float) (t := t2) yId (AnyTensor.mk (fill 1.0 yShape)))
+    (Tape.backwardDenseAll (α := Float) (t := t2) yId (Spec.PackedTensor.ofTensor (fill 1.0 yShape)))
   let dxCpu ← Utils.cpuGrad (s := shape![1, 1, 2]) gradsCpu xId
 
   let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
@@ -591,7 +591,7 @@ def runSmoothMaxPoolNdStabilityCase (beta expectedSign : Float)
       (stride := stride) (padding := padding) (hKernel := hKernel) xId beta)
   let yCpu ← Utils.cpuValue (s := yShape) t2 yId
   let gradsCpu ← Utils.okOrThrow
-    (Tape.backwardDenseAll (α := Float) (t := t2) yId (AnyTensor.mk (fill 1.0 yShape)))
+    (Tape.backwardDenseAll (α := Float) (t := t2) yId (Spec.PackedTensor.ofTensor (fill 1.0 yShape)))
   let dxCpu ← Utils.cpuGrad (s := Shape.ofList [1, 2]) gradsCpu xId
 
   let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
@@ -677,7 +677,7 @@ def runAvgPool : IO Unit := do
       (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
       (h1 := hKH) (h2 := hKW) xId)
   let yCpu ← Utils.cpuValue (s := yShape) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) yShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) yShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := shape![inC, inH, inW]) gradsCpu xId
 

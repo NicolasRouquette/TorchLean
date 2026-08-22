@@ -113,7 +113,7 @@ private def cnnPoolStride1 : Nat := 2
 private def cnnPoolStride2 : Nat := 2
 
 private def cnnFlatSize : Nat :=
-  _root_.Models.CNN.featSize cnnOutC cnnInH cnnInW cnnKH cnnKW cnnStride1 cnnPadding1 cnnStride2
+  _root_.Models.Cnn.featSize cnnOutC cnnInH cnnInW cnnKH cnnKW cnnStride1 cnnPadding1 cnnStride2
     cnnPadding2
     cnnPoolKH cnnPoolKW cnnPoolStride1 cnnPoolStride2
 
@@ -208,9 +208,10 @@ private def exportTransformer : IO Unit := do
     let codeW :=
       Export.TransformerPyTorch.generateTransformerEncoderWithWeights
         trSeqLen trEmbedDim trHeadCount trHiddenDim
-        sd.Wq sd.Wk sd.Wv sd.Wo
-        sd.W1 sd.W2 sd.b1 sd.b2
-        sd.norm1_gamma sd.norm1_beta sd.norm2_gamma sd.norm2_beta
+        sd.queryWeight sd.keyWeight sd.valueWeight sd.outputWeight
+        sd.feedForwardInputWeight sd.feedForwardOutputWeight
+        sd.feedForwardInputBias sd.feedForwardOutputBias
+        sd.norm1Scale sd.norm1Bias sd.norm2Scale sd.norm2Bias
         "TestTransformerEncoder"
     writePy dir "TestTransformer_Encoder_WithWeights" codeW
   catch _ =>
@@ -252,21 +253,21 @@ private def importCNN : IO Unit := do
   let hPoolStride1 : cnnPoolStride1 ≠ 0 := by decide
   let hPoolStride2 : cnnPoolStride2 ≠ 0 := by decide
 
-  let conv1 : _root_.Spec.Conv2DSpec cnnInC cnnOutC cnnKH cnnKW cnnStride1 cnnPadding1 Float hInC
+  let conv1 : _root_.Spec.Conv2dSpec cnnInC cnnOutC cnnKH cnnKW cnnStride1 cnnPadding1 Float hInC
     hKH hKW :=
     { kernel := sd.convW1, bias := sd.convB1 }
-  let conv2 : _root_.Spec.Conv2DSpec cnnOutC cnnOutC cnnKH cnnKW cnnStride2 cnnPadding2 Float hOutC
+  let conv2 : _root_.Spec.Conv2dSpec cnnOutC cnnOutC cnnKH cnnKW cnnStride2 cnnPadding2 Float hOutC
     hKH hKW :=
     { kernel := sd.convW2, bias := sd.convB2 }
-  let pool1 : _root_.Spec.MaxPool2DSpec cnnPoolKH cnnPoolKW cnnPoolStride1 hPoolH hPoolW hPoolStride1 :=
+  let pool1 : _root_.Spec.MaxPool2dSpec cnnPoolKH cnnPoolKW cnnPoolStride1 hPoolH hPoolW hPoolStride1 :=
     {}
-  let pool2 : _root_.Spec.MaxPool2DSpec cnnPoolKH cnnPoolKW cnnPoolStride2 hPoolH hPoolW hPoolStride2 :=
+  let pool2 : _root_.Spec.MaxPool2dSpec cnnPoolKH cnnPoolKW cnnPoolStride2 hPoolH hPoolW hPoolStride2 :=
     {}
   let linear : _root_.Spec.LinearSpec Float cnnFlatSize cnnOutC := { weights := sd.linearW, bias :=
     sd.linearB }
 
   let net :=
-    _root_.Models.cnnWithReluSpec (α := Float)
+    _root_.Models.Cnn.withReluSpec (α := Float)
       (inH := cnnInH) (inW := cnnInW)
       conv1 conv2 pool1 pool2 linear
 
@@ -277,7 +278,7 @@ private def importCNN : IO Unit := do
         _root_.Spec.Tensor.dim (fun j =>
           _root_.Spec.Tensor.scalar (Float.ofNat (i.val * cnnInW + j.val + 1)))))
 
-  let y := ModSpec.SpecChain.forward (α := Float) net x
+  let y := Spec.Module.Chain.forward (α := Float) net x
 
   IO.println "== CNN import example =="
   IO.println s!"Loaded: {jsonOf .cnn}"
@@ -291,15 +292,23 @@ private def importTransformer : IO Unit := do
     | throw <| IO.userError "Failed to load Transformer encoder state dict"
 
   let layer : _root_.Spec.TransformerEncoderLayer trHeadCount trEmbedDim trHiddenDim Float :=
-    { mha := { Wq := sd.Wq, Wk := sd.Wk, Wv := sd.Wv, Wo := sd.Wo }
-      ffn := { W1 := sd.W1, W2 := sd.W2, b1 := sd.b1, b2 := sd.b2 }
-      norm1_gamma := sd.norm1_gamma
-      norm1_beta := sd.norm1_beta
-      norm2_gamma := sd.norm2_gamma
-      norm2_beta := sd.norm2_beta }
+    { mha :=
+        { queryWeight := sd.queryWeight
+          keyWeight := sd.keyWeight
+          valueWeight := sd.valueWeight
+          outputWeight := sd.outputWeight }
+      ffn :=
+        { inputWeight := sd.feedForwardInputWeight
+          outputWeight := sd.feedForwardOutputWeight
+          inputBias := sd.feedForwardInputBias
+          outputBias := sd.feedForwardOutputBias }
+      norm1Scale := sd.norm1Scale
+      norm1Bias := sd.norm1Bias
+      norm2Scale := sd.norm2Scale
+      norm2Bias := sd.norm2Bias }
   let encoder : _root_.Spec.TransformerEncoder trNumLayers trHeadCount trEmbedDim trHiddenDim Float
     :=
-    { layers := [layer] }
+    { layers := #v[layer] }
 
   let x : _root_.Spec.Tensor Float (.dim trSeqLen (.dim trEmbedDim .scalar)) := tensor! [[1.5, 1.5]]
   let y := _root_.Spec.TransformerEncoder.forward (seqLen := trSeqLen) (embedDim := trEmbedDim)

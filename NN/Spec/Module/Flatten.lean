@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Core.TensorReductionShape
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 
 /-!
 # Flatten module wrapper
@@ -27,24 +27,18 @@ If you're thinking in PyTorch: this is `nn.Flatten()` in its simplest form (coll
 @[expose] public section
 
 
-namespace Spec
+namespace Spec.Module
 
 open Tensor
-open ModSpec
 
 -- Flatten module specification wrapper
-/-- Wrap `flatten_spec` as an `NNModuleSpec` (`s -> (Spec.Shape.size s)`).
+/-- Wrap `flatten_spec` as an `Spec.Module` (`s -> (Spec.Shape.size s)`).
 
 The `dimensions` metadata field is not meaningful for flatten because the output length depends on
 the whole input shape; exporters should recompute the shape from the typed input.
 -/
-def FlattenModuleSpec (α : Type) [Context α] (s : Shape) :
-  NNModuleSpec α s (.dim (Spec.Shape.size s) .scalar) :=
-{ forward := fun x => flattenSpec x, kind := "Flatten", export_func := {
-  toPyTorch := "nn.Flatten()",
-  -- Metadata: flatten changes shape in a way that depends on the full input shape, so exporters
-  -- should ignore this pair and use `Spec.Shape.size s`.
-  dimensions := (0, 0)
-} }
+def flatten (α : Type) [Context α] (s : Shape) :
+  Spec.Module α s (.dim (Spec.Shape.size s) .scalar) :=
+{ forward := fun x => flattenSpec x, kind := "Flatten", pythonExpr := "nn.Flatten()" }
 
-end Spec
+end Spec.Module

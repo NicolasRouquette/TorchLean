@@ -150,6 +150,9 @@ for page in site.rglob("*.html"):
             )
 PY
 
+echo "==> Checking generated links and anchors"
+python3 scripts/docs/check_site_links.py home_page/_site
+
 cat <<'EOF'
 
 Site assets and Jekyll output are rebuilt.

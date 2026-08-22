@@ -32,7 +32,7 @@ Seeded construction of executable models.
 pure construction and yields the same result whenever `nn.build` starts from the same seed.
 :::
 
-:::definition "seeded_relu_mlp" (parent := "model_api") (lean := "TorchLean.nn.models.mlpRelu")
+:::definition "seeded_relu_mlp" (parent := "model_api") (lean := "TorchLean.nn.blocks.mlp")
 This {uses "seeded_builder_state"}[seeded builder] constructs one batched, single-hidden-layer
 MLP: a linear layer, ReLU, and a second linear layer.
 :::

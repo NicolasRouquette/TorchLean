@@ -30,6 +30,7 @@ namespace RuntimeApprox
 
 open Spec
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 open scoped NNReal
 
 noncomputable section
@@ -56,7 +57,7 @@ structure RevNodeScale (toSpec : α → SpecScalar) (Γ : List Shape) (τ : Shap
     Γ),
       approxCtx (α := α) toSpec ctxS ctxR epsCtx →
       scaleCtx (α := α) toSpec ctxS ctxR bCtx →
-        scaleT (α := α) (toSpec := toSpec) (forwardSpec ctxS) (forwardRuntime ctxR) (fwdScaleBound
+        scaleTensor (α := α) (toSpec := toSpec) (forwardSpec ctxS) (forwardRuntime ctxR) (fwdScaleBound
           bCtx ctxR)
   vjpScaleBound : BList Γ → TList α Γ → ℝ≥0 → Tensor α τ → BList Γ
   vjpScaleSound : ∀ (ctxS : TList SpecScalar Γ) (ctxR : TList α Γ) (epsCtx : EList Γ) (bCtx : BList
@@ -64,7 +65,7 @@ structure RevNodeScale (toSpec : α → SpecScalar) (Γ : List Shape) (τ : Shap
       (δS : SpecTensor τ) (δR : Tensor α τ) (bδ : ℝ≥0),
       approxCtx (α := α) toSpec ctxS ctxR epsCtx →
       scaleCtx (α := α) toSpec ctxS ctxR bCtx →
-      scaleT (α := α) (toSpec := toSpec) δS δR bδ →
+      scaleTensor (α := α) (toSpec := toSpec) δS δR bδ →
         scaleCtx (α := α) toSpec (vjpSpec ctxS δS) (vjpRuntime ctxR δR) (vjpScaleBound bCtx ctxR bδ
           δR)
 
@@ -273,13 +274,13 @@ theorem backprop_scale {Γ : List Shape} {ss : List Shape} (g : RevGraphScale (�
 
       have hseedSplit :
           scaleCtx (α := α) toSpec seedPrevS seedPrevR bSeedPrev ∧
-            scaleT (α := α) (toSpec := toSpec) seedOutS seedOutR bSeedOut := by
+            scaleTensor (α := α) (toSpec := toSpec) seedOutS seedOutR bSeedOut := by
         simpa [seedPrevS, seedPrevR, bSeedPrev, seedOutS, seedOutR, bSeedOut] using
           (scaleCtx_unsnoc (α := α) (toSpec := toSpec) (ss := Γ ++ ssPrev) (τ := τ)
             (xS := seedS') (xR := seedR') (bs := bSeed') hseed')
 
       have hseedPrev : scaleCtx (α := α) toSpec seedPrevS seedPrevR bSeedPrev := hseedSplit.1
-      have hseedOut : scaleT (α := α) (toSpec := toSpec) seedOutS seedOutR bSeedOut := hseedSplit.2
+      have hseedOut : scaleTensor (α := α) (toSpec := toSpec) seedOutS seedOutR bSeedOut := hseedSplit.2
 
       let ctxS := evalSpec (α := α) (toSpec := toSpec) (Γ := Γ) (ss := ssPrev) g xS
       let ctxR := evalRuntime (α := α) (toSpec := toSpec) (Γ := Γ) (ss := ssPrev) g xR

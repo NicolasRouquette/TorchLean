@@ -299,18 +299,18 @@ def fdResidualBounds (u_minus : Float × Float) (u0 : Float × Float) (u_plus : 
 def seedParamsGeneric {α : Type} [Context α] : ParamStore α :=
   let firstWeight : Tensor α (.dim 16 (.dim 1 .scalar)) :=
     Tensor.dim (fun i => Tensor.dim (fun _ => Tensor.scalar ((((i.val + 1 : Nat) : α)) *
-      Numbers.pointone)))
+      Numbers.oneTenth)))
   let eight : α := Numbers.four * Numbers.two
   let firstBias : Tensor α (.dim 16 .scalar) :=
-    Tensor.dim (fun i => Tensor.scalar (Numbers.pointfive * Numbers.pointone * ((((i.val : Nat) : α)
+    Tensor.dim (fun i => Tensor.scalar (Numbers.half * Numbers.oneTenth * ((((i.val : Nat) : α)
       - eight))))
   let middleWeight : Tensor α (.dim 16 (.dim 16 .scalar)) :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (if decide (i.val = j.val) then
-      Numbers.one else (Numbers.pointfive * Numbers.pointone))))
+      Numbers.one else (Numbers.half * Numbers.oneTenth))))
   let middleBias : Tensor α (.dim 16 .scalar) := Tensor.dim (fun _ => Tensor.scalar Numbers.zero)
-  let pointzeroone : α := Numbers.pointone * Numbers.pointone
+  let pointzeroone : α := Numbers.oneTenth * Numbers.oneTenth
   let outputWeight : Tensor α (.dim 1 (.dim 16 .scalar)) :=
-    Tensor.dim (fun _ => Tensor.dim (fun j => Tensor.scalar (Numbers.pointone + pointzeroone *
+    Tensor.dim (fun _ => Tensor.dim (fun j => Tensor.scalar (Numbers.oneTenth + pointzeroone *
       (((j.val : Nat) : α)))))
   let outputBias : Tensor α (.dim 1 .scalar) := Tensor.dim (fun _ => Tensor.scalar Numbers.zero)
   let emptyStore : ParamStore α := {}
@@ -333,20 +333,20 @@ def seedParamsGeneric2D {α : Type} [Context α] : ParamStore α :=
   let firstWeight : Tensor α (.dim 16 (.dim 2 .scalar)) :=
     Tensor.dim (fun i =>
       Tensor.dim (fun j =>
-        let base := (((i.val + 1 : Nat) : α)) * (Numbers.pointfive * Numbers.pointone)
+        let base := (((i.val + 1 : Nat) : α)) * (Numbers.half * Numbers.oneTenth)
         let w := if decide (j.val = 0) then base * Numbers.two else base
         Tensor.scalar w))
   let eight : α := Numbers.four * Numbers.two
   let firstBias : Tensor α (.dim 16 .scalar) :=
-    Tensor.dim (fun i => Tensor.scalar (Numbers.pointfive * Numbers.pointone * ((((i.val : Nat) : α)
+    Tensor.dim (fun i => Tensor.scalar (Numbers.half * Numbers.oneTenth * ((((i.val : Nat) : α)
       - eight))))
   let middleWeight : Tensor α (.dim 16 (.dim 16 .scalar)) :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (if decide (i.val = j.val) then
-      Numbers.one else (Numbers.pointfive * Numbers.pointone))))
+      Numbers.one else (Numbers.half * Numbers.oneTenth))))
   let middleBias : Tensor α (.dim 16 .scalar) := Tensor.dim (fun _ => Tensor.scalar Numbers.zero)
-  let pointzeroone : α := Numbers.pointone * Numbers.pointone
+  let pointzeroone : α := Numbers.oneTenth * Numbers.oneTenth
   let outputWeight : Tensor α (.dim 1 (.dim 16 .scalar)) :=
-    Tensor.dim (fun _ => Tensor.dim (fun j => Tensor.scalar (Numbers.pointone + pointzeroone *
+    Tensor.dim (fun _ => Tensor.dim (fun j => Tensor.scalar (Numbers.oneTenth + pointzeroone *
       (((j.val : Nat) : α)))))
   let outputBias : Tensor α (.dim 1 .scalar) := Tensor.dim (fun _ => Tensor.scalar Numbers.zero)
   let emptyStore : ParamStore α := {}

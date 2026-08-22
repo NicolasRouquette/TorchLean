@@ -146,8 +146,8 @@ def evalEvery : Nat := 100
 /-- Default evaluation episodes per checkpoint (override with `--eval-episodes`). -/
 def evalEpisodes : Nat := 5
 
-instance : Fact (0 < horizon) := ⟨by decide⟩
-instance : Fact (0 < nActions) := ⟨by decide⟩
+instance : NeZero horizon := ⟨by decide⟩
+instance : NeZero nActions := ⟨by decide⟩
 
 /-- The observation tensor shape used by this run: `[..., stateDim]`. -/
 def obsShape : Shape := shape![stateDim]
@@ -169,16 +169,18 @@ We use MLPs over RAM. For pixel observations you would typically use a CNN (see
 `NN.GraphSpec.Models.TorchLean.Cnn`) and wrap the environment with Atari preprocessing.
 -/
 
-def modelCfg : nn.models.PPOActorCriticConfig :=
+def modelCfg : nn.models.PPO.Config :=
   { obsDim := stateDim, hiddenDim := hiddenDim, nActions := nActions }
 
 /-- Construct the actor network as an MLP mapping RAM observations to action logits. -/
-def actorMk (pfx : Shape) : nn.Builder (nn.Sequential (pfx.appendDim stateDim) (pfx.appendDim nActions)) :=
-  nn.models.ppoActor modelCfg pfx
+def actorMk (leading : Shape) :
+    nn.Builder (nn.Sequential (leading.appendDim stateDim) (leading.appendDim nActions)) :=
+  nn.models.PPO.actor modelCfg leading
 
 /-- Construct the critic network as an MLP mapping RAM observations to a scalar value estimate. -/
-def criticMk (pfx : Shape) : nn.Builder (nn.Sequential (pfx.appendDim stateDim) (pfx.appendDim 1)) :=
-  nn.models.ppoCritic modelCfg pfx
+def criticMk (leading : Shape) :
+    nn.Builder (nn.Sequential (leading.appendDim stateDim) (leading.appendDim 1)) :=
+  nn.models.PPO.critic modelCfg leading
 
 /-!
 ## Gymnasium / ALE bridge
@@ -212,7 +214,8 @@ def checkEnvOnly : IO Unit := do
       (makeKwargs := makeKwargs)
   try
     let _obs ← rl.gym.client.reset gym (seed? := some 0)
-    let (_obs', reward, terminated, truncated) ← Runtime.RL.Gymnasium.Client.stepRaw gym 0
+    let (_obs', reward, terminated, truncated) ←
+      Runtime.RL.Gymnasium.Client.Internal.step gym 0
     IO.println
       s!"{exeName}: env check ok reward={reward} terminated={terminated} truncated={truncated}"
   finally
@@ -259,8 +262,8 @@ def main (args : List String) : IO UInt32 := do
           (makeKwargs := makeKwargs)
       try
         IO.eprintln "  building actor/critic..."
-        let seedActor ← nn.freshSeed
-        let seedCritic ← nn.freshSeed
+        let seedActor ← rand.nextSeedGlobal
+        let seedCritic ← rand.nextSeedGlobal
         let actorObs : nn.Sequential stateShape logitsShape :=
           nn.build seedActor (actorMk .scalar)
         let criticObs : nn.Sequential stateShape valueShape :=

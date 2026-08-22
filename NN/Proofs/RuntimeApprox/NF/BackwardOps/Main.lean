@@ -22,6 +22,7 @@ namespace RuntimeApprox
 open Spec
 open Tensor
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 
 noncomputable section
 

@@ -29,7 +29,7 @@ let trainer := Trainer.new model { task := .regression, optimizer := optim.adam 
 
 The edge basis is a normal config field. This example uses triangular piecewise-linear hats; a
 spline, polynomial, or rational edge family would plug in through the same
-`nn.models.KANEdgeFamily` slot, while the trainer continues to choose the task.
+`nn.models.KanEdgeFamily` slot, while the trainer continues to choose the task.
 -/
 
 @[expose] public section
@@ -54,19 +54,18 @@ def inDim : Nat := 7
 def outDim : Nat := 1
 
 /-- KAN configuration using triangular edge bases over normalized tabular features. -/
-def cfg : nn.models.KANConfig :=
-  { batch := batch
-    inDim := inDim
+def cfg : nn.models.KanConfig :=
+  { inDim := inDim
     hidden := []
     outDim := outDim
-    edge := nn.models.KANPiecewiseLinear.edgeFamily { gridSize := 4, inputScale := 3 } }
+    edge := nn.models.KanPiecewiseLinear.edgeFamily { gridSize := 4, inputScale := 3 } }
 
-abbrev σ := nn.models.kanInShape cfg
-abbrev τ := nn.models.kanOutShape cfg
+abbrev σ := cfg.inputShape (.dim batch .scalar)
+abbrev τ := cfg.outputShape (.dim batch .scalar)
 
 /-- Generic KAN model. Regression/classification is selected by `Trainer`, not by the model name. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.kan cfg
+  nn.models.kan cfg (.dim batch .scalar)
 
 /-- Prepared Auto MPG CSV as a public trainer dataset. -/
 def data (path : System.FilePath) (seed : Nat) : Trainer.DataSource σ τ :=

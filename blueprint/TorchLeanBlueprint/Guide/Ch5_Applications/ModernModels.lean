@@ -69,7 +69,6 @@ the reusable configuration is indexed by the number $`d` of spatial axes:
 
 ```
 structure ResNetConfig (d : Nat) where
-  batch          : Nat
   inChannels     : Nat
   spatial        : Vector Nat d
   spatialNonzero : ∀ i, spatial.get i ≠ 0
@@ -77,17 +76,17 @@ structure ResNetConfig (d : Nat) where
   numClasses     : Nat
 ```
 
-Its input and output are
+The constructor accepts a separate leading shape $`L`. Its input and output are
 
 $$`\operatorname{input}
-=B\times C_{\mathrm{in}}\times n_1\times\cdots\times n_d,`
+=L\mathbin{+\!+}(C_{\mathrm{in}},n_1,\ldots,n_d),`
 
-$$`\operatorname{output}=B\times C_{\mathrm{class}}.`
+$$`\operatorname{output}=L\mathbin{+\!+}(C_{\mathrm{class}}).`
 
 The constructor uses a convolutional stem, two residual blocks, global average pooling over all
 $`d` spatial axes, and a linear classifier. The pooling operation is parameterized by the spatial
-vector. The CIFAR example instantiates $`d=2`; the model API itself is not tied to images or to two
-dimensions.
+vector. The CIFAR example instantiates $`d=2` and $`L=(B)`; the model API itself is not tied to
+images, two dimensions, or one batch axis.
 
 The next chapter runs this compact CIFAR application and inspects the resulting loss log. Here we
 stay with the architectural question: where must the two residual branches agree?
@@ -172,7 +171,7 @@ models this as a hard mask in the semantic layer. It does not use a finite addit
 as $`-1000` as a mathematical substitute for negative infinity.
 
 The shared GPT-family constructor in
-[`NN.API.Models.Gpt2`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Gpt2.lean)
+[`NN.API.Models.CausalTransformer`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/CausalTransformer.lean)
 has the architecture
 
 ```
@@ -183,10 +182,11 @@ token embedding
   -> vocabulary projection
 ```
 
-Its configuration records batch size, sequence length, vocabulary size, head count, head width,
-feed-forward width, depth, activation, dropout, normalization order, and initialization. The name
-“GPT-2-style” describes this architecture lineage. It does not mean that the command loads OpenAI
-GPT-2 weights.
+Its configuration records sequence length, vocabulary size, head count, head width, feed-forward
+width, depth, activation, dropout, normalization order, and initialization. A model constructor
+then receives the leading shape used by a particular run, so batch size is not part of the
+Transformer architecture. The name “GPT-2-style” describes this architecture lineage. It does not
+mean that the command loads OpenAI GPT-2 weights.
 
 # State-Space Models
 

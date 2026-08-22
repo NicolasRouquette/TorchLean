@@ -34,21 +34,21 @@ variable {rnd : ℝ → ℤ} [NeuralValidRndToNearest rnd]
 local notation "R" => TorchLean.Floats.NF β fexp rnd
 
 /--
-`approxT` bound for scaling by a runtime constant (`scale_spec`) over arbitrary tensor shapes.
+`approxTensor` bound for scaling by a runtime constant (`scale_spec`) over arbitrary tensor shapes.
 
 This is the tensor-level wrapper around the scalar scaling lemma `approx_scale_nf`.
 -/
-theorem approxT_scale_spec {s : Shape} (c : R) :
+theorem approxTensor_scale_spec {s : Shape} (c : R) :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (scaleSpec (α := SpecScalar) (s := s) xS (toSpec (β := β) (fexp := fexp) (rnd := rnd) c))
           (scaleSpec (α := R) (s := s) xR c)
           (linfNorm (scaleBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps c xR)) :=
             by
   intro xS xR eps hx
   have h :=
-    approxT_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+    approxTensor_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
       rnd))
       (s := s)
       (fS := fun x => x * toSpec (β := β) (fexp := fexp) (rnd := rnd) c)
@@ -66,20 +66,20 @@ theorem approxT_scale_spec {s : Shape} (c : R) :
 
 If `xR` approximates `xS` by `eps` and the runtime coefficient `cR` approximates `cS` by `epsC`,
 then this theorem accounts for both perturbations and the final rounded multiplication. It is the
-coefficient-aware counterpart of `approxT_scale_spec`.
+coefficient-aware counterpart of `approxTensor_scale_spec`.
 -/
-theorem approxT_scale_spec_of_approx {s : Shape} (cS : ℝ) (cR : R) :
+theorem approxTensor_scale_spec_of_approx {s : Shape} (cS : ℝ) (cR : R) :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps epsC : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
       abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) cR - cS) ≤ epsC →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (scaleSpec (α := SpecScalar) (s := s) xS cS)
           (scaleSpec (α := R) (s := s) xR cR)
           (linfNorm (scaleApproxBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
             (s := s) eps epsC cR xR)) := by
   intro xS xR eps epsC hx hc
   have h :=
-    approxT_map_spec_of_scalar_bound (α := R)
+    approxTensor_map_spec_of_scalar_bound (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (s := s) (fS := fun x => x * cS) (fR := fun xR => xR * cR)
       (bnd := fun a eps =>
@@ -95,16 +95,16 @@ theorem approxT_scale_spec_of_approx {s : Shape} (cS : ℝ) (cR : R) :
             (epsx := eps) (epsy := epsC) hx hc))
   simpa [scaleSpec, scaleApproxBoundTensor] using h
 
-/-- `approxT` bound for elementwise negation (`neg_spec`) over arbitrary tensor shapes. -/
-theorem approxT_neg_spec {s : Shape} :
+/-- `approxTensor` bound for elementwise negation (`neg_spec`) over arbitrary tensor shapes. -/
+theorem approxTensor_neg_spec {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (negSpec xS) (negSpec xR)
           (linfNorm (negBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps xR)) := by
   intro xS xR eps hx
   have h :=
-    approxT_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+    approxTensor_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
       rnd))
       (s := s)
       (fS := Neg.neg) (fR := Neg.neg)
@@ -116,16 +116,16 @@ theorem approxT_neg_spec {s : Shape} :
           (approx_neg_nf (β := β) (fexp := fexp) (rnd := rnd) (x := x) (xR := xR) (eps := eps) hx))
   simpa [negSpec, negBoundTensor] using h
 
-/-- `approxT` bound for elementwise absolute value (`abs_spec`) over arbitrary tensor shapes. -/
-theorem approxT_abs_spec {s : Shape} :
+/-- `approxTensor` bound for elementwise absolute value (`abs_spec`) over arbitrary tensor shapes. -/
+theorem approxTensor_abs_spec {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (absSpec xS) (absSpec xR)
           (linfNorm (absBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps xR)) := by
   intro xS xR eps hx
   have h :=
-    approxT_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+    approxTensor_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
       rnd))
       (s := s)
       (fS := MathFunctions.abs) (fR := MathFunctions.abs)
@@ -139,19 +139,19 @@ theorem approxT_abs_spec {s : Shape} :
   simpa [absSpec, absBoundTensor] using h
 
 /--
-`approxT` bound for elementwise exponentiation (`exp_spec`) over arbitrary tensor shapes.
+`approxTensor` bound for elementwise exponentiation (`exp_spec`) over arbitrary tensor shapes.
 
 This lifts the scalar mean-value-theorem bound `approx_exp_nf`.
 -/
-theorem approxT_exp_spec {s : Shape} :
+theorem approxTensor_exp_spec {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (expSpec xS) (expSpec xR)
           (linfNorm (expBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps xR)) := by
   intro xS xR eps hx
   have h :=
-    approxT_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+    approxTensor_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
       rnd))
       (s := s)
       (fS := MathFunctions.exp) (fR := MathFunctions.exp)
@@ -166,14 +166,14 @@ theorem approxT_exp_spec {s : Shape} :
 
 The pointwise lower bound is carried by `Tensor.Forall`; the global condition `eps < η` guarantees
 that every rounded input remains positive. The output budget is assembled entrywise and reduced by
-the same infinity norm used throughout `approxT`.
+the same infinity norm used throughout `approxTensor`.
 -/
-theorem approxT_sqrt_spec_of_pos_lb {s : Shape} (η : ℝ) (hη : 0 < η) :
+theorem approxTensor_sqrt_spec_of_pos_lb {s : Shape} (η : ℝ) (hη : 0 < η) :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
       Tensor.Forall (fun x : ℝ => η ≤ x) xS →
       eps < η →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (sqrtSpec xS) (sqrtSpec xR)
           (linfNorm (sqrtPosBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
             (s := s) η eps xR)) := by
@@ -184,12 +184,12 @@ theorem approxT_sqrt_spec_of_pos_lb {s : Shape} (η : ℝ) (hη : 0 < η) :
       | scalar x =>
           cases xR with
           | scalar xR =>
-              have hx' := (approxT_scalar_iff (α := R)
+              have hx' := (approxTensor_scalar_iff (α := R)
                 (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).mp hx
               have hsqrt := approx_sqrt_clamp_nf_of_lb
                 (β := β) (fexp := fexp) (rnd := rnd)
                 hη (le_trans (by simpa using hdom) (le_max_left x 0)) hx'
-              apply (approxT_scalar_iff (α := R)
+              apply (approxTensor_scalar_iff (α := R)
                 (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).mpr
               change
                 abs
@@ -216,13 +216,13 @@ theorem approxT_sqrt_spec_of_pos_lb {s : Shape} (η : ℝ) (hη : 0 < η) :
                   (linf_norm_nonneg
                     (t := sqrtPosBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                       (s := .dim n inner) η eps (Tensor.dim valuesR)))
-              refine approxT_dim_of_forall
+              refine approxTensor_dim_of_forall
                 (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                 (xS := sqrtSpec (Tensor.dim valuesS))
                 (xR := sqrtSpec (Tensor.dim valuesR))
                 (eps := bound) hbound ?_
               intro i
-              have hxI := approxT_dim_get (α := R)
+              have hxI := approxTensor_dim_get (α := R)
                 (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hx i
               have hlocal := ih hxI (by simpa using hdom i) hbudget
               have hle :
@@ -235,23 +235,23 @@ theorem approxT_sqrt_spec_of_pos_lb {s : Shape} (η : ℝ) (hη : 0 < η) :
                   linfNorm (sqrtPosBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                     (s := inner) η eps (valuesR i)) ≤ bound at h
                 exact h
-              exact approxT_mono hlocal hle
+              exact approxTensor_mono hlocal hle
 
 /--
-`approxT` bound for elementwise hyperbolic tangent (`tanh`) over arbitrary tensor shapes.
+`approxTensor` bound for elementwise hyperbolic tangent (`tanh`) over arbitrary tensor shapes.
 
 Currently uses the coarse unconditional scalar bound `approx_tanh_nf` (boundedness of `tanh`).
 -/
-theorem approxT_tanh_spec {s : Shape} :
+theorem approxTensor_tanh_spec {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mapSpec (s := s) MathFunctions.tanh xS)
           (mapSpec (s := s) MathFunctions.tanh xR)
           (linfNorm (tanhBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps xR)) := by
   intro xS xR eps hx
   have h :=
-    approxT_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+    approxTensor_map_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
       rnd))
       (s := s)
       (fS := MathFunctions.tanh) (fR := MathFunctions.tanh)
@@ -284,14 +284,14 @@ def reluBoundTensor {s : Shape} (eps : ℝ) (xR : Tensor R s) : SpecTensor s :=
     (tensorToSpec (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xR)
 
 /--
-`approxT` bound for elementwise ReLU (`max · 0`) over arbitrary tensor shapes.
+`approxTensor` bound for elementwise ReLU (`max · 0`) over arbitrary tensor shapes.
 
 Combines the 1-Lipschitz property of `max` with one rounding step for `reluR`.
 -/
-theorem approxT_relu_spec {s : Shape} :
+theorem approxTensor_relu_spec {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mapSpec (fun x => max x 0) xS)
           (mapSpec (reluR (β := β) (fexp := fexp) (rnd := rnd)) xR)
           (linfNorm (reluBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps xR)) := by
@@ -303,7 +303,7 @@ theorem approxT_relu_spec {s : Shape} :
           cases xR with
           | scalar xR =>
               have hx' :=
-                (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                   (x := x) (xR := xR) (eps := eps)).1 hx
               let xhat : ℝ := toSpec (β := β) (fexp := fexp) (rnd := rnd) xR
               have hround :
@@ -357,7 +357,7 @@ theorem approxT_relu_spec {s : Shape} :
                   tensorLinfNorm, MathFunctions.abs, xhat] using
                   (le_abs_self (eps + neuralUlp β fexp (max xhat 0) / 2))
               exact
-                (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                   (x := max x 0) (xR := reluR (β := β) (fexp := fexp) (rnd := rnd) xR)
                   (eps := linfNorm
                     (reluBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
@@ -385,7 +385,7 @@ theorem approxT_relu_spec {s : Shape} :
                       ≤ B := by
                 intro i
                 have hx_i :=
-                  approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                  approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                     (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := eps) hx i
                 have hih := ih (xS := xSf i) (xR := xRf i) hx_i
                 have hB_ge :
@@ -403,7 +403,7 @@ theorem approxT_relu_spec {s : Shape} :
                           (mapSpec (reluR (β := β) (fexp := fexp) (rnd := rnd)) (xRf i)))
                       ≤ linfNorm (reluBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                         (s := s) eps (xRf i)) := by
-                  simpa [approxT, approxWith] using hih
+                  simpa [approxTensor, approxWith] using hih
                 exact le_trans hdist hB_ge
               have hf :
                   ∀ i ∈ List.finRange n,
@@ -443,7 +443,7 @@ theorem approxT_relu_spec {s : Shape} :
                     0 (List.finRange n) ≤ B
                 simpa [tensorDistance, linfNorm, RuntimeApprox.linfNorm, tensorToSpec,
                   MathFunctions.abs, Spec.mapTensor] using hfold
-              simpa [approxT, approxWith, B, mapSpec] using this
+              simpa [approxTensor, approxWith, B, mapSpec] using this
 
 
 end NFBackend

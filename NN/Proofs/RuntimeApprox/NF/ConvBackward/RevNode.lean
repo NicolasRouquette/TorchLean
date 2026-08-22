@@ -9,11 +9,11 @@ module
 public import NN.Proofs.RuntimeApprox.NF.ConvBackward.Input
 
 /-!
-# Conv2D Backward as a RuntimeApprox Reverse Node
+# Conv2d Backward as a RuntimeApprox Reverse Node
 
 The previous files prove pointwise bounds for the bias, kernel, and input-gradient pieces. This file
 packages those pieces into the `RevNode` interface used by the generic reverse-graph approximation
-theorems, so Conv2D backward can participate in end-to-end NeuralFloat runtime proofs.
+theorems, so Conv2d backward can participate in end-to-end NeuralFloat runtime proofs.
 -/
 
 @[expose] public section
@@ -24,6 +24,7 @@ namespace RuntimeApprox
 open Spec
 open Tensor
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 
 noncomputable section
 
@@ -38,7 +39,7 @@ local notation "R" => TorchLean.Floats.NF β fexp rnd
 
 
 /--
-Package Conv2D forward + backward (VJP) as a `RevNode` for `RevGraph.backprop_approx`.
+Package Conv2d forward + backward (VJP) as a `RevNode` for `RevGraph.backprop_approx`.
 
 The node uses the forward bound from `conv2d_forward` and the three gradient bounds proved in this
 file (kernel/bias/input) to provide a compositional reverse-mode approximation theorem.
@@ -91,7 +92,7 @@ by
         let kernelS := getIdx (α := SpecScalar) ctx kernelIdx
         let biasS := getIdx (α := SpecScalar) ctx biasIdx
         let inputS := getIdx (α := SpecScalar) ctx inputIdx
-        let layerS : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+        let layerS : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
           { kernel := kernelS, bias := biasS }
         let dK := Spec.conv2dKernelDerivSpec (α := ℝ) (layer := layerS) (input := inputS)
           (grad_output := δ)
@@ -99,7 +100,7 @@ by
           (grad_output := δ)
         let dX := Spec.conv2dInputDerivSpec (α := ℝ) (layer := layerS) (input := inputS)
           (grad_output := δ)
-        TList.set3IdxNe (α := SpecScalar) (Γ := Γ) (s₁ := (.dim outC (.dim inC (.dim kH (.dim kW
+        SparseContext.set3IdxNe (α := SpecScalar) (Γ := Γ) (s₁ := (.dim outC (.dim inC (.dim kH (.dim kW
           .scalar)))))
           (s₂ := (.dim outC .scalar)) (s₃ := (.dim inC (.dim inH (.dim inW .scalar))))
           kernelIdx dK biasIdx dB inputIdx dX hab hac hbc
@@ -107,7 +108,7 @@ by
         let kernelR := getIdx (α := R) ctx kernelIdx
         let biasR := getIdx (α := R) ctx biasIdx
         let inputR := getIdx (α := R) ctx inputIdx
-        let layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3 :=
+        let layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3 :=
           { kernel := kernelR, bias := biasR }
         let dK := Spec.conv2dKernelDerivSpec (α := R) (layer := layerR) (input := inputR)
           (grad_output := δ)
@@ -115,7 +116,7 @@ by
           (grad_output := δ)
         let dX := Spec.conv2dInputDerivSpec (α := R) (layer := layerR) (input := inputR)
           (grad_output := δ)
-        TList.set3IdxNe (α := R) (Γ := Γ) (s₁ := (.dim outC (.dim inC (.dim kH (.dim kW
+        SparseContext.set3IdxNe (α := R) (Γ := Γ) (s₁ := (.dim outC (.dim inC (.dim kH (.dim kW
           .scalar)))))
           (s₂ := (.dim outC .scalar)) (s₃ := (.dim inC (.dim inH (.dim inW .scalar))))
           kernelIdx dK biasIdx dB inputIdx dX hab hac hbc
@@ -162,15 +163,15 @@ by
   let biasR := getIdx (α := R) ctxR biasIdx
   let inputS := getIdx (α := SpecScalar) ctxS inputIdx
   let inputR := getIdx (α := R) ctxR inputIdx
-  let layerS : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+  let layerS : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
     { kernel := kernelS, bias := biasS }
-  let layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3 :=
+  let layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3 :=
     { kernel := kernelR, bias := biasR }
   let epsK := getIdxEps (Γ := Γ) (s := (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))) epsCtx
     kernelIdx
   let epsX := getIdxEps (Γ := Γ) (s := (.dim inC (.dim inH (.dim inW .scalar)))) epsCtx inputIdx
   have hBias :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.conv2dBiasDerivSpec (α := ℝ) (layer := layerS) (input := inputS) (grad_output :=
           δS))
       (Spec.conv2dBiasDerivSpec (α := R) (layer := layerR) (input := inputR) (grad_output :=
@@ -182,14 +183,14 @@ by
               δR epsδ)) := by
     -- `bias_deriv` depends only on `δ`, but we keep the same `layer`/`input` arguments.
     simpa [kernelS, kernelR, biasS, biasR, inputS, inputR, layerS, layerR] using
-      (approxT_conv2d_bias_deriv_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_conv2d_bias_deriv_spec (β := β) (fexp := fexp) (rnd := rnd)
         (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
           (inH := inH) (inW := inW)
         (h1 := h1) (h2 := h2) (h3 := h3)
         (kernelS := kernelS) (kernelR := kernelR) (biasS := biasS) (biasR := biasR)
         (inputS := inputS) (inputR := inputR) (δS := δS) (δR := δR) (epsδ := epsδ) hδ)
   have hKernel :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.conv2dKernelDerivSpec (α := ℝ) (layer := layerS) (input := inputS) (grad_output :=
           δS))
       (Spec.conv2dKernelDerivSpec (α := R) (layer := layerR) (input := inputR) (grad_output :=
@@ -199,11 +200,11 @@ by
           (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
             (inH := inH) (inW := inW)
           inputR δR epsX epsδ)) := by
-    have hX' : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS
+    have hX' : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS
       inputR epsX := by
       simpa [epsX] using hX
     simpa [kernelS, kernelR, biasS, biasR, inputS, inputR, layerS, layerR] using
-      (approxT_conv2d_kernel_deriv_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_conv2d_kernel_deriv_spec (β := β) (fexp := fexp) (rnd := rnd)
         (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
           (inH := inH) (inW := inW)
         (h1 := h1) (h2 := h2) (h3 := h3)
@@ -211,7 +212,7 @@ by
         (inputS := inputS) (inputR := inputR) (δS := δS) (δR := δR) (epsX := epsX) (epsδ := epsδ)
         hX' hδ)
   have hInput :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.conv2dInputDerivSpec (α := ℝ) (layer := layerS) (input := inputS) (grad_output :=
           δS))
       (Spec.conv2dInputDerivSpec (α := R) (layer := layerR) (input := inputR) (grad_output :=
@@ -221,11 +222,11 @@ by
           (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
             (inH := inH) (inW := inW)
           kernelR δR epsK epsδ)) := by
-    have hK' : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) kernelS
+    have hK' : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) kernelS
       kernelR epsK := by
       simpa [epsK] using hK
     simpa [kernelS, kernelR, biasS, biasR, inputS, inputR, layerS, layerR] using
-      (approxT_conv2d_input_deriv_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_conv2d_input_deriv_spec (β := β) (fexp := fexp) (rnd := rnd)
         (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
           (inH := inH) (inW := inW)
         (h1 := h1) (h2 := h2) (h3 := h3)

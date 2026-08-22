@@ -11,9 +11,9 @@ public import NN.API.Seeded
 /-!
 # Convolutional Classifier
 
-The classifier is polymorphic in the number of spatial axes. Its input has shape
-`(batch, channels, spatial...)`; convolution and pooling use the same vector-valued configuration
-for signals, images, volumes, and higher-dimensional data.
+The classifier is polymorphic in both its leading dimensions and the number of spatial axes.
+Convolution and pooling use the same vector-valued configuration for signals, images, volumes,
+and higher-dimensional data.
 -/
 
 @[expose] public section
@@ -24,9 +24,7 @@ namespace nn
 namespace models
 
 /-- Configuration for a compact convolutional classifier. -/
-structure CNNConfig (d : Nat) where
-  /-- Number of independent samples processed together. -/
-  batch : Nat
+structure CnnConfig (d : Nat) where
   /-- Number of channels in each input sample. -/
   inChannels : Nat
   /-- Extent of each spatial axis. -/
@@ -39,37 +37,42 @@ structure CNNConfig (d : Nat) where
   pool : Pool d
 
 /-- Spatial extent after convolution. -/
-def CNNConfig.afterConv {d : Nat} (cfg : CNNConfig d) : Vector Nat d :=
+def CnnConfig.afterConv {d : Nat} (cfg : CnnConfig d) : Vector Nat d :=
   Spec.convOutSpatial cfg.spatial cfg.conv.kernel cfg.conv.stride cfg.conv.padding
 
 /-- Spatial extent after pooling. -/
-def CNNConfig.afterPool {d : Nat} (cfg : CNNConfig d) : Vector Nat d :=
+def CnnConfig.afterPool {d : Nat} (cfg : CnnConfig d) : Vector Nat d :=
   Spec.poolOutSpatialPad cfg.afterConv cfg.pool.kernel cfg.pool.stride cfg.pool.padding
 
 /-- Number of features presented to the classifier head. -/
-def CNNConfig.featureCount {d : Nat} (cfg : CNNConfig d) : Nat :=
+def CnnConfig.featureCount {d : Nat} (cfg : CnnConfig d) : Nat :=
   Spec.Shape.size (Spec.Shape.ofList (cfg.conv.outChannels :: cfg.afterPool.toList))
 
-/-- Input tensor shape `(batch, inChannels, spatial...)`. -/
-def cnnInShape {d : Nat} (cfg : CNNConfig d) : Spec.Shape :=
-  .dim cfg.batch (Spec.Shape.ofList (cfg.inChannels :: cfg.spatial.toList))
+namespace CnnConfig
 
-/-- Classifier output shape `(batch, outDim)`. -/
-def cnnOutShape {d : Nat} (cfg : CNNConfig d) : Spec.Shape :=
-  .dim cfg.batch (.dim cfg.outDim .scalar)
+/-- Input shape with arbitrary leading dimensions. -/
+def inputShape {d : Nat} (cfg : CnnConfig d) (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.concat (Spec.Shape.ofList (cfg.inChannels :: cfg.spatial.toList))
+
+/-- Classifier output shape with the same leading dimensions as the input. -/
+def outputShape {d : Nat} (cfg : CnnConfig d) (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.appendDim cfg.outDim
+
+end CnnConfig
 
 /-- Build `convolution -> activation -> max pool -> flatten -> linear`. -/
-def cnn {d : Nat} (cfg : CNNConfig d) (hInChannels : cfg.inChannels ≠ 0 := by decide) :
-    Builder (Sequential (cnnInShape cfg) (cnnOutShape cfg)) :=
+def cnn {d : Nat} (cfg : CnnConfig d) (leading : Spec.Shape := .scalar)
+    (hInChannels : cfg.inChannels ≠ 0 := by decide) :
+    Builder (Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
   letI : NeZero cfg.inChannels := ⟨hInChannels⟩
-  let convolution := conv (leading := .dim cfg.batch .scalar) cfg.spatial cfg.conv
-  let pooling := maxPool (leading := .dim cfg.batch .scalar) cfg.afterConv cfg.pool
+  let convolution := conv (leading := leading) cfg.spatial cfg.conv
+  let pooling := maxPool (leading := leading) cfg.afterConv cfg.pool
   nn.Sequential![
     convolution,
     relu,
     pooling,
-    flattenLeading (.dim cfg.batch .scalar),
-    linear cfg.featureCount cfg.outDim (pfx := .dim cfg.batch .scalar)
+    flattenLeading leading,
+    linear cfg.featureCount cfg.outDim (leading := leading)
   ]
 
 end models

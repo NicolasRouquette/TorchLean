@@ -101,7 +101,7 @@ open TorchLean
 #check TorchLean.Trainer.new
 #check TorchLean.Data.tensorDataset
 #check TorchLean.Loss.mse
-#check TorchLean.Metrics.argmax?
+#check TorchLean.Metrics.argmaxVector?
 #check Spec.KNN
 #check random_forest.Numeric.RegressionForestSpec
 #check Spec.pcaForwardSpec

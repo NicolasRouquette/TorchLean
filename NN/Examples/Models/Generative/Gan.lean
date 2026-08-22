@@ -43,35 +43,60 @@ def exeName : String := "torchlean gan"
 def defaultLogJson : System.FilePath := ModelZoo.trainLogPath "gan"
 
 /--
-Shared vector-image configuration.
-
-The generator, discriminator, latent batch, score batch, and CIFAR vector batch all derive from this
-record, so shape changes stay centralized.
+Shared generator and discriminator dimensions.
 -/
-def cfg : nn.models.VectorGenerativeConfig :=
-  nn.models.vectorGenerativeConfig 1 16 8 4
+def cfg : nn.models.DenseGenerative.Config :=
+  { dataDim := 16, hiddenDim := 8, latentDim := 4 }
+
+/-- Number of vectors in each training sample. -/
+def batch : Nat := 1
 
 /-- Latent-noise batch shape for the generator input. -/
-abbrev Z := nn.models.vectorLatentShape cfg
+abbrev Z := cfg.latentShape (.dim batch .scalar)
 
 /-- Flattened CIFAR image-vector batch shape. -/
-abbrev X := nn.models.vectorDataShape cfg
+abbrev X := cfg.dataShape (.dim batch .scalar)
 
 /-- Discriminator score shape: one scalar score per batch row. -/
-abbrev S : Shape := .dim cfg.batch (.dim 1 .scalar)
+abbrev S : Shape := cfg.scoreShape (.dim batch .scalar)
+
+namespace Internal
+
+/-- Deterministic example noise in `[lo, hi)`. -/
+def noise (dim seed salt : Nat) (lo hi : Float) :
+    Tensor Float (.dim batch (.dim dim .scalar)) :=
+  .dim fun bi => .dim fun j =>
+    let offset := bi.val * dim + j.val
+    let raw := (seed * 1103515245 + offset * 12345 + salt) % 997
+    let unit := Float.ofNat raw / 997.0
+    .scalar (lo + (hi - lo) * unit)
+
+/-- Deterministic latent input used by the compact generator run. -/
+def latentNoise (seed : Nat) : Tensor Float Z :=
+  noise cfg.latentDim seed 17 (-1.0) 1.0
+
+/-- Deterministic data-shaped input used as the discriminator's negative sample. -/
+def dataNoise (seed : Nat) : Tensor Float X :=
+  noise cfg.dataDim seed 91 0.0 1.0
+
+/-- Constant discriminator target. -/
+def scoreTarget (value : Float) : Tensor Float S :=
+  .dim fun _ => .dim fun _ => .scalar value
+
+end Internal
 
 /-- Generator network mapping latent vectors to flattened image vectors. -/
 def mkGenerator : nn.Builder (nn.Sequential Z X) :=
-  nn.models.vectorGanGenerator cfg
+  nn.models.DenseGenerative.ganGenerator cfg (.dim batch .scalar)
 
 /-- Discriminator network mapping flattened image vectors to scalar real/fake scores. -/
 def mkDiscriminator : nn.Builder (nn.Sequential X S) :=
-  nn.models.vectorGanDiscriminator cfg
+  nn.models.DenseGenerative.ganDiscriminator cfg (.dim batch .scalar)
 
 /-- Mean-squared error for one supervised sample evaluated through a public prediction closure. -/
 def sampleMse {σ τ : Shape}
     (predict : Tensor Float σ → IO (Tensor Float τ))
-    (sample : SupervisedSample Float σ τ) : IO Float := do
+    (sample : Sample.Supervised Float σ τ) : IO Float := do
   let yhat ← predict (Sample.x sample)
   pure (_root_.Spec.mseSpec yhat (Sample.y sample))
 
@@ -85,8 +110,8 @@ the model state, optimizer stepping, and backend details stay inside `trainer.tr
 def totalLoss
     (predictGen : Tensor Float Z → IO (Tensor Float X))
     (predictDisc : Tensor Float X → IO (Tensor Float S))
-    (genSample : SupervisedSample Float Z X)
-    (discReal discFake : SupervisedSample Float X S) : IO Float := do
+    (genSample : Sample.Supervised Float Z X)
+    (discReal discFake : Sample.Supervised Float X S) : IO Float := do
   let g ← sampleMse predictGen genSample
   let dr ← sampleMse predictDisc discReal
   let df ← sampleMse predictDisc discFake
@@ -102,12 +127,12 @@ checks that both networks, optimizers, CUDA memory reporting, and real-data load
 -/
 def trainCurve (opts : Options) (xPath yPath : System.FilePath)
     (nRows seed steps cudaMemWatch : Nat) : IO Training.Curve := do
-  let realX ← RealData.loadCifarVectorBatch cfg (by decide) exeName xPath yPath nRows seed
-  let z := nn.models.latentNoise cfg seed
-  let noiseX := nn.models.dataNoise cfg (seed + 17)
-  let genSample : SupervisedSample Float Z X := Sample.mk z realX
-  let discReal : SupervisedSample Float X S := Sample.mk realX (nn.models.onesScore cfg)
-  let discFake : SupervisedSample Float X S := Sample.mk noiseX (nn.models.zerosScore cfg)
+  let realX ← RealData.loadCifarFeatureBatch batch cfg (by decide) exeName xPath yPath nRows seed
+  let z := Internal.latentNoise seed
+  let noiseX := Internal.dataNoise (seed + 17)
+  let genSample : Sample.Supervised Float Z X := Sample.mk z realX
+  let discReal : Sample.Supervised Float X S := Sample.mk realX (Internal.scoreTarget 1.0)
+  let discFake : Sample.Supervised Float X S := Sample.mk noiseX (Internal.scoreTarget 0.0)
   let genTrainer :=
     Trainer.new mkGenerator <|
       Trainer.Config.fromRunConfig

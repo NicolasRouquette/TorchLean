@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Train.IoLoader.Common
+public import NN.Runtime.Autograd.Train.IoLoader.Parsing
 
 /-!
 # CSV loaders
@@ -166,38 +166,6 @@ def readCsvFloatRows (path : System.FilePath) (opts : CsvOptions := {}) :
         pure (.error (tagError "csv" "no data rows"))
       else
         pure (.ok rows)
-
-/--
-Read a two-column CSV file into a dataset of pairs `(x, y)`.
-
-This is useful for small regression examples where each row is one training pair.
--/
-def readCsvDatasetPairs (path : System.FilePath) (opts : CsvOptions := {}) :
-  IO (Result (Dataset (Prod Float Float))) := do
-  let rowsRes <- readCsvFloatRows path opts
-  match rowsRes with
-  | .error e => pure (.error e)
-  | .ok rows =>
-      let pairsRes : Result (List (Prod Float Float)) := rows.mapM (fun row => do
-        match row with
-        | [x, y] => .ok (x, y)
-        | _ => .error (tagError "csv" "expected exactly 2 columns per row"))
-      pure (pairsRes.map Dataset.ofList)
-
-/--
-Read an `n`-column CSV file into a dataset of length-`n` vectors.
-
-Each row must have exactly `n` cells.
--/
-def readCsvVectorDataset (path : System.FilePath) (n : Nat) (opts : CsvOptions := {}) :
-  IO (Result (Dataset (Tensor Float (.dim n .scalar)))) := do
-  let rowsRes <- readCsvFloatRows path opts
-  match rowsRes with
-  | .error e => pure (.error e)
-  | .ok rows =>
-      let tensorsRes : Result (List (Tensor Float (.dim n .scalar))) := rows.mapM (fun row =>
-        vectorOfList (tag := "csv") (n := n) row)
-      pure (tensorsRes.map Dataset.ofList)
 
 end Train
 end Autograd

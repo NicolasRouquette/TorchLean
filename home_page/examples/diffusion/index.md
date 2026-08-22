@@ -145,9 +145,9 @@ compressed; the source file expands each convolution with the exact tensor shape
 initializers:
 
 ```lean
-def epsResidualConvNet (cfg : EpsConvNetConfig) :
-    nn.Builder (nn.Sequential (epsConvNetInShape cfg) (epsConvNetOutShape cfg)) :=
-  nn.sequential![
+def epsResidualConvNet (cfg : EpsConvNetConfig d) (leading : Spec.Shape := .scalar) :
+    nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
+  nn.Sequential![
     conv3x3SameImages,
     nn.relu,
     residualBlock,
@@ -172,19 +172,19 @@ Training is classic DDPM-style $\varepsilon$-prediction. Each step:
 4. pair `appendTimeChannel x_t tNorm` with the target noise $\varepsilon$,
 5. take an optimizer step on MSE.
 
-TorchLean makes the supervised pair explicit as a `SupervisedSample` value. The operation that
-constructs $x_t$ from $x_0$ and $\varepsilon$ is `NN.API.diffusion.noisedSampleFromEps`; it is the runtime
+TorchLean makes the supervised pair explicit as a `Sample.Supervised` value. The operation that
+constructs $x_t$ from $x_0$ and $\varepsilon$ is `NN.API.diffusion.noisedSampleFromNoise`; it is the runtime
 version of the same formula used by `qSample` in the spec layer.
 
 The excerpt below leaves out the local definitions of `sqrtAb`, `sqrtOneMinusAb`, and `tNorm`, but
 keeps the actual tensor transformation:
 
 ```lean
-def noisedSampleFromEps (leading : Spec.Shape) {d c : Nat} (spatial : Vector Nat d)
-    (alphaBars : Array Float) (T : Nat)
+def noisedSampleFromNoise (leading : Spec.Shape) {d c T : Nat} [NeZero T]
+    (spatial : Vector Nat d) (alphaBars : Vector Float T)
     (x0 eps : Tensor Float
       (leading.concat (Spec.Shape.ofList (c :: spatial.toList)))) (step : Nat) :
-    SupervisedSample Float
+    Sample.Supervised Float
       (leading.concat (Spec.Shape.ofList ((c + 1) :: spatial.toList)))
       (leading.concat (Spec.Shape.ofList (c :: spatial.toList))) :=
   let x_t :=
@@ -192,6 +192,11 @@ def noisedSampleFromEps (leading : Spec.Shape) {d c : Nat} (spatial : Vector Nat
     Spec.Tensor.scaleSpec eps sqrtOneMinusAb
   Sample.mk (appendTimeChannel x_t tNorm) eps
 ```
+
+The schedule length is part of the type. A coefficient vector for `T` diffusion steps cannot be
+used with a different timestep count, and the runnable command rejects `T = 0` before constructing
+its first sample. The noise seed controls only the sampled noise; the `step` argument selects the
+schedule coefficient.
 
 ## Sampling: DDIM Replay In Lean
 

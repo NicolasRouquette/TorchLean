@@ -8,6 +8,7 @@ module
 
 public import NN.Runtime.Autograd.Engine.Cuda.Tape
 public import NN.Runtime.Autograd.Engine.Cuda.Convert
+public import NN.Runtime.Autograd.TorchLean.Random
 
 public import NN.Runtime.Autograd.Engine.Cuda.Ops
 
@@ -107,25 +108,13 @@ structure AdamState where
 def zerosArray (n : Nat) : FloatArray :=
   FloatArray.mk (Array.mk (List.replicate n 0.0))
 
-/--
-One step of the small deterministic LCG used for fused-FNO parameter initialization.
-
-This stays local to the fused CUDA example path so the engine layer does not depend on the
-higher-level `Torch.Init` helper namespace.
--/
-def lcgNext (s : Nat) : Nat :=
-  (1664525 * s + 1013904223) % 4294967296
-
-/-- Deterministic pseudo-random number in `[0, 1)` derived from `seed` and a scalar index. -/
-def rand01 (seed idx : Nat) : Float :=
-  let rec go : Nat → Nat → Nat
-    | 0, s => lcgNext s
-    | Nat.succ n, s => go n (lcgNext s)
-  (Float.ofNat (go idx seed)) / 4294967296.0
-
 /-- Deterministic uniform sample in `[lo, hi)` for a scalar index. -/
 def uniformAt (seed idx : Nat) (lo hi : Float) : Float :=
-  lo + rand01 seed idx * (hi - lo)
+  let key := _root_.Runtime.Autograd.TorchLean.Random.keyOf seed 0
+  let denom : Nat := (2 : Nat) ^ 32
+  let unit := _root_.Runtime.Autograd.TorchLean.Random.sampleUnit (α := Float)
+    (_root_.Runtime.Autograd.TorchLean.Random.sampleNat key idx denom) denom
+  lo + unit * (hi - lo)
 
 /-- Initialize a row-major parameter array with deterministic uniform samples. -/
 def initFloatArray (shape : Shape) (seed : Nat) (lo hi : Float) : FloatArray :=

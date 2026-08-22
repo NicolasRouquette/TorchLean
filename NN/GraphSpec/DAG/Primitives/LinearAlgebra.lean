@@ -20,7 +20,7 @@ namespace NN
 namespace GraphSpec
 namespace DAG
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 open NN.Tensor
 
@@ -91,7 +91,7 @@ def batchedSharedMatMul (batch mDim nDim pDim : Nat) :
             (_root_.Spec.Shape.CanBroadcastTo.dim_1_to_n
               (_root_.Spec.Shape.CanBroadcastTo.dim_eq
                 (_root_.Spec.Shape.CanBroadcastTo.dim_eq
-                  (_root_.Spec.Shape.CanBroadcastTo.scalar_to_any .scalar)))) singleton
+                  _root_.Spec.Shape.CanBroadcastTo.scalar))) singleton
           Runtime.Autograd.TorchLean.bmm (m := m) (α := α)
             (batch := batch) (mDim := mDim) (nDim := nDim) (pDim := pDim)
             expanded weights :
@@ -117,8 +117,8 @@ def batchedSharedVecMat (batch rows columns : Nat) :
   { name := s!"batchedSharedVecMat({batch},{rows},{columns})"
     specFwd := fun {α} _ xs =>
       match xs with
-      | .cons vector (.cons (.dim matrices) .nil) =>
-          .dim fun i => _root_.Spec.vecMatMulSpec (α := α) vector (matrices i)
+      | .cons v (.cons (.dim matrices) .nil) =>
+          .dim fun i => _root_.Spec.vecMatMulSpec (α := α) v (matrices i)
     program := fun {α} _ _ =>
       fun {m} _ _ => fun vector matrices =>
         (do
@@ -130,7 +130,7 @@ def batchedSharedVecMat (batch rows columns : Nat) :
             (_root_.Spec.Shape.CanBroadcastTo.dim_1_to_n
               (_root_.Spec.Shape.CanBroadcastTo.dim_eq
                 (_root_.Spec.Shape.CanBroadcastTo.dim_eq
-                  (_root_.Spec.Shape.CanBroadcastTo.scalar_to_any .scalar)))) singleton
+                  _root_.Spec.Shape.CanBroadcastTo.scalar))) singleton
           let product ← Runtime.Autograd.TorchLean.bmm (m := m) (α := α)
             (batch := batch) (mDim := 1) (nDim := rows) (pDim := columns)
             expanded matrices
@@ -194,8 +194,8 @@ def batchedSharedDot (batch width : Nat) :
   { name := s!"batchedSharedDot({batch},{width})"
     specFwd := fun {α} _ xs =>
       match xs with
-      | .cons vector (.cons (.dim vectors) .nil) =>
-          .dim fun i => .scalar (_root_.Spec.Tensor.dotSpec (α := α) vector (vectors i))
+      | .cons v (.cons (.dim vectors) .nil) =>
+          .dim fun i => .scalar (_root_.Spec.Tensor.dotSpec (α := α) v (vectors i))
     program := fun {α} _ _ =>
       fun {m} _ _ => fun vector vectors =>
         (do
@@ -221,21 +221,22 @@ def batchedDepthwiseWeightedSum (batch width channels : Nat)
       [ .dim batch (.dim width (.dim channels .scalar)),
         .dim batch (.dim width (.dim channels .scalar)) ]
       (.dim batch (.dim channels .scalar)) :=
-  letI : Fact (0 < batch) := ⟨hBatch⟩
-  letI : Fact (0 < width) := ⟨hWidth⟩
-  letI : Fact (0 < channels) := ⟨hChannels⟩
-  letI : _root_.Spec.Shape.valid_axis_inst 0
+  letI : NeZero batch := ⟨Nat.ne_of_gt hBatch⟩
+  letI : NeZero width := ⟨Nat.ne_of_gt hWidth⟩
+  letI : NeZero channels := ⟨Nat.ne_of_gt hChannels⟩
+  letI : _root_.Spec.Shape.HasNonemptyAxis 0
       (.dim width (.dim channels .scalar)) :=
-    _root_.Spec.Shape.validAxisInstZeroAlt2 hWidth
-  letI : _root_.Spec.Shape.valid_axis_inst 0
+    _root_.Spec.Shape.hasNonemptyAxisZeroOfPos hWidth
+  letI : _root_.Spec.Shape.HasNonemptyAxis 0
       (.dim width (.dim batch (.dim channels .scalar))) :=
-    _root_.Spec.Shape.validAxisInstZeroAlt2 hWidth
+    _root_.Spec.Shape.hasNonemptyAxisZeroOfPos hWidth
   { name := s!"batchedDepthwiseWeightedSum({batch},{width},{channels})"
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons (.dim values) (.cons (.dim weights) .nil) =>
-          .dim fun i => _root_.Spec.Tensor.reduceSumAuto (α := α) 0
+          .dim fun i => _root_.Spec.Tensor.reduceSum (α := α) 0
             (_root_.Spec.Tensor.mulSpec (values i) (weights i))
+            (_root_.Spec.Shape.hasNonemptyAxisZeroOfPos hWidth).proof
     program := fun {α} _ _ =>
       fun {m} _ _ => fun values weights =>
         (do
@@ -257,9 +258,9 @@ def batchedDepthwiseWeightedSum (batch width channels : Nat)
       _root_.Spec.Tensor α (.dim batch (.dim width (.dim channels .scalar)))) :
     (batchedDepthwiseWeightedSum batch width channels hBatch hWidth hChannels).specFwd
         (.cons values (.cons weights .nil)) =
-      .dim (fun i => _root_.Spec.Tensor.reduceSumAuto
-        (h := _root_.Spec.Shape.validAxisInstZeroAlt2 hWidth) 0
-        (_root_.Spec.Tensor.mulSpec (_root_.Spec.get values i) (_root_.Spec.get weights i))) := by
+      .dim (fun i => _root_.Spec.Tensor.reduceSum 0
+        (_root_.Spec.Tensor.mulSpec (_root_.Spec.get values i) (_root_.Spec.get weights i))
+        (_root_.Spec.Shape.hasNonemptyAxisZeroOfPos hWidth).proof) := by
   cases values
   cases weights
   rfl
@@ -325,7 +326,7 @@ def batchedRowScale (batch rows columns : Nat) :
             (_root_.Spec.Shape.CanBroadcastTo.dim_eq
               (_root_.Spec.Shape.CanBroadcastTo.dim_eq
                 (_root_.Spec.Shape.CanBroadcastTo.dim_1_to_n
-                  (_root_.Spec.Shape.CanBroadcastTo.scalar_to_any .scalar)))) columns'
+                  _root_.Spec.Shape.CanBroadcastTo.scalar))) columns'
           Runtime.Autograd.TorchLean.mul (m := m) (α := α) expanded matrices :
           m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
             (.dim batch (.dim rows (.dim columns .scalar))))) }
@@ -354,15 +355,23 @@ def batchedScale (batch : Nat) (elementShape : Shape) :
       match xs with
       | .cons (.dim coefficients) (.cons (.dim values) .nil) =>
           .dim fun i => _root_.Spec.Tensor.mulSpec
-            (_root_.Spec.fill (_root_.Spec.Tensor.toScalar (coefficients i))
+            (_root_.Spec.fill (_root_.Spec.Tensor.item (coefficients i))
               elementShape) (values i)
     program := fun {α} _ _ =>
       fun {m} _ _ => fun coefficients values =>
         (do
+          let coefficientShape : Shape :=
+            .dim batch (_root_.Spec.Shape.singletonAxes elementShape)
+          let coefficients' ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
+            (s₁ := .dim batch .scalar) (s₂ := coefficientShape) coefficients (by
+              simp [coefficientShape, _root_.Spec.Shape.size])
+          let _ : _root_.Spec.Shape.SameRank
+              (_root_.Spec.Shape.singletonAxes elementShape) elementShape :=
+            ⟨_root_.Spec.Shape.rank_singletonAxes elementShape⟩
           let expanded ← Runtime.Autograd.TorchLean.broadcastTo (m := m) (α := α)
-            (s₂ := .dim batch elementShape)
+            (s₁ := coefficientShape) (s₂ := .dim batch elementShape)
             (_root_.Spec.Shape.CanBroadcastTo.dim_eq
-              (_root_.Spec.Shape.CanBroadcastTo.scalar_to_any elementShape)) coefficients
+              (_root_.Spec.Shape.CanBroadcastTo.singletonAxes elementShape)) coefficients'
           Runtime.Autograd.TorchLean.mul (m := m) (α := α) expanded values :
           m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
             (.dim batch elementShape))) }
@@ -374,7 +383,7 @@ def batchedScale (batch : Nat) (elementShape : Shape) :
     (values : _root_.Spec.Tensor α (.dim batch elementShape)) :
     (batchedScale batch elementShape).specFwd (.cons coefficients (.cons values .nil)) =
       .dim (fun i => _root_.Spec.Tensor.mulSpec
-        (_root_.Spec.fill (_root_.Spec.Tensor.toScalar (_root_.Spec.get coefficients i))
+        (_root_.Spec.fill (_root_.Spec.Tensor.item (_root_.Spec.get coefficients i))
           elementShape)
         (_root_.Spec.get values i)) := by
   cases coefficients
@@ -390,7 +399,7 @@ def vecMat (rows columns : Nat) :
   { name := s!"vecMat({rows},{columns})"
     specFwd := fun {α} _ xs =>
       match xs with
-      | .cons vector (.cons matrix .nil) => _root_.Spec.vecMatMulSpec (α := α) vector matrix
+      | .cons v (.cons mtx .nil) => _root_.Spec.vecMatMulSpec (α := α) v mtx
     program := fun {α} _ _ =>
       fun {m} _ _ => fun vector matrix =>
         (do
@@ -410,10 +419,10 @@ def rowScale (rows columns : Nat) :
   { name := s!"rowScale({rows},{columns})"
     specFwd := fun {α} _ xs =>
       match xs with
-      | .cons scales (.cons matrix .nil) =>
+      | .cons scales (.cons mtx .nil) =>
           _root_.Spec.Tensor.dim fun row => _root_.Spec.Tensor.dim fun column =>
             _root_.Spec.Tensor.scalar <|
-              _root_.Spec.Tensor.vecGet scales row * _root_.Spec.get2 matrix row column
+              _root_.Spec.Tensor.vecGet scales row * _root_.Spec.get2 mtx row column
     program := fun {α} _ _ =>
       fun {m} _ _ => fun scales matrix =>
         (do
@@ -423,7 +432,7 @@ def rowScale (rows columns : Nat) :
             (s₂ := .dim rows (.dim columns .scalar))
             (_root_.Spec.Shape.CanBroadcastTo.dim_eq
               (_root_.Spec.Shape.CanBroadcastTo.dim_1_to_n
-                (_root_.Spec.Shape.CanBroadcastTo.scalar_to_any .scalar))) column
+                _root_.Spec.Shape.CanBroadcastTo.scalar)) column
           Runtime.Autograd.TorchLean.mul (m := m) (α := α) expanded matrix :
           m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
             (.dim rows (.dim columns .scalar)))) }
@@ -460,7 +469,7 @@ def scalarMul (s : Shape) : PrimOp [.scalar, s] s :=
       fun {m} _ _ => fun scalar input =>
         (do
           let expanded ← Runtime.Autograd.TorchLean.broadcastTo (m := m) (α := α)
-            (_root_.Spec.Shape.CanBroadcastTo.scalar_to_any s) scalar
+            (_root_.Spec.Shape.CanBroadcastTo.scalarTo s) scalar
           Runtime.Autograd.TorchLean.mul (m := m) (α := α) expanded input :
           m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) s)) }
 
@@ -468,7 +477,7 @@ def scalarMul (s : Shape) : PrimOp [.scalar, s] s :=
 @[simp] theorem scalarMul_specFwd {α : Type} [Context α] {s : Shape}
     (coefficient : _root_.Spec.Tensor α .scalar) (input : _root_.Spec.Tensor α s) :
     (scalarMul s).specFwd (.cons coefficient (.cons input .nil)) =
-      _root_.Spec.Tensor.mapSpec (fun value => coefficient.toScalar * value) input := by
+      _root_.Spec.Tensor.mapSpec (fun value => coefficient.item * value) input := by
   cases coefficient with
   | scalar value =>
       exact _root_.Spec.Tensor.mulSpec_fill_left value input

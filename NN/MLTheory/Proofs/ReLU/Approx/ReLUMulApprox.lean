@@ -147,12 +147,12 @@ noncomputable def mat1Get {n : Nat} (A : Tensor ℝ (.dim 1 (.dim n .scalar))) (
   match A with
   | .dim rows =>
     match rows ⟨0, by decide⟩ with
-    | .dim cols => (cols j).toScalar
+    | .dim cols => (cols j).item
 
-/-- `mat1_get` agrees with the `matrixMN` constructor. -/
-lemma singleRowMatrix_get_matrixMN {n : Nat} (f : Fin 1 → Fin n → ℝ) (j : Fin n) :
-    mat1Get (matrixMN 1 n (fun i j => f i j)) j = f 0 j := by
-  simp [mat1Get, matrixMN, Tensor.toScalar]
+/-- `mat1Get` agrees with the `Tensor.matrix` constructor. -/
+lemma singleRowMatrix_get_matrix {n : Nat} (f : Fin 1 → Fin n → ℝ) (j : Fin n) :
+    mat1Get (Tensor.matrix (m := 1) (n := n) f) j = f 0 j := by
+  simp [mat1Get, Tensor.matrix, Tensor.vector, Tensor.item]
 
 /--
 Combine two scalar-output linear specs into one scalar-output spec on an appended hidden layer.
@@ -166,9 +166,9 @@ noncomputable def combineOutput
   let c : Fin (m+n) → ℝ :=
     Fin.addCases (fun j : Fin m => α * mat1Get a.weights j) (fun j : Fin n => β * mat1Get
       b.weights j)
-  { weights := matrixMN 1 (m+n) (fun _ j => c j)
-    bias := vectorN 1 (fun _ => γ + α * extractScalarOutput a.bias + β * extractScalarOutput
-      b.bias) }
+  { weights := Tensor.matrix (m := 1) (n := m + n) (fun _ j => c j)
+    bias := Tensor.vector (n := 1)
+      (fun _ => γ + α * extractScalarOutput a.bias + β * extractScalarOutput b.bias) }
 
 /-- Reading the left component from an appended hidden vector. -/
 lemma vec_get_append_left {m n : Nat} (a : Tensor ℝ (.dim m .scalar)) (b : Tensor ℝ (.dim n
@@ -198,7 +198,7 @@ lemma vec_get_relu {n : Nat} (z : Tensor ℝ (.dim n .scalar)) (i : Fin n) :
     cases hfi : f i with
     | scalar r =>
       simp [Activation.reluSpec, Spec.Tensor.mapSpec, vecGet, relu, Activation.Math.reluSpec,
-        hfi, Tensor.toScalar]
+        hfi, Tensor.item]
 
 /-- Matrix-vector multiplication for a `1 × n` matrix produces a single scalar coordinate. -/
 lemma mat_vec_mul_spec_oneRow {n : Nat} (A : Tensor ℝ (.dim 1 (.dim n .scalar))) (v : Tensor ℝ (.dim
@@ -206,11 +206,11 @@ lemma mat_vec_mul_spec_oneRow {n : Nat} (A : Tensor ℝ (.dim 1 (.dim n .scalar)
     Spec.matVecMulSpec A v =
       Tensor.dim (fun _ : Fin 1 => Tensor.scalar (∑ j : Fin n, mat1Get A j * vecGet v j)) := by
   classical
-  -- Put `A` and `v` into the canonical `matrixMN` / `Tensor.dim (Tensor.scalar ·)` forms,
+  -- Put `A` and `v` into canonical `Tensor.matrix` / `Tensor.dim (Tensor.scalar ·)` forms,
   -- then use the general matrix×vector lemma from `relu_mlp_bridge.lean`.
   let c : Fin 1 → Fin n → ℝ := fun _ j => mat1Get A j
   let vfun : Fin n → ℝ := fun j => vecGet v j
-  have hA : A = matrixMN 1 n c := by
+  have hA : A = Tensor.matrix (m := 1) (n := n) c := by
     cases A with
     | dim rows =>
       apply congrArg Tensor.dim
@@ -222,12 +222,12 @@ lemma mat_vec_mul_spec_oneRow {n : Nat} (A : Tensor ℝ (.dim 1 (.dim n .scalar)
         have hrow0 : rows 0 = Tensor.dim cols := by
           simpa using hrow
         -- Now show the row entries match `Tensor.scalar (mat1_get ...)`.
-        -- `mat1_get` unfolds to `Tensor.toScalar (cols j)`.
+        -- `mat1_get` unfolds to `Tensor.item (cols j)`.
         apply congrArg Tensor.dim
         funext j
         cases hcol : cols j with
         | scalar r =>
-          simp [c, mat1Get, hrow0, Tensor.toScalar, hcol]
+          simp [c, mat1Get, hrow0, Tensor.item, hcol]
   have hv : v = Tensor.dim (fun j => Tensor.scalar (vfun j)) := by
     cases v with
     | dim valuesV =>
@@ -235,11 +235,11 @@ lemma mat_vec_mul_spec_oneRow {n : Nat} (A : Tensor ℝ (.dim 1 (.dim n .scalar)
       funext j
       cases hvj : valuesV j with
       | scalar r =>
-        simp [vfun, vecGet, Tensor.toScalar, hvj]
+        simp [vfun, vecGet, Tensor.item, hvj]
   -- Rewrite and apply the general lemma.
   rw [hA, hv]
-  simpa [c, vfun, singleRowMatrix_get_matrixMN, vecGet, Tensor.toScalar] using
-    (mat_vec_mul_spec_matrixMN_vector (m := 1) (n := n) (c := c) (v := vfun))
+  simpa [c, vfun, singleRowMatrix_get_matrix, vecGet, Tensor.item] using
+    (mat_vec_mul_spec_matrix_vector (m := 1) (n := n) (c := c) (v := vfun))
 
 /--
 Expand `mlp_eval_nd` into “bias + sum over hidden units” form.
@@ -292,7 +292,7 @@ lemma mlp_eval_nd_eq_bias_sum
     | scalar b0 =>
       simp [Spec.linearSpec, hmv', Spec.Tensor.addSpec, Spec.Tensor.map2Spec,
         extractScalarOutput,
-        vec_get_relu, hbias, hfb0, add_comm, Tensor.toScalar]
+        vec_get_relu, hbias, hfb0, add_comm, Tensor.item]
 
 /-- Selecting the left block of a linear spec appended via `appendLinearSpec`. -/
 lemma vec_get_linear_spec_append_left
@@ -321,7 +321,7 @@ lemma vec_get_linear_spec_append_left
                 simp [appendLinearSpec, appendDim, Spec.linearSpec, Spec.Tensor.addSpec,
                   Spec.Tensor.map2Spec,
                   Spec.matVecMulSpec, vecGet, Fin.append, Fin.addCases,
-                  Tensor.toScalar]
+                  Tensor.item]
 
 /-- Selecting the right block of a linear spec appended via `appendLinearSpec`. -/
 lemma vec_get_linear_spec_append_right
@@ -349,7 +349,7 @@ lemma vec_get_linear_spec_append_right
                 simp [appendLinearSpec, appendDim, Spec.linearSpec, Spec.Tensor.addSpec,
                   Spec.Tensor.map2Spec,
                   Spec.matVecMulSpec, vecGet, Fin.append, Fin.addCases,
-                  Tensor.toScalar]
+                  Tensor.item]
 
 /--
 Appending hidden units and wiring the output with `combineOutput` yields an affine combination.
@@ -402,7 +402,7 @@ theorem mlp_eval_append_linear
               j)))
     -- Rewrite the `castAdd` / `natAdd` branches using the selector lemmas above.
     -- `combineOutput` uses `Fin.addCases` in its weights.
-    simpa [combineOutput, singleRowMatrix_get_matrixMN, relu,
+    simpa [combineOutput, singleRowMatrix_get_matrix, relu,
       vec_get_linear_spec_append_left (l1a := l1a) (l1b := l1b) (x := x),
       vec_get_linear_spec_append_right (l1a := l1a) (l1b := l1b) (x := x),
       Fin.addCases_left, Fin.addCases_right, mul_assoc, mul_left_comm, mul_comm] using hsum
@@ -436,7 +436,7 @@ theorem mlp_eval_append_linear
   have hbias :
       extractScalarOutput (combineOutput (m := m) (n := n) α β γ l2a l2b).bias
         = γ + α * extractScalarOutput l2a.bias + β * extractScalarOutput l2b.bias := by
-    simp [combineOutput, extractScalarOutput, vectorN, Tensor.toScalar]
+    simp [combineOutput, extractScalarOutput, Tensor.vector, Tensor.item]
   rw [hbias, hsplit, hsumA, hsumB]
   simp [sumA, sumB, mul_add, add_assoc, add_left_comm]
 

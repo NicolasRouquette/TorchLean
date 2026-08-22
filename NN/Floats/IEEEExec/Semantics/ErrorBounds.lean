@@ -54,7 +54,7 @@ noncomputable section
 
 /-- `fp32Round` has the standard half-ULP absolute error bound. -/
 theorem fp32Round_abs_error (x : ℝ) :
-    _root_.abs (fp32Round x - x) ≤ eps₃₂ x := by
+    _root_.abs (fp32Round x - x) ≤ eps32 x := by
   -- `fp32Round` is definitionally the `FP32` rounding operator.
   simpa [fp32Round] using (TorchLean.Floats.FP32.round_abs_error (x := x))
 
@@ -75,7 +75,7 @@ $|\operatorname{toReal}(\operatorname{add}(x,y))
 -/
 theorem toReal_add_abs_error_of_isFinite (x y : IEEE32Exec)
     (hfin : isFinite (add x y) = true) :
-    _root_.abs (toReal (add x y) - (toReal x + toReal y)) ≤ eps₃₂ (toReal x + toReal y) := by
+    _root_.abs (toReal (add x y) - (toReal x + toReal y)) ≤ eps32 (toReal x + toReal y) := by
   simpa [toReal_add_eq_fp32Round_of_isFinite (x := x) (y := y) hfin] using
     fp32Round_abs_error (x := toReal x + toReal y)
 
@@ -83,7 +83,7 @@ theorem toReal_add_abs_error_of_isFinite (x y : IEEE32Exec)
 theorem toReal_sub_abs_error_of_isFinite (x y : IEEE32Exec)
     (hx : isFinite x = true) (hy : isFinite y = true)
     (hfin : isFinite (sub x y) = true) :
-    _root_.abs (toReal (sub x y) - (toReal x - toReal y)) ≤ eps₃₂ (toReal x - toReal y) := by
+    _root_.abs (toReal (sub x y) - (toReal x - toReal y)) ≤ eps32 (toReal x - toReal y) := by
   simpa [toReal_sub_eq_fp32Round_of_isFinite (x := x) (y := y) hx hy hfin] using
     fp32Round_abs_error (x := toReal x - toReal y)
 
@@ -97,7 +97,7 @@ $|\operatorname{toReal}(\operatorname{mul}(x,y))
 -/
 theorem toReal_mul_abs_error_of_isFinite (x y : IEEE32Exec)
     (hfin : isFinite (mul x y) = true) :
-    _root_.abs (toReal (mul x y) - (toReal x * toReal y)) ≤ eps₃₂ (toReal x * toReal y) := by
+    _root_.abs (toReal (mul x y) - (toReal x * toReal y)) ≤ eps32 (toReal x * toReal y) := by
   simpa [toReal_mul_eq_fp32Round_of_isFinite (x := x) (y := y) hfin] using
     fp32Round_abs_error (x := toReal x * toReal y)
 
@@ -113,7 +113,7 @@ $\left|\operatorname{toReal}(\operatorname{div}(x,y))
 -/
 theorem toReal_div_abs_error_of_isFinite (x y : IEEE32Exec)
     (hfin : isFinite (div x y) = true) :
-    _root_.abs (toReal (div x y) - (toReal x / toReal y)) ≤ eps₃₂ (toReal x / toReal y) := by
+    _root_.abs (toReal (div x y) - (toReal x / toReal y)) ≤ eps32 (toReal x / toReal y) := by
   simpa [toReal_div_eq_fp32Round_of_isFinite (x := x) (y := y) hfin] using
     fp32Round_abs_error (x := toReal x / toReal y)
 
@@ -130,7 +130,7 @@ $|\operatorname{toReal}(\operatorname{fma}(x,y,z))
 theorem toReal_fma_abs_error_of_isFinite (x y z : IEEE32Exec)
     (hfin : isFinite (fma x y z) = true) :
     _root_.abs (toReal (fma x y z) - (toReal x * toReal y + toReal z)) ≤
-      eps₃₂ (toReal x * toReal y + toReal z) := by
+      eps32 (toReal x * toReal y + toReal z) := by
   simpa [toReal_fma_eq_fp32Round_of_isFinite (x := x) (y := y) (z := z) hfin] using
     fp32Round_abs_error (x := toReal x * toReal y + toReal z)
 
@@ -143,7 +143,7 @@ $|\operatorname{toReal}(\operatorname{sqrt}(x))-\sqrt{\operatorname{toReal}(x)}|
 -/
 theorem toReal_sqrt_abs_error_of_isFinite (x : IEEE32Exec)
     (hfin : isFinite (sqrt x) = true) :
-    _root_.abs (toReal (sqrt x) - Real.sqrt (toReal x)) ≤ eps₃₂ (Real.sqrt (toReal x)) := by
+    _root_.abs (toReal (sqrt x) - Real.sqrt (toReal x)) ≤ eps32 (Real.sqrt (toReal x)) := by
   simpa [toReal_sqrt_eq_fp32Round_of_isFinite (x := x) hfin] using
     fp32Round_abs_error (x := Real.sqrt (toReal x))
 

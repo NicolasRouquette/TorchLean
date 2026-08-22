@@ -61,7 +61,7 @@ def sumStep (epsElem : ℝ) : (R × ℝ) → R → (R × ℝ)
 /--
 Fold `sum_step` over a tensor via `tensor_foldl_spec`.
 
-This is the shared helper behind `sum_bound` and `approxT_sum_spec`: it simultaneously computes the
+This is the shared helper behind `sum_bound` and `approxTensor_sum_spec`: it simultaneously computes the
 runtime sum (in `.1`) and the accumulated error bound (in `.2`).
 -/
 def sumFoldState {s : Shape} (epsElem : ℝ) (st : R × ℝ) (tR : Tensor R s) : (R × ℝ) :=
@@ -144,7 +144,7 @@ fold.
 private theorem approx_sum_fold_state {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {accS : ℝ} {st : R × ℝ} {epsElem : ℝ},
       abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) st.1 - accS) ≤ st.2 →
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsElem →
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsElem →
         abs
             (toSpec (β := β) (fexp := fexp) (rnd := rnd)
                 (sumFoldState (β := β) (fexp := fexp) (rnd := rnd) (s := s) epsElem st xR).1 -
@@ -160,7 +160,7 @@ private theorem approx_sum_fold_state {s : Shape} :
               cases st with
               | mk accR epsAcc =>
                   have hx' :=
-                    (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+                    (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
                       rnd))
                       (x := x) (xR := xR) (eps := epsElem)).1 hx
                   have h :=
@@ -202,7 +202,7 @@ private theorem approx_sum_fold_state {s : Shape} :
                     have h_next : n - (k + 1) = m := by grind
                     -- Apply the shape IH to fold over the current slice `valuesR ⟨k, hlt⟩`.
                     have hx_k :=
-                      approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+                      approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
                         rnd))
                         (xS := Tensor.dim valuesS) (xR := Tensor.dim valuesR) (eps := epsElem) hx
                           ⟨k, hlt⟩
@@ -227,10 +227,10 @@ Forward approximation bound for `sum_spec` over an arbitrary tensor shape.
 If `xR` approximates `xS` elementwise within `eps`, then the scalar sums `sum_spec xR` and
 `sum_spec xS` differ by at most `sum_bound eps xR`.
 -/
-theorem approxT_sum_spec {s : Shape} :
+theorem approxTensor_sum_spec {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (Tensor.scalar (sumSpec (α := ℝ) (s := s) xS))
           (Tensor.scalar (sumSpec (α := R) (s := s) xR))
           (sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps xR) := by
@@ -251,8 +251,8 @@ theorem approxT_sum_spec {s : Shape} :
     simpa [sumSpec] using
       (sum_fold_state_fst_eq (β := β) (fexp := fexp) (rnd := rnd) (s := s) (epsElem := eps)
         (st := ((0 : R), initEps)) (tR := xR))
-  -- Wrap back into `approxT` on scalar tensors.
-  refine (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+  -- Wrap back into `approxTensor` on scalar tensors.
+  refine (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (x := sumSpec (α := ℝ) (s := s) xS) (xR := sumSpec (α := R) (s := s) xR)
       (eps := sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := s) eps xR)).2 ?_
   have h' :

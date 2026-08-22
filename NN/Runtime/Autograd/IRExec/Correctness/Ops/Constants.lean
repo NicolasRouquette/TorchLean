@@ -58,18 +58,18 @@ theorem buildFrom_denoteAllFrom_const
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := NN.IR.DVal.mk (α := α) inShape x)
+          (input := Spec.PackedTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := NN.IR.DVal.mk (α := α) inShape x)
+      (input := Spec.PackedTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (NN.IR.DVal α) :=
+  let vals0 : Array (Spec.PackedTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
   let ctx : TList α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : NN.IR.DVal α := NN.IR.DVal.mk (α := α) inShape x
+  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
 
   unfold buildFrom at hBuild
   simp [hi, hN] at hBuild
@@ -91,14 +91,14 @@ theorem buildFrom_denoteAllFrom_const
         have hEval :
             NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                 (input := input) (vals := vals0) (i := i) =
-              .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+              .ok (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
           cases hOut
           simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hT, input, throw, throwThe,
             MonadExceptOf.throw, nodeData]
           try rfl
         have hStep :
             denoteAllState (α := α) inShape st1 x =
-              vals0.push (NN.IR.DVal.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+              vals0.push (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
           simpa [vals0, st1, ctx] using
             (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss) (τ := n.outShape)
               (gd := gd) (nodeData := nodeData) (x := x))

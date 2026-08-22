@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Train.IoLoader.Common
+public import NN.Runtime.Autograd.Train.IoLoader.Parsing
 
 /-!
 # NPY loaders for typed training tensors
@@ -90,18 +90,16 @@ def idxFortranOfCIdx (shape : List Nat) (idxC : Nat) : Nat :=
     | _, _ => acc
   go dimsRev stridesRev idxC 0
 
-/--
-Reorder a Fortran-ordered flat array into C-order.
-
-The function is total and defensive: if the file payload is malformed and an index is missing, the
-missing element is filled with `0.0`. The parser checks payload length before calling this function,
-so that fallback should not happen for accepted files.
--/
-def reorderFortranToC (shape : List Nat) (raw : Array Float) : Array Float :=
+/-- Reorder a Fortran-ordered flat array into C-order, rejecting an inconsistent payload. -/
+def reorderFortranToC (tag : String) (shape : List Nat) (raw : Array Float) : Result (Array Float) := do
   let count := shape.foldl (fun acc n => acc * n) 1
-  Array.ofFn (n := count) (fun (i : Fin count) =>
-    let idxF := idxFortranOfCIdx shape i.val
-    (raw[idxF]?).getD 0.0)
+  let values ← (List.range count).mapM fun i =>
+    let idxF := idxFortranOfCIdx shape i
+    match raw[idxF]? with
+    | some value => pure value
+    | none => throw <| tagError tag <|
+        s!"Fortran-order index {idxF} is outside the {raw.size}-element payload"
+  pure values.toArray
 
 /-- Safe `ByteArray` indexing. -/
 def byteAt? (bs : ByteArray) (i : Nat) : Option UInt8 :=
@@ -273,7 +271,7 @@ def parseNpy (tag : String) (bs : ByteArray) : Result NpyData := do
     for i in [0:count] do
       let v ← readNpyElement tag hdr.descr bs (hdr.dataStart + i * bytesPer)
       raw := raw.push v
-    let values := if hdr.fortran then reorderFortranToC hdr.shape raw else raw
+    let values ← if hdr.fortran then reorderFortranToC tag hdr.shape raw else pure raw
     .ok { dtype := hdr.descr, shape := hdr.shape, fortran := false, values := values }
 
 /--
@@ -339,44 +337,6 @@ larger exported NPY tensor.
 def readNpyLeadingAxisPrefix (path : System.FilePath) (expectedShape : List Nat) : IO (Result NpyData) := do
   let bs <- IO.FS.readBinFile path
   pure (parseNpyLeadingAxisPrefix (tag := "npy") expectedShape bs)
-
-/--
-Read a 1D `.npy` file as a typed TorchLean vector tensor.
-
-The shape check is part of the loader contract: files with the wrong logical size are rejected
-instead of being reshaped implicitly.
--/
-def readNpyVector (path : System.FilePath) (n : Nat) :
-  IO (Result (Tensor Float (.dim n .scalar))) := do
-  let res <- readNpy path
-  match res with
-  | .error e => pure (.error e)
-  | .ok data =>
-      if data.shape = [n] then
-        let f : Fin n -> Float := fun i => (data.values[i.val]?).getD 0.0
-        pure (.ok (vectorN n f))
-      else
-        pure (.error (tagError "npy" "shape mismatch for vector"))
-
-/--
-Read a 2D `.npy` file as a typed TorchLean matrix tensor.
-
-The returned matrix uses the same row-major indexing convention as the rest of the runtime tensor
-helpers.
--/
-def readNpyMatrix (path : System.FilePath) (m n : Nat) :
-  IO (Result (Tensor Float (.dim m (.dim n .scalar)))) := do
-  let res <- readNpy path
-  match res with
-  | .error e => pure (.error e)
-  | .ok data =>
-      if data.shape = [m, n] then
-        let f : Fin m -> Fin n -> Float := fun i j =>
-          let idx := i.val * n + j.val
-          (data.values[idx]?).getD 0.0
-        pure (.ok (matrixMN m n f))
-      else
-        pure (.error (tagError "npy" "shape mismatch for matrix"))
 
 end Train
 end Autograd

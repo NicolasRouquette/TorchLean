@@ -80,7 +80,7 @@ structure CorpusOptions extends
   /-- Optional second corpus pass. -/
   finetune : text.FinetuneOptions
   /-- Optional GPT-2 BPE tokenizer bundle. -/
-  bpe : text.BPECorpusOptions
+  bpe : text.BpeCorpusOptions
 deriving Repr
 
 namespace CorpusOptions
@@ -93,7 +93,7 @@ def parse (args : List String) : Except String (CorpusOptions × List String) :=
     { prompt := "First Citizen:", generate := 0 }
   let (interactive, args) ← text.InteractiveOptions.parse args
   let (finetune, args) ← text.FinetuneOptions.parse args training.steps
-  let (bpe, args) ← text.BPECorpusOptions.parse args
+  let (bpe, args) ← text.BpeCorpusOptions.parse args
   pure ({ toRunOptions := training
           toPromptGenerationOptions := prompt
           toInteractiveOptions := interactive
@@ -144,8 +144,7 @@ local instance : NeZero dModel := ⟨by decide⟩
 
 /-- Byte-level GPT configuration shared by shapes and the model constructor. -/
 def cfg : nn.models.CausalTransformer.Config :=
-  { batch := batch
-    seqLen := seqLen
+  { seqLen := seqLen
     vocab := vocab
     numHeads := numHeads
     headDim := headDim
@@ -154,7 +153,7 @@ def cfg : nn.models.CausalTransformer.Config :=
 
 /-- Input shape: byte-level one-hot token sequence. -/
 abbrev σ : Shape :=
-  nn.models.CausalTransformer.vocabularyShape cfg
+  nn.models.CausalTransformer.vocabularyShape cfg (.dim batch .scalar)
 
 /-- Output shape: one byte-logit row per input position. -/
 abbrev τ : Shape :=
@@ -167,21 +166,21 @@ The model is compact enough for the eager CUDA path while still exercising atten
 layers, byte tokenization, and the interactive prompt loop.
 -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.CausalTransformer.oneHot cfg
+  nn.models.CausalTransformer.oneHot cfg (.dim batch .scalar)
 
 end ByteModel
 
 /-- Build one byte-level training sample from a corpus byte offset. -/
 def mkByteCorpusSample (bytes : ByteArray) (i : Nat) :
-    SupervisedSample Float ByteModel.σ ByteModel.τ :=
+    Sample.Supervised Float ByteModel.σ ByteModel.τ :=
   let toks := (text.byteTokenWindow bytes (ByteModel.seqLen + 1)
     (offset := text.Corpus.byteOffset bytes i ByteModel.seqLen)
     ).map (· % ByteModel.vocab)
   Data.CausalLM.oneHotBatch
-    (α := Float) ByteModel.batch ByteModel.seqLen ByteModel.vocab toks
+    (α := Float) ByteModel.batch ByteModel.seqLen ByteModel.vocab toks.toList
 
 /-- Build one byte-level prompt sample for before/after generation reports. -/
-def mkBytePromptSample (prompt : String) : SupervisedSample Float ByteModel.σ ByteModel.τ :=
+def mkBytePromptSample (prompt : String) : Sample.Supervised Float ByteModel.σ ByteModel.τ :=
   let ids := text.Tokenizer.byte.encode prompt
   let start := if ids.length > ByteModel.seqLen then ids.length - ByteModel.seqLen else 0
   let window := ((ids.drop start).take ByteModel.seqLen).map (· % ByteModel.vocab)
@@ -205,7 +204,8 @@ def generateByteGreedy
     text.autoregressiveTokenIds ByteModel.seqLen 0 (text.Tokenizer.byte.encode prompt) gen
       (fun padded predPos => do
         let x := Data.CausalLM.oneHotInputs (α := Float)
-          ByteModel.batch ByteModel.seqLen ByteModel.vocab (padded.map (· % ByteModel.vocab))
+          ByteModel.batch ByteModel.seqLen ByteModel.vocab
+            (padded.map (· % ByteModel.vocab)).toList
         let logits ← predict x
         pure (text.batchLogitScoresAt logits ⟨0, by decide⟩ predPos))
       (sanitize := fun tok => if tok < ByteModel.vocab then tok else 0)
@@ -266,8 +266,7 @@ local instance : NeZero dModel := ⟨by decide⟩
 
 /-- BPE GPT configuration shared by shapes and the model constructor. -/
 def cfg : nn.models.CausalTransformer.Config :=
-  { batch := batch
-    seqLen := seqLen
+  { seqLen := seqLen
     vocab := vocab
     numHeads := numHeads
     headDim := headDim
@@ -276,7 +275,7 @@ def cfg : nn.models.CausalTransformer.Config :=
 
 /-- Input shape: local-BPE one-hot token batch. -/
 abbrev σ : Shape :=
-  nn.models.CausalTransformer.vocabularyShape cfg
+  nn.models.CausalTransformer.vocabularyShape cfg (.dim batch .scalar)
 
 /-- Output shape: one local-BPE logit row per input position. -/
 abbrev τ : Shape :=
@@ -290,7 +289,7 @@ projection over the corpus ids it observes. Its architecture and scale differ fr
 GPT-2-small.
 -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.CausalTransformer.oneHot cfg
+  nn.models.CausalTransformer.oneHot cfg (.dim batch .scalar)
 
 end BPEModel
 
@@ -352,7 +351,7 @@ def localizeBPETokens (vocab : LocalBPEVocab) (tokens : Array Nat) : Array Nat :
 
 /-- Build one BPE training sample from a tokenized corpus. -/
 def mkBpeCorpusSample (tokens : Array Nat) (i : Nat) :
-    SupervisedSample Float BPEModel.σ BPEModel.τ :=
+    Sample.Supervised Float BPEModel.σ BPEModel.τ :=
   -- The BPE model uses a real batch as well: each batch row gets a different deterministic
   -- corpus window, while the vocabulary stays small enough for a runnable example.
   Data.CausalLM.oneHotBatchFromTokenArray
@@ -361,7 +360,7 @@ def mkBpeCorpusSample (tokens : Array Nat) (i : Nat) :
 /-- Turn a BPE prompt into one model input window. -/
 def mkBpePromptSample
     (tok : text.GPT2BPE.Tokenizer) (lv : LocalBPEVocab) (prompt : String) :
-    Except String (SupervisedSample Float BPEModel.σ BPEModel.τ) := do
+    Except String (Sample.Supervised Float BPEModel.σ BPEModel.τ) := do
   let ids ← (text.GPT2BPE.encode tok prompt).map (fun ids => ids.map lv.toLocal)
   let start := if ids.length > BPEModel.seqLen then ids.length - BPEModel.seqLen else 0
   let window := (ids.drop start).take BPEModel.seqLen
@@ -415,7 +414,7 @@ def generateBpeGreedy
     text.autoregressiveTokenIds BPEModel.seqLen 0 initIds gen
       (fun padded predPos => do
         let x := Data.CausalLM.oneHotInputs (α := Float)
-          BPEModel.batch BPEModel.seqLen BPEModel.vocab padded
+          BPEModel.batch BPEModel.seqLen BPEModel.vocab padded.toList
         let logits ← predict x
         pure (text.batchLogitScoresAt logits ⟨0, by decide⟩ predPos))
       (sanitize := fun tok => if tok < BPEModel.vocab then tok else 0)
@@ -434,8 +433,8 @@ def trainCorpusFloat (opts : Options)
   let sample0 := mkByteCorpusSample bytes 0
   let first := text.byteTokenWindow bytes (ByteModel.seqLen + 1)
   IO.println s!"  mode=byte bytes={bytes.size} steps={trainOpts.steps} window={ByteModel.seqLen}"
-  IO.println s!"  first prompt={text.escapeForDisplay (text.Tokenizer.byte.decode (first.take ByteModel.seqLen))}"
-  IO.println s!"  first target={text.escapeForDisplay (text.Tokenizer.byte.decode (first.drop 1))}"
+  IO.println s!"  first prompt={text.escapeForDisplay (text.Tokenizer.byte.decode (first.toList.take ByteModel.seqLen))}"
+  IO.println s!"  first target={text.escapeForDisplay (text.Tokenizer.byte.decode (first.toList.drop 1))}"
   let ftBytes? ←
     match trainOpts.finetune.finetuneFile? with
     | none => pure none
@@ -462,7 +461,7 @@ def trainCorpusFloat (opts : Options)
     | xs => xs
   let run := Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := 1e-3 } }
   let trainer := Trainer.new ByteModel.model <|
-    Trainer.Config.fromRunConfig run .oneHotCrossEntropy
+    Trainer.Config.fromRunConfig run (.oneHotCrossEntropy 2)
   trainer.printInfo
   /-
   Each optimizer step sees one deterministic corpus window.  Materializing those windows as a
@@ -508,9 +507,9 @@ def loadBpeCorpusTokens
 def printBpeCorpusPreview (tok : text.GPT2BPE.Tokenizer) (lv : LocalBPEVocab)
     (tokens : Array Nat) : IO Unit := do
   let first := text.Corpus.tokenArrayWindow tokens (BPEModel.seqLen + 1) 0
-  IO.println s!"  first local BPE ids={first}"
-  IO.println s!"  first prompt={text.escapeForDisplay (decodeLocalBPEOrEmpty tok lv (first.take BPEModel.seqLen))}"
-  IO.println s!"  first target={text.escapeForDisplay (decodeLocalBPEOrEmpty tok lv (first.drop 1))}"
+  IO.println s!"  first local BPE ids={first.toList}"
+  IO.println s!"  first prompt={text.escapeForDisplay (decodeLocalBPEOrEmpty tok lv (first.toList.take BPEModel.seqLen))}"
+  IO.println s!"  first target={text.escapeForDisplay (decodeLocalBPEOrEmpty tok lv (first.toList.drop 1))}"
 
 /--
 Train the compact GPT-2-style model with the real GPT-2 BPE tokenizer.
@@ -530,7 +529,7 @@ def trainBpeCorpusFloat (opts : Options)
     | xs => xs
   let run := Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := 1e-3 } }
   let trainer := Trainer.new BPEModel.model <|
-    Trainer.Config.fromRunConfig run .oneHotCrossEntropy
+    Trainer.Config.fromRunConfig run (.oneHotCrossEntropy 2)
   trainer.printInfo
   /-
   BPE mode uses the real GPT-2 tokenizer but a compact local output vocabulary.  The public trainer

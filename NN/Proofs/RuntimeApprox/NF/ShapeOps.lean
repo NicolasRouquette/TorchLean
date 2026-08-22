@@ -7,7 +7,8 @@ Authors: TorchLean Team
 module
 
 public import NN.Proofs.RuntimeApprox.NF.Ops
-public import NN.Proofs.RuntimeApprox.NF.Utils
+public import NN.Proofs.RuntimeApprox.NF.FoldLemmas
+public import NN.Proofs.RuntimeApprox.NF.Ops
 public import NN.Spec.Core.TensorReductionShape
 
 /-!
@@ -16,7 +17,7 @@ public import NN.Spec.Core.TensorReductionShape
 NF (rounded) backend: approximation lemmas for shape-only tensor operators.
 
 These operators do not perform arithmetic on scalars (they only permute/replicate entries), so
-they preserve existing `approxT` error bounds.
+they preserve existing `approxTensor` error bounds.
 
 Shape-only operations should not introduce extra rounding error. Their proofs
 are mostly transport/indexing arguments rather than numerical analysis.
@@ -57,19 +58,19 @@ Although this fact is used heavily when constructing reverse-mode zero contexts,
 fact rather than a backward-mode fact. Keeping it here also makes rounded constants available to
 normalization, attention, and quantization without importing the reverse-mode implementation.
 -/
-lemma approxT_fill_const {cS : ℝ} {cR : R} {eps : ℝ}
+lemma approxTensor_fill_const {cS : ℝ} {cR : R} {eps : ℝ}
     (h : abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) cR - cS) ≤ eps) :
     ∀ {s : Shape},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.fill cS s) (Spec.fill cR s) eps := by
   intro s
   induction s with
   | scalar =>
-      exact (approxT_scalar_iff (α := R)
+      exact (approxTensor_scalar_iff (α := R)
         (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).2 h
   | dim n inner ih =>
       have hε : 0 ≤ eps := le_trans (abs_nonneg _) h
-      refine approxT_dim_of_forall
+      refine approxTensor_dim_of_forall
         (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (xS := Spec.fill cS (.dim n inner)) (xR := Spec.fill cR (.dim n inner))
         (eps := eps) hε ?_
@@ -88,28 +89,28 @@ private lemma toSpec_one_bound :
       (show (1 : R).val = neuralRound (β := β) (fexp := fexp) rnd 1 from rfl)
 
 /-- A tensor filled with runtime one differs from exact one by at most one construction rounding. -/
-lemma approxT_fill_one :
+lemma approxTensor_fill_one :
     ∀ {s : Shape},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.fill (1 : ℝ) s) (Spec.fill (1 : R) s) (neuralUlp β fexp (1 : ℝ) / 2) := by
   intro s
-  apply approxT_fill_const (β := β) (fexp := fexp) (rnd := rnd)
+  apply approxTensor_fill_const (β := β) (fexp := fexp) (rnd := rnd)
   exact toSpec_one_bound (β := β) (fexp := fexp) (rnd := rnd)
 
 /-- Zero is exactly representable in every valid neural floating-point format. -/
-lemma approxT_fill_zero :
+lemma approxTensor_fill_zero :
     ∀ {s : Shape},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.fill (0 : ℝ) s) (Spec.fill (0 : R) s) 0 := by
   intro s
-  apply approxT_fill_const (β := β) (fexp := fexp) (rnd := rnd)
+  apply approxTensor_fill_const (β := β) (fexp := fexp) (rnd := rnd)
   simp
 
 omit [NeuralValidExp fexp] [NeuralValidRndToNearest rnd] in
-theorem approxT_replicate {s : Shape}
+theorem approxTensor_replicate {s : Shape}
     {xS : SpecTensor .scalar} {xR : Tensor R .scalar} {eps : ℝ}
-    (hx : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.Tensor.replicate (α := SpecScalar) (s := s) xS)
       (Spec.Tensor.replicate (α := R) (s := s) xR)
       eps := by
@@ -119,14 +120,14 @@ theorem approxT_replicate {s : Shape}
       cases xR with
       | scalar xR =>
           have hscalar :=
-            (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+            (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
               (x := x) (xR := xR) (eps := eps)).1 hx
           have hε : 0 ≤ eps := le_trans (abs_nonneg _) hscalar
           induction s with
           | scalar =>
               simpa [Spec.Tensor.replicate] using hx
           | dim n inner ih =>
-              refine approxT_dim_of_forall
+              refine approxTensor_dim_of_forall
                 (n := n) (s := inner) (xS := Spec.Tensor.replicate (α := SpecScalar) (s := .dim n
                   inner) (.scalar x))
                 (xR := Spec.Tensor.replicate (α := R) (s := .dim n inner) (.scalar xR))
@@ -135,30 +136,29 @@ theorem approxT_replicate {s : Shape}
               simpa [Spec.Tensor.replicate] using ih
 
 omit [NeuralValidRndToNearest rnd] in
-theorem approxT_broadcastTo
+theorem approxTensor_broadcastTo
     {s₁ s₂ : Shape} (cb : Shape.CanBroadcastTo s₁ s₂)
     {xS : SpecTensor s₁} {xR : Tensor R s₁} {eps : ℝ}
-    (hx : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.Tensor.broadcastTo (α := SpecScalar) (s₁ := s₁) (s₂ := s₂) cb xS)
       (Spec.Tensor.broadcastTo (α := R) (s₁ := s₁) (s₂ := s₂) cb xR)
       eps := by
   classical
-  have hε : 0 ≤ eps := approxT_eps_nonneg (s := s₁) hx
+  have hε : 0 ≤ eps := approxTensor_eps_nonneg (s := s₁) hx
   induction cb with
-  | scalar_to_any s =>
+  | scalar =>
       cases xS with
       | scalar _ =>
           cases xR with
           | scalar _ =>
-              simpa [Spec.Tensor.broadcastTo] using
-                approxT_replicate (β := β) (fexp := fexp) (rnd := rnd) (s := s) (hx := hx)
+              simpa [Spec.Tensor.broadcastTo] using hx
   | dim_eq tail ih =>
       cases xS with
       | dim fS =>
           cases xR with
           | dim fR =>
-              refine approxT_dim_of_forall
+              refine approxTensor_dim_of_forall
                 (n := _) (s := _)
                 (xS := Spec.Tensor.broadcastTo (α := SpecScalar) (Shape.CanBroadcastTo.dim_eq tail)
                   (Tensor.dim fS))
@@ -167,14 +167,14 @@ theorem approxT_broadcastTo
                 (eps := eps) hε ?_
               intro i
               have hx_i :=
-                approxT_dim_get (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hx i
+                approxTensor_dim_get (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hx i
               simpa [Spec.Tensor.broadcastTo] using ih (xS := fS i) (xR := fR i) hx_i
   | dim_1_to_n tail ih =>
       cases xS with
       | dim fS =>
           cases xR with
           | dim fR =>
-              refine approxT_dim_of_forall
+              refine approxTensor_dim_of_forall
                 (n := _) (s := _)
                 (xS := Spec.Tensor.broadcastTo (α := SpecScalar) (Shape.CanBroadcastTo.dim_1_to_n
                   tail) (Tensor.dim fS))
@@ -183,11 +183,11 @@ theorem approxT_broadcastTo
                 (eps := eps) hε ?_
               intro i
               have hx0 :=
-                approxT_dim_get (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hx (0 : Fin
+                approxTensor_dim_get (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hx (0 : Fin
                   1)
               simpa [Spec.Tensor.broadcastTo] using ih (xS := fS 0) (xR := fR 0) hx0
   | expand_dims tail ih =>
-      refine approxT_dim_of_forall
+      refine approxTensor_dim_of_forall
         (n := _) (s := _)
         (xS := Spec.Tensor.broadcastTo (α := SpecScalar) (Shape.CanBroadcastTo.expand_dims tail) xS)
         (xR := Spec.Tensor.broadcastTo (α := R) (Shape.CanBroadcastTo.expand_dims tail) xR)
@@ -201,11 +201,11 @@ Masking is a selection operation, not arithmetic: allowed entries are unchanged 
 entries are exactly zero in both semantics. In particular, this theorem does not model a finite
 negative sentinel and introduces no extra ULP term.
 -/
-theorem approxT_applyBoolMask {s : Shape}
+theorem approxTensor_applyBoolMask {s : Shape}
     {xS : SpecTensor s} {xR : Tensor R s} (mask : Tensor Bool s) {eps : ℝ}
-    (hx : approxT (α := R)
+    (hx : approxTensor (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (map2Spec (fun x allowed => if allowed then x else 0) xS mask)
       (map2Spec (fun x allowed => if allowed then x else 0) xR mask) eps := by
@@ -219,9 +219,9 @@ theorem approxT_applyBoolMask {s : Shape}
               | scalar allowed =>
                   cases allowed with
                   | false =>
-                      apply (approxT_scalar_iff (α := R)
+                      apply (approxTensor_scalar_iff (α := R)
                         (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).2
-                      simpa using approxT_eps_nonneg hx
+                      simpa using approxTensor_eps_nonneg hx
                   | true => simpa [map2Spec] using hx
   | dim n inner ih =>
       cases xS with
@@ -230,8 +230,8 @@ theorem approxT_applyBoolMask {s : Shape}
           | dim valuesR =>
               cases mask with
               | dim masks =>
-                  have hε := approxT_eps_nonneg hx
-                  refine approxT_dim_of_forall
+                  have hε := approxTensor_eps_nonneg hx
+                  refine approxTensor_dim_of_forall
                     (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                     (xS := map2Spec (fun x allowed => if allowed then x else 0)
                       (Tensor.dim valuesS) (Tensor.dim masks))
@@ -239,7 +239,7 @@ theorem approxT_applyBoolMask {s : Shape}
                       (Tensor.dim valuesR) (Tensor.dim masks))
                     (eps := eps) hε ?_
                   intro i
-                  exact ih (masks i) (approxT_dim_get (α := R)
+                  exact ih (masks i) (approxTensor_dim_get (α := R)
                     (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hx i)
 
 end NFBackend

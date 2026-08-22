@@ -97,8 +97,9 @@ share.
   NCHW BatchNorm are also covered at the actual one-step `Graph.evalAt` path as well as at their
   helper evaluators. CHW pooling has the same local bridge to its spec operations. LayerNorm is
   covered through the IR evaluator's reshape-to-2D `Spec.layerNorm` path, and graph-structural nodes
-  such as input, detach, and scalar MSE are covered as well. The theorem import surface also
-  includes an `Eval.Coverage` checkpoint listing the covered IR constructor families.
+  such as input, detach, and scalar MSE are covered as well. The
+  `NN.Verification.TorchLean.Proved.Correctness.Eval` import collects the corresponding concrete
+  theorem modules; those imported theorems are the current record of evaluator support.
 - Load supported verification model families such as PINNs/FNOs through the example interop loaders.
 - Emit readable PyTorch code from a TorchLean `NN.IR.Graph` and `ParamStore`.
 

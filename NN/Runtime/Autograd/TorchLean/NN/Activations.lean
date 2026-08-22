@@ -94,18 +94,24 @@ def tanh {s : Shape} : Layer s s :=
         fun x => TorchLean.tanh (m := m) (α := α) (s := s) x
   }
 
-/--
-Softmax layer along the last axis (shape-preserving, no parameters).
-
-PyTorch analogy: `torch.softmax(x, dim=-1)`.
--/
-def softmaxLast {s : Shape} : Layer s s :=
+/-- Shape-preserving softmax layer along `axis`. -/
+def softmax {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s] : Layer s s :=
   { kind := "Softmax"
     stateShapes := []
     initState := .nil
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
-        fun x => TorchLean.softmax (m := m) (α := α) (s := s) x
+        fun x => F.softmax (m := m) (α := α) (s := s) axis x
+  }
+
+/-- Shape-preserving stable log-softmax layer along `axis`. -/
+def logSoftmax {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s] : Layer s s :=
+  { kind := "LogSoftmax"
+    stateShapes := []
+    initState := .nil
+    forward := fun _ {α} _ _ =>
+      fun {m} _ _ =>
+        fun x => F.logSoftmax (m := m) (α := α) (s := s) axis x
   }
 
 /--
@@ -156,7 +162,7 @@ Dropout layer controlled by `Mode`.
 - In `Mode.train`, randomly zeroes entries with probability `p`.
 - In `Mode.eval`, it is the identity.
 
-We store `p` as a scalar parameter tensor (with `requires_grad := false`) so it can be threaded
+We store `p` as a scalar parameter tensor (with `requiresGrad := false`) so it can be threaded
 through the unified parameter list without being optimized.
 
 PyTorch analogy: `torch.nn.Dropout(p)` / `torch.nn.functional.dropout(x, p, training=...)`.
@@ -166,7 +172,7 @@ def dropout {s : Shape} (p : Float) (seed : Nat := 0) : Layer s s :=
   let p0 : Tensor Float pShape := Tensor.scalar p
   { kind := s!"Dropout(p={p})"
     stateShapes := [pShape]
-    initState := Torch.tlistSingleton p0
+    initState := .cons p0 .nil
     runtimeInit := some (.cons (.flat (FloatArray.mk #[p])) .nil)
     requiresGrad := [false]
     forward := fun mode {α} _ _ =>

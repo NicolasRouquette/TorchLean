@@ -47,7 +47,7 @@ Concretely:
   - `AffineVec.eval_on_box`: min/max over products and accumulation use `BoundOps`.
   - `IBP.linear`: interval linear layer propagation uses `BoundOps`.
 - `NN.MLTheory.CROWN.Graph`
-  - `box_add`, `box_sub`, `box_mul_elem`: endpoint propagation uses `BoundOps`.
+  - `boxAdd`, `boxSub`, `boxMulElem`: endpoint propagation uses `BoundOps`.
 
 Executable certificate replay relies on this separation. A backend may support directed binary
 arithmetic without having a correctly rounded `exp` or `log`; in that case the graph checker leaves
@@ -228,9 +228,9 @@ instance (priority := 100) instNonlinearBoundOpsConservative : NonlinearBoundOps
   logBounds := fun _ _ => none
   sqrtBounds := fun _ _ => none
   sigmoidBounds := fun _ _ => some (Numbers.zero, Numbers.one)
-  tanhBounds := fun _ _ => some (Numbers.neg_one, Numbers.one)
-  sinBounds := fun _ _ => some (Numbers.neg_one, Numbers.one)
-  cosBounds := fun _ _ => some (Numbers.neg_one, Numbers.one)
+  tanhBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
+  sinBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
+  cosBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
   layerNormAbsBound := fun _ => none
   supportsIdealCoupledDerivatives := false
 
@@ -365,9 +365,9 @@ instance instNonlinearBoundOpsFloat : NonlinearBoundOps Float where
       some (HostFloat.nextDown (MathFunctions.sqrt lo'),
         HostFloat.nextUp (MathFunctions.sqrt hi))
   sigmoidBounds := fun _ _ => some (Numbers.zero, Numbers.one)
-  tanhBounds := fun _ _ => some (Numbers.neg_one, Numbers.one)
-  sinBounds := fun _ _ => some (Numbers.neg_one, Numbers.one)
-  cosBounds := fun _ _ => some (Numbers.neg_one, Numbers.one)
+  tanhBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
+  sinBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
+  cosBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
   layerNormAbsBound := fun _ => none
   supportsIdealCoupledDerivatives := false
 

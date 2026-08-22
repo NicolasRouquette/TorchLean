@@ -321,8 +321,8 @@ def propagateMatmulBounds
             let ux := getAtOrZero Bx.hi [aIdx]
             let ly := getAtOrZero By.lo [bIdx]
             let uy := getAtOrZero By.hi [bIdx]
-            let cx := (lx + ux) * Numbers.pointfive
-            let cy := (ly + uy) * Numbers.pointfive
+            let cx := (lx + ux) * Numbers.half
+            let cy := (ly + uy) * Numbers.half
             let u1 := ux * cy + ly * cx - ux * ly
             let u2 := lx * cy + uy * cx - lx * uy
             let aX := if u1 < u2 then ly else uy
@@ -340,8 +340,8 @@ def propagateMatmulBounds
             let ux := getAtOrZero Bx.hi [aIdx]
             let ly := getAtOrZero By.lo [bIdx]
             let uy := getAtOrZero By.hi [bIdx]
-            let cx := (lx + ux) * Numbers.pointfive
-            let cy := (ly + uy) * Numbers.pointfive
+            let cx := (lx + ux) * Numbers.half
+            let cy := (ly + uy) * Numbers.half
             let u1 := ux * cy + ly * cx - ux * ly
             let u2 := lx * cy + uy * cx - lx * uy
             let aX := if u1 < u2 then ly else uy
@@ -360,8 +360,8 @@ def propagateMatmulBounds
             let ux := getAtOrZero Bx.hi [aIdx]
             let ly := getAtOrZero By.lo [bIdx]
             let uy := getAtOrZero By.hi [bIdx]
-            let cx := (lx + ux) * Numbers.pointfive
-            let cy := (ly + uy) * Numbers.pointfive
+            let cx := (lx + ux) * Numbers.half
+            let cy := (ly + uy) * Numbers.half
             let l1 := lx * cy + ly * cx - lx * ly
             let l2 := ux * cy + uy * cx - ux * uy
             let aX := if l1 > l2 then ly else uy
@@ -379,8 +379,8 @@ def propagateMatmulBounds
             let ux := getAtOrZero Bx.hi [aIdx]
             let ly := getAtOrZero By.lo [bIdx]
             let uy := getAtOrZero By.hi [bIdx]
-            let cx := (lx + ux) * Numbers.pointfive
-            let cy := (ly + uy) * Numbers.pointfive
+            let cx := (lx + ux) * Numbers.half
+            let cy := (ly + uy) * Numbers.half
             let l1 := lx * cy + ly * cx - lx * ly
             let l2 := ux * cy + uy * cx - ux * uy
             let aX := if l1 > l2 then ly else uy
@@ -512,8 +512,8 @@ def propagateMulElemBounds
               | .scalar lx, .scalar ux, .scalar ly, .scalar uy,
                 .dim rowXL, .dim rowXU, .dim rowYL, .dim rowYU =>
                 -- Choose min of two upper planes at the interval center.
-                let cx := (lx + ux) * Numbers.pointfive
-                let cy := (ly + uy) * Numbers.pointfive
+                let cx := (lx + ux) * Numbers.half
+                let cy := (ly + uy) * Numbers.half
                 let u1 := ux * cy + ly * cx - ux * ly
                 let u2 := lx * cy + uy * cx - lx * uy
                 let aX := if u1 < u2 then ly else uy     -- coeff for x
@@ -531,8 +531,8 @@ def propagateMulElemBounds
               match lxF i, uxF i, lyF i, uyF i, cxL i, cxU i, cyL i, cyU i with
               | .scalar lx, .scalar ux, .scalar ly, .scalar uy,
                 .scalar cxl, .scalar cxu, .scalar cyl, .scalar cyu =>
-                let cx := (lx + ux) * Numbers.pointfive
-                let cy := (ly + uy) * Numbers.pointfive
+                let cx := (lx + ux) * Numbers.half
+                let cy := (ly + uy) * Numbers.half
                 let u1 := ux * cy + ly * cx - ux * ly
                 let u2 := lx * cy + uy * cx - lx * uy
                 let aX := if u1 < u2 then ly else uy
@@ -549,8 +549,8 @@ def propagateMulElemBounds
               | .scalar lx, .scalar ux, .scalar ly, .scalar uy,
                 .dim rowXL, .dim rowXU, .dim rowYL, .dim rowYU =>
                 -- Choose max of two lower planes at the interval center.
-                let cx := (lx + ux) * Numbers.pointfive
-                let cy := (ly + uy) * Numbers.pointfive
+                let cx := (lx + ux) * Numbers.half
+                let cy := (ly + uy) * Numbers.half
                 let l1 := ux * cy + uy * cx - ux * uy
                 let l2 := lx * cy + ly * cx - lx * ly
                 let aX := if l1 > l2 then uy else ly     -- coeff for x
@@ -569,8 +569,8 @@ def propagateMulElemBounds
               match lxF i, uxF i, lyF i, uyF i, cxL i, cxU i, cyL i, cyU i with
               | .scalar lx, .scalar ux, .scalar ly, .scalar uy,
                 .scalar cxl, .scalar cxu, .scalar cyl, .scalar cyu =>
-                let cx := (lx + ux) * Numbers.pointfive
-                let cy := (ly + uy) * Numbers.pointfive
+                let cx := (lx + ux) * Numbers.half
+                let cy := (ly + uy) * Numbers.half
                 let l1 := ux * cy + uy * cx - ux * uy
                 let l2 := lx * cy + ly * cx - lx * ly
                 let aX := if l1 > l2 then uy else ly

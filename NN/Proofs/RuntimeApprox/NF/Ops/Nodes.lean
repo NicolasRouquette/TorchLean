@@ -43,7 +43,7 @@ local notation "R" => TorchLean.Floats.NF β fexp rnd
 /--
 `FwdNode` for elementwise addition.
 
-This packages `approxT_add_spec` so addition can be used inside larger verified `FwdGraph`s.
+This packages `approxTensor_add_spec` so addition can be used inside larger verified `FwdGraph`s.
 -/
 def addNode {Γ : List Shape} {s : Shape} (a b : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
@@ -67,13 +67,13 @@ by
   have hb := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     b
   simpa using
-    (approxT_add_spec (β := β) (fexp := fexp) (rnd := rnd)
+    (approxTensor_add_spec (β := β) (fexp := fexp) (rnd := rnd)
       (s := s) (xS := getIdx (α := SpecScalar) xS a) (yS := getIdx (α := SpecScalar) xS b)
       (xR := getIdx (α := R) xR a) (yR := getIdx (α := R) xR b)
       (epsx := getIdxEps (Γ := Γ) (s := s) eps a) (epsy := getIdxEps (Γ := Γ) (s := s) eps b)
       ha hb)
 
-/-- `FwdNode` for elementwise subtraction (wraps `approxT_sub_spec`). -/
+/-- `FwdNode` for elementwise subtraction (wraps `approxTensor_sub_spec`). -/
 def subNode {Γ : List Shape} {s : Shape} (a b : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by
@@ -96,13 +96,13 @@ by
   have hb := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     b
   simpa using
-    (approxT_sub_spec (β := β) (fexp := fexp) (rnd := rnd)
+    (approxTensor_sub_spec (β := β) (fexp := fexp) (rnd := rnd)
       (s := s) (xS := getIdx (α := SpecScalar) xS a) (yS := getIdx (α := SpecScalar) xS b)
       (xR := getIdx (α := R) xR a) (yR := getIdx (α := R) xR b)
       (epsx := getIdxEps (Γ := Γ) (s := s) eps a) (epsy := getIdxEps (Γ := Γ) (s := s) eps b)
       ha hb)
 
-/-- `FwdNode` for elementwise multiplication (wraps `approxT_mul_spec`). -/
+/-- `FwdNode` for elementwise multiplication (wraps `approxTensor_mul_spec`). -/
 def mulNode {Γ : List Shape} {s : Shape} (a b : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by
@@ -125,7 +125,7 @@ by
   have hb := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     b
   simpa using
-    (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+    (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
       (s := s) (xS := getIdx (α := SpecScalar) xS a) (yS := getIdx (α := SpecScalar) xS b)
       (xR := getIdx (α := R) xR a) (yR := getIdx (α := R) xR b)
       (epsx := getIdxEps (Γ := Γ) (s := s) eps a) (epsy := getIdxEps (Γ := Γ) (s := s) eps b)
@@ -134,7 +134,7 @@ by
 /--
 `FwdNode` for clamped division `safeDiv`.
 
-Requires a proof `hε : 0 < ε` and uses `approxT_safeDiv_spec` to obtain an unconditional bound.
+Requires a proof `hε : 0 < ε` and uses `approxTensor_safeDiv_spec` to obtain an unconditional bound.
 -/
 def safeDivNode {Γ : List Shape} {s : Shape} (a b : Idx Γ s) (ε : ℝ) (hε : 0 < ε) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
@@ -161,7 +161,7 @@ by
   have hb := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     b
   simpa using
-    (approxT_safeDiv_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s) (ε := ε) hε
+    (approxTensor_safeDiv_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s) (ε := ε) hε
       (xS := getIdx (α := SpecScalar) xS a) (yS := getIdx (α := SpecScalar) xS b)
       (xR := getIdx (α := R) xR a) (yR := getIdx (α := R) xR b)
       (epsx := getIdxEps (Γ := Γ) (s := s) eps a) (epsy := getIdxEps (Γ := Γ) (s := s) eps b)
@@ -170,7 +170,7 @@ by
 /--
 `FwdNode` for scaling by a runtime constant `c`.
 
-Wraps `approxT_scale_spec`.
+Wraps `approxTensor_scale_spec`.
 -/
 def scaleNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) (c : R) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
@@ -190,11 +190,11 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_scale_spec (β := β) (fexp := fexp) (rnd := rnd) (c := c)
+    (approxTensor_scale_spec (β := β) (fexp := fexp) (rnd := rnd) (c := c)
       (s := s) (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
-/-- `FwdNode` for elementwise negation (wraps `approxT_neg_spec`). -/
+/-- `FwdNode` for elementwise negation (wraps `approxTensor_neg_spec`). -/
 def negNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by
@@ -212,11 +212,11 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_neg_spec (β := β) (fexp := fexp) (rnd := rnd)
+    (approxTensor_neg_spec (β := β) (fexp := fexp) (rnd := rnd)
       (s := s) (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
-/-- `FwdNode` for elementwise absolute value (wraps `approxT_abs_spec`). -/
+/-- `FwdNode` for elementwise absolute value (wraps `approxTensor_abs_spec`). -/
 def absNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by
@@ -234,11 +234,11 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_abs_spec (β := β) (fexp := fexp) (rnd := rnd)
+    (approxTensor_abs_spec (β := β) (fexp := fexp) (rnd := rnd)
       (s := s) (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
-/-- `FwdNode` for elementwise exponentiation (wraps `approxT_exp_spec`). -/
+/-- `FwdNode` for elementwise exponentiation (wraps `approxTensor_exp_spec`). -/
 def expNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by
@@ -256,11 +256,11 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_exp_spec (β := β) (fexp := fexp) (rnd := rnd)
+    (approxTensor_exp_spec (β := β) (fexp := fexp) (rnd := rnd)
       (s := s) (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
-/-- `FwdNode` for elementwise softplus (wraps `approxT_softplus_spec`). -/
+/-- `FwdNode` for elementwise softplus (wraps `approxTensor_softplus_spec`). -/
 def softplusNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by
@@ -278,14 +278,14 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_softplus_spec (β := β) (fexp := fexp) (rnd := rnd)
+    (approxTensor_softplus_spec (β := β) (fexp := fexp) (rnd := rnd)
       (s := s) (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
 /--
 `FwdNode` for clamped log `safeLog`.
 
-Requires a proof `hε : 0 < ε` and wraps `approxT_safeLog_spec`.
+Requires a proof `hε : 0 < ε` and wraps `approxTensor_safeLog_spec`.
 -/
 def safeLogNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) (ε : ℝ) (hε : 0 < ε) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
@@ -304,14 +304,14 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_safeLog_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s) (ε := ε) hε
+    (approxTensor_safeLog_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s) (ε := ε) hε
       (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
 /--
 `FwdNode` for the smooth `safe_log` activation.
 
-Requires `hε : 0 < ε` and wraps `approxT_safe_log_spec`.
+Requires `hε : 0 < ε` and wraps `approxTensor_safe_log_spec`.
 -/
 def safeLogSoftplusNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) (ε : ℝ) (hε : 0 < ε) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
@@ -331,11 +331,11 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_safe_log_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s) (ε := ε) hε
+    (approxTensor_safe_log_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s) (ε := ε) hε
       (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
-/-- `FwdNode` for elementwise `tanh` (wraps `approxT_tanh_spec`). -/
+/-- `FwdNode` for elementwise `tanh` (wraps `approxTensor_tanh_spec`). -/
 def tanhNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by
@@ -353,11 +353,11 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_tanh_spec (β := β) (fexp := fexp) (rnd := rnd)
+    (approxTensor_tanh_spec (β := β) (fexp := fexp) (rnd := rnd)
       (s := s) (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
-/-- `FwdNode` for elementwise sigmoid (wraps `approxT_sigmoid_spec`). -/
+/-- `FwdNode` for elementwise sigmoid (wraps `approxTensor_sigmoid_spec`). -/
 def sigmoidNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by
@@ -375,11 +375,11 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_sigmoid_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s)
+    (approxTensor_sigmoid_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s)
       (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
-/-- `FwdNode` for elementwise ReLU (`max · 0`, wraps `approxT_relu_spec`). -/
+/-- `FwdNode` for elementwise ReLU (`max · 0`, wraps `approxTensor_relu_spec`). -/
 def reluNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by
@@ -397,11 +397,11 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_relu_spec (β := β) (fexp := fexp) (rnd := rnd)
+    (approxTensor_relu_spec (β := β) (fexp := fexp) (rnd := rnd)
       (s := s) (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
-/-- `FwdNode` for the scalar logistic-form `softmax` node (wraps `approxT_softmax_spec`). -/
+/-- `FwdNode` for the scalar logistic-form `softmax` node (wraps `approxTensor_softmax_spec`). -/
 def softmaxNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ s :=
 by
@@ -419,14 +419,14 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_softmax_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s)
+    (approxTensor_softmax_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s)
       (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 
 /--
 `FwdNode` for sum reduction (`sum_spec`).
 
-This reduces a tensor to a scalar and uses `approxT_sum_spec` with the accumulated `sum_bound`.
+This reduces a tensor to a scalar and uses `approxTensor_sum_spec` with the accumulated `sum_bound`.
 -/
 def sumNode {Γ : List Shape} {s : Shape} (a : Idx Γ s) :
     FwdNode (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) Γ Shape.scalar :=
@@ -445,7 +445,7 @@ by
   have ha := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx
     a
   simpa using
-    (approxT_sum_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s)
+    (approxTensor_sum_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s)
       (xS := getIdx (α := SpecScalar) xS a) (xR := getIdx (α := R) xR a)
       (eps := getIdxEps (Γ := Γ) (s := s) eps a) ha)
 

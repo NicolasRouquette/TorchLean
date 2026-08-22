@@ -60,6 +60,122 @@ def workDir : System.FilePath :=
 def batchNormParityScriptPath : System.FilePath :=
   workDir / "batchnorm_parity.py"
 
+/-- Evaluate softmax along a statically checked tensor dimension in the eager runtime. -/
+def evalSoftmaxAxis {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (x : Tensor Float s) : IO (Tensor Float s) := do
+  let sess ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float)
+  let action : Runtime.Autograd.Torch.Internal.EagerM Float (Tensor Float s) := do
+    let xRef ← Runtime.Autograd.Torch.Ops.const
+      (m := Runtime.Autograd.Torch.Internal.EagerM Float) (α := Float) (s := s) x
+    let yRef ← Runtime.Autograd.TorchLean.F.softmax
+      (m := Runtime.Autograd.Torch.Internal.EagerM Float) (α := Float) (s := s) axis xRef
+    let sess ← read
+    liftM <| Runtime.Autograd.Torch.Internal.EagerSession.getValue
+      (α := Float) (sh := s) sess yRef
+  action sess
+
+/-- Evaluate softmax and its VJP along a statically checked tensor dimension. -/
+def evalSoftmaxAxisWithGradient {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (x upstream : Tensor Float s) : IO (Tensor Float s × Tensor Float s) := do
+  let sess ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float)
+  let xRef ← Runtime.Autograd.Torch.Internal.EagerSession.input
+    (α := Float) (sh := s) sess x (name := some "softmax_input") (requiresGrad := true)
+  let action : Runtime.Autograd.Torch.Internal.EagerM Float
+      (Runtime.Autograd.Torch.TensorRef Float s) :=
+    Runtime.Autograd.TorchLean.F.softmax
+      (m := Runtime.Autograd.Torch.Internal.EagerM Float) (α := Float) (s := s) axis xRef
+  let yRef ← action sess
+  let y ← Runtime.Autograd.Torch.Internal.EagerSession.getValue
+    (α := Float) (sh := s) sess yRef
+  let grads ← Runtime.Autograd.Torch.Internal.EagerSession.backwardDenseAll
+    (α := Float) (sh := s) sess yRef upstream
+  let dx ← Runtime.Autograd.Torch.Internal.EagerSession.grad grads xRef
+  pure (y, dx)
+
+/-- Evaluate log-softmax and its VJP along a statically checked tensor dimension. -/
+def evalLogSoftmaxAxisWithGradient {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (x upstream : Tensor Float s) : IO (Tensor Float s × Tensor Float s) := do
+  let sess ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float)
+  let xRef ← Runtime.Autograd.Torch.Internal.EagerSession.input
+    (α := Float) (sh := s) sess x (name := some "log_softmax_input") (requiresGrad := true)
+  let action : Runtime.Autograd.Torch.Internal.EagerM Float
+      (Runtime.Autograd.Torch.TensorRef Float s) :=
+    Runtime.Autograd.TorchLean.F.logSoftmax
+      (m := Runtime.Autograd.Torch.Internal.EagerM Float) (α := Float) (s := s) axis xRef
+  let yRef ← action sess
+  let y ← Runtime.Autograd.Torch.Internal.EagerSession.getValue
+    (α := Float) (sh := s) sess yRef
+  let grads ← Runtime.Autograd.Torch.Internal.EagerSession.backwardDenseAll
+    (α := Float) (sh := s) sess yRef upstream
+  let dx ← Runtime.Autograd.Torch.Internal.EagerSession.grad grads xRef
+  pure (y, dx)
+
+/-- Check outer, final, and interior softmax dimensions against explicit numerical fixtures. -/
+def checkSoftmaxDimensions : IO Unit := do
+  let matrix : Tensor Float (.dim 2 (.dim 3 .scalar)) :=
+    tensorOfList! [2, 3] [1, 2, 3, 4, 5, 6]
+  let alongRows ← evalSoftmaxAxis 0 matrix
+  let alongColumns ← evalSoftmaxAxis 1 matrix
+  let rowExpected := [0.047425873, 0.047425873, 0.047425873,
+    0.952574127, 0.952574127, 0.952574127]
+  let columnExpected := [0.090030573, 0.244728471, 0.665240956,
+    0.090030573, 0.244728471, 0.665240956]
+  for (actual, expected) in (Spec.toList alongRows).zip rowExpected do
+    assertApprox "softmax axis 0" actual expected 1e-5
+  for (actual, expected) in (Spec.toList alongColumns).zip columnExpected do
+    assertApprox "softmax axis 1" actual expected 1e-5
+
+  let rankThree : Tensor Float (.dim 2 (.dim 2 (.dim 2 .scalar))) :=
+    tensorOfList! [2, 2, 2] [0, 2, 1, 4, 3, 8, 7, 9]
+  let alongMiddle ← evalSoftmaxAxis 1 rankThree
+  let middleExpected := [0.268941421, 0.119202922, 0.731058579, 0.880797078,
+    0.017986210, 0.268941421, 0.982013790, 0.731058579]
+  for (actual, expected) in (Spec.toList alongMiddle).zip middleExpected do
+    assertApprox "softmax interior axis" actual expected 1e-5
+
+  let upstream : Tensor Float (.dim 2 (.dim 2 (.dim 2 .scalar))) :=
+    tensorOfList! [2, 2, 2] [1, -2, 3, 4, -1, 2, 5, -3]
+  let (_, gradient) ← evalSoftmaxAxisWithGradient 1 rankThree upstream
+  let expectedGradient :=
+    Activation.softmaxBackwardSpec (α := Float) (s := .dim 2 (.dim 2 (.dim 2 .scalar)))
+      1 rankThree upstream
+  for (actual, expected) in (Spec.toList gradient).zip (Spec.toList expectedGradient) do
+    assertApprox "softmax interior-axis gradient" actual expected 1e-5
+
+  let (logProbabilities, logGradient) ←
+    evalLogSoftmaxAxisWithGradient 1 rankThree upstream
+  let expectedLogProbabilities :=
+    Activation.logSoftmaxSpec (α := Float) (s := .dim 2 (.dim 2 (.dim 2 .scalar)))
+      1 rankThree
+  let expectedLogGradient :=
+    Activation.logSoftmaxBackwardSpec
+      (α := Float) (s := .dim 2 (.dim 2 (.dim 2 .scalar)))
+      1 expectedLogProbabilities upstream
+  for (actual, expected) in
+      (Spec.toList logProbabilities).zip (Spec.toList expectedLogProbabilities) do
+    assertApprox "log-softmax interior axis" actual expected 1e-5
+  for (actual, expected) in (Spec.toList logGradient).zip (Spec.toList expectedLogGradient) do
+    assertApprox "log-softmax interior-axis gradient" actual expected 1e-5
+
+/-- Check that classification metrics support outer and inner class axes. -/
+def checkClassificationAxes : IO Unit := do
+  let logits : Tensor Float (.dim 2 (.dim 3 .scalar)) :=
+    tensorOfList! [2, 3] [1, 5, 2, 9, 4, 3]
+  unless TorchLean.Metrics.argmaxAxis? 1 logits = [some 1, some 0] do
+    throw <| IO.userError "argmax along the inner class axis returned incorrect indices"
+  unless TorchLean.Metrics.argmaxAxis? 0 logits = [some 1, some 0, some 1] do
+    throw <| IO.userError "argmax along the outer class axis returned incorrect indices"
+
+  let rowTargets : Tensor Float (.dim 2 (.dim 3 .scalar)) :=
+    tensorOfList! [2, 3] [0, 1, 0, 1, 0, 0]
+  unless TorchLean.Metrics.accuracyOneHotAxis 1 logits rowTargets = (2, 2) do
+    throw <| IO.userError "one-hot accuracy along the inner class axis was incorrect"
+
+  let columnTargets : Tensor Float (.dim 2 (.dim 3 .scalar)) :=
+    tensorOfList! [2, 3] [0, 1, 0, 1, 0, 1]
+  unless TorchLean.Metrics.accuracyOneHotAxis 0 logits columnTargets = (3, 3) do
+    throw <| IO.userError "one-hot accuracy along the outer class axis was incorrect"
+
 /-- Evaluate a two-row weighted integer-label cross entropy through the eager runtime. -/
 def evalWeightedRowCrossEntropy
     (logits : Tensor Float (.dim 2 (.dim 2 .scalar)))
@@ -79,7 +195,7 @@ def evalWeightedRowCrossEntropy
     let sess ← read
     liftM <| Runtime.Autograd.Torch.Internal.EagerSession.getValue
       (α := Float) (sh := .scalar) sess lossRef
-  pure <| Tensor.toScalar (← action sess)
+  pure <| Tensor.item (← action sess)
 
 /--
 Check weighted cross entropy as a runtime operation.
@@ -106,21 +222,22 @@ def checkWeightedRowCrossEntropy : IO Unit := do
 
 /-- Check that tied token lookup removes exactly one independent affine vocabulary head. -/
 def checkTiedTokenEmbeddingParameterCount : IO Unit := do
+  let countElements (shapes : List Shape) : Nat :=
+    shapes.foldl (fun count shape => count + Spec.Shape.size shape) 0
   let cfg : TorchLean.nn.models.CausalTransformer.Config :=
-    { batch := 1
-      seqLen := 2
+    { seqLen := 2
       vocab := 7
       numHeads := 1
       headDim := 4
       ffnHidden := 8
       layers := 1 }
   let untiedBody := TorchLean.nn.build 11 <|
-    TorchLean.nn.models.CausalTransformer.fromEmbeddings cfg
+    TorchLean.nn.models.CausalTransformer.fromEmbeddings cfg (.dim 1 .scalar)
   let tiedBody := TorchLean.nn.build 11 <|
-    TorchLean.nn.models.CausalTransformer.hidden cfg
-  let untiedCount := TorchLean.nn.elementCount <|
+    TorchLean.nn.models.CausalTransformer.hidden cfg (.dim 1 .scalar)
+  let untiedCount := countElements <|
     TorchLean.nn.models.CausalTransformer.Indexed.stateShapes cfg untiedBody
-  let tiedCount := TorchLean.nn.elementCount <|
+  let tiedCount := countElements <|
     TorchLean.nn.models.CausalTransformer.Tied.stateShapes cfg tiedBody
   let independentHeadCount := cfg.vocab * cfg.dModel + cfg.vocab
   unless untiedCount = tiedCount + independentHeadCount do
@@ -131,24 +248,23 @@ def checkTiedTokenEmbeddingParameterCount : IO Unit := do
 /-- Run a tied-token model through one loss and backward pass. -/
 def checkTiedTokenEmbeddingBackward : IO Unit := do
   let cfg : TorchLean.nn.models.CausalTransformer.Config :=
-    { batch := 1
-      seqLen := 2
+    { seqLen := 2
       vocab := 7
       numHeads := 1
       headDim := 4
       ffnHidden := 8
       layers := 1 }
   let body := TorchLean.nn.build 19 <|
-    TorchLean.nn.models.CausalTransformer.hidden cfg
+    TorchLean.nn.models.CausalTransformer.hidden cfg (.dim 1 .scalar)
   let definition := TorchLean.nn.models.CausalTransformer.Tied.objective cfg body
   let module ← _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef.instantiateFloat64
     definition { execution := .eager }
-  let inputs : Tensor Nat (.dim 2 .scalar) := tensorOfList! [2] [0, 1]
-  let targets : Tensor Nat (.dim 2 .scalar) := tensorOfList! [2] [1, 2]
+  let inputs : Tensor Nat (shape![1, 2]) := tensorOfList! [1, 2] [0, 1]
+  let targets : Tensor Nat (shape![1, 2]) := tensorOfList! [1, 2] [1, 2]
   let (loss, gradients) ←
     _root_.Runtime.Autograd.TorchLean.Module.Objective.lossAndGradState module
       .nil (.cons inputs (.cons targets .nil))
-  assertFinite "tied token embedding loss" (Tensor.toScalar loss)
+  assertFinite "tied token embedding loss" (Tensor.item loss)
   let sharedGradient := Proofs.Autograd.Algebra.TList.get gradients ⟨0, by simp⟩
   let values := Spec.toList sharedGradient
   for value in values do
@@ -195,13 +311,32 @@ def checkTypedGraphLeafMetadata : IO Unit := do
   let grads ← _root_.Runtime.Autograd.TorchLean.Session.backwardScalarDenseAll sess loss
   let frozenGrad ← _root_.Runtime.Autograd.TorchLean.Session.grad grads frozenRef
   let trainableGrad ← _root_.Runtime.Autograd.TorchLean.Session.grad grads trainableRef
-  assertApprox "typed graph frozen gradient" (Tensor.toScalar frozenGrad) 0 1e-7
-  assertApprox "typed graph trainable gradient" (Tensor.toScalar trainableGrad) 10 1e-7
+  assertApprox "typed graph frozen gradient" (Tensor.item frozenGrad) 0 1e-7
+  assertApprox "typed graph trainable gradient" (Tensor.item trainableGrad) 10 1e-7
   _root_.Runtime.Autograd.TorchLean.Session.sgdStepAll sess 0.1 grads
-  assertApprox "typed graph frozen parameter" (Tensor.toScalar (← frozen.value.get)) 2 1e-7
-  assertApprox "typed graph updated parameter" (Tensor.toScalar (← trainable.value.get)) 2 1e-7
+  assertApprox "typed graph frozen parameter" (Tensor.item (← frozen.value.get)) 2 1e-7
+  assertApprox "typed graph updated parameter" (Tensor.item (← trainable.value.get)) 2 1e-7
 
 /-! ## Eager/typed graph operator parity -/
+
+/-- Evaluate public session softmax and log-softmax along the middle axis of a rank-3 tensor. -/
+def evalSessionSoftmaxFixture (execution : _root_.Runtime.Autograd.Torch.ExecutionMode) :
+    IO (Tensor Float (.dim 2 (.dim 2 (.dim 2 .scalar))) ×
+      Tensor Float (.dim 2 (.dim 2 (.dim 2 .scalar)))) := do
+  let shape : Shape := .dim 2 (.dim 2 (.dim 2 .scalar))
+  let input : Tensor Float shape := tensorOfList! [2, 2, 2] [0, 2, 1, 4, 3, 8, 7, 9]
+  let sess ← _root_.Runtime.Autograd.TorchLean.Session.new (α := Float)
+    (opts := { execution := execution })
+  let inputRef ← _root_.Runtime.Autograd.TorchLean.Session.const sess (sh := shape) input
+  let probabilitiesRef ←
+    _root_.Runtime.Autograd.TorchLean.Session.softmax sess (sh := shape) 1 inputRef
+  let logProbabilitiesRef ←
+    _root_.Runtime.Autograd.TorchLean.Session.logSoftmax sess (sh := shape) 1 inputRef
+  let probabilities ←
+    _root_.Runtime.Autograd.TorchLean.Session.getValue sess (sh := shape) probabilitiesRef
+  let logProbabilities ←
+    _root_.Runtime.Autograd.TorchLean.Session.getValue sess (sh := shape) logProbabilitiesRef
+  pure (probabilities, logProbabilities)
 
 /-- Evaluate a fixed 2x3 by 3x2 matrix product in the selected execution mode. -/
 def evalMatmulFixture (execution : _root_.Runtime.Autograd.Torch.ExecutionMode) :
@@ -228,7 +363,8 @@ def evalConcatFixture (execution : _root_.Runtime.Autograd.Torch.ExecutionMode) 
     i.val))
   let aR ← _root_.Runtime.Autograd.TorchLean.Session.const sess (sh := .dim 2 .scalar) a
   let bR ← _root_.Runtime.Autograd.TorchLean.Session.const sess (sh := .dim 3 .scalar) b
-  let cR ← _root_.Runtime.Autograd.TorchLean.Session.concatVectors sess (n := 2) (m := 3) aR bR
+  let cR ← _root_.Runtime.Autograd.TorchLean.Session.concatLeadingAxis sess
+    (n := 2) (m := 3) (sh := .scalar) aR bR
   _root_.Runtime.Autograd.TorchLean.Session.getValue sess (sh := .dim 5 .scalar) cR
 
 /-- Evaluate a fixed 2D max-pooling example in the selected execution mode. -/
@@ -354,11 +490,11 @@ def evalBatchNormNchwEval :
 
 /-- Closed-form BatchNorm expression when the mean and variance come from the current batch. -/
 def expectedBatchNormFromBatchStats (x gamma beta mean var : Float) : Float :=
-  ((x - mean) / Float.sqrt (var + Numbers.epsilon)) * gamma + beta
+  ((x - mean) / Float.sqrt (var + Numbers.normalizationEpsilon)) * gamma + beta
 
 /-- Closed-form BatchNorm expression when the mean and variance are fixed running statistics. -/
 def expectedBatchNormFromRunningStats (x gamma beta mean var : Float) : Float :=
-  ((x - mean) / Float.sqrt (var + Numbers.epsilon)) * gamma + beta
+  ((x - mean) / Float.sqrt (var + Numbers.normalizationEpsilon)) * gamma + beta
 
 /-- Flatten an NCHW tensor in PyTorch's row-major order for JSON parity comparisons. -/
 def flattenNchwRowMajor {n c h w : Nat}
@@ -471,7 +607,7 @@ def checkLossSemantics : IO Unit := do
     tensorOfList! [2, 3] [0, 0, 0, 0, 0, 0]
   let target : Tensor Float (.dim 2 (.dim 3 .scalar)) :=
     tensorOfList! [2, 3] [1, 0, 0, 0, 1, 0]
-  let logitsLoss := Spec.crossEntropyLogitsSpec logits target
+  let logitsLoss := Spec.crossEntropyLogitsSpec 1 logits target
   assertApprox "cross entropy averages samples, not classes" logitsLoss (Float.log 3) 1e-5
 
   let probabilities : Tensor Float (.dim 3 .scalar) :=
@@ -479,7 +615,7 @@ def checkLossSemantics : IO Unit := do
   let distribution : Tensor Float (.dim 3 .scalar) :=
     tensorOfList! [3] [1, 1, 1]
   let probabilityGrad :=
-    Spec.crossEntropyDerivSpec probabilities distribution (epsilon := 0.1)
+    Spec.crossEntropyDerivSpec 0 probabilities distribution (epsilon := 0.1)
   assertApprox "cross entropy lower clipped branch" (vecVal probabilityGrad ⟨0, by decide⟩) 0
   assertApprox "cross entropy interior branch" (vecVal probabilityGrad ⟨1, by decide⟩) (-2)
   assertApprox "cross entropy upper clipped branch" (vecVal probabilityGrad ⟨2, by decide⟩) 0
@@ -519,9 +655,20 @@ def checkCorrectedMathematicalSpecs : IO Unit := do
   assertApprox "tensor-wide population variance"
     (Spec.Tensor.varianceSpec matrix) 5
 
+  -- Each GroupNorm group contains one channel and both spatial positions. This fixture detects an
+  -- NHWC implementation that accidentally groups adjacent channels at each spatial position.
+  let groupNormInput : Tensor Float (.dim 1 (.dim 2 (.dim 1 (.dim 2 .scalar)))) :=
+    tensorOfList! [1, 2, 1, 2] [1, 10, 3, 14]
+  let groupNormScale : Tensor Float (.dim 2 .scalar) := tensorOfList! [2] [1, 1]
+  let groupNormBias : Tensor Float (.dim 2 .scalar) := tensorOfList! [2] [0, 0]
+  let groupNormOutput := Spec.groupNorm (groups := 2)
+    groupNormInput groupNormScale groupNormBias (h_ge := by decide) (h_div := by decide)
+  assertArrayApprox "GroupNorm NHWC channel grouping" (Spec.toList groupNormOutput).toArray
+    #[-0.999995, -0.99999875, 0.999995, 0.99999875] 1e-5
+
   let clustered : Tensor Float (.dim 2 .scalar) :=
     tensorOfList! [2] [1.0e12, 1.0e12 + 1]
-  let clusteredVariance := Spec.Tensor.reduceVar 0 clustered Spec.Shape.reducibleAlong.head
+  let clusteredVariance := Spec.Tensor.reduceVar 0 clustered Spec.Shape.NonemptyAxis.zero
   assertApprox "centered population variance"
     (scalarVal clusteredVariance) 0.25 1e-8
 
@@ -552,8 +699,8 @@ def checkCorrectedMathematicalSpecs : IO Unit := do
   let beta := schedule.beta t
   let sigma := schedule.sigma t
   let expectedRhs :=
-    Numbers.neg_point_five * beta * 2 +
-      Numbers.pointfive * Generative.Diffusion.safeDiv beta sigma
+    Numbers.negHalf * beta * 2 +
+      Numbers.half * Generative.Diffusion.safeDiv beta sigma
   assertApprox "probability-flow ODE coefficient"
     (vecVal rhs ⟨0, by decide⟩) expectedRhs
 
@@ -567,9 +714,9 @@ def checkCorrectedMathematicalSpecs : IO Unit := do
     (vecVal sampled ⟨0, by decide⟩) (vecVal expectedSample ⟨0, by decide⟩)
 
   let impossibleHmm : Spec.HMMSpec Float 1 1 :=
-    { init_prob := tensorOfList! [1] [1]
-      trans_prob := tensorOfList! [1, 1] [1]
-      emission_prob := tensorOfList! [1, 1] [0] }
+    { initial := tensorOfList! [1] [1]
+      transition := tensorOfList! [1, 1] [1]
+      emission := tensorOfList! [1, 1] [0] }
   let observations : Spec.ObservationSeq 1 := [⟨0, by decide⟩]
   assertApprox "impossible HMM observation has zero likelihood"
     (Spec.hmmForwardSpec impossibleHmm observations) 0
@@ -607,11 +754,28 @@ def checkCorrectedMathematicalSpecs : IO Unit := do
 /-- Entrypoint called by the curated float runtime suite. -/
 def run : IO Unit := do
   IO.println "torchlean_ops_check: begin"
+  checkSoftmaxDimensions
+  checkClassificationAxes
   checkWeightedRowCrossEntropy
   checkTiedTokenEmbeddingParameterCount
   checkTiedTokenEmbeddingBackward
   checkAttentionOutputProjectionInitializer
   checkTypedGraphLeafMetadata
+
+  let softmaxInput : Tensor Float (.dim 2 (.dim 2 (.dim 2 .scalar))) :=
+    tensorOfList! [2, 2, 2] [0, 2, 1, 4, 3, 8, 7, 9]
+  let expectedSoftmax := Activation.softmaxSpec (α := Float) 1 softmaxInput
+  let expectedLogSoftmax := Activation.logSoftmaxSpec (α := Float) 1 softmaxInput
+  for execution in [.eager, .typedGraph] do
+    let executionName := match execution with
+      | .eager => "eager"
+      | .typedGraph => "typed_graph"
+    let (actualSoftmax, actualLogSoftmax) ← evalSessionSoftmaxFixture execution
+    for (actual, expected) in (Spec.toList actualSoftmax).zip (Spec.toList expectedSoftmax) do
+      assertApprox s!"session softmax axis 1 ({executionName})" actual expected 1e-5
+    for (actual, expected) in
+        (Spec.toList actualLogSoftmax).zip (Spec.toList expectedLogSoftmax) do
+      assertApprox s!"session log-softmax axis 1 ({executionName})" actual expected 1e-5
 
   let mmE ← evalMatmulFixture .eager
   let mmC ← evalMatmulFixture .typedGraph

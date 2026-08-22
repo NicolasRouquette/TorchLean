@@ -67,7 +67,7 @@ def run : IO Unit := do
   let (t22, outId) ← Utils.okOrThrow (Tape.sum (α := Float) (t := t21) (s := s) u19)
 
   let outCpu ← Utils.cpuValue (s := Shape.scalar) t22 outId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (Tensor.scalar 1.0)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (Tensor.scalar 1.0)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t22) outId seedCpu)
   let dA_cpu ← Utils.cpuGrad (s := s) gradsCpu aId
   let dB_cpu ← Utils.cpuGrad (s := s) gradsCpu bId
@@ -131,8 +131,8 @@ def run : IO Unit := do
   let (geluCpu2, geluCpuOutputId) ← Utils.okOrThrow <|
     Tape.gelu (α := Float) (t := geluCpu1) (s := geluShape) geluCpuInputId
   let geluCpuOutput ← Utils.cpuValue (s := geluShape) geluCpu2 geluCpuOutputId
-  let geluSeedCpu : Runtime.AnyTensor Float :=
-    AnyTensor.mk (Spec.fill (α := Float) 1.0 geluShape)
+  let geluSeedCpu : Spec.PackedTensor Float :=
+    Spec.PackedTensor.ofTensor (Spec.fill (α := Float) 1.0 geluShape)
   let geluCpuGrads ← Utils.okOrThrow <|
     Tape.backwardDenseAll (α := Float) (t := geluCpu2) geluCpuOutputId geluSeedCpu
   let geluCpuGrad ← Utils.cpuGrad (s := geluShape) geluCpuGrads geluCpuInputId

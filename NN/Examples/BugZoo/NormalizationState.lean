@@ -84,16 +84,16 @@ theorem normalizeCore_scalar_uses_variance_plus_epsilon
         (variance := Spec.Tensor.scalar variance)
         (gamma := Spec.Tensor.scalar gamma)
         (beta := Spec.Tensor.scalar beta)
-        (cb_mean := Spec.Shape.CanBroadcastTo.scalar_to_any .scalar)
-        (cb_var := Spec.Shape.CanBroadcastTo.scalar_to_any .scalar)
-        (cb_gamma := Spec.Shape.CanBroadcastTo.scalar_to_any .scalar)
-        (cb_beta := Spec.Shape.CanBroadcastTo.scalar_to_any .scalar)
+        (cb_mean := Spec.Shape.CanBroadcastTo.scalar)
+        (cb_var := Spec.Shape.CanBroadcastTo.scalar)
+        (cb_gamma := Spec.Shape.CanBroadcastTo.scalar)
+        (cb_beta := Spec.Shape.CanBroadcastTo.scalar)
       =
     Spec.Tensor.scalar
       (((x - mean) / MathFunctions.sqrt (Max.max (variance + epsilon) 0)) * gamma + beta) := by
   simp [Spec.normalizeCore, Spec.Tensor.broadcastTo, Spec.Tensor.addSpec, Spec.Tensor.subSpec,
     Spec.Tensor.mulSpec, Spec.Tensor.divSpec, Spec.Tensor.sqrtSpec, Spec.Tensor.map2Spec,
-    Spec.fill, Spec.replicate]
+    Spec.fill]
 
 /--
 Running statistics are part of the BatchNorm inference contract.
@@ -114,7 +114,7 @@ def batchNormEvalWithStats {channels : Nat} {sSpatial : Spec.Shape}
     (stats : RunningStats channels)
     (gamma : Spec.Tensor ℝ (.dim channels .scalar))
     (beta : Spec.Tensor ℝ (.dim channels .scalar))
-    (epsilon : ℝ := Numbers.epsilon) :
+    (epsilon : ℝ := Numbers.normalizationEpsilon) :
     Spec.Tensor ℝ (.dim channels sSpatial) :=
   Spec.batchNormInference
     (x := x)
@@ -130,7 +130,7 @@ theorem batchNormEvalWithStats_unfolds {channels : Nat} {sSpatial : Spec.Shape}
     (stats : RunningStats channels)
     (gamma : Spec.Tensor ℝ (.dim channels .scalar))
     (beta : Spec.Tensor ℝ (.dim channels .scalar))
-    (epsilon : ℝ := Numbers.epsilon) :
+    (epsilon : ℝ := Numbers.normalizationEpsilon) :
     batchNormEvalWithStats x stats gamma beta epsilon =
       Spec.batchNormInference
         (x := x)
@@ -154,25 +154,22 @@ theorem batchNormEvalWithStats_is_affine
     (stats : RunningStats channels)
     (gamma : Spec.Tensor ℝ (.dim channels .scalar))
     (beta : Spec.Tensor ℝ (.dim channels .scalar))
-    (epsilon : ℝ := Numbers.epsilon) :
+    (epsilon : ℝ := Numbers.normalizationEpsilon) :
     ∃ scale bias : Spec.Tensor ℝ (.dim channels sSpatial),
       batchNormEvalWithStats x stats gamma beta epsilon =
         Spec.Tensor.addSpec (Spec.Tensor.mulSpec x scale) bias := by
   let s : Spec.Shape := .dim channels sSpatial
-  let cb : Spec.Shape.CanBroadcastTo (.dim channels .scalar) s := by
-    apply Spec.Shape.CanBroadcastTo.dim_eq
-    exact Spec.Shape.CanBroadcastTo.scalar_to_any sSpatial
   let runningVar := Spec.Tensor.maxSpec stats.variance (Spec.fill 0 (.dim channels .scalar))
-  let mean_b := Spec.Tensor.broadcastTo cb stats.mean
-  let var_b := Spec.Tensor.broadcastTo cb runningVar
-  let gamma_b := Spec.Tensor.broadcastTo cb gamma
-  let beta_b := Spec.Tensor.broadcastTo cb beta
+  let mean_b := Spec.broadcastChannelFirst sSpatial stats.mean
+  let var_b := Spec.broadcastChannelFirst sSpatial runningVar
+  let gamma_b := Spec.broadcastChannelFirst sSpatial gamma
+  let beta_b := Spec.broadcastChannelFirst sSpatial beta
   let std := Spec.Tensor.sqrtSpec (Spec.Tensor.addSpec var_b (Spec.fill epsilon s))
   refine
     ⟨Spec.Tensor.divSpec gamma_b std,
       Spec.Tensor.subSpec beta_b (Spec.Tensor.mulSpec mean_b (Spec.Tensor.divSpec gamma_b std)),
       ?_⟩
-  simpa [batchNormEvalWithStats, s, cb, runningVar, mean_b, var_b, gamma_b, beta_b, std]
+  simpa [batchNormEvalWithStats, s, runningVar, mean_b, var_b, gamma_b, beta_b, std]
     using
       Proofs.Normalization.batchNorm_inference_eq_mul_add
         (x := x)

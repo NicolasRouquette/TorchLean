@@ -196,7 +196,7 @@ def asciiAllowed (c : Char) : Bool :=
 
 /-- Fitted predictor for a runtime-sized character GPT model. -/
 abbrev Predictor (α : Type) (batch seqLen vocab : Nat) :=
-  Tensor Nat (.dim (batch * seqLen) .scalar) →
+  Tensor Nat (shape![batch, seqLen]) →
     IO (Tensor α (shape![batch, seqLen, vocab]))
 
 /-- Autoregressively extend character token ids using a trained CharGPT model. -/
@@ -227,8 +227,8 @@ partial def generateSampledFromIds {α : Type}
   let b0 : Fin batch := ⟨0, Nat.pos_of_ne_zero hBatch⟩
   text.autoregressiveTokenIds seqLen padId promptIds gen
     (fun padded predPos => do
-        let x : Tensor Nat (.dim (batch * seqLen) .scalar) :=
-          Tensor.vectorFromArrayD (batch * seqLen) padded.toArray padId
+        let x : Tensor Nat (shape![batch, seqLen]) :=
+          Spec.Tensor.dim fun _ => Spec.Tensor.vector fun i => padded.get i
         let logits ← predict x
         pure ((text.batchLogitScoresAt logits b0 predPos).map toFloat))
     (allowId := allowId)
@@ -288,14 +288,18 @@ def main (args : List String) : IO UInt32 := do
       if width % heads != 0 then
         throw <| IO.userError s!"{exeName}: --heads must divide --width"
       let alphabetFull := buildAlphabet corpus
-      let tok := text.Tokenizer.ofAlphabet alphabetFull (unkId := 0) (unkChar := '?')
+      let unkId : Fin alphabetFull.size ←
+        if h : 0 < alphabetFull.size then
+          pure ⟨0, h⟩
+        else
+          throw <| IO.userError s!"{exeName}: corpus contains no characters"
+      let tok := text.Tokenizer.ofAlphabet alphabetFull unkId (unkChar := '?')
       let vocab := tok.vocabSize
       let batch := train.batch
       let seqLen := train.seqLen
 
       let cfg : nn.models.CausalTransformer.Config :=
-        { batch := batch
-          seqLen := seqLen
+        { seqLen := seqLen
           vocab := vocab
           numHeads := heads
           headDim := width / heads
@@ -324,10 +328,12 @@ def main (args : List String) : IO UInt32 := do
         intro h
         rw [h] at modelWitness
         exact Fin.elim0 modelWitness
-      let body : nn.Sequential (nn.models.CausalTransformer.embeddingShape cfg)
-          (nn.models.CausalTransformer.vocabularyShape cfg) :=
+      let body : nn.Sequential
+          (nn.models.CausalTransformer.embeddingShape cfg (.dim batch .scalar))
+          (nn.models.CausalTransformer.vocabularyShape cfg (.dim batch .scalar)) :=
         nn.build train.seed <|
-          nn.models.CausalTransformer.fromEmbeddings cfg (h_seqLen := hSeq) (h_dModel := hModel)
+          nn.models.CausalTransformer.fromEmbeddings cfg (.dim batch .scalar)
+            (h_seqLen := hSeq) (h_dModel := hModel)
 
       let allTokens := (tok.encode corpus).toArray
       let split := allTokens.size * 9 / 10
@@ -351,7 +357,8 @@ def main (args : List String) : IO UInt32 := do
           Checkpoint.loadModule module path
           IO.println s!"  loaded checkpoint: {path}"
       let optimizer := _root_.Runtime.Autograd.TorchLean.Optim.adamw
-        (α := Float32) (paramShapes := nn.models.CausalTransformer.Indexed.stateShapes cfg body)
+        (α := Float32)
+        (paramShapes := nn.models.CausalTransformer.Indexed.stateShapes cfg body)
         (TorchLean.Runtime.ofFloat train.lr)
         (TorchLean.Runtime.ofFloat 0.01)
         (TorchLean.Runtime.ofFloat 0.9)
@@ -374,7 +381,7 @@ def main (args : List String) : IO UInt32 := do
           let (tokens, targets) := mkValSample i
           let loss ← TorchLean.Module.lossWithState
             evalDef opts module.trainer.state .nil (.cons tokens (.cons targets .nil))
-          pure (Float32.toFloat (Spec.Tensor.toScalar loss))
+          pure (Float32.toFloat (Spec.Tensor.item loss))
         pure (losses.foldl (· + ·) 0.0 / Float.ofNat losses.length)
       let beforeLoss ← evalLoss
       IO.println s!"  step 0: val loss={beforeLoss}"
@@ -392,18 +399,20 @@ def main (args : List String) : IO UInt32 := do
       let afterLoss ← evalLoss
       let forwardProgram : _root_.Runtime.Autograd.TorchLean.ProgramWithNatInputs Float32
           (nn.models.CausalTransformer.Indexed.stateShapes cfg body ++ [])
-          [nn.models.CausalTransformer.tokenShape cfg] (nn.models.CausalTransformer.vocabularyShape cfg) := by
+          [nn.models.CausalTransformer.tokenShape cfg (.dim batch .scalar)]
+          (nn.models.CausalTransformer.vocabularyShape cfg (.dim batch .scalar)) := by
         rw [List.append_nil]
         exact fun {m} _ _ =>
           nn.models.CausalTransformer.Indexed.program cfg body (α := Float32) (m := m)
       let evaluator ← TorchLean.Module.withState forwardProgram
         opts module.trainer.state
-      let predict := fun (x : Tensor Nat (nn.models.CausalTransformer.tokenShape cfg)) => do
+      let predict := fun
+          (x : Tensor Nat (nn.models.CausalTransformer.tokenShape cfg (.dim batch .scalar))) => do
         TorchLean.Module.evaluatePacked evaluator .nil (.cons x .nil)
       let promptIds := tok.encode train.prompt
       let allowId : Nat → Bool :=
         if train.asciiOnly then
-          fun i => asciiAllowed (alphabetFull.getD i '?')
+          fun i => alphabetFull[i]?.any asciiAllowed
         else
           fun _ => true
       let outIds ←

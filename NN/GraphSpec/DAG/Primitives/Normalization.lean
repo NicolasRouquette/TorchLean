@@ -8,7 +8,7 @@ module
 
 public import NN.GraphSpec.DAG.Primitives.Shape
 public import NN.Spec.Layers.Normalization
-public import NN.Spec.Models.CommonHelpers
+public import NN.Spec.Core.Tensor.Numerics
 
 /-!
 # DAG Normalization Primitives
@@ -22,7 +22,7 @@ namespace NN
 namespace GraphSpec
 namespace DAG
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 open NN.Tensor
 
@@ -40,8 +40,8 @@ def rmsNorm (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
           _root_.Spec.rmsNorm (α := α) input gamma hRows hWidth
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input gamma =>
-        Runtime.Autograd.TorchLean.Norm.rmsNormLast (m := m) (α := α)
-          hRows hWidth input gamma }
+        Runtime.Autograd.TorchLean.Norm.rmsNorm (m := m) (α := α)
+          (rows := rows) (width := width) hWidth input gamma }
 
 /-- Pure evaluation of matrix RMS normalization. -/
 @[simp] theorem rmsNorm_specFwd {rows width : Nat}
@@ -88,8 +88,8 @@ def rmsNormVector (width : Nat) (hWidth : 0 < width) :
           let row ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
             (s₁ := .dim width .scalar) (s₂ := .dim 1 (.dim width .scalar)) input (by
               simp [_root_.Spec.Shape.size])
-          let normalized ← Runtime.Autograd.TorchLean.Norm.rmsNormLast (m := m) (α := α)
-            (Nat.zero_lt_succ 0) hWidth row gamma
+          let normalized ← Runtime.Autograd.TorchLean.Norm.rmsNorm (m := m) (α := α)
+            (rows := 1) (width := width) hWidth row gamma
           Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
             (s₁ := .dim 1 (.dim width .scalar)) (s₂ := .dim width .scalar) normalized (by
               simp [_root_.Spec.Shape.size]) :
@@ -109,7 +109,7 @@ Unlike `rmsNorm`, whose scale vector is shared across rows, both inputs have sha
 `rows × width`.  Row `i` is normalized along its final axis and then multiplied coordinatewise by
 row `i` of `gamma`.  This covers head-specific normalization without encoding the head axis in a
 special-purpose primitive. -/
-def rmsNormRows (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
+def rmsNormRows (rows width : Nat) (hWidth : 0 < width) :
     PrimOp
       [.dim rows (.dim width .scalar), .dim rows (.dim width .scalar)]
       (.dim rows (.dim width .scalar)) :=
@@ -124,8 +124,8 @@ def rmsNormRows (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
         (do
           let ones ← Runtime.Autograd.TorchLean.const (m := m) (α := α)
             (_root_.Spec.fill 1 (.dim width .scalar))
-          let normalized ← Runtime.Autograd.TorchLean.Norm.rmsNormLast (m := m) (α := α)
-            hRows hWidth input ones
+          let normalized ← Runtime.Autograd.TorchLean.Norm.rmsNorm (m := m) (α := α)
+            (rows := rows) (width := width) hWidth input ones
           Runtime.Autograd.TorchLean.mul (m := m) (α := α)
             (s := .dim rows (.dim width .scalar)) normalized gamma :
           m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
@@ -133,9 +133,9 @@ def rmsNormRows (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
 
 /-- Pure evaluation of RMS normalization with one scale vector per row. -/
 @[simp] theorem rmsNormRows_specFwd {rows width : Nat}
-    (hRows : 0 < rows) (hWidth : 0 < width) {α : Type} [Context α]
+    (hWidth : 0 < width) {α : Type} [Context α]
     (input gamma : _root_.Spec.Tensor α (.dim rows (.dim width .scalar))) :
-    (rmsNormRows rows width hRows hWidth).specFwd (.cons input (.cons gamma .nil)) =
+    (rmsNormRows rows width hWidth).specFwd (.cons input (.cons gamma .nil)) =
       .dim (fun row => rmsNormVectorSemantics hWidth
         (_root_.Spec.get input row) (_root_.Spec.get gamma row)) := by
   rfl
@@ -151,11 +151,11 @@ def l2Normalize (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
     PrimOp
       [.dim rows (.dim width .scalar), .scalar]
       (.dim rows (.dim width .scalar)) :=
-  letI : Fact (0 < rows) := ⟨hRows⟩
-  letI : Fact (0 < width) := ⟨hWidth⟩
-  letI : _root_.Spec.Shape.valid_axis_inst 1
+  letI : NeZero rows := ⟨Nat.ne_of_gt hRows⟩
+  letI : NeZero width := ⟨Nat.ne_of_gt hWidth⟩
+  letI : _root_.Spec.Shape.HasNonemptyAxis 1
       (.dim rows (.dim width .scalar)) :=
-    _root_.Spec.Shape.validAxisInstOne (Nat.ne_of_gt hRows) (Nat.ne_of_gt hWidth)
+    _root_.Spec.Shape.hasNonemptyAxisOne (Nat.ne_of_gt hWidth)
   { name := s!"l2Normalize({rows},{width})"
     specFwd := fun {α} _ xs =>
       match xs with
@@ -171,7 +171,7 @@ def l2Normalize (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
             (s := .dim rows (.dim width .scalar)) 1 squared
           let epsilonRows ← Runtime.Autograd.TorchLean.broadcastTo (m := m) (α := α)
             (s₁ := .scalar) (s₂ := .dim rows .scalar)
-            (_root_.Spec.Shape.CanBroadcastTo.scalar_to_any (.dim rows .scalar)) epsilon
+            (_root_.Spec.Shape.CanBroadcastTo.scalarTo (.dim rows .scalar)) epsilon
           let shifted ← Runtime.Autograd.TorchLean.add (m := m) (α := α)
             (s := .dim rows .scalar) normSquared epsilonRows
           let denominator ← Runtime.Autograd.TorchLean.sqrt (m := m) (α := α)
@@ -185,7 +185,7 @@ def l2Normalize (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
             (s₂ := .dim rows (.dim width .scalar))
             (_root_.Spec.Shape.CanBroadcastTo.dim_eq
               (_root_.Spec.Shape.CanBroadcastTo.dim_1_to_n
-                (_root_.Spec.Shape.CanBroadcastTo.scalar_to_any .scalar))) inverseColumn
+                _root_.Spec.Shape.CanBroadcastTo.scalar)) inverseColumn
           Runtime.Autograd.TorchLean.mul (m := m) (α := α)
             (s := .dim rows (.dim width .scalar)) input inverseMatrix :
           m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)

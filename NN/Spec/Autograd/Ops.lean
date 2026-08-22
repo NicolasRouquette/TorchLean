@@ -136,24 +136,23 @@ def coshOp {s : Shape} : OpSpec α s s :=
 { forward      := fun x => coshSpec (α := α) (s := s) x
 , backward     := liftElementwiseBackward (α:=α) (s:=s) MathFunctions.sinh }
 
-/-- Elementwise "softmax" OpSpec on any shape.
+/-- Softmax `OpSpec` along an explicitly selected tensor dimension.
 
-This is a true softmax along the last axis (applied independently over all outer slices).
-
-PyTorch analogy: `torch.softmax(x, dim=-1)`. -/
-def softmaxOp {s : Shape} : OpSpec α s s :=
-{ forward      := fun x => Activation.softmaxSpec (α := α) (s := s) x
-, backward     := fun x dLdy => Activation.softmaxBackwardSpec (α := α) (s := s) x dLdy }
-
-/-- Stable last-axis log-softmax OpSpec.
-
-Backward recomputes the forward output so the VJP matches `logSoftmaxBackwardSpec`. Runtime engines
-may cache that output instead. -/
-def logSoftmaxOp {s : Shape} : OpSpec α s s :=
-{ forward      := fun x => Activation.logSoftmaxSpec (α := α) (s := s) x
+PyTorch analogy: `torch.softmax(x, dim=axis)`. -/
+def softmaxOp {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s] : OpSpec α s s :=
+{ forward      := fun x => Activation.softmaxSpec (α := α) (s := s) axis x
 , backward     := fun x dLdy =>
-    Activation.logSoftmaxBackwardSpec (α := α) (s := s)
-      (Activation.logSoftmaxSpec (α := α) (s := s) x) dLdy }
+    Activation.softmaxBackwardSpec (α := α) (s := s) axis x dLdy }
+
+/-- Stable log-softmax `OpSpec` along an explicitly selected tensor dimension.
+
+Backward recomputes the forward output so the VJP matches `logSoftmaxLastBackwardSpec`. Runtime engines
+may cache that output instead. -/
+def logSoftmaxOp {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s] : OpSpec α s s :=
+{ forward      := fun x => Activation.logSoftmaxSpec (α := α) (s := s) axis x
+, backward     := fun x dLdy =>
+    Activation.logSoftmaxBackwardSpec (α := α) (s := s) axis
+      (Activation.logSoftmaxSpec (α := α) (s := s) axis x) dLdy }
 
 /-! ## Linear layers -/
 
@@ -170,13 +169,6 @@ def linearOp {α : Type} [Add α] [Mul α] [Zero α] [One α] {inDim outDim : Na
   OpSpec α (.dim inDim .scalar) (.dim outDim .scalar) :=
 { forward      := fun x => linearSpec (α:=α) m x
 , backward     := fun _x dLdy => linearInputDerivSpec (α:=α) m.weights dLdy }
-
-/-- Extract scalar value from a scalar tensor.
-
-We use this when an upstream gradient is a scalar (e.g. for reduced losses). In PyTorch this is
-the common pattern "loss is scalar, so `grad_output` is a scalar too". -/
-def scalarOf : Tensor α Shape.scalar → α
-  | Tensor.scalar a => a
 
 /-- Generic elementwise binary OpSpec with captured right-hand tensor and `d/dx`.
 
@@ -435,7 +427,7 @@ gradient is a scalar too. (Our exact loss semantics live in `NN/Spec/Layers/Loss
 def mseLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar :=
 { forward      := fun yhat => Tensor.scalar (mseSpec (α:=α) (s:=s) yhat target)
 , backward     := fun yhat dLdy =>
-    let g := scalarOf dLdy
+    let g := dLdy.item
     scaleSpec (mseDerivSpec (α:=α) (s:=s) yhat target) g
 }
 
@@ -443,7 +435,7 @@ def mseLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar :=
 def maeLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar :=
 { forward      := fun yhat => Tensor.scalar (maeSpec (α:=α) (s:=s) yhat target)
 , backward     := fun yhat dLdy =>
-    let g := scalarOf dLdy
+    let g := dLdy.item
     scaleSpec (maeDerivSpec (α:=α) (s:=s) yhat target) g
 }
 
@@ -452,7 +444,7 @@ def huberLossOp {s : Shape} (target : Tensor α s) (delta : α := (1 : α)) : Op
   :=
 { forward      := fun yhat => Tensor.scalar (huberSpec (α:=α) (s:=s) yhat target delta)
 , backward     := fun yhat dLdy =>
-    let g := scalarOf dLdy
+    let g := dLdy.item
     scaleSpec (huberDerivSpec (α:=α) (s:=s) yhat target delta) g
 }
 
@@ -461,20 +453,24 @@ def huberLossOp {s : Shape} (target : Tensor α s) (delta : α := (1 : α)) : Op
 This is "cross-entropy between distributions": `target` is $p$, `yhat` is $q$.
 PyTorch analogy: closer to `-(p * log(q)).mean()` than to the logits-based
 `torch.nn.functional.cross_entropy` default. -/
-def crossEntropyLossOp {s : Shape} (target : Tensor α s) (epsilon : α := Numbers.epsilon) :
+def crossEntropyLossOp {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (target : Tensor α s) (epsilon : α := Numbers.epsilon) :
   OpSpec α s Shape.scalar :=
-{ forward      := fun yhat => Tensor.scalar (crossEntropySpec (α:=α) (s:=s) yhat target epsilon)
+{ forward      := fun yhat =>
+    Tensor.scalar (crossEntropySpec (α:=α) (s:=s) axis yhat target epsilon)
 , backward     := fun yhat dLdy =>
-    let g := scalarOf dLdy
-    scaleSpec (crossEntropyDerivSpec (α:=α) (s:=s) yhat target epsilon) g
+    let g := dLdy.item
+    scaleSpec (crossEntropyDerivSpec (α:=α) (s:=s) axis yhat target epsilon) g
 }
 
 /-- Logits-based cross-entropy loss, capturing the target distribution. -/
-def crossEntropyLogitsLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar :=
-{ forward      := fun logits => Tensor.scalar (crossEntropyLogitsSpec (α:=α) (s:=s) logits target)
+def crossEntropyLogitsLossOp {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (target : Tensor α s) : OpSpec α s Shape.scalar :=
+{ forward      := fun logits =>
+    Tensor.scalar (crossEntropyLogitsSpec (α:=α) (s:=s) axis logits target)
 , backward     := fun logits dLdy =>
-    let g := scalarOf dLdy
-    scaleSpec (crossEntropyLogitsDerivSpec (α:=α) (s:=s) logits target) g }
+    let g := dLdy.item
+    scaleSpec (crossEntropyLogitsDerivSpec (α:=α) (s:=s) axis logits target) g }
 
 /-- Binary cross-entropy loss on probability tensors, capturing the target tensor. -/
 def binaryCrossEntropyLossOp {s : Shape} (target : Tensor α s) (epsilon : α := Numbers.epsilon) :
@@ -482,7 +478,7 @@ def binaryCrossEntropyLossOp {s : Shape} (target : Tensor α s) (epsilon : α :=
 { forward      := fun yhat =>
     Tensor.scalar (binaryCrossEntropyTensorSpec (α:=α) (s:=s) yhat target epsilon)
 , backward     := fun yhat dLdy =>
-    let g := scalarOf dLdy
+    let g := dLdy.item
     scaleSpec (binaryCrossEntropyTensorDerivSpec (α:=α) (s:=s) yhat target epsilon) g }
 
 /-- Cosine-similarity loss, capturing the target tensor. -/
@@ -490,14 +486,14 @@ def cosineSimilarityLossOp {s : Shape} (target : Tensor α s) (epsilon : α := N
     OpSpec α s Shape.scalar :=
 { forward      := fun yhat => Tensor.scalar (cosineSimilaritySpec (α:=α) (s:=s) yhat target epsilon)
 , backward     := fun yhat dLdy =>
-    let g := scalarOf dLdy
+    let g := dLdy.item
     scaleSpec (cosineSimilarityDerivSpec (α:=α) (s:=s) yhat target epsilon) g }
 
 /-- Hinge loss (returns a scalar), capturing the target. -/
 def hingeLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar :=
 { forward      := fun yhat => Tensor.scalar (hingeSpec (α:=α) (s:=s) yhat target)
 , backward     := fun yhat dLdy =>
-    let g := scalarOf dLdy
+    let g := dLdy.item
     scaleSpec (hingeDerivSpec (α:=α) (s:=s) yhat target) g
 }
 
@@ -505,7 +501,7 @@ def hingeLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar :=
 def poissonLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar :=
 { forward      := fun yhat => Tensor.scalar (poissonSpec (α:=α) (s:=s) yhat target)
 , backward     := fun yhat dLdy =>
-    let g := scalarOf dLdy
+    let g := dLdy.item
     scaleSpec (poissonDerivSpec (α:=α) (s:=s) yhat target) g
 }
 
@@ -513,7 +509,7 @@ def poissonLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar 
 def logCoshLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar :=
 { forward      := fun yhat => Tensor.scalar (logCoshSpec (α:=α) (s:=s) yhat target)
 , backward     := fun yhat dLdy =>
-    let g := scalarOf dLdy
+    let g := dLdy.item
     scaleSpec (logCoshDerivSpec (α:=α) (s:=s) yhat target) g
 }
 
@@ -659,29 +655,27 @@ def concatLeadingAxisRightOp {n m : Nat} {s : Shape}
 { forward      := fun rhs => concatLeadingAxisSpec lhs rhs
 , backward     := fun _rhs dLdz =>
     sliceLeadingAxisRangeSpec (α:=α) (n := n + m) (s := s) n m (by
-      rw [Nat.add_comm m n]) dLdz }
+      simp) dLdz }
 
 /-- Slice a leading-axis range; backward inserts the upstream gradient into the original shape. -/
 def sliceLeadingAxisRangeOp {n : Nat} {s : Shape}
-  (start len : Nat) (h : len + start ≤ n) :
+  (start len : Nat) (h : start + len ≤ n) :
   OpSpec α (.dim n s) (.dim len s) :=
 { forward      := fun x => sliceLeadingAxisRangeSpec (α:=α) (n := n) (s := s) start len h x
 , backward     := fun _x dLdy => sliceLeadingAxisRangeBackwardSpec (α:=α) (n := n) (s := s) start len h dLdy }
 
 /-! ## Reductions and broadcasting -/
 
-/-- Reduce-sum along axis using a `valid_axis` proof; backward broadcasts back.
+/-- Reduce-sum along axis using a `NonemptyAxis` proof; backward broadcasts back.
 
 PyTorch analogy: `torch.sum(x, dim=axis)` (with `keepdim=false`). -/
 def reduceSumOp {s : Shape} (axis : Nat)
-  [valid : Shape.valid_axis_inst axis s]
-  [wf : Shape.WellFormed s]
+  [_valid : Shape.HasNonemptyAxis axis s]
+  [_wf : Shape.WellFormed s]
   :
   OpSpec α s (shapeAfterSum s axis) :=
-{ forward      := fun x => reduceSumAuto (α:=α) axis x
-, backward     := fun _x dLdz =>
-    let cb := shapeAfterSumBroadcastBack axis valid wf
-    broadcastTo cb dLdz
+{ forward      := fun x => reduceSum (α:=α) axis x _valid.proof
+, backward     := fun _x dLdz => broadcastAfterSum s axis dLdz
 }
 
 /-- Generic broadcasting-aware binary OpSpec.

@@ -18,7 +18,7 @@ import Mathlib.Algebra.Order.Algebra
 
 `import NN.Floats.FP32` is what we reach for when we want “float32 semantics for proofs”:
 - the canonical binary32-like rounding configuration (`fexp32`, `rnd32`, `FP32`),
-- the real-level helper operators (`round32`/`ulp32`/`eps32`, plus unicode aliases),
+- the real-level helper operators `round32`, `ulp32`, and `eps32`,
 - per-op absolute error bounds (`*_abs_error`),
 - interval-style enclosure corollaries (`*_mem_Icc`).
 - exact subtraction for nearby representable operands via Sterbenz's lemma.

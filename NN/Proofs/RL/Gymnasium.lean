@@ -47,7 +47,7 @@ def stepCheckedWithProof {obsShape : Shape} {nActions : Nat}
           Boundary.ContractHolds (obsShape := obsShape) (nActions := nActions) s.client.contract t} ×
         Session obsShape nActions) := do
   let obs := s.observation
-  let (obs', reward, terminated, truncated) ← s.client.stepRaw (action := action.1)
+  let (obs', reward, terminated, truncated) ← Client.Internal.step s.client action.1
   match h :
       Boundary.checkTransitionFin (obsShape := obsShape) (nActions := nActions) s.client.contract
         obs obs' action reward terminated truncated with

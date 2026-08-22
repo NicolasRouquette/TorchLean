@@ -146,7 +146,7 @@ theorem box_mul_elem_sound_real (n : Nat)
     (hx : encloses { dim := n, lo := lo1, hi := hi1 } x)
     (hy : encloses { dim := n, lo := lo2, hi := hi2 } y) :
     ∀ {B : FlatBox ℝ},
-      box_mul_elem (α := ℝ)
+      boxMulElem (α := ℝ)
           { dim := n, lo := lo1, hi := hi1 }
           { dim := n, lo := lo2, hi := hi2 } = some B →
         EnclosesBox B ⟨n, Tensor.mulSpec (α := ℝ) x y⟩ := by
@@ -164,7 +164,7 @@ theorem box_mul_elem_sound_real (n : Nat)
             cases y with
             | dim fy =>
               intro B hB
-              unfold box_mul_elem at hB
+              unfold boxMulElem at hB
               simp at hB
               symm at hB
               rw [hB]

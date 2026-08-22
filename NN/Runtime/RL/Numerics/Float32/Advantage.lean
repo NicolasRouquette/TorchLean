@@ -172,13 +172,13 @@ def generalizedAdvantageEstimationChecked {n : Nat}
     (dones : Tensor Bool (.dim n .scalar)) :
     Except String (Tensor Float32Exec (.dim n .scalar)) := do
   let rArr : Array Float32Exec :=
-    Array.ofFn (fun i : Fin n => Tensor.toScalar (get rewards i))
+    Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
   let vArr : Array Float32Exec :=
-    Array.ofFn (fun i : Fin n => Tensor.toScalar (get values i))
+    Array.ofFn (fun i : Fin n => Tensor.item (get values i))
   let nvArr : Array Float32Exec :=
-    Array.ofFn (fun i : Fin n => Tensor.toScalar (get nextValues i))
+    Array.ofFn (fun i : Fin n => Tensor.item (get nextValues i))
   let dArr : Array Bool :=
-    Array.ofFn (fun i : Fin n => Tensor.toScalar (get dones i))
+    Array.ofFn (fun i : Fin n => Tensor.item (get dones i))
 
   let mut out : Array Float32Exec := Array.replicate n (0 : Float32Exec)
   let mut advNext : Float32Exec := 0

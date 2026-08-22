@@ -68,7 +68,7 @@ open scoped BigOperators
 
 -- Reuse the tensor-algebra definitions from `Spec`/`Proofs.Tensor.Basic` instead of restating dot
 -- products or squared norms locally.
-open Spec (dot tensorNormSquared tensor_norm_squared_nonneg tensor_norm_squared_nonneg2
+open Spec (dot tensorNormSquared tensor_norm_squared_nonneg
            tensor_norm_squared_zero_iff mul_spec_comm add_spec_comm dot_comm
            sum_spec_add_distrib mul_spec_add_left mul_spec_add_right
            add_spec_assoc)
@@ -215,7 +215,7 @@ theorem tensor_l2_norm_zero_iff {s : Shape} (t : Tensor ℝ s) :
   rw [show tensorL2Norm t = 0 ↔ Real.sqrt (tensorNormSquared t) = 0 by rfl]
   rw [Real.sqrt_eq_zero]
   exact tensor_norm_squared_zero_iff t
-  exact tensor_norm_squared_nonneg2 t
+  exact tensor_norm_squared_nonneg t
 
 /--
 Basic lemma: dot product with zero tensor is zero.
@@ -384,7 +384,7 @@ theorem tensor_cauchy_schwarz {s : Shape} (x y : Tensor ℝ s) :
     -- For any real t, we have tensor_norm_squared (add_spec x (scale_spec y t)) ≥ 0
     have quad_nonneg : ∀ t : ℝ, tensorNormSquared (addSpec x (scaleSpec y t)) ≥ 0 := by
       intro t
-      exact tensor_norm_squared_nonneg2 (addSpec x (scaleSpec y t))
+      exact tensor_norm_squared_nonneg (addSpec x (scaleSpec y t))
 
     -- The quadratic expansion
     have quad_expand : ∀ t : ℝ,
@@ -413,7 +413,7 @@ theorem tensor_cauchy_schwarz {s : Shape} (x y : Tensor ℝ s) :
       -- Here a = tensor_norm_squared y ≠ 0, b = 2 * dot x y, c = tensor_norm_squared x
       have a_pos : tensorNormSquared y > 0 := by
         -- `tensor_norm_squared y` is nonnegative, so if it is not `0` it must be strictly positive.
-        have hle : 0 ≤ tensorNormSquared y := tensor_norm_squared_nonneg2 y
+        have hle : 0 ≤ tensorNormSquared y := tensor_norm_squared_nonneg y
         cases lt_or_eq_of_le hle with
         | inl hlt =>
           exact hlt
@@ -507,8 +507,8 @@ theorem tensor_cauchy_schwarz {s : Shape} (x y : Tensor ℝ s) :
       have rhs_sq : (Real.sqrt (tensorNormSquared x) * Real.sqrt (tensorNormSquared y))^2 =
         tensorNormSquared x * tensorNormSquared y := by
         rw [mul_pow]
-        simp [Real.sq_sqrt (tensor_norm_squared_nonneg2 x), Real.sq_sqrt
-          (tensor_norm_squared_nonneg2 y)]
+        simp [Real.sq_sqrt (tensor_norm_squared_nonneg x), Real.sq_sqrt
+          (tensor_norm_squared_nonneg y)]
 
       -- Use the fact that if a² ≤ b² and a,b ≥ 0, then a ≤ b
       have lhs_nonneg : 0 ≤ |dot x y| := by
@@ -554,8 +554,8 @@ theorem tensor_l2_norm_triangle {s : Shape} (x y : Tensor ℝ s) :
       tensorNormSquared x + 2 * tensorL2Norm x * tensorL2Norm y + tensorNormSquared y := by
       unfold tensorL2Norm
       ring_nf
-      simp only [Real.sq_sqrt (tensor_norm_squared_nonneg2 x), Real.sq_sqrt
-        (tensor_norm_squared_nonneg2 y)]
+      simp only [Real.sq_sqrt (tensor_norm_squared_nonneg x), Real.sq_sqrt
+        (tensor_norm_squared_nonneg y)]
 
     rw [expand_left, expand_right]
 
@@ -626,7 +626,7 @@ theorem tensor_l2_norm_scale {s : Shape} (t : Tensor ℝ s) (c : ℝ) :
   -- Goal: Real.sqrt (|c|² * dot t t) = |c| * Real.sqrt (dot t t)
 
   -- Use the fact that sqrt(a² * b) = a * sqrt(b) when a ≥ 0 and b ≥ 0
-  have h_nonneg : 0 ≤ dot t t := tensor_norm_squared_nonneg2 t
+  have h_nonneg : 0 ≤ dot t t := tensor_norm_squared_nonneg t
   have abs_nonneg : 0 ≤ |c| := by
     exact abs_nonneg c
 
@@ -822,9 +822,9 @@ theorem relu_lipschitz_general {s : Shape} (x y : Tensor ℝ s) :
                      tensorNormSquared (subSpec (fx ⟨k, hlt⟩) (fy ⟨k, hlt⟩)) := by
           -- From h_sq: √a ≤ √b, we want to show a ≤ b
           -- Since sqrt is strictly monotone on non-negative reals
-          have ha := tensor_norm_squared_nonneg2 (subSpec (mapSpec Math.reluSpec (fx ⟨k, hlt⟩))
+          have ha := tensor_norm_squared_nonneg (subSpec (mapSpec Math.reluSpec (fx ⟨k, hlt⟩))
                                                            (mapSpec Math.reluSpec (fy ⟨k, hlt⟩)))
-          have hb := tensor_norm_squared_nonneg2 (subSpec (fx ⟨k, hlt⟩) (fy ⟨k, hlt⟩))
+          have hb := tensor_norm_squared_nonneg (subSpec (fx ⟨k, hlt⟩) (fy ⟨k, hlt⟩))
           -- sqrt is monotone, so √a ≤ √b implies a ≤ b when both args are non-negative
           -- sqrt is monotone, so √a ≤ √b implies a ≤ b when both args are non-negative
           -- Use the fact that sqrt is monotone on non-negative reals
@@ -1102,7 +1102,7 @@ theorem matrix_spectral_norm_bound {m n : Nat}
     have : 0 ≤ ∑ i ∈ (Finset.univ : Finset (Fin m)), tensorNormSquared (get W i) := by
       refine Finset.sum_nonneg ?_
       intro i _
-      exact tensor_norm_squared_nonneg2 (t := get W i)
+      exact tensor_norm_squared_nonneg (t := get W i)
     simpa using this
 
   have hsquared :
@@ -1142,10 +1142,10 @@ theorem matrix_spectral_norm_bound {m n : Nat}
 
       have row_sq : (tensorL2Norm (get W i)) ^ 2 = tensorNormSquared (get W i) := by
         unfold tensorL2Norm
-        simp [Real.sq_sqrt (tensor_norm_squared_nonneg2 (t := get W i))]
+        simp [Real.sq_sqrt (tensor_norm_squared_nonneg (t := get W i))]
       have x_sq : (tensorL2Norm x) ^ 2 = tensorNormSquared x := by
         unfold tensorL2Norm
-        simp [Real.sq_sqrt (tensor_norm_squared_nonneg2 (t := x))]
+        simp [Real.sq_sqrt (tensor_norm_squared_nonneg (t := x))]
       have rhs_sq :
           (tensorL2Norm (get W i) * tensorL2Norm x) ^ 2 =
             tensorNormSquared (get W i) * tensorNormSquared x := by

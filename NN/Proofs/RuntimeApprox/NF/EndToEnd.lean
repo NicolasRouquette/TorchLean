@@ -136,7 +136,7 @@ theorem backprop_gradient_approx_graphData {Γ : List Shape} {ss : List Shape}
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsIn)
     (hseed : approxCtx (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) seedS seedR epsSeed) :
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (TList.get (RevGraph.backpropSpec g xS seedS) i)
       (TList.get
         (GraphData.backpropCtx (α := R) (Δ := Unit) (Γ := Γ) (ss := ss)
@@ -184,7 +184,7 @@ theorem backprop_optimizer_update_approx_graphData {Γ : List Shape} {ss : List 
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsIn)
     (hseed : approxCtx (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) seedS seedR epsSeed)
-    (hparams : approxT (α := R)
+    (hparams : approxTensor (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       paramsS paramsR paramsError)
     (hstate : contract.stateApprox stateS stateR stateError)
@@ -212,7 +212,7 @@ theorem backprop_optimizer_update_approx_graphData {Γ : List Shape} {ss : List 
     contract.stateApprox
         (contract.updateSpec stateS paramsS (TList.get gradsS i)).1
         (contract.updateRuntime stateR paramsR (TList.get gradsR i)).1 nextBound.state ∧
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (contract.updateSpec stateS paramsS (TList.get gradsS i)).2
         (contract.updateRuntime stateR paramsR (TList.get gradsR i)).2 nextBound.params := by
   dsimp only

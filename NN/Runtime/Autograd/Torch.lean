@@ -7,8 +7,9 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Torch.Core
+public import NN.Runtime.Autograd.Torch.Initialization
+public import NN.Runtime.Autograd.Torch.ScalarTrainer
 public import NN.Runtime.Autograd.Torch.TypedGraphSession
-public import NN.Runtime.Autograd.Torch.Utils
 
 /-!
 # Torch-style runtime front-end
@@ -21,8 +22,8 @@ The split is intentional:
   typed executable graphs, and simple scalar trainers.
 - `Torch.Internal.TypedGraphSession` is the recorder used to implement imperative typed graph
   execution. Its backpropagation agrees with the runtime tape obtained from the recorded graph.
-- `Torch.Utils` contains compact example/training conveniences such as deterministic initializers,
-  small sample builders, and trainer loops.
+- `Torch.Initialization` defines deterministic parameter initializers.
+- `Torch.ScalarTrainer` provides packed adapters and small SGD loops for scalar objectives.
 
 `TorchLean/*` builds the higher-level model and program API on top of this layer. `Torch` contains
 the low-level session and reference machinery; `TorchLean` contains the public model API.

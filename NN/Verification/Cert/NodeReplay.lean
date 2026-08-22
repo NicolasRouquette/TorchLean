@@ -10,19 +10,19 @@ public import NN.MLTheory.CROWN.Graph
 public import NN.MLTheory.CROWN.Extras.BoundOpsIEEE32Exec
 public import NN.MLTheory.CROWN.Proofs.GraphCrownCertSoundness
 public import NN.Runtime.PyTorch.Import.Core
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 public import NN.Verification.Util.FloatApprox
 public import NN.Verification.Util.Json
 public import Lean.Data.Json
 
 /-!
-# Common Certificate Helpers
+# Node-Certificate Replay
 
-Shared JSON/parsing and comparison utilities for node-wise verification certificates.
+Parsing, exact comparison, and local replay for node-wise verification certificates.
 
 The IBP, α-CROWN, and α/β-CROWN checkers all consume the same basic artifact shapes:
 flat interval boxes, affine lower/upper bounds, and optional per-node vectors.  We keep those
-format-level helpers here so the individual checkers can focus on their propagation rule:
+format-level operations here so the individual checkers can focus on their propagation rule:
 
 - `IBPNodeCert` checks interval propagation;
 - `CROWNNodeCert` checks affine CROWN propagation;
@@ -36,7 +36,7 @@ exactly.
 
 @[expose] public section
 
-namespace NN.Verification.Cert.Common
+namespace NN.Verification.Cert.NodeReplay
 
 open NN.MLTheory.CROWN
 open NN.MLTheory.CROWN.Graph
@@ -279,9 +279,9 @@ def parseFlatBox? (dim : Nat) (j : Json) : IO (Option (FlatBox IEEE32Exec)) := d
       unless (List.finRange dim).all (fun i => decide (loVec i <= hiVec i)) do
         throw <| IO.userError "Invalid ibp[i]: every lower bound must be <= its upper bound"
       let loT : Tensor IEEE32Exec (.dim dim .scalar) :=
-        Spec.mapTensor IEEE32Exec.ofFloat (Spec.vectorTensor loVec)
+        Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector loVec)
       let hiT : Tensor IEEE32Exec (.dim dim .scalar) :=
-        Spec.mapTensor IEEE32Exec.ofFloat (Spec.vectorTensor hiVec)
+        Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector hiVec)
       pure (some { dim := dim, lo := loT, hi := hiT })
 
 /--
@@ -304,7 +304,7 @@ def parseAlphaVec? (dim : Nat) (j : Json) (ctx : String := "alpha[i]") :
           throw <| IO.userError
             s!"Invalid {ctx}[{k.val}]: α-CROWN requires 0 ≤ alpha ≤ 1, got {a}"
       let t : Tensor IEEE32Exec (.dim dim .scalar) :=
-        Spec.mapTensor IEEE32Exec.ofFloat (Spec.vectorTensor v)
+        Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector v)
       pure (some { n := dim, v := t })
 
 /-- Parse flattened affine bounds (lower/upper) from JSON. -/
@@ -330,11 +330,11 @@ def parseAffineBounds? (inDim outDim : Nat) (j : Json) :
           finiteVec outDim loC && finiteVec outDim hiC do
         throw <| IO.userError "Invalid crown[i]: affine bounds must be finite"
       let loAff : AffineVec IEEE32Exec inDim outDim :=
-        { A := Spec.mapTensor IEEE32Exec.ofFloat (Spec.matrixTensor loA)
-          c := Spec.mapTensor IEEE32Exec.ofFloat (Spec.vectorTensor loC) }
+        { A := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.matrix loA)
+          c := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector loC) }
       let hiAff : AffineVec IEEE32Exec inDim outDim :=
-        { A := Spec.mapTensor IEEE32Exec.ofFloat (Spec.matrixTensor hiA)
-          c := Spec.mapTensor IEEE32Exec.ofFloat (Spec.vectorTensor hiC) }
+        { A := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.matrix hiA)
+          c := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector hiC) }
       pure (some { inDim := inDim, outDim := outDim, loAff := loAff, hiAff := hiAff })
 
 /--
@@ -568,4 +568,4 @@ def checkCROWNLikeNode
         IO.eprintln s!"  lean: {prettyAffineBounds leanB}"
         pure false
 
-end NN.Verification.Cert.Common
+end NN.Verification.Cert.NodeReplay

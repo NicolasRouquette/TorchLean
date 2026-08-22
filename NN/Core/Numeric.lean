@@ -45,13 +45,13 @@ class MathFunctions (α : Type) where
 /-- Common scalar constants used by scalar-polymorphic model definitions. -/
 class Numbers (α : Type) where
   /-- Backend representation of `-0.5`. -/
-  neg_point_five : α
+  negHalf : α
   /-- Backend representation of `-1`. -/
-  neg_one : α
+  negOne : α
   /-- Backend representation of `0.1`. -/
-  pointone : α
+  oneTenth : α
   /-- Backend representation of `0.5`. -/
-  pointfive : α
+  half : α
   one : α
   zero : α
   /-- Backend representation of `2`. -/
@@ -65,11 +65,19 @@ class Numbers (α : Type) where
   /-- Backend representation of `10`. -/
   ten : α
   /-- Backend representation of the natural logarithm of `10`. -/
-  log10 : α
+  lnTen : α
   /-- Backend representation of the natural logarithm of `10000`. -/
-  log10000 : α
+  lnTenThousand : α
   /-- Backend-supplied tolerance for numerically guarded formulas. -/
   epsilon : α
+
+namespace Numbers
+
+/-- The `1e-5` default used by PyTorch normalization layers. -/
+def normalizationEpsilon {α : Type} [Numbers α] [Mul α] [Div α] : α :=
+  one / (ten * ten * ten * ten * ten)
+
+end Numbers
 
 /-- Host implementations of the scalar transcendental interface. -/
 instance : MathFunctions Float where
@@ -112,10 +120,10 @@ noncomputable instance : MathFunctions ℝ where
 
 /-- Constants for Lean's host `Float`. -/
 instance : Numbers Float where
-  neg_point_five := -0.5
-  neg_one := -1
-  pointone := 0.1
-  pointfive := 0.5
+  negHalf := -0.5
+  negOne := -1
+  oneTenth := 0.1
+  half := 0.5
   zero := 0
   one := 1
   two := 2
@@ -123,16 +131,16 @@ instance : Numbers Float where
   four := 4
   five := 5
   ten := 10
-  log10 := Float.log 10
-  log10000 := Float.log 10000
+  lnTen := Float.log 10
+  lnTenThousand := Float.log 10000
   epsilon := 1e-6
 
 /-- Constants rounded once to native binary32. -/
 instance : Numbers Float32 where
-  neg_point_five := (-0.5 : Float).toFloat32
-  neg_one := (-1.0 : Float).toFloat32
-  pointone := (0.1 : Float).toFloat32
-  pointfive := (0.5 : Float).toFloat32
+  negHalf := (-0.5 : Float).toFloat32
+  negOne := (-1.0 : Float).toFloat32
+  oneTenth := (0.1 : Float).toFloat32
+  half := (0.5 : Float).toFloat32
   zero := 0
   one := 1
   two := 2
@@ -140,16 +148,16 @@ instance : Numbers Float32 where
   four := 4
   five := 5
   ten := 10
-  log10 := Float32.log 10
-  log10000 := Float32.log 10000
+  lnTen := Float32.log 10
+  lnTenThousand := Float32.log 10000
   epsilon := (1e-6 : Float).toFloat32
 
 /-- Constants for exact-real specifications. -/
 noncomputable instance : Numbers ℝ where
-  neg_point_five := -0.5
-  neg_one := -1
-  pointone := 0.1
-  pointfive := 0.5
+  negHalf := -0.5
+  negOne := -1
+  oneTenth := 0.1
+  half := 0.5
   zero := 0
   one := 1
   two := 2
@@ -157,8 +165,8 @@ noncomputable instance : Numbers ℝ where
   four := 4
   five := 5
   ten := 10
-  log10 := Real.log 10
-  log10000 := Real.log 10000
+  lnTen := Real.log 10
+  lnTenThousand := Real.log 10000
   epsilon := 1e-6
 
 /-- Coerce naturals into Lean's host `Float`. -/

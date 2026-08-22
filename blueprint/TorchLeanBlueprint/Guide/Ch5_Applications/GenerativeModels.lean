@@ -85,7 +85,7 @@ error.
 
 TorchLean keeps randomness outside the pure noising helper. In
 [`NN.API.Models.Diffusion`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Diffusion.lean),
-`noisedSampleFromEps` receives an explicit noise tensor. `noisedSample` obtains a reproducible
+`noisedSampleFromNoise` receives an explicit noise tensor. `noisedSample` obtains a reproducible
 tensor from a `(seed, step)` pair and then calls the pure helper. This separation makes it possible
 to state properties of the noising map without treating ambient randomness as an invisible global
 effect.

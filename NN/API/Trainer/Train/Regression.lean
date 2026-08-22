@@ -92,7 +92,7 @@ def mkTrainResult {σ τ : Shape} {α : Type}
   let predict :=
     fun (xFloat : Tensor Float σ) => do
       Manual.Runner.eval (task := trainer.task) runner
-      let x := Tensor.castFloat (Runtime.ofFloat (α := α)) xFloat
+      let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
       let yhat ← Manual.Runner.run (task := trainer.task) runner x
       Tensor.toFloatIO yhat
   let predictMany :=
@@ -110,7 +110,7 @@ def mkTrainResult {σ τ : Shape} {α : Type}
         match Verification.lowerForwardToIR (α := α) trainer.model modelState with
         | .ok c => pure c
         | .error e => throw <| IO.userError e
-      let center := Tensor.castFloat (Runtime.ofFloat (α := α)) centerFloat
+      let center := Tensor.map (Runtime.ofFloat (α := α)) centerFloat
       let ps := Verification.seedLInfBall lowered center (Runtime.ofFloat eps)
       let ibp := Verification.runIBP lowered ps
       let outB ←

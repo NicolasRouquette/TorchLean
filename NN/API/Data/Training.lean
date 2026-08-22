@@ -6,8 +6,8 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Data.Transforms
-public import NN.API.Trainer
+public import NN.API.Data.Dataset
+public import NN.API.Trainer.Run
 
 /-!
 # Datasets
@@ -44,9 +44,9 @@ their own sample logic while still returning a standard `Trainer.DataSource`.
 -/
 def samples
     {σ τ : Shape}
-    (mk : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → List (SupervisedSample α σ τ)) :
+    (mk : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → List (Sample.Supervised α σ τ)) :
     Trainer.DataSource σ τ :=
-  { build := fun {α} _ _ => pure <| fromList (mk (α := α)) }
+  { build := fun {α} _ _ => pure <| _root_.Runtime.Autograd.Train.Dataset.ofList (mk (α := α)) }
 
 /--
 Build a singleton dataset from one runtime-polymorphic supervised sample.
@@ -56,7 +56,7 @@ in the dataset definition itself.
 -/
 def singleton
     {σ τ : Shape}
-    (mk : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → SupervisedSample α σ τ) :
+    (mk : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → Sample.Supervised α σ τ) :
     Trainer.DataSource σ τ :=
   samples (fun {α} _ _ => [mk (α := α)])
 
@@ -69,7 +69,7 @@ or one file-backed record.
 -/
 def singletonFrom
     {ρ : Type} {σ τ : Shape} (arg : ρ)
-    (mk : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → ρ → SupervisedSample α σ τ) :
+    (mk : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → ρ → Sample.Supervised α σ τ) :
     Trainer.DataSource σ τ :=
   singleton (fun {α} _ _ => mk (α := α) arg)
 
@@ -79,16 +79,16 @@ Build a singleton dataset from one `Float` sample produced inside `IO`.
 Use this when the sample comes from a file-backed or runtime-loaded Float boundary. The public
 trainer still owns the scalar/backend choice through `Trainer.RunConfig` and `Trainer.TrainOptions`.
 -/
-def ioSingletonFloat
+def singletonFloatIO
     {σ τ : Shape}
-    (mk : IO (SupervisedSample Float σ τ)) :
+    (mk : IO (Sample.Supervised Float σ τ)) :
     Trainer.DataSource σ τ :=
   { build := fun {_} _ _ => do
       let sample ← mk
-      pure <| fromList
+      pure <| _root_.Runtime.Autograd.Train.Dataset.ofList
         [ Sample.mk
-            (Tensor.castFloat Runtime.ofFloat (Sample.x sample))
-            (Tensor.castFloat Runtime.ofFloat (Sample.y sample)) ] }
+            (Tensor.map Runtime.ofFloat (Sample.x sample))
+            (Tensor.map Runtime.ofFloat (Sample.y sample)) ] }
 
 /--
 Runtime-polymorphic dataset from an in-memory list of `Float` supervised samples.
@@ -100,18 +100,18 @@ have to write their own scalar-polymorphic dataset adapter.
 -/
 def floatSamples
     {σ τ : Shape}
-    (samples : List (SupervisedSample Float σ τ)) :
+    (samples : List (Sample.Supervised Float σ τ)) :
     Trainer.DataSource σ τ :=
   { build := fun {_} _ _ =>
-      pure <| fromList <| samples.map (fun sample =>
+      pure <| _root_.Runtime.Autograd.Train.Dataset.ofList <| samples.map (fun sample =>
         Sample.mk
-          (Tensor.castFloat Runtime.ofFloat (Sample.x sample))
-          (Tensor.castFloat Runtime.ofFloat (Sample.y sample))) }
+          (Tensor.map Runtime.ofFloat (Sample.x sample))
+          (Tensor.map Runtime.ofFloat (Sample.y sample))) }
 
 /-- Array form of `floatSamples`. -/
 def floatSampleArray
     {σ τ : Shape}
-    (samples : Array (SupervisedSample Float σ τ)) :
+    (samples : Array (Sample.Supervised Float σ τ)) :
     Trainer.DataSource σ τ :=
   floatSamples samples.toList
 
@@ -197,7 +197,7 @@ tensors rather than class labels. The source records where batched features and 
 trainer materializes them at the selected scalar type.
 -/
 def supervisedDataset (src : SupervisedSource) :
-    Trainer.DataSource (Shape.ofDims src.xDims) (Shape.ofDims src.yDims) :=
+    Trainer.DataSource (Shape.ofList src.xDims) (Shape.ofList src.yDims) :=
   { build := fun {α} _ => do
       let loaded ← src.load (α := α)
       match loaded with
@@ -213,7 +213,7 @@ and `yPath` stores matching targets with shape `yDims`.
 def supervisedNpyDataset
     (xPath yPath : System.FilePath) (n : Nat)
     (xDims yDims : List Nat) :
-    Trainer.DataSource (Shape.ofDims xDims) (Shape.ofDims yDims) :=
+    Trainer.DataSource (Shape.ofList xDims) (Shape.ofList yDims) :=
   supervisedDataset (supervisedNpySource xPath yPath n xDims yDims)
 
 /--
@@ -223,7 +223,7 @@ Public file-data analogue of `torch.utils.data.TensorDataset`: the source record
 integer labels live, and the trainer materializes them at the selected scalar type.
 -/
 def labeledDataset (src : LabeledSource) :
-    Trainer.DataSource (Shape.ofDims src.xDims) (.dim src.classes .scalar) :=
+    Trainer.DataSource (Shape.ofList src.xDims) (.dim src.classes .scalar) :=
   { build := fun {α} _ => do
       let loaded ← src.load (α := α)
       match loaded with

@@ -88,7 +88,7 @@ program.
 - the shapes of parameters and persistent buffers,
 - initial values for that state (as `Float` tensors, for reproducible
   initialization),
-- per-parameter `requires_grad` flags, and
+- per-parameter `requiresGrad` flags, and
 - a `forward` program that is polymorphic over the backend monad and scalar type.
 
 PyTorch analogy: a small `nn.Module`, where:
@@ -162,12 +162,25 @@ def updateRunningVec {α : Type} [Context α] {c : Nat}
           (mulSpec (batchF i) (Tensor.scalar mom)))
 
 /--
-Compute per-channel mean and variance for a CHW tensor (no batch dimension).
+Convert the biased variance used by BatchNorm's training forward pass into the unbiased estimate
+stored in its running buffer. For a singleton sample set there is no unbiased estimate; TorchLean
+keeps the finite biased value rather than dividing by zero.
+-/
+def unbiasedRunningVariance {α : Type} [Context α] {c : Nat}
+    (biased : Tensor α (.dim c .scalar)) (sampleCount : Nat) :
+    Tensor α (.dim c .scalar) :=
+  if sampleCount > 1 then
+    scaleSpec biased ((sampleCount : α) / (sampleCount - 1 : Nat))
+  else
+    biased
+
+/--
+Compute per-channel mean and biased variance for a CHW tensor (no batch dimension).
 
 This reduces over the spatial axes `(H, W)` and returns `(mean, var)` vectors of length `channels`.
 
-PyTorch analogy: the statistics used by `torch.nn.BatchNorm2d` in training mode (but here for an
-unbatched `C×H×W` input).
+The biased variance is the value used to normalize the current input. Convert it with
+`unbiasedRunningVariance` before updating a PyTorch-compatible running-variance buffer.
 -/
 def chwBatchStats {α : Type} [Context α]
     {channels height width : Nat}
@@ -207,11 +220,12 @@ def chwBatchStats {α : Type} [Context α]
   (means, vars)
 
 /--
-Compute per-channel mean and variance for an NCHW tensor.
+Compute per-channel mean and biased variance for an NCHW tensor.
 
 This reduces over `(N, H, W)` and returns `(mean, var)` vectors of length `c`.
 
-PyTorch analogy: the batch statistics computed by `torch.nn.BatchNorm2d` in training mode.
+These are the statistics used by `torch.nn.BatchNorm2d` to normalize the current batch. Its
+running-variance update stores `unbiasedRunningVariance vars (n * h * w)` instead.
 -/
 def nchwBatchStats {α : Type} [Context α]
     {n c h w : Nat}
@@ -263,16 +277,6 @@ def nchwBatchStats {α : Type} [Context α]
 namespace Layer
 
 /--
-Backend reference type used when running a `Layer`.
-
-This is the `Ref` type provided by the current `Torch.Ops` instance, such as an eager tape or a
-typed graph.
--/
-abbrev RefT (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape]
-    [Torch.Ops (m := m) (α := α)] (s : Shape) : Type :=
-  Torch.Ops.Ref (m := m) (α := α) s
-
-/--
 Construct a layer from an uncurried reference-level forward function.
 
 This is the general constructor for non-sequential modules: branches, parameter sharing, and
@@ -285,8 +289,8 @@ def ofRef {σ τ : Shape} {ps : List Shape}
     (initState : Torch.TList Float ps)
     (run : Mode → ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
       ∀ {m : Type → Type}, [Monad m] → [Torch.Ops (m := m) (α := α)] →
-        Torch.RefList (RefT (m := m) (α := α)) ps →
-        RefT (m := m) (α := α) σ → m (RefT (m := m) (α := α) τ))
+        Torch.RefList (RefTy (m := m) (α := α)) ps →
+        RefTy (m := m) (α := α) σ → m (RefTy (m := m) (α := α) τ))
     (runtimeInit : Option (TorchLean.Module.RuntimeInit.Plan ps) := none)
     (requiresGrad : List Bool := List.replicate ps.length true)
     (updateBuffers : Option (
@@ -302,12 +306,12 @@ def ofRef {σ τ : Shape} {ps : List Shape}
     forward := fun mode {α} _ _ =>
       fun {m} _ _ =>
         Torch.CurriedRef.curry
-          (Ref := RefT (m := m) (α := α))
+          (Ref := RefTy (m := m) (α := α))
           (ss := ps ++ [σ])
-          (β := m (RefT (m := m) (α := α) τ))
+          (β := m (RefTy (m := m) (α := α) τ))
           (fun args =>
             let (params, x) :=
-              Torch.RefList.splitLast (Ref := RefT (m := m) (α := α))
+              Torch.RefList.splitLast (Ref := RefTy (m := m) (α := α))
                 (ss := ps) (τ := σ) args
             run mode params x) }
 
@@ -321,9 +325,9 @@ PyTorch analogy: calling `layer(x)` where the layer's parameters are already all
 def forwardRef {σ τ : Shape} (l : Layer σ τ) {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Torch.Ops (m := m) (α := α)]
     (mode : Mode)
-    (ps : Torch.RefList (RefT (m := m) (α := α)) l.stateShapes)
-    (x : RefT (m := m) (α := α) σ) : m (RefT (m := m) (α := α) τ) :=
-  Torch.CurriedRef.uncurry (ss := l.stateShapes ++ [σ]) (Ref := RefT (m := m) (α := α))
+    (ps : Torch.RefList (RefTy (m := m) (α := α)) l.stateShapes)
+    (x : RefTy (m := m) (α := α) σ) : m (RefTy (m := m) (α := α) τ) :=
+  Torch.CurriedRef.uncurry (ss := l.stateShapes ++ [σ]) (Ref := RefTy (m := m) (α := α))
     (l.forward mode (α := α) (m := m)) (Torch.RefList.append ps (.cons x .nil))
 
 /--

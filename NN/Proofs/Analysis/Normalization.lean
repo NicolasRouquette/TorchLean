@@ -129,24 +129,20 @@ theorem batchNorm_inference_eq_mul_add
     (runningVar : Tensor ℝ (.dim channels .scalar))
     (gamma : Tensor ℝ (.dim channels .scalar))
     (beta : Tensor ℝ (.dim channels .scalar))
-    (epsilon : ℝ := Numbers.epsilon) :
+    (epsilon : ℝ := Numbers.normalizationEpsilon) :
     Spec.batchNormInference (α := ℝ) (channels := channels) (sSpatial := sSpatial)
         x runningMean runningVar gamma beta epsilon
       =
     let s : Shape := .dim channels sSpatial
-    let cb : Shape.CanBroadcastTo (.dim channels .scalar) s := by
-      apply Shape.CanBroadcastTo.dim_eq
-      exact Shape.CanBroadcastTo.scalar_to_any sSpatial
     let runningVar := Tensor.maxSpec runningVar (Tensor.fill 0 (.dim channels .scalar))
-    let mean_b := Tensor.broadcastTo cb runningMean
-    let var_b := Tensor.broadcastTo cb runningVar
-    let gamma_b := Tensor.broadcastTo cb gamma
-    let beta_b := Tensor.broadcastTo cb beta
+    let mean_b := Spec.broadcastChannelFirst sSpatial runningMean
+    let var_b := Spec.broadcastChannelFirst sSpatial runningVar
+    let gamma_b := Spec.broadcastChannelFirst sSpatial gamma
+    let beta_b := Spec.broadcastChannelFirst sSpatial beta
     let std := Tensor.sqrtSpec (Tensor.addSpec var_b (Tensor.fill epsilon s))
     Tensor.addSpec (Tensor.mulSpec x (Tensor.divSpec gamma_b std))
       (Tensor.subSpec beta_b (Tensor.mulSpec mean_b (Tensor.divSpec gamma_b std))) := by
-  -- Unfold to the shared `normalize_core` form, then apply the shape-generic affine identity.
-  simp [Spec.batchNormInference, Spec.normalizeCore, batchNorm_inference_affine_tensor]
+  simp [Spec.batchNormInference, batchNorm_inference_affine_tensor]
 
 end Normalization
 

@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Layers.Activation
-public import NN.Spec.Models.CommonHelpers
+public import NN.Spec.Core.Tensor.Numerics
 
 /-!
 # Gaussian Mixture Model (GMM) (spec model)
@@ -31,7 +31,7 @@ PyTorch analogies:
 - `torch.softmax` for turning per-component log-probabilities into responsibilities.
 
 Invalid mixture weights and singular or non-positive-determinant covariance matrices are reported
-as `none`. Determinants and inverses are defined via `NN.Spec.Models.CommonHelpers`; those
+as `none`. Determinants and inverses are defined via `NN.Spec.Core.Tensor.Numerics`; those
 definitions are intended for small feature dimensions and proof/reference usage, not
 high-performance clustering on large matrices.
 
@@ -91,7 +91,7 @@ def covariancePositiveDefiniteSpec {n : Nat}
       let k := i.val + 1
       have hk : k ≤ n := Nat.succ_le_iff.mpr i.isLt
       let leading := leadingPrincipalSubmatrix matrix k hk
-      Context.gtBool (Tensor.toScalar (determinantSpec leading)) 0)
+      Context.gtBool (Tensor.item (determinantSpec leading)) 0)
 
 /-- Positive, normalized mixture weights. -/
 def mixtureWeightsValidSpec {n : Nat} (weights : Tensor α (.dim n .scalar)) : Bool :=
@@ -143,15 +143,15 @@ def gmmForwardSpec {nComponents nFeatures : Nat}
         let covariance := covariances k
         let diff := subSpec input mean
         let covInv ← inverseSpec? covariance
-        let det := Tensor.toScalar (determinantSpec covariance)
-        let w := Tensor.toScalar weight
+        let det := Tensor.item (determinantSpec covariance)
+        let w := Tensor.item weight
         let quadraticForm := dotSpec diff (matVecMulSpec covInv diff)
         let log2pi := MathFunctions.log (Numbers.two * MathFunctions.pi)
         let normalization : α :=
           (nFeatures : α) / Numbers.two * log2pi +
-            Numbers.pointfive * MathFunctions.log det
+            Numbers.half * MathFunctions.log det
         some (Tensor.scalar
-          (MathFunctions.log w + Numbers.neg_point_five * quadraticForm - normalization)))
+          (MathFunctions.log w + Numbers.negHalf * quadraticForm - normalization)))
   else
     none
 
@@ -247,7 +247,7 @@ def gmmMeansDerivSpec {nComponents nFeatures : Nat}
       let covInvT := matrixTransposeSpec covInv
       let weightedDiff := scaleSpec
         (addSpec (matVecMulSpec covInv diff) (matVecMulSpec covInvT diff))
-        Numbers.pointfive
+        Numbers.half
       match grad_k with
       | Tensor.scalar g =>
         pure (scaleSpec weightedDiff g))
@@ -272,8 +272,8 @@ def gmmInputDerivSpec {nComponents nFeatures : Nat}
   (h : nComponents ≠ 0) :
   Option (Tensor α (.dim nFeatures .scalar)) :=
   if gmmParametersValidSpec m then do
-    have inst : Shape.valid_axis_inst 0 (Shape.dim nComponents (.dim nFeatures .scalar)) := by
-      apply Shape.validAxisInstZeroAlt h
+    have inst : Shape.HasNonemptyAxis 0 (Shape.dim nComponents (.dim nFeatures .scalar)) := by
+      apply Shape.hasNonemptyAxisZeroOfNe h
     let perComponent ← sequenceFin (fun k => do
         let mean_k := get m.means k
         let covariance_k := get m.covariances k
@@ -283,11 +283,11 @@ def gmmInputDerivSpec {nComponents nFeatures : Nat}
         let covInvT := matrixTransposeSpec covInv
         let v := scaleSpec
           (addSpec (matVecMulSpec covInv diff) (matVecMulSpec covInvT diff))
-          Numbers.pointfive
+          Numbers.half
         match gk with
         | Tensor.scalar g =>
-            pure (scaleSpec v (Numbers.neg_one * g)))
-    pure (reduceSumAuto 0 perComponent)
+            pure (scaleSpec v (Numbers.negOne * g)))
+    pure (reduceSum 0 perComponent inst.proof)
   else
     none
 
@@ -323,7 +323,7 @@ def gmmCovariancesDerivSpec {nComponents nFeatures : Nat}
       let gradSigma := subSpec temp2 covInvT
       match grad_k with
       | Tensor.scalar g =>
-          pure (scaleSpec gradSigma (Numbers.pointfive * g)))
+          pure (scaleSpec gradSigma (Numbers.half * g)))
   else
     none
 
@@ -383,12 +383,12 @@ $m+\log\!\left(\sum_i\exp(x_i-m)\right)$ trick, where $m=\max_i x_i$.
 -/
 def logSumExpReduce {n : Nat} (log_probs : Tensor α (.dim n .scalar)) (h : n ≠ 0) : α :=
   -- Step 1: Find maximum for numerical stability
-  have inst : Shape.valid_axis_inst 0 (Shape.dim n .scalar) := by
-    apply Shape.validAxisInstZeroAlt h
-  let max_log_prob := reduceMaxAuto 0 log_probs
+  have inst : Shape.HasNonemptyAxis 0 (Shape.dim n .scalar) := by
+    apply Shape.hasNonemptyAxisZeroOfNe h
+  let max_log_prob := reduceMax 0 log_probs inst.proof
   have h_shape : shapeAfterSum (Shape.dim n Shape.scalar) 0 = Shape.scalar := by
     simp [shapeAfterSum]
-  let max_log_prob' := toScalar (tensorCast (Shape.scalar) h_shape.symm max_log_prob)
+  let max_log_prob' := item (tensorCast (Shape.scalar) h_shape.symm max_log_prob)
 
   -- Step 2: Compute sum of exp(log_prob - max_log_prob)
   let shifted_probs := Tensor.dim (fun k =>
@@ -452,7 +452,7 @@ def gmmResponsibilitiesBatchedSpec {nSamples nComponents nFeatures : Nat}
         nFeatures) m (f i) hK)
 
 /-- Scalar extraction helper for 2D tensors: `t[i,j]` as an `α`. -/
-private def get2D {n m : Nat} (t : Tensor α (.dim n (.dim m .scalar))) (i : Fin n) (j : Fin m) : α
+private def getMatrix {n m : Nat} (t : Tensor α (.dim n (.dim m .scalar))) (i : Fin n) (j : Fin m) : α
   :=
   match get (get t i) j with
   | Tensor.scalar v => v
@@ -481,7 +481,7 @@ def gmmEmStepSpec {nSamples nComponents nFeatures : Nat}
     let Nk : Tensor α (.dim nComponents .scalar) :=
       vecFromFn (n := nComponents) (fun k =>
         (List.finRange nSamples).foldl (fun acc i =>
-          acc + get2D (n := nSamples) (m := nComponents) resp i k
+          acc + getMatrix (n := nSamples) (m := nComponents) resp i k
         ) 0)
 
     -- π_k = N_k / N
@@ -509,7 +509,7 @@ def gmmEmStepSpec {nSamples nComponents nFeatures : Nat}
               Tensor.dim (fun f =>
                 Tensor.scalar (
                   (List.finRange nSamples).foldl (fun acc i =>
-                    let rik := get2D (n := nSamples) (m := nComponents) resp i k
+                    let rik := getMatrix (n := nSamples) (m := nComponents) resp i k
                     let xi := get data i
                     acc + rik * Tensor.vecGet xi f
                   ) 0 / nk))
@@ -529,7 +529,7 @@ def gmmEmStepSpec {nSamples nComponents nFeatures : Nat}
               let base :=
                 matFromFn (n := nFeatures) (m := nFeatures) (fun a b =>
                   (List.finRange nSamples).foldl (fun acc i =>
-                    let rik := get2D (n := nSamples) (m := nComponents) resp i k
+                    let rik := getMatrix (n := nSamples) (m := nComponents) resp i k
                     let xi := get data i
                     let da := Tensor.vecGet xi a - Tensor.vecGet μ a
                     let db := Tensor.vecGet xi b - Tensor.vecGet μ b

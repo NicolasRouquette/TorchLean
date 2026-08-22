@@ -1,6 +1,6 @@
 # `TorchLean.Data`
 
-`TorchLean.Data` contains typed datasets, loaders, file sources, and transforms.
+`TorchLean.Data` contains typed datasets, loaders, and file sources.
 
 The data boundary is focused:
 
@@ -28,7 +28,6 @@ export, or verifier.
 | image/classification labels | `Data.LabeledSource` |
 | small numeric CSV | `Data.TabularSupervisedSource` |
 | repeated training batches | `Data.batchLoader` |
-| simple preprocessing | `Data.Transforms` |
 | generated or file-backed batches | typed step streams through the trainer API |
 | text windows | `TorchLean.text` helpers, then integer-token samples |
 
@@ -39,7 +38,9 @@ The main Lean entry points are:
 - `Data.LabeledSource`: batched inputs plus label vector, one-hot encoded when loaded.
 - `Data.TabularSupervisedSource`: one CSV where each row contains `x..., y...`.
 - `Data.batchLoader`: typed, deterministic minibatching.
-- `Data.Transforms`: map transforms over samples and datasets.
+
+Use `Data.map`, `Tensor.map`, and `Sample.mapX` or `Sample.mapY` for preprocessing. These are the
+same operations used elsewhere in the API rather than a second transform-specific vocabulary.
 
 ## Boundary Discipline
 

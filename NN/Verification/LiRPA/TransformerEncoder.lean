@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Verification.LiRPA.Common
+public import NN.Verification.LiRPA.ExampleInputs
 
 /-!
 # LiRPA transformer encoder certificate checker
@@ -129,7 +129,7 @@ def seedParamsFloat : ParamStore Float :=
 
 /-- Insert an $L^\infty$ input box of radius `eps` around a fixed center point. -/
 def seedInputFloat (ps : ParamStore Float) (eps : Float) : ParamStore Float :=
-  NN.Verification.LiRPA.seedNaturalInputBox 0 4 eps ps
+  NN.Verification.LiRPA.ExampleInputs.seedNaturalInputBox 0 4 eps ps
 
 /--
 Check an IBP certificate JSON against this transformer-encoder graph.
@@ -139,6 +139,6 @@ This is wired into `lake exe verify -- lirpa-encoder [path]`.
 def verifyCert (path : String) : IO Unit := do
   let g := buildGraph
   let ps := seedInputFloat (seedParamsFloat) (eps := (0.5))
-  NN.Verification.LiRPA.checkIBPCert g ps (outId := 10) path
+  NN.Verification.IBPCert.checkOrThrow g ps (outId := 10) path
 
 end NN.Verification.LiRPA.TransformerEncoder

@@ -208,15 +208,15 @@ that claims to support it.
 During evaluation, node 0 stores a vector, nodes 1 and 2 store `[5]`, node 3 stores `[3]`, and nodes
 4 and 5 store scalars. One homogeneous Lean array cannot directly contain all those tensor types.
 
-The evaluator uses
+The evaluator uses the packed tensor type from the specification layer:
 
 ```
-DVal α = Σ s : Shape, Spec.Tensor α s
+Spec.PackedTensor α = Σ s : Shape, Spec.Tensor α s
 ```
 
-a dependent pair of a runtime shape tag and a tensor with exactly that shape. The table can hold
-`DVal α` values of different shapes, while `Graph.expectShape` recovers a statically typed tensor
-after checking the tag.
+This is a dependent pair of a runtime shape tag and a tensor with exactly that shape. The table can
+hold packed tensors of different shapes, while `Graph.expectShape` recovers a statically typed
+tensor after checking the tag.
 
 For node 1, evaluation performs:
 
@@ -225,7 +225,7 @@ For node 1, evaluation performs:
 3. check the parent tag equals `[4]`;
 4. check the declared output equals `[5]`;
 5. call the pure `linearSpec`;
-6. store the result as `DVal α`.
+6. store the result as a `Spec.PackedTensor α`.
 
 Failures are reported as `Except String`; malformed imported data does not receive a fabricated
 proof cast.
@@ -279,9 +279,10 @@ spec outShape:     [2,8,4]
 forward graph outShape: [2,8,4]
 ```
 
-For the current middle-axis softmax and layer-normalization cases, the spec evaluator runs while
-the forward-graph path explicitly reports that the case is unsupported. This is preferable to silently
-changing the axis or falling back to a different meaning.
+Middle-axis softmax runs through both the specification evaluator and the forward graph. The
+selected dimension is part of the operation, so axis zero, an interior axis, and the final axis all
+retain their usual tensor meaning. The current rank-three middle-axis LayerNorm example remains a
+specification-only case and reports that limitation explicitly.
 
 Change `concat axis=1` to an out-of-range axis in the source
 [`IRAxisOps.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/DeepDives/IRAxisOps.lean).
@@ -315,7 +316,8 @@ The same structural graph can therefore be interpreted at:
 The graph is the same data, but the meaning of arithmetic changes with `α`. The equality of two
 interpretations is never automatic.
 
-`DVal α` varies the shape while retaining the scalar contract introduced in *Tensors And Shapes*.
+`Spec.PackedTensor α` varies the shape while retaining the scalar contract introduced in
+*Tensors And Shapes*.
 
 For the six-node example:
 

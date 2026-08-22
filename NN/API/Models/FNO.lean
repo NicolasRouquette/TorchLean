@@ -25,7 +25,7 @@ Equations*, ICLR 2021.
 namespace TorchLean.nn.models
 
 /-- Configuration for a scalar-field FNO over `d` spatial axes. -/
-structure FNOConfig (d : Nat) where
+structure FnoConfig (d : Nat) where
   /-- Extent of each spatial axis. -/
   spatial : Vector Nat d
   /-- Number of low and high Fourier modes retained along each axis. -/
@@ -43,13 +43,15 @@ structure FNOConfig (d : Nat) where
   /-- Base seed for parameter initialization. -/
   seed : Nat := 0
 
-/-- Input shape of the scalar field sampled on `cfg.spatial`. -/
-abbrev fnoInShape {d : Nat} (cfg : FNOConfig d) : Spec.Shape :=
-  Spec.Shape.ofList cfg.spatial.toList
+/-- Input shape of the scalar field, with any independently mapped axes prepended. -/
+abbrev FnoConfig.inputShape {d : Nat} (cfg : FnoConfig d)
+    (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.concat (Spec.Shape.ofList cfg.spatial.toList)
 
-/-- Output shape of the scalar field sampled on `cfg.spatial`. -/
-abbrev fnoOutShape {d : Nat} (cfg : FNOConfig d) : Spec.Shape :=
-  Spec.Shape.ofList cfg.spatial.toList
+/-- Output shape of the scalar field, with any independently mapped axes prepended. -/
+abbrev FnoConfig.outputShape {d : Nat} (cfg : FnoConfig d)
+    (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.concat (Spec.Shape.ofList cfg.spatial.toList)
 
 /--
 Build the portable multidimensional FNO model.
@@ -57,9 +59,10 @@ Build the portable multidimensional FNO model.
 The shape and mode contracts are independent of the selected device and provider and are retained
 when a fused kernel is chosen.
 -/
-def fno {d : Nat} (cfg : FNOConfig d) :
-    nn.Builder (nn.Sequential (fnoInShape cfg) (fnoOutShape cfg)) :=
-  pure <| _root_.Runtime.Autograd.TorchLean.NN.FNO.model
-    cfg.spatial cfg.modes cfg.width cfg.blocks (seed := cfg.seed)
+def fno {d : Nat} (cfg : FnoConfig d) (leading : Spec.Shape := .scalar) :
+    nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
+  nn.mapLeading leading <|
+    _root_.Runtime.Autograd.TorchLean.NN.FNO.model
+      cfg.spatial cfg.modes cfg.width cfg.blocks (seed := cfg.seed)
 
 end TorchLean.nn.models

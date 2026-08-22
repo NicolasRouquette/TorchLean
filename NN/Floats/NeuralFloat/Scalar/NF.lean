@@ -271,20 +271,20 @@ omit [NeuralValidRnd rnd] in
 
 /-- Numeric constants for NF via rounded reals. -/
 noncomputable instance : Numbers (NF β fexp rnd) where
-  neg_point_five := ofReal (β := β) (fexp := fexp) (rnd := rnd) (-0.5)
-  neg_one        := ofReal (β := β) (fexp := fexp) (rnd := rnd) (-1)
-  pointone       := ofReal (β := β) (fexp := fexp) (rnd := rnd) 0.1
-  pointfive      := ofReal (β := β) (fexp := fexp) (rnd := rnd) 0.5
-  zero           := ofReal (β := β) (fexp := fexp) (rnd := rnd) 0
-  one            := ofReal (β := β) (fexp := fexp) (rnd := rnd) 1
-  two            := ofReal (β := β) (fexp := fexp) (rnd := rnd) 2
-  three          := ofReal (β := β) (fexp := fexp) (rnd := rnd) 3
-  four           := ofReal (β := β) (fexp := fexp) (rnd := rnd) 4
-  five           := ofReal (β := β) (fexp := fexp) (rnd := rnd) 5
-  ten            := ofReal (β := β) (fexp := fexp) (rnd := rnd) 10
-  log10          := ofReal (β := β) (fexp := fexp) (rnd := rnd) (Real.log 10)
-  log10000       := ofReal (β := β) (fexp := fexp) (rnd := rnd) (Real.log 10000)
-  epsilon        := ofReal (β := β) (fexp := fexp) (rnd := rnd) (1e-6)
+  negHalf       := ofReal (β := β) (fexp := fexp) (rnd := rnd) (-0.5)
+  negOne        := ofReal (β := β) (fexp := fexp) (rnd := rnd) (-1)
+  oneTenth      := ofReal (β := β) (fexp := fexp) (rnd := rnd) 0.1
+  half          := ofReal (β := β) (fexp := fexp) (rnd := rnd) 0.5
+  zero          := ofReal (β := β) (fexp := fexp) (rnd := rnd) 0
+  one           := ofReal (β := β) (fexp := fexp) (rnd := rnd) 1
+  two           := ofReal (β := β) (fexp := fexp) (rnd := rnd) 2
+  three         := ofReal (β := β) (fexp := fexp) (rnd := rnd) 3
+  four          := ofReal (β := β) (fexp := fexp) (rnd := rnd) 4
+  five          := ofReal (β := β) (fexp := fexp) (rnd := rnd) 5
+  ten           := ofReal (β := β) (fexp := fexp) (rnd := rnd) 10
+  lnTen         := ofReal (β := β) (fexp := fexp) (rnd := rnd) (Real.log 10)
+  lnTenThousand := ofReal (β := β) (fexp := fexp) (rnd := rnd) (Real.log 10000)
+  epsilon       := ofReal (β := β) (fexp := fexp) (rnd := rnd) (1e-6)
 
 /--
 Extract an approximate radix-`β` mantissa/exponent pair for debugging.

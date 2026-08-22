@@ -51,22 +51,26 @@ def hiddenChannels : Nat := 4
 
 /-- Configuration shared by the model constructor and its typed input/output shapes. -/
 def cfg : nn.models.ResNetConfig 2 :=
-  { batch := batch
-    inChannels := inChannels
+  { inChannels := inChannels
     spatial := #v[height, width]
     spatialNonzero := by intro i; fin_cases i <;> decide
     hiddenChannels := hiddenChannels
     numClasses := RealData.cifarClasses }
 
 /-- Batched channel-first input shape. -/
-abbrev σ : Shape := nn.models.resnetInShape cfg
+abbrev σ : Shape := .dim batch (.dim inChannels (.dim height (.dim width .scalar)))
 
 /-- One row of class logits per input sample. -/
-abbrev τ : Shape := nn.models.resnetOutShape cfg
+abbrev τ : Shape := .dim batch (.dim RealData.cifarClasses .scalar)
 
 /-- Residual classifier from the public model API. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.resnet cfg (hInChannels := by decide) (hHiddenChannels := by decide)
+  by
+    simpa [σ, τ, cfg, nn.models.ResNetConfig.inputShape,
+      nn.models.ResNetConfig.outputShape, Spec.Shape.ofList, Spec.Shape.concat,
+      Spec.Shape.appendDim] using
+      nn.models.resnet cfg (.dim batch .scalar)
+        (hInChannels := by decide) (hHiddenChannels := by decide)
 
 /-- Train the residual classifier with the public classification trainer. -/
 def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
@@ -78,7 +82,7 @@ def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :
     Trainer.new model <|
       Trainer.Config.fromRunConfig
         (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := flags.lr } })
-        .oneHotCrossEntropy
+        (.oneHotCrossEntropy 1)
         (seed := flags.seed)
   let trained ← trainer.train
     (Data.floatSamples batches)

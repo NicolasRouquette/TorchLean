@@ -94,21 +94,21 @@ This is used when we ask the typed graph engine for a dense list of gradients wi
 need to recover a shape-typed view.
 -/
 def gradsPrefix {α : Type} [DecidableEq Shape] :
-    {ss : List Shape} → Array (Runtime.AnyTensor α) → Nat → IO (TList α ss)
+    {ss : List Shape} → Array (Spec.PackedTensor α) → Nat → IO (TList α ss)
   | [], _grads, _off => pure .nil
   | s :: ss, grads, off => do
       let any ← match grads[off]? with
         | some v => pure v
         | none => throw <| IO.userError "torchlean(hvp): gradient array too small"
-        if h : any.s = s then
-          let g : Tensor α s := Tensor.castShape any.t h
+        if h : any.shape = s then
+          let g : Tensor α s := any.cast h
           let gs ← gradsPrefix (α := α) (ss := ss) grads (off + 1)
           pure (.cons g gs)
         else
           throw <| IO.userError <|
             s!"torchlean(hvp): gradient shape mismatch at idx={off} (expected "
               ++ s!"{Shape.pretty s}, got "
-              ++ s!"{Shape.pretty any.s})"
+              ++ s!"{Shape.pretty any.shape})"
 
 end Internal
 

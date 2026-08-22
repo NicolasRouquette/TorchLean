@@ -113,7 +113,7 @@ def runConvTranspose2 : IO Unit := do
       (inSpatial := inSpatial2Dims)
       kId bId xId (name := "conv_transpose[d=2]"))
   let yCpu ← Utils.cpuValue (s := outShape2) t4 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) outShape2)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) outShape2)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t4) yId seedCpu)
   let dKCpu ← Utils.cpuGrad (s := kernelShape2) gradsCpu kId
   let dBCpu ← Utils.cpuGrad (s := shape![outC2]) gradsCpu bId
@@ -230,7 +230,7 @@ def runConvTranspose3 : IO Unit := do
       (inSpatial := inSpatial3Dims)
       kId bId xId (name := "conv_transpose[d=3]"))
   let yCpu ← Utils.cpuValue (s := outShape3) t4 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) outShape3)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) outShape3)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t4) yId seedCpu)
   let dKCpu ← Utils.cpuGrad (s := kernelShape3) gradsCpu kId
   let dBCpu ← Utils.cpuGrad (s := shape![outC3]) gradsCpu bId

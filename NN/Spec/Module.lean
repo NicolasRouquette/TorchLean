@@ -29,23 +29,18 @@ public import NN.Spec.Module.PositionalEncoding
 public import NN.Spec.Module.Rnn
 public import NN.Spec.Module.RnnModels
 public import NN.Spec.Module.Seq2seq
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 public import NN.Spec.Module.Svm
-
-/-!
-Module-level neural-network specifications.
-
-This file re-exports the layer and model building blocks that describe networks before they are
-lowered to runtime modules or verification graphs.
--/
 
 /-!
 # Spec modules
 
-Umbrella import for PyTorch-style `NNModuleSpec` wrappers around pure layer/model specs.
+This umbrella re-exports shape-indexed modules built from TorchLean's mathematical layer and model
+definitions. A `Spec.Module α σ τ` is a pure map from tensors of shape `σ` to tensors of shape
+`τ`; `Spec.Module.Chain` composes modules only when adjacent shapes agree.
 
-These wrappers add a uniform `forward` interface and export metadata, while preserving
-the underlying spec definitions as the source of mathematical meaning.
+The `forward` field carries the semantics. Operation names and Python expressions are metadata for
+reports and source export, not part of the mathematical definition.
 -/
 
 @[expose] public section

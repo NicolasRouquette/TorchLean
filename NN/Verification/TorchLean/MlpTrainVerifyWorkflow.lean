@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API
+public import NN.API.Module.Command
 
 /-!
 # TorchLean MLP Train-Then-Verify Workflow
@@ -54,10 +55,15 @@ def XFloat : Spec.Tensor Float (.dim 3 xShape) :=
            [0.0, 1.0],
            [1.0, 1.0]]
 
+/-- Affine regression target used by the workflow. -/
+def target (x : Spec.Tensor Float xShape) : Spec.Tensor Float yShape :=
+  let x₁ := Spec.Tensor.item (Spec.get x ⟨0, by decide⟩)
+  let x₂ := Spec.Tensor.item (Spec.get x ⟨1, by decide⟩)
+  Spec.Tensor.dim fun _ => Spec.Tensor.scalar (2.0 * x₁ - 3.0 * x₂)
+
 /-- Batched targets for training. -/
 def YFloat : Spec.Tensor Float (.dim 3 yShape) :=
-  Data.Synthetic.regressionTargetsFloat XFloat
-    (Data.Synthetic.affinePlane 2.0 (-3.0) 0.0)
+  Spec.Tensor.mapLeading (.dim 3 .scalar) target XFloat
 
 /-- TorchLean model used for training and verification. -/
 def mkModel : nn.Builder (nn.Sequential xShape yShape) :=

@@ -59,19 +59,15 @@ def hidDim : Nat := 32
 /-- Regression target width: normalized miles-per-gallon. -/
 def outDim : Nat := 1
 
-/-- Shared MLP configuration used by shapes and the constructor. -/
-def cfg : nn.models.MLPConfig :=
-  { batch := batch, inDim := inDim, hidDim := hidDim, outDim := outDim }
-
 /-- Input shape: a minibatch of Auto MPG feature vectors. -/
 abbrev σ : Shape := .dim batch (.dim inDim .scalar)
 
 /-- Output shape: one scalar regression prediction per row. -/
 abbrev τ : Shape := .dim batch (.dim outDim .scalar)
 
-/-- One-hidden-layer ReLU MLP from the public model API. -/
+/-- One-hidden-layer ReLU MLP from the public block API. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.mlpRelu cfg
+  nn.blocks.mlp inDim outDim { hidden := [hidDim] } (.dim batch .scalar)
 
 /--
 Auto MPG as a public TorchLean dataset.

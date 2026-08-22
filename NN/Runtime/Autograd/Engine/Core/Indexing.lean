@@ -37,15 +37,15 @@ def gatherScalar {α : Type} [Zero α] [DecidableEq Shape]
   let y : Tensor α Shape.scalar := getAtSpec x i
   let node : Node α :=
     { name := some s!"gather_scalar[{i.val}]"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := Shape.scalar) dLdyAny
-        let g : α := Tensor.toScalar dLdy
+        let g : α := Tensor.item dLdy
         let dx : Tensor α (.dim n .scalar) :=
           Tensor.dim (fun j => Tensor.scalar (if decide (j = i) then g else 0))
-        pure [(xId, AnyTensor.mk dx)]
+        pure [(xId, Spec.PackedTensor.ofTensor dx)]
     }
   pure (t.addNode node)
 
@@ -60,8 +60,8 @@ def gatherRow {α : Type} [Zero α] [DecidableEq Shape]
   let y : Tensor α (.dim cols .scalar) := getAtSpec x i
   let node : Node α :=
     { name := some s!"gather_row[{i.val}]"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim cols .scalar) dLdyAny
@@ -71,7 +71,7 @@ def gatherRow {α : Type} [Zero α] [DecidableEq Shape]
               dLdy
             else
               fill (0 : α) (.dim cols .scalar))
-        pure [(xId, AnyTensor.mk dx)]
+        pure [(xId, Spec.PackedTensor.ofTensor dx)]
     }
   pure (t.addNode node)
 
@@ -81,7 +81,7 @@ Gather a scalar from a 1D vector using a runtime `Nat` index.
 Out-of-bounds indices are totalized to return `0`.
 PyTorch comparison: `x[i]` would raise on out-of-range; here we return `0` to keep the op total.
 -/
-def gatherScalarNat {α : Type} [Zero α] [DecidableEq Shape]
+def gatherScalarNatOrZero {α : Type} [Zero α] [DecidableEq Shape]
   {n : Nat} (t : Tape α) (xId : Nat) (i : Nat) : Result (Tape α × Nat) := do
   let x ← requireValue (α := α) (t := t) (s := .dim n .scalar) xId
   let y : Tensor α Shape.scalar :=
@@ -90,20 +90,20 @@ def gatherScalarNat {α : Type} [Zero α] [DecidableEq Shape]
     else
       Tensor.scalar 0
   let node : Node α :=
-    { name := some s!"gather_scalar_nat[{i}]"
-      value := AnyTensor.mk y
-      requires_grad := true
+    { name := some s!"gather_scalar_nat_or_zero[{i}]"
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := Shape.scalar) dLdyAny
-        let g : α := Tensor.toScalar dLdy
+        let g : α := Tensor.item dLdy
         let dx : Tensor α (.dim n .scalar) :=
           Tensor.dim (fun j =>
             if i < n then
               if decide (j.val = i) then Tensor.scalar g else Tensor.scalar 0
             else
               Tensor.scalar 0)
-        pure [(xId, AnyTensor.mk dx)]
+        pure [(xId, Spec.PackedTensor.ofTensor dx)]
     }
   pure (t.addNode node)
 
@@ -114,7 +114,7 @@ Out-of-bounds indices are totalized to `0`. In the backward pass, gradients are 
 repeated indices (scatter-add semantics).
 PyTorch comparison: related to `torch.gather` / advanced indexing.
 -/
-def gatherVecNat {α : Type} [Add α] [Zero α] [DecidableEq Shape]
+def gatherVecNatOrZero {α : Type} [Add α] [Zero α] [DecidableEq Shape]
   {n k : Nat} (t : Tape α) (xId : Nat) (idx : Tensor Nat (.dim k .scalar)) :
   Result (Tape α × Nat) := do
   let x ← requireValue (α := α) (t := t) (s := .dim n .scalar) xId
@@ -129,9 +129,9 @@ def gatherVecNat {α : Type} [Add α] [Zero α] [DecidableEq Shape]
               else
                 Tensor.scalar 0)
   let node : Node α :=
-    { name := some "gather_vec_nat"
-      value := AnyTensor.mk y
-      requires_grad := true
+    { name := some "gather_vec_nat_or_zero"
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim k .scalar) dLdyAny
@@ -154,7 +154,7 @@ def gatherVecNat {α : Type} [Add α] [Zero α] [DecidableEq Shape]
                 else acc
               ) 0
             Tensor.scalar sum)
-        pure [(xId, AnyTensor.mk dx)]
+        pure [(xId, Spec.PackedTensor.ofTensor dx)]
     }
   pure (t.addNode node)
 
@@ -164,7 +164,7 @@ Gather `k` rows from a 2D matrix using an explicit index tensor.
 Out-of-bounds indices are totalized to zero rows; backward accumulates gradients into selected
 rows (scatter-add), including repeated indices.
 -/
-def gatherRowsNat {α : Type} [Add α] [Zero α] [DecidableEq Shape]
+def gatherRowsNatOrZero {α : Type} [Add α] [Zero α] [DecidableEq Shape]
   {rows cols k : Nat} (t : Tape α) (xId : Nat) (idx : Tensor Nat (.dim k .scalar)) :
   Result (Tape α × Nat) := do
   let x ← requireValue (α := α) (t := t) (s := .dim rows (.dim cols .scalar)) xId
@@ -179,9 +179,9 @@ def gatherRowsNat {α : Type} [Add α] [Zero α] [DecidableEq Shape]
               else
                 fill (0 : α) (.dim cols .scalar))
   let node : Node α :=
-    { name := some "gather_rows_nat"
-      value := AnyTensor.mk y
-      requires_grad := true
+    { name := some "gather_rows_nat_or_zero"
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim k (.dim cols .scalar)) dLdyAny
@@ -201,7 +201,7 @@ def gatherRowsNat {α : Type} [Add α] [Zero α] [DecidableEq Shape]
                 else acc
               ) (fill (0 : α) (.dim cols .scalar))
             rowGrad)
-        pure [(xId, AnyTensor.mk dx)]
+        pure [(xId, Spec.PackedTensor.ofTensor dx)]
     }
   pure (t.addNode node)
 
@@ -215,19 +215,19 @@ def scatterAddVec {α : Type} [Add α] [Zero α] [DecidableEq Shape]
   {n : Nat} (t : Tape α) (xId vId : Nat) (i : Fin n) : Result (Tape α × Nat) := do
   let x ← requireValue (α := α) (t := t) (s := .dim n .scalar) xId
   let vT ← requireValue (α := α) (t := t) (s := Shape.scalar) vId
-  let v : α := Tensor.toScalar vT
+  let v : α := Tensor.item vT
   let xiT : Tensor α Shape.scalar := getAtSpec x i
-  let xi : α := Tensor.toScalar xiT
+  let xi : α := Tensor.item xiT
   let y : Tensor α (.dim n .scalar) := updateSpec x [i.val] (xi + v)
   let node : Node α :=
     { name := some s!"scatter_add_vec[{i.val}]"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId, vId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim n .scalar) dLdyAny
         let dv : Tensor α Shape.scalar := getAtSpec dLdy i
-        pure [(xId, AnyTensor.mk dLdy), (vId, AnyTensor.mk dv)]
+        pure [(xId, Spec.PackedTensor.ofTensor dLdy), (vId, Spec.PackedTensor.ofTensor dv)]
     }
   pure (t.addNode node)
 
@@ -248,12 +248,12 @@ def scatterAddRow {α : Type} [Add α] [Zero α] [DecidableEq Shape]
         getAtSpec x r)
   let node : Node α :=
     { name := some s!"scatter_add_row[{i.val}]"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId, vId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim rows (.dim cols .scalar)) dLdyAny
         let dv : Tensor α (.dim cols .scalar) := getAtSpec dLdy i
-        pure [(xId, AnyTensor.mk dLdy), (vId, AnyTensor.mk dv)]
+        pure [(xId, Spec.PackedTensor.ofTensor dLdy), (vId, Spec.PackedTensor.ofTensor dv)]
     }
   pure (t.addNode node)

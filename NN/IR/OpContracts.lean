@@ -93,21 +93,35 @@ IR nodes store dynamic shapes, so every pass that accepts `.broadcastTo` must re
 instead of trusting that the declared input and output shapes are compatible.
 -/
 def mkCanBroadcastTo? : (s₁ s₂ : Shape) → Option (Shape.CanBroadcastTo s₁ s₂)
-  | .scalar, s₂ => some (.scalar_to_any s₂)
-  | .dim n₁ t₁, .dim n₂ t₂ =>
-      if hEq : n₁ = n₂ then
-        (mkCanBroadcastTo? t₁ t₂).map (fun tail =>
-          hEq ▸ Shape.CanBroadcastTo.dim_eq (n := n₁) (s₁ := t₁) (s₂ := t₂) tail)
-      else if h1 : n₁ = 1 then
-        (mkCanBroadcastTo? t₁ t₂).map (fun tail =>
-          h1 ▸ Shape.CanBroadcastTo.dim_1_to_n (n := n₂) (s₁ := t₁) (s₂ := t₂) tail)
+  | s₁, s₂ =>
+      if hlt : Spec.Shape.rank s₁ < Spec.Shape.rank s₂ then
+        match s₂ with
+        | .scalar => none
+        | .dim n₂ t₂ =>
+            (mkCanBroadcastTo? s₁ t₂).map fun tail =>
+              Shape.CanBroadcastTo.expand_dims (n := n₂) (s₁ := s₁) (s₂ := t₂) tail
+      else if hgt : Spec.Shape.rank s₂ < Spec.Shape.rank s₁ then
+        none
       else
-        (mkCanBroadcastTo? (.dim n₁ t₁) t₂).map (fun tail =>
-          Shape.CanBroadcastTo.expand_dims (n := n₂) (s₁ := .dim n₁ t₁) (s₂ := t₂) tail)
-  | _, _ => none
+        match s₁, s₂ with
+        | .scalar, .scalar => some .scalar
+        | .dim n₁ t₁, .dim n₂ t₂ =>
+            letI : Shape.SameRank t₁ t₂ := ⟨by
+              apply Nat.le_antisymm
+              · exact Nat.le_of_not_gt (by simpa [Spec.Shape.rank] using hgt)
+              · exact Nat.le_of_not_gt (by simpa [Spec.Shape.rank] using hlt)⟩
+            if hEq : n₁ = n₂ then
+              (mkCanBroadcastTo? t₁ t₂).map (fun tail =>
+                hEq ▸ Shape.CanBroadcastTo.dim_eq (n := n₁) (s₁ := t₁) (s₂ := t₂) tail)
+            else if h1 : n₁ = 1 then
+              (mkCanBroadcastTo? t₁ t₂).map (fun tail =>
+                h1 ▸ Shape.CanBroadcastTo.dim_1_to_n (n := n₂) (s₁ := t₁) (s₂ := t₂) tail)
+            else
+              none
+        | _, _ => none
 
 /--
-Compute the `(seqLen, embedDim)` pair used to interpret `layernorm axis`.
+Compute the matrix dimensions used to interpret `layernorm axis`.
 
 TorchLean’s IR stores LayerNorm as an `axis : Nat` instead of a full `normalized_shape` tuple.
 We interpret this in the same way the PyTorch exporter does:
@@ -115,14 +129,15 @@ We interpret this in the same way the PyTorch exporter does:
 `normalized_shape = dims.drop axis`
 
 That is, we normalize over the **suffix** of dimensions starting at `axis`. To reuse the current
-spec primitive (`Spec.layerNorm`), we flatten the input shape `s` into a 2D view:
+spec primitive (`Spec.layerNorm`), we flatten the input shape `s` into a matrix:
 
-* `seqLen`   = product of dimensions *before* `axis` (`dims.take axis`)
-* `embedDim` = product of dimensions *from* `axis` onward (`dims.drop axis`)
+* the row count is the product of dimensions before `axis` (`dims.take axis`);
+* the column count is the product of dimensions from `axis` onward (`dims.drop axis`).
 
-Then we run 2D last-axis LayerNorm on a `(seqLen × embedDim)` tensor and reshape back.
+LayerNorm then runs over each row and the result is reshaped to `s`. This construction works for
+every nonempty tensor rank; the matrix is an evaluation view, not a restriction on the input shape.
 -/
-def layerNorm2DParams (axis : Nat) (s : Shape) : Except String (Nat × Nat) := do
+def layerNormMatrixDims (axis : Nat) (s : Shape) : Except String (Nat × Nat) := do
   checkAxisValid axis s
   let dims := Shape.toList s
   let seqLen : Nat := (dims.take axis).foldl (fun acc d => acc * d) 1

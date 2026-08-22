@@ -40,7 +40,7 @@ Sum down the rows of a 2D row-major buffer.
 Input `b` has shape `(rows, cols)` and is stored as length `rows*cols`.
 Output is length `cols` (sum down the rows for each column).
 -/
-@[extern "torchlean_cuda_buffer_reduce_sum_by_column"]
+@[never_extract, extern "torchlean_cuda_buffer_reduce_sum_by_column"]
 opaque reduceSumByColumn (b : @& Buffer) (rows cols : UInt32) : Buffer
 
 /--
@@ -49,7 +49,7 @@ Sum across the columns of a 2D row-major buffer.
 Input `b` has shape `(rows, cols)` and is stored as length `rows*cols`.
 Output is length `rows` (sum across the columns for each row).
 -/
-@[extern "torchlean_cuda_buffer_reduce_sum_by_row"]
+@[never_extract, extern "torchlean_cuda_buffer_reduce_sum_by_row"]
 opaque reduceSumByRow (b : @& Buffer) (rows cols : UInt32) : Buffer
 
 /--
@@ -58,7 +58,7 @@ Maximum down the rows of a 2D row-major buffer.
 Input `b` has shape `(rows, cols)` and is stored as length `rows*cols`.
 Output is length `cols` (max down the rows for each column).
 -/
-@[extern "torchlean_cuda_buffer_reduce_max_by_column"]
+@[never_extract, extern "torchlean_cuda_buffer_reduce_max_by_column"]
 opaque reduceMaxByColumn (b : @& Buffer) (rows cols : UInt32) : Buffer
 
 /--
@@ -67,7 +67,7 @@ Maximum across the columns of a 2D row-major buffer.
 Input `b` has shape `(rows, cols)` and is stored as length `rows*cols`.
 Output is length `rows` (max across the columns for each row).
 -/
-@[extern "torchlean_cuda_buffer_reduce_max_by_row"]
+@[never_extract, extern "torchlean_cuda_buffer_reduce_max_by_row"]
 opaque reduceMaxByRow (b : @& Buffer) (rows cols : UInt32) : Buffer
 
 /--
@@ -76,11 +76,11 @@ Stable row-wise hard-masked softmax for flat `(rows, cols)` buffers.
 The row maximum and denominator are computed only from entries whose mask value is nonzero. Blocked
 entries are exactly zero in the output. A row with no allowed entries is defined to be all zeros.
 -/
-@[extern "torchlean_cuda_buffer_hard_masked_softmax_by_row"]
+@[never_extract, extern "torchlean_cuda_buffer_hard_masked_softmax_by_row"]
 opaque hardMaskedSoftmaxByRow (scores mask : @& Buffer) (rows cols : UInt32) : Buffer
 
 /-- Concatenate two 1D buffers `a` (length `n`) and `b` (length `m`). -/
-@[extern "torchlean_cuda_buffer_concat1d"]
+@[never_extract, extern "torchlean_cuda_buffer_concat1d"]
 opaque concatVectorBuffers (a b : @& Buffer) (n m : UInt32) : Buffer
 
 /--
@@ -88,7 +88,7 @@ Slice a 1D buffer `b` (length `n`) starting at `start` for `len` elements.
 
 Requires `start + len ≤ n`.
 -/
-@[extern "torchlean_cuda_buffer_slice1d"]
+@[never_extract, extern "torchlean_cuda_buffer_slice1d"]
 opaque sliceVectorBuffer (b : @& Buffer) (n start len : UInt32) : Buffer
 
 /--
@@ -96,7 +96,7 @@ Broadcast a row-vector (length `cols`) to a `(rows, cols)` matrix.
 
 Output is row-major of length `rows*cols`, with `out[i, j] = vec[j]`.
 -/
-@[extern "torchlean_cuda_buffer_broadcast_vec_to_rows"]
+@[never_extract, extern "torchlean_cuda_buffer_broadcast_vec_to_rows"]
 opaque broadcastVecToRows (vec : @& Buffer) (rows cols : UInt32) : Buffer
 
 /--
@@ -104,7 +104,7 @@ Broadcast a column-vector (length `rows`) to a `(rows, cols)` matrix.
 
 Output is row-major of length `rows*cols`, with `out[i, j] = vec[i]`.
 -/
-@[extern "torchlean_cuda_buffer_broadcast_vec_to_cols"]
+@[never_extract, extern "torchlean_cuda_buffer_broadcast_vec_to_cols"]
 opaque broadcastVecToCols (vec : @& Buffer) (rows cols : UInt32) : Buffer
 
 /--
@@ -115,7 +115,7 @@ Layer normalization over the columns of a row-major `(rows, cols)` buffer.
 enough for TorchLean's layer-normalization VJP; the native kernel does not create or own an
 autograd graph.
 -/
-@[extern "torchlean_cuda_buffer_layer_norm_fwd"]
+@[never_extract, extern "torchlean_cuda_buffer_layer_norm_fwd"]
 opaque layerNormFwd
     (x gamma beta : @& Buffer) (rows cols : UInt32) (invCols epsilon : Float) :
     Buffer × Buffer × Buffer
@@ -127,7 +127,7 @@ Given the upstream derivative, cached normalized values and inverse standard dev
 `gamma`, returns `(dX, dGamma, dBeta)`. The formula and parent association remain part of the
 TorchLean tape; this primitive only evaluates that formula.
 -/
-@[extern "torchlean_cuda_buffer_layer_norm_bwd"]
+@[never_extract, extern "torchlean_cuda_buffer_layer_norm_bwd"]
 opaque layerNormBwd
     (dOut normalized invStd gamma : @& Buffer) (rows cols : UInt32)
     (colsScale invCols : Float) : Buffer × Buffer × Buffer
@@ -142,7 +142,7 @@ shape of `B` is `(batch, p, n)`. Other flag values are rejected by the native bo
 cuBLAS consumes these layouts directly. In particular, backward rules can request `Aᵀ B` or
 `A Bᵀ` without first allocating a transposed buffer.
 -/
-@[extern "torchlean_cuda_buffer_bmm_with_transpose"]
+@[never_extract, extern "torchlean_cuda_buffer_bmm_with_transpose"]
 opaque bmmWithTranspose (A B : @& Buffer) (batch m n p transposeA transposeB : UInt32) : Buffer
 
 /-- Batched matrix multiplication `A B` for ordinary row-major operands. -/
@@ -182,7 +182,7 @@ remains available in non-CUDA builds for tests and portability. This is a low-le
 primitive; differentiable tensor/autograd wrappers should spell out their backward convention
 separately because half-spectrum packing has normalization and conjugate-symmetry edge cases.
 -/
-@[extern "torchlean_cuda_buffer_rfft1d_packed"]
+@[never_extract, extern "torchlean_cuda_buffer_rfft1d_packed"]
 opaque rfft1dPacked (x : @& Buffer) (batch n : UInt32) : Buffer
 
 /--
@@ -197,7 +197,7 @@ Output:
 The CUDA implementation uses cuFFT `C2R` and explicitly scales by `1/n`, matching the CPU reference
 and the usual normalized inverse FFT convention used by high-level ML APIs.
 -/
-@[extern "torchlean_cuda_buffer_irfft1d_packed"]
+@[never_extract, extern "torchlean_cuda_buffer_irfft1d_packed"]
 opaque irfft1dPacked (spec : @& Buffer) (batch n : UInt32) : Buffer
 
 /--
@@ -217,22 +217,22 @@ Semantics:
 This is the CUDA/cuFFT-backed runtime primitive intended to replace dense DFT matrix multiplies in
 float32 FNO examples. The three backward primitives below are its explicit VJP components.
 -/
-@[extern "torchlean_cuda_buffer_spectral_conv1d_rfft_fwd"]
+@[never_extract, extern "torchlean_cuda_buffer_spectral_conv1d_rfft_fwd"]
 opaque spectralConv1dRfftFwd
     (x wRe wIm : @& Buffer) (grid width modes : UInt32) : Buffer
 
 /-- VJP component `∂L/∂x` for `spectralConv1dRfftFwd`. -/
-@[extern "torchlean_cuda_buffer_spectral_conv1d_rfft_bwd_x"]
+@[never_extract, extern "torchlean_cuda_buffer_spectral_conv1d_rfft_bwd_x"]
 opaque spectralConv1dRfftBwdX
     (x wRe wIm dY : @& Buffer) (grid width modes : UInt32) : Buffer
 
 /-- VJP component `∂L/∂wRe` for `spectralConv1dRfftFwd`. -/
-@[extern "torchlean_cuda_buffer_spectral_conv1d_rfft_bwd_wre"]
+@[never_extract, extern "torchlean_cuda_buffer_spectral_conv1d_rfft_bwd_wre"]
 opaque spectralConv1dRfftBwdWRe
     (x wRe wIm dY : @& Buffer) (grid width modes : UInt32) : Buffer
 
 /-- VJP component `∂L/∂wIm` for `spectralConv1dRfftFwd`. -/
-@[extern "torchlean_cuda_buffer_spectral_conv1d_rfft_bwd_wim"]
+@[never_extract, extern "torchlean_cuda_buffer_spectral_conv1d_rfft_bwd_wim"]
 opaque spectralConv1dRfftBwdWIm
     (x wRe wIm dY : @& Buffer) (grid width modes : UInt32) : Buffer
 
@@ -250,7 +250,7 @@ Output:
 This is the runtime primitive corresponding to the proof layer affine scan contract in
 `NN.Spec.Layers.SelectiveScan` and `NN.MLTheory.Proofs.StateSpace.Scan`.
 -/
-@[extern "torchlean_cuda_buffer_selective_scan_diag_fwd"]
+@[never_extract, extern "torchlean_cuda_buffer_selective_scan_diag_fwd"]
 opaque selectiveScanDiagFwd (A B X h0 : @& Buffer) (seqLen state : UInt32) : Buffer
 
 /--
@@ -259,7 +259,7 @@ Backward kernel for `selectiveScanDiagFwd`.
 Given `out = selectiveScanDiagFwd A B X h0` and an upstream gradient `dY` with the same
 `seqLen*state` layout as `out`, returns `(dA, dB, dX, dH0)`.
 -/
-@[extern "torchlean_cuda_buffer_selective_scan_diag_bwd"]
+@[never_extract, extern "torchlean_cuda_buffer_selective_scan_diag_bwd"]
 opaque selectiveScanDiagBwd (A B X h0 out dY : @& Buffer) (seqLen state : UInt32) :
     Buffer × Buffer × Buffer × Buffer
 
@@ -277,7 +277,7 @@ Output:
 This is the runtime primitive corresponding to full Mamba-style selective scans where the token
 controls the affine transition coefficients.
 -/
-@[extern "torchlean_cuda_buffer_selective_scan_diag_var_fwd"]
+@[never_extract, extern "torchlean_cuda_buffer_selective_scan_diag_var_fwd"]
 opaque selectiveScanDiagVarFwd (A B X h0 : @& Buffer) (seqLen state : UInt32) : Buffer
 
 /--
@@ -293,23 +293,23 @@ Both the native CUDA and optional LibTorch providers use hard-mask semantics: bl
 contribute zero softmax numerator. The LibTorch provider has separate extern names because it is an
 external implementation and, for its backward entry point, an external autograd boundary.
 -/
-@[extern "torchlean_cuda_buffer_flash_attention_fwd"]
+@[never_extract, extern "torchlean_cuda_buffer_flash_attention_fwd"]
 opaque flashAttentionFwd
     (Q K V mask : @& Buffer) (hasMask batch n d : UInt32) (scale : Float) : Buffer
 
 /-- Fused VJP `(dQ, dK, dV)` for `flashAttentionFwd`. -/
-@[extern "torchlean_cuda_buffer_flash_attention_bwd"]
+@[never_extract, extern "torchlean_cuda_buffer_flash_attention_bwd"]
 opaque flashAttentionBwd
     (Q K V mask dOut : @& Buffer) (hasMask batch n d : UInt32) (scale : Float) :
     Buffer × Buffer × Buffer
 
 /-- Optional LibTorch SDPA forward provider. Built only with `-K cuda=true -K libtorch=true`. -/
-@[extern "torchlean_libtorch_sdpa_fwd"]
+@[never_extract, extern "torchlean_libtorch_sdpa_fwd"]
 opaque libTorchSDPAFwd
     (Q K V mask : @& Buffer) (hasMask batch n d : UInt32) (scale : Float) : IO Buffer
 
 /-- Optional LibTorch SDPA VJP provider. Built only with `-K cuda=true -K libtorch=true`. -/
-@[extern "torchlean_libtorch_sdpa_bwd"]
+@[never_extract, extern "torchlean_libtorch_sdpa_bwd"]
 opaque libTorchSDPABwd
     (Q K V mask dOut : @& Buffer) (hasMask batch n d : UInt32) (scale : Float) :
     IO (Buffer × Buffer × Buffer)
@@ -320,7 +320,7 @@ Row-major transpose of a 2D buffer.
 Input `b` has shape `(rows, cols)` and is stored as length `rows*cols`.
 Output has shape `(cols, rows)` and is stored as length `rows*cols` (row-major).
 -/
-@[extern "torchlean_cuda_buffer_transpose2d"]
+@[never_extract, extern "torchlean_cuda_buffer_transpose2d"]
 opaque transpose2d (b : @& Buffer) (rows cols : UInt32) : Buffer
 
 /--
@@ -333,7 +333,7 @@ Input:
 Indices that fit in `UInt32` but are out of bounds are totalized to `0`.
 Large `Nat` values outside the FFI index range are rejected by the runtime.
 -/
-@[extern "torchlean_cuda_buffer_gather_vec"]
+@[never_extract, extern "torchlean_cuda_buffer_gather_vec"]
 opaque gatherVec (vec : @& Buffer) (n : UInt32) (indices : @& Array Nat) (k : UInt32) : Buffer
 
 /--
@@ -350,7 +350,7 @@ Semantics:
 - large `Nat` values outside the FFI index range are rejected by the runtime,
 - repeated indices accumulate (scatter-add semantics).
 -/
-@[extern "torchlean_cuda_buffer_scatter_add"]
+@[never_extract, extern "torchlean_cuda_buffer_scatter_add"]
 opaque scatterAdd (x values : @& Buffer) (n : UInt32) (indices : @& Array Nat) (k : UInt32) : Buffer
 
 /--
@@ -366,7 +366,7 @@ Arguments:
 This shape-driven mapping is generated in Lean from a `Shape.CanBroadcastTo` proof so the kernel
 does not need to interpret the proof object.
 -/
-@[extern "torchlean_cuda_buffer_broadcast_to"]
+@[never_extract, extern "torchlean_cuda_buffer_broadcast_to"]
 opaque broadcastTo (x : @& Buffer) (inDims outDims axisMap : @& Array Nat) : Buffer
 
 /--
@@ -375,7 +375,7 @@ shape by summing over broadcasted axes.
 
 This uses the same `(inDims,outDims,axisMap)` convention as `broadcastTo`.
 -/
-@[extern "torchlean_cuda_buffer_reduce_from_broadcast"]
+@[never_extract, extern "torchlean_cuda_buffer_reduce_from_broadcast"]
 opaque reduceFromBroadcastTo (dOut : @& Buffer) (inDims outDims axisMap : @& Array Nat) : Buffer
 
 /--
@@ -383,7 +383,7 @@ Swap adjacent axes at `depth` for a contiguous buffer described by `dims`.
 
 `depth = 0` swaps the first two axes; `depth = 1` swaps axes 1 and 2; etc.
 -/
-@[extern "torchlean_cuda_buffer_swap_adjacent_at_depth"]
+@[never_extract, extern "torchlean_cuda_buffer_swap_adjacent_at_depth"]
 opaque swapAdjacentAtDepth (x : @& Buffer) (dims : @& Array Nat) (depth : UInt32) : Buffer
 
 /--
@@ -391,7 +391,7 @@ Reduce-sum along `axis` for an N-D contiguous buffer described by `dims` (outerm
 
 The returned buffer is laid out row-major with shape `dims` with the `axis` dimension removed.
 -/
-@[extern "torchlean_cuda_buffer_reduce_sum_axis"]
+@[never_extract, extern "torchlean_cuda_buffer_reduce_sum_axis"]
 opaque reduceSumAxis (x : @& Buffer) (dims : @& Array Nat) (axis : UInt32) : Buffer
 
 /--
@@ -407,7 +407,7 @@ Output:
 Indices that fit in `UInt32` but are out of bounds are totalized to `0` rows.
 Large `Nat` values outside the FFI index range are rejected by the runtime.
 -/
-@[extern "torchlean_cuda_buffer_gather_rows"]
+@[never_extract, extern "torchlean_cuda_buffer_gather_rows"]
 opaque gatherRows (mat : @& Buffer) (rows cols : UInt32) (indices : @& Array Nat) (k : UInt32) : Buffer
 
 /--
@@ -415,7 +415,7 @@ Scatter-add into a single matrix row.
 
 Returns a copy of `mat` with `out[i,:] += rowVec`.
 -/
-@[extern "torchlean_cuda_buffer_scatter_add_row"]
+@[never_extract, extern "torchlean_cuda_buffer_scatter_add_row"]
 opaque scatterAddRow (mat rowVec : @& Buffer) (rows cols : UInt32) (i : UInt32) : Buffer
 
 /--
@@ -425,7 +425,7 @@ Semantics: `out = mat` with `out[indices[r], j] += values[r, j]` for each `r < k
 Indices that fit in `UInt32` but are out of bounds are ignored; repeated indices accumulate
 (scatter-add). Large `Nat` values outside the FFI index range are rejected by the runtime.
 -/
-@[extern "torchlean_cuda_buffer_scatter_add_rows"]
+@[never_extract, extern "torchlean_cuda_buffer_scatter_add_rows"]
 opaque scatterAddRows (mat values : @& Buffer) (rows cols : UInt32) (indices : @& Array Nat) (k : UInt32) :
   Buffer
 

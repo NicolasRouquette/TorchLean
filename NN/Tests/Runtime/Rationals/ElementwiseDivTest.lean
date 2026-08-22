@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Utils
+public import NN.Runtime.Autograd.Train
 public import NN.Tensor
 
 /-!
@@ -72,12 +72,12 @@ input gradients against the exact rational references. -/
 def checkDiv : Runtime.Autograd.Result Bool := do
   let t0 : Tape ℚ := Tape.empty
   let m : TapeM ℚ _ := do
-    let aId ← TapeM.leaf a (name := some "a") (requires_grad := true)
-    let bId ← TapeM.leaf b (name := some "b") (requires_grad := true)
+    let aId ← TapeM.leaf a (name := some "a") (requiresGrad := true)
+    let bId ← TapeM.leaf b (name := some "b") (requiresGrad := true)
     let yId ← TapeM.div (s := s2) aId bId
     let t ← TapeM.getTape
     let yVal ← liftM (Tape.requireValue (α := ℚ) (t := t) (s := s2) yId)
-    let grads ← liftM (Tape.backward (t := t) yId (Runtime.Autograd.AnyTensor.mk dLdy))
+    let grads ← liftM (Tape.backward (t := t) yId (Spec.PackedTensor.ofTensor dLdy))
     pure (aId, bId, yVal, grads)
   let ((aId, bId, yVal, grads), _) ← TapeM.run t0 m
   let da ← Train.requireGradTensor (tag := tag) (s := s2) grads aId

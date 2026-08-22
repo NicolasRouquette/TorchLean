@@ -88,13 +88,13 @@ private theorem buildFrom_preserves_denotation
       st') :
     ∀ x : Tensor α inShape,
       NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-        (input := NN.IR.DVal.mk (α := α) inShape x)
+        (input := Spec.PackedTensor.mk (α := α) inShape x)
         (i := i) (vals := denoteAllState (α := α) inShape st x) =
         .ok (denoteAllState (α := α) inShape st' x) := by
   classical
   intro x
   rcases st with ⟨ss, gd⟩
-  let vals0 : Array (NN.IR.DVal α) :=
+  let vals0 : Array (Spec.PackedTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
   -- The runtime context corresponding to the already-lowered prefix.
   let ctx : TList α ([inShape] ++ ss) :=
@@ -120,7 +120,7 @@ private theorem buildFrom_preserves_denotation
         -- Reduce the successful `getNode` and eliminate the resulting `do`-binder.
         simp (config := { failIfUnchanged := false })
           [hN] at hBuild
-        let input : NN.IR.DVal α := NN.IR.DVal.mk (α := α) inShape x
+        let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
         -- Tail correctness helper: wrap the recursive call so the termination side-goal is solved
         -- immediately at the call site.
         have tail
@@ -147,10 +147,10 @@ private theorem buildFrom_preserves_denotation
           (hEval :
             NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                 (input := input) (vals := vals0) (i := i) =
-              .ok (NN.IR.DVal.mk (α := α) τ (nodeData.eval ctx)))
+              .ok (Spec.PackedTensor.mk (α := α) τ (nodeData.eval ctx)))
           (hStep :
             denoteAllState (α := α) inShape st1 x =
-              vals0.push (NN.IR.DVal.mk (α := α) τ (nodeData.eval ctx))) :
+              vals0.push (Spec.PackedTensor.mk (α := α) τ (nodeData.eval ctx))) :
             NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
                 (input := input) (i := i) (vals := vals0) =
               .ok (denoteAllState (α := α) inShape st' x) := by
@@ -354,7 +354,7 @@ theorem denoteAll_eq_of_lowerToForwardGraph
     (h : lowerToForwardGraph (α := α) g payload = .ok exec) :
     ∀ x : Tensor α exec.inShape,
       NN.IR.Graph.denoteAll (α := α) (g := g) (payload := payload)
-          (input := NN.IR.DVal.mk (α := α) exec.inShape x) =
+          (input := Spec.PackedTensor.mk (α := α) exec.inShape x) =
         .ok (ForwardGraph.denoteAll (α := α) (e := exec) x) := by
   classical
   -- Unfold the lowering pass.
@@ -406,21 +406,21 @@ theorem denoteAll_eq_of_lowerToForwardGraph
               -- Evaluate node 0 (`.input`), then apply the semantic equivalence lemma from `i=1`.
               have h0 :
                   NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
-                      (input := NN.IR.DVal.mk (α := α) n0.outShape x) (vals := #[]) (i := 0) =
-                    .ok (NN.IR.DVal.mk (α := α) n0.outShape x) := by
-                simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN0, hk0, NN.IR.Graph.expectShape,
-                  NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
+                      (input := Spec.PackedTensor.mk (α := α) n0.outShape x) (vals := #[]) (i := 0) =
+                    .ok (Spec.PackedTensor.mk (α := α) n0.outShape x) := by
+                simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                  NN.IR.Graph.normalizeNodeOutput, hN0, hk0, NN.IR.Graph.expectShape,
                   throw_eq_error]
                 rfl
               have hTail :
                   NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-                      (input := NN.IR.DVal.mk (α := α) n0.outShape x)
-                      (i := 1) (vals := #[NN.IR.DVal.mk (α := α) n0.outShape x]) =
+                      (input := Spec.PackedTensor.mk (α := α) n0.outShape x)
+                      (i := 1) (vals := #[Spec.PackedTensor.mk (α := α) n0.outShape x]) =
                     .ok (denoteAllState (α := α) n0.outShape stFinal x) := by
                 have hInit :
                     denoteAllState (α := α) n0.outShape (st := (⟨[], .nil⟩ : State α n0.outShape)) x
                       =
-                      #[NN.IR.DVal.mk (α := α) n0.outShape x] := by
+                      #[Spec.PackedTensor.mk (α := α) n0.outShape x] := by
                   simp
                 simpa [hInit] using
                   (buildFrom_preserves_denotation (α := α) (g := g) (payload := payload) (inShape :=
@@ -443,7 +443,6 @@ theorem denoteAll_eq_of_lowerToForwardGraph
                     simp
               -- With `0 < size`, the `if` guard in `denoteAllFrom` is true at `i=0`.
               unfold NN.IR.Graph.denoteAllFrom
-              simp only [NN.IR.DVal.mk] at h0 hTail ⊢
               rw [dif_pos hSize, h0, hExec]
               simpa using hTail
           all_goals

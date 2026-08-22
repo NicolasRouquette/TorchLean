@@ -21,6 +21,8 @@ namespace TorchLean
 
 namespace nn
 
+namespace Internal
+
 /-- Number of scalar elements represented by a list of tensor shapes. -/
 def elementCount (shapes : List Shape) : Nat :=
   shapes.foldl (fun acc s => acc + Spec.Shape.size s) 0
@@ -31,14 +33,9 @@ def trainableCount : List Shape → List Bool → Nat
   | _ :: shapes, false :: flags => trainableCount shapes flags
   | _, _ => 0
 
-/-- Dimensions of a tensor shape, outermost first. Scalars have no dimensions. -/
-def shapeDims : Shape → List Nat
-  | .scalar => []
-  | .dim n rest => n :: shapeDims rest
-
 /-- User-facing tensor shape display for one model-summary shape. -/
 def shapeDisplay (s : Shape) : String :=
-  match shapeDims s with
+  match Spec.Shape.toList s with
   | [] => "scalar"
   | dims => "[" ++ String.intercalate ", " (dims.map toString) ++ "]"
 
@@ -47,6 +44,8 @@ def shapeListString (shapes : List Shape) : String :=
   match shapes with
   | [] => "[]"
   | _ => "[" ++ String.intercalate ", " (shapes.map shapeDisplay) ++ "]"
+
+end Internal
 
 /-- Structured per-layer summary derived from a checked sequential model. -/
 structure LayerSummary where
@@ -69,8 +68,9 @@ namespace LayerSummary
 
 /-- One-line rendering of one layer summary. -/
 def render (s : LayerSummary) : String :=
-  s!"  [{s.index}] {s.kind}: {shapeDisplay s.inputShape} -> {shapeDisplay s.outputShape} " ++
-    s!"params={s.paramCount}, state={s.stateCount} {shapeListString s.stateShapes}"
+  s!"  [{s.index}] {s.kind}: {Internal.shapeDisplay s.inputShape} -> " ++
+    s!"{Internal.shapeDisplay s.outputShape} params={s.paramCount}, state={s.stateCount} " ++
+    Internal.shapeListString s.stateShapes
 
 instance : ToString LayerSummary where
   toString := render
@@ -96,7 +96,8 @@ namespace ModelSummary
 
 /-- Header line for the model summary. -/
 def header (s : ModelSummary) : String :=
-  s!"Sequential: {shapeDisplay s.inputShape} -> {shapeDisplay s.outputShape}, " ++
+  s!"Sequential: {Internal.shapeDisplay s.inputShape} -> " ++
+    s!"{Internal.shapeDisplay s.outputShape}, " ++
     s!"layers={s.layerCount}, params={s.totalParams}, state={s.totalState}"
 
 /-- Multi-line rendering of the structured model summary. -/
@@ -133,8 +134,8 @@ def summary {σ τ : Shape} (model : Sequential σ τ) : ModelSummary :=
     outputShape := τ
     layers := layers
     layerCount := layers.length
-    totalParams := trainableCount (stateShapes model) (requiresGrad model)
-    totalState := elementCount (stateShapes model) }
+    totalParams := Internal.trainableCount (stateShapes model) (requiresGrad model)
+    totalState := Internal.elementCount (stateShapes model) }
 
 /--
 Model description derived from a sequential model value.

@@ -40,7 +40,7 @@ structure Trainer.DataSource (σ τ : Shape) where
     {α : Type} →
     [Context α] →
     [Runtime.FromFloat α] →
-    IO (Training.Dataset (SupervisedSample α σ τ))
+    IO (Training.Dataset (Sample.Supervised α σ τ))
 ```
 
 The `IO` is doing real work. A dataset may open a file, parse text, allocate arrays, or discover a
@@ -126,7 +126,9 @@ literal itself fails to elaborate. If the mismatch instead arrives from runtime 
 returns an error before constructing the dataset.
 
 `Data.samples`, `Data.singleton`, and `Data.floatSamples` serve list-backed or generated data.
-`Data.regressionGrid` builds the deterministic grid used by the running MLP.
+The running MLP constructs a deterministic input grid with `Data.Synthetic.squareGrid`, maps its
+target over the leading axis with `Tensor.mapLeading`, and passes both tensors to
+`Data.tensorDataset`.
 
 # A Real CSV Run
 

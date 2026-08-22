@@ -76,21 +76,21 @@ def Pool2DOperation.denote
   | .maximum =>
       Spec.maxPool2dMultiSpec (α := α) (kH := kH) (kW := kW)
         (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-        (layer := ({} : Spec.MaxPool2DSpec kH kW stride hkH hkW hs)) (input := x)
+        (layer := ({} : Spec.MaxPool2dSpec kH kW stride hkH hkW hs)) (input := x)
   | .maximumPadded padding =>
       Spec.maxPool2dMultiSpecPad (α := α) (kH := kH) (kW := kW)
         (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding := padding)
-        (layer := ({} : Spec.MaxPool2DSpec kH kW stride hkH hkW hs)) (input := x)
+        (layer := ({} : Spec.MaxPool2dSpec kH kW stride hkH hkW hs)) (input := x)
   | .average =>
       Spec.avgPool2dMultiSpec (α := α) (kH := kH) (kW := kW)
         (inH := inH) (inW := inW) (inC := inC) (stride := stride)
         (h1 := hkH) (h2 := hkW)
-        (layer := ({} : Spec.AvgPool2DSpec kH kW stride hkH hkW hs)) (input := x)
+        (layer := ({} : Spec.AvgPool2dSpec kH kW stride hkH hkW hs)) (input := x)
   | .averagePadded padding =>
       Spec.avgPool2dMultiSpecPad (α := α) (kH := kH) (kW := kW)
         (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding := padding)
         (h1 := hkH) (h2 := hkW)
-        (layer := ({} : Spec.AvgPool2DSpec kH kW stride hkH hkW hs)) (input := x)
+        (layer := ({} : Spec.AvgPool2dSpec kH kW stride hkH hkW hs)) (input := x)
 
 /-- Evaluate any supported CHW pooling operation in its canonical two-node graph. -/
 theorem evalAt_pool2d_eq
@@ -105,11 +105,11 @@ theorem evalAt_pool2d_eq
           (.dim inC (.dim inH (.dim inW .scalar)))
           (op.outShape inC inH inW kH kW stride))
         (payload := {})
-        (input := DVal.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x)
-        (vals := #[DVal.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x)
+        (vals := #[Spec.PackedTensor.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) (op.outShape inC inH inW kH kW stride)
+        (Spec.PackedTensor.mk (α := α) (op.outShape inC inH inW kH kW stride)
           (op.denote hkH hkW hs x)) := by
   cases op <;>
     simp [Pool2DOperation.contractName, Pool2DOperation.padding] at hHeight hWidth <;>
@@ -130,14 +130,14 @@ theorem evalAt_maxPool2d_eq
           (.dim inC (.dim inH (.dim inW .scalar)))
           (Spec.pool2dMultiOutShape inC inH inW kH kW stride))
         (payload := {})
-        (input := DVal.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x)
-        (vals := #[DVal.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x)
+        (vals := #[Spec.PackedTensor.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) (Spec.pool2dMultiOutShape inC inH inW kH kW stride)
+        (Spec.PackedTensor.mk (α := α) (Spec.pool2dMultiOutShape inC inH inW kH kW stride)
           (Spec.maxPool2dMultiSpec (α := α) (kH := kH) (kW := kW)
             (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-            (layer := ({} : Spec.MaxPool2DSpec kH kW stride hkH hkW hs)) (input := x))) := by
+            (layer := ({} : Spec.MaxPool2dSpec kH kW stride hkH hkW hs)) (input := x))) := by
   exact evalAt_pool2d_eq .maximum x hkH hkW hs hHeight hWidth
 
 /-- Local IR semantics for padded max-pooling over CHW tensors. -/
@@ -153,14 +153,14 @@ theorem evalAt_maxPool2dPad_eq
           (.dim inC (.dim inH (.dim inW .scalar)))
           (Spec.pool2dMultiOutShapePad inC inH inW kH kW stride padding))
         (payload := {})
-        (input := DVal.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x)
-        (vals := #[DVal.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x)
+        (vals := #[Spec.PackedTensor.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) (Spec.pool2dMultiOutShapePad inC inH inW kH kW stride padding)
+        (Spec.PackedTensor.mk (α := α) (Spec.pool2dMultiOutShapePad inC inH inW kH kW stride padding)
           (Spec.maxPool2dMultiSpecPad (α := α) (kH := kH) (kW := kW)
             (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding := padding)
-            (layer := ({} : Spec.MaxPool2DSpec kH kW stride hkH hkW hs)) (input := x))) := by
+            (layer := ({} : Spec.MaxPool2dSpec kH kW stride hkH hkW hs)) (input := x))) := by
   exact evalAt_pool2d_eq (.maximumPadded padding) x hkH hkW hs hHeight hWidth
 
 /-- Local IR semantics for unpadded average-pooling over CHW tensors. -/
@@ -176,15 +176,15 @@ theorem evalAt_avgPool2d_eq
           (.dim inC (.dim inH (.dim inW .scalar)))
           (Spec.pool2dMultiOutShape inC inH inW kH kW stride))
         (payload := {})
-        (input := DVal.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x)
-        (vals := #[DVal.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x)
+        (vals := #[Spec.PackedTensor.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) (Spec.pool2dMultiOutShape inC inH inW kH kW stride)
+        (Spec.PackedTensor.mk (α := α) (Spec.pool2dMultiOutShape inC inH inW kH kW stride)
           (Spec.avgPool2dMultiSpec (α := α) (kH := kH) (kW := kW)
             (inH := inH) (inW := inW) (inC := inC) (stride := stride)
             (h1 := hkH) (h2 := hkW)
-            (layer := ({} : Spec.AvgPool2DSpec kH kW stride hkH hkW hs)) (input := x))) := by
+            (layer := ({} : Spec.AvgPool2dSpec kH kW stride hkH hkW hs)) (input := x))) := by
   exact evalAt_pool2d_eq .average x hkH hkW hs hHeight hWidth
 
 /-- Local IR semantics for padded average-pooling over CHW tensors. -/
@@ -200,15 +200,15 @@ theorem evalAt_avgPool2dPad_eq
           (.dim inC (.dim inH (.dim inW .scalar)))
           (Spec.pool2dMultiOutShapePad inC inH inW kH kW stride padding))
         (payload := {})
-        (input := DVal.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x)
-        (vals := #[DVal.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x)
+        (vals := #[Spec.PackedTensor.mk (α := α) (.dim inC (.dim inH (.dim inW .scalar))) x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) (Spec.pool2dMultiOutShapePad inC inH inW kH kW stride padding)
+        (Spec.PackedTensor.mk (α := α) (Spec.pool2dMultiOutShapePad inC inH inW kH kW stride padding)
           (Spec.avgPool2dMultiSpecPad (α := α) (kH := kH) (kW := kW)
             (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding := padding)
             (h1 := hkH) (h2 := hkW)
-            (layer := ({} : Spec.AvgPool2DSpec kH kW stride hkH hkW hs)) (input := x))) := by
+            (layer := ({} : Spec.AvgPool2dSpec kH kW stride hkH hkW hs)) (input := x))) := by
   exact evalAt_pool2d_eq (.averagePadded padding) x hkH hkW hs hHeight hWidth
 
 end IRStep

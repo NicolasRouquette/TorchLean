@@ -46,13 +46,6 @@ abbrev spectralWeightShape {d : Nat} (spatial : Vector Nat d) (channels : Nat) :
 
 namespace Internal
 
-/-- The number of entries represented by a list-shaped tensor is the product of its axes. -/
-@[simp] theorem size_ofList_eq_prod (dims : List Nat) :
-    Shape.size (Shape.ofList dims) = dims.prod := by
-  induction dims with
-  | nil => simp [Shape.ofList, Shape.size]
-  | cons dim dims ih => simp [Shape.ofList, Shape.size, ih]
-
 /-- Decode a row-major flat index into coordinates for the given axis extents. -/
 def coordinates : List Nat → Nat → List Nat
   | [], _ => []
@@ -192,9 +185,6 @@ def removeScalarChannel {d : Nat} (spatial : Vector Nat d) :
 
 end Internal
 
-/-- Activation applied after each spectral-plus-pointwise residual block. -/
-abbrev Activation := FNO1D.Activation
-
 /--
 One multidimensional FNO block.
 
@@ -203,7 +193,7 @@ the discarded frequency rectangle is set to zero, and a pointwise affine skip is
 inverse transform.
 -/
 def block {d : Nat} (spatial modes : Vector Nat d) (width : Nat)
-    (activation : Activation := .tanh) (seed : Nat := 0) :
+    (activation : FNO1D.Activation := .tanh) (seed : Nat := 0) :
     Layer (fieldShape spatial width) (fieldShape spatial width) :=
   let grid := gridSize spatial
   let field : Shape := fieldShape spatial width
@@ -221,7 +211,7 @@ def block {d : Nat} (spatial modes : Vector Nat d) (width : Nat)
     Torch.Init.tensor (s := biasShape) (sch := .zeros) (seed := seed + 3)
   { kind := "FNOBlock"
     stateShapes := [spectralShape, spectralShape, skipShape, biasShape]
-    initState := Torch.tlistQuad spectralReal0 spectralImag0 skip0 bias0
+    initState := .cons spectralReal0 (.cons spectralImag0 (.cons skip0 (.cons bias0 .nil)))
     runtimeInit := some <| .cons (.uniform (-0.05) 0.05 seed) <|
       .cons (.uniform (-0.05) 0.05 (seed + 1)) <|
       .cons (.uniform (-0.05) 0.05 (seed + 2)) <| .cons .zeros .nil
@@ -287,7 +277,7 @@ def block {d : Nat} (spatial modes : Vector Nat d) (width : Nat)
 
 /-- Repeated multidimensional FNO blocks with deterministic, disjoint parameter seeds. -/
 def blocks {d : Nat} (spatial modes : Vector Nat d) (width blockCount : Nat)
-    (activation : Activation := .tanh) (seed : Nat := 0) :
+    (activation : FNO1D.Activation := .tanh) (seed : Nat := 0) :
     Seq (fieldShape spatial width) (fieldShape spatial width) :=
   match blockCount with
   | 0 => Seq.id _
@@ -302,7 +292,7 @@ The dense reference carries real and imaginary Fourier components explicitly, so
 scalar backends. Fused implementations may be selected through backend-specific kernel capsules.
 -/
 def model {d : Nat} (spatial modes : Vector Nat d) (width blockCount : Nat)
-    (activation : Activation := .tanh) (seed : Nat := 0) :
+    (activation : FNO1D.Activation := .tanh) (seed : Nat := 0) :
     Seq (scalarFieldShape spatial) (scalarFieldShape spatial) :=
   let grid := gridSize spatial
   let lift := FNO1D.matAffine grid 1 width seed (seed + 1)

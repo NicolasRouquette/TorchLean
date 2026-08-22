@@ -90,7 +90,7 @@ $$`y_i=b_i+\sum_{j=0}^{n-1}W_{ij}x_j.`
 The runtime weights, bias, and input may begin near their real counterparts. Each product introduces
 another rounded result, the dot product accumulates those results in a declared order, and the bias
 addition rounds once more. `linearErrorBudget` is the explicit expression obtained by composing the
-matrix-vector and final-addition bounds. `approxT_linear_fp32` proves that this expression bounds
+matrix-vector and final-addition bounds. `approxTensor_linear_fp32` proves that this expression bounds
 every output coordinate.
 
 This matters more than a theorem that merely says some tolerance exists. A caller can inspect the
@@ -103,11 +103,11 @@ import NN.Proofs.RuntimeApprox.FP32.Layers
 open NN.Proofs.RuntimeApprox.FP32
 
 #check linearErrorBudget
-#check approxT_linear_fp32
+#check approxTensor_linear_fp32
 ```
 
 The real side uses `LinearSpec ℝ inDim outDim`; the rounded side uses the same tensor
-specification at scalar type `R`, the FP32 abbreviation in this proof namespace. `approxT` relates
+specification at scalar type `R`, the FP32 abbreviation in this proof namespace. `approxTensor` relates
 the two tensors componentwise after interpreting the rounded values as reals. Thus the theorem is
 about a shaped layer, not an isolated scalar multiply.
 
@@ -124,9 +124,9 @@ import NN.Proofs.RuntimeApprox.FP32.MLP
 open NN.Proofs.RuntimeApprox.FP32
 
 #check reluTwoLayerMlpErrorBudget
-#check approxT_reluTwoLayerMlp_float32
+#check approxTensor_reluTwoLayerMlp_float32
 #check tanhMlp3ErrorBudget
-#check approxT_tanhMlp3_fp32
+#check approxTensor_tanhMlp3_fp32
 ```
 
 These are architecture-shaped theorems for `Linear → ReLU → Linear` and
@@ -142,7 +142,7 @@ gives an error `epsOut` at a fixed input. Inflating every output coordinate by t
 $$`[\mathrm{lo}-\varepsilon_{\mathrm{out}},\;\mathrm{hi}+\varepsilon_{\mathrm{out}}].`
 
 `ibpBound_contains_reluTwoLayerMlp_float32` proves this construction pointwise for the two-layer
-ReLU MLP. It combines the real IBP theorem with `approxT_reluTwoLayerMlp_float32`; its named budget
+ReLU MLP. It combines the real IBP theorem with `approxTensor_reluTwoLayerMlp_float32`; its named budget
 is `ibpReluTwoLayerErrorBudget`. The budget depends on the chosen real input, while
 `inflateBoxUniform` merely applies one chosen amount uniformly across output coordinates. To obtain
 one rounded enclosure valid for every input in the input box, first prove a domain-wide upper bound

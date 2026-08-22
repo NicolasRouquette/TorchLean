@@ -223,7 +223,7 @@ theorem cert_encloses_semantics
               | nil =>
                   simp [certStepNode?, hkKind, hparents] at hcertStep
               | cons p2 _ =>
-                  -- From the certificate step: B = box_add Bp1 Bp2.
+                  -- From the certificate step: B = boxAdd Bp1 Bp2.
                   have hp1c : p1 < cert.size :=
                     parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
                   have hp2c : p2 < cert.size :=
@@ -283,7 +283,7 @@ theorem cert_encloses_semantics
                                     have hvalStep'' := hvalStep'
                                     simp [hgv1, hgv2, hxy] at hvalStep''
                                     cases hvalStep''
-                                    -- Make `box_add` reducible by destructing the boxes and using
+                                    -- Make `boxAdd` reducible by destructing the boxes and using
                                     -- the equal-dimension branch.
                                     cases B1 with
                                     | mk n1 lo1 hi1 =>
@@ -344,7 +344,7 @@ theorem cert_encloses_semantics
                                           simpa [x, y, h2] using h1
                                         -- Prove enclosure for the canonical “equal-dimension”
                                         -- result box,
-                                        -- then rewrite the goal box (`box_add …`) using `hBoxEq`.
+                                        -- then rewrite the goal box (`boxAdd …`) using `hBoxEq`.
                                         have hCanon :
                                             EnclosesBox
                                               { dim := n1
@@ -438,9 +438,9 @@ theorem cert_encloses_semantics
                                     simpa [hB2, hv2] using h
                                   rcases hpar1 with ⟨hDim1, hx1⟩
                                   rcases hpar2 with ⟨hDim2, hx2⟩
-                                  have hcertStep'' : some B = box_mul_elem (α := ℝ) B1 B2 := by
+                                  have hcertStep'' : some B = boxMulElem (α := ℝ) B1 B2 := by
                                     simpa [hgb1, hgb2] using hcertStep'
-                                  cases hmul : box_mul_elem (α := ℝ) B1 B2 with
+                                  cases hmul : boxMulElem (α := ℝ) B1 B2 with
                                   | none =>
                                       simp [hmul] at hcertStep''
                                   | some Bmul =>
@@ -473,14 +473,14 @@ theorem cert_encloses_semantics
                                         | mk n1 lo1 hi1 =>
                                           cases B2 with
                                           | mk n2 lo2 hi2 =>
-                                            -- `Bmul` coming from `box_mul_elem` forces equal
+                                            -- `Bmul` coming from `boxMulElem` forces equal
                                             -- dimensions.
                                             have hn12 : n1 = n2 := by
                                               by_contra hne
-                                              have : box_mul_elem (α := ℝ)
+                                              have : boxMulElem (α := ℝ)
                                                   { dim := n1, lo := lo1, hi := hi1 }
                                                   { dim := n2, lo := lo2, hi := hi2 } = none := by
-                                                unfold box_mul_elem
+                                                unfold boxMulElem
                                                 simp [hne]
                                               have : False := by
                                                 simp [this] at hmul
@@ -766,8 +766,8 @@ theorem cert_encloses_semantics
                       have hpar' : EnclosesBox B1 v1 := by
                         have h := parentIH p1 (by simp [hparents])
                         simpa [hB1, hv1] using h
-                      have hB_eq : B = box_relu (α := ℝ) B1 := by
-                        have : some B = some (box_relu (α := ℝ) B1) := by
+                      have hB_eq : B = boxRelu (α := ℝ) B1 := by
+                        have : some B = some (boxRelu (α := ℝ) B1) := by
                           simpa [hgb] using hcertStep'
                         cases this
                         rfl
@@ -780,7 +780,7 @@ theorem cert_encloses_semantics
                       subst hB_eq
                       subst hv_eq
                       rcases hpar' with ⟨hDim, hxEnc⟩
-                      have hDimOut : (box_relu (α := ℝ) B1).dim = v1.n := by
+                      have hDimOut : (boxRelu (α := ℝ) B1).dim = v1.n := by
                         exact Eq.trans
                           (NN.MLTheory.CROWN.Graph.Theorems.box_relu_dim (α := ℝ) B1)
                           hDim
@@ -795,9 +795,9 @@ theorem cert_encloses_semantics
                           (x := castDimScalar (α := ℝ) hDim.symm v1.v)
                           (hx := by
                             simpa [castDimScalar] using hxEnc))
-                      -- `box_relu_sound` already inserts a cast to match `(box_relu ...).dim`;
+                      -- `box_relu_sound` already inserts a cast to match `(boxRelu ...).dim`;
                       -- after rewriting the value cast, it is exactly the enclosure we need.
-                      have hOuter : B1.dim = (box_relu (α := ℝ) B1).dim := by
+                      have hOuter : B1.dim = (boxRelu (α := ℝ) B1).dim := by
                         simpa using
                           (NN.MLTheory.CROWN.Graph.Theorems.box_relu_dim (α := ℝ) B1).symm
                       have hReluVal :
@@ -1137,7 +1137,7 @@ theorem cert_encloses_semantics
                 parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
               have hp1v : p1 < vals.size :=
                 parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
-              -- Certificate step delegates to `ibp_linear`.
+              -- Certificate step delegates to `ibpLinear`.
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               -- Semantics step uses the linear spec from ParamStore.
@@ -1159,9 +1159,9 @@ theorem cert_encloses_semantics
                         have h := parentIH p1 (by simp [hparents])
                         simpa [hB1, hv1] using h
                       rcases hpar' with ⟨hDim, hxEnc⟩
-                      -- Unfold `ibp_linear` and use the already-proved `IBP.linear` soundness
+                      -- Unfold `ibpLinear` and use the already-proved `IBP.linear` soundness
                       -- theorem.
-                      unfold ibp_linear at hcertStep'
+                      unfold ibpLinear at hcertStep'
                       cases hlin : ps.linearWB[k]? with
                       | none =>
                           have : (none : Option (FlatBox ℝ)) = some B := by
@@ -1272,7 +1272,7 @@ theorem cert_encloses_semantics
                         have h := parentIH p1 (by simp [hparents])
                         simpa [hB1, hv1] using h
                       rcases hpar' with ⟨hDim, hxEnc⟩
-                      unfold ibp_matmul at hcertStep'
+                      unfold ibpMatmul at hcertStep'
                       cases hmat : ps.matmulW[k]? with
                       | none =>
                           have : (none : Option (FlatBox ℝ)) = some B := by

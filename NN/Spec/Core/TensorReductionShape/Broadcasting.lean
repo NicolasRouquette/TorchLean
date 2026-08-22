@@ -42,8 +42,7 @@ a sum-reduction along the broadcasted axes (see `reduceFromBroadcastTo` below).
   `torch.broadcast_to`). -/
 def broadcastTo {α : Type} [Inhabited α] :
   {s₁ s₂ : Shape} → Shape.CanBroadcastTo s₁ s₂ → Tensor α s₁ → Tensor α s₂
-| _, _, Shape.CanBroadcastTo.scalar_to_any _, t =>
-    replicate t
+| _, _, Shape.CanBroadcastTo.scalar, t => t
 | _, _, Shape.CanBroadcastTo.dim_eq tail, Tensor.dim xs =>
     Tensor.dim (fun i => broadcastTo tail (xs i))
 | _, _, Shape.CanBroadcastTo.dim_1_to_n tail, Tensor.dim xs =>

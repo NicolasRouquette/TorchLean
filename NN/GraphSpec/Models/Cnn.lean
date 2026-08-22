@@ -13,7 +13,7 @@ public import NN.GraphSpec.Primitives.Vision
 
 This is a GraphSpec version of the classic small CNN:
 
-`Conv2D → ReLU → MaxPool2D → Conv2D → ReLU → MaxPool2D → Flatten → Linear`
+`Conv2d → ReLU → MaxPool2d → Conv2d → ReLU → MaxPool2d → Flatten → Linear`
 
 Notes:
 - This is still a **chain** model (no skip connections), so it fits the sequential GraphSpec core
@@ -26,9 +26,9 @@ Notes:
 The point of GraphSpec is that the *shape interface is part of the type*. Convolution and pooling
 therefore bake their output shapes into the type, using the standard formulas:
 
-- Conv2D:
+- Conv2d:
   `outH = Spec.Shape.slidingWindowOutDim inH kH stride padding` (and similarly for `outW`)
-- MaxPool2D:
+- MaxPool2d:
   `outH = Spec.poolOutDim inH kH stride 0` (and similarly for `outW`)
 
 This file defines small helper abbreviations (`outH/outW/poolH/poolW`) so that the overall
@@ -48,7 +48,7 @@ namespace NN
 namespace GraphSpec
 namespace Models
 
-open _root_.NN.Spec
+open _root_.Spec
 open NN.Tensor
 
 /-! ### Conv/pool output size helpers -/

@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.IR.HardMask
-public import NN.Runtime.Autograd.IRExec.Helpers
+public import NN.Runtime.Autograd.IRExec.Lowering.Primitives
 public import NN.Spec.Layers.Attention
 
 /-!
@@ -226,7 +226,7 @@ def buildFrom
                     let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
                     let ip ← parentIdx pId sIn
                     let expected : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
-                    let layer : Spec.MaxPool2DSpec kH kW stride hkH hkW hs := {}
+                    let layer : Spec.MaxPool2dSpec kH kW stride hkH hkW hs := {}
                     if hOut : expected = τ then
                       let forward := fun ctx : TList α ([inShape] ++ ss) =>
                         let xCHW := getIdx (α := α) (xs := ctx) ip
@@ -262,7 +262,7 @@ def buildFrom
                     let ip ← parentIdx pId sIn
                     let expected : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW stride
                       padding
-                    let layer : Spec.MaxPool2DSpec kH kW stride hkH hkW hs := {}
+                    let layer : Spec.MaxPool2dSpec kH kW stride hkH hkW hs := {}
                     if hOut : expected = τ then
                       let forward := fun ctx : TList α ([inShape] ++ ss) =>
                         let xCHW := getIdx (α := α) (xs := ctx) ip
@@ -298,7 +298,7 @@ def buildFrom
                     let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
                     let ip ← parentIdx pId sIn
                     let expected : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
-                    let layer : Spec.AvgPool2DSpec kH kW stride hkH hkW hs := {}
+                    let layer : Spec.AvgPool2dSpec kH kW stride hkH hkW hs := {}
                     if hOut : expected = τ then
                       let forward := fun ctx : TList α ([inShape] ++ ss) =>
                         let xCHW := getIdx (α := α) (xs := ctx) ip
@@ -334,7 +334,7 @@ def buildFrom
                     let ip ← parentIdx pId sIn
                     let expected : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW stride
                       padding
-                    let layer : Spec.AvgPool2DSpec kH kW stride hkH hkW hs := {}
+                    let layer : Spec.AvgPool2dSpec kH kW stride hkH hkW hs := {}
                     if hOut : expected = τ then
                       let forward := fun ctx : TList α ([inShape] ++ ss) =>
                         let xCHW := getIdx (α := α) (xs := ctx) ip
@@ -376,11 +376,11 @@ def buildFrom
               let pNode ← g.getNode pId
               let s := pNode.outShape
               let ip ← parentIdx pId s
-              match Spec.Shape.validAxis? (axis := axis) s with
+              match Spec.Shape.nonemptyAxis? (axis := axis) s with
               | none =>
                   throw s!"IRExec: node {i}: reduce_sum invalid axis={axis} for shape {repr s}"
               | some hAxis =>
-                  let hRed := Shape.proveReducibleAlong axis s hAxis.down
+                  let hRed := hAxis.down
                   let expected : Shape := Spec.Tensor.shapeAfterSum s axis
                   if hOut : expected = τ then
                     let forward := fun ctx : TList α ([inShape] ++ ss) =>
@@ -399,11 +399,11 @@ def buildFrom
               let pNode ← g.getNode pId
               let s := pNode.outShape
               let ip ← parentIdx pId s
-              match Spec.Shape.validAxis? (axis := axis) s with
+              match Spec.Shape.nonemptyAxis? (axis := axis) s with
               | none =>
                   throw s!"IRExec: node {i}: reduce_mean invalid axis={axis} for shape {repr s}"
               | some hAxis =>
-                  let hRed := Shape.proveReducibleAlong axis s hAxis.down
+                  let hRed := hAxis.down
                   let expected : Shape := Spec.Tensor.shapeAfterSum s axis
                   if hOut : expected = τ then
                     let forward := fun ctx : TList α ([inShape] ++ ss) =>
@@ -636,14 +636,15 @@ def buildFrom
       | .softmax axis =>
           match n.parents with
           | [pId] => do
-              -- The runtime primitive is last-axis softmax. We keep the lowering pass disciplined and
-              -- reject any request for a non-last axis (callers can insert an explicit `.permute`
-              -- node if they want to model a different axis).
-              OpContracts.checkLastAxis "softmax" axis τ
-              let ip ← parentIdx pId τ
-              let forward := fun ctx : TList α ([inShape] ++ ss) =>
-                Activation.softmaxSpec (α := α) (getIdx (α := α) (xs := ctx) ip)
-              pure <| fwd forward
+              match Spec.Shape.axisInBounds? axis τ with
+              | none =>
+                  throw s!"softmax: invalid axis {axis} for rank {Spec.Shape.rank τ}"
+              | some h =>
+                  parentIdx pId τ >>= fun ip =>
+                    let forward := fun ctx : TList α ([inShape] ++ ss) =>
+                      @Activation.softmaxSpec α _ τ axis h.down
+                        (getIdx (α := α) (xs := ctx) ip)
+                    pure <| fwd forward
           | _ => throw s!"IRExec: node {i}: softmax expects 1 parent ({n.summary})"
       | .hardMaskedSoftmax mask =>
           match n.parents with
@@ -664,11 +665,11 @@ def buildFrom
           match n.parents with
           | [pId] => do
               let (seqLen, embedDim) ←
-                match OpContracts.layerNorm2DParams axis τ with
+                match OpContracts.layerNormMatrixDims axis τ with
                 | .ok p => pure p
                 | .error msg => throw s!"IRExec: node {i}: layernorm: {msg} ({n.summary})"
-              let view2D : Shape := .dim seqLen (.dim embedDim .scalar)
-              if hNumel : Spec.Shape.size τ = Spec.Shape.size view2D then
+              let view2d : Shape := .dim seqLen (.dim embedDim .scalar)
+              if hNumel : Spec.Shape.size τ = Spec.Shape.size view2d then
                 if hSeq : seqLen > 0 then
                   if hEmb : embedDim > 0 then
                     let ip ← parentIdx pId τ
@@ -678,13 +679,13 @@ def buildFrom
                       Spec.fill (α := α) 0 (.dim embedDim .scalar)
                     let forward := fun ctx : TList α ([inShape] ++ ss) =>
                       let x : Tensor α τ := getIdx (α := α) (xs := ctx) ip
-                      let x2D : Tensor α view2D :=
-                        Tensor.reshapeSpec (α := α) (s₁ := τ) (s₂ := view2D) x hNumel
-                      let y2D : Tensor α view2D :=
+                      let x2d : Tensor α view2d :=
+                        Tensor.reshapeSpec (α := α) (s₁ := τ) (s₂ := view2d) x hNumel
+                      let y2d : Tensor α view2d :=
                         Spec.layerNorm (α := α) (seqLen := seqLen) (embedDim := embedDim)
-                          (x := x2D) (gamma := gamma) (beta := beta)
+                          (x := x2d) (gamma := gamma) (beta := beta)
                           (h_seq_pos := hSeq) (h_embed_pos := hEmb)
-                      Tensor.reshapeSpec (α := α) (s₁ := view2D) (s₂ := τ) y2D hNumel.symm
+                      Tensor.reshapeSpec (α := α) (s₁ := view2d) (s₂ := τ) y2d hNumel.symm
                     pure <| fwd forward
                   else
                     throw s!"IRExec: node {i}: layernorm embedDim must be > 0 (got {embedDim})"
@@ -693,7 +694,7 @@ def buildFrom
               else
                 throw <|
                   s!"IRExec: node {i}: layernorm internal error: bad reshape sizes " ++
-                    s!"({Spec.Shape.size τ} vs {Spec.Shape.size view2D}) ({n.summary})"
+                    s!"({Spec.Shape.size τ} vs {Spec.Shape.size view2d}) ({n.summary})"
           | _ =>
               throw s!"IRExec: node {i}: layernorm expects 1 parent ({n.summary})"
       | .reshape inS outS =>

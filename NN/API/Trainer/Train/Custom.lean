@@ -33,7 +33,7 @@ def meanModuleLoss {σ τ : Shape} {α : Type}
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (model : TorchLean.nn.Sequential σ τ)
     (m : Module.Objective α (nn.stateShapes model) [σ, τ])
-    (samples : List (SupervisedSample α σ τ)) : IO α := do
+    (samples : List (Sample.Supervised α σ τ)) : IO α := do
   match samples with
   | [] => pure 0
   | xs =>
@@ -84,7 +84,7 @@ def trainCore {σ τ : Shape} {β : Type}
     let after ← meanModuleLoss model m samples
     let predict :=
       fun (xFloat : Tensor Float σ) => do
-        let x := Tensor.castFloat (Runtime.ofFloat (α := α)) xFloat
+        let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
         let yhat ← Module.Supervised.predict (α := α) runtimeOpts model m x
         Tensor.toFloatIO yhat
     let predictMany :=

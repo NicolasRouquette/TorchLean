@@ -18,10 +18,7 @@ This is a definitional/structural bridge:
 - We show `GraphData.eval` / `GraphData.backpropCtx` coincide with
   `RevGraph.evalRuntime` / `RevGraph.backpropRuntime`.
 
-Deduplication note:
-`Proofs.RuntimeApprox.TList` is defined as an `abbrev` for the *same* heterogeneous context type
-used by the executable autograd-algebra layer (`Proofs.Autograd.Algebra.TList`). This means all
-bridges in this file are genuinely structural/definitional: we do not need to convert between two
+Both sides use `Proofs.Autograd.Algebra.TList` directly, so the bridge does not convert between
 different context representations.
 
 Note on environments (`Δ`):
@@ -90,7 +87,7 @@ evaluate to the same runtime context.
 theorem evalRuntime_of_toGraphData {Γ : List Shape} :
     {ss : List Shape} →
     (g : _root_.Proofs.RuntimeApprox.RevGraph (α := α) toSpec Γ ss) →
-    (xR : RuntimeApprox.TList α Γ) →
+    (xR : TList α Γ) →
       GraphData.eval (α := α) (Δ := Unit) (Γ := Γ) (ss := ss)
           (g := toGraphData (α := α) (toSpec := toSpec) (Γ := Γ) (ss := ss) g) xR ()
         =
@@ -115,8 +112,8 @@ Informally: the executable `GraphData.backpropCtx` computes the same reverse-mod
 theorem backpropRuntime_of_toGraphData {Γ : List Shape} [Add α] :
     {ss : List Shape} →
     (g : _root_.Proofs.RuntimeApprox.RevGraph (α := α) toSpec Γ ss) →
-    (xR : RuntimeApprox.TList α Γ) →
-    (seedR : RuntimeApprox.TList α (Γ ++ ss)) →
+    (xR : TList α Γ) →
+    (seedR : TList α (Γ ++ ss)) →
       GraphData.backpropCtx (α := α) (Δ := Unit) (Γ := Γ) (ss := ss)
           (g := toGraphData (α := α) (toSpec := toSpec) (Γ := Γ) (ss := ss) g) xR () seedR
         =

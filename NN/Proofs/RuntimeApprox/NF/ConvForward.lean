@@ -8,18 +8,18 @@ module
 
 public import NN.Proofs.RuntimeApprox.Graph.ForwardApprox
 public import NN.Proofs.RuntimeApprox.NF.Conv
-public import NN.Proofs.RuntimeApprox.NF.Utils
-public import NN.Spec.Layers.Utils
+public import NN.Proofs.RuntimeApprox.NF.FoldLemmas
+public import NN.Spec.Layers.Conv.TwoD.Padding
 
 /-!
-# Conv2D Forward Approximation
+# Conv2d Forward Approximation
 
-NF (rounded) backend: Conv2D forward runtime→spec approximation.
+NF (rounded) backend: Conv2d forward runtime→spec approximation.
 
 This file proves soundness of the `NFBackend.conv2dPointBound`/`conv2dBoundTensor` bounds and
-packages Conv2D as a `FwdNode` so it composes via `FwdGraph.eval_approx`.
+packages Conv2d as a `FwdNode` so it composes via `FwdGraph.eval_approx`.
 
-PyTorch analogue: a forward Conv2D op (typically `torch.nn.functional.conv2d`) plus the standard
+PyTorch analogue: a forward Conv2d op (typically `torch.nn.functional.conv2d`) plus the standard
 “stack over channels/spatial positions” tensor semantics.
 https://pytorch.org/docs/stable/generated/torch.nn.functional.conv2d.html
 
@@ -27,7 +27,7 @@ https://pytorch.org/docs/stable/generated/torch.nn.functional.conv2d.html
 - Small indexing lemmas (`entry_eq_scalar_get_at_or_zero3`) used to align the
   spec definition of convolution with the bound-generating replay in the runtime proof.
 - `approx_conv2d_point`: elementwise forward error bound for a single `(out_ch, i, j)` output.
-- `approxT_conv2d_spec`: tensor-level `approxT` statement obtained by lifting the pointwise bound.
+- `approxTensor_conv2d_spec`: tensor-level `approxTensor` statement obtained by lifting the pointwise bound.
 - `conv2dNode`: packaging as a `FwdNode` so it composes inside larger graphs.
 
 ## References
@@ -195,28 +195,28 @@ lemma entry_eq_scalar_get_at_or_zero3
 
 private lemma mkInputIdx?_2d
     (out_i out_j di dj stride padding : Nat) :
-    Spec.Private.mkInputIdx? [out_i, out_j] [di, dj] [stride, stride] [padding, padding] =
+    Spec.Conv.Internal.mkInputIdx? [out_i, out_j] [di, dj] [stride, stride] [padding, padding] =
       if _ : out_i * stride + di < padding ∨ out_j * stride + dj < padding then
         none
       else
         some [out_i * stride + di - padding, out_j * stride + dj - padding] := by
   by_cases hq0 : out_i * stride + di < padding
-  · simp [Spec.Private.mkInputIdx?, hq0]
+  · simp [Spec.Conv.Internal.mkInputIdx?, hq0]
   · by_cases hq1 : out_j * stride + dj < padding
-    · simp [Spec.Private.mkInputIdx?, hq0, hq1]
+    · simp [Spec.Conv.Internal.mkInputIdx?, hq0, hq1]
     · have hOr : ¬(out_i * stride + di < padding ∨ out_j * stride + dj < padding) := by
         intro h
         cases h with
         | inl h => exact hq0 h
         | inr h => exact hq1 h
-      simp [Spec.Private.mkInputIdx?, hq0, hq1]
+      simp [Spec.Conv.Internal.mkInputIdx?, hq0, hq1]
 
 private lemma conv_input_val_eq_padded
     {α : Type} [Context α]
     {inC inH inW stride padding : Nat}
     (img : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
     (c : Fin inC) (out_i out_j di dj : Nat) :
-    (match Spec.Private.mkInputIdx? [out_i, out_j] [di, dj] [stride, stride] [padding, padding] with
+    (match Spec.Conv.Internal.mkInputIdx? [out_i, out_j] [di, dj] [stride, stride] [padding, padding] with
       | none => (0 : α)
       | some inIdx => getAtOrZero img (c.val :: inIdx))
       =
@@ -227,25 +227,25 @@ private lemma conv_input_val_eq_padded
               (Shape.dim (inH + 2 * padding) (Shape.dim (inW + 2 * padding) Shape.scalar)))
             (by simp; rw [h4]) img
         else
-          Spec.padMultiChannel img padding)
+          Spec.padChannelsFirst2d img padding)
         [c.val, out_i * stride + di, out_j * stride + dj] := by
   classical
   by_cases h4 : padding = 0
   · subst h4
-    simp [Spec.Private.mkInputIdx?]
+    simp [Spec.Conv.Internal.mkInputIdx?]
   · have hpad :=
-      Spec.get_at_or_zero_pad_multi_channel (α := α) (img := img) (c := c)
-        (p := out_i * stride + di) (q := out_j * stride + dj) (padding := padding)
+      Spec.getAtOrZero_padChannelsFirst2d (α := α) (input := img) (channel := c)
+        (row := out_i * stride + di) (col := out_j * stride + dj) (padding := padding)
     by_cases ht : out_i * stride + di < padding ∨ out_j * stride + dj < padding
     · -- left/top padding: both sides are `0`
       have :
-          Spec.Private.mkInputIdx? [out_i, out_j] [di, dj] [stride, stride] [padding, padding] =
+          Spec.Conv.Internal.mkInputIdx? [out_i, out_j] [di, dj] [stride, stride] [padding, padding] =
             none := by
         simp [mkInputIdx?_2d, ht]
       simp [h4, this, hpad, ht]
     · -- core region: both sides read the original tensor at shifted indices
       have :
-          Spec.Private.mkInputIdx? [out_i, out_j] [di, dj] [stride, stride] [padding, padding] =
+          Spec.Conv.Internal.mkInputIdx? [out_i, out_j] [di, dj] [stride, stride] [padding, padding] =
             some [out_i * stride + di - padding, out_j * stride + dj - padding] := by
         simp [mkInputIdx?_2d, ht]
       simp [h4, this, hpad, ht]
@@ -254,7 +254,7 @@ private lemma conv_input_val_eq_padded
       {α : Type} [Context α]
       {inC outC kH kW stride padding inH inW : Nat}
       {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-      (layer : Spec.Conv2DSpec inC outC kH kW stride padding α h1 h2 h3)
+      (layer : Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3)
       (input : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
       (out_ch : Fin outC)
       (i : Fin (conv2dOutH inH kH stride padding))
@@ -265,7 +265,7 @@ private lemma conv_input_val_eq_padded
           (List.finRange kH).foldl (fun acc (di : Fin kH) =>
               (List.finRange kW).foldl (fun acc (dj : Fin kW) =>
                   acc +
-                    (match Spec.Private.mkInputIdx? [i.val, j.val] [di.val, dj.val] [stride, stride]
+                    (match Spec.Conv.Internal.mkInputIdx? [i.val, j.val] [di.val, dj.val] [stride, stride]
                       [padding, padding] with
                     | none => (0 : α)
                     | some inIdx => getAtOrZero input (in_ch.val :: inIdx)) *
@@ -286,11 +286,11 @@ private lemma conv_input_val_eq_padded
     rfl
 
 -- ---------------------------------------------------------------------------
--- Conv2D forward: pointwise soundness for `conv2dPointBound`.
+-- Conv2d forward: pointwise soundness for `conv2dPointBound`.
 -- ---------------------------------------------------------------------------
 
 /--
-Pointwise forward soundness for Conv2D in the rounded `NF` backend.
+Pointwise forward soundness for Conv2d in the rounded `NF` backend.
 
 Given spec/runtime approximations for the kernel, bias, and input, this bounds the absolute error
 of a single output entry of `Spec.conv2dSpec` by `conv2dPointBound` (a replay-style bound
@@ -305,16 +305,16 @@ theorem approx_conv2d_point
     {inputS : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))}
     {inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar)))}
     {epsK epsB epsX : ℝ}
-    (hK : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) kernelS kernelR
+    (hK : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) kernelS kernelR
       epsK)
-    (hB : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) biasS biasR epsB)
-    (hX : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS inputR
+    (hB : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) biasS biasR epsB)
+    (hX : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS inputR
       epsX)
     (out_ch : Fin outC) (i : Fin (conv2dOutH inH kH stride padding)) (j : Fin (conv2dOutW inW kW
       stride padding)) :
-    let layerS : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    let layerS : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := kernelS, bias := biasS }
-    let layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3 :=
+    let layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3 :=
       { kernel := kernelR, bias := biasR }
     abs
         (toSpec (β := β) (fexp := fexp) (rnd := rnd)
@@ -334,7 +334,7 @@ theorem approx_conv2d_point
         (by simp; rw [h4])
         inputR
     else
-      Spec.padMultiChannel inputR padding
+      Spec.padChannelsFirst2d inputR padding
   let paddedS :=
     if h4 : padding = 0 then
       tensorCast
@@ -342,7 +342,7 @@ theorem approx_conv2d_point
         (by simp; rw [h4])
         inputS
     else
-      Spec.padMultiChannel inputS padding
+      Spec.padChannelsFirst2d inputS padding
 
   let idxs : List (Fin inC × Fin kH × Fin kW) :=
     (List.finRange inC).flatMap (fun in_ch =>
@@ -540,7 +540,7 @@ theorem approx_conv2d_point
     -- `conv2dSpec` defines its padded input via an `if`; rewrite those reads to our `paddedR`
     -- abbreviation so we can reuse `hFoldMulR` without reintroducing proof-term noise.
     have convInputVal_eq_paddedR (in_ch : Fin inC) (di : Fin kH) (dj : Fin kW) :
-        (match Spec.Private.mkInputIdx? [i.val, j.val] [di.val, dj.val] [stride, stride]
+        (match Spec.Conv.Internal.mkInputIdx? [i.val, j.val] [di.val, dj.val] [stride, stride]
               [padding, padding] with
           | none => (0 : R)
           | some inIdx => getAtOrZero inputR (in_ch.val :: inIdx))
@@ -641,7 +641,7 @@ theorem approx_conv2d_point
         _ = sumS := hsumS_nested
 
     have convInputVal_eq_paddedS (in_ch : Fin inC) (di : Fin kH) (dj : Fin kW) :
-        (match Spec.Private.mkInputIdx? [i.val, j.val] [di.val, dj.val] [stride, stride]
+        (match Spec.Conv.Internal.mkInputIdx? [i.val, j.val] [di.val, dj.val] [stride, stride]
               [padding, padding] with
           | none => (0 : ℝ)
           | some inIdx => getAtOrZero inputS (in_ch.val :: inIdx))
@@ -675,12 +675,12 @@ theorem approx_conv2d_point
 -- ---------------------------------------------------------------------------
 
 /--
-Tensor-level forward approximation for Conv2D (`approxT`).
+Tensor-level forward approximation for Conv2d (`approxTensor`).
 
-This lifts `approx_conv2d_point` to an `approxT` statement for the full output tensor, with a
+This lifts `approx_conv2d_point` to an `approxTensor` statement for the full output tensor, with a
 global error `linfNorm (conv2dBoundTensor ...)` that upper-bounds all pointwise error entries.
 -/
-theorem approxT_conv2d_spec
+theorem approxTensor_conv2d_spec
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     {kernelS : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
@@ -689,36 +689,36 @@ theorem approxT_conv2d_spec
     {inputS : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))}
     {inputR : Spec.Tensor R (.dim inC (.dim inH (.dim inW .scalar)))}
     {epsK epsB epsX : ℝ}
-    (hK : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) kernelS kernelR
+    (hK : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) kernelS kernelR
       epsK)
-    (hB : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) biasS biasR epsB)
-    (hX : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS inputR
+    (hB : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) biasS biasR epsB)
+    (hX : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS inputR
       epsX) :
-    let layerS : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    let layerS : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := kernelS, bias := biasS }
-    let layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3 :=
+    let layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3 :=
       { kernel := kernelR, bias := biasR }
     let outS := Spec.conv2dSpec (α := ℝ) (layer := layerS) (input := inputS)
     let outR := Spec.conv2dSpec (α := R) (layer := layerR) (input := inputR)
     let bT :=
       conv2dBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (layerR := layerR) (inputR := inputR)
         (epsK := epsK) (epsB := epsB) (epsX := epsX)
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) outS outR (linfNorm
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) outS outR (linfNorm
       bT) := by
   intro layerS layerR outS outR bT
   classical
   have hε : 0 ≤ linfNorm bT := linf_norm_nonneg (t := bT)
-  refine approxT_dim_of_forall (n := outC)
+  refine approxTensor_dim_of_forall (n := outC)
     (s := .dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride padding)
       .scalar))
     (xS := outS) (xR := outR) (eps := linfNorm bT) hε ?_
   intro oc
-  refine approxT_dim_of_forall (n := conv2dOutH inH kH stride
+  refine approxTensor_dim_of_forall (n := conv2dOutH inH kH stride
     padding)
     (s := .dim (conv2dOutW inW kW stride padding) .scalar)
     (eps := linfNorm bT) hε ?_
   intro oi
-  refine approxT_dim_of_forall (n := conv2dOutW inW kW stride
+  refine approxTensor_dim_of_forall (n := conv2dOutW inW kW stride
     padding)
     (s := .scalar)
     (eps := linfNorm bT) hε ?_
@@ -819,35 +819,35 @@ theorem approxT_conv2d_spec
     exact entry_eq_scalar_get_at_or_zero3 (t := outR) oc oi oj
 
   have happ :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Tensor.scalar (getAtOrZero outS [oc.val, oi.val, oj.val]))
         (Tensor.scalar (getAtOrZero outR [oc.val, oi.val, oj.val]))
         (linfNorm bT) :=
-    (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (x := getAtOrZero outS [oc.val, oi.val, oj.val])
         (xR := getAtOrZero outR [oc.val, oi.val, oj.val])
         (eps := linfNorm bT)).2 (by
           simpa using hscalar)
 
   have happ' :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         outSentry outRentry (linfNorm bT) := by
     rw [hEntryS, hEntryR]
     exact happ
 
-  change approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+  change approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
     outSentry outRentry (linfNorm bT)
   exact happ'
 
 -- ---------------------------------------------------------------------------
--- `FwdNode` packaging for Conv2D.
+-- `FwdNode` packaging for Conv2d.
 -- ---------------------------------------------------------------------------
 
 /--
-Package Conv2D as a `FwdNode` for use in `FwdGraph.eval_approx`.
+Package Conv2d as a `FwdNode` for use in `FwdGraph.eval_approx`.
 
 The node reads kernel/bias/input from the typed context `Γ`, runs the spec/runtime forward passes,
-and uses `approxT_conv2d_spec` as its soundness proof.
+and uses `approxTensor_conv2d_spec` as its soundness proof.
 -/
 def conv2dNode
     {Γ : List Shape}
@@ -866,14 +866,14 @@ by
         let kernelS := getIdx (α := SpecScalar) ctx kernelIdx
         let biasS := getIdx (α := SpecScalar) ctx biasIdx
         let inputS := getIdx (α := SpecScalar) ctx inputIdx
-        let layerS : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+        let layerS : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
           { kernel := kernelS, bias := biasS }
         Spec.conv2dSpec (α := ℝ) (layer := layerS) (input := inputS)
       forwardRuntime := fun ctx =>
         let kernelR := getIdx (α := R) ctx kernelIdx
         let biasR := getIdx (α := R) ctx biasIdx
         let inputR := getIdx (α := R) ctx inputIdx
-        let layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3 :=
+        let layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3 :=
           { kernel := kernelR, bias := biasR }
         Spec.conv2dSpec (α := R) (layer := layerR) (input := inputR)
       bound := fun epsCtx ctxR =>
@@ -885,7 +885,7 @@ by
         let epsB := getIdxEps (Γ := Γ) (s := (.dim outC .scalar)) epsCtx biasIdx
         let epsX := getIdxEps (Γ := Γ) (s := (.dim inC (.dim inH (.dim inW .scalar)))) epsCtx
           inputIdx
-        let layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3 :=
+        let layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3 :=
           { kernel := kernelR, bias := biasR }
         linfNorm
           (conv2dBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
@@ -899,7 +899,7 @@ by
         have hX := approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           hctx inputIdx
         simpa [conv2dOutH, conv2dOutW] using
-          (approxT_conv2d_spec (β := β) (fexp := fexp) (rnd := rnd)
+          (approxTensor_conv2d_spec (β := β) (fexp := fexp) (rnd := rnd)
             (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding :=
               padding) (inH := inH) (inW := inW)
             (h1 := h1) (h2 := h2) (h3 := h3)

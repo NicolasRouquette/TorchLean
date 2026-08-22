@@ -21,7 +21,7 @@ namespace Data
 
 /-- Load an N-D tensor from a `.npy` file, checking the on-disk shape matches `dims`. -/
 def readNpyTensor (path : System.FilePath) (dims : List Nat) :
-    IO (Except String (Spec.Tensor Float (NN.Tensor.shapeOfDims dims))) := do
+    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList dims))) := do
   let res ← readNpy path
   match res with
   | .error e => pure (.error e)
@@ -51,7 +51,7 @@ This is still a checked loader, not an implicit reshape:
 - only C-order NPY files can be prefix-loaded efficiently by the low-level parser.
 -/
 def readNpyTensorPrefix (path : System.FilePath) (dims : List Nat) :
-    IO (Except String (Spec.Tensor Float (NN.Tensor.shapeOfDims dims))) := do
+    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList dims))) := do
   let res ← readNpyLeadingAxisPrefix path dims
   match res with
   | .error e => pure (.error e)
@@ -106,7 +106,7 @@ def labeledFromLeadingAxis {α : Type} [_root_.Context α] [_root_.TorchLean.Run
   let samples : List (Spec.Tensor Float σ × Fin classes) ←
     (List.finRange n).mapM (fun i => do
       let x := Spec.getAtSpec X i
-      let labelF : Float := Spec.Tensor.toScalar (Spec.getAtSpec y i)
+      let labelF : Float := Spec.Tensor.item (Spec.getAtSpec y i)
       let label ← finLabelOfFloat tag classes labelF
       pure (x, label))
   pure <| labeled (α := α) (σ := σ) classes samples
@@ -195,7 +195,7 @@ Supported shapes:
 - `[n]`: either one column with `n` rows or one row with `n` columns.
 -/
 def loadCsvTensor (path : System.FilePath) (dims : List Nat) (opts : CsvOptions := {}) :
-    IO (Except String (Spec.Tensor Float (NN.Tensor.shapeOfDims dims))) := do
+    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList dims))) := do
   match hDims : dims with
   | [rowsExpected, colsExpected] =>
       let rowsRes ← readCsvFloatRows path opts
@@ -220,8 +220,11 @@ def loadCsvTensor (path : System.FilePath) (dims : List Nat) (opts : CsvOptions 
       | .error e => pure (.error e)
       | .ok rows =>
           let flat? : Except String (List Float) :=
-            if rows.length = n && rows.all (fun row => row.length == 1) then
-              .ok (rows.map (fun row => row.getD 0 0.0))
+            if rows.length = n then
+              rows.zipIdx.mapM fun (row, i) =>
+                match row with
+                | [value] => pure value
+                | _ => throw s!"csv: row {i + 1}: expected one column, got {row.length}"
             else
               match rows with
               | [row] =>
@@ -241,7 +244,7 @@ def loadCsvTensor (path : System.FilePath) (dims : List Nat) (opts : CsvOptions 
 /-- Load a Float tensor from a path/format/dimension tuple. -/
 def loadFloatAs (format : TensorFormat) (path : System.FilePath)
     (dims : List Nat) (opts : CsvOptions := {}) :
-    IO (Except String (Spec.Tensor Float (NN.Tensor.shapeOfDims dims))) := do
+    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList dims))) := do
   match format with
   | .npy => readNpyTensor path dims
   | .csv => loadCsvTensor path dims opts
@@ -256,14 +259,14 @@ sources remain exact because CSV has no binary prefix contract; NPY sources use
 -/
 def loadFloatLeadingPrefixAs (format : TensorFormat) (path : System.FilePath)
     (dims : List Nat) (opts : CsvOptions := {}) :
-    IO (Except String (Spec.Tensor Float (NN.Tensor.shapeOfDims dims))) := do
+    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList dims))) := do
   match format with
   | .npy => readNpyTensorPrefix path dims
   | .csv => loadCsvTensor path dims opts
 
-/-- Load a `TensorSource` as a Float tensor with the statically reflected `shapeOfDims src.dims`. -/
+/-- Load a `TensorSource` as a Float tensor with statically reflected dimensions. -/
 def loadFloat (src : TensorSource) :
-    IO (Except String (Spec.Tensor Float (NN.Tensor.shapeOfDims src.dims))) := do
+    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList src.dims))) := do
   loadFloatAs src.format src.path src.dims src.csvOptions
 
 end TensorSource
@@ -301,8 +304,8 @@ This is the preferred public loader for regression/operator-learning examples, r
 whether the backing files are `.npy` or small numeric CSV tables.
 -/
 def load {α : Type} [_root_.TorchLean.Runtime.FromFloat α] (src : SupervisedSource) :
-    IO (Except String (Dataset (_root_.TorchLean.TensorPack α [NN.Tensor.shapeOfDims src.xDims,
-      NN.Tensor.shapeOfDims src.yDims]))) := do
+    IO (Except String (Dataset (_root_.TorchLean.TensorPack α [Spec.Shape.ofList src.xDims,
+      Spec.Shape.ofList src.yDims]))) := do
   -- Dataset sources interpret `src.n` as "number of rows to use in this run."  For NPY files, the
   -- physical file is allowed to contain more rows; for CSV files, the requested shape remains exact.
   let xRes ← TensorSource.loadFloatLeadingPrefixAs src.x.format src.x.path (src.n :: src.xDims)
@@ -333,10 +336,10 @@ This is useful for reporting, custom evaluation loops, and native kernels that n
 def loadSupervisedNpy
     (xPath yPath : System.FilePath) (n : Nat)
     (xDims yDims : List Nat) :
-    IO (Except String (Array (TorchLean.Sample.Supervised Float (NN.Tensor.shapeOfDims xDims)
-      (NN.Tensor.shapeOfDims yDims)))) := do
+    IO (Except String (Array (TorchLean.Sample.Supervised Float (Spec.Shape.ofList xDims)
+      (Spec.Shape.ofList yDims)))) := do
   let ds ← SupervisedSource.load (α := Float) (supervisedNpySource xPath yPath n xDims yDims)
-  pure <| ds.map (fun d => toList d |>.toArray)
+  pure <| ds.map (fun d => d.toList.toArray)
 
 /--
 Two tensor sources representing labeled classification data:
@@ -371,7 +374,7 @@ For CSV label vectors, store labels as a single-column table with `dims = [n, 1]
 `TensorSource` if needed; the path constructor above is aimed at `.npy` label vectors.
 -/
 def load {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α] (src : LabeledSource) :
-    IO (Except String (Dataset (_root_.TorchLean.TensorPack α [NN.Tensor.shapeOfDims src.xDims,
+    IO (Except String (Dataset (_root_.TorchLean.TensorPack α [Spec.Shape.ofList src.xDims,
       .dim src.classes .scalar]))) := do
   -- Labels use the same prefix-row convention as supervised tensors. This lets one full exported
   -- label vector back different bounded runs without making separate copies on disk.
@@ -384,7 +387,7 @@ def load {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α]
       match yRes with
       | .error e => pure (.error e)
       | .ok y =>
-          pure <| labeledFromLeadingAxis (α := α) (σ := NN.Tensor.shapeOfDims src.xDims)
+          pure <| labeledFromLeadingAxis (α := α) (σ := Spec.Shape.ofList src.xDims)
             "data-source" src.classes X y
 
 end LabeledSource

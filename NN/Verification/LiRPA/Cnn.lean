@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Operators.Conv
-public import NN.Verification.LiRPA.Common
+public import NN.Verification.LiRPA.ExampleInputs
 
 /-!
 # LiRPA CNN certificate checker
@@ -80,7 +80,7 @@ def seedParamsFloat : ParamStore Float :=
     Tensor.dim (fun _ => Tensor.dim (fun _ => Tensor.dim (fun i => Tensor.dim (fun j =>
       Tensor.scalar (Float.ofNat (1 + (i.val + j.val)))))))
   let bias : Tensor Float (.dim outC .scalar) := Tensor.dim (fun _ => Tensor.scalar (0.0))
-  let conv : Spec.Conv2DSpec inC outC kH kW stride padding Float
+  let conv : Spec.Conv2dSpec inC outC kH kW stride padding Float
       inputChannelsNonzero kernelHeightNonzero kernelWidthNonzero :=
     { kernel := kernel, bias := bias }
   -- Seed input box (center ones, eps)
@@ -133,6 +133,6 @@ This is wired into `lake exe verify -- lirpa-cnn [path]`.
 def verifyCert (path : String) : IO Unit := do
   let g := buildGraph
   let ps := seedParamsFloat
-  NN.Verification.LiRPA.checkIBPCert g ps (outId := 3) path
+  NN.Verification.IBPCert.checkOrThrow g ps (outId := 3) path
 
 end NN.Verification.LiRPA.Cnn

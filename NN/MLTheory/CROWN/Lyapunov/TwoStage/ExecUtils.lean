@@ -35,30 +35,29 @@ namespace NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils
 open TorchLean.Floats.IEEE754
 open NN.MLTheory.CROWN.Lyapunov.TwoStage.Core
 
-/-- Executable float32 semantics used by the TwoStage workflows. -/
-abbrev α : Type := IEEE32Exec
+local notation "Scalar" => IEEE32Exec
 
 /-- Coerce a natural number into `IEEE32Exec`. -/
-def nat (k : Nat) : α := ((k : Nat) : α)
+def nat (k : Nat) : Scalar := ((k : Nat) : Scalar)
 
 /-- Default learning rate used by the TwoStage workflows (`0.05`). -/
-def defaultLr : α := nat 1 / nat 20
+def defaultLr : Scalar := nat 1 / nat 20
 
 /-- Default PGD step size used by the TwoStage workflows (`0.05`). -/
-def defaultPgdStepSize : α := nat 1 / nat 20
+def defaultPgdStepSize : Scalar := nat 1 / nat 20
 
 /-- Default sampling/clamp radius used by the TwoStage workflows (`2.0`). -/
-def defaultRad : α := nat 2
+def defaultRad : Scalar := nat 2
 
 /-- Default check-box half-width used by the TwoStage workflows (`0.1`). -/
-def defaultEpsCheck : α := nat 1 / nat 10
+def defaultEpsCheck : Scalar := nat 1 / nat 10
 
 /-- Clamp a scalar to `[lo, hi]`. -/
-def clamp (lo hi x : α) : α :=
+def clamp (lo hi x : Scalar) : Scalar :=
   if x < lo then lo else if x > hi then hi else x
 
 /-- Clamp the two-dimensional state vector to `[lo, hi]^2`. -/
-def clampStateVector (lo hi : α) (x : Tensor α Core.xShape) : Tensor α Core.xShape :=
+def clampStateVector (lo hi : Scalar) (x : Tensor Scalar Core.xShape) : Tensor Scalar Core.xShape :=
   Tensor.dim (fun i =>
     let xi := Tensor.vecGet x i
     Tensor.scalar (clamp lo hi xi))
@@ -80,11 +79,11 @@ def lcgU24 (s : UInt64) : UInt64 × Nat :=
   (s', u.toNat)
 
 /-- Convert a 24-bit integer `u ∈ [0, 2^24)` to a scalar in `[0,1)`. -/
-def unitIntervalSample (u : Nat) : α :=
-  (u : α) / ((0x1000000 : Nat) : α) -- divide by 2^24
+def unitIntervalSample (u : Nat) : Scalar :=
+  (u : Scalar) / ((0x1000000 : Nat) : Scalar) -- divide by 2^24
 
 /-- Build a state vector for the two-dimensional Lyapunov example. -/
-def stateVector (x1 x2 : α) : Tensor α Core.xShape :=
+def stateVector (x1 x2 : Scalar) : Tensor Scalar Core.xShape :=
   Tensor.dim (n := Core.xDim) (s := .scalar) (fun i =>
     Tensor.scalar <|
       match i.val with
@@ -92,13 +91,13 @@ def stateVector (x1 x2 : α) : Tensor α Core.xShape :=
       | _ => x2)
 
 /-- Sample a point uniformly from `[-rad, rad]^2` using a deterministic PRNG seed. -/
-def sampleStateVector (seed : UInt64) (rad : α) : UInt64 × Tensor α Core.xShape :=
+def sampleStateVector (seed : UInt64) (rad : Scalar) : UInt64 × Tensor Scalar Core.xShape :=
   let (s1, u1) := lcgU24 seed
   let (s2, u2) := lcgU24 s1
-  let firstUniform : α := unitIntervalSample u1
-  let secondUniform : α := unitIntervalSample u2
-  let two : α := nat 2
-  let one : α := nat 1
+  let firstUniform : Scalar := unitIntervalSample u1
+  let secondUniform : Scalar := unitIntervalSample u2
+  let two : Scalar := nat 2
+  let one : Scalar := nat 1
   let x1 := (two * firstUniform - one) * rad
   let x2 := (two * secondUniform - one) * rad
   (s2, stateVector x1 x2)

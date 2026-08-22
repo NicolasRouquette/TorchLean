@@ -76,10 +76,14 @@ def modelLoss {α : Type} [Context α] [DecidableEq Spec.Shape] :
           (batch := batch) (n := n) (numHeads := numHeads) (dModel := dModel)
           (headDim := headDim)
           (h1 := by decide) wq wk wv wo x (mask := none)
-        let yLn ← _root_.Runtime.Autograd.TorchLean.layerNorm (m := m) (α := α)
-          (batch := batch) (seqLen := n) (embedDim := dModel) (h_seq_pos := by decide)
-          (h_embed_pos := by decide)
-          y gamma beta
+        let yRows ← _root_.Runtime.Autograd.TorchLean.layerNorm (m := m) (α := α)
+          (rows := batch * n) (width := dModel) (hWidth := by decide)
+          (← _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
+            (s₁ := xShape) (s₂ := .dim (batch * n) (.dim dModel .scalar)) y (by
+              simp [xShape, Spec.Shape.size, Nat.mul_assoc])) gamma beta
+        let yLn ← _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
+          (s₁ := .dim (batch * n) (.dim dModel .scalar)) (s₂ := xShape) yRows (by
+            simp [xShape, Spec.Shape.size, Nat.mul_assoc])
         Ops.mseLoss (m := m) (α := α) (s := xShape) yLn target
         : m (Ops.RefTy (m := m) (α := α) Spec.Shape.scalar))
 
@@ -88,19 +92,19 @@ def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
     [Runtime.FromFloat α] [BoundOps α] (withCrown : Bool) : IO Unit := do
   let cast : Float → α := Runtime.ofFloat
   let params : TensorPack α paramShapes :=
-    tensorpack.septuple
+    TensorPack!
       (NN.Tensor.ofListOfLength (α := α) [2, 2]
-        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl))
+        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [2, 2]
-        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl))
+        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [2, 2]
-        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl))
+        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [2, 2]
-        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl))
+        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [2]
-        [cast 1.0, cast 1.0] (by rfl))
+        [cast 1.0, cast 1.0] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [2]
-        [cast 0.0, cast 0.0] (by rfl))
+        [cast 0.0, cast 0.0] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [1, 2, 2]
         [cast 0.0, cast 0.0, cast 0.0, cast 0.0] (by rfl))
 

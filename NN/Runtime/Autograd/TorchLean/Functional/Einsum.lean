@@ -48,7 +48,7 @@ def bmm {α : Type} [Context α] [DecidableEq Shape]
 
 These are non-`Option` equivalents for the most common einsum contractions in ML code.
 They are intended to be used directly (no string parsing), and serve as the fast-path targets for
-`einsumDyn`.
+`einsum?`.
 -/
 
 /-- `einsum("ij,jk->ik", A, B)` as a typed matmul. -/
@@ -92,7 +92,8 @@ def einsumBhidBhjdBhij {α : Type} [Context α] [DecidableEq Shape]
     simp [sOut3, sOut4, Spec.Shape.size, bh, Nat.mul_left_comm, Nat.mul_comm]
   let q3 ← reshape (m := m) (α := α) (s₁ := sQ4) (s₂ := sQ3) q hQ
   let k3 ← reshape (m := m) (α := α) (s₁ := sK4) (s₂ := sK3) k hK
-  let kt ← transpose3dLastTwo (m := m) (α := α) (a := bh) (b := jDim) (c := dDim) k3
+  let kt ← _root_.Runtime.Autograd.Torch.transpose3dLastTwo
+    (m := m) (α := α) (a := bh) (b := jDim) (c := dDim) k3
   let out3 ← bmm (m := m) (α := α) (batch := bh) (mDim := iDim) (nDim := dDim) (pDim := jDim) q3 kt
   reshape (m := m) (α := α) (s₁ := sOut3) (s₂ := sOut4) out3 hOut
 
@@ -125,7 +126,7 @@ def einsumBhijBhjdBhid {α : Type} [Context α] [DecidableEq Shape]
 
 namespace Einsum
 
--- Needed for runtime checks (e.g. to build a `valid_axis_inst` for reductions).
+-- Needed for runtime checks (e.g. to build a `HasNonemptyAxis` for reductions).
 /-- Decidable instance for `Shape.well_formed`, used by the dynamic einsum lowering. -/
 def wellFormedDec : (s : Shape) → Decidable s.wellFormed
   | .scalar => isTrue trivial
@@ -290,9 +291,9 @@ abbrev Counts : Type := List (Label × Nat)
 def countsFind? (cs : Counts) (x : Label) : Option Nat :=
   (cs.find? (fun p => p.1 == x)).map (fun p => p.2)
 
-/-- Lookup with default for `Counts`. -/
-def countsFindD (cs : Counts) (x : Label) (dflt : Nat) : Nat :=
-  (countsFind? cs x).getD dflt
+/-- Number of occurrences of a label. An absent label has count zero. -/
+def labelCount (cs : Counts) (x : Label) : Nat :=
+  (countsFind? cs x).getD 0
 
 /-- Increment a label’s count (inserting it if absent). -/
 def countsInc (cs : Counts) (x : Label) : Counts :=
@@ -324,10 +325,6 @@ abbrev DimMap : Type := List (Label × Nat)
 /-- Lookup a label’s dimension size. -/
 def dimFind? (mp : DimMap) (x : Label) : Option Nat :=
   (mp.find? (fun p => p.1 == x)).map (fun p => p.2)
-
-/-- Lookup with default for `DimMap`. -/
-def dimFindD (mp : DimMap) (x : Label) (dflt : Nat) : Nat :=
-  (dimFind? mp x).getD dflt
 
 /-- Insert/update a label’s dimension size in a `DimMap`. -/
 def dimUpdate (mp : DimMap) (x : Label) (d : Nat) : DimMap :=
@@ -373,22 +370,26 @@ This mirrors the typeclass-based broadcasting used elsewhere, but returns an `Op
 einsum lowering can fail gracefully.
 -/
 def canBroadcastTo? : (s₁ s₂ : Shape) → Option (Shape.CanBroadcastTo s₁ s₂)
-  | .scalar, s₂ => some (.scalar_to_any s₂)
+  | .scalar, .scalar => some .scalar
   | .dim n s₁, .dim m s₂ =>
-      if h : n = m then
-        by
-          cases h
-          match canBroadcastTo? s₁ s₂ with
-          | some tail => exact some (Shape.CanBroadcastTo.dim_eq (n := n) (s₁ := s₁) (s₂ := s₂)
-            tail)
-          | none => exact none
-      else if h1 : n = 1 then
-        by
-          cases h1
-          match canBroadcastTo? s₁ s₂ with
-          | some tail => exact some (Shape.CanBroadcastTo.dim_1_to_n (n := m) (s₁ := s₁) (s₂ := s₂)
-            tail)
-          | none => exact none
+      if hRank : Spec.Shape.rank s₁ = Spec.Shape.rank s₂ then
+        letI : Shape.SameRank s₁ s₂ := ⟨hRank⟩
+        if h : n = m then
+          by
+            cases h
+            match canBroadcastTo? s₁ s₂ with
+            | some tail => exact some (Shape.CanBroadcastTo.dim_eq (n := n) (s₁ := s₁) (s₂ := s₂)
+              tail)
+            | none => exact none
+        else if h1 : n = 1 then
+          by
+            cases h1
+            match canBroadcastTo? s₁ s₂ with
+            | some tail => exact some (Shape.CanBroadcastTo.dim_1_to_n (n := m) (s₁ := s₁) (s₂ := s₂)
+              tail)
+            | none => exact none
+        else
+          none
       else
         none
   | _, _ => none
@@ -411,9 +412,20 @@ def permuteBySwaps {α : Type} [Context α] [DecidableEq Shape]
     cur := ⟨cur.fst.swapAdjacentAtDepth d, cur'⟩
   pure cur
 
+/-- Apply adjacent swaps while retaining the resulting shape in the return type. -/
+def permuteBySwapsTyped {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)] {s : Shape}
+    (x : RefTy (m := m) (α := α) s) :
+    (depths : List Nat) →
+      m (RefTy (m := m) (α := α) (s.applyAdjacentSwaps depths))
+  | [] => pure x
+  | depth :: depths => do
+      let moved ← swapAdjacentAtDepth (m := m) (α := α) (s := s) depth x
+      permuteBySwapsTyped (m := m) (α := α) moved depths
+
 /-- Reflexive broadcast witness constructor (`s` can always broadcast to itself). -/
 def canBroadcastRefl : (s : Shape) → Shape.CanBroadcastTo s s
-  | .scalar => Shape.CanBroadcastTo.scalar_to_any .scalar
+  | .scalar => Shape.CanBroadcastTo.scalar
   | .dim n s => Shape.CanBroadcastTo.dim_eq (n := n) (s₁ := s) (s₂ := s) (canBroadcastRefl s)
 
 /-- Remove the element at index `n` (0-based), leaving the list unchanged if out of bounds. -/
@@ -448,13 +460,15 @@ def permForDuplicateLabels? (src tgt : List Label) : Option (List Nat) :=
   else
     none
 
-/--
+/-
 Build a diagonal mask tensor (spec-level) for diagonal embedding/extraction.
 
 Given axes `p` and `q`, the resulting tensor is `1` when the indices along those axes agree, and `0`
 otherwise. The `ip`/`iq` parameters track the first-seen indices while recursing over dimensions.
 -/
-def diagMaskSpecAux {α : Type} [Zero α] [One α] :
+namespace Internal
+
+def diagMaskSpec {α : Type} [Zero α] [One α] :
     (dims : List Nat) → (p q : Nat) → (ip iq : Option Nat) → Tensor α (Shape.ofList dims)
   | [], _, _, ip, iq =>
       Tensor.scalar <|
@@ -477,12 +491,14 @@ def diagMaskSpecAux {α : Type} [Zero α] [One α] :
               | none => some i.1
               | some v => some v
           | _ + 1 => iq
-        diagMaskSpecAux ds (Nat.pred p) (Nat.pred q) ip' iq'
+        diagMaskSpec ds (Nat.pred p) (Nat.pred q) ip' iq'
+
+end Internal
 
 /-- Diagonal mask specification with fresh index-tracking state. -/
 def diagMaskSpec {α : Type} [Zero α] [One α] (dims : List Nat) (p q : Nat) :
     Tensor α (Shape.ofList dims) :=
-  diagMaskSpecAux (α := α) dims p q none none
+  Internal.diagMaskSpec (α := α) dims p q none none
 
 /-- Specialize `diagMaskSpec` to a concrete `Shape` by rewriting through `Shape.toList`. -/
 def diagMaskForShape {α : Type} [Zero α] [One α] (s : Shape) (p q : Nat) : Tensor α s := by
@@ -522,7 +538,7 @@ Currently unsupported (returns `none`):
 This is implemented purely by reordering, reshaping, broadcasting, elementwise multiplication,
 and summing contracted axes.
 -/
-def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
+def einsum? {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     (equation : String)
     (xs : List (Σ s : Shape, RefTy (m := m) (α := α) s)) :
@@ -727,10 +743,8 @@ def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
           | some (_, p, q) =>
               let curShape := cur.fst
               let dims := Shape.toList curShape
-              let dp := dims.getD p 0
-              let dq := dims.getD q 0
-              if dp = 0 || dq = 0 then
-                failure
+              let some dp := dims[p]? | failure
+              let some dq := dims[q]? | failure
               if dp != dq then
                 failure
               let maskT : Tensor α curShape := Einsum.diagMaskForShape (α := α) curShape p q
@@ -754,8 +768,8 @@ def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
                         (← OptionT.lift <|
                           (by
                             letI : Shape.WellFormed sPerm := ⟨hw⟩
-                            haveI : Shape.valid_axis_inst axis sPerm :=
-                              Shape.validAxisLastInst (s := sPerm) hRankPerm hw
+                            haveI : Shape.HasNonemptyAxis axis sPerm :=
+                              Shape.hasNonemptyLastAxis (s := sPerm) hRankPerm hw
                             exact reduceSum (m := m) (α := α) (s := sPerm) axis xPerm))
                       let nextShape : Shape := Spec.Tensor.shapeAfterSum sPerm axis
                       diagonalizeOperand fuel ⟨nextShape, nextRef⟩ (Einsum.removeAt labs q)
@@ -811,7 +825,7 @@ def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
               continue
             -- Important: use *raw* label multiplicities (before diagonal extraction) so that
             -- `ii` (implicit output) computes a trace (scalar), not a diagonal vector.
-            if Einsum.countsFindD countsRaw l 0 = 1 then
+            if Einsum.labelCount countsRaw l = 1 then
               labs := labs ++ [l]
           pure labs
 
@@ -831,8 +845,10 @@ def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
       | .ok mp => pure mp
       | .error _ => failure
 
-    let fullDims : List Nat :=
-      fullLabels.map (fun l => Einsum.dimFindD dimMap l 1)
+    let fullDims : List Nat ← fullLabels.mapM fun label =>
+      match Einsum.dimFind? dimMap label with
+      | some dimension => pure dimension
+      | none => failure
     let sCommon : Shape := Shape.ofList fullDims
 
     -- Align each operand to `fullLabels` (permute -> reshape insert ones -> broadcast).
@@ -856,7 +872,7 @@ def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
       let mut insertedDims : List Nat := []
       for l in fullLabels do
         if labsIn.contains l then
-          let d := dimsPerm.getD di 1
+          let some d := dimsPerm[di]? | failure
           insertedDims := insertedDims ++ [d]
           di := di + 1
         else
@@ -896,8 +912,8 @@ def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
                 (← OptionT.lift <|
                   (by
                     letI : Shape.WellFormed curShape := ⟨hw⟩
-                    haveI : Shape.valid_axis_inst axis curShape :=
-                      Shape.validAxisLastInst (s := curShape) hRank hw
+                    haveI : Shape.HasNonemptyAxis axis curShape :=
+                      Shape.hasNonemptyLastAxis (s := curShape) hRank hw
                     exact reduceSum (m := m) (α := α) (s := curShape) axis cur.snd))
               let nextShape : Shape :=
                 Spec.Tensor.shapeAfterSum curShape axis
@@ -926,7 +942,7 @@ def einsumDyn {α : Type} [Context α] [DecidableEq Shape]
       let mut cur : Σ s : Shape, RefTy (m := m) (α := α) s := out0
       for l in extras do
         let some baseIdx := outLabels.findIdx? (· == l) | failure
-        let d := Einsum.dimFindD dimMap l 1
+        let some d := Einsum.dimFind? dimMap l | failure
         let sReshape : Shape := Shape.appendDim cur.fst 1
         have hSz : Spec.Shape.size cur.fst = Spec.Shape.size sReshape := by
           simpa [sReshape] using (Spec.Shape.size_appendDim cur.fst 1).symm
@@ -957,7 +973,7 @@ def einsum {α : Type} [Context α] [DecidableEq Shape]
     (equation : String)
     (xs : List (Σ s : Shape, RefTy (m := m) (α := α) s)) :
     m (Option (RefTy (m := m) (α := α) sOut)) := do
-  let r? ← einsumDyn (α := α) (m := m) equation xs
+  let r? ← einsum? (α := α) (m := m) equation xs
   match r? with
   | none => pure none
   | some ⟨s, r⟩ =>

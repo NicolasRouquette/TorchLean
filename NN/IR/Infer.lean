@@ -192,7 +192,7 @@ def inferNodeOutShape (n : Node) (parentShapes : List Shape) : Except String Sha
   | .layernorm axis =>
       match parentShapes with
       | [s] =>
-          let _ ← OpContracts.layerNorm2DParams axis s
+          let _ ← OpContracts.layerNormMatrixDims axis s
           pure s
       | _ => throw "layernorm: expected 1 parent"
   | .reshape inS outS =>

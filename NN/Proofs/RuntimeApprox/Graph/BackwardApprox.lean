@@ -54,6 +54,7 @@ namespace RuntimeApprox
 open Spec
 open Tensor
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 
 noncomputable section
 
@@ -83,7 +84,7 @@ structure RevNode (toSpec : α → SpecScalar) (Γ : List Shape) (τ : Shape) ex
   vjpSound : ∀ (ctxS : TList SpecScalar Γ) (ctxR : TList α Γ) (epsCtx : EList Γ)
       (δS : SpecTensor τ) (δR : Tensor α τ) (epsδ : SpecScalar),
       approxCtx (α := α) toSpec ctxS ctxR epsCtx →
-      approxT (α := α) (toSpec := toSpec) δS δR epsδ →
+      approxTensor (α := α) (toSpec := toSpec) δS δR epsδ →
         approxCtx (α := α) toSpec (vjpSpec ctxS δS) (vjpRuntime ctxR δR) (vjpBound epsCtx ctxR epsδ
           δR)
 
@@ -315,7 +316,7 @@ theorem backprop_approx {Γ : List Shape} {ss : List Shape} (g : RevGraph (α :=
 
       have hseedSplit :
           approxCtx (α := α) toSpec seedPrevS seedPrevR epsSeedPrev ∧
-            approxT (α := α) (toSpec := toSpec) seedOutS seedOutR epsSeedOut := by
+            approxTensor (α := α) (toSpec := toSpec) seedOutS seedOutR epsSeedOut := by
         simpa [seedPrevS, seedPrevR, epsSeedPrev, seedOutS, seedOutR, epsSeedOut] using
           (approxCtx_unsnoc (α := α) (toSpec := toSpec) (ss := Γ ++ ssPrev) (τ := τ)
             (xS := seedS') (xR := seedR') (eps := epsSeed') hseed')
@@ -325,7 +326,7 @@ theorem backprop_approx {Γ : List Shape} {ss : List Shape} (g : RevGraph (α :=
         hseedSplit.1
 
       have hseedOut :
-          approxT (α := α) (toSpec := toSpec) seedOutS seedOutR epsSeedOut :=
+          approxTensor (α := α) (toSpec := toSpec) seedOutS seedOutR epsSeedOut :=
         hseedSplit.2
 
       -- local VJP approximation

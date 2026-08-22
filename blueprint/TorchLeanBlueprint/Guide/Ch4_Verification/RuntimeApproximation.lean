@@ -63,7 +63,7 @@ conversion to the spec scalar. The key names are:
 - `linfNorm`: max style tensor norm used for error statements.
 - `approxWith`: absolute tensor approximation using an explicit error tensor.
 - `approxWithTol`: approximation using a tolerance object.
-- `approxTTol`: packaged tensor tolerance relation.
+- `approxTensorWithTol`: packaged tensor tolerance relation.
 - `Witness`: a small record for carrying a runtime value and its error evidence.
 
 The tolerance API defines `ApproxTol`, with absolute, relative, and slack components.
@@ -329,7 +329,7 @@ The file includes scalar and tensor approximation lemmas for common operations:
 - arithmetic: `approx_add_nf`, `approx_sub_nf`, `approx_mul_nf`, `approx_div_nf_of_lb`;
 - unary functions: `approx_exp_nf`, `approx_tanh_nf`, `approx_abs_nf`, `approx_neg_nf`;
 - guarded operations: `safeLog`, `safeDiv`, `safe_log`;
-- tensor rules: `approxT_add_spec`, `approxT_mul_spec`, `approxT_exp_spec`, `approxT_relu_spec`;
+- tensor rules: `approxTensor_add_spec`, `approxTensor_mul_spec`, `approxTensor_exp_spec`, `approxTensor_relu_spec`;
 - graph nodes: `addNode`, `mulNode`, `expNode`, `reluNode`, `safeDivNode`, `softmaxNode`, `sumNode`.
 
 Several of these lemmas make the numerical analysis tradeoff visible. Division requires a lower
@@ -353,9 +353,9 @@ lemmas in
 [NN.Proofs.RuntimeApprox.NF.ReductionOps](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/ReductionOps.lean):
 
 ```
-#check Proofs.RuntimeApprox.NFBackend.approxT_reduce_sum_by_row_2d
-#check Proofs.RuntimeApprox.NFBackend.approxT_reduce_mean_by_row_2d
-#check Proofs.RuntimeApprox.NFBackend.approxT_reduce_sum_by_column_2d
+#check Proofs.RuntimeApprox.NFBackend.approxTensor_reduce_sum_by_row_2d
+#check Proofs.RuntimeApprox.NFBackend.approxTensor_reduce_mean_by_row_2d
+#check Proofs.RuntimeApprox.NFBackend.approxTensor_reduce_sum_by_column_2d
 ```
 
 The row-sum theorem accounts for the number of accumulated
@@ -365,15 +365,15 @@ detail that matters for LayerNorm, attention logits, pooled features, and miniba
 Softmax needs even more care. Scalar logistic-style bounds are not a proof of axis softmax, because
 axis softmax couples every coordinate through the denominator. TorchLean's
 [axis softmax approximation API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/SoftmaxAxis.lean)
-proves the conditional NF rounded-real forward theorem `approxT_softmaxVecSpec`: it accounts for
+proves the conditional NF rounded-real forward theorem `approxTensor_softmaxVecSpec`: it accounts for
 max subtraction, exponential approximation, a sequential denominator sum, and division, under an
-explicit denominator-error margin. `approxT_softmaxRowsSpec` lifts the result rowwise.
+explicit denominator-error margin. `approxTensor_softmaxRowsSpec` lifts the result rowwise.
 
 Hard masking uses exact Boolean mask semantics, including an exact-zero theorem for an all-blocked
 row. `HardMaskedRowsEvidence` records the selected maxima, their approximation proofs, positive
 real denominator lower bounds, and rounded denominator margins required by
-`approxT_hardMaskedSoftmaxRowsSpec_of_max`. Backward bounds are provided by
-`approxT_softmaxBackwardFromWeightsVecSpec` and `approxT_softmaxBackwardVecSpec`. The analytic facts
+`approxTensor_hardMaskedSoftmaxRowsSpec_of_max`. Backward bounds are provided by
+`approxTensor_softmaxBackwardFromWeightsVecSpec` and `approxTensor_softmaxBackwardVecSpec`. The analytic facts
 `sum_softmaxVec`, `sum_softmaxJvp`, and `abs_softmaxJvp_le_two_mul` establish normalization,
 zero-sum JVP coordinates, and the dimension-independent bound
 $`\lvert\operatorname{vjp}_i\rvert\le 2G`.
@@ -390,7 +390,7 @@ intermediate error trace instead of assigning one unexplained tolerance to the l
 handles arbitrary tensor rank once the selected mean and variance reductions have been certified.
 Its centering, variance stabilization, square root, division, and affine stages expose the lower
 bounds needed to keep the denominator away from zero. In particular,
-`approxT_normalizeCore` assumes approximation evidence for the input, mean, variance, scale, bias,
+`approxTensor_normalizeCore` assumes approximation evidence for the input, mean, variance, scale, bias,
 and epsilon, plus a positive exact stabilized-variance lower bound and strict rounded-error
 margins. It does not derive the mean and variance reduction bounds itself.
 
@@ -400,15 +400,15 @@ second matrix multiplication. A hard attention mask is semantic: blocked entries
 softmax numerator. It is not represented by adding a large finite negative constant, which would
 change the function for sufficiently large logits. Backend capsules must therefore advertise a
 matching mask convention before their output can inherit this theorem. The masked theorem
-`approxT_scaledDotProductAttention_masked` consumes `HardMaskedRowsEvidence`; the canonical
+`approxTensor_scaledDotProductAttention_masked` consumes `HardMaskedRowsEvidence`; the canonical
 inverse-square-root scale theorem also requires a positive feature dimension and a square-root
 margin. These are conditional NF approximation theorems, not proofs for arbitrary fused attention
 implementations.
 
 ```
 #check Proofs.RuntimeApprox.NFBackend.normalizeCoreErrorTrace
-#check Proofs.RuntimeApprox.NFBackend.approxT_normalizeCore
-#check Proofs.RuntimeApprox.Attention.approxT_scaledDotProductAttention_masked
+#check Proofs.RuntimeApprox.NFBackend.approxTensor_normalizeCore
+#check Proofs.RuntimeApprox.Attention.approxTensor_scaledDotProductAttention_masked
 ```
 
 # Convolution Forward And Backward
@@ -423,7 +423,7 @@ gradients with respect to inputs and parameters. TorchLean has dedicated normal 
 The convolution forward API proves pointwise and full tensor approximation for convolution forward:
 
 - `approx_conv2d_point` for one output coordinate;
-- `approxT_conv2d_spec` for the full output tensor;
+- `approxTensor_conv2d_spec` for the full output tensor;
 - `conv2dNode` to package the theorem as a graph node.
 
 The proof has a lot of indexing work because the spec definition and the runtime replay need to
@@ -433,9 +433,9 @@ what prevents the proof from silently comparing two different convolutions.
 
 The convolution backward API covers the three reverse operators:
 
-- `approxT_conv2d_bias_deriv_spec`;
-- `approxT_conv2d_kernel_deriv_spec`;
-- `approxT_conv2d_input_deriv_spec`.
+- `approxTensor_conv2d_bias_deriv_spec`;
+- `approxTensor_conv2d_kernel_deriv_spec`;
+- `approxTensor_conv2d_input_deriv_spec`.
 
 It also packages the result as `conv2dRevNode`, so the backward approximation theorem can compose
 convolution with the rest of a reverse graph. Here is the local-to-global pattern in its cleanest
@@ -466,9 +466,9 @@ AdamW paper (https://arxiv.org/abs/1711.05101).
 
 ```
 #check Proofs.RuntimeApprox.Optimizer.NumericalStepContract.run_approx
-#check Proofs.RuntimeApprox.NFBackend.Optimizer.approxT_sgd_update
-#check Proofs.RuntimeApprox.NFBackend.Optimizer.approxT_momentumSGD_update
-#check Proofs.RuntimeApprox.NFBackend.Optimizer.approxT_adamW_update
+#check Proofs.RuntimeApprox.NFBackend.Optimizer.approxTensor_sgd_update
+#check Proofs.RuntimeApprox.NFBackend.Optimizer.approxTensor_momentumSGD_update
+#check Proofs.RuntimeApprox.NFBackend.Optimizer.approxTensor_adamW_update
 ```
 
 # Scale Aware Tolerances
@@ -480,11 +480,11 @@ The scale layer is split across
 [backward scale propagation](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/Scale/BackwardScale.lean).
 
 The scale approximation API defines `BList`, a list of nonnegative scale bounds indexed by shape,
-plus helpers such as `scaleT`, `scaleCtx`, and `tolFromEpsScale`. An absolute error budget is
+plus helpers such as `scaleTensor`, `scaleCtx`, and `tolFromEpsScale`. An absolute error budget is
 computed from a machine-like epsilon times a local scale bound.
 
 A graph can then carry both "how close" and "at what scale" information. The lemmas
-`approxTTol_from_scale` and `approxCtx_get_tolFromEpsScale` connect scale estimates back to the
+`approxTensorWithTol_from_scale` and `approxCtx_get_tolFromEpsScale` connect scale estimates back to the
 tolerance API used by graph theorems.
 
 This remains a separate layer because not every proof needs scale aware reasoning. Small examples

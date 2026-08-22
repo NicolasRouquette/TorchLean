@@ -52,10 +52,10 @@ def cfg : nn.models.Mamba.Config :=
     convWidth := 3 }
 
 /-- Input shape: one sequence of one-hot byte tokens. -/
-abbrev σ := nn.models.Mamba.inputShape cfg seqLen
+abbrev σ : Shape := nn.models.Mamba.inputShape cfg seqLen .scalar
 
 /-- Output shape: one vocabulary-logit row per input position. -/
-abbrev τ := nn.models.Mamba.outputShape cfg seqLen
+abbrev τ : Shape := nn.models.Mamba.outputShape cfg seqLen .scalar
 
 /-- Public Mamba language-model constructor specialized to the example config. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
@@ -89,22 +89,22 @@ def parse (args : List String) : Except String (TrainOptions × List String) := 
 end TrainOptions
 
 /-- Convert a token window into the one-hot next-token sample consumed by the Mamba model. -/
-def sampleFromTokenIds (ids : List Nat) : SupervisedSample Float σ τ :=
+def sampleFromTokenIds (ids : List Nat) : Sample.Supervised Float σ τ :=
   let (xF, yF) := Data.CausalLM.oneHotPair (α := Float)
     (seqLen := seqLen) (vocab := cfg.vocab) (ids.map (· % cfg.vocab))
   Sample.mk xF yF
 
 /-- Build a finite cyclic training set from corpus text, biased toward the prompt when present. -/
 def samplesFromCorpus (input _prompt : String) (windows : Nat) :
-    Array (SupervisedSample Float σ τ) :=
+    Array (Sample.Supervised Float σ τ) :=
   let toks := tokenizer.encode input
   let offsets :=
-    nn.models.Mamba.trainingOffsets toks.length seqLen windows
+    text.Corpus.evenlySpacedOffsets toks.length seqLen windows
   offsets.toArray.map (fun off =>
     -- Slice real corpus text into a tiny next-token window. Larger `--windows` values give a more
     -- interesting training run, but the default stays small so the command is a reliable quick check.
     let ids := text.tokenWindow tokenizer (seqLen + 1) input (offset := off) (padId := 32)
-    sampleFromTokenIds ids)
+    sampleFromTokenIds ids.toList)
 
 /-- Print the current argmax prediction beside the prompt and shifted target text. -/
 def printPredictionReport (label prompt : String) (logits : Tensor Float τ) : IO Unit := do
@@ -134,7 +134,7 @@ partial def generateSampled
   let ids ←
     text.autoregressiveTokenIds seqLen 32 (tokenizer.encode prompt) gen
       (fun padded predPos => do
-        let logits ← predict (inputTensorFromIds padded)
+        let logits ← predict (inputTensorFromIds padded.toList)
         pure (text.logitScoresAt logits predPos))
   pure (tokenizer.decode ids)
 
@@ -144,10 +144,10 @@ def trainOnText (opts : Options) (input : String)
     IO (Float × Float) := do
   let samples := samplesFromCorpus input train.prompt train.windows
   let reportSample := sampleFromTokenIds (text.tokenWindow tokenizer (seqLen + 1) train.prompt
-    (padId := 32))
+    (padId := 32)).toList
   let run := Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := train.lr } }
   let trainer := Trainer.new model <|
-    Trainer.Config.fromRunConfig run .oneHotCrossEntropy
+    Trainer.Config.fromRunConfig run (.oneHotCrossEntropy 1)
   let cudaMemWatch := Trainer.Manual.CUDAMemory.cadence opts train.steps train.cudaMemWatch
   let trained ← trainer.train
     (Data.floatSampleArray samples)

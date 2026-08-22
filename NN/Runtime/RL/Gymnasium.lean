@@ -17,7 +17,7 @@ Umbrella import for TorchLean’s Gymnasium subprocess bridge.
 The bridge has two layers:
 
 - `NN.Runtime.RL.Gymnasium.Client`: JSON-lines protocol, startup handshake, and low-level
-  `reset`/`stepRaw` operations.
+  subprocess ownership.
 - `NN.Runtime.RL.Gymnasium.Session`: stores the previous observation so `stepChecked` can emit a
   full observed transition validated by the trust-boundary contract.
 

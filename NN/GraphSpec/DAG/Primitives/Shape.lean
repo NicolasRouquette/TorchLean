@@ -20,7 +20,7 @@ namespace NN
 namespace GraphSpec
 namespace DAG
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 open NN.Tensor
 
@@ -29,13 +29,15 @@ namespace PrimOp
 /-- Sum the leading axis of a nonempty tensor. -/
 def reduceLeadingSum (outer : Nat) (inner : Shape) (hOuter : 0 < outer)
     [_root_.Spec.Shape.WellFormed inner] : PrimOp [.dim outer inner] inner :=
-  letI : Fact (0 < outer) := ⟨hOuter⟩
-  letI : _root_.Spec.Shape.valid_axis_inst 0 (.dim outer inner) :=
-    _root_.Spec.Shape.validAxisInstZeroAlt2 hOuter
+  letI : NeZero outer := ⟨Nat.ne_of_gt hOuter⟩
+  letI : _root_.Spec.Shape.HasNonemptyAxis 0 (.dim outer inner) :=
+    _root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter
   { name := s!"reduceLeadingSum({outer})"
     specFwd := fun {α} _ xs =>
       match xs with
-      | .cons input .nil => _root_.Spec.Tensor.reduceSumAuto (α := α) 0 input
+      | .cons input .nil =>
+          _root_.Spec.Tensor.reduceSum (α := α) 0 input
+            (_root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter).proof
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.reduceSum (m := m) (α := α) 0 input }
@@ -45,20 +47,22 @@ def reduceLeadingSum (outer : Nat) (inner : Shape) (hOuter : 0 < outer)
     (hOuter : 0 < outer) [_root_.Spec.Shape.WellFormed inner]
     {α : Type} [Context α] (input : _root_.Spec.Tensor α (.dim outer inner)) :
     (reduceLeadingSum outer inner hOuter).specFwd (.cons input .nil) =
-      _root_.Spec.Tensor.reduceSumAuto (α := α)
-        (h := _root_.Spec.Shape.validAxisInstZeroAlt2 hOuter) 0 input := by
+      _root_.Spec.Tensor.reduceSum (α := α) 0 input
+        (_root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter).proof := by
   rfl
 
 /-- Average the leading axis of a nonempty tensor. -/
 def reduceLeadingMean (outer : Nat) (inner : Shape) (hOuter : 0 < outer)
     [_root_.Spec.Shape.WellFormed inner] : PrimOp [.dim outer inner] inner :=
-  letI : Fact (0 < outer) := ⟨hOuter⟩
-  letI : _root_.Spec.Shape.valid_axis_inst 0 (.dim outer inner) :=
-    _root_.Spec.Shape.validAxisInstZeroAlt2 hOuter
+  letI : NeZero outer := ⟨Nat.ne_of_gt hOuter⟩
+  letI : _root_.Spec.Shape.HasNonemptyAxis 0 (.dim outer inner) :=
+    _root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter
   { name := s!"reduceLeadingMean({outer})"
     specFwd := fun {α} _ xs =>
       match xs with
-      | .cons input .nil => _root_.Spec.Tensor.reduceMeanAuto (α := α) 0 inferInstance input
+      | .cons input .nil =>
+          _root_.Spec.Tensor.reduceMean (α := α) 0 input
+            (_root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter).proof
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.reduceMean (m := m) (α := α) 0 input }
@@ -68,8 +72,8 @@ def reduceLeadingMean (outer : Nat) (inner : Shape) (hOuter : 0 < outer)
     (hOuter : 0 < outer) [_root_.Spec.Shape.WellFormed inner]
     {α : Type} [Context α] (input : _root_.Spec.Tensor α (.dim outer inner)) :
     (reduceLeadingMean outer inner hOuter).specFwd (.cons input .nil) =
-      _root_.Spec.Tensor.reduceMeanAuto (α := α) 0
-        (_root_.Spec.Shape.validAxisInstZeroAlt2 hOuter) input := by
+      _root_.Spec.Tensor.reduceMean (α := α) 0 input
+        (_root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter).proof := by
   rfl
 
 /-- Transpose a two-dimensional tensor. -/
@@ -78,11 +82,11 @@ def transpose2d (rows columns : Nat) :
   { name := s!"transpose2d({rows},{columns})"
     specFwd := fun {α} _ xs =>
       match xs with
-      | .cons matrix .nil => _root_.Spec.Tensor.matrixTransposeSpec (α := α) matrix
+      | .cons input .nil => _root_.Spec.Tensor.matrixTransposeSpec (α := α) input
     program := fun {α} _ _ =>
-      fun {m} _ _ => fun matrix =>
+      fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.transpose2d (m := m) (α := α)
-          (mDim := rows) (nDim := columns) matrix }
+          (mDim := rows) (nDim := columns) input }
 
 /-- Swap the last two axes of a rank-three tensor. -/
 def transpose3dLastTwo (batch rows columns : Nat) :
@@ -95,7 +99,7 @@ def transpose3dLastTwo (batch rows columns : Nat) :
       | .cons input .nil => _root_.Spec.Tensor.transpose3DLastTwoSpec (α := α) input
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
-        Runtime.Autograd.TorchLean.transpose3dLastTwo (m := m) (α := α)
+        Runtime.Autograd.Torch.transpose3dLastTwo (m := m) (α := α)
           (a := batch) (b := rows) (c := columns) input }
 
 /-- Swap adjacent tensor axes at a statically chosen depth. -/
@@ -104,7 +108,7 @@ def swapAdjacentAtDepth (s : Shape) (depth : Nat) :
   { name := s!"swapAdjacentAtDepth({depth})"
     specFwd := fun {_α} _ xs =>
       match xs with
-      | .cons input .nil => _root_.Spec.Tensor.swapAtDepthHelper input depth
+      | .cons input .nil => _root_.Spec.Tensor.swapAdjacentAxes input depth
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.swapAdjacentAtDepth (m := m) (α := α) depth input }
@@ -113,7 +117,7 @@ def swapAdjacentAtDepth (s : Shape) (depth : Nat) :
 @[simp] theorem swapAdjacentAtDepth_specFwd {α : Type} [Context α]
     (s : Shape) (depth : Nat) (input : _root_.Spec.Tensor α s) :
     (swapAdjacentAtDepth s depth).specFwd (.cons input .nil) =
-      _root_.Spec.Tensor.swapAtDepthHelper input depth := by
+      _root_.Spec.Tensor.swapAdjacentAxes input depth := by
   rfl
 
 /-- Select one row of a statically shaped matrix. -/
@@ -197,7 +201,7 @@ for rolling sequence windows and cache prefixes, and lowers to the existing diff
 TorchLean slice rather than introducing a backend-specific indexing node.
 -/
 def sliceLeadingAxisRange (total start length : Nat) (inner : Shape)
-    (hRange : length + start ≤ total) :
+    (hRange : start + length ≤ total) :
     PrimOp [.dim total inner] (.dim length inner) :=
   { name := s!"sliceLeadingAxisRange({start},{length})"
     specFwd := fun {α} _ xs =>
@@ -212,7 +216,7 @@ def sliceLeadingAxisRange (total start length : Nat) (inner : Shape)
 
 /-- Pure semantics of a checked contiguous slice of the leading tensor axis. -/
 @[simp] theorem sliceLeadingAxisRange_specFwd {total start length : Nat} {inner : Shape}
-    (hRange : length + start ≤ total) {α : Type} [Context α]
+    (hRange : start + length ≤ total) {α : Type} [Context α]
     (input : _root_.Spec.Tensor α (.dim total inner)) :
     (sliceLeadingAxisRange total start length inner hRange).specFwd (.cons input .nil) =
       _root_.Spec.Tensor.sliceLeadingAxisRangeSpec start length hRange input := by

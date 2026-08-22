@@ -9,11 +9,10 @@ module
 public import NN.Runtime.Autograd.IRExec.Core
 
 /-!
-# IR Graph Lowering
+# IR Lowering Primitives
 
-Checked helpers for lowering the shared operation-tagged IR into executable forward graph data.
-The public graph representation and denotation helpers live in `IRExec.Core`; implementation
-details in this file remain under `IRExec.Internal`.
+Typed state, indices, and shape operations used by the checked IR lowering pass. These declarations
+remain under `IRExec.Internal`; the public lowering entry point lives in `IRExec.Lowering`.
 -/
 
 @[expose] public section
@@ -106,7 +105,7 @@ def applySwapsTensor {α : Type} [Context α] :
     {s : Shape} → (swaps : List Nat) → Tensor α s → Tensor α (swapShapeBySwaps s swaps)
   | _s, [], t => t
   | s, d :: ds, t =>
-      let t' : Tensor α (s.swapAdjacentAtDepth d) := Tensor.swapAtDepthHelper (tensor := t) d
+      let t' : Tensor α (s.swapAdjacentAtDepth d) := Tensor.swapAdjacentAxes (tensor := t) d
       applySwapsTensor (s := s.swapAdjacentAtDepth d) (swaps := ds) t'
 
 /--

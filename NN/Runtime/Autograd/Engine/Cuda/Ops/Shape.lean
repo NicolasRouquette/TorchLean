@@ -34,7 +34,7 @@ def sum {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
   let node : Node :=
     { name := some "sum"
       value := { s := Shape.scalar, buf := y }
-      requires_grad := true
+      requiresGrad := true
       parents := [xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny Shape.scalar
@@ -61,8 +61,8 @@ def reshape {s₁ s₂ : Shape} (t : Tape) (xId : Nat) (_h : Spec.Shape.size s�
 
 /-- Transpose an `m × n` CUDA buffer and register the matching transpose rule for backpropagation. -/
 def transpose2d {m n : Nat} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let m32 ← u32 m
-  let n32 ← u32 n
+  let m32 ← AnyBuffer.natToU32Checked m
+  let n32 ← AnyBuffer.natToU32Checked n
   unary (t := t) "transpose2d" xId (.dim m (.dim n .scalar)) (.dim n (.dim m .scalar))
     (forward := fun x => Buffer.transpose2d x m32 n32)
     (backward := fun _x dLdy => Buffer.transpose2d dLdy n32 m32)
@@ -73,7 +73,7 @@ Swap adjacent axes at a given depth in an N-D buffer.
 If `depth` is out of range, this is treated as the identity (matches the spec-layer helper).
 -/
 def swapAdjacentAtDepth {s : Shape} (t : Tape) (depth : Nat) (xId : Nat) : Result (Tape × Nat) := do
-  let depth32 ← u32 depth
+  let depth32 ← AnyBuffer.natToU32Checked depth
   let dimsIn : Array Nat := Shape.toArray s
   let outShape : Shape := s.swapAdjacentAtDepth depth
   let dimsOut : Array Nat := Shape.toArray outShape
@@ -125,40 +125,36 @@ def broadcastTo {s₁ s₂ : Shape} (t : Tape) (cb : Shape.CanBroadcastTo s₁ s
     (backward := fun _x dLdy => Buffer.reduceFromBroadcastTo dLdy inDims outDims axisMap)
 
 /-- Reduce-sum along `axis`. -/
-def reduceSum {s : Shape} (axis : Nat) [valid : Shape.valid_axis_inst axis s] [wf : Shape.WellFormed s]
+def reduceSum {s : Shape} (axis : Nat) [_valid : Shape.HasNonemptyAxis axis s]
+    [_wf : Shape.WellFormed s]
     (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let axis32 ← u32 axis
+  let axis32 ← AnyBuffer.natToU32Checked axis
   let dims : Array Nat := Shape.toArray s
   let outShape : Shape := shapeAfterSum s axis
   unary (t := t) s!"reduce_sum(axis={axis})" xId s outShape
     (forward := fun x => Buffer.reduceSumAxis x dims axis32)
     (backward := fun _x dLdy =>
-      let cb := shapeAfterSumBroadcastBack (s := s) axis valid wf
-      let (inDims, outDims, axisMap) := Broadcast.broadcastArgs cb
+      let (inDims, outDims, axisMap) := Broadcast.afterSumArgs s axis
       Buffer.broadcastTo dLdy inDims outDims axisMap)
 
 /-- Reduce-mean along `axis`. -/
-def reduceMean {s : Shape} (axis : Nat) [valid : Shape.valid_axis_inst axis s] [wf : Shape.WellFormed s]
+def reduceMean {s : Shape} (axis : Nat) [valid : Shape.HasNonemptyAxis axis s]
+    [_wf : Shape.WellFormed s]
     (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let axis32 ← u32 axis
+  let axis32 ← AnyBuffer.natToU32Checked axis
   let dims : Array Nat := Shape.toArray s
   let outShape : Shape := shapeAfterSum s axis
   unary (t := t) s!"reduce_mean(axis={axis})" xId s outShape
     (forward := fun x =>
       let sum := Buffer.reduceSumAxis x dims axis32
-      let denomNat :=
-        match getDimSize s axis with
-        | some n => n
-        | none => 1
+      letI : Shape.AxisInBounds axis s := valid.proof.toAxisInBounds
+      let denomNat := Shape.axisSize s axis
       Buffer.scale sum (1.0 / (Float.ofNat denomNat)))
     (backward := fun _x dLdy =>
-      let cb := shapeAfterSumBroadcastBack (s := s) axis valid wf
-      let (inDims, outDims, axisMap) := Broadcast.broadcastArgs cb
+      let (inDims, outDims, axisMap) := Broadcast.afterSumArgs s axis
       let dLdx := Buffer.broadcastTo dLdy inDims outDims axisMap
-      let denomNat :=
-        match getDimSize s axis with
-        | some n => n
-        | none => 1
+      letI : Shape.AxisInBounds axis s := valid.proof.toAxisInBounds
+      let denomNat := Shape.axisSize s axis
       Buffer.releaseThen dLdx <| Buffer.scale dLdx (1.0 / (Float.ofNat denomNat)))
 end Tape
 

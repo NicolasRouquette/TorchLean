@@ -56,7 +56,7 @@ regression evidence, while the theorem layer supplies bounds that apply beyond o
 Let $`x` be an ideal real tensor and $`\widehat{x}` its rounded counterpart. TorchLean writes the basic
 coordinatewise relation as
 
-$$`\operatorname{approxT}(x,\widehat x,\varepsilon)
+$$`\operatorname{approxTensor}(x,\widehat x,\varepsilon)
   \quad\Longleftrightarrow\quad
   \forall i,\;
   |\operatorname{toSpec}(\widehat x_i)-x_i|\leq\varepsilon`.

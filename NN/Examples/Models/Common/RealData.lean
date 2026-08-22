@@ -96,7 +96,7 @@ def cropCifarImages (batch h w : Nat)
 def cropCifarBatch (batch h w : Nat)
     (hH : h ≤ cifarHeight) (hW : w ≤ cifarWidth)
     (sample : Sample.Batch Float batch CifarImage CifarTarget) :
-    SupervisedSample Float (.dim batch (.dim cifarChannels (.dim h (.dim w .scalar)))) (.dim batch (.dim cifarClasses .scalar)) :=
+    Sample.Supervised Float (.dim batch (.dim cifarChannels (.dim h (.dim w .scalar)))) (.dim batch (.dim cifarClasses .scalar)) :=
   Sample.mk (cropCifarImages batch h w hH hW (Sample.x sample)) (Sample.y sample)
 
 /-- ImageNet-style converted image shape used by the higher-resolution diffusion example. -/
@@ -294,22 +294,10 @@ def parse
 
 end HouseholdPowerModelTrainFlags
 
-/-- Require that a paired supervised `.npy` dataset exists before training starts. -/
-abbrev requireSupervisedNpyFiles
-    (exeName : String)
-    (xLabel : String) (xPath : System.FilePath)
-    (yLabel : String) (yPath : System.FilePath)
-    (hint : String) : IO Unit :=
-  Data.requirePairedFiles exeName xLabel xPath yLabel yPath hint
-
-/-- Require that a CSV path exists before a tabular regression command starts training. -/
-abbrev requireCsvFile (exeName : String) (csvPath : System.FilePath) (hint : String) : IO Unit :=
-  Data.requireFile exeName "CSV dataset" csvPath hint
-
 def loadCifarLoader
     (exeName : String) (batch nRows seed : Nat) (xPath yPath : System.FilePath) :
     IO (Data.BatchLoader Float batch CifarImage CifarTarget) := do
-  requireSupervisedNpyFiles
+  Data.requirePairedFiles
     exeName
     "CIFAR-10 images" xPath
     "CIFAR-10 labels" yPath
@@ -442,15 +430,16 @@ def loadImageNet64Batch
 /--
 Load a CIFAR minibatch and expose it as a compact flattened vector batch.
 
-The file paths and download hints remain in `NN.Examples`, while the flattening logic lives in the
-public generative-model API so users can reuse it with their own image tensors.
+The file paths and download hints remain in `NN.Examples`. Tensor flattening uses the ordinary
+shape-general operation from the public tensor API, so the data path does not require an
+image-specific model helper.
 -/
-def loadCifarVectorBatch (cfg : nn.models.VectorGenerativeConfig)
+def loadCifarFeatureBatch (batch : Nat) (cfg : nn.models.DenseGenerative.Config)
     (hData : cfg.dataDim ≤ Spec.Shape.size CifarImage)
     (exeName : String) (xPath yPath : System.FilePath) (nRows seed : Nat) :
-    IO (Tensor Float (nn.models.vectorDataShape cfg)) := do
-  let batchSample ← loadCifarBatch exeName cfg.batch nRows seed xPath yPath
-  pure (Tensor.flattenPrefix (.dim cfg.batch .scalar) cfg.dataDim hData (Sample.x batchSample))
+    IO (Tensor Float (cfg.dataShape (.dim batch .scalar))) := do
+  let batchSample ← loadCifarBatch exeName batch nRows seed xPath yPath
+  pure (Tensor.flattenPrefix (.dim batch .scalar) cfg.dataDim hData (Sample.x batchSample))
 
 /--
 Public singleton dataset for compact vector generative examples over flattened CIFAR batches.
@@ -460,16 +449,17 @@ vector boundary, build one supervised sample, and hand that sample to the public
 sample itself may be Float-specific; this dataset constructor casts it into the runtime-selected scalar so the
 command still works across the ordinary public runtime backends.
 -/
-def cifarVectorDataset {τ : Shape}
-    (cfg : nn.models.VectorGenerativeConfig)
+def cifarFeatureDataset {τ : Shape}
+    (batch : Nat)
+    (cfg : nn.models.DenseGenerative.Config)
     (hData : cfg.dataDim ≤ Spec.Shape.size CifarImage)
     (exeName : String)
-    (mkSample : Tensor Float (nn.models.vectorDataShape cfg) →
-      SupervisedSample Float (nn.models.vectorDataShape cfg) τ)
+    (mkSample : Tensor Float (cfg.dataShape (.dim batch .scalar)) →
+      Sample.Supervised Float (cfg.dataShape (.dim batch .scalar)) τ)
     (xPath yPath : System.FilePath) (nRows seed : Nat) :
-    Trainer.DataSource (nn.models.vectorDataShape cfg) τ :=
-  Data.ioSingletonFloat do
-    let x ← loadCifarVectorBatch cfg hData exeName xPath yPath nRows seed
+    Trainer.DataSource (cfg.dataShape (.dim batch .scalar)) τ :=
+  Data.singletonFloatIO do
+    let x ← loadCifarFeatureBatch batch cfg hData exeName xPath yPath nRows seed
     pure (mkSample x)
 
 /-- Shared text-corpus CLI/data boundary for local text-model examples. -/

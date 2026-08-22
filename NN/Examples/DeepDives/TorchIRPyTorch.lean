@@ -57,9 +57,8 @@ def archAutoencoder : nn.Builder (nn.Sequential (.dim 3 .scalar) (.dim 3 .scalar
   ]
 
 def archCNN : nn.Builder (nn.Sequential (.dim 1 (.dim 1 (.dim 4 (.dim 4 .scalar)))) (shape![1, 3])) :=
-  let cfg : nn.models.CNNConfig 2 :=
-    { batch := 1
-      inChannels := 1
+  let cfg : nn.models.CnnConfig 2 :=
+    { inChannels := 1
       spatial := #v[4, 4]
       outDim := 3
       conv :=
@@ -72,14 +71,14 @@ def archCNN : nn.Builder (nn.Sequential (.dim 1 (.dim 1 (.dim 4 (.dim 4 .scalar)
           kernelNonzero := by intro i; fin_cases i <;> decide
           strideNonzero := by intro i; fin_cases i <;> decide } }
   by
-    simpa [cfg, nn.models.cnnInShape, nn.models.cnnOutShape, Spec.Shape.ofList] using
-      nn.models.cnn cfg
+    simpa [cfg, nn.models.CnnConfig.inputShape, nn.models.CnnConfig.outputShape,
+      Spec.Shape.ofList, Spec.Shape.concat, Spec.Shape.appendDim] using
+      nn.models.cnn cfg (.dim 1 .scalar)
 
 def archConvMLP :
     nn.Builder (nn.Sequential (.dim 1 (.dim 1 (.dim 3 (.dim 3 .scalar)))) (shape![1, 1])) :=
-  let cfg : nn.models.CNNConfig 2 :=
-    { batch := 1
-      inChannels := 1
+  let cfg : nn.models.CnnConfig 2 :=
+    { inChannels := 1
       spatial := #v[3, 3]
       outDim := 1
       conv :=
@@ -92,12 +91,13 @@ def archConvMLP :
           kernelNonzero := by intro i; fin_cases i <;> decide
           strideNonzero := by intro i; fin_cases i <;> decide } }
   by
-    simpa [cfg, nn.models.cnnInShape, nn.models.cnnOutShape, Spec.Shape.ofList] using
-      nn.models.cnn cfg
+    simpa [cfg, nn.models.CnnConfig.inputShape, nn.models.CnnConfig.outputShape,
+      Spec.Shape.ofList, Spec.Shape.concat, Spec.Shape.appendDim] using
+      nn.models.cnn cfg (.dim 1 .scalar)
 
 def archMHA :
     nn.Builder (nn.Sequential (shape![1, 4, 8]) (shape![1, 4, 8])) :=
-  nn.multiheadAttention (batch := 1) (n := 4) (dModel := 8)
+  nn.multiHeadAttention (.dim 1 .scalar) (n := 4) (dModel := 8)
     { numHeads := 2, headDim := 4 }
 
 def archMHAMask : Tensor Bool (.dim 4 (.dim 4 .scalar)) :=
@@ -105,12 +105,12 @@ def archMHAMask : Tensor Bool (.dim 4 (.dim 4 .scalar)) :=
 
 def archMHAMasked :
     nn.Builder (nn.Sequential (shape![1, 4, 8]) (shape![1, 4, 8])) :=
-  nn.multiheadAttention (batch := 1) (n := 4) (dModel := 8)
+  nn.multiHeadAttention (.dim 1 .scalar) (n := 4) (dModel := 8)
     { numHeads := 2, headDim := 4 } (mask := some archMHAMask)
 
 def archTransformer :
     nn.Builder (nn.Sequential (shape![1, 2, 2]) (shape![1, 2, 2])) :=
-  nn.transformerEncoderBlock (batch := 1) (n := 2) (dModel := 2)
+  nn.transformerEncoderBlock (.dim 1 .scalar) (n := 2) (dModel := 2)
     { numHeads := 1
     , headDim := 2
     , ffnHidden := 2 }

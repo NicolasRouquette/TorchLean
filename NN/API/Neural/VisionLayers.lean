@@ -7,7 +7,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Neural.FunctionalBatch
+public import NN.API.Neural.Leading
 
 /-!
 # Vision Layers
@@ -58,7 +58,7 @@ def conv (leading : Spec.Shape := .scalar) {d inChannels : Nat} (spatial : Vecto
       (leading.concat (Spec.Shape.ofList (inChannels :: spatial.toList)))
       (leading.concat (Spec.Shape.ofList
         (cfg.outChannels :: (Spec.convOutSpatial spatial cfg.kernel cfg.stride cfg.padding).toList))) :=
-  nn.of <| Implementation.adaptFlatBatch leading <|
+  nn.of <| adaptLeadingShape leading <|
     _root_.Runtime.Autograd.TorchLean.NN.conv
       (Spec.Shape.size leading) d inChannels cfg.outChannels
       cfg.kernel cfg.stride cfg.padding spatial
@@ -85,7 +85,7 @@ def maxPool (leading : Spec.Shape := .scalar) {d channels : Nat} (spatial : Vect
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))
       (leading.concat (Spec.Shape.ofList
         (channels :: (Spec.poolOutSpatialPad spatial cfg.kernel cfg.stride cfg.padding).toList))) :=
-  nn.of <| Implementation.adaptFlatBatch leading <|
+  nn.of <| adaptLeadingShape leading <|
     _root_.Runtime.Autograd.TorchLean.NN.maxPool (Spec.Shape.size leading) d channels
       cfg.kernel cfg.stride cfg.padding spatial
       (hKernel := cfg.kernelNonzero) (hStride := cfg.strideNonzero)
@@ -97,7 +97,7 @@ def avgPool (leading : Spec.Shape := .scalar) {d channels : Nat} (spatial : Vect
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))
       (leading.concat (Spec.Shape.ofList
         (channels :: (Spec.poolOutSpatialPad spatial cfg.kernel cfg.stride cfg.padding).toList))) :=
-  nn.of <| Implementation.adaptFlatBatch leading <|
+  nn.of <| adaptLeadingShape leading <|
     _root_.Runtime.Autograd.TorchLean.NN.avgPool (Spec.Shape.size leading) d channels
       cfg.kernel cfg.stride cfg.padding spatial cfg.kernelNonzero cfg.strideNonzero
 
@@ -108,7 +108,7 @@ def globalAvgPool (leading : Spec.Shape := .scalar) {d channels : Nat}
     (spatial : Vector Nat d) (spatialNonzero : ∀ i : Fin d, spatial.get i ≠ 0) :
     Sequential
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))
-      (leading.concat (.dim channels .scalar)) :=
+      (leading.appendDim channels) :=
   let config : Pool d :=
     { kernel := spatial
       stride := Vector.replicate d 1
@@ -119,7 +119,7 @@ def globalAvgPool (leading : Spec.Shape := .scalar) {d channels : Nat}
   let pooledShape := leading.concat (Spec.Shape.ofList
     (channels :: (Spec.poolOutSpatialPad spatial spatial
       (Vector.replicate d 1) (Vector.replicate d 0)).toList))
-  let outputShape := leading.concat (.dim channels .scalar)
+  let outputShape := leading.appendDim channels
   let removeSingletons : Layer pooledShape outputShape :=
     { kind := "GlobalAvgPool"
       stateShapes := []
@@ -133,108 +133,57 @@ def globalAvgPool (leading : Spec.Shape := .scalar) {d channels : Nat}
                 dsimp [pooledShape, outputShape]
                 rw [Spec.poolOutSpatialPad_global spatial spatialNonzero]
                 simp [Spec.Shape.size_concat, Spec.Shape.ofList,
-                  Spec.Shape.size]) }
+                  Spec.Shape.size, Spec.Shape.size_appendDim]) }
   seq! pooled, nn.of removeSingletons
 
 /--
-LayerNorm configuration for batched `(batch x seqLen x embedDim)` tensors.
+LayerNorm parameter initialization.
 
 PyTorch analogue: `torch.nn.LayerNorm`.
 See `https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html`.
 -/
-structure LayerNorm where
+structure LayerNormConfig where
   /-- Seed for deterministic initialization of `gamma` (scale). -/
   seedGamma : Nat := 0
   /-- Seed for deterministic initialization of `beta` (shift). -/
   seedBeta : Nat := 0
 
-/--
-Layer normalization over `(batch × seqLen × embedDim)` tensors, with explicit positivity proofs.
-
-This matches the common Transformer usage: normalize each token’s `embedDim`-vector independently,
-with learnable scale/shift parameters `gamma` and `beta`.
-
-PyTorch analogue: `torch.nn.LayerNorm(embedDim)` applied to a tensor of shape
-`(batch, seqLen, embedDim)`.
-
-Call `nn.layerNorm` when `NeZero` can discharge the positivity proofs automatically.
--/
-def layerNormWith {batch seqLen embedDim : Nat} (cfg : LayerNorm)
-    (hSeq : seqLen > 0) (hEmbed : embedDim > 0) :
-    Sequential (.dim batch (.dim seqLen (.dim embedDim .scalar)))
-      (.dim batch (.dim seqLen (.dim embedDim .scalar))) :=
-  of <| _root_.Runtime.Autograd.TorchLean.NN.layerNorm
-    (batch := batch) (seqLen := seqLen) (embedDim := embedDim)
-    (h_seq_pos := hSeq) (h_embed_pos := hEmbed)
+/-- Layer normalization over the final axis, with an explicit nonempty-width proof. -/
+def layerNormWith (leading : Spec.Shape := .scalar) {width : Nat} (cfg : LayerNormConfig)
+    (hWidth : width > 0) :
+    Sequential (leading.appendDim width) (leading.appendDim width) :=
+  of <| _root_.Runtime.Autograd.TorchLean.NN.layerNorm leading width (hWidth := hWidth)
     (seedGamma := cfg.seedGamma) (seedBeta := cfg.seedBeta)
 
 /--
-Layer normalization over `(batch × seqLen × embedDim)` tensors.
+Layer normalization over the final axis of a tensor.
 
-This normalizes each `embedDim`-vector (per batch element, per sequence position), and applies
-learned affine parameters `gamma` and `beta`.
-
-PyTorch analogue: `torch.nn.LayerNorm(embedDim)` on a tensor shaped `(batch, seqLen, embedDim)`.
-
-Implementation note:
-TorchLean uses `NeZero` to ensure `seqLen` and `embedDim` are positive, avoiding degenerate shapes.
+Every index in `leading` selects one width-`width` vector. Empty leading axes are allowed; only the
+normalized axis must be nonempty.
 -/
-def layerNorm {batch seqLen embedDim : Nat} (cfg : LayerNorm := {})
-    [NeZero seqLen] [NeZero embedDim] :
-    Sequential (.dim batch (.dim seqLen (.dim embedDim .scalar)))
-      (.dim batch (.dim seqLen (.dim embedDim .scalar))) :=
-  layerNormWith (batch := batch) (seqLen := seqLen) (embedDim := embedDim) cfg
-    (Nat.pos_of_ne_zero (NeZero.ne (n := seqLen)))
-    (Nat.pos_of_ne_zero (NeZero.ne (n := embedDim)))
+def layerNorm (leading : Spec.Shape := .scalar) {width : Nat} (cfg : LayerNormConfig := {})
+    [NeZero width] : Sequential (leading.appendDim width) (leading.appendDim width) :=
+  layerNormWith leading (width := width) cfg (Nat.pos_of_ne_zero (NeZero.ne (n := width)))
 
-/--
-RMSNorm configuration for batched `(batch x seqLen x embedDim)` tensors.
-
-This is a common alternative to LayerNorm in modern transformer architectures.
--/
-structure RMSNorm where
+/-- RMSNorm parameter initialization. -/
+structure RmsNormConfig where
   /-- Seed for deterministic initialization of `gamma` (scale). -/
   seedGamma : Nat := 0
 
-/--
-RMS normalization over `(batch × seqLen × embedDim)` tensors, with explicit positivity proofs.
-
-This is like LayerNorm but without mean subtraction: we scale by the root-mean-square over the
-`embedDim` axis, and apply a learned scale `gamma`.
-
-PyTorch analogue: many libraries provide an `RMSNorm(embedDim)` module; conceptually it is applied
-to tensors shaped `(batch, seqLen, embedDim)`.
-
-Call `nn.rmsNorm` when `NeZero` can discharge the positivity proofs automatically.
--/
-def rmsNormWith {batch seqLen embedDim : Nat} (cfg : RMSNorm)
-    (hSeq : seqLen > 0) (hEmbed : embedDim > 0) :
-    Sequential (.dim batch (.dim seqLen (.dim embedDim .scalar)))
-      (.dim batch (.dim seqLen (.dim embedDim .scalar))) :=
-  of <| _root_.Runtime.Autograd.TorchLean.NN.rmsNorm
-    (batch := batch) (seqLen := seqLen) (embedDim := embedDim)
-    (h_seq_pos := hSeq) (h_embed_pos := hEmbed)
+/-- RMS normalization over the final axis, with an explicit nonempty-width proof. -/
+def rmsNormWith (leading : Spec.Shape := .scalar) {width : Nat} (cfg : RmsNormConfig)
+    (hWidth : width > 0) :
+    Sequential (leading.appendDim width) (leading.appendDim width) :=
+  of <| _root_.Runtime.Autograd.TorchLean.NN.rmsNorm leading width (hWidth := hWidth)
     (seedGamma := cfg.seedGamma)
 
-/--
-RMS normalization over `(batch × seqLen × embedDim)` tensors.
-
-This normalizes by the root-mean-square over the `embedDim` axis (per batch element, per position),
-then applies a learned scale `gamma`.
-
-Implementation note:
-TorchLean uses `NeZero` to ensure `seqLen` and `embedDim` are positive, avoiding degenerate shapes.
--/
-def rmsNorm {batch seqLen embedDim : Nat} (cfg : RMSNorm := {})
-    [NeZero seqLen] [NeZero embedDim] :
-    Sequential (.dim batch (.dim seqLen (.dim embedDim .scalar)))
-      (.dim batch (.dim seqLen (.dim embedDim .scalar))) :=
-  rmsNormWith (batch := batch) (seqLen := seqLen) (embedDim := embedDim) cfg
-    (Nat.pos_of_ne_zero (NeZero.ne (n := seqLen)))
-    (Nat.pos_of_ne_zero (NeZero.ne (n := embedDim)))
+/-- RMS normalization over the final axis of a tensor. -/
+def rmsNorm (leading : Spec.Shape := .scalar) {width : Nat} (cfg : RmsNormConfig := {})
+    [NeZero width] : Sequential (leading.appendDim width) (leading.appendDim width) :=
+  rmsNormWith leading (width := width) cfg (Nat.pos_of_ne_zero (NeZero.ne (n := width)))
 
 /-- Parameter initialization for affine channel normalization. -/
-structure ChannelNorm where
+structure ChannelNormConfig where
   seedGamma : Nat := 0
   seedBeta : Nat := 0
 
@@ -277,7 +226,7 @@ end Implementation
 
 /-- Batch normalization over `(leading..., channels, spatial...)` for any spatial rank. -/
 def batchNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
-    (spatial : Vector Nat d) (cfg : ChannelNorm := {})
+    (spatial : Vector Nat d) (cfg : ChannelNormConfig := {})
     [NeZero (Spec.Shape.size leading)] [NeZero channels]
     [NeZero (Spec.Shape.size (Spec.Shape.ofList spatial.toList))] :
     Sequential
@@ -298,7 +247,7 @@ def batchNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
 
 /-- Instance normalization over `(leading..., channels, spatial...)` for any spatial rank. -/
 def instanceNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
-    (spatial : Vector Nat d) (cfg : ChannelNorm := {})
+    (spatial : Vector Nat d) (cfg : ChannelNormConfig := {})
     [NeZero (Spec.Shape.size leading)] [NeZero channels]
     [NeZero (Spec.Shape.size (Spec.Shape.ofList spatial.toList))] :
     Sequential
@@ -321,7 +270,7 @@ def instanceNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
 def groupNorm (leading : Spec.Shape := .scalar) {d channels : Nat}
     (spatial : Vector Nat d) (groups : Nat) (hGroups : groups > 0)
     (hGroupsLe : channels ≥ groups) (hDiv : channels % groups = 0)
-    (cfg : ChannelNorm := {}) [NeZero (Spec.Shape.size leading)] [NeZero channels]
+    (cfg : ChannelNormConfig := {}) [NeZero (Spec.Shape.size leading)] [NeZero channels]
     [NeZero (Spec.Shape.size (Spec.Shape.ofList spatial.toList))] :
     Sequential
       (leading.concat (Spec.Shape.ofList (channels :: spatial.toList)))
@@ -345,7 +294,7 @@ Multi-head self-attention configuration.
 PyTorch analogue: `torch.nn.MultiheadAttention` (conceptually).
 See `https://pytorch.org/docs/stable/generated/torch.nn.MultiheadAttention.html`.
 -/
-structure MultiheadAttention where
+structure MultiHeadAttention where
   /-- Number of attention heads. -/
   numHeads : Nat
   /-- Per-head embedding dimension. -/
@@ -369,29 +318,33 @@ Multi-head self-attention with an explicit nonzero sequence length proof.
 
 If `mask` is provided, it is a boolean attention mask of shape `(n × n)` (e.g. causal masking).
 -/
-def multiheadAttentionWith {batch n dModel : Nat} (cfg : MultiheadAttention) (hN : n ≠ 0)
+def multiHeadAttentionWith (leading : Spec.Shape := .scalar) {n dModel : Nat}
+    (cfg : MultiHeadAttention) (hN : n ≠ 0)
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    Sequential (.dim batch (.dim n (.dim dModel .scalar))) (.dim batch (.dim n (.dim dModel .scalar)))
-      :=
-  if cfg.outputBias then
-    of <| _root_.Runtime.Autograd.TorchLean.NN.multiHeadAttentionOutputBias
-      batch n dModel cfg.numHeads cfg.headDim
-      (h1 := hN) (seedW := cfg.seedW) (weightInit? := cfg.weightInit?)
-      (outputWeightInit? := cfg.outputWeightInit?) (mask := mask)
-  else
-    of <| _root_.Runtime.Autograd.TorchLean.NN.multiHeadAttention
-      batch n dModel cfg.numHeads cfg.headDim
-      (h1 := hN) (seedW := cfg.seedW) (weightInit? := cfg.weightInit?)
-      (outputWeightInit? := cfg.outputWeightInit?) (mask := mask)
+    Sequential ((leading.concat (.dim n .scalar)).appendDim dModel)
+      ((leading.concat (.dim n .scalar)).appendDim dModel) := by
+  simpa only [Spec.Shape.concat_appendDim, Spec.Shape.appendDim] using
+    (if cfg.outputBias then
+      of <| adaptLeadingShape leading <|
+        _root_.Runtime.Autograd.TorchLean.NN.multiHeadAttentionOutputBias
+        (Spec.Shape.size leading) n dModel cfg.numHeads cfg.headDim
+        (h1 := hN) (seedW := cfg.seedW) (weightInit? := cfg.weightInit?)
+        (outputWeightInit? := cfg.outputWeightInit?) (mask := mask)
+    else
+      of <| adaptLeadingShape leading <| _root_.Runtime.Autograd.TorchLean.NN.multiHeadAttention
+        (Spec.Shape.size leading) n dModel cfg.numHeads cfg.headDim
+        (h1 := hN) (seedW := cfg.seedW) (weightInit? := cfg.weightInit?)
+        (outputWeightInit? := cfg.outputWeightInit?) (mask := mask))
 
 /--
 Multi-head self-attention using `NeZero` to hide the nonzero sequence length proof.
 
 If `mask` is provided, it is a boolean attention mask of shape `(n × n)` (e.g. causal masking).
 -/
-def multiheadAttention {batch n dModel : Nat} (cfg : MultiheadAttention) [NeZero n]
+def multiHeadAttention (leading : Spec.Shape := .scalar) {n dModel : Nat}
+    (cfg : MultiHeadAttention) [NeZero n]
     (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    Sequential (.dim batch (.dim n (.dim dModel .scalar))) (.dim batch (.dim n (.dim dModel .scalar)))
-      :=
-  multiheadAttentionWith (batch := batch) (n := n) (dModel := dModel) cfg (NeZero.ne (n := n))
+    Sequential ((leading.concat (.dim n .scalar)).appendDim dModel)
+      ((leading.concat (.dim n .scalar)).appendDim dModel) :=
+  multiHeadAttentionWith leading (n := n) (dModel := dModel) cfg (NeZero.ne (n := n))
     (mask := mask)

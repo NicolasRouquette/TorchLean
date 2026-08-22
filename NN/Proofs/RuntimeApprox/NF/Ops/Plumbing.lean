@@ -25,7 +25,7 @@ public import NN.Spec.Layers.Activation
 /-!
 # NF Tensor Approximation Plumbing
 
-Shape-generic lemmas for `approxT` and `linf_norm`.  The later NF proof files use these lemmas to
+Shape-generic lemmas for `approxTensor` and `linf_norm`.  The later NF proof files use these lemmas to
 turn scalar absolute-error facts into tensor-level forward-error bounds.
 -/
 
@@ -49,10 +49,10 @@ Composed operators often prove a row- or coordinate-level estimate and then embe
 infinity-norm budget. This lemma records that monotonicity once, without unfolding the tensor
 distance predicate at every use site.
 -/
-lemma approxT_mono {α : Type} {toSpec : α → SpecScalar} {s : Shape}
+lemma approxTensor_mono {α : Type} {toSpec : α → SpecScalar} {s : Shape}
     {xS : SpecTensor s} {xR : Tensor α s} {eps eps' : SpecScalar}
-    (h : approxT (α := α) (toSpec := toSpec) xS xR eps) (hle : eps ≤ eps') :
-    approxT (α := α) (toSpec := toSpec) xS xR eps' :=
+    (h : approxTensor (α := α) (toSpec := toSpec) xS xR eps) (hle : eps ≤ eps') :
+    approxTensor (α := α) (toSpec := toSpec) xS xR eps' :=
   le_trans h hle
 
 /-- `linf_norm` is always nonnegative. -/
@@ -93,40 +93,40 @@ lemma linf_norm_le_get_dim {n : Nat} {s : Shape} (t : SpecTensor (.dim n s)) (i 
       simpa [linfNorm, RuntimeApprox.linfNorm, tensorLinfNorm] using hle
 
 /--
-Scalar characterization of `approxT` on scalar tensors.
+Scalar characterization of `approxTensor` on scalar tensors.
 
-This rewrites `approxT (Tensor.scalar x) (Tensor.scalar xR) eps` into the usual absolute-error
+This rewrites `approxTensor (Tensor.scalar x) (Tensor.scalar xR) eps` into the usual absolute-error
 inequality `|toSpec xR - x| ≤ eps`.
 -/
-lemma approxT_scalar_iff {α : Type} {toSpec : α → SpecScalar} {x : SpecScalar} {xR : α} {eps :
+lemma approxTensor_scalar_iff {α : Type} {toSpec : α → SpecScalar} {x : SpecScalar} {xR : α} {eps :
   SpecScalar} :
-    approxT (α := α) (toSpec := toSpec) (Tensor.scalar x) (Tensor.scalar xR) eps ↔
+    approxTensor (α := α) (toSpec := toSpec) (Tensor.scalar x) (Tensor.scalar xR) eps ↔
       abs (toSpec xR - x) ≤ eps := by
   -- `tensor_distance linf_norm` is `|x - toSpec xR|` on scalar tensors.
   constructor
   · intro h
     have h' : abs (x - toSpec xR) ≤ eps := by
-      simpa [approxT, approxWith, tensorToSpec, linfNorm, RuntimeApprox.linfNorm,
+      simpa [approxTensor, approxWith, tensorToSpec, linfNorm, RuntimeApprox.linfNorm,
         tensorDistance, NN.MLTheory.Robustness.Spec.tensor_distance_tensor_sub_eq_sub_spec,
         tensorLinfNorm, Spec.mapTensor, Spec.Tensor.subSpec, map2Spec, MathFunctions.abs] using h
     simpa [abs_sub_comm] using h'
   · intro h
     have h' : abs (x - toSpec xR) ≤ eps := by
       simpa [abs_sub_comm] using h
-    simpa [approxT, approxWith, tensorToSpec, linfNorm, RuntimeApprox.linfNorm,
+    simpa [approxTensor, approxWith, tensorToSpec, linfNorm, RuntimeApprox.linfNorm,
       tensorDistance, NN.MLTheory.Robustness.Spec.tensor_distance_tensor_sub_eq_sub_spec,
       tensorLinfNorm, Spec.mapTensor, Spec.Tensor.subSpec, map2Spec, MathFunctions.abs] using h'
 
 /--
-Projection lemma for `approxT` on dimensioned tensors.
+Projection lemma for `approxTensor` on dimensioned tensors.
 
 If `xS` approximates `xR` within `eps`, then each component `xS[i]` approximates `xR[i]` within
   `eps`.
 -/
-lemma approxT_dim_get {α : Type} {toSpec : α → SpecScalar} {n : Nat} {s : Shape}
+lemma approxTensor_dim_get {α : Type} {toSpec : α → SpecScalar} {n : Nat} {s : Shape}
     {xS : SpecTensor (.dim n s)} {xR : Tensor α (.dim n s)} {eps : SpecScalar}
-    (h : approxT (α := α) (toSpec := toSpec) xS xR eps) (i : Fin n) :
-    approxT (α := α) (toSpec := toSpec)
+    (h : approxTensor (α := α) (toSpec := toSpec) xS xR eps) (i : Fin n) :
+    approxTensor (α := α) (toSpec := toSpec)
       (match xS with | Tensor.dim f => f i)
       (match xR with | Tensor.dim f => f i)
       eps := by
@@ -134,7 +134,7 @@ lemma approxT_dim_get {α : Type} {toSpec : α → SpecScalar} {n : Nat} {s : Sh
   | dim xSf =>
       cases xR with
       | dim xRf =>
-          -- Unfold `approxT` at dimension shape: it is a `foldl max` over component distances.
+          -- Unfold `approxTensor` at dimension shape: it is a `foldl max` over component distances.
           have hi : i ∈ List.finRange n := List.mem_finRange i
           have hComp :
               tensorDistance (α := SpecScalar) linfNorm (xSf i)
@@ -162,16 +162,16 @@ lemma approxT_dim_get {α : Type} {toSpec : α → SpecScalar} {n : Nat} {s : Sh
                   0 (List.finRange n)
               exact hle
           have := le_trans hComp h
-          simpa [approxT, approxWith] using this
+          simpa [approxTensor, approxWith] using this
 
 /-- Every valid tensor approximation has a nonnegative error budget.
 
 This fact is independent of the executable scalar type.  Keeping it at the plumbing layer avoids
 repeating the same norm argument in each backend-specific development.
 -/
-lemma approxT_eps_nonneg {α : Type} {toSpec : α → SpecScalar} {s : Shape}
+lemma approxTensor_eps_nonneg {α : Type} {toSpec : α → SpecScalar} {s : Shape}
     {xS : SpecTensor s} {xR : Tensor α s} {eps : SpecScalar}
-    (hx : approxT (α := α) (toSpec := toSpec) xS xR eps) : 0 ≤ eps := by
+    (hx : approxTensor (α := α) (toSpec := toSpec) xS xR eps) : 0 ≤ eps := by
   have h0 :
       0 ≤ tensorDistance (α := SpecScalar) linfNorm xS
         (tensorToSpec (α := α) (toSpec := toSpec) xR) := by
@@ -184,16 +184,16 @@ lemma approxT_eps_nonneg {α : Type} {toSpec : α → SpecScalar} {s : Shape}
 /-- Assemble a dimensioned tensor approximation from uniform componentwise approximations.
 
 The premise uses one common infinity-norm budget for every component.  This is the converse of
-`approxT_dim_get` and is deliberately polymorphic in the runtime scalar representation, so NF,
+`approxTensor_dim_get` and is deliberately polymorphic in the runtime scalar representation, so NF,
 IEEE execution, interval, and future quantized backends can share the same structural proof.
 -/
-lemma approxT_dim_of_forall {α : Type} {toSpec : α → SpecScalar} {n : Nat} {s : Shape}
+lemma approxTensor_dim_of_forall {α : Type} {toSpec : α → SpecScalar} {n : Nat} {s : Shape}
     {xS : SpecTensor (.dim n s)} {xR : Tensor α (.dim n s)} {eps : SpecScalar}
     (hε : 0 ≤ eps)
     (h : ∀ i : Fin n,
-      approxT (α := α) (toSpec := toSpec)
+      approxTensor (α := α) (toSpec := toSpec)
         (match xS with | .dim f => f i) (match xR with | .dim f => f i) eps) :
-    approxT (α := α) (toSpec := toSpec) xS xR eps := by
+    approxTensor (α := α) (toSpec := toSpec) xS xR eps := by
   classical
   cases xS with
   | dim xSf =>
@@ -204,14 +204,14 @@ lemma approxT_dim_of_forall {α : Type} {toSpec : α → SpecScalar} {n : Nat} {
             tensorDistance (α := SpecScalar) linfNorm (xSf i)
                 (tensorToSpec (α := α) (toSpec := toSpec) (xRf i)) ≤ eps := by
         intro i _hi
-        simpa [approxT, approxWith] using h i
+        simpa [approxTensor, approxWith] using h i
       have hfold :=
         List.foldl_max_le_of_le (List.finRange n)
           (fun i =>
             tensorDistance (α := SpecScalar) linfNorm (xSf i)
               (tensorToSpec (α := α) (toSpec := toSpec) (xRf i)))
           (acc := (0 : SpecScalar)) (eps := eps) hε hf
-      simp [approxT, approxWith, tensorDistance,
+      simp [approxTensor, approxWith, tensorDistance,
         linfNorm, RuntimeApprox.linfNorm, tensorToSpec, Spec.mapTensor]
       change
         List.foldl
@@ -232,18 +232,18 @@ Lift a scalar approximation bound to an elementwise `map_spec`.
 
 Given a scalar bound of the form
 `|toSpec (fR xR) - fS x| ≤ bnd (toSpec xR) eps`
-and an input approximation `approxT xS xR eps`, this produces an approximation bound for
+and an input approximation `approxTensor xS xR eps`, this produces an approximation bound for
 `map_spec fS xS` vs `map_spec fR xR`, with an output epsilon computed by taking the `linf_norm` of
 the pointwise bound.
 -/
-theorem approxT_map_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScalar} {s : Shape}
+theorem approxTensor_map_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScalar} {s : Shape}
     (fS : SpecScalar → SpecScalar) (fR : α → α) (bnd : SpecScalar → SpecScalar → SpecScalar) :
     ∀ {xS : SpecTensor s} {xR : Tensor α s} {eps : SpecScalar},
-      approxT (α := α) (toSpec := toSpec) xS xR eps →
+      approxTensor (α := α) (toSpec := toSpec) xS xR eps →
         (∀ {x : SpecScalar} {xR : α},
           abs (toSpec xR - x) ≤ eps →
             abs (toSpec (fR xR) - fS x) ≤ bnd (toSpec xR) eps) →
-        approxT (α := α) (toSpec := toSpec)
+        approxTensor (α := α) (toSpec := toSpec)
           (mapSpec (s := s) fS xS)
           (mapSpec (s := s) fR xR)
           (linfNorm
@@ -257,20 +257,20 @@ theorem approxT_map_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScalar
           cases xR with
           | scalar xR =>
               have hx' :=
-                (approxT_scalar_iff (α := α) (toSpec := toSpec)
+                (approxTensor_scalar_iff (α := α) (toSpec := toSpec)
                   (x := x) (xR := xR) (eps := eps)).1 hx
               have herr :
                   abs (toSpec (fR xR) - fS x) ≤ bnd (toSpec xR) eps :=
                 hscalar hx'
               have herr' : abs (toSpec (fR xR) - fS x) ≤ abs (bnd (toSpec xR) eps) :=
                 le_trans herr (le_abs_self _)
-              change approxT (α := α) (toSpec := toSpec)
+              change approxTensor (α := α) (toSpec := toSpec)
                 (Tensor.scalar (fS x)) (Tensor.scalar (fR xR))
                 (linfNorm
                   (mapSpec (s := Shape.scalar) (fun a => bnd a eps)
                     (tensorToSpec (α := α) (toSpec := toSpec) (Tensor.scalar xR))))
               exact
-                (approxT_scalar_iff (α := α) (toSpec := toSpec)
+                (approxTensor_scalar_iff (α := α) (toSpec := toSpec)
                   (x := fS x) (xR := fR xR)
                   (eps := linfNorm
                     (mapSpec (s := Shape.scalar) (fun a => bnd a eps)
@@ -300,7 +300,7 @@ theorem approxT_map_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScalar
                       ≤ B := by
                 intro i
                 have hx_i :=
-                  approxT_dim_get (α := α) (toSpec := toSpec)
+                  approxTensor_dim_get (α := α) (toSpec := toSpec)
                     (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := eps) hx i
                 have hih := ih (xS := xSf i) (xR := xRf i) hx_i
                 have hB_ge :
@@ -322,7 +322,7 @@ theorem approxT_map_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScalar
                       linfNorm
                         (mapSpec (s := s) (fun a => bnd a eps)
                           (tensorToSpec (α := α) (toSpec := toSpec) (xRf i))) := by
-                  simpa [approxT, approxWith] using hih
+                  simpa [approxTensor, approxWith] using hih
                 exact le_trans hdist hB_ge
               have hf :
                   ∀ i ∈ List.finRange n,
@@ -355,25 +355,25 @@ theorem approxT_map_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScalar
                               (mapSpec (s := s) fR (xRf i)))))
                       0 (List.finRange n) ≤ B
                   exact hfold
-              simpa [approxT, approxWith, B] using this
+              simpa [approxTensor, approxWith, B] using this
 
 /--
 Lift a scalar approximation bound to an elementwise `map2_spec`.
 
-This is the binary analogue of `approxT_map_spec_of_scalar_bound`, used for elementwise arithmetic
+This is the binary analogue of `approxTensor_map_spec_of_scalar_bound`, used for elementwise arithmetic
 (`add`, `sub`, `mul_elem`, etc.).
 -/
-theorem approxT_map2_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScalar} {s : Shape}
+theorem approxTensor_map2_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScalar} {s : Shape}
     (fS : SpecScalar → SpecScalar → SpecScalar) (fR : α → α → α)
     (bnd : SpecScalar → SpecScalar → SpecScalar → SpecScalar → SpecScalar) :
     ∀ {xS yS : SpecTensor s} {xR yR : Tensor α s} {epsx epsy : SpecScalar},
-      approxT (α := α) (toSpec := toSpec) xS xR epsx →
-      approxT (α := α) (toSpec := toSpec) yS yR epsy →
+      approxTensor (α := α) (toSpec := toSpec) xS xR epsx →
+      approxTensor (α := α) (toSpec := toSpec) yS yR epsy →
         (∀ {x y : SpecScalar} {xR yR : α},
           abs (toSpec xR - x) ≤ epsx →
           abs (toSpec yR - y) ≤ epsy →
             abs (toSpec (fR xR yR) - fS x y) ≤ bnd (toSpec xR) (toSpec yR) epsx epsy) →
-        approxT (α := α) (toSpec := toSpec)
+        approxTensor (α := α) (toSpec := toSpec)
           (map2Spec fS xS yS)
           (map2Spec fR xR yR)
           (linfNorm
@@ -392,10 +392,10 @@ theorem approxT_map2_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScala
                   cases yR with
                     | scalar yR =>
                         have hx' :=
-                          (approxT_scalar_iff (α := α) (toSpec := toSpec)
+                          (approxTensor_scalar_iff (α := α) (toSpec := toSpec)
                             (x := x) (xR := xR) (eps := epsx)).1 hx
                         have hy' :=
-                          (approxT_scalar_iff (α := α) (toSpec := toSpec)
+                          (approxTensor_scalar_iff (α := α) (toSpec := toSpec)
                             (x := y) (xR := yR) (eps := epsy)).1 hy
                         have herr :
                             abs (toSpec (fR xR yR) - fS x y) ≤ bnd (toSpec xR) (toSpec yR) epsx epsy
@@ -405,14 +405,14 @@ theorem approxT_map2_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScala
                             abs (toSpec (fR xR yR) - fS x y) ≤ abs (bnd (toSpec xR) (toSpec yR) epsx
                               epsy) :=
                           le_trans herr (le_abs_self _)
-                        change approxT (α := α) (toSpec := toSpec)
+                        change approxTensor (α := α) (toSpec := toSpec)
                           (Tensor.scalar (fS x y)) (Tensor.scalar (fR xR yR))
                           (linfNorm
                             (map2Spec (fun a b => bnd a b epsx epsy)
                               (tensorToSpec (α := α) (toSpec := toSpec) (Tensor.scalar xR))
                               (tensorToSpec (α := α) (toSpec := toSpec) (Tensor.scalar yR))))
                         exact
-                          (approxT_scalar_iff (α := α) (toSpec := toSpec)
+                          (approxTensor_scalar_iff (α := α) (toSpec := toSpec)
                             (x := fS x y) (xR := fR xR yR)
                           (eps := linfNorm
                             (map2Spec (fun a b => bnd a b epsx epsy)
@@ -451,10 +451,10 @@ theorem approxT_map2_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScala
                               ≤ B := by
                         intro i
                         have hx_i :=
-                          approxT_dim_get (α := α) (toSpec := toSpec)
+                          approxTensor_dim_get (α := α) (toSpec := toSpec)
                             (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := epsx) hx i
                         have hy_i :=
-                          approxT_dim_get (α := α) (toSpec := toSpec)
+                          approxTensor_dim_get (α := α) (toSpec := toSpec)
                             (xS := Tensor.dim ySf) (xR := Tensor.dim yRf) (eps := epsy) hy i
                         have hih := ih (xS := xSf i) (yS := ySf i) (xR := xRf i) (yR := yRf i) hx_i
                           hy_i
@@ -481,7 +481,7 @@ theorem approxT_map2_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScala
                                 (map2Spec (fun a b => bnd a b epsx epsy)
                                   (tensorToSpec (α := α) (toSpec := toSpec) (xRf i))
                                   (tensorToSpec (α := α) (toSpec := toSpec) (yRf i))) := by
-                          simpa [approxT, approxWith] using hih
+                          simpa [approxTensor, approxWith] using hih
                         exact le_trans hdist hB_ge
 
                       have hf :
@@ -517,7 +517,7 @@ theorem approxT_map2_spec_of_scalar_bound {α : Type} {toSpec : α → SpecScala
                                       (map2Spec fR (xRf i) (yRf i)))))
                               0 (List.finRange n) ≤ B
                           exact hfold
-                      simpa [approxT, approxWith, B] using this
+                      simpa [approxTensor, approxWith, B] using this
 
 end
 

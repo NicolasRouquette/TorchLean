@@ -35,9 +35,8 @@ namespace Tensor
 -- so `open Tensor` brings them into scope.
 export Spec (shapeOf getSpec getAtSpec get get2 getAtOrZero finZero getHead getTail
   tensorCast replicate
-  sliceSpec sliceRangeSpec collectAtIndexSpec
-  fill scalarTensor vectorTensor matrixTensor nDArrayTensor vectorN matrixMN
-    generate singleton padLeft
+  sliceSpec sliceRangeSpec
+  fill singleton padLeft
   identityTensorSpec matMulSpec matVecMulSpec vecMatMulSpec outerProductSpec)
 
 end Tensor

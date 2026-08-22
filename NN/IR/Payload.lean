@@ -59,10 +59,10 @@ structure LinearWB (α : Type) [Context α] where
 /--
 Payload record for a `conv2d` node.
 
-The spec-layer `Conv2DSpec` carries the typed kernel and bias. The cached dimensions let verifier
+The spec-layer `Conv2dSpec` carries the typed kernel and bias. The cached dimensions let verifier
 passes reconstruct flat shapes without unpacking the spec package at every use site.
 -/
-structure Conv2DParams (α : Type) [Context α] where
+structure Conv2dParams (α : Type) [Context α] where
   /-- Input channels. -/
   inC : Nat
   /-- Output channels. -/
@@ -88,10 +88,10 @@ structure Conv2DParams (α : Type) [Context α] where
   /-- Proof that the stride is nonzero. -/
   hStride : stride ≠ 0
   /-- Spec-layer convolution package containing weights, bias, and convolution metadata. -/
-  spec : Spec.Conv2DSpec inC outC kH kW stride padding α hIn hKH hKW
+  spec : Spec.Conv2dSpec inC outC kH kW stride padding α hIn hKH hKW
 
 /-- Payload record for eval-mode BatchNorm2d over `N×C×H×W` tensors. -/
-structure BatchNorm2DNchwEvalParams (α : Type) [Context α] where
+structure BatchNorm2dNchwEvalParams (α : Type) [Context α] where
   /-- Channel count. -/
   c : Nat
   /-- Affine scale. -/
@@ -117,8 +117,8 @@ structure Payload (α : Type) [Context α] where
   /-- Linear weights and bias keyed by the `linear` node id. -/
   linear? : Nat → Option (LinearWB α) := fun _ => none
   /-- Convolution parameters keyed by the `conv2d` node id. -/
-  conv2d? : Nat → Option (Conv2DParams α) := fun _ => none
+  conv2d? : Nat → Option (Conv2dParams α) := fun _ => none
   /-- Eval-mode BatchNorm parameters keyed by the `batchNorm2dNchwEval` node id. -/
-  batchNorm2dNchwEval? : Nat → Option (BatchNorm2DNchwEvalParams α) := fun _ => none
+  batchNorm2dNchwEval? : Nat → Option (BatchNorm2dNchwEvalParams α) := fun _ => none
 
 end NN.IR

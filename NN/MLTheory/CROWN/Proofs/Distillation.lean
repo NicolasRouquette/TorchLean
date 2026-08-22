@@ -43,7 +43,7 @@ open NN.MLTheory.CROWN
         cases hyi : fy i with
         | scalar yv =>
           simp [Tensor.vecGet, Tensor.subSpec, Spec.Tensor.subSpec, Spec.Tensor.map2Spec,
-            Spec.get, Spec.getAtSpec, Tensor.toScalar, hxi, hyi]
+            Spec.get, Spec.getAtSpec, Tensor.item, hxi, hyi]
 
 /-! ## Interval arithmetic on output boxes -/
 

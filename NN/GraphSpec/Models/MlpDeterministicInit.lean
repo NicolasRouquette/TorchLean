@@ -36,7 +36,7 @@ namespace NN
 namespace GraphSpec
 namespace Models
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 open NN.Tensor
 
@@ -67,7 +67,7 @@ theorem mlp_detInitParams_eq_torchlean_linear_inits
   simp
     [ mlp
     , LowerToDAG.Chain.detInitParams?
-    , LowerToDAG.Chain.detInitParamsAux
+    , LowerToDAG.Chain.detInitParamsFrom
     , Chain.linear, Chain.relu
     , Primitive.linear, Primitive.relu
     ]

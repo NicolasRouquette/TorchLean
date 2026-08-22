@@ -28,9 +28,9 @@ in this folder emits auditable Python source for parity checks and round-trip te
 
 The public helpers are organized as follows:
 
-- `generatePyTorchImports` / `generatePyTorchHelperModules` provide the shared Python prelude.
+- `generatePyTorchImports` / `generatePyTorchSupportDefinitions` provide the shared Python prelude.
 - `generateBasePyTorchModule` is the reusable class skeleton for the example exporters.
-- `generatePyTorchModule` is the simplest end-to-end exporter for a `SpecChain`.
+- `generatePyTorchModule` is the simplest end-to-end exporter for a `Spec.Module.Chain`.
 - `generateCompletePyTorchExport` combines the codegen pieces into a single script.
 - `NN.Runtime.PyTorch.Export.StateDict` is the general checkpoint-to-JSON adapter for users who
   already have PyTorch weights.
@@ -49,8 +49,8 @@ namespace PyTorch
 
 open Spec
 open Tensor
-open ModSpec
-open SpecChain
+open Spec.Module
+open Spec.Module.Chain
 
 /--
 Metadata for a generated PyTorch model snippet.
@@ -132,11 +132,6 @@ def generateGetModelInfoMethodLines (modelName : String)
   [ indentFour "}"
   ]
 
-/-- Flatten a `Shape` into a list of dimension sizes (outermost-first). -/
-def shapeDims : Shape → List Nat
-| .scalar => []
-| .dim n s => n :: shapeDims s
-
 /--
 Render a `Shape` as a Python tuple literal.
 
@@ -146,14 +141,14 @@ Examples:
 - higher-rank shapes become `"(d0, d1, ...)"`.
 -/
 def shapeToPyTupleString (s : Shape) : String :=
-  let dims := shapeDims s
+  let dims := Shape.toList s
   match dims with
   | [] => "()"
   | [n] => s!"({n},)"
   | _ => "(" ++ String.intercalate ", " (dims.map (fun n => toString n)) ++ ")"
 
-/-- Count the number of primitive layers in a `SpecChain`. -/
-def countLayers {α : Type} {s t : Shape} : SpecChain α s t → Nat
+/-- Count the number of primitive layers in a `Spec.Module.Chain`. -/
+def countLayers {α : Type} {s t : Shape} : Spec.Module.Chain α s t → Nat
 | .single _ => 1
 | .comp a b => countLayers a + countLayers b
 
@@ -237,7 +232,7 @@ to be fast.
 -/
 def tensorToPyString {s : Shape} (t : Tensor Float s) : String :=
   match s with
-  | .scalar => toString (toScalar t)
+  | .scalar => toString (item t)
   | .dim n s' =>
     match t with
     | .dim f =>
@@ -258,18 +253,26 @@ def generatePyTorchImports : String :=
   ]
 
 /--
-Small helper modules used by some `toPyTorch` strings in the Lean specs.
+Small helper modules used by some `pythonExpr` strings in the Lean specs.
 
 These are small, dependency-free Python utilities (selectors, wrappers, a compact attention helper)
 used so the generated model classes stay short and readable.
 -/
-def generatePyTorchHelperModules : String :=
+def generatePyTorchSupportDefinitions : String :=
   joinLines [
     "",
     "class SelectLast(nn.Module):",
     indentTwo "\"\"\"Select the last timestep from a (batch, seq, hidden) tensor.\"\"\"",
     indentTwo "def forward(self, x):",
     indentFour "return x[:, -1, :]",
+    "",
+    "class SelectLeading(nn.Module):",
+    indentTwo "\"\"\"Select one position from the leading model dimension after the batch axis.\"\"\"",
+    indentTwo "def __init__(self, index: int):",
+    indentFour "super().__init__()",
+    indentFour "self.index = index",
+    indentTwo "def forward(self, x):",
+    indentFour "return x[:, self.index, ...]",
     "",
     "class RNNOnlyOutput(nn.Module):",
     indentTwo "def __init__(self, input_size: int, hidden_size: int, **kwargs):",
@@ -514,23 +517,23 @@ def generateTestingUtils : String :=
   ]
 
 /--
-Generate a complete `nn.Sequential`-based Python module for a `SpecChain`.
+Generate a complete `nn.Sequential`-based Python module for a `Spec.Module.Chain`.
 
 This is the simplest exporter: we extract a list of `(opName, pythonLayerString)` pairs and drop
 them into an `nn.Sequential(...)` in a new class.
 -/
 def generatePyTorchModule {α : Type} {s t : Shape}
-  (chain : SpecChain α s t) (className : String := "ExportedModel") : String :=
+  (chain : Spec.Module.Chain α s t) (className : String := "ExportedModel") : String :=
   let inputShape := shapeToPyTupleString s
   let outputShape := shapeToPyTupleString t
   let layerCount := countLayers chain
-  let layers := SpecChain.extractLayerInfo chain
+  let layers := Spec.Module.Chain.layerInfo chain
   let layerStrings := layers.map (fun (_, pytorch) => indentEight pytorch)
   let opList := "[" ++ String.intercalate ", " (layers.map (fun (op, _) => s!"\"{op}\"")) ++ "]"
 
   joinLines <|
     [ generatePyTorchImports
-    , generatePyTorchHelperModules
+    , generatePyTorchSupportDefinitions
     , ""
     , s!"class {className}(nn.Module):"
     , indentTwo "def __init__(self):"
@@ -584,18 +587,19 @@ def generateCompletePyTorchExport (className : String) (docstring : String) : St
   ]
 
 /--
-Export a `SpecChain` to PyTorch and bundle the result in a metadata record.
+Export a `Spec.Module.Chain` to PyTorch and bundle the result in a metadata record.
 
 This is the "one call" entrypoint used by some examples.
 -/
-def exportGeneralModel {α : Type} {s t : Shape}
-  (chain : SpecChain α s t) (className : String := "GeneralModel") : PyTorchExportMetadata α s t :=
+def exportChain {α : Type} {s t : Shape}
+    (chain : Spec.Module.Chain α s t) (className : String := "TorchLeanModel") :
+    PyTorchExportMetadata α s t :=
   {
     modelName := className,
     inputShape := s,
     outputShape := t,
     layerCount := countLayers chain,
-    operationTypes := (extractLayerInfo chain).map (fun (op, _) => op),
+    operationTypes := (Spec.Module.Chain.layerInfo chain).map (fun (op, _) => op),
     hasWeights := false,
     pytorchCode := generatePyTorchModule chain className
   }

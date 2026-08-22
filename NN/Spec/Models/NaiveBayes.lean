@@ -79,10 +79,6 @@ private def totalFeatureCounts (counts : HashMap String (HashMap String Nat)) : 
 private def distinctFeatures (data : List Example) : List String :=
   data.foldl (fun acc ex => acc ++ ex.features) [] |>.eraseDups
 
--- Compute log-probabilities to avoid underflow.
-/-- Alias for `MathFunctions.log`, to emphasize we are working in log-space. -/
-private def logProb {α : Type} (x : α) [Context α] : α := MathFunctions.log x
-
 /-!
 ## Fitted model
 
@@ -138,13 +134,14 @@ Scores are in log space. For prediction we only need relative ordering.
 
 /-- Log prior probability `log P(lbl)` with Laplace smoothing. -/
 private def logPrior {α : Type} [Context α] (m : Model) (lbl : String) : α :=
-  logProb (((m.labelCounts.getD lbl 0 + 1) : α) / ((m.totalExamples + nLabels m) : α))
+  MathFunctions.log (((m.labelCounts.getD lbl 0 + 1) : α) /
+    ((m.totalExamples + nLabels m) : α))
 
 /-- Log conditional probability `log P(f | lbl)` with Laplace smoothing. -/
 private def logCond {α : Type} [Context α] (m : Model) (lbl : String) (f : String) : α :=
   let countF := m.featureCounts.getD lbl {} |>.getD f 0
   let totalF := m.totalCounts.getD lbl 0
-  logProb (((countF + 1) : α) / ((totalF + vocabSize m) : α))
+  MathFunctions.log (((countF + 1) : α) / ((totalF + vocabSize m) : α))
 
 /-- Unnormalized log score `log P(lbl) + Σ log P(f|lbl)` for a bag of features. -/
 def score {α : Type} [Context α] (m : Model) (input : List String) (lbl : String) : α :=
@@ -189,12 +186,12 @@ private def logSumExp {α : Type} [Context α] (xs : List α) : α :=
   -- Numerically-stable log-sum-exp:
   --   log Σ exp(x_i) = m + log Σ exp(x_i - m), where m = max_i x_i.
   match xs with
-  | [] => logProb (0 : α)
+  | [] => MathFunctions.log (0 : α)
   | x0 :: rest =>
       let m :=
         rest.foldl (fun cur x => if x > cur then x else cur) x0
       let s := listSum (xs.map (fun x => MathFunctions.exp (x - m)))
-      m + logProb s
+      m + MathFunctions.log s
 
 /-- Negative log-likelihood of the dataset under the trained Naive Bayes model. -/
 def negLogLikelihood {α : Type} [Context α] (m : Model) (data : List Example) : α :=

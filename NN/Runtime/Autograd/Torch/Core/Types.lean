@@ -66,14 +66,14 @@ deriving Repr, DecidableEq
 Options controlling the behavior of the Torch-style front-end.
 
 PyTorch comparison: these are approximately session/global settings, such as the default
-`requires_grad` value and requested execution device.
+`requiresGrad` value and requested execution device.
 -/
 structure Options where
   /-- Choose immediate tape execution or shape-indexed typed graph execution. -/
   execution : ExecutionMode := .eager
   /-- Device requested for execution. -/
   device : NN.Backend.Device := .cpu
-  /-- Default `requires_grad` value for parameters whose constructor omits it. Inputs default to false. -/
+  /-- Default `requiresGrad` value for parameters whose constructor omits it. Inputs default to false. -/
   requiresGradByDefault : Bool := true
   /--
   Global deterministic seed for runtime randomness.
@@ -91,7 +91,7 @@ structure Options where
   Enable gradient tracking for newly recorded leaves.
 
   Inference helpers set this to `false`: forward values are still materialized so they can be read
-  back, but parameter/input leaves are recorded with `requires_grad = false`. The tape may still
+  back, but parameter/input leaves are recorded with `requiresGrad = false`. The tape may still
   exist as a runtime value store; this flag controls whether newly recorded leaves participate in
   backward. It does not control whether forward execution may allocate intermediate values.
   -/
@@ -262,9 +262,9 @@ structure AnyParam (α : Type) where
   /-- Whether the underlying parameter receives optimizer updates. -/
   requiresGrad : Bool
   /-- Read the current parameter value with its runtime shape. -/
-  get : IO (Runtime.AnyTensor α)
+  get : IO (Spec.PackedTensor α)
   /-- Overwrite the current parameter value, checking shape at the call site. -/
-  set : Runtime.AnyTensor α → IO Unit
+  set : Spec.PackedTensor α → IO Unit
   /-- Store a CUDA buffer mirror without forcing an immediate host download. -/
   setCuda : Runtime.Autograd.Cuda.AnyBuffer → IO Unit
 
@@ -294,7 +294,7 @@ def releaseCachedCudaValue {α : Type} {s : Shape} (p : Param α s) : IO Unit :=
   match ← p.cudaValue.get with
   | none => pure ()
   | some any =>
-      let released := Runtime.Autograd.Cuda.Buffer.release any.buf
+      let released ← Runtime.Autograd.Cuda.Buffer.releaseIO any.buf
       observeCudaCleanupFlag released
 
 /--
@@ -308,16 +308,16 @@ def ofParam {α : Type} {s : Shape} (p : Param α s) : AnyParam α :=
     requiresGrad := p.requiresGrad
     get := do
       let v ← p.value.get
-      pure (Runtime.Autograd.AnyTensor.mk v)
+      pure (Spec.PackedTensor.ofTensor v)
     set := fun v => do
-      if h : v.s = s then
+      if h : v.shape = s then
         releaseCachedCudaValue p
-        p.value.set (Tensor.castShape v.t h)
+        p.value.set (v.cast h)
         p.cudaValue.set none
         p.hostCurrent.set true
       else
         throw <| IO.userError
-          s!"torch: param update shape mismatch (expected {Shape.pretty s}, got {Shape.pretty v.s})"
+          s!"torch: param update shape mismatch (expected {Shape.pretty s}, got {Shape.pretty v.shape})"
     setCuda := fun v => do
       if _h : v.s = s then
         releaseCachedCudaValue p
@@ -329,10 +329,6 @@ def ofParam {α : Type} {s : Shape} (p : Param α s) : AnyParam α :=
           }
 
 end AnyParam
-
-/-- Convenience: throw `IO.userError` on a `.error` result. -/
-abbrev okOrThrow {α : Type} : Runtime.Autograd.Result α → IO α :=
-  Runtime.Autograd.okOrThrow
 end Torch
 end Autograd
 end Runtime

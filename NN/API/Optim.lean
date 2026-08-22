@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Neural
+public import NN.API.Tensor
 public import NN.API.Trainer.Manual.Core
 
 /-!
@@ -33,7 +33,7 @@ namespace optim
 abbrev Optimizer := TorchLean.Trainer.Manual.OptimizerConfig
 
 /-- Public SGD optimizer configuration. -/
-structure SGDConfig where
+structure SgdConfig where
   /-- Learning rate. -/
   lr : Float
   /-- Momentum coefficient. -/
@@ -49,7 +49,7 @@ structure AdagradConfig where
 deriving Repr
 
 /-- Public RMSProp optimizer configuration. -/
-structure RMSpropConfig where
+structure RmspropConfig where
   /-- Learning rate. -/
   lr : Float
   /-- Decay coefficient for the running average of squared gradients. -/
@@ -87,11 +87,11 @@ structure AdadeltaConfig where
 deriving Repr
 
 /-- SGD optimizer config, written `optim.sgd { lr := 0.05 }`. -/
-def sgd (cfg : SGDConfig) : Optimizer :=
+def sgd (cfg : SgdConfig) : Optimizer :=
   .sgd cfg.lr cfg.momentum
 
 /-- Momentum SGD, using momentum `0.9` when the configuration leaves it at zero. -/
-def momentumSgd (cfg : SGDConfig) : Optimizer :=
+def momentumSgd (cfg : SgdConfig) : Optimizer :=
   .sgd cfg.lr
     (if cfg.momentum == 0.0 then 0.9 else cfg.momentum)
 
@@ -100,7 +100,7 @@ def adagrad (cfg : AdagradConfig) : Optimizer :=
   .adagrad cfg.lr cfg.epsilon
 
 /-- RMSprop optimizer config, written `optim.rmsprop { lr := 1e-3 }`. -/
-def rmsprop (cfg : RMSpropConfig) : Optimizer :=
+def rmsprop (cfg : RmspropConfig) : Optimizer :=
   .rmsprop cfg.lr cfg.decay cfg.epsilon
 
 /-- Adam optimizer config, written `optim.adam { lr := 1e-3 }`. -/

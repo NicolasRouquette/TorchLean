@@ -15,7 +15,6 @@ public import NN.Spec.Core.TensorReductionShape.ConcatSlice
 /-!
 # Tensor Reductions and Shape Helpers
 
-Shape-changing tensor specs, broadcasting, reductions, linear-algebra helpers, concatenation, and
-slicing. The original import path remains the public entrypoint; the implementation lives in focused
-submodules by operation family.
+Shape-changing tensor specifications, broadcasting, reductions, linear-algebra operations,
+concatenation, and slicing. Implementations are grouped into submodules by operation family.
 -/

@@ -35,16 +35,16 @@ local notation "R" => TorchLean.Floats.NF β fexp rnd
 
 omit [NeuralValidRndToNearest rnd] in
 /--
-`approxT` bound for elementwise addition (`add_spec`) over arbitrary tensor shapes.
+`approxTensor` bound for elementwise addition (`add_spec`) over arbitrary tensor shapes.
 
 The output epsilon is computed as `linf_norm (add_bound_tensor epsx epsy xR yR)`, which combines the
 input epsilons and one rounding-ULP term per element.
 -/
-theorem approxT_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
+theorem approxTensor_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
     ∀ {xS yS : SpecTensor s} {xR yR : Tensor R s} {epsx epsy : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (addSpec xS yS) (addSpec xR yR)
           (linfNorm (addBoundTensor (β := β) (fexp := fexp) epsx epsy xR yR)) := by
   intro xS yS xR yR epsx epsy hx hy
@@ -58,13 +58,13 @@ theorem approxT_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
               | scalar xR =>
                   cases yR with
                   | scalar yR =>
-                      -- Reduce to the scalar rounding lemma and wrap back into `approxT`.
+                      -- Reduce to the scalar rounding lemma and wrap back into `approxTensor`.
                       have hx' :=
-                        (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
+                        (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
                           := rnd))
                           (x := x) (xR := xR) (eps := epsx)).1 hx
                       have hy' :=
-                        (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
+                        (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
                           := rnd))
                           (x := y) (xR := yR) (eps := epsy)).1 hy
                       have hxy := approx_add_nf (β := β) (fexp := fexp) (rnd := rnd) (x := x) (y :=
@@ -86,7 +86,7 @@ theorem approxT_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                               (toSpec (β := β) (fexp := fexp) (rnd := rnd) xR +
                                 toSpec (β := β) (fexp := fexp) (rnd := rnd) yR) / 2))
                       exact
-                        (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
+                        (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
                           := rnd))
                           (x := x + y) (xR := xR + yR)
                           (eps := linfNorm
@@ -124,11 +124,11 @@ theorem approxT_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                         intro i
                         -- Project input approximations to the component.
                         have hx_i :=
-                          approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+                          approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
                             rnd))
                             (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := epsx) hx i
                         have hy_i :=
-                          approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+                          approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
                             rnd))
                             (xS := Tensor.dim ySf) (xR := Tensor.dim yRf) (eps := epsy) hy i
 
@@ -149,7 +149,7 @@ theorem approxT_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                                   (s := Shape.dim n s) epsx epsy (Tensor.dim xRf) (Tensor.dim yRf))
                               i)
 
-                        -- Convert the IH (an `approxT` statement) into a `tensor_distance`
+                        -- Convert the IH (an `approxTensor` statement) into a `tensor_distance`
                         -- inequality and weaken the bound.
                         have hdist : tensorDistance (α := SpecScalar) linfNorm
                             (addSpec (xSf i) (ySf i))
@@ -158,7 +158,7 @@ theorem approxT_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                               (addSpec (xRf i) (yRf i)))
                           ≤ linfNorm (addBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                               (s := s) epsx epsy (xRf i) (yRf i)) := by
-                          simpa [approxT, approxWith] using hih
+                          simpa [approxTensor, approxWith] using hih
                         exact le_trans hdist hB_ge
 
                       -- Fold the component distances with `max` and bound by `B`.
@@ -205,25 +205,25 @@ theorem approxT_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                         simpa [tensorDistance, linfNorm, RuntimeApprox.linfNorm, tensorToSpec,
                           MathFunctions.abs, Spec.mapTensor] using hfold
 
-                      -- Conclude `approxT` for the whole tensor.
-                      simpa [approxT, approxWith, B, addSpec, map2Spec] using this
+                      -- Conclude `approxTensor` for the whole tensor.
+                      simpa [approxTensor, approxWith, B, addSpec, map2Spec] using this
 
 /--
-`approxT` bound for elementwise subtraction (`sub_spec`) over arbitrary tensor shapes.
+`approxTensor` bound for elementwise subtraction (`sub_spec`) over arbitrary tensor shapes.
 
 This is obtained by lifting the scalar subtraction bound `approx_sub_nf` via
-`approxT_map2_spec_of_scalar_bound`.
+`approxTensor_map2_spec_of_scalar_bound`.
 -/
-theorem approxT_sub_spec {s : Shape} :
+theorem approxTensor_sub_spec {s : Shape} :
     ∀ {xS yS : SpecTensor s} {xR yR : Tensor R s} {epsx epsy : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (subSpec xS yS) (subSpec xR yR)
           (linfNorm (subBoundTensor (β := β) (fexp := fexp) epsx epsy xR yR)) := by
   intro xS yS xR yR epsx epsy hx hy
   have h :=
-    approxT_map2_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+    approxTensor_map2_spec_of_scalar_bound (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
       rnd))
       (s := s)
       (fS := fun a b => a - b) (fR := fun a b => a - b)
@@ -239,16 +239,16 @@ theorem approxT_sub_spec {s : Shape} :
 
 omit [NeuralValidRndToNearest rnd] in
 /--
-`approxT` bound for elementwise multiplication (`mul_spec`) over arbitrary tensor shapes.
+`approxTensor` bound for elementwise multiplication (`mul_spec`) over arbitrary tensor shapes.
 
 The scalar core is `approx_mul_nf`, lifted componentwise; the resulting bound is packaged as
 `mul_bound_tensor` and reduced with `linf_norm`.
 -/
-theorem approxT_mul_spec {s : Shape} [NeuralValidRndToNearest rnd] :
+theorem approxTensor_mul_spec {s : Shape} [NeuralValidRndToNearest rnd] :
     ∀ {xS yS : SpecTensor s} {xR yR : Tensor R s} {epsx epsy : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mulSpec xS yS) (mulSpec xR yR)
           (linfNorm (mulBoundTensor (β := β) (fexp := fexp) epsx epsy xR yR)) := by
   intro xS yS xR yR epsx epsy hx hy
@@ -263,11 +263,11 @@ theorem approxT_mul_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                   cases yR with
                   | scalar yR =>
                       have hx' :=
-                        (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
+                        (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
                           := rnd))
                           (x := x) (xR := xR) (eps := epsx)).1 hx
                       have hy' :=
-                        (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
+                        (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
                           := rnd))
                           (x := y) (xR := yR) (eps := epsy)).1 hy
                       have hxy := approx_mul_nf (β := β) (fexp := fexp) (rnd := rnd) (x := x) (y :=
@@ -289,7 +289,7 @@ theorem approxT_mul_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                                   (toSpec (β := β) (fexp := fexp) (rnd := rnd) xR *
                                     toSpec (β := β) (fexp := fexp) (rnd := rnd) yR) / 2))
                       exact
-                        (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
+                        (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd
                           := rnd))
                           (x := x * y) (xR := xR * yR)
                           (eps := linfNorm
@@ -324,11 +324,11 @@ theorem approxT_mul_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                               ≤ B := by
                         intro i
                         have hx_i :=
-                          approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+                          approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
                             rnd))
                             (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := epsx) hx i
                         have hy_i :=
-                          approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+                          approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
                             rnd))
                             (xS := Tensor.dim ySf) (xR := Tensor.dim yRf) (eps := epsy) hy i
 
@@ -353,7 +353,7 @@ theorem approxT_mul_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                               (mulSpec (xRf i) (yRf i)))
                           ≤ linfNorm (mulBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                               (s := s) epsx epsy (xRf i) (yRf i)) := by
-                          simpa [approxT, approxWith] using hih
+                          simpa [approxTensor, approxWith] using hih
                         exact le_trans hdist hB_ge
 
                       have : tensorDistance (α := SpecScalar) linfNorm
@@ -395,18 +395,18 @@ theorem approxT_mul_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                         simpa [tensorDistance, linfNorm, RuntimeApprox.linfNorm, tensorToSpec,
                           MathFunctions.abs, Spec.mapTensor] using hfold
 
-                      simpa [approxT, approxWith, B, mulSpec, map2Spec] using this
+                      simpa [approxTensor, approxWith, B, mulSpec, map2Spec] using this
 
 /-- Squaring is the diagonal specialization of elementwise multiplication, so it uses the same
 rounded multiplication bound rather than a separate numerical rule. -/
-theorem approxT_square_spec {s : Shape} :
+theorem approxTensor_square_spec {s : Shape} :
     ∀ {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ},
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps →
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (squareSpec xS) (squareSpec xR)
           (linfNorm (mulBoundTensor (β := β) (fexp := fexp) eps eps xR xR)) := by
   intro xS xR eps hx
-  have h := approxT_mul_spec
+  have h := approxTensor_mul_spec
     (β := β) (fexp := fexp) (rnd := rnd) hx hx
   simpa only [squareSpec_eq_mulSpec] using h
 end NFBackend

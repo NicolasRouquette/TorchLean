@@ -60,7 +60,7 @@ rounded-real ULP exactly.
 -/
 theorem neuralBpow_ulpExp?_eq_ulp32 (x : IEEE32Exec) {d : Dyadic}
     (hx : toDyadic? x = some d) :
-    (ulpExp? x).map (neuralBpow binaryRadix) = some (ulp₃₂ (toReal x)) := by
+    (ulpExp? x).map (neuralBpow binaryRadix) = some (ulp32 (toReal x)) := by
   by_cases hm : d.mant = 0
   · have hz : dyadicToReal d = 0 := by
       have h := abs_dyadicToReal d
@@ -93,7 +93,7 @@ exactly the rounded-real binary32 ULP at `x`.
 -/
 theorem neuralBpow_eq_ulp32_of_ulpExp?_eq_some {x : IEEE32Exec} {k : Int}
     (hx : ulpExp? x = some k) :
-    neuralBpow binaryRadix k = ulp₃₂ (toReal x) := by
+    neuralBpow binaryRadix k = ulp32 (toReal x) := by
   cases hdy : toDyadic? x with
   | none =>
       simp [ulpExp?, hdy] at hx
@@ -113,7 +113,7 @@ rounding the exact real sum returns the left operand.
 theorem round32_add_eq_left_of_absorbs {a b : IEEE32Exec} {da db : Dyadic}
     (ha : toDyadic? a = some da) (hb : toDyadic? b = some db)
     (hfin : isFinite (add a b) = true) (habs : absorbs a b = true) :
-    round₃₂ (toReal a + toReal b) = toReal a := by
+    round32 (toReal a + toReal b) = toReal a := by
   have h := toReal_add_eq_fp32Round a b ha hb hfin
   have habsEq : add a b = a := of_decide_eq_true habs
   rw [habsEq] at h
@@ -126,7 +126,7 @@ three executable finiteness checks.
 theorem round32_add_eq_left_of_absorbs_of_isFinite {a b : IEEE32Exec}
     (ha : isFinite a = true) (hb : isFinite b = true)
     (hadd : isFinite (add a b) = true) (habs : absorbs a b = true) :
-    round₃₂ (toReal a + toReal b) = toReal a := by
+    round32 (toReal a + toReal b) = toReal a := by
   obtain ⟨da, hda⟩ := exists_toDyadic?_of_isFinite ha
   obtain ⟨db, hdb⟩ := exists_toDyadic?_of_isFinite hb
   exact round32_add_eq_left_of_absorbs hda hdb hadd habs

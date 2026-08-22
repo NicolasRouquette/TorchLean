@@ -170,7 +170,7 @@ theorem linear_layer_lipschitz_bound {inDim outDim : ℕ}
               Spec.tensorNormSquared (Spec.get layer.weights i) := by
           refine Finset.sum_nonneg ?_
           intro i _
-          exact Spec.tensor_norm_squared_nonneg2 (t := Spec.get layer.weights i)
+          exact Spec.tensor_norm_squared_nonneg (t := Spec.get layer.weights i)
         simpa using this
 
       have hsum0 :
@@ -187,7 +187,7 @@ theorem linear_layer_lipschitz_bound {inDim outDim : ℕ}
           ∀ i ∈ (Finset.univ : Finset (Fin outDim)),
             0 ≤ Spec.tensorNormSquared (Spec.get layer.weights i) := by
         intro i _
-        exact Spec.tensor_norm_squared_nonneg2 (t := Spec.get layer.weights i)
+        exact Spec.tensor_norm_squared_nonneg (t := Spec.get layer.weights i)
 
       have hterms0_mem :
           ∀ i ∈ (Finset.univ : Finset (Fin outDim)),

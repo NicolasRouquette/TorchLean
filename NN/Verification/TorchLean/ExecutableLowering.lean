@@ -30,7 +30,7 @@ pass with the theorem for `NN.Verification.TorchLean.Proved.ForwardProgram`.
 
 namespace NN.Verification.TorchLean
 
-open _root_.NN.Spec
+open _root_.Spec
 open Tensor
 open NN.IR
 

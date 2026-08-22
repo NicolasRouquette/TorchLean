@@ -62,7 +62,7 @@ in the command and in the shapes, rather than being an implicit cache dependency
 ## Supervised Examples: Next-Token Prediction As Tensors
 
 The training data is represented directly as typed supervised samples. The examples build explicit
-`SupervisedSample` values whose shapes say what they are.
+`Sample.Supervised` values whose shapes say what they are.
 
 For GPT-2, the sample is a one-hot matrix for causal language modeling:
 
@@ -79,7 +79,7 @@ typed tensors directly.
 The Lean sample constructor is explicit:
 
 ```lean
-def mkSampleFromTokenIds (toks : List Nat) : SupervisedSample Float σ τ :=
+def mkSampleFromTokenIds (toks : List Nat) : Sample.Supervised Float σ τ :=
   Data.CausalLM.oneHotBatch (α := Float) batch seqLen vocab toks (padId := 32)
 ```
 
@@ -90,29 +90,33 @@ tensors.
 
 ## GPT-2: A Small Causal Transformer
 
-`NN.Examples.Models.Sequence.Gpt2` wires up a miniature causal transformer from reusable layers
-(`nn.models.CausalTransformerOneHot`). The default configuration is compact enough for a local run,
+`NN.Examples.Models.Sequence.Gpt2` wires up a miniature causal Transformer from reusable layers
+(`nn.models.CausalTransformer.oneHot`). The default configuration is compact enough for a local run,
 but it is still large enough to learn short structure from Tiny Shakespeare.
 
 The model declaration is a normal Lean value:
 
 ```lean
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.CausalTransformerOneHot
-    { batch := batch
-      seqLen := seqLen
+  nn.models.CausalTransformer.oneHot
+    { seqLen := seqLen
       vocab := vocab
       numHeads := numHeads
       headDim := headDim
       ffnHidden := ffnHidden
       layers := layers }
+    (.dim batch .scalar)
 ```
+
+The configuration describes the Transformer itself. The final argument supplies the leading batch
+shape for this particular training run; the same constructor also accepts an unbatched sequence or
+several leading collection axes.
 
 The training loop stays on the same public API used by the simpler quickstarts:
 
 ```lean
 let trainer := Trainer.new model <|
-  Trainer.Config.fromRunConfig run (.oneHotCrossEntropy)
+  Trainer.Config.fromRunConfig run (.oneHotCrossEntropy 2)
 let trained ← trainer.train data train.options probes
 trained.printSummary
 ```
@@ -180,7 +184,7 @@ and the training body is still an ordinary trainer call:
 
 ```lean
 let trainer := Trainer.new model <|
-  Trainer.Config.fromRunConfig run (.oneHotCrossEntropy)
+  Trainer.Config.fromRunConfig run (.oneHotCrossEntropy 1)
 let trained ← trainer.train data train.options probes
 trained.printSummary
 ```

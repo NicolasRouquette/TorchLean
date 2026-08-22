@@ -35,7 +35,7 @@ namespace NN
 namespace GraphSpec
 namespace Models
 
-open _root_.NN.Spec
+open _root_.Spec
 open NN.Tensor
 
 /--
@@ -87,7 +87,7 @@ def g (inDim hidDim outDim : Nat) :
       [ .dim hidDim (.dim inDim .scalar), .dim hidDim .scalar
       , .dim outDim (.dim hidDim .scalar), .dim outDim .scalar ]
       (.dim inDim .scalar) (.dim outDim .scalar) :=
-  Models.mlp inDim hidDim outDim >>> Chain.softmaxLast (.dim outDim .scalar)
+  Models.mlp inDim hidDim outDim >>> Chain.softmax (.dim outDim .scalar) 0
 ```
 
 Then:

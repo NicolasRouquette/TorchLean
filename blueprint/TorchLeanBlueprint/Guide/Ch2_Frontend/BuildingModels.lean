@@ -391,7 +391,7 @@ The block constructor is:
 
 ```
 nn.transformerEncoderBlock
-  (batch := batch)
+  (.dim batch .scalar)
   (n := sequenceLength)
   (dModel := dModel)
   { numHeads := 2
@@ -439,7 +439,7 @@ KANs, GPT-style language models, vision transformers, recurrent models, neural o
 autoencoders, diffusion models, and reinforcement-learning policies all build from the same shape,
 parameter, and runtime interfaces.
 
-For example, `nn.models.KANConfig` records input/output dimensions, hidden widths, and an edge basis
+For example, `nn.models.KanConfig` records input/output dimensions, hidden widths, and an edge basis
 family. The basis is explicit because a KAN edge performs a learned scalar function rather than an
 ordinary affine weight. It still returns a seeded model builder that can be trained through the
 same trainer boundary.
@@ -500,9 +500,10 @@ transformation did.
 Masks change which data reaches the model. A low-rank adapter instead changes a parameterized
 projection without replacing its base weight.
 
-`NN.API` also exports the LoRA tensor helpers as `TorchLean.Adapters.LoRA`. They use the row-batch
-convention: an input of shape `[batch,inDim]` multiplies a base weight of shape
-`[inDim,outDim]` on the right. An adapter stores
+`NN.API` also exports the LoRA tensor helpers as `TorchLean.Adapters.LoRA`. An input whose final
+axis has size `inDim` multiplies a base weight of shape `[inDim,outDim]` on the right. Every leading
+axis is preserved, so the same definition handles a vector, a batch, or several leading axes. An
+adapter stores
 
 $$`
 A:\operatorname{Tensor}\;\alpha\;[\mathrm{inDim},\mathrm{rank}],
@@ -546,13 +547,15 @@ TorchLean therefore writes:
 
 ```
 Trainer.new model { task := .regression }
-Trainer.new model { task := .oneHotCrossEntropy }
+Trainer.new model { task := .oneHotCrossEntropy 0 }
 Trainer.new model { task := .custom lossProgram }
 ```
 
 Regression uses mean-squared error by default. Classification variants specify their target
-convention. A custom task supplies a checked scalar loss program. This makes the loss visible in
-the training configuration rather than baking it into the model architecture.
+convention and the zero-based class dimension. For example, `[batch, classes]` uses axis `1`, while
+`[batch, time, vocabulary]` uses axis `2`. A custom task supplies a checked scalar loss program.
+This makes the loss visible in the training configuration rather than baking it into the model
+architecture.
 
 # What We Carry Forward
 

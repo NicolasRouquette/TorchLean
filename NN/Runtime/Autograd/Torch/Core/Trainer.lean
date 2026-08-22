@@ -78,12 +78,12 @@ instance {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [Decidable
     Internal.EagerSession.gatherScalar (α := α) sess (n := n) x i
   gatherRow := fun {rows cols} x i => fun sess =>
     Internal.EagerSession.gatherRow (α := α) sess (rows := rows) (cols := cols) x i
-  gatherScalarNat := fun {n} x i => fun sess =>
-    Internal.EagerSession.gatherScalarNat (α := α) sess (n := n) x i
-  gatherVecNat := fun {n k} x idx => fun sess =>
-    Internal.EagerSession.gatherVecNat (α := α) sess (n := n) (k := k) x idx
-  gatherRowsNat := fun {rows cols k} x idx => fun sess =>
-    Internal.EagerSession.gatherRowsNat (α := α) sess (rows := rows) (cols := cols) (k := k) x idx
+  gatherScalarNatOrZero := fun {n} x i => fun sess =>
+    Internal.EagerSession.gatherScalarNatOrZero (α := α) sess (n := n) x i
+  gatherVecNatOrZero := fun {n k} x idx => fun sess =>
+    Internal.EagerSession.gatherVecNatOrZero (α := α) sess (n := n) (k := k) x idx
+  gatherRowsNatOrZero := fun {rows cols k} x idx => fun sess =>
+    Internal.EagerSession.gatherRowsNatOrZero (α := α) sess (rows := rows) (cols := cols) (k := k) x idx
   scatterAddVec := fun {n} x v i => fun sess =>
     Internal.EagerSession.scatterAddVec (α := α) sess (n := n) x v i
   scatterAddRow := fun {rows cols} x v i => fun sess =>
@@ -92,8 +92,6 @@ instance {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [Decidable
     Internal.EagerSession.matmul (α := α) sess (m := mDim) (n := nDim) (p := pDim) a b
   bmm := fun {batch mDim nDim pDim} a b => fun sess =>
     Internal.EagerSession.bmm (α := α) sess (batch := batch) (m := mDim) (n := nDim) (p := pDim) a b
-  concatVectors := fun {nDim mDim} a b => fun sess =>
-    Internal.EagerSession.concatVectors (α := α) sess (n := nDim) (m := mDim) a b
   concatLeadingAxis := fun {nDim mDim} {s} a b => fun sess =>
     Internal.EagerSession.concatLeadingAxis (α := α) sess (n := nDim) (m := mDim) (sh := s) a b
   sliceLeadingAxisRange := fun {nDim} {s} start len h x => fun sess =>
@@ -142,8 +140,10 @@ instance {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [Decidable
   sigmoid := fun {s} x => fun sess => Internal.EagerSession.sigmoid (α := α) sess (sh := s) x
   tanh := fun {s} x => fun sess => Internal.EagerSession.tanh (α := α) sess (sh := s) x
   gelu := fun {s} x => fun sess => Internal.EagerSession.gelu (α := α) sess (sh := s) x
-  softmax := fun {s} x => fun sess => Internal.EagerSession.softmax (α := α) sess (sh := s) x
-  logSoftmax := fun {s} x => fun sess => Internal.EagerSession.logSoftmax (α := α) sess (sh := s) x
+  softmaxLast := fun {s} x => fun sess =>
+    Internal.EagerSession.softmaxLast (α := α) sess (sh := s) x
+  logSoftmaxLast := fun {s} x => fun sess =>
+    Internal.EagerSession.logSoftmaxLast (α := α) sess (sh := s) x
   softplus := fun {s} x => fun sess => Internal.EagerSession.softplus (α := α) sess (sh := s) x
   exp := fun {s} x => fun sess => Internal.EagerSession.exp (α := α) sess (sh := s) x
   log := fun {s} x => fun sess => Internal.EagerSession.log (α := α) sess (sh := s) x
@@ -251,12 +251,12 @@ instance {α Δ : Type} [Context α] [DecidableEq Shape] {Γ : List Shape} :
     Runtime.Autograd.TypedGraph.GraphM.gatherScalar (α := α) (Γ := Γ) (n := n) x i
   gatherRow := fun {rows cols} x i =>
     Runtime.Autograd.TypedGraph.GraphM.gatherRow (α := α) (Γ := Γ) (rows := rows) (cols := cols) x i
-  gatherScalarNat := fun {n} x i =>
-    Runtime.Autograd.TypedGraph.GraphM.gatherScalarNat (α := α) (Γ := Γ) (n := n) x i
-  gatherVecNat := fun {n k} x idx =>
-    Runtime.Autograd.TypedGraph.GraphM.gatherVecNat (α := α) (Γ := Γ) (n := n) (k := k) x idx
-  gatherRowsNat := fun {rows cols k} x idx =>
-    Runtime.Autograd.TypedGraph.GraphM.gatherRowsNat (α := α) (Γ := Γ) (rows := rows) (cols := cols)
+  gatherScalarNatOrZero := fun {n} x i =>
+    Runtime.Autograd.TypedGraph.GraphM.gatherScalarNatOrZero (α := α) (Γ := Γ) (n := n) x i
+  gatherVecNatOrZero := fun {n k} x idx =>
+    Runtime.Autograd.TypedGraph.GraphM.gatherVecNatOrZero (α := α) (Γ := Γ) (n := n) (k := k) x idx
+  gatherRowsNatOrZero := fun {rows cols k} x idx =>
+    Runtime.Autograd.TypedGraph.GraphM.gatherRowsNatOrZero (α := α) (Γ := Γ) (rows := rows) (cols := cols)
       (k := k) x idx
   scatterAddVec := fun {n} x v i =>
     Runtime.Autograd.TypedGraph.GraphM.scatterAddVec (α := α) (Γ := Γ) (n := n) x v i
@@ -269,8 +269,6 @@ instance {α Δ : Type} [Context α] [DecidableEq Shape] {Γ : List Shape} :
   bmm := fun {batch mDim nDim pDim} a b =>
     Runtime.Autograd.TypedGraph.GraphM.bmm (α := α) (Γ := Γ) (batch := batch) (m := mDim) (n := nDim)
       (p := pDim) a b
-  concatVectors := fun {nDim mDim} a b =>
-    Runtime.Autograd.TypedGraph.GraphM.concatVectors (α := α) (Γ := Γ) (n := nDim) (m := mDim) a b
   concatLeadingAxis := fun {nDim mDim} {s} a b =>
     Runtime.Autograd.TypedGraph.GraphM.concatLeadingAxis (α := α) (Γ := Γ) (n := nDim) (m := mDim) (s := s)
       a b
@@ -321,9 +319,10 @@ instance {α Δ : Type} [Context α] [DecidableEq Shape] {Γ : List Shape} :
   sigmoid := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.sigmoid (α := α) (Γ := Γ) (s := s) x
   tanh := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.tanh (α := α) (Γ := Γ) (s := s) x
   gelu := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.gelu (α := α) (Γ := Γ) (s := s) x
-  softmax := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.softmax (α := α) (Γ := Γ) (s := s) x
-  logSoftmax := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.logSoftmax (α := α) (Γ := Γ) (s := s)
-    x
+  softmaxLast := fun {s} x =>
+    Runtime.Autograd.TypedGraph.GraphM.softmaxLast (α := α) (Γ := Γ) (s := s) x
+  logSoftmaxLast := fun {s} x =>
+    Runtime.Autograd.TypedGraph.GraphM.logSoftmaxLast (α := α) (Γ := Γ) (s := s) x
   softplus := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.softplus (α := α) (Γ := Γ) (s := s) x
   exp := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.exp (α := α) (Γ := Γ) (s := s) x
   log := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.log (α := α) (Γ := Γ) (s := s) x
@@ -469,7 +468,7 @@ namespace Internal
 Extract gradients (as a typed `TList`) for a list of eager `TensorRef`s from a dense gradient array.
 -/
 def gradsOfRefs {α : Type} [DecidableEq Shape] :
-    {ss : List Shape} → Array (Runtime.AnyTensor α) → RefList (TensorRef α) ss → IO (TList α ss)
+    {ss : List Shape} → Array (Spec.PackedTensor α) → RefList (TensorRef α) ss → IO (TList α ss)
   | [], _grads, .nil => pure .nil
   | s :: ss, grads, .cons r rs => do
       let g ← Internal.EagerSession.grad (α := α) (sh := s) grads r
@@ -515,6 +514,7 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
     {paramShapes inputShapes natInputShapes : List Shape}
     (opts : Options := {})
     (initRequiresGrad : List Bool := List.replicate paramShapes.length true)
+    (validateNatInputs : TList Nat natInputShapes → Except String Unit := fun _ => pure ())
     (loss :
       ∀ {m : Type → Type}, [Monad m] → [Ops (m := m) (α := α)] →
         CurriedRef (fun s => Ops.Ref (m := m) (α := α) s) (paramShapes ++ inputShapes)
@@ -526,6 +526,10 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
       (β := IO (ScalarTrainer α paramShapes inputShapes natInputShapes))
     (fun initParams => do
     let ps ← ParamList.ofTListWithRequiresGrad (α := α) initParams initRequiresGrad
+    let validateNatInputsIO (inputs : TList Nat natInputShapes) : IO Unit :=
+      match validateNatInputs inputs with
+      | .error message => throw <| IO.userError message
+      | .ok () => pure ()
     match opts.execution with
     | .typedGraph =>
         if opts.device != .cpu then
@@ -544,7 +548,7 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
               (loss (m := Runtime.Autograd.TypedGraph.GraphM.MWith α Δ Γ)) vs
           CurriedRef.applyTListProjections (full := natInputShapes) id withNatInputs
         let graph ← okOrThrow
-          (lowerToTypedGraphWithAux (α := α) (Δ := Δ) (Γ := Γ) (τ := Shape.scalar) build)
+          (lowerToTypedGraphWithData (α := α) (Δ := Δ) (Γ := Γ) (τ := Shape.scalar) build)
         let ssFull : List Shape := graph.nodeShapes
         let fullGraph : Proofs.Autograd.Algebra.GraphData α Δ Γ ssFull :=
           graph.data
@@ -554,31 +558,32 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
           let any ← match t.getValue? outId with
             | some v => pure v
             | none => throw <| IO.userError "typed graph execution: missing output value in tape"
-          if h : any.s = Shape.scalar then
-            pure (Tensor.castShape any.t h)
+          if h : any.shape = Shape.scalar then
+            pure (any.cast h)
           else
             throw <| IO.userError
-              s!"typed graph execution: output shape mismatch (expected scalar, got {Shape.pretty any.s})"
+              s!"typed graph execution: output shape mismatch (expected scalar, got {Shape.pretty any.shape})"
 
         let rec gradsPrefix :
-            {ss : List Shape} → Array (Runtime.AnyTensor α) → Nat → IO (TList α ss)
+            {ss : List Shape} → Array (Spec.PackedTensor α) → Nat → IO (TList α ss)
           | [], _grads, _off => pure .nil
           | s :: ss, grads, off => do
               let any ← match grads[off]? with
                 | some v => pure v
                 | none => throw <| IO.userError "typed graph execution: gradient array too small"
-              if h : any.s = s then
-                let g : Tensor α s := Tensor.castShape any.t h
+              if h : any.shape = s then
+                let g : Tensor α s := any.cast h
                 let gs ← gradsPrefix (ss := ss) grads (off + 1)
                 pure (.cons g gs)
               else
                 throw <| IO.userError <|
                   s!"typed graph execution: gradient shape mismatch at idx={off} (expected "
                     ++ s!"{Shape.pretty s}, got "
-                    ++ s!"{Shape.pretty any.s})"
+                    ++ s!"{Shape.pretty any.shape})"
 
         let runTape (xs : TList α inputShapes) (natInputs : Δ) :
             IO (Runtime.Autograd.Tape α) := do
+          validateNatInputsIO natInputs
           let pv ← ParamList.values (α := α) ps
           let args := Proofs.Autograd.Algebra.TList.append (α := α) (ss₁ := paramShapes)
             (ss₂ := inputShapes) pv xs
@@ -676,6 +681,7 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
         let lossEager := loss (m := Internal.EagerM α)
         let recordLoss (xs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
             IO (TensorRef α Shape.scalar × RefList (TensorRef α) paramShapes) := do
+          validateNatInputsIO natInputs
           sess.resetTape
           (do
             let pRefs ← Internal.useParams (α := α) (ss := paramShapes) ps

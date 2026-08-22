@@ -29,9 +29,6 @@ namespace Tests
 namespace Floats
 namespace TorchLeanIndexShapeCheck
 
-instance : Fact (3 > 0) where
-  out := by decide
-
 /-- A task head preserves every leading axis rather than treating only axis zero as a batch. -/
 def multiLeadingClassifier :
     TorchLean.nn.Sequential (shape![2, 3, 4, 5]) (shape![2, 3, 7]) :=
@@ -67,7 +64,7 @@ def gradGatherScalarNat (execution : _root_.Runtime.Autograd.Torch.ExecutionMode
     (opts := { execution := execution })
   let xVal : Tensor Float (.dim 3 .scalar) := NN.Tensor.vector (α := Float) [1.0, 2.0, 3.0]
   let x ← _root_.Runtime.Autograd.TorchLean.Session.input sess xVal (name := some "x") (requiresGrad := true)
-  let y ← _root_.Runtime.Autograd.TorchLean.Session.gatherScalarNat sess (n := 3) x 1
+  let y ← _root_.Runtime.Autograd.TorchLean.Session.gatherScalarNatOrZero sess (n := 3) x 1
   let grads ← _root_.Runtime.Autograd.TorchLean.Session.backwardScalarDenseAll sess y
   _root_.Runtime.Autograd.TorchLean.Session.grad grads x
 
@@ -78,7 +75,7 @@ def gradGatherVecNat (execution : _root_.Runtime.Autograd.Torch.ExecutionMode) :
   let xVal : Tensor Float (.dim 3 .scalar) := NN.Tensor.vector (α := Float) [1.0, 2.0, 3.0]
   let idx : Tensor Nat (.dim 4 .scalar) := NN.Tensor.vector (α := Nat) [2, 0, 2, 10]
   let x ← _root_.Runtime.Autograd.TorchLean.Session.input sess xVal (name := some "x") (requiresGrad := true)
-  let y ← _root_.Runtime.Autograd.TorchLean.Session.gatherVecNat sess (n := 3) (k := 4) x idx
+  let y ← _root_.Runtime.Autograd.TorchLean.Session.gatherVecNatOrZero sess (n := 3) (k := 4) x idx
   let total ← _root_.Runtime.Autograd.TorchLean.Session.sum sess (sh := .dim 4 .scalar) y
   let grads ← _root_.Runtime.Autograd.TorchLean.Session.backwardScalarDenseAll sess total
   _root_.Runtime.Autograd.TorchLean.Session.grad grads x
@@ -92,7 +89,7 @@ def gradGatherRowsNat (execution : _root_.Runtime.Autograd.Torch.ExecutionMode) 
     Tensor.dim (fun r => Tensor.dim (fun c => Tensor.scalar (Float.ofNat (r.val * 10 + c.val + 1))))
   let idx : Tensor Nat (.dim 3 .scalar) := NN.Tensor.vector (α := Nat) [2, 10, 2]
   let x ← _root_.Runtime.Autograd.TorchLean.Session.input sess xVal (name := some "x") (requiresGrad := true)
-  let y ← _root_.Runtime.Autograd.TorchLean.Session.gatherRowsNat sess (rows := 3) (cols := 2) (k := 3) x idx
+  let y ← _root_.Runtime.Autograd.TorchLean.Session.gatherRowsNatOrZero sess (rows := 3) (cols := 2) (k := 3) x idx
   let total ← _root_.Runtime.Autograd.TorchLean.Session.sum sess (sh := .dim 3 (.dim 2 .scalar)) y
   let grads ← _root_.Runtime.Autograd.TorchLean.Session.backwardScalarDenseAll sess total
   _root_.Runtime.Autograd.TorchLean.Session.grad grads x
@@ -103,7 +100,7 @@ def gradBroadcastScalar (execution : _root_.Runtime.Autograd.Torch.ExecutionMode
   let sVal : Tensor Float Shape.scalar := Tensor.scalar 2.0
   let sRef ← _root_.Runtime.Autograd.TorchLean.Session.input sess sVal (name := some "s") (requiresGrad := true)
   let cb : Shape.CanBroadcastTo Shape.scalar (.dim 4 .scalar) :=
-    Shape.CanBroadcastTo.scalar_to_any (.dim 4 .scalar)
+    Shape.CanBroadcastTo.scalarTo (.dim 4 .scalar)
   let v ← _root_.Runtime.Autograd.TorchLean.Session.broadcastTo sess (sh1 := Shape.scalar) (sh2 := .dim 4 .scalar) cb sRef
   let total ← _root_.Runtime.Autograd.TorchLean.Session.sum sess (sh := .dim 4 .scalar) v
   let grads ← _root_.Runtime.Autograd.TorchLean.Session.backwardScalarDenseAll sess total
@@ -170,7 +167,7 @@ def checkRuntimeGatherJvps : IO Unit := do
   let scalarIndex ← _root_.Runtime.Autograd.TorchLean.Session.inputNat scalarSession 1
   let scalarInput ← _root_.Runtime.Autograd.TorchLean.Session.input scalarSession
     (NN.Tensor.vector (α := Float) [10.0, 20.0, 30.0])
-  let scalarOutput ← _root_.Runtime.Autograd.TorchLean.Session.gatherScalarRef scalarSession
+  let scalarOutput ← _root_.Runtime.Autograd.TorchLean.Session.gatherScalarRefOrZero scalarSession
     (n := 3) scalarInput scalarIndex
   let scalarTangent ← _root_.Runtime.Autograd.TorchLean.Session.jvpLeaf
     (α := Float) (shOut := Shape.scalar) (shX := .dim 3 .scalar) scalarSession
@@ -184,7 +181,7 @@ def checkRuntimeGatherJvps : IO Unit := do
     Tensor.dim (fun r => Tensor.dim (fun c =>
       Tensor.scalar (Float.ofNat (r.val * 2 + c.val))))
   let rowInput ← _root_.Runtime.Autograd.TorchLean.Session.input rowSession rowValue
-  let rowOutput ← _root_.Runtime.Autograd.TorchLean.Session.gatherRowRef rowSession
+  let rowOutput ← _root_.Runtime.Autograd.TorchLean.Session.gatherRowRefOrZero rowSession
     (rows := 3) (cols := 2) rowInput rowIndex
   let rowDirection : Tensor Float (.dim 3 (.dim 2 .scalar)) :=
     Tensor.dim (fun r => Tensor.dim (fun c =>
@@ -201,7 +198,7 @@ def checkRuntimeGatherJvps : IO Unit := do
     (NN.Tensor.vector (α := Nat) [2, 0, 2, 10])
   let vectorInput ← _root_.Runtime.Autograd.TorchLean.Session.input vectorSession
     (NN.Tensor.vector (α := Float) [10.0, 20.0, 30.0])
-  let vectorOutput ← _root_.Runtime.Autograd.TorchLean.Session.gatherVecRef vectorSession
+  let vectorOutput ← _root_.Runtime.Autograd.TorchLean.Session.gatherVecRefOrZero vectorSession
     (n := 3) (k := 4) vectorInput vectorIndices
   let vectorTangent ← _root_.Runtime.Autograd.TorchLean.Session.jvpLeaf
     (α := Float) (shOut := .dim 4 .scalar) (shX := .dim 3 .scalar) vectorSession
@@ -216,7 +213,7 @@ def checkRuntimeGatherJvps : IO Unit := do
   let rowsIndices ← _root_.Runtime.Autograd.TorchLean.Session.inputNatVec rowsSession
     (NN.Tensor.vector (α := Nat) [2, 10, 0])
   let rowsInput ← _root_.Runtime.Autograd.TorchLean.Session.input rowsSession rowValue
-  let rowsOutput ← _root_.Runtime.Autograd.TorchLean.Session.gatherRowsRef rowsSession
+  let rowsOutput ← _root_.Runtime.Autograd.TorchLean.Session.gatherRowsRefOrZero rowsSession
     (rows := 3) (cols := 2) (k := 3) rowsInput rowsIndices
   let rowsTangent ← _root_.Runtime.Autograd.TorchLean.Session.jvpLeaf
     (α := Float) (shOut := .dim 3 (.dim 2 .scalar))
@@ -271,12 +268,12 @@ def embeddingTrainingLoss (execution : _root_.Runtime.Autograd.Torch.ExecutionMo
     Tensor.dim (fun row => Tensor.dim (fun col =>
       let values : List (List Float) := [[0.0, 0.0], [2.0, -2.0], [1.0, 1.0]]
       Tensor.scalar ((values[row.val]!)[col.val]!)))
-  module.loadState (tensorpack! table)
+  module.loadState (TensorPack! table)
 
   let target : Tensor Float (.dim 2 (.dim 2 .scalar)) := Spec.fill 0.0 _
   let tokenIds : Tensor Nat (.dim 2 .scalar) := NN.Tensor.vector (α := Nat) [1, 1]
-  let inputs := tensorpack! target
-  let indices := tensorpack! tokenIds
+  let inputs := TensorPack! target
+  let indices := TensorPack! tokenIds
   let before ← TorchLean.Module.loss module inputs indices
   let _ ← TorchLean.Module.sgdStepWithLoss module 0.1 inputs indices
   let after ← TorchLean.Module.loss module inputs indices
@@ -292,6 +289,23 @@ def checkEmbeddingTraining : IO Unit := do
     throw <| IO.userError
       s!"embedding training did not reduce loss ({eagerBefore} -> {eagerAfter})"
 
+  for execution in [_root_.Runtime.Autograd.Torch.ExecutionMode.eager,
+      _root_.Runtime.Autograd.Torch.ExecutionMode.typedGraph] do
+    let table := TorchLean.nn.build 19 <| TorchLean.nn.embedding 3 2
+    let model := table.model (.dim 2 .scalar)
+    let objective := TorchLean.nn.IndexedModel.Objective.mse model
+    let module ← TorchLean.Module.instantiate { execution := execution } objective
+    let target : Tensor Float (.dim 2 (.dim 2 .scalar)) := Spec.fill 0.0 _
+    let invalidIds : Tensor Nat (.dim 2 .scalar) := NN.Tensor.vector (α := Nat) [0, 3]
+    let rejected ←
+      try
+        let _ ← TorchLean.Module.loss module (TensorPack! target) (TensorPack! invalidIds)
+        pure false
+      catch _ => pure true
+    unless rejected do
+      throw <| IO.userError
+        "embedding objective accepted a token outside its vocabulary"
+
 def run : IO Unit := do
   IO.println "torchlean_index_shape_check: begin"
 
@@ -305,28 +319,28 @@ def run : IO Unit := do
   let gnE ← gradGatherScalarNat .eager
   let gnC ← gradGatherScalarNat .typedGraph
   for i in List.finRange 3 do
-    assertApprox s!"gather_scalar_nat grad[{i.val}] eager/typed-graph" (vecVal gnE i) (vecVal gnC i)
-    assertApprox s!"gather_scalar_nat grad[{i.val}] expected" (vecVal gnE i) (if i.val = 1 then 1.0
+    assertApprox s!"gather_scalar_nat_or_zero grad[{i.val}] eager/typed-graph" (vecVal gnE i) (vecVal gnC i)
+    assertApprox s!"gather_scalar_nat_or_zero grad[{i.val}] expected" (vecVal gnE i) (if i.val = 1 then 1.0
       else 0.0)
 
   let gvE ← gradGatherVecNat .eager
   let gvC ← gradGatherVecNat .typedGraph
   for i in List.finRange 3 do
-    assertApprox s!"gather_vec_nat dx[{i.val}] eager/typed-graph" (vecVal gvE i) (vecVal gvC i)
-  assertApprox "gather_vec_nat dx[0] expected" (vecVal gvE ⟨0, by decide⟩) 1.0
-  assertApprox "gather_vec_nat dx[1] expected" (vecVal gvE ⟨1, by decide⟩) 0.0
-  assertApprox "gather_vec_nat dx[2] expected" (vecVal gvE ⟨2, by decide⟩) 2.0
+    assertApprox s!"gather_vec_nat_or_zero dx[{i.val}] eager/typed-graph" (vecVal gvE i) (vecVal gvC i)
+  assertApprox "gather_vec_nat_or_zero dx[0] expected" (vecVal gvE ⟨0, by decide⟩) 1.0
+  assertApprox "gather_vec_nat_or_zero dx[1] expected" (vecVal gvE ⟨1, by decide⟩) 0.0
+  assertApprox "gather_vec_nat_or_zero dx[2] expected" (vecVal gvE ⟨2, by decide⟩) 2.0
 
   let grE ← gradGatherRowsNat .eager
   let grC ← gradGatherRowsNat .typedGraph
   for i in List.finRange 3 do
     for j in List.finRange 2 do
-      assertApprox s!"gather_rows_nat dx[{i.val},{j.val}] eager/typed-graph" (matVal grE i j) (matVal
+      assertApprox s!"gather_rows_nat_or_zero dx[{i.val},{j.val}] eager/typed-graph" (matVal grE i j) (matVal
         grC i j)
   for j in List.finRange 2 do
-    assertApprox s!"gather_rows_nat dx[0,{j.val}] expected" (matVal grE ⟨0, by decide⟩ j) 0.0
-    assertApprox s!"gather_rows_nat dx[1,{j.val}] expected" (matVal grE ⟨1, by decide⟩ j) 0.0
-    assertApprox s!"gather_rows_nat dx[2,{j.val}] expected" (matVal grE ⟨2, by decide⟩ j) 2.0
+    assertApprox s!"gather_rows_nat_or_zero dx[0,{j.val}] expected" (matVal grE ⟨0, by decide⟩ j) 0.0
+    assertApprox s!"gather_rows_nat_or_zero dx[1,{j.val}] expected" (matVal grE ⟨1, by decide⟩ j) 0.0
+    assertApprox s!"gather_rows_nat_or_zero dx[2,{j.val}] expected" (matVal grE ⟨2, by decide⟩ j) 2.0
 
   let bsE ← gradBroadcastScalar .eager
   let bsC ← gradBroadcastScalar .typedGraph

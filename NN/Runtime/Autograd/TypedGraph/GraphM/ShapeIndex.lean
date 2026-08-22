@@ -167,12 +167,12 @@ def transpose3dLastTwo {α : Type} {Δ : Type} [Zero α] [DecidableEq Shape]
   let outS : Shape := s.swapAdjacentAtDepth depth
   let node : NodeData α Δ (Γ ++ ss) outS :=
     { forward := fun ctx _d =>
-        Spec.Tensor.swapAtDepthHelper (tensor := getIdx (α := α) (xs := ctx) ix) depth
+        Spec.Tensor.swapAdjacentAxes (tensor := getIdx (α := α) (xs := ctx) ix) depth
       jvp := fun _ctx dctx _d =>
         let dx := getIdx (α := α) (xs := dctx) ix
-        Spec.Tensor.swapAtDepthHelper (tensor := dx) depth
+        Spec.Tensor.swapAdjacentAxes (tensor := dx) depth
       vjp := fun _ctx _d δ =>
-        let dx' := Spec.Tensor.swapAtDepthHelper (tensor := δ) depth
+        let dx' := Spec.Tensor.swapAdjacentAxes (tensor := δ) depth
         let dx : Tensor α s :=
           Tensor.castShape dx' (by simpa [outS] using (Spec.Shape.swapAdjacentAtDepth_involutive s
             depth))
@@ -206,19 +206,21 @@ PyTorch comparison: `torch.sum(x, dim=axis)`.
 -/
 def reduceSum {α : Type} {Δ : Type} [Add α] [Zero α] [Inhabited α] [DecidableEq Shape]
   {Γ : List Shape} {s : Shape} (axis : Nat)
-  [valid : Shape.valid_axis_inst axis s] [wf : Shape.WellFormed s]
+  [_valid : Shape.HasNonemptyAxis axis s] [_wf : Shape.WellFormed s]
   (x : Var s) : MWith α Δ Γ (Var (shapeAfterSum s axis)) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   let outS : Shape := shapeAfterSum s axis
   let node : NodeData α Δ (Γ ++ ss) outS :=
     { forward := fun ctx _d =>
-        reduceSumAuto (α := α) (s := s) axis (getIdx (α := α) (xs := ctx) ix)
+        Spec.Tensor.reduceSum (α := α) (s := s) axis
+          (getIdx (α := α) (xs := ctx) ix) _valid.proof
       jvp := fun _ctx dctx _d =>
-        reduceSumAuto (α := α) (s := s) axis (getIdx (α := α) (xs := dctx) ix)
+        Spec.Tensor.reduceSum (α := α) (s := s) axis
+          (getIdx (α := α) (xs := dctx) ix) _valid.proof
       vjp := fun _ctx _d δ =>
-        let cb := shapeAfterSumBroadcastBack (s := s) axis valid wf
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (Spec.Tensor.broadcastTo (α := α) cb δ) }
+        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix
+          (Spec.Tensor.broadcastAfterSum s axis δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
 
 /--
@@ -228,27 +230,24 @@ PyTorch comparison: `torch.mean(x, dim=axis)`.
 -/
 def reduceMean {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {Γ : List Shape} {s : Shape} (axis : Nat)
-  [valid : Shape.valid_axis_inst axis s] [wf : Shape.WellFormed s]
+  [valid : Shape.HasNonemptyAxis axis s] [_wf : Shape.WellFormed s]
   (x : Var s) : MWith α Δ Γ (Var (shapeAfterSum s axis)) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   let outS : Shape := shapeAfterSum s axis
-  let denomNat :=
-    match getDimSize s axis with
-    | some n => n
-    | none => 1
+  letI : Shape.AxisInBounds axis s := valid.proof.toAxisInBounds
+  let denomNat := Shape.axisSize s axis
   let node : NodeData α Δ (Γ ++ ss) outS :=
     { forward := fun ctx _d =>
         let xv := getIdx (α := α) (xs := ctx) ix
-        let h := Shape.proveReducibleAlong axis s valid.proof
+        let h := valid.proof
         Spec.Tensor.reduceMean (α := α) (s := s) axis xv h
       jvp := fun _ctx dctx _d =>
         let dx := getIdx (α := α) (xs := dctx) ix
-        let h := Shape.proveReducibleAlong axis s valid.proof
+        let h := valid.proof
         Spec.Tensor.reduceMean (α := α) (s := s) axis dx h
       vjp := fun _ctx _d δ =>
-        let cb := shapeAfterSumBroadcastBack (s := s) axis valid wf
-        let dLdx := Spec.Tensor.broadcastTo (α := α) cb δ
+        let dLdx := Spec.Tensor.broadcastAfterSum s axis δ
         let dLdx' := scaleSpec (α := α) (s := s) dLdx (1 / (denomNat : α))
         TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix dLdx' }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
@@ -269,7 +268,7 @@ def reduceMean {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
         jvp := fun _ctx dctx _d =>
           getAtSpec (getIdx (α := α) (xs := dctx) ix) i
         vjp := fun _ctx _d δ =>
-          let gVal : α := Tensor.toScalar δ
+          let gVal : α := Tensor.item δ
           let dx : Tensor α (.dim n .scalar) :=
             Tensor.dim (fun j => Tensor.scalar (if decide (j = i) then gVal else 0))
           TList.single (α := α) (Γ := Γ ++ ss) (s := .dim n .scalar) ix dx }
@@ -307,7 +306,7 @@ def gatherRow {α : Type} {Δ : Type} [Zero α] [DecidableEq Shape]
 
   If `i` is out of bounds we return `0` and propagate no gradient (matching the forward choice).
   -/
-  def gatherScalarNat {α : Type} {Δ : Type} [Zero α] [DecidableEq Shape]
+  def gatherScalarNatOrZero {α : Type} {Δ : Type} [Zero α] [DecidableEq Shape]
     {Γ : List Shape} {n : Nat} (x : Var (.dim n .scalar)) (i : Nat) :
     MWith α Δ Γ (Var Shape.scalar) := do
     let ⟨ss, g⟩ ← get
@@ -326,7 +325,7 @@ def gatherRow {α : Type} {Δ : Type} [Zero α] [DecidableEq Shape]
           else
             Tensor.scalar 0
         vjp := fun _ctx _d δ =>
-          let gVal : α := Tensor.toScalar δ
+          let gVal : α := Tensor.item δ
           let dx : Tensor α (.dim n .scalar) :=
             Tensor.dim (fun j =>
             if _hi : i < n then
@@ -343,7 +342,7 @@ def gatherRow {α : Type} {Δ : Type} [Zero α] [DecidableEq Shape]
 
   PyTorch comparison: `torch.gather` for 1D inputs, with explicit bounds handling.
   -/
-def gatherVecNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
+def gatherVecNatOrZero {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
   {Γ : List Shape} {n k : Nat} (x : Var (.dim n .scalar))
   (idx : Δ → Tensor Nat (.dim k .scalar)) :
   MWith α Δ Γ (Var (.dim k .scalar)) := do
@@ -403,7 +402,7 @@ def gatherVecNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
 
   PyTorch comparison: `torch.index_select(x, dim=0, index=idx)` with explicit bounds handling.
   -/
-def gatherRowsNat {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
+def gatherRowsNatOrZero {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
   {Γ : List Shape} {rows cols k : Nat} (x : Var (.dim rows (.dim cols .scalar)))
   (idx : Δ → Tensor Nat (.dim k .scalar)) :
   MWith α Δ Γ (Var (.dim k (.dim cols .scalar))) := do
@@ -472,13 +471,13 @@ def scatterAddVec {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape]
   let node : NodeData α Δ (Γ ++ ss) outS :=
     { forward := fun ctx _d =>
         let xv := getIdx (α := α) (xs := ctx) ix
-        let vv : α := Tensor.toScalar (getIdx (α := α) (xs := ctx) iv)
-        let xi : α := Tensor.toScalar (getAtSpec xv i)
+        let vv : α := Tensor.item (getIdx (α := α) (xs := ctx) iv)
+        let xi : α := Tensor.item (getAtSpec xv i)
         updateSpec xv [i.val] (xi + vv)
       jvp := fun _ctx dctx _d =>
         let dx := getIdx (α := α) (xs := dctx) ix
-        let dv : α := Tensor.toScalar (getIdx (α := α) (xs := dctx) iv)
-        let dxi : α := Tensor.toScalar (getAtSpec dx i)
+        let dv : α := Tensor.item (getIdx (α := α) (xs := dctx) iv)
+        let dxi : α := Tensor.item (getAtSpec dx i)
         updateSpec dx [i.val] (dxi + dv)
       vjp := fun _ctx _d δ =>
         let dv : Tensor α Shape.scalar := getAtSpec δ i

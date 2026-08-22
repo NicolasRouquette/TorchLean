@@ -454,8 +454,8 @@ private def backwardMatmul
             let ux := getAtOrZero Bx.hi [aIdx]
             let ly := getAtOrZero By.lo [bIdx]
             let uy := getAtOrZero By.hi [bIdx]
-            let cx := (lx + ux) * Numbers.pointfive
-            let cy := (ly + uy) * Numbers.pointfive
+            let cx := (lx + ux) * Numbers.half
+            let cy := (ly + uy) * Numbers.half
 
             -- Upper plane selection.
             let u1 := ux * cy + ly * cx - ux * ly
@@ -517,8 +517,8 @@ private def backwardMulElem
       Tensor.dim (fun i =>
         match xLo i, xHi i, yLo i, yHi i with
         | .scalar lx, .scalar ux, .scalar ly, .scalar uy =>
-          let mx := (lx + ux) * Numbers.pointfive
-          let my := (ly + uy) * Numbers.pointfive
+          let mx := (lx + ux) * Numbers.half
+          let my := (ly + uy) * Numbers.half
           let u1 := ux * my + ly * mx - ux * ly
           let u2 := lx * my + uy * mx - lx * uy
           let ax := if u1 < u2 then ly else uy
@@ -527,8 +527,8 @@ private def backwardMulElem
       Tensor.dim (fun i =>
         match xLo i, xHi i, yLo i, yHi i with
         | .scalar lx, .scalar ux, .scalar ly, .scalar uy =>
-          let mx := (lx + ux) * Numbers.pointfive
-          let my := (ly + uy) * Numbers.pointfive
+          let mx := (lx + ux) * Numbers.half
+          let my := (ly + uy) * Numbers.half
           let u1 := ux * my + ly * mx - ux * ly
           let u2 := lx * my + uy * mx - lx * uy
           let ay := if u1 < u2 then ux else lx
@@ -537,8 +537,8 @@ private def backwardMulElem
       Tensor.dim (fun i =>
         match xLo i, xHi i, yLo i, yHi i with
         | .scalar lx, .scalar ux, .scalar ly, .scalar uy =>
-          let mx := (lx + ux) * Numbers.pointfive
-          let my := (ly + uy) * Numbers.pointfive
+          let mx := (lx + ux) * Numbers.half
+          let my := (ly + uy) * Numbers.half
           let u1 := ux * my + ly * mx - ux * ly
           let u2 := lx * my + uy * mx - lx * uy
           let b := if u1 < u2 then (-(ux * ly)) else (-(lx * uy))
@@ -547,8 +547,8 @@ private def backwardMulElem
       Tensor.dim (fun i =>
         match xLo i, xHi i, yLo i, yHi i with
         | .scalar lx, .scalar ux, .scalar ly, .scalar uy =>
-          let mx := (lx + ux) * Numbers.pointfive
-          let my := (ly + uy) * Numbers.pointfive
+          let mx := (lx + ux) * Numbers.half
+          let my := (ly + uy) * Numbers.half
           let l1 := lx * my + ly * mx - lx * ly
           let l2 := ux * my + uy * mx - ux * uy
           let ax := if l1 > l2 then ly else uy
@@ -557,8 +557,8 @@ private def backwardMulElem
       Tensor.dim (fun i =>
         match xLo i, xHi i, yLo i, yHi i with
         | .scalar lx, .scalar ux, .scalar ly, .scalar uy =>
-          let mx := (lx + ux) * Numbers.pointfive
-          let my := (ly + uy) * Numbers.pointfive
+          let mx := (lx + ux) * Numbers.half
+          let my := (ly + uy) * Numbers.half
           let l1 := lx * my + ly * mx - lx * ly
           let l2 := ux * my + uy * mx - ux * uy
           let ay := if l1 > l2 then lx else ux
@@ -567,8 +567,8 @@ private def backwardMulElem
       Tensor.dim (fun i =>
         match xLo i, xHi i, yLo i, yHi i with
         | .scalar lx, .scalar ux, .scalar ly, .scalar uy =>
-          let mx := (lx + ux) * Numbers.pointfive
-          let my := (ly + uy) * Numbers.pointfive
+          let mx := (lx + ux) * Numbers.half
+          let my := (ly + uy) * Numbers.half
           let l1 := lx * my + ly * mx - lx * ly
           let l2 := ux * my + uy * mx - ux * uy
           let b := if l1 > l2 then (-(lx * ly)) else (-(ux * uy))

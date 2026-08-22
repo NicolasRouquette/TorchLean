@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Core.TensorReductionShape
+public import NN.Spec.Core.Sequence
 
 /-!
 # Gradient boosted trees (spec model)
@@ -46,7 +47,7 @@ simple greedy CART-style algorithm (implemented below).
 
 Note on comparisons:
 The spec layer’s scalar interface (`Context α`) gives us a decidable `>` (via
-  `Context.decidable_gt`)
+  `Context.decidableGT`)
 but does not promise a decidable `<` for every backend. To stay portable, the tree uses the rule:
 
 `goRight := (x_feature > threshold)`
@@ -62,37 +63,35 @@ A regression-tree node for the typed GBDT specification.
 - `split feature threshold left right` branches on a single feature using the rule
   `goRight := (x_feature > threshold)`.
 -/
-inductive TreeNode (α : Type) where
-  | leaf (value : α) : TreeNode α
-  | split (feature : Nat) (threshold : α) (left right : TreeNode α) : TreeNode α
+inductive TreeNode (α : Type) (nFeatures : Nat) : Nat → Type where
+  | leaf {depth : Nat} (value : α) : TreeNode α nFeatures depth
+  | split {depth : Nat} (feature : Fin nFeatures) (threshold : α)
+      (left right : TreeNode α nFeatures depth) : TreeNode α nFeatures (depth + 1)
 deriving Inhabited
 
 /--
-Decision-tree spec wrapper with an explicit max-depth budget.
+Decision-tree specification whose type records its feature count and maximum split depth.
 
-The `max_depth` field is redundant (it matches the type index) but is convenient in downstream
-code that wants a value-level knob.
+Each split consumes one unit of the depth index, so a value of this type cannot contain a path
+deeper than `maxDepth`. Its feature index is a `Fin nFeatures`, ruling out invalid feature access.
 -/
-structure DecisionTreeSpec (α : Type) (maxDepth : Nat) where
-  /-- root. -/
-  root : TreeNode α
-  /-- max depth. -/
-  max_depth : Nat := maxDepth
+structure DecisionTreeSpec (α : Type) (nFeatures maxDepth : Nat) where
+  /-- Root node with at most `maxDepth` splits on any path. -/
+  root : TreeNode α nFeatures maxDepth
 deriving Inhabited
 
 /--
 Gradient boosted tree ensemble (regression-style) specification.
 
-We keep the model as an explicit tensor of trees plus a shrinkage parameter `learning_rate` and an
-`initial_prediction` bias term.
+The model stores an explicit tensor of trees, a shrinkage parameter, and an initial prediction.
 -/
-structure GradientBoostedTreesSpec (α : Type) (nTrees : Nat) (maxDepth : Nat) where
+structure GradientBoostedTreesSpec (α : Type) (nFeatures nTrees maxDepth : Nat) where
   /-- trees. -/
-  trees : Tensor (DecisionTreeSpec α maxDepth) (.dim nTrees .scalar)
+  trees : Tensor (DecisionTreeSpec α nFeatures maxDepth) (.dim nTrees .scalar)
   /-- learning rate. -/
-  learning_rate : α
+  learningRate : α
   /-- initial prediction. -/
-  initial_prediction : α
+  initialPrediction : α
 
 /-!
 ## Forward pass
@@ -103,45 +102,32 @@ features exist.
 -/
 
 /-- Forward pass for a single decision tree on an input vector of `nFeatures` features. -/
-def decisionTreeForwardSpecN {maxDepth nFeatures : Nat}
-  (tree : DecisionTreeSpec α maxDepth)
+def decisionTreeForwardSpec {maxDepth nFeatures : Nat}
+  (tree : DecisionTreeSpec α nFeatures maxDepth)
   (input : Tensor α (.dim nFeatures .scalar)) : α :=
-  let rec traverse (node : TreeNode α) : α :=
+  let rec traverse {depth : Nat} (node : TreeNode α nFeatures depth) : α :=
     match node with
     | TreeNode.leaf value => value
-    | TreeNode.split feature_idx threshold left right =>
-      match input with
-      | Tensor.dim values =>
-        if h : feature_idx < nFeatures then
-          match values ⟨feature_idx, h⟩ with
-          | Tensor.scalar feature_value =>
-            if decide (feature_value > threshold) then
-              traverse right
-            else
-              traverse left
-        else
-          -- Out-of-range feature index: treat as a missing feature and fall back to the left
-          -- branch.
-          traverse left
+    | TreeNode.split feature threshold left right =>
+      let featureValue := Tensor.item (get input feature)
+      if decide (featureValue > threshold) then traverse right else traverse left
   traverse tree.root
 
-/-- Batched forward pass for a single decision tree. -/
-def decisionTreeBatchedForwardSpecN {batch maxDepth nFeatures : Nat}
-  (tree : DecisionTreeSpec α maxDepth)
-  (input : Tensor α (.dim batch (.dim nFeatures .scalar))) :
-  Tensor α (.dim batch .scalar) :=
-  match input with
-  | Tensor.dim batch_fn =>
-    Tensor.dim (fun i => Tensor.scalar (decisionTreeForwardSpecN (α := α) (maxDepth := maxDepth)
-      (nFeatures := nFeatures) tree (batch_fn i)))
+/-- Apply a decision tree independently at every index of a leading shape. -/
+def decisionTreeForwardLeadingSpec (leading : Shape) {maxDepth nFeatures : Nat}
+  (tree : DecisionTreeSpec α nFeatures maxDepth)
+  (input : Tensor α (leading.concat (.dim nFeatures .scalar))) :
+  Tensor α (leading.concat .scalar) :=
+  Tensor.mapLeading leading
+    (fun x => Tensor.scalar (decisionTreeForwardSpec tree x)) input
 
 /--
 Forward pass for a gradient boosted ensemble on a single input.
 
-This computes `initial_prediction + learning_rate * sum(tree_i(x))`.
+This computes `initialPrediction + learningRate * sum(tree_i(x))`.
 -/
 def gradientBoostedTreesForwardSpec {nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim nFeatures .scalar)) :
   Tensor α .scalar :=
   let rec accumulate_trees (i : Nat) (acc : α) : α :=
@@ -150,21 +136,20 @@ def gradientBoostedTreesForwardSpec {nTrees maxDepth nFeatures : Nat}
       | Tensor.dim trees =>
         match trees ⟨i, h⟩ with
         | Tensor.scalar tree =>
-          let tree_prediction := decisionTreeForwardSpecN (α := α) (maxDepth := maxDepth)
+          let tree_prediction := decisionTreeForwardSpec (α := α) (maxDepth := maxDepth)
             (nFeatures := nFeatures) tree input
-          accumulate_trees (i + 1) (acc + model.learning_rate * tree_prediction)
+          accumulate_trees (i + 1) (acc + model.learningRate * tree_prediction)
     else acc
-  let ensemble_prediction := accumulate_trees 0 model.initial_prediction
+  let ensemble_prediction := accumulate_trees 0 model.initialPrediction
   Tensor.scalar ensemble_prediction
 
-/-- Batched forward pass for a gradient boosted ensemble. -/
-def gradientBoostedTreesBatchedForwardSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
-  (input : Tensor α (.dim batch (.dim nFeatures .scalar))) :
-  Tensor α (.dim batch .scalar) :=
-  match input with
-  | Tensor.dim batch_fn =>
-    Tensor.dim (fun i => gradientBoostedTreesForwardSpec model (batch_fn i))
+/-- Apply a gradient-boosted ensemble independently at every index of a leading shape. -/
+def gradientBoostedTreesForwardLeadingSpec (leading : Shape)
+  {nTrees maxDepth nFeatures : Nat}
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
+  (input : Tensor α (leading.concat (.dim nFeatures .scalar))) :
+  Tensor α (leading.concat .scalar) :=
+  Tensor.mapLeading leading (gradientBoostedTreesForwardSpec model) input
 
 /--
 "Gradient" w.r.t. a tree's prediction.
@@ -175,7 +160,7 @@ dataflow explicit: gradient information is used to fit subsequent trees, not to 
 through split predicates.
 -/
 def treePredictionGradSpec {maxDepth nFeatures : Nat}
-  (_tree : DecisionTreeSpec α maxDepth)
+  (_tree : DecisionTreeSpec α nFeatures maxDepth)
   (_input : Tensor α (.dim nFeatures .scalar))
   (grad_output : α) :
   α :=
@@ -189,7 +174,7 @@ Approximate gradient w.r.t. input features for a tree.
 In this spec we return `0` gradients (trees are treated as non-differentiable).
 -/
 def treeInputGradSpec {maxDepth nFeatures : Nat}
-  (_tree : DecisionTreeSpec α maxDepth)
+  (_tree : DecisionTreeSpec α nFeatures maxDepth)
   (_input : Tensor α (.dim nFeatures .scalar))
   (_grad_output : α) :
   Tensor α (.dim nFeatures .scalar) :=
@@ -205,7 +190,7 @@ structure. Instead, residuals/gradients are used to fit *new* trees. This helper
 not wired into an `OpSpec`; callers should not mistake it for a differentiable surrogate.
 -/
 def gradientBoostedTreesZeroInputGradForNondiffTrees {nTrees maxDepth nFeatures : Nat}
-  (_model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (_model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (_input : Tensor α (.dim nFeatures .scalar))
   (_grad_output : α) :
   Tensor α (.dim nFeatures .scalar) :=
@@ -332,7 +317,7 @@ Fit a regression tree by greedy CART-style splitting (MSE/SSE), with a depth bud
 `depthLeft` counts how many splits we are still allowed to make.
 -/
 def fitRegressionNode {nFeatures : Nat} :
-    Nat → List (RegressionExample (α := α) nFeatures) → TreeNode α
+    (depth : Nat) → List (RegressionExample (α := α) nFeatures) → TreeNode α nFeatures depth
   | 0, xs => TreeNode.leaf (leafValue (α := α) xs)
   | (d+1), xs =>
     -- If there’s no meaningful split, stop at a leaf.
@@ -342,7 +327,7 @@ def fitRegressionNode {nFeatures : Nat} :
       let parentScore := sse (targets xs)
       -- Only split if it actually improves SSE.
       if Context.gtBool parentScore score then
-        TreeNode.split feature.val threshold
+        TreeNode.split feature threshold
           (fitRegressionNode d l)
           (fitRegressionNode d r)
       else
@@ -352,10 +337,10 @@ def fitRegressionNode {nFeatures : Nat} :
 def decisionTreeFitRegressionMseSpec {batch maxDepth nFeatures : Nat}
   (x : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (y : Tensor α (.dim batch .scalar)) :
-  DecisionTreeSpec α maxDepth :=
+  DecisionTreeSpec α nFeatures maxDepth :=
   let examples : List (RegressionExample (α := α) nFeatures) :=
     (List.finRange batch).map (fun i =>
-      { x := get x i, y := Tensor.toScalar (get y i) })
+      { x := get x i, y := Tensor.item (get y i) })
   { root := fitRegressionNode (α := α) (nFeatures := nFeatures) maxDepth examples }
 
 /-!
@@ -387,19 +372,18 @@ PyTorch / sklearn analogies:
 -/
 
 /-- A classifier tree node: numeric splits, label-valued leaves. -/
-inductive ClassifierTreeNode (α β : Type) where
-  | leaf (label : β) : ClassifierTreeNode α β
-  | split (feature : Nat) (threshold : α) (left right : ClassifierTreeNode α β) : ClassifierTreeNode
-    α β
+inductive ClassifierTreeNode (α β : Type) (nFeatures : Nat) : Nat → Type where
+  | leaf {depth : Nat} (label : β) : ClassifierTreeNode α β nFeatures depth
+  | split {depth : Nat} (feature : Fin nFeatures) (threshold : α)
+      (left right : ClassifierTreeNode α β nFeatures depth) :
+      ClassifierTreeNode α β nFeatures (depth + 1)
 deriving Inhabited
 
 /-- Specification wrapper for a classification decision tree (numeric splits, label-valued leaves).
   -/
-structure DecisionTreeClassifierSpec (α β : Type) (maxDepth : Nat) where
-  /-- root. -/
-  root : ClassifierTreeNode α β
-  /-- max depth. -/
-  max_depth : Nat := maxDepth
+structure DecisionTreeClassifierSpec (α β : Type) (nFeatures maxDepth : Nat) where
+  /-- Root node with bounded depth and valid feature indices. -/
+  root : ClassifierTreeNode α β nFeatures maxDepth
 deriving Inhabited
 
 /-- Forward pass for a classifier decision tree on an input vector of `nFeatures` features.
@@ -415,25 +399,14 @@ $x_{\mathrm{feature}}>\mathrm{threshold}$ goes right, but avoids needing a decid
 `Context α` backend.
 -/
 def decisionTreeClassifyForwardSpecN {β : Type} {maxDepth nFeatures : Nat}
-  (tree : DecisionTreeClassifierSpec α β maxDepth)
+  (tree : DecisionTreeClassifierSpec α β nFeatures maxDepth)
   (input : Tensor α (.dim nFeatures .scalar)) : β :=
-  let rec traverse (node : ClassifierTreeNode α β) : β :=
+  let rec traverse {depth : Nat} (node : ClassifierTreeNode α β nFeatures depth) : β :=
     match node with
     | .leaf lbl => lbl
-    | .split feature_idx threshold left right =>
-      match input with
-      | Tensor.dim values =>
-        if h : feature_idx < nFeatures then
-          match values ⟨feature_idx, h⟩ with
-          | Tensor.scalar feature_value =>
-            if decide (feature_value > threshold) then
-              traverse right
-            else
-              traverse left
-        else
-          -- Out-of-range feature index: treat as a missing feature and fall back to the left
-          -- branch.
-          traverse left
+    | .split feature threshold left right =>
+      let featureValue := Tensor.item (get input feature)
+      if decide (featureValue > threshold) then traverse right else traverse left
   traverse tree.root
 
 /-- A single classification training example: feature vector `x` and label `y`. -/
@@ -570,7 +543,8 @@ Fit a classification tree node by greedy CART-style splitting (Gini impurity).
 `depthLeft` counts how many more splits we are allowed to make.
 -/
 def fitClassificationNode {nFeatures : Nat} {β : Type} [DecidableEq β] [Inhabited β] :
-    Nat → List (ClassificationExample (α := α) nFeatures β) → ClassifierTreeNode α β
+    (depth : Nat) → List (ClassificationExample (α := α) nFeatures β) →
+      ClassifierTreeNode α β nFeatures depth
   | 0, xs => .leaf (majorityLabel (β := β) (classTargets xs))
   | (d+1), xs =>
     match bestSplitC (β := β) (nFeatures := nFeatures) xs with
@@ -578,7 +552,7 @@ def fitClassificationNode {nFeatures : Nat} {β : Type} [DecidableEq β] [Inhabi
     | some (feature, threshold, l, r, score) =>
       let parentScore := giniWeighted (β := β) (classTargets xs)
       if Context.gtBool parentScore score then
-        .split feature.val threshold
+        .split feature threshold
           (fitClassificationNode (β := β) d l)
           (fitClassificationNode (β := β) d r)
       else
@@ -587,39 +561,33 @@ def fitClassificationNode {nFeatures : Nat} {β : Type} [DecidableEq β] [Inhabi
 /--
 Fit a classification decision tree (CART-style) using Gini impurity.
 
-Labels are supplied as a list of length `batch`.
-
-- If `y` is shorter than `batch`, missing entries use `default` (so the function remains total).
-- If `y` is longer than `batch`, extra labels are ignored.
-
-This “list-based labels” API is meant for examples and small experiments. If you have labels already
-as a tensor or an index type, it is usually better to convert them to a list explicitly at the
-boundary of your program so the conversion is visible.
+The label vector has exactly one element per input row. Its length is part of the type, so fitting
+cannot silently discard labels or invent missing ones.
 -/
-def decisionTreeFitClassificationGiniListSpec {β : Type} [DecidableEq β] [Inhabited β]
+def decisionTreeFitClassificationGiniSpec {β : Type} [DecidableEq β] [Inhabited β]
   {batch maxDepth nFeatures : Nat}
   (x : Tensor α (.dim batch (.dim nFeatures .scalar)))
-  (y : List β) :
-  DecisionTreeClassifierSpec α β maxDepth :=
+  (y : Vector β batch) :
+  DecisionTreeClassifierSpec α β nFeatures maxDepth :=
   let examples : List (ClassificationExample (α := α) nFeatures β) :=
     (List.finRange batch).map (fun i =>
-      { x := get x i, y := y.getD i.val default })
+      { x := get x i, y := y.get i })
   { root := fitClassificationNode (β := β) (nFeatures := nFeatures) maxDepth examples }
 
 -- Mean Squared Error loss for regression
 /-- Mean squared error (MSE) loss for regression, reduced to a scalar by averaging over the batch.
   -/
 def gbtMseLossSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar)) (h : batch ≠ 0) :
   Tensor α .scalar :=
-  let predictions := gradientBoostedTreesBatchedForwardSpec model input
+  let predictions := gradientBoostedTreesForwardLeadingSpec (.dim batch .scalar) model input
   let errors := subSpec predictions target
   let squared_errors := squareSpec errors
-  have inst : Shape.valid_axis_inst 0 (Shape.dim batch Shape.scalar) := by
-    apply Shape.validAxisInstZeroAlt h
-  let mse := reduceSumAuto 0 squared_errors
+  have inst : Shape.HasNonemptyAxis 0 (Shape.dim batch Shape.scalar) := by
+    apply Shape.hasNonemptyAxisZeroOfNe h
+  let mse := reduceSum 0 squared_errors inst.proof
   scaleSpec mse (1 / (batch : α))
 
 /--
@@ -629,11 +597,11 @@ This is a direct probability-space loss helper. For numerically sensitive classi
 prefer a stable "BCE with logits" implementation in the runtime/training layer.
 -/
 def gbtBinaryCrossentropyLossSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar)) (h : batch ≠ 0) :
   Tensor α .scalar :=
-  let predictions := gradientBoostedTreesBatchedForwardSpec model input
+  let predictions := gradientBoostedTreesForwardLeadingSpec (.dim batch .scalar) model input
   let sigmoid_preds := mapSpec (fun x => 1 / (1 + MathFunctions.exp (-x))) predictions
   let log_preds := mapSpec MathFunctions.log sigmoid_preds
   let log_one_minus_preds := mapSpec (fun x => MathFunctions.log (1 - x)) sigmoid_preds
@@ -642,9 +610,9 @@ def gbtBinaryCrossentropyLossSpec {batch nTrees maxDepth nFeatures : Nat}
   let negativeLogLikelihood := mulSpec negativeTarget
     log_one_minus_preds
   let logLikelihood := addSpec positiveLogLikelihood negativeLogLikelihood
-  have inst : Shape.valid_axis_inst 0 (Shape.dim batch Shape.scalar) := by
-    apply Shape.validAxisInstZeroAlt h
-  let summedLogLikelihood := reduceSumAuto 0 logLikelihood
+  have inst : Shape.HasNonemptyAxis 0 (Shape.dim batch Shape.scalar) := by
+    apply Shape.hasNonemptyAxisZeroOfNe h
+  let summedLogLikelihood := reduceSum 0 logLikelihood inst.proof
   negSpec (scaleSpec summedLogLikelihood (1 / (batch : α)))
 
 /-- Gradient of MSE loss w.r.t. predictions (elementwise). -/
@@ -669,11 +637,11 @@ Residual computation for gradient boosting.
 For squared-error regression, the residual is `target - prediction`.
 -/
 def computeResidualsSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar)) :
   Tensor α (.dim batch .scalar) :=
-  let predictions := gradientBoostedTreesBatchedForwardSpec model input
+  let predictions := gradientBoostedTreesForwardLeadingSpec (.dim batch .scalar) model input
   subSpec target predictions
 
 /--
@@ -684,48 +652,44 @@ The residuals computed here are illustrative; the "fit a tree to residuals" vari
 usually the more self-contained baseline.
 -/
 def gradientBoostedTreesTrainStepSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar))
-  (new_tree : DecisionTreeSpec α maxDepth)
+  (new_tree : DecisionTreeSpec α nFeatures maxDepth)
   (h : batch ≠ 0) :
-  (Tensor α .scalar × GradientBoostedTreesSpec α (nTrees + 1) maxDepth) :=
-  -- Compute current predictions
-  let _predictions := gradientBoostedTreesBatchedForwardSpec model input
+  (Tensor α .scalar × GradientBoostedTreesSpec α nFeatures (nTrees + 1) maxDepth) :=
   -- Compute loss
   let loss := gbtMseLossSpec model input target h
-  -- Compute residuals (negative gradients)
-  let _residuals := computeResidualsSpec model input target
   -- Add new tree to ensemble
-  let new_trees := concatVectorsSpec model.trees (Tensor.dim (fun _ => Tensor.scalar new_tree))
-  let updated_model := {
+  let newTrees := concatLeadingAxisSpec model.trees (Tensor.dim (fun _ => Tensor.scalar new_tree))
+  let updatedModel := {
     model with
-    trees := new_trees
+    trees := newTrees
   }
-  (loss, updated_model)
+  (loss, updatedModel)
 
 /-!
 ### Gradient boosting: a "fit-one-more-tree" step
 
-The original `gradient_boosted_trees_train_step_spec` expects a pre-fit `new_tree`. For a more
+The original `gradientBoostedTreesTrainStepSpec` expects a pre-fit `new_tree`. For a more
 complete baseline, we also provide a deterministic step that *fits* that tree to the residuals.
 -/
 
 /-- Fit a new tree to residuals and append it to the ensemble. -/
 def gradientBoostedTreesTrainStepFitSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar))
   (h : batch ≠ 0) :
-  (Tensor α .scalar × GradientBoostedTreesSpec α (nTrees + 1) maxDepth) :=
+  (Tensor α .scalar × GradientBoostedTreesSpec α nFeatures (nTrees + 1) maxDepth) :=
   let loss := gbtMseLossSpec model input target h
   let residuals := computeResidualsSpec model input target
   let newTree :=
     decisionTreeFitRegressionMseSpec (α := α) (batch := batch) (maxDepth := maxDepth)
       (nFeatures := nFeatures) input residuals
-  let new_trees := concatVectorsSpec model.trees (Tensor.dim (fun _ => Tensor.scalar newTree))
-  let updated_model := { model with trees := new_trees }
-  (loss, updated_model)
+  let newTrees := concatLeadingAxisSpec model.trees (Tensor.dim (fun _ => Tensor.scalar newTree))
+  let updatedModel := { model with trees := newTrees }
+  (loss, updatedModel)
 
 namespace GradientBoostedTrees.Internal
 
@@ -734,12 +698,13 @@ Increment a single feature counter by 1 inside a length-`nFeatures` vector.
 
 This is used by the split-count feature-importance computation below.
 -/
-def incrFeature {nFeatures : Nat} (acc : Tensor α (.dim nFeatures .scalar)) (featureIdx : Nat) :
+def incrFeature {nFeatures : Nat} (acc : Tensor α (.dim nFeatures .scalar))
+    (feature : Fin nFeatures) :
   Tensor α (.dim nFeatures .scalar) :=
   Tensor.dim (fun i =>
     match get acc i with
     | Tensor.scalar v =>
-        if i.val = featureIdx then Tensor.scalar (v + (1 : α)) else Tensor.scalar v)
+        if i = feature then Tensor.scalar (v + (1 : α)) else Tensor.scalar v)
 
 end GradientBoostedTrees.Internal
 
@@ -748,8 +713,9 @@ Count how many times each feature index appears in split nodes of a tree.
 
 This mirrors a very common "split count" importance heuristic.
 -/
-def treeFeatureCounts {nFeatures : Nat} : TreeNode α → Tensor α (.dim nFeatures .scalar) → Tensor
-  α (.dim nFeatures .scalar)
+def treeFeatureCounts {nFeatures depth : Nat} :
+    TreeNode α nFeatures depth → Tensor α (.dim nFeatures .scalar) →
+      Tensor α (.dim nFeatures .scalar)
   | TreeNode.leaf _v, acc => acc
   | TreeNode.split featureIdx _threshold left right, acc =>
       let acc' := incrFeature (α := α) (nFeatures := nFeatures) acc featureIdx
@@ -762,7 +728,7 @@ This mirrors the common "how often was a feature used in a split?" heuristic.  I
 same as gain-based importance in XGBoost/LightGBM, but it is deterministic and easy to interpret.
 -/
 def computeFeatureImportanceSpec {nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth) :
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth) :
   Tensor α (.dim nFeatures .scalar) :=
   let rec accumulate_importance (i : Nat) (acc : Tensor α (.dim nFeatures .scalar)) : Tensor α (.dim
     nFeatures .scalar) :=
@@ -788,44 +754,44 @@ This uses the standard formula `1 - ss_res / ss_tot`, written as `(ss_tot - ss_r
 to avoid an explicit `1 - ...` when working in an abstract scalar context.
 -/
 def gbtRSquaredSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar)) (h : batch ≠ 0) :
   Tensor α .scalar :=
-  let predictions := gradientBoostedTreesBatchedForwardSpec model input
-  have inst : Shape.valid_axis_inst 0 (Shape.dim batch Shape.scalar) := by
-    apply Shape.validAxisInstZeroAlt h
-  let target_mean := reduceMeanAuto 0 inst target
+  let predictions := gradientBoostedTreesForwardLeadingSpec (.dim batch .scalar) model input
+  have inst : Shape.HasNonemptyAxis 0 (Shape.dim batch Shape.scalar) := by
+    apply Shape.hasNonemptyAxisZeroOfNe h
+  let target_mean := reduceMean 0 target inst.proof
   let target_mean_broadcast := broadcastLike target target_mean
-  let ss_res := reduceSumAuto 0 (squareSpec (subSpec predictions target))
-  let ss_tot := reduceSumAuto 0 (squareSpec (subSpec target target_mean_broadcast))
+  let ss_res := reduceSum 0 (squareSpec (subSpec predictions target)) inst.proof
+  let ss_tot := reduceSum 0 (squareSpec (subSpec target target_mean_broadcast)) inst.proof
   -- Correct R-squared formula: (ss_tot - ss_res) / ss_tot
   divSpec (subSpec ss_tot ss_res) ss_tot
 
 /-- Mean absolute error (MAE) for regression. -/
 def gbtMaeSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar)) (h : batch ≠ 0) :
   Tensor α .scalar :=
-  let predictions := gradientBoostedTreesBatchedForwardSpec model input
+  let predictions := gradientBoostedTreesForwardLeadingSpec (.dim batch .scalar) model input
   let errors := absSpec (subSpec predictions target)
-  have inst : Shape.valid_axis_inst 0 (Shape.dim batch Shape.scalar) := by
-    apply Shape.validAxisInstZeroAlt h
-  reduceMeanAuto 0 inst errors
+  have inst : Shape.HasNonemptyAxis 0 (Shape.dim batch Shape.scalar) := by
+    apply Shape.hasNonemptyAxisZeroOfNe h
+  reduceMean 0 errors inst.proof
 
 /-- Root mean squared error (RMSE) for regression. -/
 def gbtRmseSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar)) (h : batch ≠ 0) :
   Tensor α .scalar :=
-  let predictions := gradientBoostedTreesBatchedForwardSpec model input
+  let predictions := gradientBoostedTreesForwardLeadingSpec (.dim batch .scalar) model input
   let errors := subSpec predictions target
   let squared_errors := squareSpec errors
-  have inst : Shape.valid_axis_inst 0 (Shape.dim batch Shape.scalar) := by
-    apply Shape.validAxisInstZeroAlt h
-  let mse := reduceMeanAuto 0 inst squared_errors
+  have inst : Shape.HasNonemptyAxis 0 (Shape.dim batch Shape.scalar) := by
+    apply Shape.hasNonemptyAxisZeroOfNe h
+  let mse := reduceMean 0 squared_errors inst.proof
   sqrtSpec mse
 
 /--
@@ -836,7 +802,7 @@ The caller is responsible for tracking the patience counter; this predicate only
 train/validation loss pair.
 -/
 def earlyStoppingCheckSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar))
   (validation_input : Tensor α (.dim batch (.dim nFeatures .scalar)))
@@ -845,17 +811,17 @@ def earlyStoppingCheckSpec {batch nTrees maxDepth nFeatures : Nat}
   (_patience : Nat)
   (min_delta : α) :
   Bool :=
-  let train_loss := Tensor.toScalar (gbtMseLossSpec model input target h)
-  let val_loss := Tensor.toScalar (gbtMseLossSpec model validation_input validation_target h)
+  let train_loss := Tensor.item (gbtMseLossSpec model input target h)
+  let val_loss := Tensor.item (gbtMseLossSpec model validation_input validation_target h)
   -- Single-step loss-margin check; patience is tracked by the caller.
   Context.gtBool (train_loss + min_delta) val_loss
 
 /-- Adjust the ensemble learning rate (shrinkage) while keeping the same trees. -/
-def adjustLearningRateSpec {_nTrees maxDepth : Nat}
-  (model : GradientBoostedTreesSpec α _nTrees maxDepth)
-  (new_rate : α) :
-  GradientBoostedTreesSpec α _nTrees maxDepth :=
-  { model with learning_rate := new_rate }
+def adjustLearningRateSpec {nFeatures nTrees maxDepth : Nat}
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
+  (newRate : α) :
+  GradientBoostedTreesSpec α nFeatures nTrees maxDepth :=
+  { model with learningRate := newRate }
 
 /--
 Deterministic prefix selection used as a proof-friendly stand-in for stochastic subsampling.
@@ -887,15 +853,14 @@ split-gain objective; tree-builder policies such as histogram binning and split 
 represented elsewhere by the tree-fitting routines.
 -/
 def xgboostSquaredErrorObjectiveSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar))
   (h : batch ≠ 0)
   (lambda : α)
   (_gamma : α) :
   Tensor α .scalar :=
-  let _predictions := gradientBoostedTreesBatchedForwardSpec model input
-  let mse := Tensor.toScalar (gbtMseLossSpec model input target h)
+  let mse := Tensor.item (gbtMseLossSpec model input target h)
   -- Compact scalar proxy for an L2-style ensemble penalty.
   let regularization := lambda * mse
   Tensor.scalar (mse + regularization)
@@ -907,15 +872,14 @@ This objective is deterministic because it operates on a fixed ensemble and batc
 loss shape used by examples rather than the full LightGBM histogram/split objective.
 -/
 def lightgbmSquaredErrorObjectiveSpec {batch nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth)
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth)
   (input : Tensor α (.dim batch (.dim nFeatures .scalar)))
   (target : Tensor α (.dim batch .scalar))
   (lambda_l1 : α)
   (lambda_l2 : α)
   (h : batch ≠ 0) :
   Tensor α .scalar :=
-  let _predictions := gradientBoostedTreesBatchedForwardSpec model input
-  let mse := Tensor.toScalar (gbtMseLossSpec model input target h)
+  let mse := Tensor.item (gbtMseLossSpec model input target h)
   -- Compact scalar proxy for L1/L2-style ensemble penalties.
   let regularization := lambda_l1 * mse + lambda_l2 * mse
   Tensor.scalar (mse + regularization)

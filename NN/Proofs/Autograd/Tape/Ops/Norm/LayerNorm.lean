@@ -585,17 +585,6 @@ structure Inputs (Γ : List Shape) (m n : Nat) where
   /-- Affine shift vector. -/
   beta : Idx Γ (VecShape n)
 
-/-- Saved tensors before the final LayerNorm output `y`. -/
-abbrev ssBeforeY (m n : Nat) : List Shape :=
-  ssPrefix7 m n ++
-    [ VecShape m
-    , MatShape m n
-    , MatShape m n
-    , MatShape m n
-    , MatShape m n
-    , MatShape m n
-    ]
-
 /-- Index of the final LayerNorm output in `ΓLN ++ ssLayerNorm`. -/
 def idxY {m n : Nat} : Idx (ΓLN m n ++ ssLayerNorm m n) (MatShape m n) :=
   ⟨⟨16, by simp [ΓLN, ssLayerNorm]⟩,

@@ -89,7 +89,7 @@ def Loss.logCosh : Loss :=
 -- Pure loss function specifications
 
 /-- Sum all tensor elements into a single scalar. -/
-def toScalarSpec {s : Shape} : Tensor α s → α :=
+def toScalarSpec {α : Type} [Add α] [Zero α] {s : Shape} : Tensor α s → α :=
   sumSpec
 
 /-- Denominator for totalized mean reductions over a shape.
@@ -102,41 +102,42 @@ def meanDenom (s : Shape) : Nat :=
   if Spec.Shape.size s = 0 then 1 else Spec.Shape.size s
 
 /-- Mean of a scalar that conceptually came from a tensor with shape `s`. -/
-def meanOver {s : Shape} (x : α) : α :=
+def meanOver {α : Type} [Div α] [Coe Nat α] {s : Shape} (x : α) : α :=
   x / (meanDenom s : α)
 
-/-- Number of independent last-axis slices in a tensor shape.
+/-- Number of slices orthogonal to `axis` in a tensor shape.
 
-Classification losses sum over the innermost class axis and apply `mean` over the remaining axes.
-Thus a class vector has one slice, a matrix of shape `(batch, classes)` has `batch` slices, and
-higher-rank inputs use the product of every axis except the last. Scalars are treated as one
-single-coordinate slice. -/
-def lastAxisSliceCount : Shape → Nat
-  | .scalar => 1
-  | .dim _ .scalar => 1
-  | .dim n inner => n * lastAxisSliceCount inner
+Classification losses sum along the selected class dimension and average over every other
+dimension. Thus a class vector has one slice, a matrix of shape `(batch, classes)` with class
+dimension `1` has `batch` slices, and a tensor may instead place its class dimension anywhere in
+the shape. -/
+def axisSliceCount (s : Shape) (axis : Nat) [Shape.AxisInBounds axis s] : Nat :=
+  Spec.Shape.size (shapeAfterSum s axis)
 
-/-- Totalized denominator for a mean over last-axis slices. -/
-def lastAxisMeanDenom (s : Shape) : Nat :=
-  if lastAxisSliceCount s = 0 then 1 else lastAxisSliceCount s
+/-- Totalized denominator for a mean over slices orthogonal to `axis`. -/
+def axisMeanDenom (s : Shape) (axis : Nat) [Shape.AxisInBounds axis s] : Nat :=
+  if axisSliceCount s axis = 0 then 1 else axisSliceCount s axis
 
-/-- Divide a last-axis-summed classification loss by its number of independent slices. -/
-def meanOverLastAxisSlices {s : Shape} (x : α) : α :=
-  x / (lastAxisMeanDenom s : α)
+/-- Divide a classification loss by the number of slices orthogonal to `axis`. -/
+def meanOverAxisSlices {α : Type} [Div α] [Coe Nat α] {s : Shape}
+    (axis : Nat) [Shape.AxisInBounds axis s] (x : α) : α :=
+  x / (axisMeanDenom s axis : α)
 
 /-- Mean squared error: average of $(\mathtt{predicted}-\mathtt{target})^2$. -/
-def mseSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) : α :=
+def mseSpec {α : Type} [Add α] [Sub α] [Mul α] [Div α] [Zero α] [Coe Nat α]
+    {s : Shape} (predicted target : Tensor α s) : α :=
   let diff := subSpec predicted target
   let squared := mulSpec diff diff
   meanOver (s := s) (toScalarSpec squared)
 
-/-- Derivative of `mse_spec` w.r.t. `predicted`. -/
-def mseDerivSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) : Tensor α s :=
+/-- Derivative of `mseSpec` with respect to `predicted`. -/
+def mseDerivSpec {α : Type} [Add α] [Sub α] [Mul α] [Div α] [One α] [Coe Nat α]
+    {s : Shape} (predicted target : Tensor α s) : Tensor α s :=
   let diff := subSpec predicted target
   -- Corresponds to PyTorch's `MSELoss(reduction="mean")`.
   -- d/dpred ( (1/N) * Σᵢ (predᵢ - tgtᵢ)^2 ) = (2/N) * (pred - tgt)
   let n : α := (meanDenom s : α)
-  scaleSpec diff (Numbers.two / n)
+  scaleSpec diff (((1 : α) + 1) / n)
 
 /-- Mean absolute error: average of `|predicted - target|`. -/
 def maeSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) : α :=
@@ -204,27 +205,26 @@ $$
 =-\operatorname{mean}_r\sum_c p_{rc}\log q_{rc},
 $$
 
-where `c` is the last (class) axis and `r` ranges over all remaining axes. A lone class vector is
-one distribution and is not divided by its number of classes.
+where `c` ranges along the selected class dimension and `r` ranges over all remaining dimensions.
+A lone class vector is one distribution and is not divided by its number of classes.
 
 PyTorch's `F.cross_entropy` typically takes logits and does `log_softmax + NLLLoss`; that is a
 different API surface than this "probabilities in, scalar out" spec.
 -/
-def crossEntropySpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) (epsilon : α :=
-  Numbers.epsilon) : α :=
-  -- Standard cross-entropy between distributions: sum over each last-axis class distribution,
-  -- then average over the remaining sample/spatial axes.
+def crossEntropySpec {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (predicted : Tensor α s) (target : Tensor α s) (epsilon : α := Numbers.epsilon) : α :=
+  -- Sum over each class distribution, then average over all dimensions other than `axis`.
   let clamp01 := fun x : α =>
     let x := if x > epsilon then x else epsilon
     if x < (1 : α) - epsilon then x else (1 : α) - epsilon
   let q := mapSpec clamp01 predicted
   let logq := logSpec q
   let total := sumSpec (mulSpec target logq)
-  meanOverLastAxisSlices (s := s) (-total)
+  meanOverAxisSlices (s := s) axis (-total)
 
 /-- Derivative of `cross_entropy_spec` w.r.t. `predicted`. -/
-def crossEntropyDerivSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) (epsilon : α
-  := Numbers.epsilon) :
+def crossEntropyDerivSpec {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (predicted : Tensor α s) (target : Tensor α s) (epsilon : α := Numbers.epsilon) :
     Tensor α s :=
   -- The forward clamp is locally constant outside `(epsilon, 1 - epsilon)`, so its branch
   -- derivative is zero there. At the two clipping kinks this definition selects the zero
@@ -234,7 +234,7 @@ def crossEntropyDerivSpec {s : Shape} (predicted : Tensor α s) (target : Tensor
       if q < (1 : α) - epsilon then -p / q else 0
     else
       0) predicted target
-  scaleSpec grad (1 / (lastAxisMeanDenom s : α))
+  scaleSpec grad (1 / (axisMeanDenom s axis : α))
 
 /--
 Cross-entropy on logits (stable log-softmax form).
@@ -247,28 +247,31 @@ $$
   \mathtt{target}_{rc}\operatorname{logsoftmax}(\mathtt{logits})_{rc},
 $$
 
-where the last axis `c` contains classes and `r` ranges over the remaining axes. This is PyTorch's
-`reduction="mean"` convention for one-hot or soft distribution targets.
+where the dimension selected by `axis` contains classes and `r` ranges over the remaining
+dimensions. This is PyTorch's `reduction="mean"` convention for one-hot or soft distribution
+targets.
 
-Unlike `crossEntropySpec`, this takes *logits* and uses `Activation.logSoftmaxSpec` for
+Unlike `crossEntropySpec`, this takes *logits* and uses `Activation.logSoftmaxLastSpec` for
 numerical stability.
 
-Note: this spec assumes each last-axis `target` slice is a probability distribution (sums to 1),
-as in one-hot or label-smoothed targets. -/
-def crossEntropyLogitsSpec {s : Shape} (logits : Tensor α s) (target : Tensor α s) : α :=
-  let logp := Activation.logSoftmaxSpec (α := α) (s := s) logits
+This spec assumes each `target` slice along `axis` is a probability distribution (sums to `1`), as
+in one-hot or label-smoothed targets. -/
+def crossEntropyLogitsSpec {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (logits : Tensor α s) (target : Tensor α s) : α :=
+  let logp := Activation.logSoftmaxSpec (α := α) (s := s) axis logits
   let total := sumSpec (mulSpec target logp)
-  meanOverLastAxisSlices (s := s) (-total)
+  meanOverAxisSlices (s := s) axis (-total)
 
 /-- Derivative of `cross_entropy_logits_spec` w.r.t. `logits`. -/
-def crossEntropyLogitsDerivSpec {s : Shape} (logits : Tensor α s) (target : Tensor α s) :
+def crossEntropyLogitsDerivSpec {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (logits : Tensor α s) (target : Tensor α s) :
     Tensor α s :=
-  -- When `target` is a distribution over the last axis, the gradient is the familiar:
+  -- When `target` is a distribution along `axis`, the gradient is the familiar:
   --   d/dlogits = softmax(logits) - target
   -- followed by the mean over all non-class axes.
-  let probs := Activation.softmaxSpec (α := α) (s := s) logits
+  let probs := Activation.softmaxSpec (α := α) (s := s) axis logits
   let grad := subSpec probs target
-  scaleSpec grad (1 / (lastAxisMeanDenom s : α))
+  scaleSpec grad (1 / (axisMeanDenom s axis : α))
 
 /--
 Hinge loss (binary margin loss), elementwise then mean-reduced:

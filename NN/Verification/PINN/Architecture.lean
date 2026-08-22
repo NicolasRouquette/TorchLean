@@ -85,7 +85,7 @@ Internal: worker for `buildGraph`.
 Implementation note: TorchLean enables the `backward.privateInPublic` check, so exported
 definitions should not depend on `private` helpers.
 -/
-def buildNodesAux
+def buildNodes
     (activation : HiddenActivation)
     (remaining : List (Nat × Nat))
     (prevId nextId : Nat)
@@ -102,21 +102,21 @@ def buildNodesAux
     let prevId := nextId
     let nextId := nextId + 1
     match rest with
-    | [] => buildNodesAux activation rest prevId nextId acc
+    | [] => buildNodes activation rest prevId nextId acc
     | _ =>
       let actNode : Node :=
         { id := nextId,
           parents := [prevId],
           kind := activationOpKind activation,
           outShape := .dim outDim .scalar }
-      buildNodesAux activation rest nextId (nextId + 1) (acc.push actNode)
+      buildNodes activation rest nextId (nextId + 1) (acc.push actNode)
 
 end Internal
 
 /-- Build a computation graph matching the supplied sequential PINN architecture. -/
 def buildGraph (arch : SequentialPINNArch) : Graph :=
   let nodes : Array Node :=
-    Internal.buildNodesAux arch.activation arch.linearDims 0 1
+    Internal.buildNodes arch.activation arch.linearDims 0 1
       #[{ id := 0, parents := [], kind := NN.IR.OpKind.input, outShape := .dim arch.inputDim .scalar
         }]
   { nodes := nodes }

@@ -31,6 +31,7 @@ namespace AlphaCrownTransferSoundness
 noncomputable section
 
 open CrownCertSoundness
+open CertSoundness
 
 /-! ## Main transfer theorem -/
 

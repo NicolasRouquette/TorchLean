@@ -61,7 +61,7 @@ def BoxValid {d : Nat} (B : Box d) : Prop := ∀ i, Interval32.Valid (B i)
 
 /-- `B` is a box contained in `[-1,1]^d`. -/
 def BoxInCube {d : Nat} (B : Box d) : Prop :=
-  ∀ i, (Numbers.neg_one : F) ≤ (B i).lo ∧ (B i).hi ≤ (Numbers.one : F)
+  ∀ i, (Numbers.negOne : F) ≤ (B i).lo ∧ (B i).hi ≤ (Numbers.one : F)
 
 /-- `m` is a minimum of `g` on the set `S`, stated without choosing a canonical `min`. -/
 def IsMinOn {X : Type} (g : X → F) (S : Set X) (m : F) : Prop :=

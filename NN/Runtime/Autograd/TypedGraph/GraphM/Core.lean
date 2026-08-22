@@ -165,10 +165,13 @@ def arg {α : Type} {Δ : Type} [DecidableEq Shape] {Γ : List Shape} (i : Nat) 
   else
     throw s!"typed GraphM: input index out of bounds i={i} (Γ.length={Γ.length})"
 
-/-- Pure helper to build `VarList Γ` starting at a given id offset. -/
-def argsAux : (Γ : List Shape) → Nat → VarList Γ
+namespace Internal
+
+def args : (Γ : List Shape) → Nat → VarList Γ
   | [], _i => .nil
-  | _s :: ss, i => .cons { id := i } (argsAux ss (i + 1))
+  | _s :: ss, i => .cons { id := i } (args ss (i + 1))
+
+end Internal
 
 /--
 Return one `Var` per entry of `Γ`, in order.
@@ -176,7 +179,7 @@ Return one `Var` per entry of `Γ`, in order.
 This is the canonical argument environment for a graph with input context `Γ`.
 -/
 def args {α : Type} {Δ : Type} {Γ : List Shape} : MWith α Δ Γ (VarList Γ) := do
-  pure (argsAux Γ 0)
+  pure (Internal.args Γ 0)
 
 /--
 Embed a constant tensor as a node in the typed graph.

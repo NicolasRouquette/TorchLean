@@ -8,6 +8,7 @@ module
 
 public import NN.Spec.Layers.Attention
 public import NN.Spec.Layers.Normalization
+public import NN.Spec.Core.Sequence
 
 /-!
 # Transformer (spec model)
@@ -149,14 +150,14 @@ Gradients for a `FeedForward` block (field-for-field).
 This container is used by downstream models that want a readable backward pass.
 -/
 structure FeedForwardGrads (embedDim hiddenDim : Nat) (α : Type) where
-  /-- Gradient of `W1`. -/
-  dW1 : Tensor α (.dim embedDim (.dim hiddenDim .scalar))
-  /-- Gradient of `W2`. -/
-  dW2 : Tensor α (.dim hiddenDim (.dim embedDim .scalar))
-  /-- Gradient of `b1`. -/
-  db1 : Tensor α (.dim hiddenDim .scalar)
-  /-- Gradient of `b2`. -/
-  db2 : Tensor α (.dim embedDim .scalar)
+  /-- Gradient of the input projection weight. -/
+  inputWeight : Tensor α (.dim embedDim (.dim hiddenDim .scalar))
+  /-- Gradient of the output projection weight. -/
+  outputWeight : Tensor α (.dim hiddenDim (.dim embedDim .scalar))
+  /-- Gradient of the input projection bias. -/
+  inputBias : Tensor α (.dim hiddenDim .scalar)
+  /-- Gradient of the output projection bias. -/
+  outputBias : Tensor α (.dim embedDim .scalar)
 
 /--
 Gradients for `MultiHeadAttention` parameters (field-for-field).
@@ -164,14 +165,14 @@ Gradients for `MultiHeadAttention` parameters (field-for-field).
 This mirrors the `MultiHeadAttention` record defined in `NN.Spec.Module.Attention`.
 -/
 structure MultiHeadAttentionGrads (numHeads dModel headDim : Nat) (α : Type) where
-  /-- Gradient of the query projection matrix `Wq`. -/
-  dWq : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))
-  /-- Gradient of the key projection matrix `Wk`. -/
-  dWk : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))
-  /-- Gradient of the value projection matrix `Wv`. -/
-  dWv : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))
-  /-- Gradient of the output projection matrix `Wo`. -/
-  dWo : Tensor α (.dim (numHeads * headDim) (.dim dModel .scalar))
+  /-- Gradient of the query projection matrix. -/
+  queryWeight : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))
+  /-- Gradient of the key projection matrix. -/
+  keyWeight : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))
+  /-- Gradient of the value projection matrix. -/
+  valueWeight : Tensor α (.dim dModel (.dim (numHeads * headDim) .scalar))
+  /-- Gradient of the output projection matrix. -/
+  outputWeight : Tensor α (.dim (numHeads * headDim) (.dim dModel .scalar))
 
 /--
 Gradients for a `TransformerEncoderLayer` (field-for-field).
@@ -184,13 +185,13 @@ structure TransformerEncoderLayerGrads (headCount embedDim hiddenDim : Nat) (α 
   /-- Gradients for the feedforward block. -/
   ffn : FeedForwardGrads embedDim hiddenDim α
   /-- Gradient of LayerNorm 1 gamma (attention "Add & Norm"). -/
-  d_norm1_gamma : Tensor α (.dim embedDim .scalar)
+  norm1Scale : Tensor α (.dim embedDim .scalar)
   /-- Gradient of LayerNorm 1 beta (attention "Add & Norm"). -/
-  d_norm1_beta  : Tensor α (.dim embedDim .scalar)
+  norm1Bias : Tensor α (.dim embedDim .scalar)
   /-- Gradient of LayerNorm 2 gamma (FFN "Add & Norm"). -/
-  d_norm2_gamma : Tensor α (.dim embedDim .scalar)
+  norm2Scale : Tensor α (.dim embedDim .scalar)
   /-- Gradient of LayerNorm 2 beta (FFN "Add & Norm"). -/
-  d_norm2_beta  : Tensor α (.dim embedDim .scalar)
+  norm2Bias : Tensor α (.dim embedDim .scalar)
 
 /--
 2-layer position-wise feedforward network used inside Transformer layers.
@@ -203,13 +204,13 @@ PyTorch analogue: the `linear1` / `linear2` submodule in `torch.nn.TransformerEn
 structure FeedForward (embedDim hiddenDim : Nat) (α : Type) [Context α] [DecidableRel ((· > ·) : α →
   α → Prop)] where
   /-- First linear layer weights (`embedDim -> hiddenDim`). -/
-  W1 : Tensor α (.dim embedDim (.dim hiddenDim .scalar))
+  inputWeight : Tensor α (.dim embedDim (.dim hiddenDim .scalar))
   /-- Second linear layer weights (`hiddenDim -> embedDim`). -/
-  W2 : Tensor α (.dim hiddenDim (.dim embedDim .scalar))
+  outputWeight : Tensor α (.dim hiddenDim (.dim embedDim .scalar))
   /-- First layer bias (length `hiddenDim`). -/
-  b1 : Tensor α (.dim hiddenDim .scalar)
+  inputBias : Tensor α (.dim hiddenDim .scalar)
   /-- Second layer bias (length `embedDim`). -/
-  b2 : Tensor α (.dim embedDim .scalar)
+  outputBias : Tensor α (.dim embedDim .scalar)
 
 /--
 Forward pass for `FeedForward`.
@@ -221,14 +222,14 @@ def FeedForward.forward {embedDim hiddenDim seqLen : Nat}
   (ffn : FeedForward embedDim hiddenDim α)
   (x : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   : Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-  let preact := matMulSpec x ffn.W1
+  let preact := matMulSpec x ffn.inputWeight
   let bc_b1 : Shape.CanBroadcastTo (.dim hiddenDim .scalar) (.dim seqLen (.dim hiddenDim .scalar))
     := by
     apply Shape.CanBroadcastTo.expand_dims
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
+    exact Shape.CanBroadcastTo.scalar
 
-  let preact_reshaped := broadcastTo bc_b1 ffn.b1
+  let preact_reshaped := broadcastTo bc_b1 ffn.inputBias
   let preact_added := addSpec preact preact_reshaped
   let hidden := reluSpec preact_added
 
@@ -236,9 +237,9 @@ def FeedForward.forward {embedDim hiddenDim seqLen : Nat}
     by
     apply Shape.CanBroadcastTo.expand_dims
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
-  let hidden_reshaped := broadcastTo bc_b2 ffn.b2
-  addSpec (matMulSpec hidden ffn.W2) hidden_reshaped
+    exact Shape.CanBroadcastTo.scalar
+  let hidden_reshaped := broadcastTo bc_b2 ffn.outputBias
+  addSpec (matMulSpec hidden ffn.outputWeight) hidden_reshaped
 
 /--
 Transformer encoder layer (post-norm).
@@ -258,14 +259,14 @@ structure TransformerEncoderLayer (headCount embedDim hiddenDim : Nat) (α : Typ
   ffn : FeedForward embedDim hiddenDim α
 
   /-- LayerNorm 1 gamma (attention "Add & Norm"). -/
-  norm1_gamma : Tensor α (.dim embedDim .scalar)
+  norm1Scale : Tensor α (.dim embedDim .scalar)
   /-- LayerNorm 1 beta (attention "Add & Norm"). -/
-  norm1_beta  : Tensor α (.dim embedDim .scalar)
+  norm1Bias : Tensor α (.dim embedDim .scalar)
 
   /-- LayerNorm 2 gamma (FFN "Add & Norm"). -/
-  norm2_gamma : Tensor α (.dim embedDim .scalar)
+  norm2Scale : Tensor α (.dim embedDim .scalar)
   /-- LayerNorm 2 beta (FFN "Add & Norm"). -/
-  norm2_beta  : Tensor α (.dim embedDim .scalar)
+  norm2Bias : Tensor α (.dim embedDim .scalar)
 
 /--
 Forward pass for a post-norm `TransformerEncoderLayer`.
@@ -278,13 +279,13 @@ def TransformerEncoderLayer.forward
   (layer : TransformerEncoderLayer headCount embedDim hiddenDim α)
   (x : Tensor α (.dim seqLen (.dim embedDim .scalar))) (h1 : seqLen > 0) (h2 : embedDim > 0)
   : Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-  have h3 : seqLen ≠ 0 := by apply Shape.gt_pos_to_ne_zero h1
+  have h3 : seqLen ≠ 0 := Nat.ne_of_gt h1
   let attnOut := MultiHeadAttention.forward seqLen h3 layer.mha x none
   let attnAdded := addSpec x attnOut
-  let normAttn := layerNorm attnAdded layer.norm1_gamma layer.norm1_beta h1 h2
+  let normAttn := layerNorm attnAdded layer.norm1Scale layer.norm1Bias h1 h2
   let ffnOut := FeedForward.forward layer.ffn normAttn
   let ffnAdded := addSpec normAttn ffnOut
-  layerNorm ffnAdded layer.norm2_gamma layer.norm2_beta h1 h2
+  layerNorm ffnAdded layer.norm2Scale layer.norm2Bias h1 h2
 
 /--
 Transformer encoder: a stack of `TransformerEncoderLayer`s.
@@ -293,8 +294,8 @@ PyTorch analogue: `torch.nn.TransformerEncoder` (a list of layers composed seque
 -/
 structure TransformerEncoder (numLayers headCount embedDim hiddenDim : Nat) (α : Type) [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)] where
-  /-- Layer list; typically has length `numLayers`, but the spec does not enforce that invariant. -/
-  layers : List (TransformerEncoderLayer headCount embedDim hiddenDim α)
+  /-- Encoder layers, with the stack depth recorded in the type. -/
+  layers : Vector (TransformerEncoderLayer headCount embedDim hiddenDim α) numLayers
 
 /--
 Forward pass for `TransformerEncoder` (left-fold over layers).
@@ -305,23 +306,7 @@ def TransformerEncoder.forward {numLayers headCount embedDim hiddenDim seqLen : 
   (encoder : TransformerEncoder numLayers headCount embedDim hiddenDim α)
   (x : Tensor α (.dim seqLen (.dim embedDim .scalar))) (h1 : seqLen > 0) (h2 : embedDim > 0)
   : Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-  encoder.layers.foldl (fun acc layer => TransformerEncoderLayer.forward layer acc h1 h2) x
-
-/-!
-### Config-indexed aliases
-
-These abbreviations let downstream models index transformer components by a config record rather
-than repeating the Nat parameters.
--/
-
-/-- Encoder-layer gradients indexed by a `TransformerLayerConfig`. -/
-abbrev TransformerEncoderLayerGradsCfg (cfg : TransformerLayerConfig) (α : Type) :=
-  TransformerEncoderLayerGrads cfg.headCount cfg.embedDim cfg.hiddenDim α
-
-/-- Encoder stack indexed by a `TransformerStackConfig`. -/
-abbrev TransformerEncoderCfg (cfg : TransformerStackConfig) (α : Type) [Context α]
-    [DecidableRel ((· > ·) : α → α → Prop)] :=
-  TransformerEncoder cfg.numLayers cfg.headCount cfg.embedDim cfg.hiddenDim α
+  encoder.layers.toArray.foldl (fun acc layer => TransformerEncoderLayer.forward layer acc h1 h2) x
 
 /-!
 ## Decoder notes
@@ -370,9 +355,9 @@ def multiHeadCrossAttention
   (kvInput : Tensor α (.dim nK (.dim embedDim .scalar)))
   (mask : Option (Tensor Bool (.dim nQ (.dim nK .scalar)))) :
   Tensor α (.dim nQ (.dim embedDim .scalar)) :=
-  let Q := matMulSpec qInput mha.Wq
-  let K := matMulSpec kvInput mha.Wk
-  let V := matMulSpec kvInput mha.Wv
+  let Q := matMulSpec qInput mha.queryWeight
+  let K := matMulSpec kvInput mha.keyWeight
+  let V := matMulSpec kvInput mha.valueWeight
   let h : headCount * (embedDim / headCount) = headCount * (embedDim / headCount) := by rfl
   let QHeads := splitHeadsSpec Q headCount (embedDim / headCount) h
   let KHeads := splitHeadsSpec K headCount (embedDim / headCount) h
@@ -390,7 +375,7 @@ def multiHeadCrossAttention
   let concatenated :=
     combineHeadsSpec (α := α) (n := nQ) (numHeads := headCount) (headDim := (embedDim /
       headCount)) attentionHeads
-  matMulSpec concatenated mha.Wo
+  matMulSpec concatenated mha.outputWeight
 
 /--
 Transformer decoder layer (post-norm).
@@ -411,20 +396,20 @@ structure TransformerDecoderLayer (headCount embedDim hiddenDim : Nat) (α : Typ
   crossAttn : MultiHeadAttention α headCount embedDim (embedDim / headCount)
   /-- Position-wise feedforward block. -/
   ffn : FeedForward embedDim hiddenDim α
-  /-- LayerNorm 1 gamma (self-attention "Add & Norm"). -/
-  norm1_gamma : Tensor α (.dim embedDim .scalar)
-  /-- LayerNorm 1 beta (self-attention "Add & Norm"). -/
-  norm1_beta  : Tensor α (.dim embedDim .scalar)
+  /-- Scale of the layer normalization after self-attention. -/
+  norm1Scale : Tensor α (.dim embedDim .scalar)
+  /-- Bias of the layer normalization after self-attention. -/
+  norm1Bias : Tensor α (.dim embedDim .scalar)
 
-  /-- LayerNorm 2 gamma (cross-attention "Add & Norm"). -/
-  norm2_gamma : Tensor α (.dim embedDim .scalar)
-  /-- LayerNorm 2 beta (cross-attention "Add & Norm"). -/
-  norm2_beta  : Tensor α (.dim embedDim .scalar)
+  /-- Scale of the layer normalization after cross-attention. -/
+  norm2Scale : Tensor α (.dim embedDim .scalar)
+  /-- Bias of the layer normalization after cross-attention. -/
+  norm2Bias : Tensor α (.dim embedDim .scalar)
 
-  /-- LayerNorm 3 gamma (FFN "Add & Norm"). -/
-  norm3_gamma : Tensor α (.dim embedDim .scalar)
-  /-- LayerNorm 3 beta (FFN "Add & Norm"). -/
-  norm3_beta  : Tensor α (.dim embedDim .scalar)
+  /-- Scale of the layer normalization after the feed-forward block. -/
+  norm3Scale : Tensor α (.dim embedDim .scalar)
+  /-- Bias of the layer normalization after the feed-forward block. -/
+  norm3Bias : Tensor α (.dim embedDim .scalar)
 
 /--
 Forward pass for a post-norm `TransformerDecoderLayer`.
@@ -440,11 +425,11 @@ def TransformerDecoderLayer.forward
   (h1 : seqLen > 0) (h2 : embedDim > 0)
   :
   Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-  have h3 : seqLen ≠ 0 := by apply Shape.gt_pos_to_ne_zero h1
+  have h3 : seqLen ≠ 0 := Nat.ne_of_gt h1
   -- Self-attention with residual connection
   let selfAttnOut := MultiHeadAttention.forward seqLen h3 layer.selfAttn x none
   let selfAttnAdded := addSpec x selfAttnOut
-  let normSelfAttn := layerNorm selfAttnAdded layer.norm1_gamma layer.norm1_beta h1 h2
+  let normSelfAttn := layerNorm selfAttnAdded layer.norm1Scale layer.norm1Bias h1 h2
 
   -- Cross-attention with residual connection
   let crossAttnOut :=
@@ -452,12 +437,12 @@ def TransformerDecoderLayer.forward
       (headCount := headCount) (embedDim := embedDim) (nQ := seqLen) (nK := seqLen)
       h3 h3 layer.crossAttn normSelfAttn encoderOutput none
   let crossAttnAdded := addSpec normSelfAttn crossAttnOut
-  let normCrossAttn := layerNorm crossAttnAdded layer.norm2_gamma layer.norm2_beta h1 h2
+  let normCrossAttn := layerNorm crossAttnAdded layer.norm2Scale layer.norm2Bias h1 h2
 
   -- Feedforward with residual connection
   let ffnOut := FeedForward.forward layer.ffn normCrossAttn
   let ffnAdded := addSpec normCrossAttn ffnOut
-  layerNorm ffnAdded layer.norm3_gamma layer.norm3_beta h1 h2
+  layerNorm ffnAdded layer.norm3Scale layer.norm3Bias h1 h2
 
 /--
 Transformer decoder: a stack of `TransformerDecoderLayer`s.
@@ -466,8 +451,8 @@ PyTorch analogue: `torch.nn.TransformerDecoder` (a list of decoder layers compos
 -/
 structure TransformerDecoder (numLayers headCount embedDim hiddenDim : Nat) (α : Type) [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)] where
-  /-- Layer list; typically has length `numLayers`, but the spec does not enforce that invariant. -/
-  layers : List (TransformerDecoderLayer headCount embedDim hiddenDim α)
+  /-- Decoder layers, with the stack depth recorded in the type. -/
+  layers : Vector (TransformerDecoderLayer headCount embedDim hiddenDim α) numLayers
 
 /--
 Forward pass for `TransformerDecoder` (left-fold over layers).
@@ -480,8 +465,8 @@ def TransformerDecoder.forward {numLayers headCount embedDim hiddenDim seqLen : 
   (encoderOutput : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   (h1 : seqLen > 0) (h2 : embedDim > 0) :
   Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-  decoder.layers.foldl (fun acc layer => TransformerDecoderLayer.forward layer acc encoderOutput h1
-    h2) x
+  decoder.layers.toArray.foldl
+    (fun acc layer => TransformerDecoderLayer.forward layer acc encoderOutput h1 h2) x
 
 /--
 End-to-end encoder-decoder Transformer (spec model).
@@ -558,60 +543,60 @@ ReLU mask) instead of relying on a mutable tape, similar to the math underlying 
 -/
 def FeedForward.backward {embedDim hiddenDim seqLen : Nat}
   (ffn : FeedForward embedDim hiddenDim α)
-  (x : Tensor α (.dim seqLen (.dim embedDim .scalar)))  -- input to FFN
+  (x : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   (outputGrad : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   (h_seq : seqLen > 0) (_h_embed : embedDim > 0) :
   (FeedForwardGrads embedDim hiddenDim α ×
    Tensor α (.dim seqLen (.dim embedDim .scalar))) :=
 
   -- Forward pass reconstruction
-  let preact := matMulSpec x ffn.W1
+  let preact := matMulSpec x ffn.inputWeight
   let h1 : Shape.CanBroadcastTo (.dim hiddenDim .scalar) (.dim seqLen (.dim hiddenDim .scalar)) :=
     by
     apply Shape.CanBroadcastTo.expand_dims
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
+    exact Shape.CanBroadcastTo.scalar
 
-  let z1 := addSpec preact (broadcastTo h1 ffn.b1)
+  let z1 := addSpec preact (broadcastTo h1 ffn.inputBias)
   let a1 := reluSpec z1
 
   let h1 : Shape.CanBroadcastTo (.dim embedDim .scalar) (.dim seqLen (.dim embedDim .scalar)) := by
     apply Shape.CanBroadcastTo.expand_dims
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
-  let z2 := addSpec (matMulSpec a1 ffn.W2) (broadcastTo h1 ffn.b2)
+    exact Shape.CanBroadcastTo.scalar
+  let z2 := addSpec (matMulSpec a1 ffn.outputWeight) (broadcastTo h1 ffn.outputBias)
 
   -- Backward pass
   let dz2 := outputGrad
 
   -- dW2 = a1^T ⋅ dz2
-  let dW2 := matMulSpec (matrixTransposeSpec a1) dz2
+  let outputWeight := matMulSpec (matrixTransposeSpec a1) dz2
 
-  let h3 : seqLen ≠ 0 := by apply Shape.gt_pos_to_ne_zero h_seq
-  have : Shape.valid_axis_inst 0 (Shape.dim seqLen (Shape.dim embedDim Shape.scalar)) :=
-    Shape.validAxisInstZeroAlt h3
+  let h3 : seqLen ≠ 0 := Nat.ne_of_gt h_seq
+  have : Shape.HasNonemptyAxis 0 (Shape.dim seqLen (Shape.dim embedDim Shape.scalar)) :=
+    Shape.hasNonemptyAxisZeroOfNe h3
 
   -- db2 = sum across seqLen
-  let db2 := reduceSumAuto 0 dz2
+  let outputBias := reduceSum 0 dz2 this.proof
 
   -- da1 = dz2 ⋅ W2^T
-  let da1 := matMulSpec dz2 (matrixTransposeSpec ffn.W2)
+  let da1 := matMulSpec dz2 (matrixTransposeSpec ffn.outputWeight)
 
   -- dz1 = da1 ⊙ ReLU'(z1)
   let drelu := mulSpec da1 (reluDerivSpec z1)
 
   -- dW1 = x^T ⋅ dz1
-  let dW1 := matMulSpec (matrixTransposeSpec x) drelu
+  let inputWeight := matMulSpec (matrixTransposeSpec x) drelu
 
   -- db1 = sum across seqLen
-  have : Shape.valid_axis_inst 0 (Shape.dim seqLen (Shape.dim hiddenDim Shape.scalar)) :=
-    Shape.validAxisInstZeroAlt h3
-  let db1 := reduceSumAuto 0 drelu
+  have : Shape.HasNonemptyAxis 0 (Shape.dim seqLen (Shape.dim hiddenDim Shape.scalar)) :=
+    Shape.hasNonemptyAxisZeroOfNe h3
+  let inputBias := reduceSum 0 drelu this.proof
 
   -- dInput = dz1 ⋅ W1^T
-  let dInput := matMulSpec drelu (matrixTransposeSpec ffn.W1)
+  let dInput := matMulSpec drelu (matrixTransposeSpec ffn.inputWeight)
 
-  ({ dW1 := dW1, dW2 := dW2, db1 := db1, db2 := db2 }, dInput)
+  ({ inputWeight, outputWeight, inputBias, outputBias }, dInput)
 
 
 /--
@@ -631,25 +616,25 @@ The implementation mirrors the forward pass structure (residuals + LayerNorm) an
 def TransformerEncoderLayer.backward
   {headCount embedDim hiddenDim seqLen : Nat}
   (layer : TransformerEncoderLayer headCount embedDim hiddenDim α)
-  (x : Tensor α (.dim seqLen (.dim embedDim .scalar)))  -- input
+  (x : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   (outputGrad : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   (h1 : seqLen > 0) (h2 : embedDim > 0) :
   (TransformerEncoderLayerGrads headCount embedDim hiddenDim α ×
    Tensor α (.dim seqLen (.dim embedDim .scalar))) :=
 
-  let h3 : seqLen ≠ 0 := by apply Shape.gt_pos_to_ne_zero h1
+  let h3 : seqLen ≠ 0 := Nat.ne_of_gt h1
 
   -- Reconstruct forward intermediates locally for this backward spec.
   let mhaOut := MultiHeadAttention.forward seqLen h3 layer.mha x none
   let res1 := addSpec x mhaOut
-  let norm1 := layerNorm res1 layer.norm1_gamma layer.norm1_beta h1 h2
+  let norm1 := layerNorm res1 layer.norm1Scale layer.norm1Bias h1 h2
   let ffnOut := FeedForward.forward layer.ffn norm1
   let res2 := addSpec norm1 ffnOut
-  let _y := layerNorm res2 layer.norm2_gamma layer.norm2_beta h1 h2
+  let _y := layerNorm res2 layer.norm2Scale layer.norm2Bias h1 h2
 
   -- Backprop through final LayerNorm.
   let (dRes2, dGamma2, dBeta2) :=
-    layerNormBackward h1 h2 res2 layer.norm2_gamma layer.norm2_beta outputGrad
+    layerNormBackward h1 h2 res2 layer.norm2Scale layer.norm2Bias outputGrad
 
   -- Residual: res2 = norm1 + ffnOut
   let dNorm1_from_residual := dRes2
@@ -661,34 +646,34 @@ def TransformerEncoderLayer.backward
 
   -- Backprop through first LayerNorm.
   let (dRes1, dGamma1, dBeta1) :=
-    layerNormBackward h1 h2 res1 layer.norm1_gamma layer.norm1_beta dNorm1
+    layerNormBackward h1 h2 res1 layer.norm1Scale layer.norm1Bias dNorm1
 
   -- Residual: res1 = x + mhaOut
   let dX_from_residual := dRes1
   let dMhaOut := dRes1
 
   -- MHA backward: returns (dX_from_mha, dWq, dWk, dWv, dWo)
-  let (dX_from_mha, dWq, dWk, dWv, dWo) :=
-    MultiHeadAttentionBackward (α := α) (n := seqLen) (dModel := embedDim)
+  let (dXFromMha, queryWeight, keyWeight, valueWeight, outputWeight) :=
+    multiHeadAttentionBackward (α := α) (n := seqLen) (dModel := embedDim)
       (numHeads := headCount) (headDim := (embedDim / headCount))
       h3 layer.mha x none dMhaOut
 
-  let dX := addSpec dX_from_residual dX_from_mha
+  let dX := addSpec dX_from_residual dXFromMha
 
   let grads : TransformerEncoderLayerGrads headCount embedDim hiddenDim α :=
-    { mha := { dWq := dWq, dWk := dWk, dWv := dWv, dWo := dWo }
+    { mha := { queryWeight, keyWeight, valueWeight, outputWeight }
       ffn := dFfnParams
-      d_norm1_gamma := dGamma1
-      d_norm1_beta := dBeta1
-      d_norm2_gamma := dGamma2
-      d_norm2_beta := dBeta2 }
+      norm1Scale := dGamma1
+      norm1Bias := dBeta1
+      norm2Scale := dGamma2
+      norm2Bias := dBeta2 }
 
   (grads, dX)
 
 /-!
 ## Backward pass for an encoder stack
 
-The encoder is a list of layers applied sequentially. To compute gradients we:
+The encoder is a fixed-length vector of layers applied sequentially. To compute gradients we:
 1. re-run the forward pass to collect each layer's input (a small "cache"),
 2. traverse layers in reverse, applying `TransformerEncoderLayer.backward`,
 3. return per-layer parameter gradients plus the gradient w.r.t. the encoder input.
@@ -700,7 +685,7 @@ This is purely a spec (no mutation, no state), so we do the simplest thing: reco
 Backward pass for `TransformerEncoder.forward` (a sequential stack of layers).
 
 Returns:
-- a list of per-layer parameter gradients (in the same order as `encoder.layers`),
+- one parameter-gradient record per layer, in the same order as `encoder.layers`,
 - the gradient w.r.t. the encoder input `x`.
 
 Because this is a pure spec, we recompute forward intermediates (each layer input) instead of
@@ -711,37 +696,16 @@ def TransformerEncoder.backward {numLayers headCount embedDim hiddenDim seqLen :
   (x : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   (outputGrad : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   (h1 : seqLen > 0) (h2 : embedDim > 0) :
-  (List (TransformerEncoderLayerGrads headCount embedDim hiddenDim α) ×
+  (Vector (TransformerEncoderLayerGrads headCount embedDim hiddenDim α) numLayers ×
    Tensor α (.dim seqLen (.dim embedDim .scalar))) :=
-
-  -- Collect the input seen by each layer during the forward pass.
-  let rec collect_inputs
-    (layers : List (TransformerEncoderLayer headCount embedDim hiddenDim α))
-    (cur : Tensor α (.dim seqLen (.dim embedDim .scalar))) :
-    List (Tensor α (.dim seqLen (.dim embedDim .scalar))) :=
-    match layers with
-    | [] => []
-    | l :: ls =>
-        let next := TransformerEncoderLayer.forward l cur h1 h2
-        cur :: collect_inputs ls next
-
-  let inputs := collect_inputs encoder.layers x
-  let pairs := List.zip encoder.layers inputs
-
-  -- Reverse-mode: fold from the end.
-  let step :
-    (List (TransformerEncoderLayerGrads headCount embedDim hiddenDim α) ×
-      Tensor α (.dim seqLen (.dim embedDim .scalar))) →
-    (TransformerEncoderLayer headCount embedDim hiddenDim α × Tensor α (.dim seqLen (.dim embedDim
-      .scalar))) →
-    (List (TransformerEncoderLayerGrads headCount embedDim hiddenDim α) ×
-      Tensor α (.dim seqLen (.dim embedDim .scalar))) :=
-    fun (accGrads, grad) (layer, inp) =>
-      let (g, dInp) := TransformerEncoderLayer.backward layer inp grad h1 h2
-      (g :: accGrads, dInp)
-
-  let (revGrads, dInput) := (pairs.reverse).foldl step ([], outputGrad)
-  (revGrads.reverse, dInput)
+  let (_, inputs) := Sequence.mapAccum numLayers x fun i current =>
+    let next := TransformerEncoderLayer.forward (encoder.layers.get i) current h1 h2
+    (next, current)
+  let (inputGrad, layerGrads) := Sequence.mapAccumRight numLayers outputGrad fun i grad =>
+    let (paramsGrad, previousGrad) :=
+      TransformerEncoderLayer.backward (encoder.layers.get i) (inputs.get i) grad h1 h2
+    (previousGrad, paramsGrad)
+  (layerGrads, inputGrad)
 
 /--
 Sinusoidal positional encoding (Vaswani et al., 2017), added to the input sequence.
@@ -760,7 +724,7 @@ def positionalEncoding {seqLen embedDim : Nat}
       let pos' : α := pos.val
       let i' : α := (i.val : α) / Numbers.two
       let denom : α := (embedDim : α)
-      let angle := pos' * MathFunctions.exp (-i' * Numbers.log10000 / denom)
+      let angle := pos' * MathFunctions.exp (-i' * Numbers.lnTenThousand / denom)
       Tensor.scalar (if i.val % 2 == 0 then MathFunctions.sin angle else MathFunctions.cos angle)
     )
   )
@@ -784,7 +748,7 @@ def maskedMultiHeadAttention {headCount embedDim seqLen : Nat}
   (mask : Option (Tensor Bool (.dim seqLen (.dim seqLen .scalar))))
   (h1 : seqLen > 0) :
   Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-  let h3 : seqLen ≠ 0 := by apply Shape.gt_pos_to_ne_zero h1
+  let h3 : seqLen ≠ 0 := Nat.ne_of_gt h1
   MultiHeadAttention.forward seqLen h3 mha x mask
 
 

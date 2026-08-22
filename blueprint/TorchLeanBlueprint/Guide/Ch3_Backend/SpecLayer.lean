@@ -284,9 +284,9 @@ not determine.
 
 ## Loss reductions
 
-`mseSpec` takes a global mean over all entries. Cross-entropy over logits applies log-softmax on the
-final class axis and averages over the remaining slices. Changing `mean` to `sum` changes both the
-loss and every gradient by a scale factor.
+`mseSpec` takes a global mean over all entries. Cross-entropy over logits applies log-softmax along
+the selected class dimension and averages over the remaining slices. Changing `mean` to `sum`
+changes both the loss and every gradient by a scale factor.
 
 ## Attention masks
 

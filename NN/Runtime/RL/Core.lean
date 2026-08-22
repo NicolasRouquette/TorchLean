@@ -104,7 +104,7 @@ References:
   def discountedReturnsVecFrom {n : Nat} (gamma : α) (rewards : Tensor α (.dim n .scalar))
       (bootstrap : α := 0) : Tensor α (.dim n .scalar) :=
     let rArr : Array α :=
-      Array.ofFn (fun i : Fin n => Tensor.toScalar (get rewards i))
+      Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
     let out : Array α :=
       Id.run do
         -- Array-backed right-to-left scan; `idx` is always in-bounds for arrays of size `n`.
@@ -129,9 +129,9 @@ References:
       (rewards : Tensor α (.dim n .scalar)) (dones : Tensor Bool (.dim n .scalar))
       (bootstrap : α := 0) : Tensor α (.dim n .scalar) :=
     let rArr : Array α :=
-      Array.ofFn (fun i : Fin n => Tensor.toScalar (get rewards i))
+      Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
     let dArr : Array Bool :=
-      Array.ofFn (fun i : Fin n => Tensor.toScalar (get dones i))
+      Array.ofFn (fun i : Fin n => Tensor.item (get dones i))
     let out : Array α :=
       Id.run do
         let mut returns : Array α := Array.replicate n (0 : α)
@@ -152,13 +152,13 @@ References:
       (dones : Tensor Bool (.dim n .scalar)) :
       Tensor α (.dim n .scalar) :=
     let rArr : Array α :=
-      Array.ofFn (fun i : Fin n => Tensor.toScalar (get rewards i))
+      Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
     let vArr : Array α :=
-      Array.ofFn (fun i : Fin n => Tensor.toScalar (get values i))
+      Array.ofFn (fun i : Fin n => Tensor.item (get values i))
     let nvArr : Array α :=
-      Array.ofFn (fun i : Fin n => Tensor.toScalar (get nextValues i))
+      Array.ofFn (fun i : Fin n => Tensor.item (get nextValues i))
     let dArr : Array Bool :=
-      Array.ofFn (fun i : Fin n => Tensor.toScalar (get dones i))
+      Array.ofFn (fun i : Fin n => Tensor.item (get dones i))
     let out : Array α :=
       Id.run do
         let mut advs : Array α := Array.replicate n (0 : α)

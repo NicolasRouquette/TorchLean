@@ -34,14 +34,13 @@ open NN.IR
 /-- Projecting the tensor from a freshly constructed dynamic value is definitionally exact. -/
 @[simp] theorem dval_tensor_mk
     {α : Type} [Context α] {s : Shape} (t : Tensor α s) :
-    DVal.tensor (α := α) (⟨s, t⟩ : DVal α) = t := rfl
+    Spec.PackedTensor.tensor (α := α) (⟨s, t⟩ : Spec.PackedTensor α) = t := rfl
 
 /-- Shape checking succeeds for a dynamic value constructed with the expected shape tag. -/
 @[simp] theorem graph_expectShape_mk
     {α : Type} [Context α] [DecidableEq Shape] {s : Shape} (t : Tensor α s) :
-    Graph.expectShape (α := α) (expected := s) (DVal.mk (α := α) s t) = .ok t := by
-  simp [Graph.expectShape, DVal.shape, DVal.tensor, DVal.mk]
-  rfl
+    Graph.expectShape (α := α) (expected := s) (Spec.PackedTensor.mk (α := α) s t) = .ok t := by
+  simp [Graph.expectShape, Pure.pure, Except.pure]
 
 /-! ## Typed indices -/
 
@@ -206,8 +205,8 @@ abbrev ForwardProgram (α : Type) (paramShapes : List Shape) (inShape outShape :
 /-! ## Evaluation -/
 
 /-- Read a dynamic value from the executable context with a user-facing bounds error. -/
-def getDVal? {α : Type} [Context α] (vals : Array (DVal α)) (idx : Nat) :
-    Except String (DVal α) :=
+def getValue? {α : Type} [Context α] (vals : Array (Spec.PackedTensor α)) (idx : Nat) :
+    Except String (Spec.PackedTensor α) :=
   match vals[idx]? with
   | some v => .ok v
   | none =>
@@ -222,8 +221,8 @@ discipline.
 -/
 def getVal {α : Type} [Context α] [DecidableEq Shape]
     {inShape : Shape} {ss : List Shape} {s : Shape}
-    (vals : Array (DVal α)) (idx : Idx (Ctx inShape ss) s) : Except String (Tensor α s) := do
-  let v : DVal α ← getDVal? vals idx.id
+    (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s) : Except String (Tensor α s) := do
+  let v : Spec.PackedTensor α ← getValue? vals idx.id
   if h : v.shape = s then
     pure (h ▸ v.tensor)
   else
@@ -239,72 +238,72 @@ def evalNode
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
     (node : Node α paramShapes inShape ss out)
     (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (vals : Array (DVal α)) : Except String (DVal α) :=
+    (vals : Array (Spec.PackedTensor α)) : Except String (Spec.PackedTensor α) :=
   match node with
   | .const (s := s) _wf t => do
-      pure <| DVal.mk (α := α) s t
+      pure <| Spec.PackedTensor.mk (α := α) s t
   | .paramConst (s := s) _wf p => do
-      pure <| DVal.mk (α := α) s (getParam (α := α) (paramShapes := paramShapes) params p)
+      pure <| Spec.PackedTensor.mk (α := α) s (getParam (α := α) (paramShapes := paramShapes) params p)
   | .add (s := s) a b => do
       let ta ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals a
       let tb ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals b
-      pure <| DVal.mk (α := α) s (Tensor.addSpec (α := α) ta tb)
+      pure <| Spec.PackedTensor.mk (α := α) s (Tensor.addSpec (α := α) ta tb)
   | .sub (s := s) a b => do
       let ta ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals a
       let tb ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals b
-      pure <| DVal.mk (α := α) s (Tensor.subSpec (α := α) ta tb)
+      pure <| Spec.PackedTensor.mk (α := α) s (Tensor.subSpec (α := α) ta tb)
   | .mulElem (s := s) a b => do
       let ta ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals a
       let tb ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals b
-      pure <| DVal.mk (α := α) s (Tensor.mulSpec (α := α) ta tb)
+      pure <| Spec.PackedTensor.mk (α := α) s (Tensor.mulSpec (α := α) ta tb)
   | .relu (s := s) x => do
       let tx ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals x
-      pure <| DVal.mk (α := α) s (Activation.reluSpec (α := α) tx)
+      pure <| Spec.PackedTensor.mk (α := α) s (Activation.reluSpec (α := α) tx)
   | .exp (s := s) x => do
       let tx ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals x
-      pure <| DVal.mk (α := α) s (Tensor.expSpec (α := α) tx)
+      pure <| Spec.PackedTensor.mk (α := α) s (Tensor.expSpec (α := α) tx)
   | .log (s := s) x => do
       let tx ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals x
       -- Domain discipline: align the verified execution model with the IR semantics. The raw
       -- `log` is treated as undefined on nonpositive inputs; use `safe_log` in models that require
       -- epsilon protection.
       if Tensor.allSpec (α := α) (s := s) (fun v => decide (0 < v)) tx then
-        pure <| DVal.mk (α := α) s (Tensor.logSpec (α := α) tx)
+        pure <| Spec.PackedTensor.mk (α := α) s (Tensor.logSpec (α := α) tx)
       else
         throw
           "IR eval: log: input contains values <= 0 (or NaN); use `safe_log` if you want epsilon protection"
   | .inv (s := s) x => do
       let tx ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals x
-      pure <| DVal.mk (α := α) s (Tensor.invSpec (α := α) tx)
+      pure <| Spec.PackedTensor.mk (α := α) s (Tensor.invSpec (α := α) tx)
   | .matmul2d m n p a b => do
       let ta ← getVal (α := α) (inShape := inShape) (ss := ss)
         (s := .dim m (.dim n .scalar)) vals a
       let tb ← getVal (α := α) (inShape := inShape) (ss := ss)
         (s := .dim n (.dim p .scalar)) vals b
-      pure <| DVal.mk (α := α) (.dim m (.dim p .scalar))
+      pure <| Spec.PackedTensor.mk (α := α) (.dim m (.dim p .scalar))
         (Tensor.matMulSpec (α := α) (m := m) (n := n) (p := p) ta tb)
   | .bmm batch m n p a b => do
       let ta ← getVal (α := α) (inShape := inShape) (ss := ss)
         (s := .dim batch (.dim m (.dim n .scalar))) vals a
       let tb ← getVal (α := α) (inShape := inShape) (ss := ss)
         (s := .dim batch (.dim n (.dim p .scalar))) vals b
-      pure <| DVal.mk (α := α) (.dim batch (.dim m (.dim p .scalar)))
+      pure <| Spec.PackedTensor.mk (α := α) (.dim batch (.dim m (.dim p .scalar)))
         (Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := n) (p := p) ta tb)
   | .reshape inS outS h x => do
       let tx ← getVal (α := α) (inShape := inShape) (ss := ss) (s := inS) vals x
-      pure <| DVal.mk (α := α) outS (Tensor.reshapeSpec (α := α) (s₁ := inS) (s₂ := outS) tx h)
+      pure <| Spec.PackedTensor.mk (α := α) outS (Tensor.reshapeSpec (α := α) (s₁ := inS) (s₂ := outS) tx h)
   | .swap_first_two m n rest x => do
       let tx ← getVal (α := α) (inShape := inShape) (ss := ss) (s := .dim m (.dim n rest)) vals x
-      pure <| DVal.mk (α := α) (.dim n (.dim m rest))
+      pure <| Spec.PackedTensor.mk (α := α) (.dim n (.dim m rest))
         (Tensor.swapFirstTwoSpec (α := α) (m := m) (n := n) (s := rest) tx)
   | .transpose3dLastTwo a b c x => do
       let tx ← getVal (α := α) (inShape := inShape) (ss := ss)
         (s := .dim a (.dim b (.dim c .scalar))) vals x
-      pure <| DVal.mk (α := α) (.dim a (.dim c (.dim b .scalar)))
+      pure <| Spec.PackedTensor.mk (α := α) (.dim a (.dim c (.dim b .scalar)))
         (Tensor.transpose3DLastTwoSpec (α := α) (a := a) (b := b) (c := c) tx)
   | .softmaxLast (s := s) _hRank x => do
       let tx ← getVal (α := α) (inShape := inShape) (ss := ss) (s := s) vals x
-      pure <| DVal.mk (α := α) s (Activation.softmaxSpec (α := α) tx)
+      pure <| Spec.PackedTensor.mk (α := α) s (Activation.softmaxLastSpec (α := α) tx)
   | .layernorm2d seqLen embedDim hSeq hEmb x => do
       let tx ← getVal (α := α) (inShape := inShape) (ss := ss)
         (s := .dim seqLen (.dim embedDim .scalar)) vals x
@@ -313,7 +312,7 @@ def evalNode
         (gamma := Spec.fill (α := α) 1 (.dim embedDim .scalar))
         (beta := Spec.fill (α := α) 0 (.dim embedDim .scalar))
         (h_seq_pos := hSeq) (h_embed_pos := hEmb)
-      pure <| DVal.mk (α := α) (.dim seqLen (.dim embedDim .scalar)) y
+      pure <| Spec.PackedTensor.mk (α := α) (.dim seqLen (.dim embedDim .scalar)) y
   | .linear inDim outDim w b x => do
       let wT := getParam (α := α) (paramShapes := paramShapes) params w
       let bT := getParam (α := α) (paramShapes := paramShapes) params b
@@ -321,16 +320,16 @@ def evalNode
         (s := .dim inDim .scalar) vals x
       let y := Tensor.addSpec (α := α)
         (Tensor.matVecMulSpec (α := α) (m := outDim) (n := inDim) wT xT) bT
-      pure <| DVal.mk (α := α) (.dim outDim .scalar) y
+      pure <| Spec.PackedTensor.mk (α := α) (.dim outDim .scalar) y
   | .conv2d inC outC kH kW stride padding inH inW hIn hKH hKW _hStride _hHeight _hWidth kernel bias x => do
       let kT := getParam (α := α) (paramShapes := paramShapes) params kernel
       let bT := getParam (α := α) (paramShapes := paramShapes) params bias
       let xT ← getVal (α := α) (inShape := inShape) (ss := ss)
         (s := .dim inC (.dim inH (.dim inW .scalar))) vals x
-      let spec : Spec.Conv2DSpec inC outC kH kW stride padding α hIn hKH hKW :=
+      let spec : Spec.Conv2dSpec inC outC kH kW stride padding α hIn hKH hKW :=
         { kernel := kT, bias := bT }
       let y := Spec.conv2dSpec (α := α) (layer := spec) (input := xT)
-      pure <| DVal.mk (α := α)
+      pure <| Spec.PackedTensor.mk (α := α)
         (.dim outC
           (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
             (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))) y
@@ -338,8 +337,8 @@ def evalNode
       -- Mirror the IR semantics: `mse_loss` is dynamically shape-checked (both parents must have
       -- equal shape),
       -- then reduces to a scalar by averaging the squared error.
-      let yV : DVal α ← getDVal? vals yhat.id
-      let tV : DVal α ← getDVal? vals target.id
+      let yV : Spec.PackedTensor α ← getValue? vals yhat.id
+      let tV : Spec.PackedTensor α ← getValue? vals target.id
       if h : yV.shape = tV.shape then
         let yT : Tensor α yV.shape := yV.tensor
         let tT : Tensor α yV.shape := h.symm ▸ tV.tensor
@@ -348,7 +347,7 @@ def evalNode
         let sq := Tensor.mulSpec (α := α) diff diff
         let total : α := Tensor.sumSpec (α := α) sq
         let mean : α := total / (↑(NN.IR.Graph.meanDenom s) : α)
-        pure <| DVal.mk (α := α) .scalar (Tensor.scalar mean)
+        pure <| Spec.PackedTensor.mk (α := α) .scalar (Tensor.scalar mean)
       else
         throw
           s!"TorchLeanVerified: mse_loss expects equal shapes, got {repr yV.shape} vs {repr tV.shape}"
@@ -364,10 +363,10 @@ def evalForwardLetChain
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
     (g : ForwardLetChain α paramShapes inShape ss out)
     (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (vals : Array (DVal α)) : Except String (Tensor α out) :=
+    (vals : Array (Spec.PackedTensor α)) : Except String (Tensor α out) :=
   match g with
   | .ret y => do
-      let v : DVal α ← getDVal? vals y.id
+      let v : Spec.PackedTensor α ← getValue? vals y.id
       if h : v.shape = out then
         pure (h ▸ v.tensor)
       else
@@ -392,7 +391,7 @@ def evalForward
     (p : ForwardProgram α paramShapes inShape outShape)
     (params : Runtime.Autograd.Torch.TList α paramShapes)
     (x : Tensor α inShape) : Except String (Tensor α outShape) := do
-  let vals0 : Array (DVal α) := #[DVal.mk (α := α) inShape x]
+  let vals0 : Array (Spec.PackedTensor α) := #[Spec.PackedTensor.mk (α := α) inShape x]
   evalForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out := outShape)
     p params vals0
 

@@ -130,18 +130,13 @@ are applied as `X * W`. PyTorch stores linear weights as `(out, in)` and applies
 PyTorch `state_dict`.
 -/
 def generateTransformerEncoderWithWeights (seqLen embedDim headCount hiddenDim : Nat)
-  (Wq : Tensor Float (.dim embedDim (.dim embedDim .scalar)))
-  (Wk : Tensor Float (.dim embedDim (.dim embedDim .scalar)))
-  (Wv : Tensor Float (.dim embedDim (.dim embedDim .scalar)))
-  (Wo : Tensor Float (.dim embedDim (.dim embedDim .scalar)))
-  (W1 : Tensor Float (.dim embedDim (.dim hiddenDim .scalar)))
-  (W2 : Tensor Float (.dim hiddenDim (.dim embedDim .scalar)))
-  (b1 : Tensor Float (.dim hiddenDim .scalar))
-  (b2 : Tensor Float (.dim embedDim .scalar))
-  (norm1_gamma : Tensor Float (.dim embedDim .scalar))
-  (norm1_beta : Tensor Float (.dim embedDim .scalar))
-  (norm2_gamma : Tensor Float (.dim embedDim .scalar))
-  (norm2_beta : Tensor Float (.dim embedDim .scalar))
+  (queryWeight keyWeight valueWeight outputWeight :
+    Tensor Float (.dim embedDim (.dim embedDim .scalar)))
+  (feedForwardInputWeight : Tensor Float (.dim embedDim (.dim hiddenDim .scalar)))
+  (feedForwardOutputWeight : Tensor Float (.dim hiddenDim (.dim embedDim .scalar)))
+  (feedForwardInputBias : Tensor Float (.dim hiddenDim .scalar))
+  (feedForwardOutputBias norm1Scale norm1Bias norm2Scale norm2Bias :
+    Tensor Float (.dim embedDim .scalar))
   (className : String := "TransformerEncoder") : String :=
   joinLines [
     generateTransformerEncoderPyTorchClass seqLen embedDim headCount hiddenDim 1 className,
@@ -149,18 +144,18 @@ def generateTransformerEncoderWithWeights (seqLen embedDim headCount hiddenDim :
     "# Weight initialization helpers",
     "def get_transformer_state_dict():",
     indentTwo "state_dict = {}",
-    indentTwo s!"state_dict['layers.0.mha.q_proj.weight'] = torch.tensor({transposedMatrixTensorToPy Wq})",
-    indentTwo s!"state_dict['layers.0.mha.k_proj.weight'] = torch.tensor({transposedMatrixTensorToPy Wk})",
-    indentTwo s!"state_dict['layers.0.mha.v_proj.weight'] = torch.tensor({transposedMatrixTensorToPy Wv})",
-    indentTwo s!"state_dict['layers.0.mha.out_proj.weight'] = torch.tensor({transposedMatrixTensorToPy Wo})",
-    indentTwo s!"state_dict['layers.0.ffn.fc1.weight'] = torch.tensor({transposedMatrixTensorToPy W1})",
-    indentTwo s!"state_dict['layers.0.ffn.fc1.bias'] = torch.tensor({vectorTensorToPy b1})",
-    indentTwo s!"state_dict['layers.0.ffn.fc2.weight'] = torch.tensor({transposedMatrixTensorToPy W2})",
-    indentTwo s!"state_dict['layers.0.ffn.fc2.bias'] = torch.tensor({vectorTensorToPy b2})",
-    indentTwo s!"state_dict['layers.0.norm1.weight'] = torch.tensor({vectorTensorToPy norm1_gamma})",
-    indentTwo s!"state_dict['layers.0.norm1.bias'] = torch.tensor({vectorTensorToPy norm1_beta})",
-    indentTwo s!"state_dict['layers.0.norm2.weight'] = torch.tensor({vectorTensorToPy norm2_gamma})",
-    indentTwo s!"state_dict['layers.0.norm2.bias'] = torch.tensor({vectorTensorToPy norm2_beta})",
+    indentTwo s!"state_dict['layers.0.mha.q_proj.weight'] = torch.tensor({transposedMatrixTensorToPy queryWeight})",
+    indentTwo s!"state_dict['layers.0.mha.k_proj.weight'] = torch.tensor({transposedMatrixTensorToPy keyWeight})",
+    indentTwo s!"state_dict['layers.0.mha.v_proj.weight'] = torch.tensor({transposedMatrixTensorToPy valueWeight})",
+    indentTwo s!"state_dict['layers.0.mha.out_proj.weight'] = torch.tensor({transposedMatrixTensorToPy outputWeight})",
+    indentTwo s!"state_dict['layers.0.ffn.fc1.weight'] = torch.tensor({transposedMatrixTensorToPy feedForwardInputWeight})",
+    indentTwo s!"state_dict['layers.0.ffn.fc1.bias'] = torch.tensor({vectorTensorToPy feedForwardInputBias})",
+    indentTwo s!"state_dict['layers.0.ffn.fc2.weight'] = torch.tensor({transposedMatrixTensorToPy feedForwardOutputWeight})",
+    indentTwo s!"state_dict['layers.0.ffn.fc2.bias'] = torch.tensor({vectorTensorToPy feedForwardOutputBias})",
+    indentTwo s!"state_dict['layers.0.norm1.weight'] = torch.tensor({vectorTensorToPy norm1Scale})",
+    indentTwo s!"state_dict['layers.0.norm1.bias'] = torch.tensor({vectorTensorToPy norm1Bias})",
+    indentTwo s!"state_dict['layers.0.norm2.weight'] = torch.tensor({vectorTensorToPy norm2Scale})",
+    indentTwo s!"state_dict['layers.0.norm2.bias'] = torch.tensor({vectorTensorToPy norm2Bias})",
     indentTwo "return state_dict",
     indentTwo "",
     "def load_transformer_weights(model):",

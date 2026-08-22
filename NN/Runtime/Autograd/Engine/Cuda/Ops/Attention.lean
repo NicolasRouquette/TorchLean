@@ -63,15 +63,15 @@ def multiHeadAttention
           s!"provider `{reprStr provider}` with VJP mode `{reprStr vjpMode}`"
   let one32 : UInt32 := 1
   let depth1 : UInt32 := 1
-  let n32 ← ExceptT.mk (pure <| u32 n)
-  let dModel32 ← ExceptT.mk (pure <| u32 dModel)
-  let head32 ← ExceptT.mk (pure <| u32 headDim)
+  let n32 ← ExceptT.mk (pure <| AnyBuffer.natToU32Checked n)
+  let dModel32 ← ExceptT.mk (pure <| AnyBuffer.natToU32Checked dModel)
+  let head32 ← ExceptT.mk (pure <| AnyBuffer.natToU32Checked headDim)
   let projDim : Nat := numHeads * headDim
-  let proj32 ← ExceptT.mk (pure <| u32 projDim)
+  let proj32 ← ExceptT.mk (pure <| AnyBuffer.natToU32Checked projDim)
   let rows : Nat := batch * n
-  let rows32 ← ExceptT.mk (pure <| u32 rows)
+  let rows32 ← ExceptT.mk (pure <| AnyBuffer.natToU32Checked rows)
   let batchHeads : Nat := batch * numHeads
-  let batchHeads32 ← ExceptT.mk (pure <| u32 batchHeads)
+  let batchHeads32 ← ExceptT.mk (pure <| AnyBuffer.natToU32Checked batchHeads)
   let wq ← ExceptT.mk (pure <| requireValue (t := t) wqId (.dim dModel (.dim projDim .scalar)))
   let wk ← ExceptT.mk (pure <| requireValue (t := t) wkId (.dim dModel (.dim projDim .scalar)))
   let wv ← ExceptT.mk (pure <| requireValue (t := t) wvId (.dim dModel (.dim projDim .scalar)))
@@ -111,7 +111,7 @@ def multiHeadAttention
     | .torchLean =>
       let scores := Buffer.bmmRightTranspose Qh Kh batchHeads32 n32 head32 n32
       let scaled0 := Buffer.scale scores scale
-      let rowsFold32 ← ExceptT.mk (pure <| u32 (batchHeads * n))
+      let rowsFold32 ← ExceptT.mk (pure <| AnyBuffer.natToU32Checked (batchHeads * n))
       let attnOwned : Buffer.WithWorkspace :=
         match mask with
         | none => rowSoftmaxForward scaled0 rowsFold32 n32
@@ -129,7 +129,7 @@ def multiHeadAttention
   let node : Node :=
     { name := some nodeName
       value := { s := outputShape, buf := y }
-      requires_grad := true
+      requiresGrad := true
       parents := [wqId, wkId, wvId, woId, xId]
       cleanup := [Qh, Kh, Vh, maskB, outHeads, swapped]
       backward := fun dLdyAny => do
@@ -152,7 +152,7 @@ def multiHeadAttention
           else
             let scores := Buffer.bmmRightTranspose Qh Kh batchHeads32 n32 head32 n32
             let scaled0 := Buffer.scale scores scale
-            let rowsFold32 ← u32 (batchHeads * n)
+            let rowsFold32 ← AnyBuffer.natToU32Checked (batchHeads * n)
             let attnOwned :=
               match mask with
               | none => rowSoftmaxForward scaled0 rowsFold32 n32

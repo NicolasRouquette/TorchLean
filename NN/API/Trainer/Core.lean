@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Spec.Core.Shape
 public import NN.API.Module
 public import NN.API.Trainer.Manual.Core
 public import NN.API.Optim
@@ -65,7 +66,8 @@ inductive Task (σ τ : Shape) where
   /-- Mean-squared-error supervised regression. -/
   | regression (reduction : Loss.Reduction := .mean)
   /-- One-hot cross entropy over a class or structured logit tensor. -/
-  | oneHotCrossEntropy (reduction : Loss.Reduction := .mean)
+  | oneHotCrossEntropy (axis : Nat) [axisInBounds : _root_.Spec.Shape.AxisInBounds axis τ]
+      (reduction : Loss.Reduction := .mean)
   /-- A checked TorchLean loss program supplied by the caller. -/
   | custom
       (loss : ∀ {α : Type}, [_root_.Context α] → [DecidableEq Shape] →
@@ -137,7 +139,7 @@ whole matrix of one-hot next-token rows:
 
 ```lean
 let trainer := Trainer.new model
-  { task := .oneHotCrossEntropy, optimizer := optim.adam { lr := 1e-3 } }
+  { task := .oneHotCrossEntropy 1, optimizer := optim.adam { lr := 1e-3 } }
 let trained ← trainer.train tokenWindows { steps := 200 }
 ```
 
@@ -147,6 +149,10 @@ model-specific and belongs in the text example.
 structure OneHotCrossEntropy (σ τ : Shape) where
   /-- The checked TorchLean model used by this trainer. -/
   model : TorchLean.nn.Sequential σ τ
+  /-- Tensor dimension containing the class logits. -/
+  axis : Nat
+  /-- Evidence that `axis` names a dimension of the output tensor. -/
+  [validAxis : _root_.Spec.Shape.AxisInBounds axis τ]
   /-- Mean vs sum loss reduction for the one-hot cross-entropy task. -/
   reduction : Loss.Reduction := .mean
   /-- Runtime, backend-contract, and optimizer choices carried by this trainer. -/
@@ -213,7 +219,8 @@ namespace OneHotCrossEntropy
 
 /-- Checked TorchLean task induced by this cross-entropy dispatch record. -/
 def task {σ τ : Shape} (trainer : OneHotCrossEntropy σ τ) : TorchLean.Trainer.Manual.SeqTask σ τ :=
-  TorchLean.Trainer.Manual.SeqTask.oneHotCrossEntropy trainer.model trainer.reduction
+  letI := trainer.validAxis
+  TorchLean.Trainer.Manual.SeqTask.oneHotCrossEntropy trainer.model trainer.axis trainer.reduction
 
 /-- Checked model summary for this trainer. -/
 def info {σ τ : Shape} (trainer : OneHotCrossEntropy σ τ) : String :=
@@ -228,7 +235,7 @@ def printInfo {σ τ : Shape} (trainer : OneHotCrossEntropy σ τ) : IO Unit := 
 theorem task_state_shapes_eq {σ τ : Shape} (trainer : OneHotCrossEntropy σ τ) :
     TorchLean.Trainer.Manual.stateShapes trainer.task = nn.stateShapes trainer.model := by
   cases trainer with
-  | mk model reduction =>
+  | mk model axis reduction runtime =>
       rfl
 
 end OneHotCrossEntropy

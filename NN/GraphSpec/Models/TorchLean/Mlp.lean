@@ -48,7 +48,7 @@ namespace GraphSpec
 namespace Models
 namespace TorchLean
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 open NN.Tensor
 

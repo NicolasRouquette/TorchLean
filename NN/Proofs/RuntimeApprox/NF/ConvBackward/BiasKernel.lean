@@ -9,9 +9,9 @@ module
 public import NN.Proofs.RuntimeApprox.NF.ConvBackward.Common
 
 /-!
-# NeuralFloat Conv2D Bias/Kernel Backward Bounds
+# NeuralFloat Conv2d Bias/Kernel Backward Bounds
 
-This file proves pointwise NeuralFloat approximation bounds for the Conv2D bias and kernel
+This file proves pointwise NeuralFloat approximation bounds for the Conv2d bias and kernel
 gradients. The proofs replay the same summation structure used by the runtime backward pass and
 accumulate an explicit error budget for each output coordinate.
 -/
@@ -38,7 +38,7 @@ local notation "R" => TorchLean.Floats.NF β fexp rnd
 
 
 /--
-Pointwise error bound for the Conv2D **bias** gradient (NF runtime vs spec).
+Pointwise error bound for the Conv2d **bias** gradient (NF runtime vs spec).
 
 This bound is a replay of the bias-gradient summation with per-term error `epsδ` coming from the
 `grad_output` approximation hypothesis.
@@ -59,9 +59,9 @@ def conv2dBiasPointBound
   (foldAddState (β := β) (fexp := fexp) (rnd := rnd) idxs termR epsTerm).2
 
 /--
-Soundness of the Conv2D **bias**-gradient pointwise bound.
+Soundness of the Conv2d **bias**-gradient pointwise bound.
 
-Given `approxT` for `grad_output`, this shows the spec bias-gradient entry is approximated by the
+Given `approxTensor` for `grad_output`, this shows the spec bias-gradient entry is approximated by the
 NF runtime entry within `conv2dBiasPointBound`.
 -/
 theorem approx_conv2d_bias_point
@@ -77,11 +77,11 @@ theorem approx_conv2d_bias_point
     {δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
       padding) .scalar)))}
     {epsδ : ℝ}
-    (hδ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) δS δR epsδ)
+    (hδ : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) δS δR epsδ)
     (out_ch : Fin outC) :
-    let layerS : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    let layerS : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := kernelS, bias := biasS }
-    let layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3 :=
+    let layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3 :=
       { kernel := kernelR, bias := biasR }
     abs
         (toSpec (β := β) (fexp := fexp) (rnd := rnd)
@@ -294,7 +294,7 @@ theorem approx_conv2d_bias_point
 /--
 Tensor-shaped bias-gradient bound.
 
-This packages `conv2dBiasPointBound` into a `Tensor` so later `approxT` statements can use
+This packages `conv2dBiasPointBound` into a `Tensor` so later `approxTensor` statements can use
 `linfNorm` to obtain a single scalar error bound.
 -/
 def conv2dBiasBoundTensor
@@ -310,11 +310,11 @@ def conv2dBiasBoundTensor
         δR epsδ out_ch)
 
 -- ---------------------------------------------------------------------------
--- Conv2D kernel gradient: pointwise bound
+-- Conv2d kernel gradient: pointwise bound
 -- ---------------------------------------------------------------------------
 
 /--
-Pointwise error bound for the Conv2D **kernel** gradient (NF runtime vs spec).
+Pointwise error bound for the Conv2d **kernel** gradient (NF runtime vs spec).
 
 The kernel-gradient entry accumulates products of padded input values and upstream gradients.
 The bound is a replay of this accumulation with per-term errors derived from `epsX` and `epsδ`.
@@ -335,7 +335,7 @@ def conv2dKernelPointBound
         (by simp; rw [h4])
         inputR
     else
-      Spec.padMultiChannel inputR padding
+      Spec.padChannelsFirst2d inputR padding
   let idxs : List (Fin out_h × Fin out_w) :=
     (List.finRange out_h).flatMap (fun i => (List.finRange out_w).map (fun j => (i, j)))
   let termR : (Fin out_h × Fin out_w) → R := fun t =>
@@ -355,9 +355,9 @@ def conv2dKernelPointBound
   (foldAddState (β := β) (fexp := fexp) (rnd := rnd) idxs termR epsTerm).2
 
 /--
-Soundness of the Conv2D **kernel**-gradient pointwise bound.
+Soundness of the Conv2d **kernel**-gradient pointwise bound.
 
-Given `approxT` hypotheses for the input and upstream gradient (`grad_output`), this shows the spec
+Given `approxTensor` hypotheses for the input and upstream gradient (`grad_output`), this shows the spec
 kernel-gradient entry is approximated by the NF runtime entry within `conv2dKernelPointBound`.
 -/
 theorem approx_conv2d_kernel_point
@@ -373,13 +373,13 @@ theorem approx_conv2d_kernel_point
     {δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
       padding) .scalar)))}
     {epsX epsδ : ℝ}
-    (hX : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS inputR
+    (hX : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS inputR
       epsX)
-    (hδ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) δS δR epsδ)
+    (hδ : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) δS δR epsδ)
     (out_ch : Fin outC) (in_ch : Fin inC) (di : Fin kH) (dj : Fin kW) :
-    let layerS : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    let layerS : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := kernelS, bias := biasS }
-    let layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3 :=
+    let layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3 :=
       { kernel := kernelR, bias := biasR }
     abs
         (toSpec (β := β) (fexp := fexp) (rnd := rnd)
@@ -406,7 +406,7 @@ theorem approx_conv2d_kernel_point
         (by simp; rw [h4])
         inputR
     else
-      Spec.padMultiChannel inputR padding
+      Spec.padChannelsFirst2d inputR padding
   let paddedS :=
     if h4 : padding = 0 then
       tensorCast
@@ -414,7 +414,7 @@ theorem approx_conv2d_kernel_point
         (by simp; rw [h4])
         inputS
     else
-      Spec.padMultiChannel inputS padding
+      Spec.padChannelsFirst2d inputS padding
   let idxs : List (Fin out_h × Fin out_w) :=
     (List.finRange out_h).flatMap (fun i => (List.finRange out_w).map (fun j => (i, j)))
   let termR : (Fin out_h × Fin out_w) → R := fun t =>
@@ -712,7 +712,7 @@ theorem approx_conv2d_kernel_point
 /--
 Tensor-shaped kernel-gradient bound.
 
-This packages `conv2dKernelPointBound` into the full 4D kernel-tensor shape so later `approxT`
+This packages `conv2dKernelPointBound` into the full 4D kernel-tensor shape so later `approxTensor`
 lemmas can use a single global bound via `linfNorm`.
 -/
 def conv2dKernelBoundTensor
@@ -737,12 +737,12 @@ def conv2dKernelBoundTensor
 -- ---------------------------------------------------------------------------
 
 /--
-Tensor-level `approxT` bound for the Conv2D **bias** gradient.
+Tensor-level `approxTensor` bound for the Conv2d **bias** gradient.
 
 This lifts `approx_conv2d_bias_point` entrywise and packages the error into
 `linfNorm (conv2dBiasBoundTensor ...)`.
 -/
-theorem approxT_conv2d_bias_deriv_spec
+theorem approxTensor_conv2d_bias_deriv_spec
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     {kernelS : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
@@ -755,10 +755,10 @@ theorem approxT_conv2d_bias_deriv_spec
     {δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
       padding) .scalar)))}
     {epsδ : ℝ}
-    (hδ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) δS δR epsδ) :
-    let layerS : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    (hδ : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) δS δR epsδ) :
+    let layerS : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := kernelS, bias := biasS }
-    let layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3 :=
+    let layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3 :=
       { kernel := kernelR, bias := biasR }
     let outS := Spec.conv2dBiasDerivSpec (α := ℝ) (layer := layerS) (input := inputS)
       (grad_output := δS)
@@ -769,12 +769,12 @@ theorem approxT_conv2d_bias_deriv_spec
         (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding) (inH := inH)
             (inW := inW)
           δR epsδ
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) outS outR (linfNorm
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) outS outR (linfNorm
       bT) := by
   intro layerS layerR outS outR bT
   classical
   have hε : 0 ≤ linfNorm bT := linf_norm_nonneg (t := bT)
-  refine approxT_dim_of_forall (n := outC) (s := .scalar)
+  refine approxTensor_dim_of_forall (n := outC) (s := .scalar)
     (xS := outS) (xR := outR) (eps := linfNorm bT) hε ?_
   intro oc
   have hpt :=
@@ -814,7 +814,7 @@ theorem approxT_conv2d_bias_deriv_spec
   let entryS : Tensor ℝ .scalar := (match outS with | .dim f => f oc)
   let entryR : Tensor R .scalar := (match outR with | .dim f => f oc)
   change
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) entryS entryR
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) entryS entryR
       (linfNorm bT)
   have hEntryS :
       entryS = Tensor.scalar (getAtOrZero outS [oc.val]) := by
@@ -825,23 +825,23 @@ theorem approxT_conv2d_bias_deriv_spec
     convert (entry_eq_scalar_get_at_or_zero1 (t := outR) oc) using 1
     rfl
   have happ :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Tensor.scalar (getAtOrZero outS [oc.val]))
         (Tensor.scalar (getAtOrZero outR [oc.val]))
         (linfNorm bT) :=
-    (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (x := getAtOrZero outS [oc.val]) (xR := getAtOrZero outR [oc.val]) (eps := linfNorm
           bT)).2 (by
           simpa using hscalar)
   simpa [hEntryS, hEntryR] using happ
 
 /--
-Tensor-level `approxT` bound for the Conv2D **kernel** gradient.
+Tensor-level `approxTensor` bound for the Conv2d **kernel** gradient.
 
 This lifts `approx_conv2d_kernel_point` entrywise and packages the error into
 `linfNorm (conv2dKernelBoundTensor ...)`.
 -/
-theorem approxT_conv2d_kernel_deriv_spec
+theorem approxTensor_conv2d_kernel_deriv_spec
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
     {kernelS : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))}
@@ -854,12 +854,12 @@ theorem approxT_conv2d_kernel_deriv_spec
     {δR : Spec.Tensor R (.dim outC (.dim (conv2dOutH inH kH stride padding) (.dim (conv2dOutW inW kW stride
       padding) .scalar)))}
     {epsX epsδ : ℝ}
-    (hX : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS inputR
+    (hX : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) inputS inputR
       epsX)
-    (hδ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) δS δR epsδ) :
-    let layerS : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    (hδ : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) δS δR epsδ) :
+    let layerS : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := kernelS, bias := biasS }
-    let layerR : Spec.Conv2DSpec inC outC kH kW stride padding R h1 h2 h3 :=
+    let layerR : Spec.Conv2dSpec inC outC kH kW stride padding R h1 h2 h3 :=
       { kernel := kernelR, bias := biasR }
     let outS := Spec.conv2dKernelDerivSpec (α := ℝ) (layer := layerS) (input := inputS)
       (grad_output := δS)
@@ -870,27 +870,27 @@ theorem approxT_conv2d_kernel_deriv_spec
           (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
             (inH := inH) (inW := inW)
           inputR δR epsX epsδ
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) outS outR (linfNorm
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) outS outR (linfNorm
       bT) := by
   intro layerS layerR outS outR bT
   classical
   have hε : 0 ≤ linfNorm bT := linf_norm_nonneg (t := bT)
-  refine approxT_dim_of_forall (n := outC)
+  refine approxTensor_dim_of_forall (n := outC)
     (s := .dim inC (.dim kH (.dim kW .scalar)))
     (xS := outS) (xR := outR) (eps := linfNorm bT) hε ?_
   intro oc
-  refine approxT_dim_of_forall (n := inC)
+  refine approxTensor_dim_of_forall (n := inC)
     (s := .dim kH (.dim kW .scalar))
     (xS := (match outS with | .dim f => f oc)) (xR := (match outR with | .dim f => f oc))
     (eps := linfNorm bT) hε ?_
   intro ic
-  refine approxT_dim_of_forall (n := kH)
+  refine approxTensor_dim_of_forall (n := kH)
     (s := .dim kW .scalar)
     (xS := (match (match outS with | .dim f => f oc) with | .dim g => g ic))
     (xR := (match (match outR with | .dim f => f oc) with | .dim g => g ic))
     (eps := linfNorm bT) hε ?_
   intro di
-  refine approxT_dim_of_forall (n := kW)
+  refine approxTensor_dim_of_forall (n := kW)
     (s := .scalar)
     (xS :=
       (match
@@ -986,7 +986,7 @@ theorem approxT_conv2d_kernel_deriv_spec
     | .dim k => k dj)
 
   change
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) entryS entryR
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) entryS entryR
       (linfNorm bT)
   have hEntryS :
       entryS = Tensor.scalar (getAtOrZero outS [oc.val, ic.val, di.val, dj.val]) := by
@@ -998,11 +998,11 @@ theorem approxT_conv2d_kernel_deriv_spec
     rfl
 
   have happ :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Tensor.scalar (getAtOrZero outS [oc.val, ic.val, di.val, dj.val]))
         (Tensor.scalar (getAtOrZero outR [oc.val, ic.val, di.val, dj.val]))
         (linfNorm bT) :=
-    (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (x := getAtOrZero outS [oc.val, ic.val, di.val, dj.val])
         (xR := getAtOrZero outR [oc.val, ic.val, di.val, dj.val])
         (eps := linfNorm bT)).2 (by
@@ -1011,7 +1011,7 @@ theorem approxT_conv2d_kernel_deriv_spec
   simpa [hEntryS, hEntryR] using happ
 
 -- ---------------------------------------------------------------------------
--- Conv2D input gradient: pointwise bound
+-- Conv2d input gradient: pointwise bound
 -- ---------------------------------------------------------------------------
 
 

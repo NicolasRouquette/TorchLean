@@ -82,11 +82,11 @@ def matrixArray : TensorArray.Tensor Float [2, 3] :=
   TensorArray.ofArray #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0] [2, 3] (by simp)
 
 /-- Convert the matrix into the spec-level representation (`Spec.Tensor`). -/
-def matrixSpec : Spec.Tensor Float (listToShape [2, 3]) :=
+def matrixSpec : Spec.Tensor Float (Shape.ofList [2, 3]) :=
   toTensor matrixArray
 
 /-- Extract the first row (shape `[3]`) by pattern-matching on the outer dimension. -/
-def firstRowSpec : Spec.Tensor Float (listToShape [3]) :=
+def firstRowSpec : Spec.Tensor Float (Shape.ofList [3]) :=
   match matrixSpec with
   | Spec.Tensor.dim rows => rows ⟨0, by simp⟩
 
@@ -100,10 +100,10 @@ Widget lane for the row-extraction example.
 These `meta` declarations mirror the ordinary definitions above so ProofWidgets can execute the
 bridge computation. Use the ordinary definitions in application code.
 -/
-meta def matrixSpecView : Spec.Tensor Float (listToShape [2, 3]) :=
+meta def matrixSpecView : Spec.Tensor Float (Shape.ofList [2, 3]) :=
   toTensor (TensorArray.ofArray #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0] [2, 3] (by simp))
 
-meta def firstRowSpecView : Spec.Tensor Float (listToShape [3]) :=
+meta def firstRowSpecView : Spec.Tensor Float (Shape.ofList [3]) :=
   match matrixSpecView with
   | Spec.Tensor.dim rows => rows ⟨0, by simp⟩
 
@@ -131,8 +131,8 @@ def weightMatrix : TensorArray.Tensor Float [4, 3] :=
   TensorArray.full [4, 3] 0.1
 
 /-- A length-3 input vector built as a `Spec.Tensor` (values 1,2,3). -/
-def inputVector : Spec.Tensor Float (listToShape [3]) :=
-  Spec.vectorTensor (fun i => Float.ofNat (i.val + 1))
+def inputVector : Spec.Tensor Float (Shape.ofList [3]) :=
+  Spec.Tensor.vector (fun i => Float.ofNat (i.val + 1))
 
 /-- The same input, converted to `TensorArray` so we can call `TensorArray.matvec`. -/
 def inputAsArray : TensorArray.Tensor Float [3] :=
@@ -143,15 +143,15 @@ def linearOutput : TensorArray.Tensor Float [4] :=
   TensorArray.matvec weightMatrix inputAsArray
 
 /-- Convert the output back to `Spec.Tensor` (useful if the rest of the pipeline is spec-level). -/
-def outputAsInductive : Spec.Tensor Float (listToShape [4]) :=
+def outputAsInductive : Spec.Tensor Float (Shape.ofList [4]) :=
   toTensor linearOutput
 
 #tensor_view inputVector
 
 /-! Widget-only mirror for the bridge-backed output. -/
-meta def outputAsInductiveView : Spec.Tensor Float (listToShape [4]) :=
+meta def outputAsInductiveView : Spec.Tensor Float (Shape.ofList [4]) :=
   toTensor (TensorArray.matvec (TensorArray.full [4, 3] 0.1)
-    (toTensorArray (Spec.vectorTensor (fun i => Float.ofNat (i.val + 1)))))
+    (toTensorArray (Spec.Tensor.vector (fun i => Float.ofNat (i.val + 1)))))
 
 #tensor_view outputAsInductiveView
 #tensor_stats_view outputAsInductiveView
@@ -180,16 +180,16 @@ def batchArray : TensorArray.Tensor Float [2, 2, 3] :=
     (by simp)
 
 /-- Convert the whole batch into the spec tensor. -/
-def batchSpec : Spec.Tensor Float (listToShape [2, 2, 3]) :=
+def batchSpec : Spec.Tensor Float (Shape.ofList [2, 2, 3]) :=
   toTensor batchArray
 
 /-- Slice out the first sample (shape `[2,3]`). -/
-def firstSampleSpec : Spec.Tensor Float (listToShape [2, 3]) :=
+def firstSampleSpec : Spec.Tensor Float (Shape.ofList [2, 3]) :=
   match batchSpec with
   | Spec.Tensor.dim samples => samples ⟨0, by simp⟩
 
 /-- Slice out the second sample (shape `[2,3]`). -/
-def secondSampleSpec : Spec.Tensor Float (listToShape [2, 3]) :=
+def secondSampleSpec : Spec.Tensor Float (Shape.ofList [2, 3]) :=
   match batchSpec with
   | Spec.Tensor.dim samples => samples ⟨1, by simp⟩
 
@@ -202,18 +202,18 @@ def secondSampleAsArray : TensorArray.Tensor Float [2, 3] :=
   toTensorArray secondSampleSpec
 
 /-! Widget-only mirrors for the bridge-backed batch tensors. -/
-meta def batchSpecView : Spec.Tensor Float (listToShape [2, 2, 3]) :=
+meta def batchSpecView : Spec.Tensor Float (Shape.ofList [2, 2, 3]) :=
   toTensor <|
     TensorArray.ofArray
       #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
       [2, 2, 3]
       (by simp)
 
-meta def firstSampleSpecView : Spec.Tensor Float (listToShape [2, 3]) :=
+meta def firstSampleSpecView : Spec.Tensor Float (Shape.ofList [2, 3]) :=
   match batchSpecView with
   | Spec.Tensor.dim samples => samples ⟨0, by simp⟩
 
-meta def secondSampleSpecView : Spec.Tensor Float (listToShape [2, 3]) :=
+meta def secondSampleSpecView : Spec.Tensor Float (Shape.ofList [2, 3]) :=
   match batchSpecView with
   | Spec.Tensor.dim samples => samples ⟨1, by simp⟩
 
@@ -240,11 +240,11 @@ def flatTensor : TensorArray.Tensor Float [6] :=
   TensorArray.ofArray #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0] [6] (by simp)
 
 /-- Convert it to `Spec.Tensor` (shape `[6]`). -/
-def flatAsInductive : Spec.Tensor Float (listToShape [6]) :=
+def flatAsInductive : Spec.Tensor Float (Shape.ofList [6]) :=
   toTensor flatTensor
 
 /-- Reshape `[6]` into `[2,3]` by explicit index arithmetic (row-major). -/
-def reshapedMatrix : Spec.Tensor Float (listToShape [2, 3]) :=
+def reshapedMatrix : Spec.Tensor Float (Shape.ofList [2, 3]) :=
   match flatAsInductive with
   | Spec.Tensor.dim values =>
     Spec.Tensor.dim (fun i =>
@@ -261,8 +261,8 @@ def reshapedAsArray : TensorArray.Tensor Float [2, 3] :=
   toTensorArray reshapedMatrix
 
 /-! Widget-only mirror for the manual reshape. -/
-meta def reshapedMatrixView : Spec.Tensor Float (listToShape [2, 3]) :=
-  let flat : Spec.Tensor Float (listToShape [6]) :=
+meta def reshapedMatrixView : Spec.Tensor Float (Shape.ofList [2, 3]) :=
+  let flat : Spec.Tensor Float (Shape.ofList [6]) :=
     toTensor (TensorArray.ofArray #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0] [6] (by simp))
   match flat with
   | Spec.Tensor.dim values =>
@@ -296,8 +296,8 @@ def tensorA : TensorArray.Tensor Float [2, 2] :=
   TensorArray.full [2, 2] 2.0
 
 /-- A `2×2` spec tensor filled with threes. -/
-def tensorB : Spec.Tensor Float (listToShape [2, 2]) :=
-  Spec.fill 3.0 (listToShape [2, 2])
+def tensorB : Spec.Tensor Float (Shape.ofList [2, 2]) :=
+  Spec.fill 3.0 (Shape.ofList [2, 2])
 
 /-- Convert `tensorB` so both operands live in the array-backed representation. -/
 def tensorBAsArray : TensorArray.Tensor Float [2, 2] :=
@@ -308,17 +308,17 @@ def elementWiseSum : TensorArray.Tensor Float [2, 2] :=
   TensorArray.add tensorA tensorBAsArray
 
 /-- Convert the result back to `Spec.Tensor`. -/
-def sumAsInductive : Spec.Tensor Float (listToShape [2, 2]) :=
+def sumAsInductive : Spec.Tensor Float (Shape.ofList [2, 2]) :=
   toTensor elementWiseSum
 
 #tensor_view tensorB
 
 /-! Widget-only mirror for the bridge-backed elementwise sum. -/
-meta def sumAsInductiveView : Spec.Tensor Float (listToShape [2, 2]) :=
+meta def sumAsInductiveView : Spec.Tensor Float (Shape.ofList [2, 2]) :=
   toTensor <|
     TensorArray.add
       (TensorArray.full [2, 2] 2.0)
-      (toTensorArray (Spec.fill 3.0 (listToShape [2, 2])))
+      (toTensorArray (Spec.fill 3.0 (Shape.ofList [2, 2])))
 
 #tensor_view sumAsInductiveView
 #tensor_stats_view sumAsInductiveView
@@ -346,12 +346,12 @@ def forwardPass (input : TensorArray.Tensor Float [3]) (weights : TensorArray.Te
 /-- The same forward pass, returning a spec tensor. -/
 def forwardAsInductive (input : TensorArray.Tensor Float [3]) (weights : TensorArray.Tensor Float
   [4, 3]) :
-    Spec.Tensor Float (listToShape [4]) :=
+    Spec.Tensor Float (Shape.ofList [4]) :=
   toTensor (forwardPass input weights)
 
 /-- A small "gradient" transformation: elementwise multiply by 2 (same shape, spec-side). -/
-def computeGradient (output : Spec.Tensor Float (listToShape [4])) :
-    Spec.Tensor Float (listToShape [4]) :=
+def computeGradient (output : Spec.Tensor Float (Shape.ofList [4])) :
+    Spec.Tensor Float (Shape.ofList [4]) :=
   match output with
   | Spec.Tensor.dim values =>
     Spec.Tensor.dim (fun i =>
@@ -359,23 +359,23 @@ def computeGradient (output : Spec.Tensor Float (listToShape [4])) :
       | Spec.Tensor.scalar v => Spec.Tensor.scalar (2.0 * v))
 
 /-- Convert the example gradient back to `TensorArray`. -/
-def gradientAsArray (output : Spec.Tensor Float (listToShape [4])) :
+def gradientAsArray (output : Spec.Tensor Float (Shape.ofList [4])) :
     TensorArray.Tensor Float [4] :=
   toTensorArray (computeGradient output)
 
-def gradientExample : Spec.Tensor Float (listToShape [4]) :=
+def gradientExample : Spec.Tensor Float (Shape.ofList [4]) :=
   computeGradient outputAsInductive
 
 /-! Widget-only mirror for the bridge-backed gradient-like tensor. -/
-meta def computeGradientView (output : Spec.Tensor Float (listToShape [4])) :
-    Spec.Tensor Float (listToShape [4]) :=
+meta def computeGradientView (output : Spec.Tensor Float (Shape.ofList [4])) :
+    Spec.Tensor Float (Shape.ofList [4]) :=
   match output with
   | Spec.Tensor.dim values =>
     Spec.Tensor.dim (fun i =>
       match values i with
       | Spec.Tensor.scalar v => Spec.Tensor.scalar (2.0 * v))
 
-meta def gradientExampleView : Spec.Tensor Float (listToShape [4]) :=
+meta def gradientExampleView : Spec.Tensor Float (Shape.ofList [4]) :=
   computeGradientView outputAsInductiveView
 
 #tensor_view gradientExampleView

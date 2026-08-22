@@ -64,11 +64,11 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     boxes.set! id (some { dim := d, lo := lo, hi := hi })
   | .add =>
     match node.parents with
-    | p1 :: p2 :: _ => boxes.set! id (some (box_add (get! p1) (get! p2)))
+    | p1 :: p2 :: _ => boxes.set! id (some (boxAdd (get! p1) (get! p2)))
     | _ => boxes
   | .sub =>
     match node.parents with
-    | p1 :: p2 :: _ => boxes.set! id (some (box_sub (get! p1) (get! p2)))
+    | p1 :: p2 :: _ => boxes.set! id (some (boxSub (get! p1) (get! p2)))
     | _ => boxes
   | .abs =>
     match node.parents with
@@ -118,7 +118,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
                 simp [sFlat, sIn, expectedInDim, Spec.Shape.size, hIn]
               let xLo := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
               let xHi := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-              let layer : Spec.MaxPool2DSpec kH kW stride hkH hkW hs := {}
+              let layer : Spec.MaxPool2dSpec kH kW stride hkH hkW hs := {}
               let yLo : Tensor α outShape :=
                 Spec.maxPool2dMultiSpec (α := α) (kH := kH) (kW := kW)
                   (inH := inH) (inW := inW) (inC := inC) (stride := stride)
@@ -155,7 +155,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
                 simp [sFlat, sIn, expectedInDim, Spec.Shape.size, hIn]
               let xLo := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
               let xHi := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-              let layer : Spec.MaxPool2DSpec kH kW stride hkH hkW hs := {}
+              let layer : Spec.MaxPool2dSpec kH kW stride hkH hkW hs := {}
               let yLo : Tensor α outShape :=
                 Spec.maxPool2dMultiSpecPad (α := α) (kH := kH) (kW := kW)
                   (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding := padding)
@@ -192,7 +192,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
                 simp [sFlat, sIn, expectedInDim, Spec.Shape.size, hIn]
               let xLo := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
               let xHi := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-              let layer : Spec.AvgPool2DSpec kH kW stride hkH hkW hs := {}
+              let layer : Spec.AvgPool2dSpec kH kW stride hkH hkW hs := {}
               let yLo : Tensor α outShape :=
                 Spec.avgPool2dMultiSpec (α := α) (kH := kH) (kW := kW)
                   (inH := inH) (inW := inW) (inC := inC) (stride := stride)
@@ -229,7 +229,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
                 simp [sFlat, sIn, expectedInDim, Spec.Shape.size, hIn]
               let xLo := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
               let xHi := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-              let layer : Spec.AvgPool2DSpec kH kW stride hkH hkW hs := {}
+              let layer : Spec.AvgPool2dSpec kH kW stride hkH hkW hs := {}
               let yLo : Tensor α outShape :=
                 Spec.avgPool2dMultiSpecPad (α := α) (kH := kH) (kW := kW)
                   (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding := padding)
@@ -269,12 +269,12 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     | _ => boxes
   | .relu =>
     match node.parents with
-    | p1 :: _ => boxes.set! id (some (box_relu (get! p1)))
+    | p1 :: _ => boxes.set! id (some (boxRelu (get! p1)))
     | _ => boxes
   | .linear =>
     match node.parents with
     | p1 :: _ =>
-      match ibp_linear (α:=α) id ps (get! p1) with
+      match ibpLinear (α:=α) id ps (get! p1) with
       | some yB => boxes.set! id (some yB)
       | none    => boxes
     | _ => boxes
@@ -397,7 +397,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
       | none, some yB => boxes.set! id (some yB)
       | none, none => boxes
     | p1 :: _ =>
-      match ibp_matmul (α:=α) id ps (get! p1) with
+      match ibpMatmul (α:=α) id ps (get! p1) with
       | some yB => boxes.set! id (some yB)
       | none    => boxes
     | _ => boxes
@@ -468,14 +468,14 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
           simp [sFlat, sIn, Spec.Shape.size, hdim]
         let xLo : Tensor α sIn := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
         let xHi : Tensor α sIn := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-        match permuteDVal? (α := α) (v := ⟨sIn, xLo⟩) perm, permuteDVal? (α := α) (v := ⟨sIn, xHi⟩)
+        match permutePackedTensor? (α := α) (v := ⟨sIn, xLo⟩) perm, permutePackedTensor? (α := α) (v := ⟨sIn, xHi⟩)
           perm with
         | some yLoV, some yHiV =>
-            let sOut := flatDValShape (α := α) yLoV
-            if hSame : flatDValShape (α := α) yHiV = sOut then
+            let sOut := Spec.PackedTensor.shape (α := α) yLoV
+            if hSame : Spec.PackedTensor.shape (α := α) yHiV = sOut then
               if hOut : sOut = node.outShape then
-                let yLoSOut : Tensor α sOut := flatDValTensor (α := α) yLoV
-                let yHiSOut : Tensor α sOut := hSame ▸ flatDValTensor (α := α) yHiV
+                let yLoSOut : Tensor α sOut := Spec.PackedTensor.tensor (α := α) yLoV
+                let yHiSOut : Tensor α sOut := hSame ▸ Spec.PackedTensor.tensor (α := α) yHiV
                 let yLoT : Tensor α node.outShape := hOut ▸ yLoSOut
                 let yHiT : Tensor α node.outShape := hOut ▸ yHiSOut
                 let flatLo := Tensor.flattenSpec (α:=α) yLoT
@@ -492,7 +492,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
   | .mul_elem =>
     match node.parents with
     | p1 :: p2 :: _ =>
-      match box_mul_elem (α:=α) (get! p1) (get! p2) with
+      match boxMulElem (α:=α) (get! p1) (get! p2) with
       | some prod => boxes.set! id (some prod)
       | none => boxes
     | _ => boxes
@@ -507,7 +507,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
       let Y := get! p1
       let T := get! p2
       if Y.dim = T.dim then
-        let diff := box_sub (α := α) Y T
+        let diff := boxSub (α := α) Y T
         let sq := boxSquare (α:=α) diff
         match boxMean? (α := α) sq with
         | some mean => boxes.set! id (some mean)
@@ -522,7 +522,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
       | some yB => boxes.set! id (some yB)
       | none =>
         -- Fallback: allow callers to inject a flattened linear form when conv params are absent.
-        match ibp_linear (α:=α) id ps Xin with
+        match ibpLinear (α:=α) id ps Xin with
         | some yB => boxes.set! id (some yB)
         | none    => boxes
     | _ => boxes

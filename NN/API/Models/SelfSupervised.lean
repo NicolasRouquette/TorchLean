@@ -34,32 +34,33 @@ namespace models
 /--
 Configuration for a compact masked patch-transformer reconstructor.
 
-The input/output contract is MAE-style:
-- input: a masked tensor, `(batch, channels, spatial...)`;
-- output: a flattened reconstruction vector, `N×reconDim`.
+The input/output contract is MAE-style: a masked channel/spatial tensor is mapped to a flattened
+reconstruction vector while every leading axis is preserved.
 
 `reconDim` can be the full image size (`C*H*W`) or a prefix for faster experiments.
 -/
-structure ViTMAEConfig (d : Nat) where
+structure VitMaeConfig (d : Nat) where
   /-- Patch-transformer encoder configuration. -/
-  encoder : ViTConfig d
+  encoder : VitConfig d
   /-- Number of reconstructed output coordinates. -/
   reconDim : Nat
 
-/-- Masked input shape. -/
-def vitMaeInShape {d : Nat} (cfg : ViTMAEConfig d) : Spec.Shape :=
-  vitInShape cfg.encoder
+/-- Masked input shape after prepending independently mapped axes. -/
+abbrev VitMaeConfig.inputShape {d : Nat} (cfg : VitMaeConfig d)
+    (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  cfg.encoder.inputShape leading
 
-/-- Reconstruction-vector output shape. -/
-def vitMaeOutShape {d : Nat} (cfg : ViTMAEConfig d) : Spec.Shape :=
-  .dim cfg.encoder.batch (.dim cfg.reconDim .scalar)
+/-- Reconstruction-vector output shape after preserving every leading axis. -/
+abbrev VitMaeConfig.outputShape {d : Nat} (cfg : VitMaeConfig d)
+    (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.appendDim cfg.reconDim
 
 /-- Number of patch tokens produced by the ViT-MAE patch embedding. -/
-def ViTMAEConfig.seqLen {d : Nat} (cfg : ViTMAEConfig d) : Nat :=
+def VitMaeConfig.seqLen {d : Nat} (cfg : VitMaeConfig d) : Nat :=
   cfg.encoder.seqLen
 
 /-- Flattened encoded-token representation size before the MAE decoder head. -/
-def ViTMAEConfig.flatDim {d : Nat} (cfg : ViTMAEConfig d) : Nat :=
+def VitMaeConfig.flatDim {d : Nat} (cfg : VitMaeConfig d) : Nat :=
   cfg.encoder.flatDim
 
 /--
@@ -75,40 +76,17 @@ The masking objective is provided by `TorchLean.ssl.BlockMAE.sample`. Its axis p
 independent of the model architecture and spatial rank, so this constructor uses the same checked
 operation as signal, volume, and higher-dimensional masked-prediction models.
 -/
-def vitMaskedAutoencoder {d : Nat} (cfg : ViTMAEConfig d)
+def vitMaskedAutoencoder {d : Nat} (cfg : VitMaeConfig d)
+    (leading : Spec.Shape := .scalar)
     (h_inC : cfg.encoder.inChannels ≠ 0 := by decide)
     (h_seqLen : cfg.seqLen ≠ 0 := by decide)
     (h_dModel : cfg.encoder.patch.outChannels ≠ 0 := by decide) :
-    nn.Builder (nn.Sequential (vitMaeInShape cfg) (vitMaeOutShape cfg)) :=
-  let vitCfg := cfg.encoder
-  letI : NeZero vitCfg.inChannels := ⟨h_inC⟩
-  letI : NeZero vitCfg.seqLen := ⟨h_seqLen⟩
-  letI : NeZero vitCfg.patch.outChannels := ⟨h_dModel⟩
-  let patchEmbedding :=
-    nn.conv (leading := .dim vitCfg.batch .scalar) vitCfg.spatial vitCfg.patch
-  nn.Sequential![
-    patchEmbedding,
-    nn.lift (nn.of (spatialToTokens vitCfg)),
-    nn.transformerEncoderBlock
-      { numHeads := vitCfg.numHeads
-        headDim := vitCfg.headDim
-        ffnHidden := vitCfg.ffnHidden
-        activation := .gelu
-        dropout? := none },
-    flattenLeading (.dim vitCfg.batch .scalar),
-    linear cfg.flatDim cfg.reconDim (pfx := .dim vitCfg.batch .scalar)
-  ]
-
-/--
-Compact vector masked autoencoder.
-
-Architecturally this reuses the vector autoencoder body; the self-supervised part is in
-`TorchLean.ssl.VectorMAE.sample` or `TorchLean.ssl.VectorMAE.tensorPrefixSample`, which mask the
-input while keeping the original tensor content as the target.
--/
-def vectorMaskedAutoencoder (cfg : VectorGenerativeConfig) :
-    nn.Builder (nn.Sequential (vectorDataShape cfg) (vectorDataShape cfg)) :=
-  vectorAutoencoder cfg
+    nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) := do
+  let encoder ← vitEncoder cfg.encoder leading h_inC h_seqLen h_dModel
+  let flatten ← flattenLeading leading
+    (s := .dim cfg.seqLen (.dim cfg.encoder.patch.outChannels .scalar))
+  let decoder ← linear cfg.flatDim cfg.reconDim (leading := leading)
+  pure <| encoder >>> flatten >>> decoder
 
 end models
 end nn

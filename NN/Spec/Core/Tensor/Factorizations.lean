@@ -67,17 +67,9 @@ variable {α : Type} [Context α]
 def toMatFn {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) : Fin m → Fin n → α :=
   fun i j => get2 A i j
 
-/-- Build a matrix tensor from a function `Fin m → Fin n → α`. -/
-def ofMatFn {m n : Nat} (f : Fin m → Fin n → α) : Tensor α (.dim m (.dim n .scalar)) :=
-  Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (f i j)))
-
 /-- View a vector tensor as a function `Fin n → α`. -/
 def toVecFn {n : Nat} (v : Tensor α (.dim n .scalar)) : Fin n → α :=
-  fun i => Tensor.toScalar (get v i)
-
-/-- Build a vector tensor from a function `Fin n → α`. -/
-def ofVecFn {n : Nat} (f : Fin n → α) : Tensor α (.dim n .scalar) :=
-  Tensor.dim (fun i => Tensor.scalar (f i))
+  fun i => Tensor.item (get v i)
 
 /-! ## Small numeric helpers on the function representation -/
 
@@ -103,13 +95,14 @@ The columns are computed left to right. Column `j` uses only columns `0 .. j-1`:
 
 ### Trust boundary: the `@[implemented_by]` performance hooks
 
-Several defs here (`choleskyColsFn`, `cholSolveFn`, `solveRidgeFn`) carry an `@[implemented_by …Impl]`
-attribute. The clean closure form is what the correctness proofs reason about; the `…Impl` companion
+Several defs here (`choleskyColsFn`, `cholSolveFn`, `solveRidgeFn`) carry an `@[implemented_by]`
+attribute. The clean closure form is what the correctness proofs reason about; the internal companion
 is a strict, array-backed rewrite that the compiler runs instead, so `#eval` stays fast (the closure
 form re-evaluates prefixes exponentially in the interpreter).
 
-**This substitution is a trusted runtime boundary.** Compiled `#eval`/runtime code executes the `…Impl`
-body while the proofs constrain the clean closure body. The two transcribe the same recurrence, and the
+**This substitution is a trusted runtime boundary.** Compiled `#eval` and runtime code execute the
+internal array-backed body while the proofs constrain the clean closure body. The two transcribe the
+same recurrence, and the
 numeric examples in `NN/Examples/Factorization` exercise the compiled path, but a future equivalence
 theorem should discharge this boundary explicitly. Anything proved about `choleskyFn`/`solveRidgeFn`
 therefore transfers to `#eval` output only modulo this
@@ -126,7 +119,7 @@ factor strictly; this equivalence is **trusted, not proved** (see the trust-boun
 the numeric examples ($A=LL^\mathsf{T}$ and ridge-solve residual $\approx0$) as evidence rather
 than a proof.
 -/
-def choleskyColsImpl {n : Nat} (A : Fin n → Fin n → α) : List (Fin n → α) :=
+def Internal.choleskyCols {n : Nat} (A : Fin n → Fin n → α) : List (Fin n → α) :=
   let cols : Array (Array α) := (List.finRange n).foldl (fun cols j =>
     let jv := j.val
     -- Σ_{k<j} L[j,k]²  (previous columns at row `j`, read from the materialized arrays).
@@ -151,11 +144,11 @@ The list of columns of the Cholesky factor `L`, as length-`n` vectors, computed 
 Element `j` of the result is column `j` of `L`. Built by a left fold so that when column `j` is
 formed, `cols` already holds columns `0 .. j-1`.
 
-The runtime implementation is `choleskyColsImpl` (strict arrays); the closure form here is the one the
-correctness proofs reason about. The two are intended to compute the same factor — trusted, not proved;
-see the trust-boundary note above.
+The runtime implementation is `Internal.choleskyCols` (strict arrays); the closure form here is the
+one used by the correctness proofs. The two are intended to compute the same factor. Their
+equivalence remains part of the trust boundary described above.
 -/
-@[implemented_by choleskyColsImpl]
+@[implemented_by Internal.choleskyCols]
 def choleskyColsFn {n : Nat} (A : Fin n → Fin n → α) : List (Fin n → α) :=
   (List.finRange n).foldl (fun cols j =>
     -- Σ_{k<j} L[j,k]²  (the already-computed columns evaluated at row `j`).
@@ -184,7 +177,7 @@ PyTorch analogue: `torch.linalg.cholesky(A)`.
 -/
 def choleskySpec {n : Nat} (A : Tensor α (.dim n (.dim n .scalar))) :
     Tensor α (.dim n (.dim n .scalar)) :=
-  ofMatFn (choleskyFn (toMatFn A))
+  Tensor.matrix (choleskyFn (toMatFn A))
 
 /-! ## Triangular solves and the kernel-ridge (Tikhonov) linear solve
 
@@ -223,7 +216,7 @@ the `Function.update` accumulator chain on every step, which is ruinous in the i
 compute the same solution strictly; this equivalence is **trusted, not proved** (see the trust-boundary
 note above), with the numeric examples (the ridge residual $\approx0$) as evidence rather than a
 proof. -/
-def cholSolveImpl {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fin n → α :=
+def Internal.cholSolve {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fin n → α :=
   let La : Array (Array α) := Array.ofFn (fun i : Fin n => Array.ofFn (fun j : Fin n => L i j))
   let Lent : Nat → Nat → α := fun i j => (La.getD i #[]).getD j 0
   -- Forward solve `L · z = b`: `z[i] = (b[i] − Σ_{k<i} L[i,k]·z[k]) / L[i,i]`.
@@ -243,10 +236,10 @@ def cholSolveImpl {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fi
 /-- Solve $Ax=b$ given a Cholesky factor $L$ of $A$ (so $A=LL^\mathsf{T}$): forward-solve
 $Lz=b$, then back-solve $L^\mathsf{T}x=z$.
 
-The runtime implementation is `cholSolveImpl` (strict arrays); the closure form here is what the
-correctness proofs reason about. The two are intended to compute the same solution — trusted, not
-proved; see the trust-boundary note above. -/
-@[implemented_by cholSolveImpl]
+The runtime implementation is `Internal.cholSolve` (strict arrays); the closure form here is the
+one used by the correctness proofs. Their equivalence remains part of the trust boundary described
+above. -/
+@[implemented_by Internal.cholSolve]
 def cholSolveFn {n : Nat} (L : Fin n → Fin n → α) (b : Fin n → α) : Fin n → α :=
   triSolveUpperFn (fun i k => L k i) (triSolveLowerFn L b)
 
@@ -266,7 +259,7 @@ Intended to be the same linear solve; this equivalence is **trusted, not proved*
 trust-boundary note above), with the numeric examples (residual $(K+\gamma I)x-b\approx0$) as evidence
 rather than a proof.
 -/
-def solveRidgeImpl {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n → α) : Fin n → α :=
+def Internal.solveRidge {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n → α) : Fin n → α :=
   let A : Fin n → Fin n → α := fun i j => K i j + (if i.val == j.val then γ else 0)
   -- Cholesky columns, left to right: `cols[j][i] = L[i][j]` (strict arrays, `O(1)` back-reference).
   let cols : Array (Array α) := (List.finRange n).foldl (fun cols j =>
@@ -301,10 +294,10 @@ def solveRidgeImpl {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n �
 /-- The Tikhonov-regularized (kernel-ridge) solve $(K+\gamma I)x=b$, via the Cholesky factorization
 of $K+\gamma I$.
 
-The runtime implementation is `solveRidgeImpl` (strict arrays); the closure form here, built from the
-`choleskyFn` / `triSolve*` pieces the correctness proofs reason about. The two are intended to compute
-the same solution — trusted, not proved; see the trust-boundary note above. -/
-@[implemented_by solveRidgeImpl]
+The runtime implementation is `Internal.solveRidge` (strict arrays); the closure form here is built
+from the `choleskyFn` and `triSolve*` definitions used by the correctness proofs. Their equivalence
+remains part of the trust boundary described above. -/
+@[implemented_by Internal.solveRidge]
 def solveRidgeFn {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n → α) : Fin n → α :=
   cholSolveFn (choleskyFn (addScaledIdFn K γ)) b
 
@@ -313,7 +306,7 @@ def solveRidgeFn {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n →
 PyTorch analogue: `torch.linalg.solve(K + gamma * I, b)` (specialized to the SPD Cholesky path). -/
 def solveRidgeSpec {n : Nat} (K : Tensor α (.dim n (.dim n .scalar))) (γ : α)
     (b : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
-  ofVecFn (solveRidgeFn (toMatFn K) γ (toVecFn b))
+  Tensor.vector (solveRidgeFn (toMatFn K) γ (toVecFn b))
 
 /-! ## QR factorization (classical Gram–Schmidt)
 
@@ -358,13 +351,13 @@ positive executable `R` pivots. -/
 def qrQSpec {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) :
     Tensor α (.dim m (.dim n .scalar)) :=
   let st := gramSchmidtFn (toMatFn A)
-  ofMatFn (fun i j => (st.qs.getD j.val (fun _ => 0)) i)
+  Tensor.matrix (fun i j => (st.qs.getD j.val (fun _ => 0)) i)
 
 /-- The `R` factor (upper-triangular) of the QR factorization of `A`. -/
 def qrRSpec {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) :
     Tensor α (.dim n (.dim n .scalar)) :=
   let st := gramSchmidtFn (toMatFn A)
-  ofMatFn (fun k j => (st.rcols.getD j.val (fun _ => 0)) k)
+  Tensor.matrix (fun k j => (st.rcols.getD j.val (fun _ => 0)) k)
 
 /--
 QR factorization candidate of $A\in\mathbb{R}^{m\times n}$ via classical Gram–Schmidt. Over `ℝ`,

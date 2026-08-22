@@ -67,18 +67,18 @@ def cfg : nn.models.RecurrentConfig :=
 
 /-- Input shape: one token vector per timestep. -/
 abbrev σ :=
-  nn.models.recurrentInShape cfg
+  cfg.inputShape
 
 /-- Output shape: one prediction row per timestep. -/
 abbrev τ :=
-  nn.models.recurrentOutShape cfg
+  cfg.outputShape
 
 /-- Vanilla RNN followed by a time-distributed linear output head. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.rnnWithLinearHead cfg
 
 /-- Build one next-token training sample from the loaded corpus prefix. -/
-def sample (corpus : String) : SupervisedSample Float σ τ :=
+def sample (corpus : String) : Sample.Supervised Float σ τ :=
   let s := Data.CausalLM.byteSample
     (α := Float) seqLen inputSize (corpus.take (seqLen + 1)).toString
   Sample.mk (Spec.Tensor.materialize (Sample.x s)) (Spec.Tensor.materialize (Sample.y s))

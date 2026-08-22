@@ -25,7 +25,7 @@ namespace NN.Proofs.IR.ShapeContracts
 
 open NN
 open NN.IR
-open _root_.NN.Spec
+open _root_.Spec
 
 def chwSmall : Spec.Shape := .dim 1 (.dim 2 (.dim 2 .scalar))
 

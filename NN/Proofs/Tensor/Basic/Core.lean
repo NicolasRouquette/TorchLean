@@ -21,7 +21,7 @@ public import NN.Spec.Core.Shape
 public import NN.Spec.Core.Tensor
 public import NN.Spec.Core.TensorOps
 public import NN.Spec.Core.TensorReductionShape
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 
 /-!
 # Real Tensor Proof Toolkit
@@ -40,9 +40,8 @@ The statements use PyTorch-shaped names where that helps readers:
 - `flattenR` / `unflattenR` give a `Fin (Spec.Shape.size s) → ℝ` view of `Tensor ℝ s`.
 - lemmas relate `toVec` views to `add_spec`, `scale_spec`, etc.
 
-We re-export selected generic helpers from `NN.Proofs.Tensor.Algebra` into the `Spec.*` namespace so
-downstream proof files can use one consistent tensor vocabulary (`Spec.toVec`, `Spec.ofVec`,
-`Spec.finRange_foldl_add_eq_finset_sum`) through shared fold and vector lemmas.
+We re-export tensor-specific helpers from `NN.Proofs.Tensor.Algebra` into the `Spec` namespace.
+General list-fold lemmas retain their canonical `List` names.
 
 ## PyTorch correspondence / citations
 
@@ -64,8 +63,8 @@ open scoped BigOperators
 
 -- Re-export generic helpers (defined once in `Proofs.TensorAlgebra`) into `Spec.*`.
 export Proofs.TensorAlgebra (toVec ofVec toVec_ofVec ofVec_toVec)
-export Proofs.TensorAlgebra (finRange_foldl_add_eq_finset_sum finRange_foldl_add_acc
-  add_finRange_foldl_add_zero foldl_tensorScalar_mulAdd foldl_add_distrib2 foldl_matvec_scalar)
+export Proofs.TensorAlgebra
+  (add_finRange_foldl_add_zero foldl_tensorScalar_mulAdd foldl_matvec_scalar)
 
 /-! ## Algebraic instances for small tensor shapes -/
 
@@ -101,7 +100,7 @@ noncomputable instance {n : Nat} : Module ℝ (Tensor ℝ (.dim n .scalar)) :=
 
 /-- Mapping a scalar tensor and then extracting it is the same as mapping its scalar value. -/
 @[simp] lemma toScalar_mapTensor {α β : Type} (f : α -> β) (x : Tensor α .scalar) :
-    Tensor.toScalar (Spec.mapTensor f x) = f (Tensor.toScalar x) := by
+    Tensor.item (Spec.mapTensor f x) = f (Tensor.item x) := by
   cases x
   rfl
 

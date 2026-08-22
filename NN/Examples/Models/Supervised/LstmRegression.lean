@@ -89,11 +89,11 @@ def cfg : nn.models.RecurrentConfig :=
 
 /-- Input shape: one scalar observation at each of `seqLen` timesteps. -/
 abbrev σ : Shape :=
-  nn.models.recurrentInShape cfg
+  cfg.inputShape
 
 /-- Target/prediction shape: one next-step scalar at each of `seqLen` timesteps. -/
 abbrev τ : Shape :=
-  nn.models.recurrentOutShape cfg
+  cfg.outputShape
 
 /-- Raw input shape stored by the prepared household-power `.npy` files. -/
 abbrev rawσ : Shape :=
@@ -128,7 +128,7 @@ def availableWindows (xPath : System.FilePath) :
 
 /-- Load the Float version once for reporting probes and short training. -/
 def loadReportSamples (xPath yPath : System.FilePath) (windows : Nat) :
-    IO (Except String (Array (SupervisedSample Float rawσ rawτ))) := do
+    IO (Except String (Array (Sample.Supervised Float rawσ rawτ))) := do
   Data.loadSupervisedNpy xPath yPath windows
     [rawSeqLen, inputSize] [rawSeqLen, inputSize]
 
@@ -140,7 +140,7 @@ def takePrefix (t : Tensor Float rawσ) : Tensor Float σ :=
         rows ⟨i.val, Nat.lt_of_lt_of_le i.isLt (by decide : seqLen ≤ rawSeqLen)⟩
 
 /-- Convert one real 24-hour prepared window into the tiny recurrent training sample. -/
-def prefixSample (sample : SupervisedSample Float rawσ rawτ) : SupervisedSample Float σ τ :=
+def prefixSample (sample : Sample.Supervised Float rawσ rawτ) : Sample.Supervised Float σ τ :=
   Sample.mk (takePrefix (Sample.x sample)) (takePrefix (Sample.y sample))
 
 /--
@@ -163,13 +163,13 @@ def readSeriesAt (t : Tensor Float τ) (i : Nat) : Float :=
 /--
 Render the first few target values for one forecast window.
 -/
-def targetSummary (sample : SupervisedSample Float σ τ) : String :=
+def targetSummary (sample : Sample.Supervised Float σ τ) : String :=
   String.intercalate ", " <|
     (List.range (Nat.min seqLen 8)).map (fun i =>
       s!"t+{i+1}={readSeriesAt (Sample.y sample) i}")
 
 /-- Public trainer probe for a deterministic forecast window. -/
-def probeOfSample (sample : SupervisedSample Float σ τ) (idx : Nat) : Trainer.Probe σ :=
+def probeOfSample (sample : Sample.Supervised Float σ τ) (idx : Nat) : Trainer.Probe σ :=
   Trainer.Probe.ofFloatTensor
     "forecast"
     (Sample.x sample)
@@ -197,7 +197,9 @@ def trainForecast (opts : Options) (train : RealData.HouseholdPowerModelTrainFla
   let rawSamples ← ModelZoo.orThrow exeName =<< loadReportSamples train.xPath train.yPath train.windows
   let samples := rawSamples.map prefixSample
   let fallback ← ModelZoo.orThrow exeName <|
-    Data.firstArrayOrError samples "no training windows loaded"
+    match samples[0]? with
+    | some sample => .ok sample
+    | none => .error "no training windows loaded"
   let probeIdx := train.reportOffset % Nat.max 1 samples.size
   let probe := probeOfSample (samples.getD probeIdx fallback) probeIdx
   let trainer :=

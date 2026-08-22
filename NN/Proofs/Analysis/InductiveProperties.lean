@@ -123,7 +123,7 @@ theorem l2_norm_concatenation {n : Nat} {s : Shape}
   classical
   have l2_sq : ∀ {s : Shape} (t : Tensor ℝ s), (tensorL2Norm t)^2 = tensorNormSquared t := by
     intro s t
-    simp [tensorL2Norm, Real.sq_sqrt (tensor_norm_squared_nonneg2 (t := t))]
+    simp [tensorL2Norm, Real.sq_sqrt (tensor_norm_squared_nonneg (t := t))]
   calc
     (tensorL2Norm (Tensor.dim f))^2 = tensorNormSquared (Tensor.dim f) := l2_sq (t := Tensor.dim
       f)
@@ -146,7 +146,7 @@ theorem l2_norm_concatenation {n : Nat} {s : Shape}
       simpa using (l2_sq (t := f i)).symm
     _ = (List.finRange n).foldl (fun acc i => acc + (tensorL2Norm (f i))^2) 0 := by
       simpa using
-        (Spec.finRange_foldl_add_eq_finset_sum (f := fun i : Fin n => (tensorL2Norm (f
+        (List.finRange_foldl_add_eq_finset_sum (f := fun i : Fin n => (tensorL2Norm (f
           i))^2)).symm
 
 /--
@@ -169,7 +169,7 @@ theorem componentwise_bound_extension {n : Nat} {s : Shape}
               simpa using (l2_norm_concatenation (f := f))
         _ = (Finset.univ : Finset (Fin n)).sum (fun i => (tensorL2Norm (f i))^2) := by
           simpa using
-            (Spec.finRange_foldl_add_eq_finset_sum (f := fun i : Fin n => (tensorL2Norm (f i))^2))
+            (List.finRange_foldl_add_eq_finset_sum (f := fun i : Fin n => (tensorL2Norm (f i))^2))
     have hSg :
         (tensorL2Norm (Tensor.dim g))^2 =
           (Finset.univ : Finset (Fin n)).sum (fun i => (tensorL2Norm (g i))^2) := by
@@ -179,7 +179,7 @@ theorem componentwise_bound_extension {n : Nat} {s : Shape}
               simpa using (l2_norm_concatenation (f := g))
         _ = (Finset.univ : Finset (Fin n)).sum (fun i => (tensorL2Norm (g i))^2) := by
           simpa using
-            (Spec.finRange_foldl_add_eq_finset_sum (f := fun i : Fin n => (tensorL2Norm (g i))^2))
+            (List.finRange_foldl_add_eq_finset_sum (f := fun i : Fin n => (tensorL2Norm (g i))^2))
 
     have h_term :
         ∀ i : Fin n, (tensorL2Norm (f i))^2 ≤ C^2 * (tensorL2Norm (g i))^2 := by

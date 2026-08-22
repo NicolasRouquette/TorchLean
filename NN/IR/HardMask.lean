@@ -37,12 +37,13 @@ def ofTensor {s : Shape} (mask : Tensor Bool s) : NN.IR.HardMask :=
 /-- Check a hard-mask payload and return the equality needed to recover its typed shape. -/
 def validateAs (mask : NN.IR.HardMask) (expected : Shape) :
     Except String (PLift (mask.shape = expected)) := do
-  if h : mask.shape = expected then
-    if mask.allowed.size != Shape.size expected then
+  if hShape : mask.shape = expected then
+    if _hSize : mask.allowed.size = Shape.size expected then
+      pure ⟨hShape⟩
+    else
       throw <|
         s!"hard mask: shape {repr expected} requires {Shape.size expected} entries, " ++
           s!"but the payload contains {mask.allowed.size}"
-    pure ⟨h⟩
   else
     throw <|
       s!"hard mask: expected shape {repr expected}, but the payload has shape {repr mask.shape}"
@@ -50,9 +51,14 @@ def validateAs (mask : NN.IR.HardMask) (expected : Shape) :
 /-- Reconstruct a typed mask, rejecting a payload whose flat length disagrees with its shape. -/
 def toTensor? (mask : NN.IR.HardMask) : Except String (Tensor Bool mask.shape) := do
   let _ ← validateAs mask mask.shape
-  let flat : Tensor Bool (.dim (Shape.size mask.shape) .scalar) :=
-    Tensor.dim fun i => Tensor.scalar (mask.allowed[i.val]?.getD false)
-  pure (Tensor.unflattenSpec mask.shape flat)
+  if hSize : mask.allowed.size = Shape.size mask.shape then
+    let flat : Tensor Bool (.dim (Shape.size mask.shape) .scalar) :=
+      Tensor.dim fun i => Tensor.scalar <| mask.allowed[i.val]'(by simp [hSize, i.isLt])
+    pure (Tensor.unflattenSpec mask.shape flat)
+  else
+    throw <|
+      s!"hard mask: shape {repr mask.shape} requires {Shape.size mask.shape} entries, " ++
+        s!"but the payload contains {mask.allowed.size}"
 
 /--
 Decode a hard-mask payload at an expected shape.

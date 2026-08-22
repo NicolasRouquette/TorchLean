@@ -118,7 +118,7 @@ def fitLogistic {n p : ℕ} (X : Tensor α (.dim n (.dim p .scalar)))
   let weights := Tensor.dim (fun i => getAtSpec final_weights ⟨i.val, Nat.lt_succ_of_lt i.isLt⟩)
   let intercept := getAtSpec final_weights ⟨p, Nat.lt_succ_self p⟩
 
-  { weights := weights, intercept := toScalar intercept }
+  { weights := weights, intercept := item intercept }
 
 /-- Predict probabilities `σ(Xw + b)` for each row in `X`. -/
 def predictProba {n p : ℕ} (model : LogisticRegression p n α)

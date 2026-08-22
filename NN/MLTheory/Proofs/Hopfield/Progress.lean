@@ -29,7 +29,7 @@ We package the statement for a **full cyclic sweep** over coordinates:
 namespace NN.MLTheory.Proofs.Hopfield
 
 open scoped BigOperators
-open _root_.NN.Spec
+open _root_.Spec
 
 open Spec.Hopfield
 

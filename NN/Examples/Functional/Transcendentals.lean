@@ -86,18 +86,18 @@ end
 /-! ## Functions under test (written once; gradients come from autograd) -/
 
 /-- $f(x)=e^x$. -/
-def expFn : autograd.func.Fn Spec.Shape.scalar Spec.Shape.scalar :=
+def expFn : autograd.func.TensorFunction Spec.Shape.scalar Spec.Shape.scalar :=
   fun x => nn.functional.exp x
 
 /-- $f(x)=e^{-2x}$ — the shape of the AVS canopy two-way transmittance as a
 function of the attenuation parameter. -/
-def expNegativeTwoFn : autograd.func.Fn Spec.Shape.scalar Spec.Shape.scalar :=
+def expNegativeTwoFn : autograd.func.TensorFunction Spec.Shape.scalar Spec.Shape.scalar :=
   fun x => do
     let u ← nn.functional.scale x (-Numbers.two)
     nn.functional.exp u
 
 /-- $f(x)=3x+1$ via the scalar-affine op. -/
-def affineFn : autograd.func.Fn Spec.Shape.scalar Spec.Shape.scalar :=
+def affineFn : autograd.func.TensorFunction Spec.Shape.scalar Spec.Shape.scalar :=
   fun x => nn.functional.affine x Numbers.three Numbers.one
 
 /-! ## Float checks -/
@@ -121,7 +121,7 @@ def expectNot (name : String) (got wrong : Float) (tol : Float := 1e-6) : IO Uni
     IO.println s!"[PASS-NEG] {name}: grad = {got} ≠ {wrong} (test discriminates)"
 
 /-- Differentiate a scalar→scalar `Fn` at a Float point, returning the gradient. -/
-def gradAt (f : autograd.func.Fn Spec.Shape.scalar Spec.Shape.scalar) (x0 : Float) :
+def gradAt (f : autograd.func.TensorFunction Spec.Shape.scalar Spec.Shape.scalar) (x0 : Float) :
     IO Float := do
   let x : Spec.Tensor Float Spec.Shape.scalar := Spec.fill (x0 : Float) Spec.Shape.scalar
   let g ← autograd.func.grad (α := Float) f x

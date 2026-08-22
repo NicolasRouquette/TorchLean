@@ -71,32 +71,14 @@ namespace TensorBridge
 
 open TensorArray Spec
 
-/-- Convert a `Shape` to a runtime list of dimensions. -/
-def shapeToList : Shape → List Nat :=
-  Shape.toList
-
-/-- Convert a runtime list of dimensions to a `Shape`. -/
-def listToShape : List Nat → Shape :=
-  Shape.ofList
-
-/-- Shape conversion is involutive (applying it twice gives the original). -/
-theorem shapeToList_listToShape_involutive (s : Shape) :
-  listToShape (shapeToList s) = s := by
-  simp [shapeToList, listToShape]
-
-/-- List-to-shape conversion is involutive. -/
-theorem listToShape_shapeToList_involutive (shape : List Nat) :
-  shapeToList (listToShape shape) = shape := by
-  simp [shapeToList, listToShape]
-
 /-- Flatten a `Spec.Tensor` of list-shape to row-major list. -/
-def flatten {α : Type} : ∀ {shape : List Nat}, Spec.Tensor α (listToShape shape) → List α
+def flatten {α : Type} : ∀ {shape : List Nat}, Spec.Tensor α (Shape.ofList shape) → List α
   | [], Spec.Tensor.scalar x => [x]
   | n :: ns, Spec.Tensor.dim f =>
     (List.finRange n).flatMap (fun i => flatten (shape := ns) (f i))
 
 /-- Length of `flatten` is exactly the product of dimensions. -/
-theorem flatten_length {α : Type} : ∀ {shape : List Nat} (t : Spec.Tensor α (listToShape shape)),
+theorem flatten_length {α : Type} : ∀ {shape : List Nat} (t : Spec.Tensor α (Shape.ofList shape)),
     (flatten t).length = TensorArray.shapeProd shape
   | [], Spec.Tensor.scalar _ => by
       simp [flatten]
@@ -134,7 +116,7 @@ theorem length_take_drop_mul {α : Type} (xs : List α) {n k : Nat}
 
 /-- Unflatten a row-major list into a `Spec.Tensor` of list-shape. -/
 def unflatten {α : Type} : ∀ (shape : List Nat) (xs : List α),
-    xs.length = TensorArray.shapeProd shape → Spec.Tensor α (listToShape shape)
+    xs.length = TensorArray.shapeProd shape → Spec.Tensor α (Shape.ofList shape)
   | [], xs, h =>
     have hlen : xs.length = 1 := by
       simpa [TensorArray.shapeProd] using h
@@ -247,7 +229,7 @@ private theorem take_drop_flatMap_finRange_eq {α : Type} :
 
 /-- Unflatten after flatten returns the original tensor (for any valid length proof). -/
 theorem unflatten_flatten {α : Type} :
-    ∀ {shape : List Nat} (t : Spec.Tensor α (listToShape shape))
+    ∀ {shape : List Nat} (t : Spec.Tensor α (Shape.ofList shape))
       {h : (flatten t).length = TensorArray.shapeProd shape},
       unflatten shape (flatten t) h = t
     := by
@@ -290,7 +272,7 @@ theorem unflatten_flatten {α : Type} :
 
 /-- Convert from `TensorArray.Tensor` to `Spec.Tensor`. -/
 def toTensor {α : Type} {shape : List Nat} :
-  TensorArray.Tensor α shape → Spec.Tensor α (listToShape shape)
+  TensorArray.Tensor α shape → Spec.Tensor α (Shape.ofList shape)
   | t =>
     unflatten shape t.data.toList (by
       calc
@@ -300,7 +282,7 @@ def toTensor {α : Type} {shape : List Nat} :
 
 /-- Convert from `Spec.Tensor` to `TensorArray.Tensor`. -/
 def toTensorArray {α : Type} {shape : List Nat} :
-  Spec.Tensor α (listToShape shape) → TensorArray.Tensor α shape
+  Spec.Tensor α (Shape.ofList shape) → TensorArray.Tensor α shape
   | t =>
     let xs := flatten t
     TensorArray.ofArray xs.toArray shape (by
@@ -318,14 +300,14 @@ theorem to_tensor_array_to_tensor {α : Type} {shape : List Nat} (t : TensorArra
     simp [toTensor, toTensorArray, TensorArray.ofArray, flatten_unflatten, Array.toArray_toList]
 
 /-- Converting to tensor array and back preserves the original tensor. -/
-theorem to_tensor_to_tensor_array {α : Type} {shape : List Nat} (t : Spec.Tensor α (listToShape
+theorem to_tensor_to_tensor_array {α : Type} {shape : List Nat} (t : Spec.Tensor α (Shape.ofList
   shape)) :
   toTensor (toTensorArray t) = t := by
   simp [toTensor, toTensorArray, TensorArray.ofArray, unflatten_flatten]
 
 /-- A definable equivalence between the two tensor representations. -/
 def tensorArrayEquivTensor (α : Type) (shape : List Nat) :
-  TensorArray.Tensor α shape ≃ Spec.Tensor α (listToShape shape) :=
+  TensorArray.Tensor α shape ≃ Spec.Tensor α (Shape.ofList shape) :=
   Equiv.mk
     (toTensor (α := α) (shape := shape))
     (toTensorArray (α := α) (shape := shape))

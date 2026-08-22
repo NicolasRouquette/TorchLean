@@ -64,7 +64,7 @@ Practical checklist:
 
 3. Define a parameter record
    - Use `structure <Model>Spec ... where ...` and store weights/biases as `Tensor α <shape>`.
-   - Prefer reusing layer-spec parameter records when they exist (`Conv2DSpec`, `LinearSpec`, etc.).
+   - Prefer reusing layer-spec parameter records when they exist (`Conv2dSpec`, `LinearSpec`, etc.).
 
 4. Implement `forward`
    - Name it `<Model>Spec.forward`.

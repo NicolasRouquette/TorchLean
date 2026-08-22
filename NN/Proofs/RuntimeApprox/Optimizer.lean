@@ -83,14 +83,14 @@ structure NumericalStepContract (R : Type) (toSpec : R → ℝ) where
       (gradsS : Tensor ℝ s) (gradsR : Tensor R s) (gradsError : ℝ)
       (stepData : StepData s),
     stateApprox stateS stateR stateBound →
-    approxT (α := R) (toSpec := toSpec) paramsS paramsR paramsError →
-    approxT (α := R) (toSpec := toSpec) gradsS gradsR gradsError →
+    approxTensor (α := R) (toSpec := toSpec) paramsS paramsR paramsError →
+    approxTensor (α := R) (toSpec := toSpec) gradsS gradsR gradsError →
     stepDataValid stateS stateR stateBound paramsS paramsR paramsError
       gradsS gradsR gradsError stepData →
       let nextBound := updateBound stateBound paramsError gradsError stateR paramsR gradsR stepData
       stateApprox (updateSpec stateS paramsS gradsS).1
           (updateRuntime stateR paramsR gradsR).1 nextBound.state ∧
-        approxT (α := R) (toSpec := toSpec)
+        approxTensor (α := R) (toSpec := toSpec)
           (updateSpec stateS paramsS gradsS).2
           (updateRuntime stateR paramsR gradsR).2 nextBound.params
 
@@ -148,7 +148,7 @@ inductive StepStreamApprox (contract : NumericalStepContract R toSpec) {s : Shap
     List (Tensor ℝ s) → List (Tensor R s) → List ℝ → List (contract.StepData s) → Prop
   | nil {spec runtime bound} : StepStreamApprox contract spec runtime bound [] [] [] []
   | cons {spec runtime bound gradS gradR error stepData gradsS gradsR errors steps} :
-      approxT (α := R) (toSpec := toSpec) gradS gradR error →
+      approxTensor (α := R) (toSpec := toSpec) gradS gradR error →
       contract.stepDataValid spec.1 runtime.1 bound.state spec.2 runtime.2 bound.params
         gradS gradR error stepData →
       StepStreamApprox contract
@@ -169,7 +169,7 @@ def RunSound (contract : NumericalStepContract R toSpec) {s : Shape}
         contract.stateApprox
           (contract.runSpec spec gradsS).1
           (contract.runRuntime runtime gradsR).1 finalBound.state ∧
-        approxT (α := R) (toSpec := toSpec)
+        approxTensor (α := R) (toSpec := toSpec)
           (contract.runSpec spec gradsS).2
           (contract.runRuntime runtime gradsR).2 finalBound.params
 
@@ -181,7 +181,7 @@ theorem run_approx (contract : NumericalStepContract R toSpec) {s : Shape}
     {steps : List (contract.StepData s)}
     (hsteps : StepStreamApprox contract spec runtime bound gradsS gradsR gradErrors steps) :
     contract.stateApprox spec.1 runtime.1 bound.state →
-    approxT (α := R) (toSpec := toSpec) spec.2 runtime.2 bound.params →
+    approxTensor (α := R) (toSpec := toSpec) spec.2 runtime.2 bound.params →
     RunSound contract spec runtime bound gradsS gradsR gradErrors steps := by
   cases hsteps with
   | nil =>

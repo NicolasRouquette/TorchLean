@@ -35,8 +35,8 @@ The exact real value `Real.exp a.val` lies in the interval
 theorem exp_mem_Icc (a : FP32) :
     Real.exp a.val ∈
       Set.Icc
-        ((MathFunctions.exp a).val - eps₃₂ (Real.exp a.val))
-        ((MathFunctions.exp a).val + eps₃₂ (Real.exp a.val)) := by
+        ((MathFunctions.exp a).val - eps32 (Real.exp a.val))
+        ((MathFunctions.exp a).val + eps32 (Real.exp a.val)) := by
   have h := (abs_le).1 (exp_abs_error (a := a))
   constructor
   · linarith [h.2]
@@ -46,8 +46,8 @@ theorem exp_mem_Icc (a : FP32) :
 theorem tanh_mem_Icc (a : FP32) :
     Real.tanh a.val ∈
       Set.Icc
-        ((MathFunctions.tanh a).val - eps₃₂ (Real.tanh a.val))
-        ((MathFunctions.tanh a).val + eps₃₂ (Real.tanh a.val)) := by
+        ((MathFunctions.tanh a).val - eps32 (Real.tanh a.val))
+        ((MathFunctions.tanh a).val + eps32 (Real.tanh a.val)) := by
   have h := (abs_le).1 (tanh_abs_error (a := a))
   constructor
   · linarith [h.2]
@@ -57,8 +57,8 @@ theorem tanh_mem_Icc (a : FP32) :
 theorem log_mem_Icc (a : FP32) :
     Real.log a.val ∈
       Set.Icc
-        ((MathFunctions.log a).val - eps₃₂ (Real.log a.val))
-        ((MathFunctions.log a).val + eps₃₂ (Real.log a.val)) := by
+        ((MathFunctions.log a).val - eps32 (Real.log a.val))
+        ((MathFunctions.log a).val + eps32 (Real.log a.val)) := by
   have h := (abs_le).1 (log_abs_error (a := a))
   constructor
   · linarith [h.2]
@@ -68,8 +68,8 @@ theorem log_mem_Icc (a : FP32) :
 theorem cos_mem_Icc (a : FP32) :
     Real.cos a.val ∈
       Set.Icc
-        ((MathFunctions.cos a).val - eps₃₂ (Real.cos a.val))
-        ((MathFunctions.cos a).val + eps₃₂ (Real.cos a.val)) := by
+        ((MathFunctions.cos a).val - eps32 (Real.cos a.val))
+        ((MathFunctions.cos a).val + eps32 (Real.cos a.val)) := by
   have h := (abs_le).1 (cos_abs_error (a := a))
   constructor <;> linarith [h.2, h.1]
 
@@ -77,8 +77,8 @@ theorem cos_mem_Icc (a : FP32) :
 theorem sin_mem_Icc (a : FP32) :
     Real.sin a.val ∈
       Set.Icc
-        ((MathFunctions.sin a).val - eps₃₂ (Real.sin a.val))
-        ((MathFunctions.sin a).val + eps₃₂ (Real.sin a.val)) := by
+        ((MathFunctions.sin a).val - eps32 (Real.sin a.val))
+        ((MathFunctions.sin a).val + eps32 (Real.sin a.val)) := by
   have h := (abs_le).1 (sin_abs_error (a := a))
   constructor <;> linarith [h.2, h.1]
 
@@ -86,8 +86,8 @@ theorem sin_mem_Icc (a : FP32) :
 theorem sinh_mem_Icc (a : FP32) :
     Real.sinh a.val ∈
       Set.Icc
-        ((MathFunctions.sinh a).val - eps₃₂ (Real.sinh a.val))
-        ((MathFunctions.sinh a).val + eps₃₂ (Real.sinh a.val)) := by
+        ((MathFunctions.sinh a).val - eps32 (Real.sinh a.val))
+        ((MathFunctions.sinh a).val + eps32 (Real.sinh a.val)) := by
   have h := (abs_le).1 (sinh_abs_error (a := a))
   constructor <;> linarith [h.2, h.1]
 
@@ -95,8 +95,8 @@ theorem sinh_mem_Icc (a : FP32) :
 theorem cosh_mem_Icc (a : FP32) :
     Real.cosh a.val ∈
       Set.Icc
-        ((MathFunctions.cosh a).val - eps₃₂ (Real.cosh a.val))
-        ((MathFunctions.cosh a).val + eps₃₂ (Real.cosh a.val)) := by
+        ((MathFunctions.cosh a).val - eps32 (Real.cosh a.val))
+        ((MathFunctions.cosh a).val + eps32 (Real.cosh a.val)) := by
   have h := (abs_le).1 (cosh_abs_error (a := a))
   constructor <;> linarith [h.2, h.1]
 
@@ -104,8 +104,8 @@ theorem cosh_mem_Icc (a : FP32) :
 theorem sqrt_mem_Icc (a : FP32) :
     Real.sqrt a.val ∈
       Set.Icc
-        ((MathFunctions.sqrt a).val - eps₃₂ (Real.sqrt a.val))
-        ((MathFunctions.sqrt a).val + eps₃₂ (Real.sqrt a.val)) := by
+        ((MathFunctions.sqrt a).val - eps32 (Real.sqrt a.val))
+        ((MathFunctions.sqrt a).val + eps32 (Real.sqrt a.val)) := by
   have h := (abs_le).1 (sqrt_abs_error (a := a))
   constructor <;> linarith [h.2, h.1]
 
@@ -117,8 +117,8 @@ Even though `|x|` is exact over `Real`, the `FP32` proof semantics rounds after 
 theorem abs_mem_Icc (a : FP32) :
     |a.val| ∈
       Set.Icc
-        ((MathFunctions.abs a).val - eps₃₂ (|a.val|))
-        ((MathFunctions.abs a).val + eps₃₂ (|a.val|)) := by
+        ((MathFunctions.abs a).val - eps32 (|a.val|))
+        ((MathFunctions.abs a).val + eps32 (|a.val|)) := by
   have h := (abs_le).1 (abs_abs_error (a := a))
   constructor <;> linarith [h.2, h.1]
 

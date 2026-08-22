@@ -65,14 +65,14 @@ stable normalization operator.
 -/
 theorem toSpec_maxVecSpec {n : Nat} (xR : Tensor R (.dim (Nat.succ n) .scalar)) :
     NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)
-        (Tensor.toScalar (Activation.maxVecSpec xR)) =
-      Tensor.toScalar
+        (Tensor.item (Activation.maxVecSpec xR)) =
+      Tensor.item
         (Activation.maxVecSpec
           (Spec.mapTensor (NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) xR)) := by
   cases xR with
   | dim values =>
       let first : Fin (Nat.succ n) := ⟨0, Nat.succ_pos n⟩
-      let runtimeValue : Fin (Nat.succ n) -> R := fun i => Tensor.toScalar (values i)
+      let runtimeValue : Fin (Nat.succ n) -> R := fun i => Tensor.item (values i)
       let realValue : Fin (Nat.succ n) -> ℝ := fun i =>
         NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd) (runtimeValue i)
       have hfold := List.foldl_hom
@@ -86,18 +86,18 @@ theorem toSpec_maxVecSpec {n : Nat} (xR : Tensor R (.dim (Nat.succ n) .scalar)) 
             (NFBackend.toSpec_max (β := β) (fexp := fexp) (rnd := rnd)
               acc (runtimeValue i)).symm)
       simpa only [Activation.maxVecSpec, Spec.mapTensor, Spec.toScalar_mapTensor,
-        Tensor.toScalar_scalar, runtimeValue, realValue, first] using hfold.symm
+        Tensor.item_scalar, runtimeValue, realValue, first] using hfold.symm
 
 omit [NeuralValidRndToNearest rnd] in
 /-- The maximum of a rounded vector approximates the real maximum with the same infinity-norm
 budget as the vector itself. No additional ULP term appears because maximum is a selection.
 -/
-theorem approxT_maxVecSpec {n : Nat}
+theorem approxTensor_maxVecSpec {n : Nat}
     {xS : SpecTensor (.dim (Nat.succ n) .scalar)}
     {xR : Tensor R (.dim (Nat.succ n) .scalar)} {eps : ℝ}
-    (hx : approxT (α := R)
+    (hx : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Activation.maxVecSpec xS) (Activation.maxVecSpec xR) eps := by
   classical
@@ -109,17 +109,17 @@ theorem approxT_maxVecSpec {n : Nat}
   let xR : Tensor R (.dim (Nat.succ n) .scalar) := Tensor.dim runtimeValues
   let xHat : SpecTensor (.dim (Nat.succ n) .scalar) :=
     Spec.mapTensor (NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) xR
-  let mS : ℝ := Tensor.toScalar (Activation.maxVecSpec xS)
-  let mHat : ℝ := Tensor.toScalar (Activation.maxVecSpec xHat)
+  let mS : ℝ := Tensor.item (Activation.maxVecSpec xS)
+  let mHat : ℝ := Tensor.item (Activation.maxVecSpec xHat)
   have hpoint : ∀ i, |Spec.toVec xHat i - Spec.toVec xS i| <= eps := by
     intro i
-    have hi := approxT_dim_get (α := R)
+    have hi := approxTensor_dim_get (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) hx i
     cases hspec : specValues i with
     | scalar specValue =>
         cases hruntime : runtimeValues i with
         | scalar runtimeValue =>
-            have hi' := (approxT_scalar_iff (α := R)
+            have hi' := (approxTensor_scalar_iff (α := R)
               (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))).mp
                 (by simpa [hspec, hruntime] using hi)
             simpa [xS, xHat, xR, Spec.mapTensor, Spec.toVec, hspec, hruntime] using hi'
@@ -143,7 +143,7 @@ theorem approxT_maxVecSpec {n : Nat}
   | scalar specMaximum =>
       cases hruntimeMax : Activation.maxVecSpec xR with
       | scalar runtimeMaximum =>
-          apply (approxT_scalar_iff (α := R)
+          apply (approxTensor_scalar_iff (α := R)
             (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))).mpr
           have hbridge' :
               NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd) runtimeMaximum = mHat := by
@@ -208,13 +208,13 @@ Unlike a blanket continuity statement, the theorem follows the executable stages
 subtraction, exponential, sequential sum, and division. The sole side condition is the numerical
 certificate check that the denominator error remains below its proved real lower bound `1`.
 -/
-theorem approxT_softmaxVecSpec {n : Nat}
+theorem approxTensor_softmaxVecSpec {n : Nat}
     {xS : SpecTensor (.dim (Nat.succ n) .scalar)}
     {xR : Tensor R (.dim (Nat.succ n) .scalar)} {eps : ℝ}
-    (hx : approxT (α := R)
+    (hx : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps)
     (hdenom : denominatorErrorBound (β := β) (fexp := fexp) (rnd := rnd) eps xR < 1) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Activation.softmaxVecSpec xS) (Activation.softmaxVecSpec xR)
       (softmaxErrorBound (β := β) (fexp := fexp) (rnd := rnd) eps xR) := by
@@ -240,28 +240,28 @@ theorem approxT_softmaxVecSpec {n : Nat}
   let epsDenom := denominatorErrorBound (β := β) (fexp := fexp) (rnd := rnd) eps xR
   let outBound := softmaxErrorBound (β := β) (fexp := fexp) (rnd := rnd) eps xR
 
-  have hmax := approxT_maxVecSpec (β := β) (fexp := fexp) (rnd := rnd) hx
-  have hmaxRep : approxT (α := R)
+  have hmax := approxTensor_maxVecSpec (β := β) (fexp := fexp) (rnd := rnd) hx
+  have hmaxRep : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       maxRepS maxRepR eps := by
     simpa [maxRepS, maxRepR, maxS, maxR] using
-      (NFBackend.approxT_replicate (β := β) (fexp := fexp) (rnd := rnd)
+      (NFBackend.approxTensor_replicate (β := β) (fexp := fexp) (rnd := rnd)
         (s := .dim (Nat.succ n) .scalar) hmax)
-  have hshift : approxT (α := R)
+  have hshift : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       shiftedS shiftedR epsShift := by
-    have h := NFBackend.approxT_sub_spec (β := β) (fexp := fexp) (rnd := rnd) hx hmaxRep
+    have h := NFBackend.approxTensor_sub_spec (β := β) (fexp := fexp) (rnd := rnd) hx hmaxRep
     simpa [shiftedS, shiftedR, epsShift, shiftErrorBound, maxRepR, maxR] using h
-  have hexp : approxT (α := R)
+  have hexp : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       exS exR epsNum := by
-    have h := NFBackend.approxT_exp_spec (β := β) (fexp := fexp) (rnd := rnd) hshift
+    have h := NFBackend.approxTensor_exp_spec (β := β) (fexp := fexp) (rnd := rnd) hshift
     simpa [exS, exR, shiftedS, shiftedR, epsNum, exponentErrorBound,
       Activation.maxShiftedExpVecSpec, maxRepS, maxRepR, maxS, maxR] using h
-  have hsum : approxT (α := R)
+  have hsum : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Tensor.scalar denomS) (Tensor.scalar denomR) epsDenom := by
-    have h := NFBackend.approxT_sum_spec (β := β) (fexp := fexp) (rnd := rnd) hexp
+    have h := NFBackend.approxTensor_sum_spec (β := β) (fexp := fexp) (rnd := rnd) hexp
     simpa [denomS, denomR, epsDenom, denominatorErrorBound, epsNum, exR] using h
   have hdenomLower : (1 : ℝ) ≤ denomS := by
     simpa [denomS, exS] using (Proofs.softmax_shift_denom_bounds xS).1
@@ -272,7 +272,7 @@ theorem approxT_softmaxVecSpec {n : Nat}
       (linf_norm_nonneg
         (t := softmaxBoundTensor (β := β) (fexp := fexp) (rnd := rnd) eps xR))
 
-  refine approxT_dim_of_forall
+  refine approxTensor_dim_of_forall
     (xS := Activation.softmaxVecSpec xS)
     (xR := Activation.softmaxVecSpec xR)
     (eps := outBound) hOutNonneg ?_
@@ -281,24 +281,24 @@ theorem approxT_softmaxVecSpec {n : Nat}
   | dim exValuesS =>
       cases hExR : exR with
       | dim exValuesR =>
-          have hexp' : approxT (α := R)
+          have hexp' : approxTensor (α := R)
               (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
               (Tensor.dim exValuesS) (Tensor.dim exValuesR) epsNum := by
             simpa [← hExS, ← hExR] using hexp
-          have hnumI' : approxT (α := R)
+          have hnumI' : approxTensor (α := R)
               (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
               (exValuesS i) (exValuesR i) epsNum := by
             simpa using
-              (approxT_dim_get (α := R)
+              (approxTensor_dim_get (α := R)
                 (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) hexp' i)
           cases hNumS : exValuesS i with
           | scalar numS =>
               cases hNumR : exValuesR i with
               | scalar numR =>
-                  have hnumScalar := (approxT_scalar_iff (α := R)
+                  have hnumScalar := (approxTensor_scalar_iff (α := R)
                     (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))).mp
                       (by simpa [hNumS, hNumR] using hnumI')
-                  have hdenomScalar := (approxT_scalar_iff (α := R)
+                  have hdenomScalar := (approxTensor_scalar_iff (α := R)
                     (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))).mp hsum
                   have hdiv := NFBackend.approx_div_nf_of_pos_lb
                     (β := β) (fexp := fexp) (rnd := rnd) (η := (1 : ℝ))
@@ -314,10 +314,10 @@ theorem approxT_softmaxVecSpec {n : Nat}
                     simpa [outBound, softmaxErrorBound, softmaxBoundTensor, exR, denomR,
                       epsNum, epsDenom, hExR, hNumR, Spec.mapTensor, linfNorm,
                       RuntimeApprox.linfNorm, tensorLinfNorm, MathFunctions.abs] using hcoord
-                  have hscalarOut : approxT (α := R)
+                  have hscalarOut : approxTensor (α := R)
                       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
                       (Tensor.scalar (numS / denomS)) (Tensor.scalar (numR / denomR)) outBound :=
-                    (approxT_scalar_iff (α := R)
+                    (approxTensor_scalar_iff (α := R)
                       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))).mpr
                         (le_trans hdiv hdivBound)
                   have hSoftS : Activation.softmaxVecSpec xS =
@@ -351,16 +351,16 @@ without replacing them by a single pessimistic analytic assumption. The output u
 infinity-norm budget because that is the contract consumed by matrix multiplication and graph
 composition.
 -/
-theorem approxT_softmaxRowsSpec {m n : Nat}
+theorem approxTensor_softmaxRowsSpec {m n : Nat}
     {xS : SpecTensor (.dim m (.dim (Nat.succ n) .scalar))}
     {xR : Tensor R (.dim m (.dim (Nat.succ n) .scalar))} {eps : ℝ}
-    (hx : approxT (α := R)
+    (hx : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps)
     (hdenom : ∀ i : Fin m,
       denominatorErrorBound (β := β) (fexp := fexp) (rnd := rnd) eps (Spec.get xR i) < 1) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
-      (Activation.softmaxSpec xS) (Activation.softmaxSpec xR)
+      (Activation.softmaxLastSpec xS) (Activation.softmaxLastSpec xR)
       (softmaxRowsErrorBound (β := β) (fexp := fexp) (rnd := rnd) eps xR) := by
   classical
   cases xS with
@@ -374,14 +374,14 @@ theorem approxT_softmaxRowsSpec {m n : Nat}
               (linf_norm_nonneg
                 (t := softmaxRowsBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                   eps (Tensor.dim rowsR)))
-          refine approxT_dim_of_forall
-            (xS := Activation.softmaxSpec (Tensor.dim rowsS))
-            (xR := Activation.softmaxSpec (Tensor.dim rowsR))
+          refine approxTensor_dim_of_forall
+            (xS := Activation.softmaxLastSpec (Tensor.dim rowsS))
+            (xR := Activation.softmaxLastSpec (Tensor.dim rowsR))
             (eps := bound) hbound ?_
           intro i
-          have hrow := approxT_dim_get (α := R)
+          have hrow := approxTensor_dim_get (α := R)
             (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) hx i
-          have hsoft := approxT_softmaxVecSpec (β := β) (fexp := fexp) (rnd := rnd) hrow
+          have hsoft := approxTensor_softmaxVecSpec (β := β) (fexp := fexp) (rnd := rnd) hrow
             (by simpa [Spec.get, getAtSpec] using hdenom i)
           have hrowLe :
               softmaxErrorBound (β := β) (fexp := fexp) (rnd := rnd) eps (rowsR i) ≤ bound := by
@@ -390,8 +390,8 @@ theorem approxT_softmaxRowsSpec {m n : Nat}
                 eps (Tensor.dim rowsR)) i
             simpa [bound, softmaxRowsErrorBound, softmaxRowsBoundTensor,
               softmaxErrorBound] using h
-          have hsoft' := approxT_mono hsoft hrowLe
-          simpa [Activation.softmaxSpec] using hsoft'
+          have hsoft' := approxTensor_mono hsoft hrowLe
+          simpa [Activation.softmaxLastSpec] using hsoft'
 
 /-! ## Exact hard-masked softmax -/
 
@@ -482,12 +482,12 @@ values blindly: `hmax` must relate them numerically, and `hdenomLower` supplies 
 lower bound used by division. For the canonical selected maximum this lower bound is `1`, because
 one allowed shifted score is zero and contributes `exp 0 = 1`.
 -/
-theorem approxT_hardMaskedSoftmaxVecSpec_of_max {n : Nat}
+theorem approxTensor_hardMaskedSoftmaxVecSpec_of_max {n : Nat}
     {scoresS : SpecTensor (.dim n .scalar)}
     {scoresR : Tensor R (.dim n .scalar)}
     (mask : Tensor Bool (.dim n .scalar))
     {rowMaxS : ℝ} {rowMaxR : R} {epsScores epsMax η : ℝ}
-    (hscores : approxT (α := R)
+    (hscores : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       scoresS scoresR epsScores)
     (hmax : abs
@@ -498,7 +498,7 @@ theorem approxT_hardMaskedSoftmaxVecSpec_of_max {n : Nat}
     (hdenomMargin :
       hardMaskedDenominatorError (β := β) (fexp := fexp) (rnd := rnd)
         epsScores epsMax scoresR mask rowMaxR < η) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.hardMaskedSoftmaxVecSpec scoresS mask)
       (Spec.hardMaskedSoftmaxVecSpec scoresR mask)
@@ -528,28 +528,28 @@ theorem approxT_hardMaskedSoftmaxVecSpec_of_max {n : Nat}
   let epsDenominator := hardMaskedDenominatorError (β := β) (fexp := fexp) (rnd := rnd)
     epsScores epsMax scoresR mask rowMaxR
 
-  have hmaxTensor : approxT (α := R)
+  have hmaxTensor : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       maxS maxR epsMax :=
-    (approxT_scalar_iff (α := R)
+    (approxTensor_scalar_iff (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))).2 hmax
-  have hmaxRep := NFBackend.approxT_replicate
+  have hmaxRep := NFBackend.approxTensor_replicate
     (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar) hmaxTensor
-  have hshift := NFBackend.approxT_sub_spec
+  have hshift := NFBackend.approxTensor_sub_spec
     (β := β) (fexp := fexp) (rnd := rnd) hscores hmaxRep
-  have hexp := NFBackend.approxT_exp_spec
+  have hexp := NFBackend.approxTensor_exp_spec
     (β := β) (fexp := fexp) (rnd := rnd) hshift
-  have hnumerators := NFBackend.approxT_applyBoolMask
+  have hnumerators := NFBackend.approxTensor_applyBoolMask
     (β := β) (fexp := fexp) (rnd := rnd) mask hexp
-  have hsum := NFBackend.approxT_sum_spec
+  have hsum := NFBackend.approxTensor_sum_spec
     (β := β) (fexp := fexp) (rnd := rnd) hnumerators
-  have hdenominatorRep := NFBackend.approxT_replicate
+  have hdenominatorRep := NFBackend.approxTensor_replicate
     (β := β) (fexp := fexp) (rnd := rnd)
     (s := .dim n .scalar) hsum
   have hdenominatorDomain :
       Tensor.Forall (fun z : ℝ => η ≤ z) denominatorRepS := by
     exact Tensor.forall_replicate (by simpa [denominatorS, numeratorsS] using hdenomLower)
-  have hout := NFBackend.approxT_div_spec_of_pos_lb
+  have hout := NFBackend.approxTensor_div_spec_of_pos_lb
     (β := β) (fexp := fexp) (rnd := rnd) η
     hnumerators hdenominatorRep hdenominatorDomain hdenomMargin
   simp only [Spec.hardMaskedSoftmaxVecSpec, hmaxS, hmaxR]
@@ -563,21 +563,21 @@ theorem approxT_hardMaskedSoftmaxVecSpec_of_max {n : Nat}
     denominatorRepS, denominatorRepR, epsShift, epsNumerator, epsDenominator] using hout
 
 /-- If both semantics find no allowed key, hard-masked softmax agrees exactly on the zero row. -/
-theorem approxT_hardMaskedSoftmaxVecSpec_allBlocked {n : Nat}
+theorem approxTensor_hardMaskedSoftmaxVecSpec_allBlocked {n : Nat}
     (scoresS : SpecTensor (.dim n .scalar))
     (scoresR : Tensor R (.dim n .scalar))
     (mask : Tensor Bool (.dim n .scalar))
     (hmaxS : Spec.hardMaskedMax? scoresS mask = none)
     (hmaxR : Spec.hardMaskedMax? scoresR mask = none) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.hardMaskedSoftmaxVecSpec scoresS mask)
       (Spec.hardMaskedSoftmaxVecSpec scoresR mask) 0 := by
   simp only [Spec.hardMaskedSoftmaxVecSpec, hmaxS, hmaxR]
-  change approxT (α := R)
+  change approxTensor (α := R)
     (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
     (Spec.fill (0 : ℝ) (.dim n .scalar)) (Spec.fill (0 : R) (.dim n .scalar)) 0
-  exact NFBackend.approxT_fill_zero (β := β) (fexp := fexp) (rnd := rnd)
+  exact NFBackend.approxTensor_fill_zero (β := β) (fexp := fexp) (rnd := rnd)
     (s := .dim n .scalar)
 
 /-- Checkable evidence for nonempty hard-masked softmax rows.
@@ -628,17 +628,17 @@ The selected maxima and denominator checks remain row-local. This matches causal
 row `i` always admits key `i`, and avoids replacing all rows by the worst intermediate scale before
 the final infinity norm is taken.
 -/
-theorem approxT_hardMaskedSoftmaxRowsSpec_of_max {m n : Nat}
+theorem approxTensor_hardMaskedSoftmaxRowsSpec_of_max {m n : Nat}
     {scoresS : SpecTensor (.dim m (.dim n .scalar))}
     {scoresR : Tensor R (.dim m (.dim n .scalar))}
     (mask : Tensor Bool (.dim m (.dim n .scalar)))
     {epsScores : ℝ}
-    (hscores : approxT (α := R)
+    (hscores : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       scoresS scoresR epsScores)
     (evidence : HardMaskedRowsEvidence (β := β) (fexp := fexp) (rnd := rnd)
       scoresS scoresR mask epsScores) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.hardMaskedSoftmaxSpec scoresS mask)
       (Spec.hardMaskedSoftmaxSpec scoresR mask)
@@ -661,15 +661,15 @@ theorem approxT_hardMaskedSoftmaxRowsSpec_of_max {m n : Nat}
                     (t := hardMaskedRowsBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                       evidence.eta epsScores (Tensor.dim scoreRowsR) (Tensor.dim maskRows)
                       evidence.rowMaxR evidence.epsMax))
-              refine approxT_dim_of_forall
+              refine approxTensor_dim_of_forall
                 (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
                 (xS := Spec.hardMaskedSoftmaxSpec (Tensor.dim scoreRowsS) (Tensor.dim maskRows))
                 (xR := Spec.hardMaskedSoftmaxSpec (Tensor.dim scoreRowsR) (Tensor.dim maskRows))
                 (eps := bound) hbound ?_
               intro i
-              have hscoresI := approxT_dim_get (α := R)
+              have hscoresI := approxTensor_dim_get (α := R)
                 (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) hscores i
-              have hrow := approxT_hardMaskedSoftmaxVecSpec_of_max
+              have hrow := approxTensor_hardMaskedSoftmaxVecSpec_of_max
                 (β := β) (fexp := fexp) (rnd := rnd)
                 (maskRows i) hscoresI (evidence.maxApprox i)
                 (by simpa [Spec.get, getAtSpec] using evidence.specMax i)
@@ -687,7 +687,7 @@ theorem approxT_hardMaskedSoftmaxRowsSpec_of_max {m n : Nat}
                     evidence.eta epsScores (Tensor.dim scoreRowsR) (Tensor.dim maskRows)
                     evidence.rowMaxR evidence.epsMax) i
                 simpa [bound, hardMaskedRowsBoundTensor] using h
-              have hrow' := approxT_mono hrow hrowLe
+              have hrow' := approxTensor_mono hrow hrowLe
               simpa [Spec.hardMaskedSoftmaxSpec] using hrow'
 
 /-! ## Rounded softmax backward -/
@@ -729,14 +729,14 @@ This formulation is shared by ordinary and hard-masked softmax. In the masked ca
 are exactly zero, so the common formula also returns exactly zero gradient at blocked logits; no
 separate finite-sentinel derivative rule is required.
 -/
-theorem approxT_softmaxBackwardFromWeightsVecSpec {n : Nat}
+theorem approxTensor_softmaxBackwardFromWeightsVecSpec {n : Nat}
     {yS dYS : SpecTensor (.dim (Nat.succ n) .scalar)}
     {yR dYR : Tensor R (.dim (Nat.succ n) .scalar)} {epsY epsDY : ℝ}
-    (hy : approxT (α := R)
+    (hy : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsY)
-    (hdY : approxT (α := R)
+    (hdY : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) dYS dYR epsDY) :
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.softmaxBackwardFromWeightsSpec yS dYS)
       (Spec.softmaxBackwardFromWeightsSpec yR dYR)
@@ -755,64 +755,64 @@ theorem approxT_softmaxBackwardFromWeightsVecSpec {n : Nat}
   let epsCentered :=
     vjpCenteredError (β := β) (fexp := fexp) (rnd := rnd) epsDY epsY dYR yR
 
-  have hproduct : approxT (α := R)
+  have hproduct : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       productS productR epsProduct := by
-    have h := NFBackend.approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd) hdY hy
+    have h := NFBackend.approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd) hdY hy
     simpa [productS, productR, epsProduct, vjpProductError] using h
-  have hdot : approxT (α := R)
+  have hdot : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Tensor.scalar dotS) (Tensor.scalar dotR) epsDot := by
-    have h := NFBackend.approxT_sum_spec (β := β) (fexp := fexp) (rnd := rnd) hproduct
+    have h := NFBackend.approxTensor_sum_spec (β := β) (fexp := fexp) (rnd := rnd) hproduct
     simpa [dotS, dotR, epsDot, vjpDotError, productR, epsProduct] using h
-  have hdotRep : approxT (α := R)
+  have hdotRep : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       dotRepS dotRepR epsDot := by
     simpa [dotRepS, dotRepR] using
-      (NFBackend.approxT_replicate (β := β) (fexp := fexp) (rnd := rnd)
+      (NFBackend.approxTensor_replicate (β := β) (fexp := fexp) (rnd := rnd)
         (s := .dim (Nat.succ n) .scalar) hdot)
-  have hcentered : approxT (α := R)
+  have hcentered : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       centeredS centeredR epsCentered := by
-    have h := NFBackend.approxT_sub_spec (β := β) (fexp := fexp) (rnd := rnd) hdY hdotRep
+    have h := NFBackend.approxTensor_sub_spec (β := β) (fexp := fexp) (rnd := rnd) hdY hdotRep
     simpa [centeredS, centeredR, epsCentered, vjpCenteredError, dotRepR, dotR, productR,
       epsDot] using h
-  have hout := NFBackend.approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd) hy hcentered
+  have hout := NFBackend.approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd) hy hcentered
   simpa [Spec.softmaxBackwardFromWeightsSpec, productS, productR, dotS, dotR,
     dotRepS, dotRepR, centeredS, centeredR, epsCentered, softmaxVjpErrorBound] using hout
 
 /-- Forward-error theorem for the executable softmax VJP.
 
-This is the training counterpart of `approxT_softmaxVecSpec`. It follows the implementation's
+This is the training counterpart of `approxTensor_softmaxVecSpec`. It follows the implementation's
 factorization `y * (dY - sum (dY * y))`; the proof never materializes a dense Jacobian and reuses
 the same rounded multiplication, reduction, replication, and subtraction contracts as ordinary
 model execution.
 -/
-theorem approxT_softmaxBackwardVecSpec {n : Nat}
+theorem approxTensor_softmaxBackwardVecSpec {n : Nat}
     {xS dYS : SpecTensor (.dim (Nat.succ n) .scalar)}
     {xR dYR : Tensor R (.dim (Nat.succ n) .scalar)} {epsX epsDY : ℝ}
-    (hx : approxT (α := R)
+    (hx : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsX)
-    (hdY : approxT (α := R)
+    (hdY : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) dYS dYR epsDY)
     (hdenom : denominatorErrorBound (β := β) (fexp := fexp) (rnd := rnd) epsX xR < 1) :
     let yR := Activation.softmaxVecSpec xR
-    approxT (α := R)
+    approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
-      (Activation.softmaxBackwardSpec xS dYS) (Activation.softmaxBackwardSpec xR dYR)
+      (Activation.softmaxLastBackwardSpec xS dYS) (Activation.softmaxLastBackwardSpec xR dYR)
       (softmaxVjpErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         epsDY (softmaxErrorBound (β := β) (fexp := fexp) (rnd := rnd) epsX xR) dYR yR) := by
   dsimp only
   let yS := Activation.softmaxVecSpec xS
   let yR := Activation.softmaxVecSpec xR
   let epsY := softmaxErrorBound (β := β) (fexp := fexp) (rnd := rnd) epsX xR
-  have hy : approxT (α := R)
+  have hy : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsY := by
     simpa [yS, yR, epsY] using
-      (approxT_softmaxVecSpec (β := β) (fexp := fexp) (rnd := rnd) hx hdenom)
-  have hout := approxT_softmaxBackwardFromWeightsVecSpec
+      (approxTensor_softmaxVecSpec (β := β) (fexp := fexp) (rnd := rnd) hx hdenom)
+  have hout := approxTensor_softmaxBackwardFromWeightsVecSpec
     (β := β) (fexp := fexp) (rnd := rnd) hy hdY
-  simpa [Activation.softmaxBackwardSpec, Spec.softmaxBackwardFromWeightsSpec, yS, yR, epsY]
+  simpa [Activation.softmaxLastBackwardSpec, Spec.softmaxBackwardFromWeightsSpec, yS, yR, epsY]
     using hout
 
 /-- The analytic softmax on a nonempty vector sums to one. -/

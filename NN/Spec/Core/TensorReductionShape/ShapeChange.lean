@@ -101,7 +101,7 @@ Important nuance:
   The theorems below show that the round-trips do work for the spec definitions as written.
 -/
 
-namespace Private
+namespace Internal
 
 /--
 Helper lemma: `flattenSpec` on an outer `Tensor.dim` agrees with flattening a chosen slice.
@@ -176,7 +176,7 @@ private theorem tensor_eq_of_size_zero {α : Type} :
                   funext i
                   exact tensor_eq_of_size_zero (α := α) (s := s) hs0 (fx i) (fy i)
 
-end Private
+end Internal
 
 /--
 Round-trip `unflatten ∘ flatten = id`.
@@ -201,7 +201,7 @@ theorem flatten_unflatten_inverse {α : Type} [Inhabited α] :
               by_cases hm : Spec.Shape.size s = 0
               ·
                 exact
-                  Private.tensor_eq_of_size_zero (α := α) (s := s) hm
+                  Internal.tensor_eq_of_size_zero (α := α) (s := s) hm
                     (unflattenSpec s
                       (Tensor.dim (fun j : Fin (Spec.Shape.size s) =>
                         if hIdx : i.val * Spec.Shape.size s + j.val < n * Spec.Shape.size s then
@@ -233,7 +233,7 @@ theorem flatten_unflatten_inverse {α : Type} [Inhabited α] :
                         exact Nat.lt_of_lt_of_le hlt hle
                       simp [hidx]
                       have :=
-                        Private.flattenSpec_dim_apply (α := α) (f := f) (i := i) (j := j)
+                        Internal.flattenSpec_dim_apply (α := α) (f := f) (i := i) (j := j)
                           (hmpos := hmpos) (hidx := hidx)
                       simpa [hflat, hfi] using this
                 simpa [sub_eq] using
@@ -334,7 +334,7 @@ theorem unflatten_flatten_inverse {α : Type} [Inhabited α] :
                   simp [hrecomp]
 
                 have hcoord :=
-                  Private.flattenSpec_dim_apply
+                  Internal.flattenSpec_dim_apply
                     (α := α)
                     (f := fun i : Fin n =>
                       let startIdx := i.val * m

@@ -6,18 +6,156 @@ Authors: TorchLean Team
 
 module
 
+public import NN.API.CLI
 public import NN.API.Rand
 public import NN.API.Module.Execution
 
 /-!
 # Executable Module Commands
 
-Command-line support for executable TorchLean programs, including help output, seed parsing,
-banners, and exit codes. Module construction and device selection are defined in
-`NN.API.Module.Execution`.
+Command-line support for executable TorchLean programs, including scalar and device selection,
+help output, seed parsing, banners, and exit codes.
 -/
 
 @[expose] public section
+
+namespace TorchLean
+namespace Module
+
+/-- Runtime choices parsed from the shared command-line flags. -/
+structure ExecConfig where
+  /-- Scalar semantics for this execution. -/
+  scalar : _root_.TorchLean.Runtime.ScalarMode := .float32
+  /-- Immediate or typed-graph execution. -/
+  execution : ExecutionMode := .eager
+  /-- Requested execution device. -/
+  device : NN.Backend.Device := .cpu
+  /-- Whether to print each backend capsule when first used. -/
+  showBackend : Bool := false
+  deriving Repr, DecidableEq
+
+namespace ExecConfig
+
+/--
+Parse the shared scalar, execution, device, and backend-reporting flags.
+
+Named devices without an installed runtime remain parseable so diagnostics can report the intended
+target. `Options.validateForExecution` rejects such a configuration before execution.
+-/
+def parseWithScalar
+    (args : List String) (defaultScalar : _root_.TorchLean.Runtime.ScalarMode) :
+    Except String (ExecConfig × List String) := do
+  let (scalar, args) ←
+    _root_.TorchLean.Runtime.ScalarMode.parseAndStripWithDefault args defaultScalar
+  let (execution, args) ←
+    _root_.TorchLean.CLI.takeParsedFlagDefault args "execution" "eager"
+      TorchLean.Runtime.ExecutionMode.parse
+  let rec go (device : NN.Backend.Device) (showBackend : Bool) (acc : List String) :
+      List String → Except String (NN.Backend.Device × Bool × List String)
+    | [] => pure (device, showBackend, acc.reverse)
+    | "--device" :: value :: rest => do
+        go (← TorchLean.Runtime.Device.parse value) showBackend acc rest
+    | ["--device"] =>
+        throw "missing value after --device (supported: auto | cpu | cuda | rocm | metal | wasm | tpu | trainium | custom | external)"
+    | arg :: rest =>
+        if arg.startsWith "--device=" then do
+          let device ← TorchLean.Runtime.Device.parse ((arg.drop "--device=".length).toString)
+          go device showBackend acc rest
+        else if arg == "--show-backend" then
+          go device true acc rest
+        else
+          go device showBackend (arg :: acc) rest
+  let (device, showBackend, rest) ← go .cpu false [] args
+  pure ({ scalar, execution, device, showBackend }, rest)
+
+/-- Convert parsed command-line choices to explicit runtime options. -/
+def toOptions (cfg : ExecConfig) (seed : Nat := 0) : Except String Options := do
+  if (NN.Backend.BackendProfile.maintainedForDevice? cfg.device).isNone then
+    throw s!"device `{cfg.device.cliName}` has no maintained runtime profile; use a programmatic backend profile"
+  pure
+    { execution := cfg.execution
+      device := cfg.device
+      seed
+      backendProfile? := none
+      showBackend := cfg.showBackend }
+
+/-- Parse the shared runtime flags with native binary32 as the default scalar. -/
+def parseAndStrip (args : List String) : Except String (ExecConfig × List String) :=
+  parseWithScalar args .float32
+
+/-- Print the selected scalar, execution strategy, and device. -/
+def log (cfg : ExecConfig) : IO Unit := do
+  _root_.TorchLean.Runtime.ScalarMode.log cfg.scalar
+  IO.println s!"[TorchLean] execution: {reprStr cfg.execution}"
+  IO.println s!"[TorchLean] device: {cfg.device.cliName}"
+
+end ExecConfig
+
+/--
+Parse the shared runtime flags, select an executable scalar, and call `k` with the corresponding
+literal conversion and explicit runtime options.
+-/
+def withRuntime
+    (args : List String)
+    (k :
+      ∀ {α : Type}, [_root_.Context α] → [DecidableEq Spec.Shape] → [ToString α] →
+        [_root_.TorchLean.Runtime.FromFloat α] →
+        (cast : Float → α) → (opts : Options) → (rest : List String) → IO Unit) :
+    IO Unit := do
+  let (cfg, rest) ← match ExecConfig.parseAndStrip args with
+    | .ok result => pure result
+    | .error message => throw <| IO.userError message
+  ExecConfig.log cfg
+  let opts ← match ExecConfig.toOptions cfg with
+    | .ok result => pure result
+    | .error message => throw <| IO.userError message
+  opts.validateForExecution
+  match (← _root_.TorchLean.Runtime.ScalarMode.withRuntime cfg.scalar (fun {α} _ _ _ _ =>
+      k (α := α) (_root_.TorchLean.Runtime.ofFloat (α := α)) opts rest)) with
+  | .ok () => pure ()
+  | .error message => throw <| IO.userError message
+
+/--
+Parse the shared runtime flags, instantiate `defn`, and pass the resulting scalar module to `k`.
+-/
+def withModule
+    {stateShapes inputShapes : List Spec.Shape}
+    (defn : ObjectiveDef stateShapes inputShapes)
+    (args : List String)
+    (k :
+      ∀ {α : Type}, [_root_.Context α] → [DecidableEq Spec.Shape] → [ToString α] →
+        [_root_.TorchLean.Runtime.FromFloat α] →
+        (cast : Float → α) → Objective α stateShapes inputShapes →
+        (rest : List String) → IO Unit) :
+    IO Unit := do
+  let (cfg, rest) ← match ExecConfig.parseAndStrip args with
+    | .ok result => pure result
+    | .error message => throw <| IO.userError message
+  ExecConfig.log cfg
+  let opts ← match ExecConfig.toOptions cfg with
+    | .ok result => pure result
+    | .error message => throw <| IO.userError message
+  opts.validateForExecution
+  match cfg.scalar with
+  | .float32 =>
+      let module ← _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef.instantiateWith
+        (α := Float32) (stateShapes := stateShapes) (inputShapes := inputShapes)
+        defn Float.toFloat32 opts
+      k (α := Float32) Float.toFloat32 module rest
+  | _ =>
+      if cfg.device == .cuda then
+        throw <| IO.userError "torch: CUDA module execution currently requires --scalar float32"
+      match (← _root_.TorchLean.Runtime.ScalarMode.withRuntime cfg.scalar (fun {α} _ _ _ _ => do
+          let cast := _root_.TorchLean.Runtime.ofFloat (α := α)
+          let module ← _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef.instantiateWith
+            (α := α) (stateShapes := stateShapes) (inputShapes := inputShapes)
+            defn cast opts
+          k (α := α) cast module rest)) with
+      | .ok () => pure ()
+      | .error message => throw <| IO.userError message
+
+end Module
+end TorchLean
 
 namespace TorchLean.Module.Command
 

@@ -29,7 +29,7 @@ import NN.API
 open TorchLean
 
 def attenuated :
-    autograd.func.Fn Shape.scalar Shape.scalar :=
+    autograd.func.TensorFunction Shape.scalar Shape.scalar :=
   fun x => do
     let neg ← nn.functional.scale x (-2.0)
     let e ← nn.functional.exp neg

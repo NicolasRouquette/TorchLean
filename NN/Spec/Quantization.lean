@@ -55,9 +55,8 @@ theorem quantizeTensor_inRange (q : AffineQuantizer) (rnd : ℝ → ℤ)
 /-- Pointwise order is preserved by tensor quantization. -/
 theorem quantizeTensor_mono (q : AffineQuantizer) (rnd : ℝ → ℤ) [NeuralValidRnd rnd]
     {s : Shape} {x y : Tensor ℝ s}
-    (hxy : Tensor.Forall (fun ab : ℝ × ℝ => ab.1 ≤ ab.2) (Spec.zip x y)) :
-    Tensor.Forall (fun ab : ℤ × ℤ => ab.1 ≤ ab.2)
-      (Spec.zip (q.quantizeTensor rnd x) (q.quantizeTensor rnd y)) := by
+    (hxy : Tensor.Forall₂ (· ≤ ·) x y) :
+    Tensor.Forall₂ (· ≤ ·) (q.quantizeTensor rnd x) (q.quantizeTensor rnd y) := by
   induction s with
   | scalar =>
       cases x with

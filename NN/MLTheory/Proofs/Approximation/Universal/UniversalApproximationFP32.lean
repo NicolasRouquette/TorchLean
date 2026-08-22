@@ -262,13 +262,10 @@ noncomputable section
 
 open TorchLean.Floats
 
-/-- Alias for the “round-after-each-primitive” real-valued FP32 model (`TorchLean.Floats.FP32`). -/
-abbrev FP32 : Type := TorchLean.Floats.FP32
-
 /-- Extract scalar from a length-1 tensor (FP32). -/
 def extractScalarOutputFp32 (t : Tensor FP32 (.dim 1 .scalar)) : FP32 :=
   match t with
-  | .dim f => toScalar (f ⟨0, by norm_num⟩)
+  | .dim f => item (f ⟨0, by norm_num⟩)
 
 /-- Evaluate a 2-layer ReLU MLP on a scalar FP32 input (returns an FP32 scalar). -/
 noncomputable def mlpEval1dFp32 (hidDim : ℕ)
@@ -344,13 +341,13 @@ lemma relu_lipschitz (u v : ℝ) : |relu u - relu v| ≤ |u - v| := by
 
 /-- First FP32 hinge layer: hidden unit $i$ computes $x-t_i$ before ReLU. -/
   noncomputable def hingeLayer1Fp32 (n : ℕ) (t : Fin n → FP32) : LinearSpec FP32 1 n :=
-  { weights := matrixMN n 1 (fun _ _ => (1 : FP32))
-    bias := vectorN n (fun i => -t i) }
+  { weights := Tensor.matrix (m := n) (n := 1) (fun _ _ => (1 : FP32))
+    bias := Tensor.vector (n := n) (fun i => -t i) }
 
 /-- Second FP32 hinge layer: sum hidden activations with coefficients $c_i$ and bias $b$. -/
   noncomputable def hingeLayer2Fp32 (n : ℕ) (c : Fin n → FP32) (b : FP32) : LinearSpec FP32 n 1 :=
-  { weights := matrixMN 1 n (fun _ j => c j)
-    bias := vectorN 1 (fun _ => b) }
+  { weights := Tensor.matrix (m := 1) (n := n) (fun _ j => c j)
+    bias := Tensor.vector (n := 1) (fun _ => b) }
 
 /-- One rounded hinge term $c_i\operatorname{ReLU}_{32}(x-t_i)$ in the FP32 model. -/
   noncomputable def hingeTermFp32 {n : ℕ} (c t : Fin n → FP32) (x : FP32) (i : Fin n) : FP32 :=

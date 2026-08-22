@@ -146,9 +146,9 @@ Correctness (what is and is not guaranteed):
   tool to produce inputs for downstream checks/counterexamples.
 -/
 
-/-- Runtime view of a type-level `Shape` (same convention as `TensorBridge.shapeToList`). -/
+/-- Runtime view of a type-level `Shape` (same convention as `Shape.toList`). -/
 def shapeList (s : Shape) : List Nat :=
-  TensorBridge.shapeToList s
+  Shape.toList s
 
 /--
 Number of scalar elements (“numel”) in a tensor of shape `s`.
@@ -166,21 +166,19 @@ Cast a tensor with type-level shape `s` into the definitional-equal “list-shap
 This cast is purely a type-level transport; it does not change the tensor values.
 -/
 def castToListShape {s : Shape} :
-    Tensor Float s → Tensor Float (TensorBridge.listToShape (shapeList s)) :=
+    Tensor Float s → Tensor Float (Shape.ofList (shapeList s)) :=
   fun t =>
     cast
-      (congrArg (fun sh => Tensor Float sh) (by
-        simpa [shapeList] using (TensorBridge.shapeToList_listToShape_involutive s).symm)) t
+      (congrArg (fun sh => Tensor Float sh) (by simp [shapeList])) t
 
 /--
 Inverse cast: transport a “list-shaped” tensor back to the original type-level shape `s`.
 -/
 def castFromListShape {s : Shape} :
-    Tensor Float (TensorBridge.listToShape (shapeList s)) → Tensor Float s :=
+    Tensor Float (Shape.ofList (shapeList s)) → Tensor Float s :=
   fun t =>
     cast
-      (congrArg (fun sh => Tensor Float sh) (by
-        simpa [shapeList] using (TensorBridge.shapeToList_listToShape_involutive s))) t
+      (congrArg (fun sh => Tensor Float sh) (by simp [shapeList])) t
 
 /--
 Deterministically generate a length-`n` direction vector from a `seed`.
@@ -215,7 +213,7 @@ The length proof is part of the interface to avoid “silent truncation/padding�
 -/
 def unflattenToTensor {s : Shape} (xs : List Float)
     (h : xs.length = TensorArray.shapeProd (shapeList s)) : Tensor Float s :=
-  let tList : Tensor Float (TensorBridge.listToShape (shapeList s)) :=
+  let tList : Tensor Float (Shape.ofList (shapeList s)) :=
     TensorBridge.unflatten (shapeList s) xs (by simpa [shapeList] using h)
   castFromListShape (s := s) tList
 

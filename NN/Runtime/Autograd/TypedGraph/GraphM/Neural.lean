@@ -138,7 +138,7 @@ Multi-head attention primitive (shape-specialized).
 
 PyTorch comparison: `torch.nn.MultiheadAttention` / scaled dot-product attention.
 
-Forward-mode status: implemented by `Spec.MultiHeadAttentionJvp`, including tangents for the
+Forward-mode status: implemented by `Spec.multiHeadAttentionJvp`, including tangents for the
 input and all four projection matrices.
 -/
 def multiHeadAttention {α : Type} {Δ : Type} [Context α]
@@ -160,25 +160,25 @@ def multiHeadAttention {α : Type} {Δ : Type} [Context α]
   let node : NodeData α Δ (Γ ++ ss) (.dim n (.dim dModel .scalar)) :=
     { forward := fun ctx _d =>
         let mha : Spec.MultiHeadAttention α numHeads dModel headDim :=
-          { Wq := getIdx (α := α) (xs := ctx) iwq
-            Wk := getIdx (α := α) (xs := ctx) iwk
-            Wv := getIdx (α := α) (xs := ctx) iwv
-            Wo := getIdx (α := α) (xs := ctx) iwo }
+          { queryWeight := getIdx (α := α) (xs := ctx) iwq
+            keyWeight := getIdx (α := α) (xs := ctx) iwk
+            valueWeight := getIdx (α := α) (xs := ctx) iwv
+            outputWeight := getIdx (α := α) (xs := ctx) iwo }
         Spec.MultiHeadAttention.forward (α := α) (n := n) (h1 := h1)
           (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
           (mha := mha) (x := getIdx (α := α) (xs := ctx) ix) (mask := mask)
       jvp := fun ctx dctx _d =>
         let mha : Spec.MultiHeadAttention α numHeads dModel headDim :=
-          { Wq := getIdx (α := α) (xs := ctx) iwq
-            Wk := getIdx (α := α) (xs := ctx) iwk
-            Wv := getIdx (α := α) (xs := ctx) iwv
-            Wo := getIdx (α := α) (xs := ctx) iwo }
+          { queryWeight := getIdx (α := α) (xs := ctx) iwq
+            keyWeight := getIdx (α := α) (xs := ctx) iwk
+            valueWeight := getIdx (α := α) (xs := ctx) iwv
+            outputWeight := getIdx (α := α) (xs := ctx) iwo }
         let dmha : Spec.MultiHeadAttention α numHeads dModel headDim :=
-          { Wq := getIdx (α := α) (xs := dctx) iwq
-            Wk := getIdx (α := α) (xs := dctx) iwk
-            Wv := getIdx (α := α) (xs := dctx) iwv
-            Wo := getIdx (α := α) (xs := dctx) iwo }
-        Spec.MultiHeadAttentionJvp (α := α) (h1 := h1)
+          { queryWeight := getIdx (α := α) (xs := dctx) iwq
+            keyWeight := getIdx (α := α) (xs := dctx) iwk
+            valueWeight := getIdx (α := α) (xs := dctx) iwv
+            outputWeight := getIdx (α := α) (xs := dctx) iwo }
+        Spec.multiHeadAttentionJvp (α := α) (h1 := h1)
           (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
           (mha := mha) (dmha := dmha)
           (x := getIdx (α := α) (xs := ctx) ix)
@@ -186,13 +186,13 @@ def multiHeadAttention {α : Type} {Δ : Type} [Context α]
           (mask := mask)
       vjp := fun ctx _d dLdy =>
         let mha : Spec.MultiHeadAttention α numHeads dModel headDim :=
-          { Wq := getIdx (α := α) (xs := ctx) iwq
-            Wk := getIdx (α := α) (xs := ctx) iwk
-            Wv := getIdx (α := α) (xs := ctx) iwv
-            Wo := getIdx (α := α) (xs := ctx) iwo }
+          { queryWeight := getIdx (α := α) (xs := ctx) iwq
+            keyWeight := getIdx (α := α) (xs := ctx) iwk
+            valueWeight := getIdx (α := α) (xs := ctx) iwv
+            outputWeight := getIdx (α := α) (xs := ctx) iwo }
         let xv := getIdx (α := α) (xs := ctx) ix
         let (dx, dWq, dWk, dWv, dWo) :=
-          Spec.MultiHeadAttentionBackward (α := α) (h1 := h1)
+          Spec.multiHeadAttentionBackward (α := α) (h1 := h1)
             (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
             (mha := mha) (x := xv) (mask := mask) (grad_output := dLdy)
         let z0 :=

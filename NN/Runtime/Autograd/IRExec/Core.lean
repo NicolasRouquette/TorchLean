@@ -24,7 +24,7 @@ runtime imports do not pull in that proof.
 ## Main declarations
 
 - `ForwardGraph` packages a forward-only graph lowered from `NN.IR.Graph`.
-- `Internal.dValsOfCtx` converts typed runtime contexts back into IR-style value arrays.
+- `Internal.packedTensorsOfContext` converts typed runtime contexts back into IR-style value arrays.
 - `Internal.buildFrom` is the lowering pass from `NN.IR.Graph` to executable graph data.
 - `lowerToForwardGraph` is the public lowering entry point.
 
@@ -134,24 +134,20 @@ end ForwardGraph
 For debugging and for the forward-correctness development in
 `NN.Runtime.Autograd.IRExec.Correctness`,
 we provide a helper that erases this context
-into an IR-style value table `Array (NN.IR.DVal α)` in node-id order.
+into an IR-style value table `Array (Spec.PackedTensor α)` in node-id order.
 -/
 
 namespace Internal
 
-/-- Convert a runtime `AnyTensor` (shape carried as a field) into an IR denotation value `DVal`. -/
-def dValOfAny {α : Type} [Context α] (v : Runtime.AnyTensor α) : NN.IR.DVal α :=
-  ⟨v.s, v.t⟩
-
 /--
 Convert a typed runtime context `TList α ss` into an IR-style value table.
 
-This is phrased in terms of `Array (DVal α)` because the IR denotation functions (`denoteAll*`)
+This is phrased in terms of `Array (Spec.PackedTensor α)` because the IR denotation functions (`denoteAll*`)
 are array-based, while forward-graph execution evaluates into a typed context (`TList`).
 -/
-def dValsOfCtx {α : Type} [Context α] {ss : List Shape}
-    (ctx : Proofs.Autograd.Algebra.TList α ss) : Array (NN.IR.DVal α) :=
-  (Proofs.Autograd.Algebra.TList.toAnyArray (α := α) (ss := ss) ctx).map (dValOfAny (α := α))
+def packedTensorsOfContext {α : Type} {ss : List Shape}
+    (ctx : Proofs.Autograd.Algebra.TList α ss) : Array (Spec.PackedTensor α) :=
+  Proofs.Autograd.Algebra.TList.toPackedArray (α := α) (ss := ss) ctx
 
 end Internal
 
@@ -160,13 +156,13 @@ namespace ForwardGraph
 variable {α : Type} [Context α]
 
 /--
-Convert the full evaluated context into an IR-style value table (one `DVal` per node id).
+Convert the full evaluated context into an IR-style value table (one `Spec.PackedTensor` per node id).
 
 This is the bridge used to compare forward-graph evaluation with `NN.IR.Graph.denoteAll*`.
 -/
 def denoteAll (e : Runtime.Autograd.IRExec.ForwardGraph α)
-    (x : Tensor α e.inShape) : Array (NN.IR.DVal α) :=
-  Internal.dValsOfCtx (α := α) (ss := [e.inShape] ++ e.ss)
+    (x : Tensor α e.inShape) : Array (Spec.PackedTensor α) :=
+  Internal.packedTensorsOfContext (α := α) (ss := [e.inShape] ++ e.ss)
     (Runtime.Autograd.IRExec.ForwardGraph.eval e x)
 
 end ForwardGraph

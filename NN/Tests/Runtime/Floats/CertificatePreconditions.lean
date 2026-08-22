@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Tests.Runtime.Floats.Utils
-public import NN.Verification.Cert.Common
+public import NN.Verification.Cert.NodeReplay
 public import NN.Verification.Cert.CROWNNodeCert
 public import NN.Verification.Cert.IBPNodeCert
 public import NN.Verification.ODE.Parse
@@ -31,7 +31,7 @@ open Spec
 open Lean
 open NN.MLTheory.CROWN
 open NN.MLTheory.CROWN.Graph
-open NN.Verification.Cert.Common
+open NN.Verification.Cert.NodeReplay
 open TorchLean.Floats.IEEE754
 
 namespace Tests
@@ -98,13 +98,13 @@ def evalPDEAtTwo (source : String) : Option (Float × Float) := do
 
 def flatBox (lo hi : Fin 2 → Float) : FlatBox IEEE32Exec :=
   { dim := 2
-    lo := Spec.mapTensor IEEE32Exec.ofFloat (Spec.vectorTensor lo)
-    hi := Spec.mapTensor IEEE32Exec.ofFloat (Spec.vectorTensor hi) }
+    lo := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector lo)
+    hi := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector hi) }
 
 def flatBox3 : FlatBox IEEE32Exec :=
   { dim := 3
-    lo := Spec.mapTensor IEEE32Exec.ofFloat (Spec.vectorTensor (fun _ : Fin 3 => 0.0))
-    hi := Spec.mapTensor IEEE32Exec.ofFloat (Spec.vectorTensor (fun _ : Fin 3 => 1.0)) }
+    lo := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector (fun _ : Fin 3 => 0.0))
+    hi := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector (fun _ : Fin 3 => 1.0)) }
 
 def inputNode (id dim : Nat) : _root_.NN.IR.Node :=
   { id := id, parents := [], kind := .input, outShape := .dim dim .scalar }

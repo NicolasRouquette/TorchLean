@@ -18,8 +18,8 @@ training conveniences that make loss construction read cleanly without defining 
 
 The main helpers are:
 
-- `param` for trainable leaves (`requires_grad := true`);
-- `const` for data or frozen leaves (`requires_grad := false`);
+- `param` for trainable leaves (`requiresGrad := true`);
+- `const` for data or frozen leaves (`requiresGrad := false`);
 - `meanScalarOver`, `meanScalarOverArray`, and `meanScalarOverDataset` for averaged scalar losses.
 
 ## Higher derivatives
@@ -48,12 +48,12 @@ open Tensor
 /--
 Create a trainable leaf node.
 
-This is the training alias for `Runtime.Autograd.TapeM.leaf` with `requires_grad := true`, matching
-the role of a parameter tensor in a PyTorch-style eager tape.
+This constructor records a leaf with `requiresGrad := true`, matching the role of a parameter
+tensor in a PyTorch-style eager tape.
 -/
 def param {a : Type} {s : Shape}
   (value : Tensor a s) (name : Option String := none) : Runtime.Autograd.TapeM a Nat :=
-  Runtime.Autograd.TapeM.leaf value (name := name) (requires_grad := true)
+  Runtime.Autograd.TapeM.leaf value (name := name) (requiresGrad := true)
 
 /--
 Create a constant/data leaf node.
@@ -63,7 +63,7 @@ forward computation, but `backwardScalar` will not accumulate a gradient for it 
 -/
 def const {a : Type} {s : Shape}
   (value : Tensor a s) (name : Option String := none) : Runtime.Autograd.TapeM a Nat :=
-  Runtime.Autograd.TapeM.leaf value (name := name) (requires_grad := false)
+  Runtime.Autograd.TapeM.leaf value (name := name) (requiresGrad := false)
 
 /-!
 Compute the mean of a dataset of scalar-valued losses.
@@ -116,20 +116,6 @@ def meanScalarOverDataset {a b : Type}
   (tag : String) (xs : Dataset b) (lossOf : b -> Runtime.Autograd.TapeM a Nat) :
   Runtime.Autograd.TapeM a Nat :=
   meanScalarOver (tag := tag) xs.toList lossOf
-
-/-- Array-batch mean loss is exactly list-batch mean loss after `Array.toList`. -/
-@[simp] theorem meanScalarOverArray_eq_meanScalarOver {a b : Type}
-    [Add a] [Mul a] [Div a] [One a] [Coe Nat a] [DecidableEq Shape]
-    (tag : String) (xs : Array b) (lossOf : b -> Runtime.Autograd.TapeM a Nat) :
-    meanScalarOverArray (a := a) (b := b) tag xs lossOf =
-      meanScalarOver (tag := tag) xs.toList lossOf := rfl
-
-/-- Dataset-batch mean loss is exactly list-batch mean loss after `Dataset.toList`. -/
-@[simp] theorem meanScalarOverDataset_eq_meanScalarOver {a b : Type}
-    [Add a] [Mul a] [Div a] [One a] [Coe Nat a] [DecidableEq Shape]
-    (tag : String) (xs : Dataset b) (lossOf : b -> Runtime.Autograd.TapeM a Nat) :
-    meanScalarOverDataset (a := a) (b := b) tag xs lossOf =
-      meanScalarOver (tag := tag) xs.toList lossOf := rfl
 
 end TapeM
 end Train

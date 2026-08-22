@@ -41,7 +41,8 @@ optimizers). This makes it easier to:
   - `NN/Runtime/Autograd/IRExec.lean` (shared `NN.IR.Graph` forward execution bridge)
 - PyTorch-style imperative front-end:
   - `NN/Runtime/Autograd/Torch/Core.lean`
-  - `NN/Runtime/Autograd/Torch/Utils.lean`
+  - `NN/Runtime/Autograd/Torch/Initialization.lean`
+  - `NN/Runtime/Autograd/Torch/ScalarTrainer.lean`
   - `NN/Runtime/Autograd/Torch/TypedGraphSession.lean` (records a typed graph, runs the lowered tape)
 - Unified imperative runtime:
   - `NN/Runtime/Autograd/TorchLean/Program.lean` (execution-polymorphic tensor programs)
@@ -49,8 +50,6 @@ optimizers). This makes it easier to:
   - `NN/Runtime/Autograd/TorchLean/Session.lean` (one API, eager or typed graph execution)
 - Training helpers (datasets, logging, optimizers, trainer):
   - `NN/Runtime/Autograd/Train/*`
-- Runtime utilities:
-  - `NN/Runtime/Autograd/Utils.lean` (small umbrella for executable training scripts and tests)
 
 ## Connection to Proofs
 

@@ -19,7 +19,7 @@ public import NN.Tests.Runtime.Cuda.Utils
 Low-level stress coverage that goes beyond the small eager-tape tests:
 
 - reference/deterministic RNG behavior for `randUniform`, `randNormal`, and `bernoulliMask`,
-- explicit `Buffer.release` lifecycle semantics,
+- explicit `Buffer.releaseIO` lifecycle semantics,
 - finalization of short-lived external buffer wrappers,
 - large-buffer elementwise/reduction checks on direct `Cuda.Buffer` ops,
 - extra cuBLAS matmul parity checks on rectangular inputs.
@@ -133,10 +133,10 @@ def runRngStress : IO Unit := do
 def runReleaseStress : IO Unit := do
   IO.println "== explicit release semantics =="
 
-  let b := Buffer.full 8 3.25
-  -- `release` is a lifetime hint for long eager loops: success means the allocation was freed and
+  let b ← Buffer.fullIO 8 3.25
+  -- `releaseIO` is a lifetime hint for long eager loops: success means the allocation was freed and
   -- the wrapper was converted into an empty buffer so the finalizer remains safe.
-  let r1 := Buffer.release b
+  let r1 ← Buffer.releaseIO b
   if r1 != 1 then
     throw <| IO.userError s!"release first call: expected 1, got {r1}"
   if Buffer.size b != 0 then
@@ -273,8 +273,8 @@ def runDisconnectedDenseGradientStress : IO Unit := do
   let grads ← Utils.okOrThrow <| Cuda.Tape.backwardDenseAll (t := t3) outId seed
   unless grads.size = t3.nodes.size do
     throw <| IO.userError "disconnected CUDA dense gradient: result length mismatch"
-  let xGrad := Tensor.toScalar (← Utils.cudaGrad (s := scalarShape) grads xId)
-  let invGrad := Tensor.toScalar (← Utils.cudaGrad (s := scalarShape) grads invId)
+  let xGrad := Tensor.item (← Utils.cudaGrad (s := scalarShape) grads xId)
+  let invGrad := Tensor.item (← Utils.cudaGrad (s := scalarShape) grads invId)
   unless xGrad.isFinite && xGrad == 0.0 do
     throw <| IO.userError s!"disconnected CUDA reciprocal input: expected finite zero, got {xGrad}"
   unless invGrad.isFinite && invGrad == 0.0 do
@@ -386,9 +386,9 @@ def runMatmulStress : IO Unit := do
       0.50, -0.60, 0.70, -0.80, 0.90,
       -0.05, 0.15, -0.25, 0.35, -0.45
     ]
-  let yRef1 := FastKernels.matmulForward (α := Float) (m := 3) (n := 4) (p := 5) a1 b1
-  let yFp321 := FastKernels.Cuda.matmulForwardcuBLASWith .fp32 (m := 3) (n := 4) (p := 5) a1 b1
-  let yFp641 := FastKernels.Cuda.matmulForwardcuBLASWith .fp64 (m := 3) (n := 4) (p := 5) a1 b1
+  let yRef1 := FastKernels.matmulReference (α := Float) (m := 3) (n := 4) (p := 5) a1 b1
+  let yFp321 := FastKernels.Cuda.matmulCublas .fp32 (m := 3) (n := 4) (p := 5) a1 b1
+  let yFp641 := FastKernels.Cuda.matmulCublas .fp64 (m := 3) (n := 4) (p := 5) a1 b1
   Utils.assertTensorApprox (s := sY1) "matmul stress case1 fp32" yFp321 yRef1 (tol := 7e-3)
   Utils.assertTensorApprox (s := sY1) "matmul stress case1 fp64" yFp641 yRef1 (tol := 1e-9)
 
@@ -401,9 +401,9 @@ def runMatmulStress : IO Unit := do
     tensorOfList! [1, 7] [0.25, -0.50, 0.75, -1.00, 1.25, -1.50, 1.75]
   let b2 : Tensor Float sB2 :=
     tensorOfList! [7, 1] [0.10, 0.20, -0.30, 0.40, -0.50, 0.60, -0.70]
-  let yRef2 := FastKernels.matmulForward (α := Float) (m := 1) (n := 7) (p := 1) a2 b2
-  let yFp322 := FastKernels.Cuda.matmulForwardcuBLASWith .fp32 (m := 1) (n := 7) (p := 1) a2 b2
-  let yFp642 := FastKernels.Cuda.matmulForwardcuBLASWith .fp64 (m := 1) (n := 7) (p := 1) a2 b2
+  let yRef2 := FastKernels.matmulReference (α := Float) (m := 1) (n := 7) (p := 1) a2 b2
+  let yFp322 := FastKernels.Cuda.matmulCublas .fp32 (m := 1) (n := 7) (p := 1) a2 b2
+  let yFp642 := FastKernels.Cuda.matmulCublas .fp64 (m := 1) (n := 7) (p := 1) a2 b2
   Utils.assertTensorApprox (s := sY2) "matmul stress case2 fp32" yFp322 yRef2 (tol := 7e-3)
   Utils.assertTensorApprox (s := sY2) "matmul stress case2 fp64" yFp642 yRef2 (tol := 1e-9)
 
@@ -460,7 +460,7 @@ def runCacheCapProbe : IO Unit := do
   -- Return every block to the cache. Under the cap, returns past the cap free instead of caching.
   let mut freed : Nat := 0
   for b in held do
-    freed := freed + (Buffer.release b).toNat
+    freed := freed + (← Buffer.releaseIO b).toNat
   if freed != k then
     throw <| IO.userError s!"cache-cap probe: expected {k} releases, got {freed}"
   let post ← Buffer.allocatorStats

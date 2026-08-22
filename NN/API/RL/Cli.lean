@@ -31,7 +31,7 @@ namespace rl
 namespace cli
 
 /-- Parsed PPO-style training flags shared by multiple runnable examples. -/
-structure PPOFlags where
+structure PpoFlags where
   updates : Nat
   evalEvery : Nat
   evalEpisodes : Nat
@@ -52,7 +52,7 @@ Notes:
 def parsePpoFlags (exeName : String) (args : List String)
     (defaultLogPath : System.FilePath)
     (defaultUpdates defaultEvalEvery defaultEvalEpisodes defaultEvalMaxSteps : Nat) :
-    Except String (PPOFlags × List String) := do
+    Except String (PpoFlags × List String) := do
   let (logRaw?, args) ← TorchLean.CLI.takeFlagValueOnce args "log"
   let (updates, args) ←
     TorchLean.CLI.takePositiveNatFlag args exeName "updates" defaultUpdates

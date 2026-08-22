@@ -19,7 +19,7 @@ form of convolution backpropagation.
 
 namespace Proofs
 namespace Autograd
-namespace Conv2D
+namespace Conv2d
 
 open Spec
 open Tensor
@@ -30,7 +30,7 @@ noncomputable section
 
 
 /--
-Main dot-level bridge theorem for Conv2D.
+Main dot-level bridge theorem for Conv2d.
 
 It states that the triple returned by `Spec.conv2d_backward_spec` is the adjoint (w.r.t. `Spec.dot`)
 of the corresponding forward-mode directional derivatives with respect to `(kernel, bias, input)`.
@@ -41,15 +41,15 @@ of `fderiv`” theorem in `NN.Proofs.Autograd.Tape.Ops.Conv.FDeriv`.
 theorem conv2d_backward_spec_dot
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
+    (layer : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3)
     (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (δ : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar))))
     (dKernel : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))))
     (dBias : Tensor ℝ (.dim outC .scalar))
     (dInput : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar)))) :
-    let layerK : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    let layerK : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := dKernel, bias := fill (0 : ℝ) (.dim outC .scalar) }
-    let layer0 : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    let layer0 : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := layer.kernel, bias := fill (0 : ℝ) (.dim outC .scalar) }
     let jvp : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar))) :=
       addSpec
@@ -169,6 +169,6 @@ theorem conv2d_backward_spec_dot
             simp [grads, Spec.conv2dBackwardSpec]
 end
 
-end Conv2D
+end Conv2d
 end Autograd
 end Proofs

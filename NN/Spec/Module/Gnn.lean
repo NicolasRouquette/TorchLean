@@ -7,39 +7,34 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Layers.Gnn
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 
 /-!
-# Graph layers as `NNModuleSpec`s
+# Graph layers as `Spec.Module`s
 
 `NN/Spec/Layers/Gnn.lean` defines a small GCN-style layer spec:
 
 `H' = A · H · W + b`
 
-This file wraps that forward spec as an `NNModuleSpec` so it can be composed in `SpecChain`
+This file wraps that forward spec as an `Spec.Module` so it can be composed in `Spec.Module.Chain`
 pipelines and carry simple export metadata.
 -/
 
 @[expose] public section
 
 
-namespace Spec
+namespace Spec.Module
 
 open Tensor
-open ModSpec
 
 variable {α : Type} [Context α]
 
 /-- GCN layer wrapper: `(n, inDim) -> (n, outDim)`. -/
-def GCNModuleSpec {n inDim outDim : Nat}
+def gcn {n inDim outDim : Nat}
   (layer : GCNLayerSpec n inDim outDim α) :
-  NNModuleSpec α (.dim n (.dim inDim .scalar)) (.dim n (.dim outDim .scalar)) :=
+  Spec.Module α (.dim n (.dim inDim .scalar)) (.dim n (.dim outDim .scalar)) :=
 { forward := fun x => gcnLayerSpec (α := α) layer x
   kind := "GCN"
-  export_func := {
-    toPyTorch := s!"GCNLayer(n={n}, in={inDim}, out={outDim})"
-    dimensions := (inDim, outDim)
-  } }
+  pythonExpr := s!"GCNLayer(n={n}, in={inDim}, out={outDim})" }
 
-end Spec
-
+end Spec.Module

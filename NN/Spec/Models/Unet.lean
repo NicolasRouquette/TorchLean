@@ -11,36 +11,30 @@ public import NN.Spec.Layers.Conv
 public import NN.Spec.Layers.Pooling
 
 /-!
-# Unet
+# U-Net Specification
 
-U-Net (2-level) model.
-
-This file defines a small U-Net style architecture (a single downsample + upsample):
+This file specifies a two-level U-Net with one downsampling and one upsampling stage:
 
 - down path: two `Conv2d(3x3, stride=1, padding=1) + ReLU` blocks,
 - downsample: `MaxPool2d(kernel=2, stride=2)`,
 - bottleneck: two more conv blocks,
 - upsample: `ConvTranspose2d(kernel=2, stride=2)`,
 - skip connection: concatenate channels and run two conv blocks,
-- output head: `Conv2d(1x1)` to map `baseC -> outC`.
+- output head: `Conv2d(1x1)` to map the base channels to the output channels.
 
-PyTorch analogue:
-- this matches the common "U-Net block diagram" but written without a batch axis, so our tensor
-  convention is `(C,H,W)` rather than `(N,C,H,W)`;
-- the skip connection concatenates on the channel axis (in PyTorch with a batch axis that would be
-  `torch.cat([skip, up], dim=1)`; here it is `concat_leading_axis_spec` because channels are axis `0`).
+The tensors have shape `(C, H, W)`. The skip connection therefore concatenates axis `0` with
+`concatLeadingAxisSpec`; a batched runtime implementation concatenates the corresponding channel
+axis instead.
 
-Shape notes:
-- the 3x3 conv blocks are set up to preserve `H×W` (stride=1, padding=1),
-- the pool/upsample pair is the usual `2x` down then `2x` up, but for odd spatial sizes the
-  `ConvTranspose2d` formula can produce an off-by-one; we surface this as explicit equalities
-  (`h_upH`, `h_upW`) so the caller can pick compatible `inH,inW` (typically even).
+The convolution blocks preserve spatial dimensions with the default configuration. For odd input
+sizes, pooling followed by transposed convolution can differ by one cell; `Model.forward` therefore
+requires explicit equalities connecting the computed and requested dimensions.
 
 References:
 - Ronneberger et al., "U-Net: Convolutional Networks for Biomedical Image Segmentation" (MICCAI
   2015).
 
-PyTorch docs (for API intuition, not semantics):
+PyTorch documentation for the corresponding executable layers:
 - `torch.nn.Conv2d`: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
 - `torch.nn.MaxPool2d`: https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html
 - `torch.nn.ConvTranspose2d`:
@@ -58,18 +52,16 @@ open Activation
 
 variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
 
+namespace TwoLevelUnet
+
 /-!
 ## Configuration
 
-Architectural hyperparameters live in a dedicated config record.
-
-PyTorch analogue:
-- this mirrors the way you would pass `kernel_size/stride/padding` to `nn.Conv2d`,
-  `nn.MaxPool2d`, and `nn.ConvTranspose2d`, plus the base channel width.
+`Config` contains the kernel geometry and channel width used throughout the specification.
 -/
 
-/-- U-Net (2-level) architectural hyperparameters (spec layer). -/
-structure UNet2Config where
+/-- Architectural parameters for the two-level U-Net. -/
+structure Config where
   /-- `kernel_size` for the max-pool layer (typical: `2`). -/
   poolKernel : Nat := 2
   /-- `stride` for the max-pool layer (typical: `2`). -/
@@ -96,51 +88,51 @@ structure UNet2Config where
   /-- `padding` for the final output head conv (typical: `0`). -/
   headPadding : Nat := 0
 
-  /-- Base channel count (typical: `64`). -/
-  baseC : Nat := 64
+  /-- Number of channels in the full-resolution blocks. -/
+  baseChannels : Nat := 64
 
-/-- Well-formedness conditions for `UNet2Config` (the few nonzero facts needed by layer specs). -/
-structure UNet2Config.WF (cfg : UNet2Config) : Prop where
-  poolK_ne0 : cfg.poolKernel ≠ 0
-  poolStride_ne0 : cfg.poolStride ≠ 0
-  convK_ne0 : cfg.convKernel ≠ 0
-  upK_ne0 : cfg.upKernel ≠ 0
-  upStride_ne0 : cfg.upStride ≠ 0
-  headK_ne0 : cfg.headKernel ≠ 0
-  baseC_pos : cfg.baseC > 0
+/-- Conditions required by the convolution and pooling specifications. -/
+structure Config.WF (cfg : Config) : Prop where
+  poolKernel_ne_zero : cfg.poolKernel ≠ 0
+  poolStride_ne_zero : cfg.poolStride ≠ 0
+  convKernel_ne_zero : cfg.convKernel ≠ 0
+  upKernel_ne_zero : cfg.upKernel ≠ 0
+  upStride_ne_zero : cfg.upStride ≠ 0
+  headKernel_ne_zero : cfg.headKernel ≠ 0
+  baseChannels_pos : cfg.baseChannels > 0
 
-/-- Canonical "classic U-Net-ish" defaults for our 2-level spec. -/
-def unet2DefaultConfig : UNet2Config := {}
+/-- Standard kernel geometry with 64 base channels. -/
+def defaultConfig : Config := {}
 
-/-- `unet2DefaultConfig` satisfies the nonzero facts required by the spec layer. -/
-theorem unet2DefaultConfig_wf : unet2DefaultConfig.WF := by
+/-- `defaultConfig` satisfies the conditions required by the layer specifications. -/
+theorem defaultConfig_wf : defaultConfig.WF := by
   refine
-    { poolK_ne0 := by decide
-      poolStride_ne0 := by decide
-      convK_ne0 := by decide
-      upK_ne0 := by decide
-      upStride_ne0 := by decide
-      headK_ne0 := by decide
-      baseC_pos := by decide }
+    { poolKernel_ne_zero := by decide
+      poolStride_ne_zero := by decide
+      convKernel_ne_zero := by decide
+      upKernel_ne_zero := by decide
+      upStride_ne_zero := by decide
+      headKernel_ne_zero := by decide
+      baseChannels_pos := by decide }
 
-/-- Output height after `MaxPool2d(kernel=2, stride=2)` (no padding). -/
-abbrev UNetDownH (cfg : UNet2Config) (inH : Nat) : Nat :=
+/-- Height after the downsampling pool. -/
+abbrev downHeight (cfg : Config) (inH : Nat) : Nat :=
   poolOutDim inH cfg.poolKernel cfg.poolStride 0
 
-/-- Output width after `MaxPool2d(kernel=2, stride=2)` (no padding). -/
-abbrev UNetDownW (cfg : UNet2Config) (inW : Nat) : Nat :=
+/-- Width after the downsampling pool. -/
+abbrev downWidth (cfg : Config) (inW : Nat) : Nat :=
   poolOutDim inW cfg.poolKernel cfg.poolStride 0
 
-/-- Output height after `MaxPool2d(2,2)` then `ConvTranspose2d(2,2)` (with `padding=0`). -/
-abbrev UNetUpH (cfg : UNet2Config) (inH : Nat) : Nat :=
-  convTransposeOutDim (UNetDownH cfg inH) cfg.upKernel cfg.upStride cfg.upPadding
+/-- Height after downsampling and transposed-convolution upsampling. -/
+abbrev upHeight (cfg : Config) (inH : Nat) : Nat :=
+  convTransposeOutDim (downHeight cfg inH) cfg.upKernel cfg.upStride cfg.upPadding
 
-/-- Output width after `MaxPool2d(2,2)` then `ConvTranspose2d(2,2)` (with `padding=0`). -/
-abbrev UNetUpW (cfg : UNet2Config) (inW : Nat) : Nat :=
-  convTransposeOutDim (UNetDownW cfg inW) cfg.upKernel cfg.upStride cfg.upPadding
+/-- Width after downsampling and transposed-convolution upsampling. -/
+abbrev upWidth (cfg : Config) (inW : Nat) : Nat :=
+  convTransposeOutDim (downWidth cfg inW) cfg.upKernel cfg.upStride cfg.upPadding
 
 /--
-2-level U-Net parameter record (spec).
+Parameters of the two-level U-Net.
 
 This is a compact U-Net with one downsample and one upsample step:
 - two conv + ReLU blocks at full resolution (with a skip),
@@ -150,458 +142,431 @@ This is a compact U-Net with one downsample and one upsample step:
 - two more conv + ReLU blocks,
 - a final `1×1` conv head.
 
-Shape convention: tensors are `(C,H,W)` (no batch axis).
-
-PyTorch analogue: a small U-Net built from `nn.Conv2d`, `nn.MaxPool2d`, `nn.ConvTranspose2d`,
-and `torch.cat` along the channel axis.
+Tensors have shape `(C, H, W)`; this mathematical model does not include a batch axis.
 -/
-structure UNet2Spec (cfg : UNet2Config) (inC outC inH inW : Nat) (α : Type)
+structure Model (cfg : Config) (inC outC inH inW : Nat) (α : Type)
   [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
-  (h_inC : inC ≠ 0) (hCfg : cfg.WF) where
-  /-- First 3×3 conv in the first down block (`inC -> baseC`). -/
-  down1_1 :
-    Conv2DSpec inC cfg.baseC cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α h_inC
-      hCfg.convK_ne0 hCfg.convK_ne0
-  /-- Second 3×3 conv in the first down block (`baseC -> baseC`). -/
-  down1_2 :
-    Conv2DSpec cfg.baseC cfg.baseC cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α
-      (Nat.ne_of_gt hCfg.baseC_pos) hCfg.convK_ne0 hCfg.convK_ne0
+  (hInC : inC ≠ 0) (hCfg : cfg.WF) where
+  /-- First convolution in the full-resolution down block. -/
+  down1Conv1 :
+    Conv2dSpec inC cfg.baseChannels cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α hInC
+      hCfg.convKernel_ne_zero hCfg.convKernel_ne_zero
+  /-- Second convolution in the full-resolution down block. -/
+  down1Conv2 :
+    Conv2dSpec cfg.baseChannels cfg.baseChannels cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α
+      (Nat.ne_of_gt hCfg.baseChannels_pos) hCfg.convKernel_ne_zero hCfg.convKernel_ne_zero
 
-  /-- First 3×3 conv in the bottleneck block (`baseC -> 2*baseC`). -/
-  down2_1 :
-    Conv2DSpec cfg.baseC (2 * cfg.baseC) cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α
-      (Nat.ne_of_gt hCfg.baseC_pos) hCfg.convK_ne0 hCfg.convK_ne0
-  /-- Second 3×3 conv in the bottleneck block (`2*baseC -> 2*baseC`). -/
-  down2_2 :
-    Conv2DSpec (2 * cfg.baseC) (2 * cfg.baseC) cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α
-      (Nat.ne_of_gt (Nat.mul_pos (by decide : 0 < 2) hCfg.baseC_pos)) hCfg.convK_ne0 hCfg.convK_ne0
+  /-- First convolution in the bottleneck block. -/
+  down2Conv1 :
+    Conv2dSpec cfg.baseChannels (2 * cfg.baseChannels) cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α
+      (Nat.ne_of_gt hCfg.baseChannels_pos) hCfg.convKernel_ne_zero hCfg.convKernel_ne_zero
+  /-- Second convolution in the bottleneck block. -/
+  down2Conv2 :
+    Conv2dSpec (2 * cfg.baseChannels) (2 * cfg.baseChannels) cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α
+      (Nat.ne_of_gt (Nat.mul_pos (by decide : 0 < 2) hCfg.baseChannels_pos)) hCfg.convKernel_ne_zero hCfg.convKernel_ne_zero
 
-  /-- Transposed-convolution upsampler (`2*baseC -> baseC`, `kernel=2`, `stride=2`). -/
-  upT :
-    ConvTranspose2DSpec (2 * cfg.baseC) cfg.baseC cfg.upKernel cfg.upKernel cfg.upStride cfg.upPadding α
-      (Nat.mul_pos (by decide : 0 < 2) hCfg.baseC_pos) hCfg.upK_ne0 hCfg.upK_ne0
+  /-- Transposed convolution that restores the spatial resolution. -/
+  upsample :
+    ConvTranspose2dSpec (2 * cfg.baseChannels) cfg.baseChannels cfg.upKernel cfg.upKernel cfg.upStride cfg.upPadding α
+      (Nat.mul_pos (by decide : 0 < 2) hCfg.baseChannels_pos) hCfg.upKernel_ne_zero hCfg.upKernel_ne_zero
 
-  /-- First 3×3 conv after skip concatenation (`(baseC+baseC) -> baseC`). -/
-  up1_1 :
-    Conv2DSpec (cfg.baseC + cfg.baseC) cfg.baseC cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α
+  /-- First convolution after concatenating the skip connection. -/
+  up1Conv1 :
+    Conv2dSpec (cfg.baseChannels + cfg.baseChannels) cfg.baseChannels cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α
     (by
-      -- `baseC + baseC ≥ baseC > 0`
-      have : 0 < cfg.baseC + cfg.baseC :=
-        Nat.lt_of_lt_of_le hCfg.baseC_pos (Nat.le_add_right cfg.baseC cfg.baseC)
+      have : 0 < cfg.baseChannels + cfg.baseChannels :=
+        Nat.lt_of_lt_of_le hCfg.baseChannels_pos (Nat.le_add_right cfg.baseChannels cfg.baseChannels)
       exact Nat.ne_of_gt this)
-    hCfg.convK_ne0 hCfg.convK_ne0
-  /-- Second 3×3 conv after skip concatenation (`baseC -> baseC`). -/
-  up1_2 :
-    Conv2DSpec cfg.baseC cfg.baseC cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α
-      (Nat.ne_of_gt hCfg.baseC_pos) hCfg.convK_ne0 hCfg.convK_ne0
+    hCfg.convKernel_ne_zero hCfg.convKernel_ne_zero
+  /-- Second convolution after the skip connection. -/
+  up1Conv2 :
+    Conv2dSpec cfg.baseChannels cfg.baseChannels cfg.convKernel cfg.convKernel cfg.convStride cfg.convPadding α
+      (Nat.ne_of_gt hCfg.baseChannels_pos) hCfg.convKernel_ne_zero hCfg.convKernel_ne_zero
 
-  /-- Final 1×1 conv head (`baseC -> outC`). -/
-  out1x1 :
-    Conv2DSpec cfg.baseC outC cfg.headKernel cfg.headKernel cfg.headStride cfg.headPadding α
-      (Nat.ne_of_gt hCfg.baseC_pos) hCfg.headK_ne0 hCfg.headK_ne0
+  /-- Final convolution that produces the requested output channels. -/
+  output :
+    Conv2dSpec cfg.baseChannels outC cfg.headKernel cfg.headKernel cfg.headStride cfg.headPadding α
+      (Nat.ne_of_gt hCfg.baseChannels_pos) hCfg.headKernel_ne_zero hCfg.headKernel_ne_zero
 
 /-!
 ## Gradients
 
-This U-Net is small enough that we can write a fully explicit backward pass in a "mirror the
-forward" style: rebuild the same intermediates, then walk back through them using the existing
-layer-level backward specs.
+The backward specification reconstructs the forward intermediates and applies the corresponding
+layer-level vector-Jacobian products in reverse order.
 
 Key details:
-- `concat_leading_axis_spec` is split via `concat_leading_axis_backward_spec`,
-- pooling backward uses `max_pool2d_multi_backward_spec`,
+- `concatLeadingAxisSpec` is split via `concatLeadingAxisBackwardSpec`,
+- pooling backward uses `maxPool2dMultiBackwardSpec`,
 - ReLU is handled via elementwise gating `dZ = dY ⊙ ReLU'(Z)`.
-
-PyTorch analogy:
-- each `conv2d_backward_spec` call corresponds to the gradients PyTorch computes for
-  `Conv2d(weight,bias)`;
-- `max_pool2d_multi_backward_spec` corresponds to max-pool backward using the argmax locations from
-  the forward (our spec computes it from the inputs).
 -/
 
 /--
-Parameter-gradient container for `UNet2Spec`.
+Parameter-gradient container for `Model`.
 
-This mirrors the parameter layout of `UNet2Spec`, recording kernel and bias gradients for each
-convolution and transposed-convolution layer.
+The fields follow the parameter layout of `Model`.
 -/
-structure UNet2Grads (cfg : UNet2Config) (inC outC inH inW : Nat) (α : Type) where
-  /-- d down 1 1 kernel. -/
-  d_down1_1_kernel :
-    Tensor α (.dim cfg.baseC (.dim inC (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
-  /-- d down 1 1 bias. -/
-  d_down1_1_bias   : Tensor α (.dim cfg.baseC .scalar)
-  /-- d down 1 2 kernel. -/
-  d_down1_2_kernel :
-    Tensor α (.dim cfg.baseC (.dim cfg.baseC (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
-  /-- d down 1 2 bias. -/
-  d_down1_2_bias   : Tensor α (.dim cfg.baseC .scalar)
-  /-- d down 2 1 kernel. -/
-  d_down2_1_kernel :
-    Tensor α (.dim (2 * cfg.baseC) (.dim cfg.baseC (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
-  /-- d down 2 1 bias. -/
-  d_down2_1_bias   : Tensor α (.dim (2 * cfg.baseC) .scalar)
-  /-- d down 2 2 kernel. -/
-  d_down2_2_kernel :
-    Tensor α (.dim (2 * cfg.baseC) (.dim (2 * cfg.baseC) (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
-  /-- d down 2 2 bias. -/
-  d_down2_2_bias   : Tensor α (.dim (2 * cfg.baseC) .scalar)
-  /-- d up T kernel. -/
-  d_upT_kernel     : Spec.ConvTransposeKernel cfg.baseC (2 * cfg.baseC) cfg.upKernel cfg.upKernel α
-  /-- d up T bias. -/
-  d_upT_bias       : Tensor α (.dim cfg.baseC .scalar)
-  /-- d up 1 1 kernel. -/
-  d_up1_1_kernel   :
-    Tensor α (.dim cfg.baseC (.dim (cfg.baseC + cfg.baseC) (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
-  /-- d up 1 1 bias. -/
-  d_up1_1_bias     : Tensor α (.dim cfg.baseC .scalar)
-  /-- d up 1 2 kernel. -/
-  d_up1_2_kernel   :
-    Tensor α (.dim cfg.baseC (.dim cfg.baseC (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
-  /-- d up 1 2 bias. -/
-  d_up1_2_bias     : Tensor α (.dim cfg.baseC .scalar)
-  /-- d out 1 x 1 kernel. -/
-  d_out1x1_kernel  :
-    Tensor α (.dim outC (.dim cfg.baseC (.dim cfg.headKernel (.dim cfg.headKernel .scalar))))
-  /-- d out 1 x 1 bias. -/
-  d_out1x1_bias    : Tensor α (.dim outC .scalar)
+structure Grads (cfg : Config) (inC outC inH inW : Nat) (α : Type) where
+  /-- Kernel gradient for `Model.down1Conv1`. -/
+  down1Conv1Kernel :
+    Tensor α (.dim cfg.baseChannels (.dim inC (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
+  /-- Bias gradient for `Model.down1Conv1`. -/
+  down1Conv1Bias : Tensor α (.dim cfg.baseChannels .scalar)
+  /-- Kernel gradient for `Model.down1Conv2`. -/
+  down1Conv2Kernel :
+    Tensor α (.dim cfg.baseChannels (.dim cfg.baseChannels (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
+  /-- Bias gradient for `Model.down1Conv2`. -/
+  down1Conv2Bias : Tensor α (.dim cfg.baseChannels .scalar)
+  /-- Kernel gradient for `Model.down2Conv1`. -/
+  down2Conv1Kernel :
+    Tensor α (.dim (2 * cfg.baseChannels) (.dim cfg.baseChannels (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
+  /-- Bias gradient for `Model.down2Conv1`. -/
+  down2Conv1Bias : Tensor α (.dim (2 * cfg.baseChannels) .scalar)
+  /-- Kernel gradient for `Model.down2Conv2`. -/
+  down2Conv2Kernel :
+    Tensor α (.dim (2 * cfg.baseChannels) (.dim (2 * cfg.baseChannels) (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
+  /-- Bias gradient for `Model.down2Conv2`. -/
+  down2Conv2Bias : Tensor α (.dim (2 * cfg.baseChannels) .scalar)
+  /-- Kernel gradient for `Model.upsample`. -/
+  upsampleKernel :
+    Spec.ConvTransposeKernel cfg.baseChannels (2 * cfg.baseChannels) cfg.upKernel cfg.upKernel α
+  /-- Bias gradient for `Model.upsample`. -/
+  upsampleBias : Tensor α (.dim cfg.baseChannels .scalar)
+  /-- Kernel gradient for `Model.up1Conv1`. -/
+  up1Conv1Kernel :
+    Tensor α (.dim cfg.baseChannels (.dim (cfg.baseChannels + cfg.baseChannels) (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
+  /-- Bias gradient for `Model.up1Conv1`. -/
+  up1Conv1Bias : Tensor α (.dim cfg.baseChannels .scalar)
+  /-- Kernel gradient for `Model.up1Conv2`. -/
+  up1Conv2Kernel :
+    Tensor α (.dim cfg.baseChannels (.dim cfg.baseChannels (.dim cfg.convKernel (.dim cfg.convKernel .scalar))))
+  /-- Bias gradient for `Model.up1Conv2`. -/
+  up1Conv2Bias : Tensor α (.dim cfg.baseChannels .scalar)
+  /-- Kernel gradient for `Model.output`. -/
+  outputKernel :
+    Tensor α (.dim outC (.dim cfg.baseChannels (.dim cfg.headKernel (.dim cfg.headKernel .scalar))))
+  /-- Bias gradient for `Model.output`. -/
+  outputBias : Tensor α (.dim outC .scalar)
 
 /--
-Forward pass for `UNet2Spec`.
+Forward pass for `Model`.
 
 Inputs and outputs are tensors of shape `(C, H, W)` with no batch axis.
 
-The many `h_*` equalities are shape-rewrite hints: layer specs compute output sizes using explicit
-arithmetic (matching PyTorch's formulas), and these equalities let callers assert "this 3×3 conv
-preserves spatial size" or "pool then upsample returns to the original size" for a particular
-choice of `inH,inW` (typically even).
+The equality arguments identify the dimensions computed by the layer formulas with the dimensions
+in the result type.
 -/
-def UNet2Spec.forward
-  {cfg : UNet2Config} {inC outC inH inW : Nat}
-  {h_inC : inC ≠ 0} {hCfg : cfg.WF}
-  (m : UNet2Spec (α := α) cfg inC outC inH inW h_inC hCfg)
+def Model.forward
+  {cfg : Config} {inC outC inH inW : Nat}
+  {hInC : inC ≠ 0} {hCfg : cfg.WF}
+  (m : Model (α := α) cfg inC outC inH inW hInC hCfg)
   (x : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
-  (h_convH :
+  (hConvHeight :
     (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) = inH)
-  (h_convW :
+  (hConvWidth :
     (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) = inW)
-  (h_convH_down :
-    (Shape.slidingWindowOutDim (UNetDownH cfg inH) cfg.convKernel cfg.convStride cfg.convPadding) = UNetDownH cfg inH)
-  (h_convW_down :
-    (Shape.slidingWindowOutDim (UNetDownW cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) = UNetDownW cfg inW)
-  (h_upH : UNetUpH cfg inH = inH)
-  (h_upW : UNetUpW cfg inW = inW)
-  (h_outH : (Shape.slidingWindowOutDim inH cfg.headKernel cfg.headStride cfg.headPadding) = inH)
-  (h_outW : (Shape.slidingWindowOutDim inW cfg.headKernel cfg.headStride cfg.headPadding) = inW) :
+  (hDownConvHeight :
+    (Shape.slidingWindowOutDim (downHeight cfg inH) cfg.convKernel cfg.convStride cfg.convPadding) = downHeight cfg inH)
+  (hDownConvWidth :
+    (Shape.slidingWindowOutDim (downWidth cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) = downWidth cfg inW)
+  (hUpsampleHeight : upHeight cfg inH = inH)
+  (hUpsampleWidth : upWidth cfg inW = inW)
+  (hOutputHeight : (Shape.slidingWindowOutDim inH cfg.headKernel cfg.headStride cfg.headPadding) = inH)
+  (hOutputWidth : (Shape.slidingWindowOutDim inW cfg.headKernel cfg.headStride cfg.headPadding) = inW) :
   Tensor α (.dim outC (.dim inH (.dim inW .scalar))) :=
 
-  -- The `h_*` equalities are there for one reason: many of the layer specs compute output shapes
-  -- with explicit arithmetic (matching PyTorch's formulas), and we sometimes want to treat a
-  -- "shape-preserving" conv as returning exactly `(C,inH,inW)`. These equalities are how we
-  -- rewrite between the computed shape and the intended shape.
-
   -- Down block 1 (spatial preserved because conv is 3x3, stride=1, padding=1).
-  let s1_raw :=
-    reluSpec (conv2dSpec (α := α) m.down1_1 x)
-  let s1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
-    Tensor.castShape s1_raw (by simp only [h_convH, h_convW])
+  let s1Raw :=
+    reluSpec (conv2dSpec (α := α) m.down1Conv1 x)
+  let s1 : Tensor α (.dim cfg.baseChannels (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape s1Raw (by simp only [hConvHeight, hConvWidth])
 
-  let skip1_raw :=
-    reluSpec (conv2dSpec (α := α) m.down1_2 s1)
-  let skip1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
-    Tensor.castShape skip1_raw (by simp only [h_convH, h_convW])
+  let skip1Raw :=
+    reluSpec (conv2dSpec (α := α) m.down1Conv2 s1)
+  let skip1 : Tensor α (.dim cfg.baseChannels (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape skip1Raw (by simp only [hConvHeight, hConvWidth])
 
   -- Downsample (PyTorch analogy: `nn.MaxPool2d(kernel_size=2, stride=2)`).
-  let pool : MaxPool2DSpec cfg.poolKernel cfg.poolKernel cfg.poolStride hCfg.poolK_ne0 hCfg.poolK_ne0
-      hCfg.poolStride_ne0 :=
+  let pool : MaxPool2dSpec cfg.poolKernel cfg.poolKernel cfg.poolStride hCfg.poolKernel_ne_zero hCfg.poolKernel_ne_zero
+      hCfg.poolStride_ne_zero :=
     {}
 
-  let downH := UNetDownH cfg inH
-  let downW := UNetDownW cfg inW
+  let downH := downHeight cfg inH
+  let downW := downWidth cfg inW
 
-  let pooled : Tensor α (.dim cfg.baseC (.dim downH (.dim downW .scalar))) :=
+  let pooled : Tensor α (.dim cfg.baseChannels (.dim downH (.dim downW .scalar))) :=
     maxPool2dMultiSpec (α := α) (layer := pool) skip1
 
   -- Down block 2
-  let b1_raw :=
-    reluSpec (conv2dSpec (α := α) m.down2_1 pooled)
-  let b1 : Tensor α (.dim (2 * cfg.baseC) (.dim downH (.dim downW .scalar))) :=
-    Tensor.castShape b1_raw (by
-      simp only [downH, downW, h_convH_down, h_convW_down])
+  let b1Raw :=
+    reluSpec (conv2dSpec (α := α) m.down2Conv1 pooled)
+  let b1 : Tensor α (.dim (2 * cfg.baseChannels) (.dim downH (.dim downW .scalar))) :=
+    Tensor.castShape b1Raw (by
+      simp only [downH, downW, hDownConvHeight, hDownConvWidth])
 
-  let bottleneck_raw :=
-    reluSpec (conv2dSpec (α := α) m.down2_2 b1)
-  let bottleneck : Tensor α (.dim (2 * cfg.baseC) (.dim downH (.dim downW .scalar))) :=
-    Tensor.castShape bottleneck_raw (by
-      simp only [downH, downW, h_convH_down, h_convW_down])
+  let bottleneckRaw :=
+    reluSpec (conv2dSpec (α := α) m.down2Conv2 b1)
+  let bottleneck : Tensor α (.dim (2 * cfg.baseChannels) (.dim downH (.dim downW .scalar))) :=
+    Tensor.castShape bottleneckRaw (by
+      simp only [downH, downW, hDownConvHeight, hDownConvWidth])
 
   -- Upsample (PyTorch analogy: `nn.ConvTranspose2d(kernel_size=2, stride=2, padding=0)`).
-  let upRaw : Tensor α (.dim cfg.baseC (.dim (UNetUpH cfg inH) (.dim (UNetUpW cfg inW) .scalar))) :=
-    convTranspose2dSpec (inC := 2 * cfg.baseC) (outC := cfg.baseC)
+  let upRaw : Tensor α (.dim cfg.baseChannels (.dim (upHeight cfg inH) (.dim (upWidth cfg inW) .scalar))) :=
+    convTranspose2dSpec (inC := 2 * cfg.baseChannels) (outC := cfg.baseChannels)
       (kH := cfg.upKernel) (kW := cfg.upKernel) (stride := cfg.upStride) (padding := cfg.upPadding)
-      (inH := downH) (inW := downW) m.upT bottleneck
+      (inH := downH) (inW := downW) m.upsample bottleneck
 
-  let up : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
-    Tensor.castShape upRaw (by simp only [h_upH, h_upW])
+  let up : Tensor α (.dim cfg.baseChannels (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape upRaw (by simp only [hUpsampleHeight, hUpsampleWidth])
 
   -- Skip connection: concatenate channels (no batch axis in this file, so channels are axis 0).
-  let merged : Tensor α (.dim (cfg.baseC + cfg.baseC) (.dim inH (.dim inW .scalar))) :=
+  let merged : Tensor α (.dim (cfg.baseChannels + cfg.baseChannels) (.dim inH (.dim inW .scalar))) :=
     concatLeadingAxisSpec (t1 := skip1) (t2 := up)
 
   -- Up block
-  let u1_raw :=
-    reluSpec (conv2dSpec (α := α) m.up1_1 merged)
-  let u1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
-    Tensor.castShape u1_raw (by simp only [h_convH, h_convW])
+  let u1Raw :=
+    reluSpec (conv2dSpec (α := α) m.up1Conv1 merged)
+  let u1 : Tensor α (.dim cfg.baseChannels (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape u1Raw (by simp only [hConvHeight, hConvWidth])
 
-  let u2_raw :=
-    reluSpec (conv2dSpec (α := α) m.up1_2 u1)
-  let u2 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
-    Tensor.castShape u2_raw (by simp only [h_convH, h_convW])
+  let u2Raw :=
+    reluSpec (conv2dSpec (α := α) m.up1Conv2 u1)
+  let u2 : Tensor α (.dim cfg.baseChannels (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape u2Raw (by simp only [hConvHeight, hConvWidth])
 
-  -- Output
-  let out_raw :=
-    conv2dSpec (α := α) m.out1x1 u2
-  Tensor.castShape out_raw (by simp only [h_outH, h_outW])
+  let outputRaw :=
+    conv2dSpec (α := α) m.output u2
+  Tensor.castShape outputRaw (by simp only [hOutputHeight, hOutputWidth])
 
 /--
-Backward pass for `UNet2Spec.forward`.
+Backward pass for `Model.forward`.
 
-Given:
-- the model parameters `m`,
-- the forward input image `x`,
-- an upstream gradient `grad_output = dL/dy`,
-returns:
-- parameter gradients (`UNet2Grads`), and
-- the gradient w.r.t. the input image (`dL/dx`).
-
-Implementation note: this is an explicit "recompute intermediates then walk backward" spec (no
-mutable tape), mirroring the math behind PyTorch autograd and standard conv/pool backward rules.
+It returns the parameter gradients and the gradient with respect to the input. Intermediates are
+recomputed from `m` and `x`; the mathematical specification does not use a mutable autograd tape.
 -/
-def UNet2Spec.backward
-  {cfg : UNet2Config} {inC outC inH inW : Nat}
-  {h_inC : inC ≠ 0} {hCfg : cfg.WF}
-  (m : UNet2Spec (α := α) cfg inC outC inH inW h_inC hCfg)
+def Model.backward
+  {cfg : Config} {inC outC inH inW : Nat}
+  {hInC : inC ≠ 0} {hCfg : cfg.WF}
+  (m : Model (α := α) cfg inC outC inH inW hInC hCfg)
   (x : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
-  (grad_output : Tensor α (.dim outC (.dim inH (.dim inW .scalar))))
-  (h_convH :
+  (gradOutput : Tensor α (.dim outC (.dim inH (.dim inW .scalar))))
+  (hConvHeight :
     (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) = inH)
-  (h_convW :
+  (hConvWidth :
     (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) = inW)
-  (h_convH_down :
-    (Shape.slidingWindowOutDim (UNetDownH cfg inH) cfg.convKernel cfg.convStride cfg.convPadding) = UNetDownH cfg inH)
-  (h_convW_down :
-    (Shape.slidingWindowOutDim (UNetDownW cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) = UNetDownW cfg inW)
-  (h_upH : UNetUpH cfg inH = inH)
-  (h_upW : UNetUpW cfg inW = inW)
-  (h_outH : (Shape.slidingWindowOutDim inH cfg.headKernel cfg.headStride cfg.headPadding) = inH)
-  (h_outW : (Shape.slidingWindowOutDim inW cfg.headKernel cfg.headStride cfg.headPadding) = inW) :
-  (UNet2Grads cfg inC outC inH inW α × Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :=
+  (hDownConvHeight :
+    (Shape.slidingWindowOutDim (downHeight cfg inH) cfg.convKernel cfg.convStride cfg.convPadding) = downHeight cfg inH)
+  (hDownConvWidth :
+    (Shape.slidingWindowOutDim (downWidth cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) = downWidth cfg inW)
+  (hUpsampleHeight : upHeight cfg inH = inH)
+  (hUpsampleWidth : upWidth cfg inW = inW)
+  (hOutputHeight : (Shape.slidingWindowOutDim inH cfg.headKernel cfg.headStride cfg.headPadding) = inH)
+  (hOutputWidth : (Shape.slidingWindowOutDim inW cfg.headKernel cfg.headStride cfg.headPadding) = inW) :
+  (Grads cfg inC outC inH inW α × Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :=
 
-  -- Forward reconstruction (mirrors `UNet2Spec.forward`).
+  -- Forward reconstruction (mirrors `Model.forward`).
   -- We reconstruct intermediates because the backward rules (pooling / ReLU / conv) need the
   -- forward inputs (and in the case of max-pool, the values to determine which entries "won").
-  let conv_down1_1 := conv2dSpec (α := α) m.down1_1 x
-  let s1_raw := reluSpec conv_down1_1
-  let s1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
-    Tensor.castShape s1_raw (by simp only [h_convH, h_convW])
+  let down1Conv1Output := conv2dSpec (α := α) m.down1Conv1 x
+  let s1Raw := reluSpec down1Conv1Output
+  let s1 : Tensor α (.dim cfg.baseChannels (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape s1Raw (by simp only [hConvHeight, hConvWidth])
 
-  let conv_down1_2 := conv2dSpec (α := α) m.down1_2 s1
-  let skip1_raw := reluSpec conv_down1_2
-  let skip1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
-    Tensor.castShape skip1_raw (by simp only [h_convH, h_convW])
+  let down1Conv2Output := conv2dSpec (α := α) m.down1Conv2 s1
+  let skip1Raw := reluSpec down1Conv2Output
+  let skip1 : Tensor α (.dim cfg.baseChannels (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape skip1Raw (by simp only [hConvHeight, hConvWidth])
 
-  let pool : MaxPool2DSpec cfg.poolKernel cfg.poolKernel cfg.poolStride hCfg.poolK_ne0 hCfg.poolK_ne0
-      hCfg.poolStride_ne0 :=
+  let pool : MaxPool2dSpec cfg.poolKernel cfg.poolKernel cfg.poolStride hCfg.poolKernel_ne_zero hCfg.poolKernel_ne_zero
+      hCfg.poolStride_ne_zero :=
     {}
 
-  let downH := UNetDownH cfg inH
-  let downW := UNetDownW cfg inW
+  let downH := downHeight cfg inH
+  let downW := downWidth cfg inW
 
-  let pooled : Tensor α (.dim cfg.baseC (.dim downH (.dim downW .scalar))) :=
+  let pooled : Tensor α (.dim cfg.baseChannels (.dim downH (.dim downW .scalar))) :=
     maxPool2dMultiSpec (α := α) (layer := pool) skip1
 
-  let conv_down2_1 := conv2dSpec (α := α) m.down2_1 pooled
-  let b1_raw := reluSpec conv_down2_1
-  let b1 : Tensor α (.dim (2 * cfg.baseC) (.dim downH (.dim downW .scalar))) :=
-    Tensor.castShape b1_raw (by
-      simp only [downH, downW, h_convH_down, h_convW_down])
+  let down2Conv1Output := conv2dSpec (α := α) m.down2Conv1 pooled
+  let b1Raw := reluSpec down2Conv1Output
+  let b1 : Tensor α (.dim (2 * cfg.baseChannels) (.dim downH (.dim downW .scalar))) :=
+    Tensor.castShape b1Raw (by
+      simp only [downH, downW, hDownConvHeight, hDownConvWidth])
 
-  let conv_down2_2 := conv2dSpec (α := α) m.down2_2 b1
-  let bottleneck_raw := reluSpec conv_down2_2
-  let bottleneck : Tensor α (.dim (2 * cfg.baseC) (.dim downH (.dim downW .scalar))) :=
-    Tensor.castShape bottleneck_raw (by
-      simp only [downH, downW, h_convH_down, h_convW_down])
+  let down2Conv2Output := conv2dSpec (α := α) m.down2Conv2 b1
+  let bottleneckRaw := reluSpec down2Conv2Output
+  let bottleneck : Tensor α (.dim (2 * cfg.baseChannels) (.dim downH (.dim downW .scalar))) :=
+    Tensor.castShape bottleneckRaw (by
+      simp only [downH, downW, hDownConvHeight, hDownConvWidth])
 
-  let upRaw : Tensor α (.dim cfg.baseC (.dim (UNetUpH cfg inH) (.dim (UNetUpW cfg inW) .scalar))) :=
-    convTranspose2dSpec (inC := 2 * cfg.baseC) (outC := cfg.baseC)
+  let upRaw : Tensor α (.dim cfg.baseChannels (.dim (upHeight cfg inH) (.dim (upWidth cfg inW) .scalar))) :=
+    convTranspose2dSpec (inC := 2 * cfg.baseChannels) (outC := cfg.baseChannels)
       (kH := cfg.upKernel) (kW := cfg.upKernel) (stride := cfg.upStride) (padding := cfg.upPadding)
-      (inH := downH) (inW := downW) m.upT bottleneck
+      (inH := downH) (inW := downW) m.upsample bottleneck
 
-  let up : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
-    Tensor.castShape upRaw (by simp only [h_upH, h_upW])
+  let up : Tensor α (.dim cfg.baseChannels (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape upRaw (by simp only [hUpsampleHeight, hUpsampleWidth])
 
-  let merged : Tensor α (.dim (cfg.baseC + cfg.baseC) (.dim inH (.dim inW .scalar))) :=
+  let merged : Tensor α (.dim (cfg.baseChannels + cfg.baseChannels) (.dim inH (.dim inW .scalar))) :=
     concatLeadingAxisSpec (t1 := skip1) (t2 := up)
 
-  let conv_up1_1 := conv2dSpec (α := α) m.up1_1 merged
-  let u1_raw := reluSpec conv_up1_1
-  let u1 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
-    Tensor.castShape u1_raw (by simp only [h_convH, h_convW])
+  let up1Conv1Output := conv2dSpec (α := α) m.up1Conv1 merged
+  let u1Raw := reluSpec up1Conv1Output
+  let u1 : Tensor α (.dim cfg.baseChannels (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape u1Raw (by simp only [hConvHeight, hConvWidth])
 
-  let conv_up1_2 := conv2dSpec (α := α) m.up1_2 u1
-  let u2_raw := reluSpec conv_up1_2
-  let u2 : Tensor α (.dim cfg.baseC (.dim inH (.dim inW .scalar))) :=
-    Tensor.castShape u2_raw (by simp only [h_convH, h_convW])
-
-  let out_raw := conv2dSpec (α := α) m.out1x1 u2
+  let up1Conv2Output := conv2dSpec (α := α) m.up1Conv2 u1
+  let u2Raw := reluSpec up1Conv2Output
+  let u2 : Tensor α (.dim cfg.baseChannels (.dim inH (.dim inW .scalar))) :=
+    Tensor.castShape u2Raw (by simp only [hConvHeight, hConvWidth])
 
   -- Backward starts here.
   -- For each ReLU, we backprop through it using the standard gate:
   -- `dZ = dY ⊙ ReLU'(Z)` where `Z` is the pre-activation tensor.
-  let grad_out_raw :
+  let outputRawGrad :
       Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH cfg.headKernel cfg.headStride cfg.headPadding) (.dim (Shape.slidingWindowOutDim inW cfg.headKernel cfg.headStride cfg.headPadding) .scalar))) :=
-    Tensor.castShape grad_output (by simp only [h_outH, h_outW])
+    Tensor.castShape gradOutput (by simp only [hOutputHeight, hOutputWidth])
 
-  let (d_out1x1_kernel, d_out1x1_bias, d_u2) :=
+  let (outputKernel, outputBias, u2Grad) :=
     conv2dBackwardSpec (α := α)
-      (inC := cfg.baseC) (outC := outC) (kH := cfg.headKernel) (kW := cfg.headKernel)
+      (inC := cfg.baseChannels) (outC := outC) (kH := cfg.headKernel) (kW := cfg.headKernel)
       (stride := cfg.headStride) (padding := cfg.headPadding)
       (inH := inH) (inW := inW)
-      (h1 := Nat.ne_of_gt hCfg.baseC_pos) (h2 := hCfg.headK_ne0) (h3 := hCfg.headK_ne0)
-      m.out1x1 u2 grad_out_raw
+      (h1 := Nat.ne_of_gt hCfg.baseChannels_pos) (h2 := hCfg.headKernel_ne_zero) (h3 := hCfg.headKernel_ne_zero)
+      m.output u2 outputRawGrad
 
-  let d_u2_raw :
-      Tensor α (.dim cfg.baseC (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
-    Tensor.castShape d_u2 (by simp only [h_convH, h_convW])
+  let u2RawGrad :
+      Tensor α (.dim cfg.baseChannels (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape u2Grad (by simp only [hConvHeight, hConvWidth])
 
-  let d_conv_up1_2 := mulSpec d_u2_raw (reluDerivSpec conv_up1_2)
+  let up1Conv2Grad := mulSpec u2RawGrad (reluDerivSpec up1Conv2Output)
 
-  let (d_up1_2_kernel, d_up1_2_bias, d_u1) :=
+  let (up1Conv2Kernel, up1Conv2Bias, u1Grad) :=
     conv2dBackwardSpec (α := α)
-      (inC := cfg.baseC) (outC := cfg.baseC) (kH := cfg.convKernel) (kW := cfg.convKernel)
+      (inC := cfg.baseChannels) (outC := cfg.baseChannels) (kH := cfg.convKernel) (kW := cfg.convKernel)
       (stride := cfg.convStride) (padding := cfg.convPadding)
       (inH := inH) (inW := inW)
-      (h1 := Nat.ne_of_gt hCfg.baseC_pos) (h2 := hCfg.convK_ne0) (h3 := hCfg.convK_ne0)
-      m.up1_2 u1 d_conv_up1_2
+      (h1 := Nat.ne_of_gt hCfg.baseChannels_pos) (h2 := hCfg.convKernel_ne_zero) (h3 := hCfg.convKernel_ne_zero)
+      m.up1Conv2 u1 up1Conv2Grad
 
-  let d_u1_raw :
-      Tensor α (.dim cfg.baseC (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
-    Tensor.castShape d_u1 (by simp only [h_convH, h_convW])
+  let u1RawGrad :
+      Tensor α (.dim cfg.baseChannels (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape u1Grad (by simp only [hConvHeight, hConvWidth])
 
-  let d_conv_up1_1 := mulSpec d_u1_raw (reluDerivSpec conv_up1_1)
+  let up1Conv1Grad := mulSpec u1RawGrad (reluDerivSpec up1Conv1Output)
 
-  let (d_up1_1_kernel, d_up1_1_bias, d_merged) :=
+  let (up1Conv1Kernel, up1Conv1Bias, mergedGrad) :=
     conv2dBackwardSpec (α := α)
-      (inC := cfg.baseC + cfg.baseC) (outC := cfg.baseC) (kH := cfg.convKernel) (kW := cfg.convKernel)
+      (inC := cfg.baseChannels + cfg.baseChannels) (outC := cfg.baseChannels) (kH := cfg.convKernel) (kW := cfg.convKernel)
       (stride := cfg.convStride) (padding := cfg.convPadding)
       (inH := inH) (inW := inW)
       (h1 := by
-        have : 0 < cfg.baseC + cfg.baseC :=
-          Nat.lt_of_lt_of_le hCfg.baseC_pos (Nat.le_add_right cfg.baseC cfg.baseC)
+        have : 0 < cfg.baseChannels + cfg.baseChannels :=
+          Nat.lt_of_lt_of_le hCfg.baseChannels_pos (Nat.le_add_right cfg.baseChannels cfg.baseChannels)
         exact Nat.ne_of_gt this)
-      (h2 := hCfg.convK_ne0) (h3 := hCfg.convK_ne0)
-      m.up1_1 merged d_conv_up1_1
+      (h2 := hCfg.convKernel_ne_zero) (h3 := hCfg.convKernel_ne_zero)
+      m.up1Conv1 merged up1Conv1Grad
 
   -- Split concat backward: merged = concat(skip1, up).
   -- Channel-concat is linear, so its backward just splits the incoming gradient into the two
   -- channel ranges.
-  let (d_skip1_from_merge, d_up) :=
-    concatLeadingAxisBackwardSpec (α := α) (n := cfg.baseC) (m := cfg.baseC)
+  let (skip1MergeGrad, upGrad) :=
+    concatLeadingAxisBackwardSpec (α := α) (n := cfg.baseChannels) (m := cfg.baseChannels)
       (s := .dim inH (.dim inW .scalar))
-      d_merged
+      mergedGrad
 
-  let d_upRaw : Tensor α (.dim cfg.baseC (.dim (UNetUpH cfg inH) (.dim (UNetUpW cfg inW) .scalar))) :=
-    Tensor.castShape d_up (by simp only [h_upH, h_upW])
+  let upRawGrad : Tensor α (.dim cfg.baseChannels (.dim (upHeight cfg inH) (.dim (upWidth cfg inW) .scalar))) :=
+    Tensor.castShape upGrad (by simp only [hUpsampleHeight, hUpsampleWidth])
 
-  let (d_upT_kernel, d_upT_bias, d_bottleneck) :=
+  let (upsampleKernel, upsampleBias, bottleneckGrad) :=
     convTranspose2dBackwardSpec
-      (inC := 2 * cfg.baseC) (outC := cfg.baseC) (kH := cfg.upKernel) (kW := cfg.upKernel)
+      (inC := 2 * cfg.baseChannels) (outC := cfg.baseChannels) (kH := cfg.upKernel) (kW := cfg.upKernel)
       (stride := cfg.upStride) (padding := cfg.upPadding)
       (inH := downH) (inW := downW)
-      (h1 := Nat.mul_pos (by decide : 0 < 2) hCfg.baseC_pos) (h2 := hCfg.upK_ne0) (h3 := hCfg.upK_ne0)
-      m.upT bottleneck d_upRaw
+      (h1 := Nat.mul_pos (by decide : 0 < 2) hCfg.baseChannels_pos) (h2 := hCfg.upKernel_ne_zero) (h3 := hCfg.upKernel_ne_zero)
+      m.upsample bottleneck upRawGrad
 
-  let d_bottleneck_raw : Tensor α (.dim (2 * cfg.baseC) (.dim (Shape.slidingWindowOutDim (UNetDownH cfg inH) cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim (UNetDownW cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
-    Tensor.castShape d_bottleneck (by
-      simp only [downH, downW, h_convH_down, h_convW_down])
+  let bottleneckRawGrad : Tensor α (.dim (2 * cfg.baseChannels) (.dim (Shape.slidingWindowOutDim (downHeight cfg inH) cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim (downWidth cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape bottleneckGrad (by
+      simp only [downH, downW, hDownConvHeight, hDownConvWidth])
 
-  let d_conv_down2_2 := mulSpec d_bottleneck_raw (reluDerivSpec conv_down2_2)
+  let down2Conv2Grad := mulSpec bottleneckRawGrad (reluDerivSpec down2Conv2Output)
 
-  let (d_down2_2_kernel, d_down2_2_bias, d_b1) :=
+  let (down2Conv2Kernel, down2Conv2Bias, b1Grad) :=
     conv2dBackwardSpec (α := α)
-      (inC := 2 * cfg.baseC) (outC := 2 * cfg.baseC) (kH := cfg.convKernel) (kW := cfg.convKernel)
+      (inC := 2 * cfg.baseChannels) (outC := 2 * cfg.baseChannels) (kH := cfg.convKernel) (kW := cfg.convKernel)
       (stride := cfg.convStride) (padding := cfg.convPadding)
       (inH := downH) (inW := downW)
-      (h1 := Nat.ne_of_gt (Nat.mul_pos (by decide : 0 < 2) hCfg.baseC_pos)) (h2 := hCfg.convK_ne0)
-      (h3 := hCfg.convK_ne0)
-      m.down2_2 b1 d_conv_down2_2
+      (h1 := Nat.ne_of_gt (Nat.mul_pos (by decide : 0 < 2) hCfg.baseChannels_pos)) (h2 := hCfg.convKernel_ne_zero)
+      (h3 := hCfg.convKernel_ne_zero)
+      m.down2Conv2 b1 down2Conv2Grad
 
-  let d_b1_raw : Tensor α (.dim (2 * cfg.baseC) (.dim (Shape.slidingWindowOutDim (UNetDownH cfg inH) cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim (UNetDownW cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
-    Tensor.castShape d_b1 (by
-      simp only [downH, downW, h_convH_down, h_convW_down])
+  let b1RawGrad : Tensor α (.dim (2 * cfg.baseChannels) (.dim (Shape.slidingWindowOutDim (downHeight cfg inH) cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim (downWidth cfg inW) cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape b1Grad (by
+      simp only [downH, downW, hDownConvHeight, hDownConvWidth])
 
-  let d_conv_down2_1 := mulSpec d_b1_raw (reluDerivSpec conv_down2_1)
+  let down2Conv1Grad := mulSpec b1RawGrad (reluDerivSpec down2Conv1Output)
 
-  let (d_down2_1_kernel, d_down2_1_bias, d_pooled) :=
+  let (down2Conv1Kernel, down2Conv1Bias, pooledGrad) :=
     conv2dBackwardSpec (α := α)
-      (inC := cfg.baseC) (outC := 2 * cfg.baseC) (kH := cfg.convKernel) (kW := cfg.convKernel)
+      (inC := cfg.baseChannels) (outC := 2 * cfg.baseChannels) (kH := cfg.convKernel) (kW := cfg.convKernel)
       (stride := cfg.convStride) (padding := cfg.convPadding)
       (inH := downH) (inW := downW)
-      (h1 := Nat.ne_of_gt hCfg.baseC_pos) (h2 := hCfg.convK_ne0) (h3 := hCfg.convK_ne0)
-      m.down2_1 pooled d_conv_down2_1
+      (h1 := Nat.ne_of_gt hCfg.baseChannels_pos) (h2 := hCfg.convKernel_ne_zero) (h3 := hCfg.convKernel_ne_zero)
+      m.down2Conv1 pooled down2Conv1Grad
 
   -- Pool backward.
   -- MaxPool backward routes gradient back to the (per-window) argmax location.
-  let d_skip1_from_pool :=
+  let skip1PoolGrad :=
     maxPool2dMultiBackwardSpec (α := α) (layer := pool) (input := skip1) (grad_output :=
-      d_pooled)
+      pooledGrad)
 
-  let d_skip1_total := addSpec d_skip1_from_pool d_skip1_from_merge
-  let d_skip1_raw : Tensor α (.dim cfg.baseC (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
-    Tensor.castShape d_skip1_total (by simp only [h_convH, h_convW])
+  let skip1Grad := addSpec skip1PoolGrad skip1MergeGrad
+  let skip1RawGrad : Tensor α (.dim cfg.baseChannels (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape skip1Grad (by simp only [hConvHeight, hConvWidth])
 
-  let d_conv_down1_2 := mulSpec d_skip1_raw (reluDerivSpec conv_down1_2)
+  let down1Conv2Grad := mulSpec skip1RawGrad (reluDerivSpec down1Conv2Output)
 
-  let (d_down1_2_kernel, d_down1_2_bias, d_s1) :=
+  let (down1Conv2Kernel, down1Conv2Bias, s1Grad) :=
     conv2dBackwardSpec (α := α)
-      (inC := cfg.baseC) (outC := cfg.baseC) (kH := cfg.convKernel) (kW := cfg.convKernel)
+      (inC := cfg.baseChannels) (outC := cfg.baseChannels) (kH := cfg.convKernel) (kW := cfg.convKernel)
       (stride := cfg.convStride) (padding := cfg.convPadding)
       (inH := inH) (inW := inW)
-      (h1 := Nat.ne_of_gt hCfg.baseC_pos) (h2 := hCfg.convK_ne0) (h3 := hCfg.convK_ne0)
-      m.down1_2 s1 d_conv_down1_2
+      (h1 := Nat.ne_of_gt hCfg.baseChannels_pos) (h2 := hCfg.convKernel_ne_zero) (h3 := hCfg.convKernel_ne_zero)
+      m.down1Conv2 s1 down1Conv2Grad
 
-  let d_s1_raw : Tensor α (.dim cfg.baseC (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
-    Tensor.castShape d_s1 (by simp only [h_convH, h_convW])
+  let s1RawGrad : Tensor α (.dim cfg.baseChannels (.dim (Shape.slidingWindowOutDim inH cfg.convKernel cfg.convStride cfg.convPadding) (.dim (Shape.slidingWindowOutDim inW cfg.convKernel cfg.convStride cfg.convPadding) .scalar))) :=
+    Tensor.castShape s1Grad (by simp only [hConvHeight, hConvWidth])
 
-  let d_conv_down1_1 := mulSpec d_s1_raw (reluDerivSpec conv_down1_1)
+  let down1Conv1Grad := mulSpec s1RawGrad (reluDerivSpec down1Conv1Output)
 
-  let (d_down1_1_kernel, d_down1_1_bias, d_x) :=
+  let (down1Conv1Kernel, down1Conv1Bias, inputGrad) :=
     conv2dBackwardSpec (α := α)
-      (inC := inC) (outC := cfg.baseC) (kH := cfg.convKernel) (kW := cfg.convKernel)
+      (inC := inC) (outC := cfg.baseChannels) (kH := cfg.convKernel) (kW := cfg.convKernel)
       (stride := cfg.convStride) (padding := cfg.convPadding)
       (inH := inH) (inW := inW)
-      (h1 := h_inC) (h2 := hCfg.convK_ne0) (h3 := hCfg.convK_ne0)
-      m.down1_1 x d_conv_down1_1
+      (h1 := hInC) (h2 := hCfg.convKernel_ne_zero) (h3 := hCfg.convKernel_ne_zero)
+      m.down1Conv1 x down1Conv1Grad
 
-  let grads : UNet2Grads cfg inC outC inH inW α :=
-    { d_down1_1_kernel := d_down1_1_kernel
-      d_down1_1_bias := d_down1_1_bias
-      d_down1_2_kernel := d_down1_2_kernel
-      d_down1_2_bias := d_down1_2_bias
-      d_down2_1_kernel := d_down2_1_kernel
-      d_down2_1_bias := d_down2_1_bias
-      d_down2_2_kernel := d_down2_2_kernel
-      d_down2_2_bias := d_down2_2_bias
-      d_upT_kernel := d_upT_kernel
-      d_upT_bias := d_upT_bias
-      d_up1_1_kernel := d_up1_1_kernel
-      d_up1_1_bias := d_up1_1_bias
-      d_up1_2_kernel := d_up1_2_kernel
-      d_up1_2_bias := d_up1_2_bias
-      d_out1x1_kernel := d_out1x1_kernel
-      d_out1x1_bias := d_out1x1_bias }
+  let grads : Grads cfg inC outC inH inW α :=
+    { down1Conv1Kernel := down1Conv1Kernel
+      down1Conv1Bias := down1Conv1Bias
+      down1Conv2Kernel := down1Conv2Kernel
+      down1Conv2Bias := down1Conv2Bias
+      down2Conv1Kernel := down2Conv1Kernel
+      down2Conv1Bias := down2Conv1Bias
+      down2Conv2Kernel := down2Conv2Kernel
+      down2Conv2Bias := down2Conv2Bias
+      upsampleKernel := upsampleKernel
+      upsampleBias := upsampleBias
+      up1Conv1Kernel := up1Conv1Kernel
+      up1Conv1Bias := up1Conv1Bias
+      up1Conv2Kernel := up1Conv2Kernel
+      up1Conv2Bias := up1Conv2Bias
+      outputKernel := outputKernel
+      outputBias := outputBias }
 
-  (grads, d_x)
+  (grads, inputGrad)
+
+end TwoLevelUnet
 
 end Models

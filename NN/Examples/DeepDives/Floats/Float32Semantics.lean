@@ -98,7 +98,7 @@ def model : nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar) :=
   --
   -- Note: this tutorial supplies *explicit* parameter tensors below, so the init seeds are irrelevant
   -- here.
-  nn.blocks.mlp 2 1 { hidden := [3], activation := .relu }
+  nn.build 0 <| nn.blocks.mlp 2 1 { hidden := [3], activation := .relu }
 
 -- This tutorial returns a single typed bundle so we can:
 -- - print everything in one place, and
@@ -132,7 +132,7 @@ def runOnce {α : Type}
   by the model, so the parameter order cannot be silently permuted.
   -/
   let params : autograd.model.State model α :=
-    tensorpack!
+    TensorPack!
       (NN.Tensor.ofListOfLength (α := α) [3, 2]
         [cast 0.1, cast 0.2, cast 0.3, cast 0.4, cast 0.5, cast 0.6]
         (by rfl)),
@@ -184,14 +184,9 @@ def runOnce {α : Type}
   -- Gradients w.r.t. *inputs* (here: just the input vector `inputGrad`, no tensor-pack noise).
   let inputGrad ← autograd.model.vjpInput (α := α) model params x seedOut
 
-  /-
-  ### 4. Unpack the typed gradient pack
-
-  TorchLean keeps parameter-gradient shapes in a typed tensor pack. The helper
-  `tensorpack.unpackQuad` is just less noisy than pattern matching on the pack directly.
-  -/
-  let (hiddenWeightGrad, hiddenBiasGrad, outputWeightGrad, outputBiasGrad) :=
-    tensorpack.unpackQuad dState
+  /- TorchLean keeps each parameter-gradient shape in the type of the gradient pack. -/
+  let .cons hiddenWeightGrad
+      (.cons hiddenBiasGrad (.cons outputWeightGrad (.cons outputBiasGrad .nil))) := dState
 
   IO.println s!"== {tag} =="
   IO.println s!"y   = {Spec.pretty y}"
@@ -201,7 +196,7 @@ def runOnce {α : Type}
   IO.println s!"outputBiasGrad = {Spec.pretty outputBiasGrad}"
   IO.println s!"inputGrad  = {Spec.pretty inputGrad}"
 
-  pure (tensorpack! y, hiddenWeightGrad, hiddenBiasGrad, outputWeightGrad, outputBiasGrad, inputGrad)
+  pure (TensorPack! y, hiddenWeightGrad, hiddenBiasGrad, outputWeightGrad, outputBiasGrad, inputGrad)
 
 def maxAbsDiffTensor {s : Spec.Shape} (a b : Spec.Tensor Float s) : Float :=
   let diffs :=
@@ -260,11 +255,11 @@ def main (args : List String) : IO Unit := do
   let r32 ← runOnce (α := TorchLean.Floats.IEEE32Exec) "IEEE32Exec"
 
   let rNativeF : OutPack Float :=
-    tensorpack.map (α := Float32) (β := Float)
+    TensorPack.map (α := Float32) (β := Float)
       (fun {_s} t => Spec.mapTensor Float32.toFloat t)
       rNative
   let r32F : OutPack Float :=
-    tensorpack.map (α := TorchLean.Floats.IEEE32Exec) (β := Float)
+    TensorPack.map (α := TorchLean.Floats.IEEE32Exec) (β := Float)
       (fun {_s} t => Spec.mapTensor TorchLean.Floats.IEEE754.IEEE32Exec.toFloat t)
       r32
 

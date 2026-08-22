@@ -53,7 +53,7 @@ is naturally written by choosing the output shape and requiring each input to br
 The typeclass wrapper `BroadcastTo` keeps higher-level specs readable: in many cases Lean can infer
 the broadcast evidence automatically, so call sites don’t have to manually thread proofs around.
 
-It also defines axis-validity helpers (`valid_axis`) and a `well_formed` predicate for “all
+It also defines axis-validity helpers (`NonemptyAxis`) and a `well_formed` predicate for “all
 dimensions are positive”, which is useful when you want to rule out degenerate cases in proofs.
 -/
 
@@ -129,21 +129,82 @@ theorem swapAdjacentAtDepth_involutive (s : Shape) (depth : Nat) :
   | succ d ih =>
       cases s <;> simp [swapAdjacentAtDepth, ih]
 
+/-- Shape obtained by applying adjacent-axis swaps from left to right. -/
+def applyAdjacentSwaps : Shape → List Nat → Shape
+  | s, [] => s
+  | s, depth :: depths => applyAdjacentSwaps (s.swapAdjacentAtDepth depth) depths
+
+/-- Adjacent swaps that move `axis` to the innermost position of a rank-`rank` shape. -/
+def moveAxisToLastSwaps (rank axis : Nat) : List Nat :=
+  (List.range (rank - (axis + 1))).map (axis + ·)
+
+@[simp]
+theorem applyAdjacentSwaps_append (s : Shape) (xs ys : List Nat) :
+    applyAdjacentSwaps s (xs ++ ys) = applyAdjacentSwaps (applyAdjacentSwaps s xs) ys := by
+  induction xs generalizing s with
+  | nil => rfl
+  | cons depth depths ih =>
+      simp only [List.cons_append, applyAdjacentSwaps]
+      exact ih (s.swapAdjacentAtDepth depth)
+
+/-- Replaying adjacent-axis swaps in reverse order restores the original shape. -/
+@[simp]
+theorem applyAdjacentSwaps_reverse (s : Shape) (depths : List Nat) :
+    applyAdjacentSwaps (applyAdjacentSwaps s depths) depths.reverse = s := by
+  induction depths generalizing s with
+  | nil => rfl
+  | cons depth depths ih =>
+      simp only [applyAdjacentSwaps, List.reverse_cons, applyAdjacentSwaps_append]
+      rw [ih]
+      exact swapAdjacentAtDepth_involutive s depth
+
 /-- Append a new innermost dimension. -/
+@[reducible]
 def appendDim (s : Shape) (n : Nat) : Shape :=
   match s with
   | .scalar => .dim n .scalar
   | .dim m rest => .dim m (appendDim rest n)
 
 /-- Concatenate two shapes, preserving the dimensions of the first shape as leading axes. -/
+@[reducible]
 def concat : Shape → Shape → Shape
   | .scalar, suffix => suffix
   | .dim n rest, suffix => .dim n (concat rest suffix)
+
+/-- Appending one dimension is concatenation with a one-axis suffix. -/
+theorem appendDim_eq_concat (s : Shape) (n : Nat) :
+    s.appendDim n = s.concat (.dim n .scalar) := by
+  induction s with
+  | scalar => rfl
+  | dim m rest ih => simp only [appendDim, concat, ih]
+
+/-- Appending two dimensions is concatenation with a two-axis suffix. -/
+theorem appendDim_appendDim_eq_concat (s : Shape) (m n : Nat) :
+    (s.appendDim m).appendDim n = s.concat (.dim m (.dim n .scalar)) := by
+  induction s with
+  | scalar => rfl
+  | dim k rest ih => simp only [appendDim, concat, ih]
+
+/-- Appending a final dimension commutes with adding a fixed leading shape. -/
+@[simp]
+theorem concat_appendDim (leading suffix : Shape) (n : Nat) :
+    (leading.concat suffix).appendDim n = leading.concat (suffix.appendDim n) := by
+  induction leading with
+  | scalar => rfl
+  | dim m rest ih =>
+      simp only [concat, appendDim, ih]
 
 /-- Total number of scalar elements (a.k.a. “numel”). -/
 def size : Shape → Nat
   | .scalar => 1
   | .dim n rest => n * size rest
+
+/-- The number of entries in a list-shaped tensor is the product of its dimensions. -/
+@[simp] theorem size_ofList (dims : List Nat) :
+    size (ofList dims) = dims.prod := by
+  induction dims with
+  | nil => rfl
+  | cons dim dims ih => simp [ofList, size, ih]
 
 /-- A shape consisting only of singleton axes contains one scalar. -/
 @[simp] theorem size_ofList_replicate_one (n : Nat) :
@@ -169,17 +230,17 @@ This lemma is the standard justification for reshape tricks where we:
 theorem size_appendDim (s : Shape) (n : Nat) : size (appendDim s n) = size s * n := by
   induction s with
   | scalar =>
-      simp [appendDim, size]
+      simp [size]
   | dim m rest ih =>
       -- `appendDim` recurses to the innermost dimension; `size` is multiplicative.
-      simp [appendDim, size, ih, Nat.mul_assoc]
+      simp [size, ih, Nat.mul_assoc]
 
 /-- The number of elements in a concatenated shape is the product of the two shape sizes. -/
 theorem size_concat (leading suffix : Shape) :
     size (concat leading suffix) = size leading * size suffix := by
   induction leading with
-  | scalar => simp [concat, size]
-  | dim n rest ih => simp [concat, size, ih, Nat.mul_assoc]
+  | scalar => simp [size]
+  | dim n rest ih => simp [size, ih, Nat.mul_assoc]
 
 /--
 Shape-size identity used in Transformer attention reshapes.
@@ -198,16 +259,6 @@ theorem size_eq_of_dModel_eq_numHeads_mul_headDim
   -- `Nat.mul_left_comm` proves `a * b * c = b * a * c`; we just reassociate to match our goal.
   simpa [Nat.mul_assoc] using Nat.mul_left_comm seqLen numHeads headDim
 
-
-/-- Size of the outermost dimension (or 1 for scalar). -/
-def dimSize : Shape → Nat
-  | .scalar => 1
-  | .dim n _ => n
-
-/-- Size of the innermost dimension (or 1 for scalar). -/
-def innerDimSize : Shape → Nat
-  | .scalar => 1
-  | .dim _ inner => innerDimSize inner
 
 /-- Convert to a list of dimensions (outermost first). -/
 def toList : Shape → List Nat
@@ -229,7 +280,7 @@ def toList : Shape → List Nat
     simp [ofList, toList, ih]
 
 -- Tell `grind` about the standard shape normalization lemmas.
-attribute [grind =] size_appendDim ofList_toList toList_ofList
+attribute [grind =] size_appendDim size_ofList ofList_toList toList_ofList
 
 /-- Convert to an array of dimensions (outermost first). -/
 def toArray (s : Shape) : Array Nat :=
@@ -249,16 +300,6 @@ instance : BEq Shape where
 /-- Default inhabitant for `Shape`, used only when Lean needs a canonical fallback value. -/
 instance : Inhabited Shape where
   default := .scalar
-
-/-- Check if shape is a matrix (m × n). -/
-def isMatrix : Shape → Option (Nat × Nat)
-  | .dim m (.dim n .scalar) => some (m, n)
-  | _ => none
-
-/-- Check if shape is a vector (n). -/
-def isVector : Shape → Option Nat
-  | .dim n .scalar => some n
-  | _ => none
 
 /-- Return whether the shape has no tensor dimensions. -/
 def isScalar : Shape → Bool
@@ -290,37 +331,105 @@ PyTorch analogy:
 - `dim_1_to_n` corresponds to PyTorch's "dimension 1 can expand to n" rule.
 -/
 
-/-- Evidence that shape `s₁` can be broadcast to shape `s₂` (PyTorch-style broadcasting). -/
+/-- Rank = number of dimensions (scalar has rank 0). -/
+def rank : Shape → Nat
+  | Shape.scalar => 0
+  | Shape.dim _ rest => 1 + rank rest
+
+/-- Swap the first two axes after an arbitrary fixed leading shape. -/
+@[simp]
+theorem swapAdjacentAtDepth_concat_rank (leading suffix : Shape) (m n : Nat) :
+    swapAdjacentAtDepth (leading.concat (.dim m (.dim n suffix))) leading.rank =
+      leading.concat (.dim n (.dim m suffix)) := by
+  induction leading with
+  | scalar => rfl
+  | dim _ tail ih =>
+      simp only [concat, rank, Nat.one_add, swapAdjacentAtDepth, ih]
+
+/-- Replace every dimension by one while preserving the rank of a shape. -/
+def singletonAxes : Shape → Shape
+  | .scalar => .scalar
+  | .dim _ rest => .dim 1 (singletonAxes rest)
+
+@[simp] theorem rank_singletonAxes (s : Shape) : rank (singletonAxes s) = rank s := by
+  induction s <;> simp [singletonAxes, rank, *]
+
+@[simp] theorem size_singletonAxes (s : Shape) : size (singletonAxes s) = 1 := by
+  induction s <;> simp [singletonAxes, size, *]
+
+/-- Proposition used by broadcast constructors that align two existing dimensions. -/
+class SameRank (s₁ s₂ : Shape) : Prop where
+  /-- The two shapes have the same number of dimensions. -/
+  rank_eq : rank s₁ = rank s₂
+
+instance : SameRank .scalar .scalar := ⟨rfl⟩
+
+instance sameRankRefl (s : Shape) : SameRank s s := ⟨rfl⟩
+
+instance {s₁ s₂ : Shape} {n₁ n₂ : Nat} [tail : SameRank s₁ s₂] :
+    SameRank (.dim n₁ s₁) (.dim n₂ s₂) :=
+  ⟨by simpa [rank] using congrArg Nat.succ tail.rank_eq⟩
+
+/-- Evidence that shape `s₁` can be broadcast to shape `s₂` using right-aligned dimensions.
+
+The equal-dimension constructors require equal-rank tails. Consequently, every rank difference is
+resolved by `expand_dims` before dimensions are compared, matching NumPy and PyTorch rather than
+allowing a proof term to choose between left- and right-aligned interpretations. -/
 inductive CanBroadcastTo : Shape → Shape → Type where
-  /-- A scalar can be broadcast to any target shape. -/
-  | scalar_to_any  (s : Shape) : CanBroadcastTo .scalar s
+  /-- Scalar shapes agree. Higher-rank scalar broadcasts are built with `expand_dims`. -/
+  | scalar : CanBroadcastTo .scalar .scalar
   /-- Matching outer dimensions preserve broadcasting of their tails. -/
-  | dim_eq {n : Nat} {s₁ s₂ : Shape} (tail : CanBroadcastTo s₁ s₂) :
+  | dim_eq {n : Nat} {s₁ s₂ : Shape} [SameRank s₁ s₂]
+      (tail : CanBroadcastTo s₁ s₂) :
       CanBroadcastTo (.dim n s₁) (.dim n s₂)
   /-- An outer dimension of length one can expand to any target length. -/
-  | dim_1_to_n {n : Nat} {s₁ s₂ : Shape} (tail : CanBroadcastTo s₁ s₂) :
+  | dim_1_to_n {n : Nat} {s₁ s₂ : Shape} [SameRank s₁ s₂]
+      (tail : CanBroadcastTo s₁ s₂) :
       CanBroadcastTo (.dim 1 s₁) (.dim n s₂)
   /-- A new outer target dimension aligns a source of lower rank. -/
   | expand_dims {n : Nat} {s₁ s₂ : Shape} (tail : CanBroadcastTo s₁ s₂) :
       CanBroadcastTo s₁ (Shape.dim n s₂)
 deriving Repr
 
+/-- Every shape broadcasts to itself without expanding an axis. -/
+def CanBroadcastTo.refl : (s : Shape) → CanBroadcastTo s s
+  | .scalar => .scalar
+  | .dim _ tail => .dim_eq (refl tail)
+
+/-- The canonical witness that broadcasts a scalar by inserting every target dimension. -/
+def CanBroadcastTo.scalarTo : (s : Shape) → CanBroadcastTo .scalar s
+  | .scalar => .scalar
+  | .dim _ tail => .expand_dims (scalarTo tail)
+
+/-- Broadcast a shape of singleton axes to any shape of the same rank. -/
+def CanBroadcastTo.singletonAxes : (s : Shape) → CanBroadcastTo (Shape.singletonAxes s) s
+  | .scalar => .scalar
+  | .dim _ tail =>
+      letI : SameRank (Shape.singletonAxes tail) tail := ⟨rank_singletonAxes tail⟩
+      .dim_1_to_n (singletonAxes tail)
+
+/-- Broadcast a suffix across an arbitrary collection of newly prepended target dimensions. -/
+def CanBroadcastTo.prependTarget : (leading suffix : Shape) →
+    CanBroadcastTo suffix (Shape.concat leading suffix)
+  | .scalar, suffix => refl suffix
+  | .dim _ tail, suffix => .expand_dims (prependTarget tail suffix)
+
 /-- Typeclass wrapper for `CanBroadcastTo` so broadcast proofs can be inferred. -/
 class BroadcastTo (s₁ s₂ : Shape) where
   proof : CanBroadcastTo s₁ s₂
 
-/-- Scalar broadcasts to any shape (analogue of "prepend 1s and expand"). -/
-instance broadcastToScalarLeft (s : Shape) : BroadcastTo Shape.scalar s where
-  proof := CanBroadcastTo.scalar_to_any s
+/-- Scalar shapes broadcast directly. Leading target dimensions are inferred by `expand_dims`. -/
+instance broadcastToScalar : BroadcastTo Shape.scalar Shape.scalar where
+  proof := CanBroadcastTo.scalar
 
 /-- Broadcasting preserves equal leading dimensions when the tails broadcast. -/
-instance broadcastToDimEq {n : Nat} {s₁ s₂ : Shape} [bc : BroadcastTo s₁ s₂] : BroadcastTo
-  (Shape.dim n s₁) (Shape.dim n s₂) where
+instance broadcastToDimEq {n : Nat} {s₁ s₂ : Shape} [SameRank s₁ s₂]
+    [bc : BroadcastTo s₁ s₂] : BroadcastTo (Shape.dim n s₁) (Shape.dim n s₂) where
   proof := CanBroadcastTo.dim_eq bc.proof
 
 /-- Dimension `1` can broadcast to any `n` (PyTorch's main broadcast rule). -/
-instance broadcastToDim1ToN {n : Nat} {s₁ s₂ : Shape} [bc : BroadcastTo s₁ s₂] : BroadcastTo
-  (Shape.dim 1 s₁) (Shape.dim n s₂) where
+instance broadcastToDim1ToN {n : Nat} {s₁ s₂ : Shape} [SameRank s₁ s₂]
+    [bc : BroadcastTo s₁ s₂] : BroadcastTo (Shape.dim 1 s₁) (Shape.dim n s₂) where
   proof := CanBroadcastTo.dim_1_to_n bc.proof
 
 /-- Prepend an outer dimension (the "expand_dims" step used to align ranks). -/
@@ -331,29 +440,6 @@ instance broadcastToExpandDims {n : Nat} {s₁ s₂ : Shape} [bc : BroadcastTo s
 /-- `true` iff two shapes have the same number of elements. -/
 def isValidReshape (s₁ s₂ : Shape) : Bool :=
   Spec.Shape.size s₁ == Spec.Shape.size s₂
-
-/-- Rank = number of dimensions (scalar has rank 0). -/
-def rank : Shape → Nat
-  | Shape.scalar => 0
-  | Shape.dim _ rest => 1 + rank rest
-
-/-!
-### Friendly aliases (PyTorch-style)
-
-We keep the canonical names (`toList`, `rank`, `size`, `well_formed`) because they show up
-throughout the spec/proof code.
-
-For docs and examples, these aliases read more like PyTorch.
--/
-
-/-- PyTorch-style name for `Shape.toList`. -/
-abbrev dims (s : Shape) : List Nat := toList s
-
-/-- PyTorch-style name for `Spec.Shape.rank`. -/
-abbrev ndim (s : Shape) : Nat := rank s
-
-/-- PyTorch-style name for `Spec.Shape.size` ("numel"). -/
-abbrev numel (s : Shape) : Nat := size s
 
 /-- Swap adjacent entries in an axis-ordering list, leaving invalid positions unchanged. -/
 def swapAdjacentAxes (axes : List Nat) (depth : Nat) : List Nat :=
@@ -371,64 +457,96 @@ def permute? (s : Shape) (perm : List Nat) : Option Shape :=
     none
   else if !(decide perm.Nodup) then
     none
-  else if !(perm.all (fun i => i < r)) then
-    none
   else
     let dims := toList s
-    -- `dims.length = r` by construction of `toList`/`rank`.
-    let dims' := perm.map (fun i => dims.getD i 0)
-    some (ofList dims')
+    (perm.mapM fun i => dims[i]?).map ofList
 
 /-!
-## Axis utilities
+## Axis evidence
 
-Why these exist:
+Axes are zero-based natural numbers. `AxisInBounds axis s` says only that the axis exists;
+`HasNonemptyAxis axis s` additionally says that its extent is positive. Shape-preserving operations
+such as softmax need the first condition. Reductions whose definition selects an element, such as
+maximum and minimum, use the second.
 
-- Reduction ops (`reduce_sum`, `reduce_mean`, etc.) need an axis argument.
-- In executable code we want to reject invalid axes early, but in spec/proof code we want the axis
-  validity to be available as evidence that can be carried through lemmas.
-
-So we provide:
-- `valid_axis axis s : Prop` as the core definition, and
-- `valid_axis_inst axis s` as a typeclass wrapper so the common cases can be inferred.
-
-PyTorch differences:
-
-- PyTorch allows negative axes (e.g. `dim=-1`); here we use `Nat` axes only (0-based).
-  A typical translation is: "last axis" = `Spec.Shape.rank s - 1` (when `rank s > 0`).
+Negative axes are normalized by frontends before reaching this layer. The innermost axis of a
+positive-rank shape is `s.rank - 1`.
 -/
+
+/-- The zero-based `axis` names a dimension of `s`. Its extent may be zero. -/
+class AxisInBounds (axis : Nat) (s : Shape) : Prop where
+  /-- The axis is strictly smaller than the shape rank. -/
+  proof : axis < rank s
+
+/-- Looking up an axis below the rank of a shape succeeds. -/
+theorem getDim_isSome_of_lt {s : Shape} {axis : Nat} (h : axis < rank s) :
+    (getDim s axis).isSome = true := by
+  induction s generalizing axis with
+  | scalar => simp [rank] at h
+  | dim n rest ih =>
+      cases axis with
+      | zero => rfl
+      | succ axis =>
+          simp only [getDim]
+          apply ih
+          grind [rank]
+
+/-- Extent of a statically valid axis. -/
+def axisSize (s : Shape) (axis : Nat) [h : AxisInBounds axis s] : Nat :=
+  (getDim s axis).get (getDim_isSome_of_lt h.proof)
+
+/-- The outermost dimension is axis zero, regardless of its extent. -/
+instance axisInBoundsZero {n s} : AxisInBounds 0 (.dim n s) :=
+  ⟨by simpa [rank, Nat.add_comm] using Nat.zero_lt_succ s.rank⟩
+
+/-- An inner axis remains in bounds under an additional outer dimension. -/
+instance axisInBoundsSucc {n s axis} [h : AxisInBounds axis s] :
+    AxisInBounds (axis + 1) (.dim n s) :=
+  ⟨by simpa [rank, Nat.add_comm] using Nat.add_lt_add_right h.proof 1⟩
+
+/-- Decide whether a natural number names a dimension of `s`, returning typed evidence. -/
+def axisInBounds? (axis : Nat) (s : Shape) : Option (PLift (AxisInBounds axis s)) :=
+  if h : axis < rank s then some ⟨⟨h⟩⟩ else none
+
+/-- The decision procedure succeeds whenever static in-bounds evidence is available. -/
+theorem axisInBounds?_isSome {axis : Nat} {s : Shape} [h : AxisInBounds axis s] :
+    (axisInBounds? axis s).isSome := by
+  simp [axisInBounds?, h.proof]
+
+/-- A positive-rank shape always has an innermost dimension. -/
+theorem axisInBoundsLast {s : Shape} (hRank : 0 < rank s) :
+    AxisInBounds (rank s - 1) s :=
+  ⟨Nat.sub_lt hRank Nat.zero_lt_one⟩
 
 /--
-Evidence that reducing along `axis` is well-defined for a shape.
+`NonemptyAxis axis s` says that `axis` selects a positive-length dimension of `s`.
 
-This is a small helper predicate used to rule out degenerate `0`-length dimensions when stating
-laws about reductions.
+The constructors follow the recursive representation of `Shape`, so reduction definitions can
+eliminate this evidence while recursing through outer dimensions.
 -/
-inductive reducibleAlong : Nat → Shape → Prop
-| head {n : Nat} {s : Shape} : reducibleAlong 0 (.dim (n+1) s)  -- must be ≥ 1
-| tail {n : Nat} {s : Shape} {k : Nat} :
-    reducibleAlong k s → reducibleAlong (k + 1) (.dim (n+1) s)
+inductive NonemptyAxis : Nat → Shape → Prop
+  | zero {n : Nat} {s : Shape} : NonemptyAxis 0 (.dim (n + 1) s)
+  | succ {n : Nat} {s : Shape} {axis : Nat} :
+      NonemptyAxis axis s → NonemptyAxis (axis + 1) (.dim n s)
 
-/-- `simp` lemma: axis `0` is reducible for any positive outer dimension. -/
-@[simp] theorem reducibleAlong_head {n : Nat} {s : Shape} :
-    reducibleAlong 0 (.dim (n+1) s) :=
-  reducibleAlong.head
+/-- A nonempty axis is, in particular, a valid axis. -/
+theorem NonemptyAxis.toAxisInBounds {axis : Nat} {s : Shape} (h : NonemptyAxis axis s) :
+    AxisInBounds axis s := by
+  induction h with
+  | zero => exact axisInBoundsZero
+  | succ inner ih =>
+      constructor
+      simpa [rank, Nat.add_comm] using Nat.add_lt_add_right ih.proof 1
 
-/-- `simp` lemma: reducibility for inner axis lifts to the next outer axis. -/
-@[simp] theorem reducibleAlong_tail {n : Nat} {s : Shape} {k : Nat} (h : reducibleAlong k s) :
-    reducibleAlong (k + 1) (.dim (n+1) s) :=
-  reducibleAlong.tail h
+/-- Axis zero is nonempty when the outer dimension is positive. -/
+@[simp] theorem nonemptyAxis_zero {n : Nat} {s : Shape} :
+    NonemptyAxis 0 (.dim (n + 1) s) :=
+  .zero
 
-/-!
-`valid_axis axis s` means that `axis` is a valid reduction axis for `s`.
-
-We use a Prop + typeclass wrapper (`valid_axis_inst`) so proofs can be synthesized by typeclass
-resolution in downstream code.
--/
-/-- Axis validity predicate for reduction ops (0-based axis in `Nat`). -/
-inductive valid_axis : Nat → Shape → Prop
-| valid_zero {n s} : valid_axis 0 (.dim (n+1) s)
-| valid_succ {n s k} (h : valid_axis k s) : valid_axis (k+1) (.dim (n+1) s)
+/-- Nonemptiness of an inner axis is unchanged by an outer dimension. -/
+@[simp] theorem nonemptyAxis_succ {n : Nat} {s : Shape} {axis : Nat}
+    (h : NonemptyAxis axis s) : NonemptyAxis (axis + 1) (.dim n s) :=
+  .succ h
 
 /--
 Return evidence that `axis` addresses a positive dimension of `s`.
@@ -436,56 +554,43 @@ Return evidence that `axis` addresses a positive dimension of `s`.
 Executable consumers use this to recover the proposition required by typed tensor operations from
 a raw runtime axis. Invalid axes, including axes into zero-sized dimensions, return `none`.
 -/
-def validAxis? (axis : Nat) : (s : Shape) → Option (PLift (valid_axis axis s))
+def nonemptyAxis? (axis : Nat) : (s : Shape) → Option (PLift (NonemptyAxis axis s))
   | .scalar => none
   | .dim n rest =>
       match axis, n with
-      | 0, Nat.succ k => some ⟨valid_axis.valid_zero (n := k) (s := rest)⟩
+      | 0, Nat.succ k => some ⟨NonemptyAxis.zero (n := k) (s := rest)⟩
       | 0, 0 => none
-      | Nat.succ a, Nat.succ k =>
-          (validAxis? a rest).map (fun h =>
-            ⟨valid_axis.valid_succ (n := k) (s := rest) (k := a) h.down⟩)
-      | Nat.succ _, 0 => none
+      | Nat.succ inner, n =>
+          (nonemptyAxis? inner rest).map (fun h =>
+            ⟨NonemptyAxis.succ (n := n) (s := rest) (axis := inner) h.down⟩)
 
-/-- Typeclass wrapper for `valid_axis` so common axis proofs can be inferred. -/
-class valid_axis_inst (axis : Nat) (s : Shape) where
-  (proof : valid_axis axis s)
+/-- Typeclass wrapper used when nonempty-axis evidence can be inferred statically. -/
+class HasNonemptyAxis (axis : Nat) (s : Shape) : Prop where
+  /-- The selected dimension has positive extent. -/
+  proof : NonemptyAxis axis s
 
 /-- Instance: axis `0` is valid for any positive outer dimension. -/
-instance validAxisInstZero {n s} : valid_axis_inst 0 (.dim (n+1) s) :=
-  { proof := valid_axis.valid_zero }
+instance hasNonemptyAxisZero {n s} : HasNonemptyAxis 0 (.dim (n + 1) s) :=
+  ⟨NonemptyAxis.zero⟩
 
-/--
-Instance: axis `0` is valid for a nonzero outer dimension `n`.
-
-The proof converts `n ≠ 0` to the successor form used by the primitive `valid_axis` constructor.
--/
-abbrev validAxisInstZeroAlt {n s} (h : n ≠ 0) : valid_axis_inst 0 (.dim n s) :=
+/-- Package a proof that the outer dimension is nonzero as axis evidence. -/
+theorem hasNonemptyAxisZeroOfNe {n s} (h : n ≠ 0) : HasNonemptyAxis 0 (.dim n s) :=
   let ⟨m, hm⟩ := Nat.exists_eq_succ_of_ne_zero h
-  { proof := by rw [hm]; exact valid_axis.valid_zero }
+  ⟨by rw [hm]; exact .zero⟩
 
-/-- Instance: axis `1` is valid for a 2D shape when both outer dims are nonzero. -/
-abbrev validAxisInstOne {n1 n2 s} (h₁ : n1 ≠ 0) (h₂ : n2 ≠ 0) :
-    valid_axis_inst 1 (.dim n1 (.dim n2 s)) :=
-  let ⟨m, hm⟩ := Nat.exists_eq_succ_of_ne_zero h₁
-  { proof := by
-      rw [hm]
-      exact valid_axis.valid_succ (validAxisInstZeroAlt h₂).proof }
+/-- Package positivity of the outer dimension as axis evidence. -/
+theorem hasNonemptyAxisZeroOfPos {n s} (h : 0 < n) : HasNonemptyAxis 0 (.dim n s) :=
+  hasNonemptyAxisZeroOfNe (Nat.ne_of_gt h)
 
-/-- Instance: if `k` is a valid axis for `s`, then `k+1` is a valid axis for `.dim (n+1) s`. -/
-instance validAxisInstSucc {n s k} [inst : valid_axis_inst k s] : valid_axis_inst (k+1) (.dim
-  (n+1) s) :=
-  { proof := valid_axis.valid_succ inst.proof }
+/-- Instance: axis `1` is valid for a 2D shape when the selected dimension is nonzero. -/
+theorem hasNonemptyAxisOne {n₁ n₂ s} (h₂ : n₂ ≠ 0) :
+    HasNonemptyAxis 1 (.dim n₁ (.dim n₂ s)) :=
+  ⟨NonemptyAxis.succ (hasNonemptyAxisZeroOfNe h₂).proof⟩
 
--- If a caller already has `n > 0`, this instance packages it as `n ≠ 0`.
-/-- Instance: axis `0` is valid if you have a positivity proof `n > 0` (converted to `n ≠ 0`). -/
-abbrev validAxisInstZeroAlt2 {n s} (h : n > 0) : valid_axis_inst 0 (.dim n s) :=
-  validAxisInstZeroAlt (n := n) (s := s) (Nat.ne_of_gt h)
-
--- Small lemma used at many call sites: positivity implies nonzero.
-/-- Helper lemma: a positive natural is not zero. -/
-theorem gt_pos_to_ne_zero {n : Nat} (h : n > 0) : n ≠ 0 :=
-  Nat.ne_of_gt h
+/-- Nonemptiness of an inner axis is unchanged by an outer dimension. -/
+instance hasNonemptyAxisSucc {n s axis} [h : HasNonemptyAxis axis s] :
+    HasNonemptyAxis (axis + 1) (.dim n s) :=
+  ⟨NonemptyAxis.succ h.proof⟩
 
 
 /-!
@@ -530,60 +635,26 @@ theorem size_pos_of_well_formed : ∀ {s : Shape}, s.wellFormed → 0 < Spec.Sha
       rcases hw with ⟨hn, hs⟩
       simpa [Spec.Shape.size] using Nat.mul_pos hn (size_pos_of_well_formed (s := s) hs)
 
--- Instance for the last axis (rank - 1) being valid for well-formed shapes
 /--
-If `rank s > 0` and `s` is well-formed, then the last axis `rank s - 1` is valid.
-
-This powers many "reduce over last dimension" specs where the axis is computed as `rank s - 1`.
+The innermost axis of a positive-rank, well-formed shape is nonempty.
 -/
-abbrev validAxisLastInst {s : Shape} (h : Spec.Shape.rank s > 0) (hw : s.wellFormed) :
-  valid_axis_inst (Spec.Shape.rank s - 1) s := {
-  proof := by
-    -- We'll prove this using strong induction on the rank
-    suffices ∀ r : Nat, ∀ s' : Shape, Spec.Shape.rank s' = r → r > 0 → s'.wellFormed → valid_axis (r -
-      1) s' by
-      exact this (Spec.Shape.rank s) s rfl h hw
+theorem nonemptyLastAxis {s : Shape} (hRank : 0 < s.rank) (hw : s.wellFormed) :
+    NonemptyAxis (s.rank - 1) s := by
+  induction s with
+  | scalar => simp [rank] at hRank
+  | dim n rest ih =>
+      rcases hw with ⟨hn, hRestWf⟩
+      by_cases hRestRank : rest.rank = 0
+      · obtain ⟨m, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (Nat.ne_of_gt hn)
+        simp [rank, hRestRank]
+      · have hInner := ih (Nat.pos_of_ne_zero hRestRank) hRestWf
+        have hLifted := NonemptyAxis.succ (n := n) hInner
+        simpa [rank, Nat.sub_add_cancel (Nat.one_le_iff_ne_zero.mpr hRestRank)] using hLifted
 
-    intro r
-    induction r using Nat.strong_induction_on with
-    | h r ih =>
-      intro s' hs' hr' hw'
-      cases s' with
-      | scalar =>
-        simp [Spec.Shape.rank] at hs'
-        rw [hs'] at hr'
-        grind
-      | dim n s'' =>
-        simp [Spec.Shape.rank] at hs' ⊢
-        -- Extract well-formedness properties
-        have ⟨h_n_pos, hw''⟩ := hw'
-        -- We know n > 0 from well-formedness
-        obtain ⟨m, hm⟩ := Nat.exists_eq_succ_of_ne_zero (Nat.ne_of_gt h_n_pos)
-        rw [hm]
-        -- We have Spec.Shape.rank s'' + 1 = r, so Spec.Shape.rank s'' = r - 1
-        have hs'' : Spec.Shape.rank s'' = r - 1 := by grind
-        -- We need to prove valid_axis (r - 1) (.dim (m+1) s'')
-        -- Since r > 0, we have r - 1 = Spec.Shape.rank s''
-        rw [← hs'']
-
-        cases Nat.eq_zero_or_pos (Spec.Shape.rank s'') with
-        | inl h_zero =>
-          -- If Spec.Shape.rank s'' = 0, we need valid_axis 0 (.dim (m+1) s'')
-          rw [h_zero]
-          exact valid_axis.valid_zero
-        | inr h_pos_inner =>
-          -- If Spec.Shape.rank s'' > 0, use inductive hypothesis
-          have rank_eq : Spec.Shape.rank s'' = (Spec.Shape.rank s'' - 1) + 1 :=
-            Eq.symm (Nat.sub_add_cancel (Nat.succ_le_of_lt h_pos_inner))
-          rw [rank_eq]
-          apply valid_axis.valid_succ
-
-          -- Apply IH: we need Spec.Shape.rank s'' < r, Spec.Shape.rank s'' > 0, and s''.well_formed
-          have h_lt : Spec.Shape.rank s'' < r := by
-            rw [hs'']
-            grind
-          exact ih (Spec.Shape.rank s'') h_lt s'' rfl h_pos_inner hw''
-}
+/-- Package `nonemptyLastAxis` as inferred reduction-axis evidence. -/
+theorem hasNonemptyLastAxis {s : Shape} (hRank : 0 < s.rank) (hw : s.wellFormed) :
+    HasNonemptyAxis (s.rank - 1) s :=
+  ⟨nonemptyLastAxis hRank hw⟩
 
 /--
 Typeclass wrapper for `Shape.well_formed`.
@@ -600,62 +671,14 @@ class WellFormed (s : Shape) : Prop where
 instance : WellFormed .scalar where
   proof := trivial
 
--- If the inner shape is well-formed and the new dimension is positive, the result is well-formed.
-/-- If `s` is well-formed and `n > 0`, then `.dim n s` is well-formed. -/
-abbrev wellFormedDimOfPos {n s} [WellFormed s] (h : n > 0) : WellFormed (.dim n s) where
-  proof := ⟨h, WellFormed.proof⟩
+/-- Adding a nonzero dimension preserves well-formedness. -/
+instance {n s} [Shape.WellFormed s] [NeZero n] : Shape.WellFormed (.dim n s) :=
+  ⟨⟨Nat.pos_of_ne_zero (NeZero.ne n), Shape.WellFormed.proof⟩⟩
 
--- Helper to create well-formedness for positive literals
-/-
-These small instances are purely about ergonomics.
-
-In a lot of specs/examples we write shapes with concrete dimensions like `1` and `2` (bias vectors,
-small CNN channels, etc.). Having `WellFormed` discharge automatically keeps call sites focused on
-the math/model rather than on proof mechanics.
--/
-/-- Convenience instance: `.dim 1 s` is well-formed when `s` is. -/
-instance posDim1Wf {s} [Shape.WellFormed s] : Shape.WellFormed (.dim 1 s) :=
-  Shape.WellFormed.mk ⟨by decide, Shape.WellFormed.proof⟩
-
--- Same idea as `posDim1Wf`, but for the common literal `2`.
-/-- Convenience instance: `.dim 2 s` is well-formed when `s` is. -/
-instance posDim2Wf {s} [Shape.WellFormed s] : Shape.WellFormed (.dim 2 s) :=
-  Shape.WellFormed.mk ⟨by decide, Shape.WellFormed.proof⟩
-
--- General helper: if you already have a `Fact (n > 0)` in scope, lift it into `WellFormed`.
-/-- If a `Fact (n > 0)` is in scope, lift it to a `Shape.WellFormed (.dim n s)` instance. -/
-instance {n s} [Shape.WellFormed s] [h : Fact (n > 0)] : Shape.WellFormed (.dim n s) :=
-  ⟨⟨h.out, Shape.WellFormed.proof⟩⟩
-
-/-!
-`validAxisLastAuto` is a convenience instance for the most common reduction axis:
-"reduce over the last dimension".
-
-In PyTorch this is `dim=-1` (after normalization). Here we stay in `Nat`, so the last axis is
-`rank s - 1`, and we require `rank s > 0` plus well-formedness so the proof is meaningful.
--/
-/-- Convenience instance: infer `valid_axis_inst (rank s - 1) s` from `WellFormed s` and `rank s >
-  0`. -/
-abbrev validAxisLastAuto {s : Shape} [h_wf : WellFormed s] (h : Spec.Shape.rank s > 0) :
-  Shape.valid_axis_inst (Spec.Shape.rank s - 1) s :=
-  validAxisLastInst h h_wf.proof
-
-/-!
-Bridge lemma: turn a `valid_axis` proof into a `reducibleAlong` proof.
-
-Why both exist:
-- `valid_axis` is the semantic "this axis makes sense" predicate used in public APIs.
-- `reducibleAlong` is a structurally convenient predicate for recursion over tensor shapes
-  (it lines up with how `Tensor.dim` is constructed).
-
-This function is the adapter between the two views.
--/
-/-- Convert a `valid_axis` proof into a structurally convenient `reducibleAlong` proof. -/
-theorem proveReducibleAlong (axis : Nat) (s : Shape) (h : valid_axis axis s) : reducibleAlong axis s
-  :=
-  match h with
-  | valid_axis.valid_zero => reducibleAlong.head
-  | valid_axis.valid_succ h' => reducibleAlong.tail (proveReducibleAlong _ _ h')
+/-- Infer that the innermost axis is nonempty from `WellFormed s`. -/
+theorem inferNonemptyLastAxis {s : Shape} [hw : WellFormed s] (hRank : 0 < s.rank) :
+    HasNonemptyAxis (s.rank - 1) s :=
+  hasNonemptyLastAxis hRank hw.proof
 
 /-!
 `padLeft n s` prepends `n` singleton dimensions to a shape.

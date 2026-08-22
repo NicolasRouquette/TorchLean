@@ -6,7 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Layers.Dropout
 public import NN.Spec.Layers.Linear
 public import NN.Spec.Layers.Loss
 public import NN.Spec.Layers.Lstm
@@ -17,9 +16,10 @@ public import NN.Spec.Models.Transformer
 
 Encoder-decoder models for sequence generation.
 
-This file supports both:
-- discrete token id inputs (non‑differentiable lookup, good for runtime examples), and
-- one‑hot / token‑distribution inputs (differentiable embedding via a matrix multiply).
+This file supports both bounded token indices and differentiable token distributions. A bounded
+index has type `Fin vocabSize`, so embedding lookup cannot silently substitute a value for an
+invalid token. A token distribution uses a vector of length `vocabSize` and realizes embedding as a
+matrix multiplication.
 
 PyTorch analogue:
 
@@ -46,8 +46,6 @@ References:
   "Learning Phrase Representations using RNN Encoder-Decoder for Statistical Machine Translation"
   (2014).
 - Vaswani et al., "Attention Is All You Need" (2017) for the transformer encoder variant.
-- Srivastava et al., "Dropout: A Simple Way to Prevent Neural Networks from Overfitting" (JMLR
-  2014).
 
 PyTorch docs (for API intuition, not semantics):
 - `torch.nn.Embedding`: https://pytorch.org/docs/stable/generated/torch.nn.Embedding.html
@@ -66,6 +64,7 @@ PyTorch docs (for API intuition, not semantics):
 namespace Spec
 
 open Tensor
+open Recurrent
 
 variable {α : Type} [Context α]
 
@@ -84,8 +83,7 @@ and reverse-mode gradients for the differentiable path:
 - gradients flow through embeddings, encoder RNN, decoder RNN, output projection, and (optionally)
   the decoder self-attention block.
 
-Token-id based training (`Tensor Nat`) is still useful for examples, but it is intentionally treated as
-non-differentiable.
+Bounded token indices are intentionally treated as non-differentiable.
 -/
 
 /-! ### Small gradient records -/
@@ -98,9 +96,9 @@ PyTorch analogue: the gradient pair for `nn.linear`.
 -/
 structure Seq2SeqLinearGrads (α : Type) (inDim outDim : Nat) where
   /-- Gradient of the weight matrix `W`. -/
-  dW : Tensor α (.dim outDim (.dim inDim .scalar))
+  weight : Tensor α (.dim outDim (.dim inDim .scalar))
   /-- Gradient of the bias vector `b`. -/
-  db : Tensor α (.dim outDim .scalar)
+  bias : Tensor α (.dim outDim .scalar)
 
 /--
 Gradients for an `RNNSpec` cell.
@@ -109,9 +107,9 @@ PyTorch analogue: the gradients for `nn.RNN` parameters (weight and bias).
 -/
 structure Seq2SeqRNNGrads (α : Type) (inputSize hiddenSize : Nat) where
   /-- Gradient of the concatenated input+hidden weight matrix. -/
-  dW : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  weight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
   /-- Gradient of the bias term. -/
-  db : HiddenVector α hiddenSize
+  bias : HiddenVector α hiddenSize
 
 /--
 Gradients for a token embedding table `E : (vocabSize × embedDim)`.
@@ -120,7 +118,7 @@ PyTorch analogue: `nn.Embedding.weight.grad`.
 -/
 structure Seq2SeqEmbeddingGrads (α : Type) (vocabSize embedDim : Nat) where
   /-- Gradient of the embedding matrix. -/
-  d_embedding : Tensor α (.dim vocabSize (.dim embedDim .scalar))
+  embedding : Tensor α (.dim vocabSize (.dim embedDim .scalar))
 
 /--
 End-to-end gradient record for the differentiable Seq2Seq baseline.
@@ -135,17 +133,17 @@ This bundles gradients for:
 structure Seq2SeqGrads (α : Type)
     (srcVocabSize tgtVocabSize embedDim hiddenDim : Nat) where
   /-- Gradients for the source embedding table. -/
-  d_src_embedding : Seq2SeqEmbeddingGrads α srcVocabSize embedDim
+  sourceEmbedding : Seq2SeqEmbeddingGrads α srcVocabSize embedDim
   /-- Gradients for the target embedding table. -/
-  d_tgt_embedding : Seq2SeqEmbeddingGrads α tgtVocabSize embedDim
+  targetEmbedding : Seq2SeqEmbeddingGrads α tgtVocabSize embedDim
   /-- Gradients for the encoder RNN parameters. -/
-  d_encoder : Seq2SeqRNNGrads α embedDim hiddenDim
+  encoder : Seq2SeqRNNGrads α embedDim hiddenDim
   /-- Gradients for the decoder RNN parameters. -/
-  d_decoder_rnn : Seq2SeqRNNGrads α embedDim hiddenDim
+  decoderRnn : Seq2SeqRNNGrads α embedDim hiddenDim
   /-- Gradients for the decoder output projection (`hiddenDim -> tgtVocabSize`). -/
-  d_output_projection : Seq2SeqLinearGrads α hiddenDim tgtVocabSize
+  outputProjection : Seq2SeqLinearGrads α hiddenDim tgtVocabSize
   /-- Gradients for optional decoder self-attention parameters. -/
-  d_decoder_attention :
+  decoderAttention :
     Option (Σ numHeads : Nat, MultiHeadAttentionGrads numHeads embedDim (embedDim / numHeads) α) :=
     none
 
@@ -153,51 +151,33 @@ structure Seq2SeqGrads (α : Type)
 Seq2Seq token embedding specification.
 
 Parameters:
-- `embedding`: a lookup table `E : (vocabSize × embedDim)`,
-- `dropout_rate`: the training probability retained by the evaluation-mode dropout layer.
+- `embedding`: a lookup table `E : (vocabSize × embedDim)`.
 
-PyTorch analogue: `nn.Embedding(vocabSize, embedDim)` plus a `nn.Dropout(p)` applied to the
-sequence of embeddings.
+PyTorch analogue: `nn.Embedding(vocabSize, embedDim)`.
 -/
 structure Seq2SeqEmbeddingSpec (α : Type) [Numbers α] (vocabSize embedDim : Nat) where
   /-- Embedding table `E : (vocabSize × embedDim)`. -/
   embedding : Tensor α (.dim vocabSize (.dim embedDim .scalar))
-  /-- Dropout probability `p` (used in a deterministic inference-style way). -/
-  dropout_rate : α := Numbers.pointone
 
 /--
 Embedding forward pass for discrete token ids.
 
 Inputs:
-- `token_ids : (seqLen)`, a tensor of natural-number token ids.
+- `tokenIds : (seqLen)`, a tensor of indices bounded by the vocabulary size.
 
 Output:
 - `y : (seqLen × embedDim)`, where each timestep selects a row of the embedding table.
 
-Out-of-range token ids map to a zero vector in this spec. We then apply
-evaluation-mode dropout deterministically (no RNG), which is useful for runtime examples.
-
-PyTorch analogue: `nn.Embedding` on an integer tensor, followed by `nn.Dropout(p)` (but with
-randomness disabled in evaluation mode; see `NN.Spec.Layers.Dropout`).
+PyTorch analogue: `nn.Embedding` on an integer tensor. The `Fin vocabSize` element type expresses
+the lookup precondition directly, rather than assigning an arbitrary meaning to an invalid token.
 -/
 def Seq2SeqEmbeddingSpec.forward {vocabSize embedDim seqLen : Nat}
   (embedding : Seq2SeqEmbeddingSpec α vocabSize embedDim)
-  (token_ids : Tensor Nat (.dim seqLen .scalar)):
+  (tokenIds : Tensor (Fin vocabSize) (.dim seqLen .scalar)):
   Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-
-  -- Token embeddings
-  let token_embeds := Tensor.dim (fun i =>
-    match get token_ids i with
-    | Tensor.scalar token_id =>
-      if h : token_id < vocabSize then
-        match get embedding.embedding ⟨token_id, h⟩ with
-        | Tensor.dim embed_vals => Tensor.dim embed_vals
-      else
-        Tensor.dim (fun _ => Tensor.scalar (0 : α))
-  )
-
-  -- Evaluation-mode dropout.
-  dropoutInferenceSpec (p := embedding.dropout_rate) token_embeds
+  Tensor.dim (fun i =>
+    match get tokenIds i with
+    | Tensor.scalar tokenId => get embedding.embedding tokenId)
 
 /-- Seq2Seq embedding forward pass for one-hot / token distributions.
 
@@ -216,8 +196,7 @@ def Seq2SeqEmbeddingSpec.forwardOneHot {vocabSize embedDim seqLen : Nat}
   Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
   match tokenOneHot with
   | Tensor.dim f =>
-    let token_embeds := Tensor.dim (fun i => vecMatMulSpec (f i) embedding.embedding)
-    dropoutInferenceSpec (p := embedding.dropout_rate) token_embeds
+      Tensor.dim (fun i => vecMatMulSpec (f i) embedding.embedding)
 
 /--
 Backward pass for `Seq2SeqEmbeddingSpec.forwardOneHot`.
@@ -235,25 +214,16 @@ def Seq2SeqEmbeddingSpec.backwardOneHot {vocabSize embedDim seqLen : Nat}
   (tokenOneHot : Tensor α (.dim seqLen (.dim vocabSize .scalar)))
   (grad_output : Tensor α (.dim seqLen (.dim embedDim .scalar))) :
   (Seq2SeqEmbeddingGrads α vocabSize embedDim × Tensor α (.dim seqLen (.dim vocabSize .scalar))) :=
-  let grad_output0 :=
-    dropoutInferenceBackwardSpec (p := embedding.dropout_rate) grad_output
-  let step (acc : Seq2SeqEmbeddingGrads α vocabSize embedDim × List (Tensor α (.dim vocabSize
-    .scalar))) (i : Fin seqLen) :=
-    let (accE, accX) := acc
+  let step (i : Fin seqLen) (acc : Seq2SeqEmbeddingGrads α vocabSize embedDim) :=
     let token_t := get tokenOneHot i
-    let dY_t := get grad_output0 i
+    let dY_t := get grad_output i
     let dE_t := outerProductSpec token_t dY_t
     let dToken_t := matVecMulSpec embedding.embedding dY_t
-    ({ d_embedding := addSpec accE.d_embedding dE_t }, dToken_t :: accX)
+    ({ embedding := addSpec acc.embedding dE_t }, dToken_t)
   let init : Seq2SeqEmbeddingGrads α vocabSize embedDim :=
-    { d_embedding := fill 0 (.dim vocabSize (.dim embedDim .scalar)) }
-  let (dE, dX_rev) := (List.finRange seqLen).foldl step (init, [])
-  let dX_list := dX_rev.reverse
-  let dX :=
-    match dX_list with
-    | [] => fill 0 (.dim seqLen (.dim vocabSize .scalar))
-    | h :: _ => Tensor.dim (fun i => dX_list.getD i.val h)
-  (dE, dX)
+    { embedding := fill 0 (.dim vocabSize (.dim embedDim .scalar)) }
+  let (dE, dX) := Sequence.mapAccum seqLen init step
+  (dE, Tensor.dim dX.get)
 
 /--
 RNN-based encoder specification for Seq2Seq.
@@ -268,8 +238,6 @@ PyTorch analogue: `nn.RNN(..., batch_first=True)` (ignoring the batch axis), ret
 structure Seq2SeqRNNEncoderSpec (α : Type) [Numbers α] (embedDim hiddenDim : Nat) where
   /-- RNN cell parameters. -/
   rnn : RNNSpec α embedDim hiddenDim
-  /-- Dropout probability `p` retained by evaluation-mode dropout on the input sequence. -/
-  dropout_rate : α := Numbers.pointone
 
 /--
 Forward pass for `Seq2SeqRNNEncoderSpec`.
@@ -286,42 +254,13 @@ def Seq2SeqRNNEncoderSpec.forward {α : Type} [Context α] {embedDim hiddenDim s
   (x : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   (h0 : Option (Tensor α (.dim hiddenDim .scalar))):
   (Tensor α (.dim seqLen (.dim hiddenDim .scalar)) × Tensor α (.dim hiddenDim .scalar)) :=
-
-  let x := dropoutInferenceSpec (p := encoder.dropout_rate) x
-
-  -- Initial hidden state
-  let initial_h := match h0 with
+  let initialHidden := match h0 with
     | some h => h
-    | none => Tensor.dim (fun _ => Tensor.scalar (0 : α))
-
-  -- Recursive sequence processor
-  let rec process_sequence (i : Nat) (h : Tensor α (.dim hiddenDim .scalar))
-    (acc : List (Tensor α (.dim hiddenDim .scalar))) (h1 : i <= seqLen) :
-    (Tensor α (.dim hiddenDim .scalar) × List (Tensor α (.dim hiddenDim .scalar))) :=
-    if h_eq : i = seqLen then
-      (h, acc.reverse)
-    else
-      match x with
-      | Tensor.dim tokens =>
-        have hi : i < seqLen := Nat.lt_of_le_of_ne h1 h_eq
-        let input_token := tokens ⟨i, hi⟩
-        let new_h := rnnCellSpec encoder.rnn input_token h
-        let h2 : i + 1 <= seqLen := Nat.succ_le_of_lt hi
-        process_sequence (i + 1) new_h (new_h :: acc) h2
-  termination_by seqLen - i
-  decreasing_by
-    all_goals
-      simpa using Nat.sub_succ_lt_self (a := seqLen) (i := i) hi
-
-  let h_zero : 0 <= seqLen := Nat.zero_le seqLen
-  let (final_h, outputs) := process_sequence 0 initial_h [] h_zero
-
-  -- Convert list to tensor
-  let output_tensor : Tensor α (.dim seqLen (.dim hiddenDim .scalar)) :=
-    Tensor.dim (fun i =>
-      outputs.getD i.val (Tensor.dim (fun _ => Tensor.scalar (0 : α))))
-
-  (output_tensor, final_h)
+    | none => fill 0 (.dim hiddenDim .scalar)
+  let (finalHidden, outputs) := Sequence.mapAccum seqLen initialHidden fun i previous =>
+    let hidden := rnnCellSpec encoder.rnn (get x i) previous
+    (hidden, hidden)
+  (Tensor.dim outputs.get, finalHidden)
 
 
 /--
@@ -336,8 +275,6 @@ PyTorch analogue: `nn.LSTM(..., batch_first=True)` (ignoring the batch axis), re
 structure Seq2SeqLSTMEncoderSpec (α : Type) [Numbers α] (embedDim hiddenDim : Nat) where
   /-- LSTM cell parameters. -/
   lstm : LSTMSpec α embedDim hiddenDim
-  /-- Dropout probability `p` retained by evaluation-mode dropout on the input sequence. -/
-  dropout_rate : α := Numbers.pointone
 
 /--
 Forward pass for `Seq2SeqLSTMEncoderSpec`.
@@ -359,66 +296,29 @@ def Seq2SeqLSTMEncoderSpec.forward {embedDim hiddenDim seqLen : Nat}
   (Tensor α (.dim seqLen (.dim hiddenDim .scalar)) ×
    Tensor α (.dim hiddenDim .scalar) ×
    Tensor α (.dim hiddenDim .scalar)) :=
-
-  let x := dropoutInferenceSpec (p := encoder.dropout_rate) x
-
-  -- Initialize hidden and cell states
-  let initial_h := match h0 with
+  let initialHidden := match h0 with
   | some h => h
-  | none => Tensor.dim (fun _ => Tensor.scalar (0 : α))
-
-  let initial_c := match c0 with
+  | none => fill 0 (.dim hiddenDim .scalar)
+  let initialCell := match c0 with
   | some c => c
-  | none => Tensor.dim (fun _ => Tensor.scalar (0 : α))
-
-  -- Process sequence step by step
-  let rec process_sequence (i : Nat) (h : Tensor α (.dim hiddenDim .scalar))
-    (c : Tensor α (.dim hiddenDim .scalar))
-    (acc : List (Tensor α (.dim hiddenDim .scalar))) (h1 : i <= seqLen):
-    (Tensor α (.dim hiddenDim .scalar) × Tensor α (.dim hiddenDim .scalar) × List (Tensor α (.dim
-      hiddenDim .scalar))) :=
-    if h4 : i = seqLen then (h, c, acc.reverse)
-    else
-      let input_token := match x with
-      | Tensor.dim tokens =>
-        have hi : i < seqLen := Nat.lt_of_le_of_ne h1 h4
-        tokens ⟨i, hi⟩
-      let lstm_state : LSTMState α hiddenDim := ⟨h, c⟩
-      let new_state := lstmCellSpec encoder.lstm input_token lstm_state
-      let new_h := new_state.hidden
-      let new_c := new_state.cell
-      have hi : i < seqLen := Nat.lt_of_le_of_ne h1 h4
-      let h2 : i + 1 <= seqLen := Nat.succ_le_of_lt hi
-      process_sequence (i + 1) new_h new_c (new_h :: acc) h2
-    termination_by seqLen - i
-    decreasing_by
-      all_goals
-        simpa using Nat.sub_succ_lt_self (a := seqLen) (i := i) hi
-
-  let h_zero : 0 <= seqLen := Nat.zero_le seqLen
-  let (final_h, final_c, outputs) := process_sequence 0 initial_h initial_c [] h_zero
-
-  -- Convert list to tensor
-  let output_tensor := Tensor.dim (fun i =>
-    outputs.getD i.val (Tensor.dim (fun _ => Tensor.scalar (0 : α))))
-
-  (output_tensor, final_h, final_c)
+  | none => fill 0 (.dim hiddenDim .scalar)
+  let (outputs, finalState) :=
+    lstmSequenceSpec encoder.lstm x { hidden := initialHidden, cell := initialCell }
+  (outputs, finalState.hidden, finalState.cell)
 
 /--
 Transformer-based encoder specification for Seq2Seq.
 
-This wrapper applies a list of `TransformerEncoderLayer`s from
-`NN.Spec.Models.Transformer`, applied as a left-fold.
+This wrapper applies exactly `numLayers` `TransformerEncoderLayer`s from
+`NN.Spec.Models.Transformer` as a left fold.
 
 PyTorch analogue: `nn.TransformerEncoder(nn.TransformerEncoderLayer(...), num_layers=...)`
 (ignoring dropout and most configuration knobs).
 -/
 structure Seq2SeqTransformerEncoderSpec (α : Type) [Context α] [Numbers α] (embedDim numHeads
   numLayers : Nat) where
-  /-- Encoder layer stack; typically length `numLayers`, but not enforced by the spec. -/
-  layers : List (TransformerEncoderLayer numHeads embedDim (embedDim * 4) α)
-  /-- Dropout probability `p` retained by evaluation-mode dropout on the input sequence. -/
-  dropout_rate : α := Numbers.pointone
+  /-- Encoder layer stack. Its length is part of the type. -/
+  layers : Vector (TransformerEncoderLayer numHeads embedDim (embedDim * 4) α) numLayers
 
 /--
 Forward pass for `Seq2SeqTransformerEncoderSpec`.
@@ -433,8 +333,7 @@ def Seq2SeqTransformerEncoderSpec.forward {embedDim numHeads numLayers seqLen : 
   (x : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   (h1 : seqLen > 0) (h2 : embedDim > 0) :
   Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-  let x := dropoutInferenceSpec (p := encoder.dropout_rate) x
-  encoder.layers.foldl (fun acc layer => TransformerEncoderLayer.forward layer acc h1 h2) x
+  encoder.layers.toArray.foldl (fun acc layer => TransformerEncoderLayer.forward layer acc h1 h2) x
 
 /--
 RNN decoder specification for Seq2Seq.
@@ -456,9 +355,7 @@ structure Seq2SeqDecoderSpec (α : Type) [Numbers α] (embedDim hiddenDim vocabS
   attention :
     Option (Σ numHeads : Nat, MultiHeadAttention α numHeads embedDim (embedDim / numHeads)) := none
   /-- Output projection (`hiddenDim -> vocabSize`) producing per-timestep logits. -/
-  output_projection : LinearSpec α hiddenDim vocabSize
-  /-- Dropout probability `p` retained by evaluation-mode dropout on decoder input embeddings. -/
-  dropout_rate : α := Numbers.pointone
+  outputProjection : LinearSpec α hiddenDim vocabSize
 
 /--
 Seq2Seq decoder forward pass (teacher forcing)
@@ -478,55 +375,13 @@ def Seq2SeqDecoderSpec.forwardTeacherForcing {embedDim hiddenDim vocabSize tgtSe
   Tensor α (.dim tgtSeqLen (.dim vocabSize .scalar)) :=
 
   -- Optional self-attention over the full target embedding sequence.
-  let attended_embeddings :=
+  let attendedEmbeddings :=
     match decoder.attention with
     | some ⟨_numHeads, attn⟩ =>
         MultiHeadAttention.forward tgtSeqLen h_len_nonzero attn target_embeddings none
     | none => target_embeddings
-
-  let attended_embeddings :=
-    dropoutInferenceSpec (p := decoder.dropout_rate) attended_embeddings
-
-  -- Recursive function to process sequence step by step
-  let rec process_sequence
-    (i : Nat)                             -- current time step
-    (h : Tensor α (.dim hiddenDim .scalar)) -- current hidden state
-    (acc : List (Tensor α (.dim vocabSize .scalar))) -- accumulated logits
-    (h_bound : i <= tgtSeqLen)            -- proof that i <= tgtSeqLen
-    : List (Tensor α (.dim vocabSize .scalar)) :=
-    if h_end : i = tgtSeqLen then
-      acc.reverse  -- return accumulated logits
-    else
-      -- Safe access to target embedding at step i
-      have h_idx : i < tgtSeqLen := Nat.lt_of_le_of_ne h_bound h_end
-      let idx : Fin tgtSeqLen := ⟨i, h_idx⟩
-
-      let attended_input :=
-        match attended_embeddings with
-        | Tensor.dim tokens => tokens idx
-
-      -- Update hidden state via RNN cell
-      let new_h := rnnCellSpec decoder.rnn attended_input h
-
-      -- Project hidden state to logits
-      let output_logits := linearSpec decoder.output_projection new_h
-
-      -- Increment recursion
-      let h_next : i + 1 <= tgtSeqLen := Nat.succ_le_of_lt h_idx
-      process_sequence (i + 1) new_h (output_logits :: acc) h_next
-
-  termination_by tgtSeqLen - i
-  decreasing_by
-    all_goals
-      simpa using Nat.sub_succ_lt_self (a := tgtSeqLen) (i := i) h_idx
-
-  -- Start recursion
-  let h_zero : 0 <= tgtSeqLen := Nat.zero_le tgtSeqLen
-  let outputs := process_sequence 0 h0 [] h_zero
-
-  -- Convert list of logits to tensor safely using Fin indexing
-  Tensor.dim (fun i : Fin tgtSeqLen =>
-    outputs.getD i.val (Tensor.dim (fun _ => Tensor.scalar (0 : α))))
+  let hiddens := rnnSequenceSpec decoder.rnn attendedEmbeddings h0
+  Tensor.dim (fun i => linearSpec decoder.outputProjection (get hiddens i))
 
 /-!
 ### Decoder backward (teacher forcing)
@@ -557,24 +412,17 @@ def timeDistributedLinearBackward
   (hiddens : Tensor α (.dim tgtSeqLen (.dim hiddenDim .scalar)))
   (grad_logits : Tensor α (.dim tgtSeqLen (.dim vocabSize .scalar))) :
   (Seq2SeqLinearGrads α hiddenDim vocabSize × Tensor α (.dim tgtSeqLen (.dim hiddenDim .scalar))) :=
-  let step (acc : Seq2SeqLinearGrads α hiddenDim vocabSize × List (Tensor α (.dim hiddenDim
-    .scalar))) (i : Fin tgtSeqLen) :=
-    let (accLin, accDH) := acc
+  let step (i : Fin tgtSeqLen) (acc : Seq2SeqLinearGrads α hiddenDim vocabSize) :=
     let hi := get hiddens i
     let dYi := get grad_logits i
     let (dW, db, dH) := linearBackwardSpec layer hi dYi
-    ({ dW := addSpec accLin.dW dW, db := addSpec accLin.db db }, dH :: accDH)
+    ({ weight := addSpec acc.weight dW, bias := addSpec acc.bias db }, dH)
   let init : Seq2SeqLinearGrads α hiddenDim vocabSize := {
-    dW := fill 0 (.dim vocabSize (.dim hiddenDim .scalar)),
-    db := fill 0 (.dim vocabSize .scalar)
+    weight := fill 0 (.dim vocabSize (.dim hiddenDim .scalar)),
+    bias := fill 0 (.dim vocabSize .scalar)
   }
-  let (linGrads, dH_rev) := (List.finRange tgtSeqLen).foldl step (init, [])
-  let dH_list := dH_rev.reverse
-  let dH :=
-    match dH_list with
-    | [] => fill 0 (.dim tgtSeqLen (.dim hiddenDim .scalar))
-    | h :: _ => Tensor.dim (fun i => dH_list.getD i.val h)
-  (linGrads, dH)
+  let (linearGrads, dH) := Sequence.mapAccum tgtSeqLen init step
+  (linearGrads, Tensor.dim dH.get)
 
 /--
 Backward pass for `Seq2SeqDecoderSpec.forwardTeacherForcing`.
@@ -602,37 +450,31 @@ def Seq2SeqDecoderSpec.backwardTeacherForcing
     Tensor α (.dim tgtSeqLen (.dim embedDim .scalar)) ×
     Tensor α (.dim hiddenDim .scalar)) :=
 
-  let attended_embeddings0 :=
+  let attendedEmbeddings :=
     match decoder.attention with
     | some ⟨_numHeads, attn⟩ =>
         MultiHeadAttention.forward tgtSeqLen h_len_nonzero attn target_embeddings none
     | none => target_embeddings
-
-  let attended_embeddings :=
-    dropoutInferenceSpec (p := decoder.dropout_rate) attended_embeddings0
-
-  let hiddens := rnnSequenceSpec decoder.rnn attended_embeddings h0
+  let hiddens := rnnSequenceSpec decoder.rnn attendedEmbeddings h0
   let (projGrads, dH) := timeDistributedLinearBackward (α := α)
     (tgtSeqLen := tgtSeqLen) (hiddenDim := hiddenDim) (vocabSize := vocabSize)
-    decoder.output_projection hiddens grad_logits
+    decoder.outputProjection hiddens grad_logits
 
   let (dW_rnn, db_rnn, dAttended0, dH0) :=
-    rnnSequenceBackwardSpec decoder.rnn attended_embeddings h0 hiddens dH
+    rnnSequenceBackwardSpec decoder.rnn attendedEmbeddings h0 hiddens dH
 
-  let dAttended :=
-    dropoutInferenceBackwardSpec (p := decoder.dropout_rate) dAttended0
-
-  let rnnGrads : Seq2SeqRNNGrads α embedDim hiddenDim := { dW := dW_rnn, db := db_rnn }
+  let rnnGrads : Seq2SeqRNNGrads α embedDim hiddenDim :=
+    { weight := dW_rnn, bias := db_rnn }
 
   match decoder.attention with
   | none =>
-      (rnnGrads, projGrads, none, dAttended, dH0)
+      (rnnGrads, projGrads, none, dAttended0, dH0)
   | some ⟨numHeads, attn⟩ =>
-      let (dTargetEmb, dWq, dWk, dWv, dWo) :=
-        MultiHeadAttentionBackward (α := α) (n := tgtSeqLen) (dModel := embedDim)
-          h_len_nonzero attn target_embeddings none dAttended
+      let (dTargetEmb, queryWeight, keyWeight, valueWeight, outputWeight) :=
+        multiHeadAttentionBackward (α := α) (n := tgtSeqLen) (dModel := embedDim)
+          h_len_nonzero attn target_embeddings none dAttended0
       let attnGrads : MultiHeadAttentionGrads numHeads embedDim (embedDim / numHeads) α :=
-        { dWq := dWq, dWk := dWk, dWv := dWv, dWo := dWo }
+        { queryWeight, keyWeight, valueWeight, outputWeight }
       (rnnGrads, projGrads, some ⟨numHeads, attnGrads⟩, dTargetEmb, dH0)
 
 /--
@@ -640,8 +482,8 @@ Seq2Seq decoder forward pass (inference-time autoregressive decoding).
 
 This runs a greedy decoding loop for `maxLen` steps, starting from:
 - an initial hidden state `h0`,
-- a starting input embedding vector (`start_token` already embedded),
-- and a target embedding table `tgt_embedding` used to embed the predicted next token id.
+- a bounded starting token index,
+- and a target embedding table used to embed each predicted token.
 
 Returns:
 - the per-step logits `(maxLen × vocabSize)`,
@@ -656,85 +498,24 @@ greedy decoding loop below does not implement autoregressive self-attention.
 def Seq2SeqDecoderSpec.forwardInference {embedDim hiddenDim vocabSize : Nat}
   (decoder : Seq2SeqDecoderSpec α embedDim hiddenDim vocabSize)
   (h0 : Tensor α (.dim hiddenDim .scalar))
-  (start_token : Tensor α (.dim embedDim .scalar))
-  (tgt_embedding : Tensor α (.dim vocabSize (.dim embedDim .scalar)))
-  (maxLen : Nat) (h_len : maxLen ≠ 0)
-  (h3 : vocabSize ≠ 0):
-  (Tensor α (.dim maxLen (.dim vocabSize .scalar)) × Tensor Nat (.dim maxLen .scalar)) :=
-
-  let rec process_sequence (i : Nat) (h : Tensor α (.dim hiddenDim .scalar))
-    (current_input : Tensor α (.dim embedDim .scalar))
-    (acc_logits : List (Tensor α (.dim vocabSize .scalar)))
-    (acc_tokens : List Nat) (h_bound : i <= maxLen) (h_len : maxLen ≠ 0) (h_vocab : vocabSize > 0):
-    (List (Tensor α (.dim vocabSize .scalar)) × List Nat) :=
-    if h_max : i = maxLen then (acc_logits.reverse, acc_tokens.reverse)
-    else
-      -- NOTE: we do not model `decoder.attention` in this greedy RNN decoding loop.
-      -- The self-attention variant in this file is intended for teacher-forcing over a known target
-      -- sequence. Autoregressive attention (prefix attention + causal masking) belongs in the
-      -- transformer-style decoders.
-      let attended_input :=
-        dropoutInferenceSpec (p := decoder.dropout_rate) current_input
-
-      let new_h := rnnCellSpec decoder.rnn attended_input h
-      let output_logits := linearSpec decoder.output_projection new_h
-
-      -- Greedy decoding
-      let predicted_token :=
-        match output_logits with
-        | Tensor.dim logits =>
-          -- Recursive greedy argmax over Fin vocabSize → Tensor α Shape.scalar
-          let rec find_max (j : Nat) (max_val : α) (max_idx : Nat) : Nat :=
-            if hlt : j < vocabSize then
-              let val_tensor := logits ⟨j, hlt⟩
-              match val_tensor with
-              | Tensor.scalar v =>
-                if v > max_val then
-                  find_max (j + 1) v j
-                else
-                  find_max (j + 1) max_val max_idx
-            else max_idx
-          termination_by vocabSize - j
-          decreasing_by
-            all_goals
-              simpa using Nat.sub_succ_lt_self (a := vocabSize) (i := j) hlt
-
-          -- Initialize recursion with first element
-          let first_tensor := logits ⟨0, h_vocab⟩
-          match first_tensor with
-          | Tensor.scalar first_val => find_max 1 first_val 0
-
-
-      -- Next input embedding: lookup the predicted token in the target embedding table.
-      let next_input :=
-        if h : predicted_token < vocabSize then
-          match get tgt_embedding ⟨predicted_token, h⟩ with
-          | Tensor.dim embed_vals => Tensor.dim embed_vals
-        else
-          Tensor.dim (fun _ => Tensor.scalar (0 : α))
-
-      have hi : i < maxLen := Nat.lt_of_le_of_ne h_bound h_max
-      let h_next : i + 1 <= maxLen := Nat.succ_le_of_lt hi
-      process_sequence (i + 1) new_h next_input (output_logits :: acc_logits) (predicted_token ::
-        acc_tokens) h_next h_len h_vocab
-
-  termination_by maxLen - i
-  decreasing_by
-    all_goals
-      simpa using Nat.sub_succ_lt_self (a := maxLen) (i := i) hi
-
-  let h_zero : 0 <= maxLen := Nat.zero_le maxLen
-  let (outputs, tokens) :=
-    process_sequence 0 h0 start_token [] [] h_zero h_len (Nat.pos_of_ne_zero h3)
-
-  -- Convert lists to tensors
-  let output_tensor := Tensor.dim (fun i =>
-    outputs.getD i.val (Tensor.dim (fun _ => Tensor.scalar (0 : α))))
-
-  let token_tensor := Tensor.dim (fun i =>
-    Tensor.scalar (tokens.getD i.val 0))
-
-  (output_tensor, token_tensor)
+  (targetEmbedding : Tensor α (.dim vocabSize (.dim embedDim .scalar)))
+  (startToken : Fin vocabSize) (maxLen : Nat) :
+  (Tensor α (.dim maxLen (.dim vocabSize .scalar)) ×
+    Tensor (Fin vocabSize) (.dim maxLen .scalar)) :=
+  let initialInput := get targetEmbedding startToken
+  let hVocab : 0 < vocabSize := lt_of_le_of_lt (Nat.zero_le startToken.val) startToken.isLt
+  let (_, results) := Sequence.mapAccum maxLen (h0, initialInput) fun _ state =>
+    let (hidden, input) := state
+    -- The optional self-attention block is defined over a complete teacher-forcing sequence. An
+    -- autoregressive attention decoder needs a causal prefix or cache and is therefore a separate
+    -- model, rather than an implicit reinterpretation of this RNN loop.
+    let nextHidden := rnnCellSpec decoder.rnn input hidden
+    let logits := linearSpec decoder.outputProjection nextHidden
+    let token := argmaxVector hVocab logits
+    let nextInput := get targetEmbedding token
+    ((nextHidden, nextInput), (logits, token))
+  (Tensor.dim (fun i => (results.get i).1),
+    Tensor.dim (fun i => Tensor.scalar (results.get i).2))
 
 /--
 Complete Seq2Seq model specification (baseline).
@@ -749,10 +530,10 @@ PyTorch analogue: a small encoder-decoder model built from `nn.Embedding`, `nn.R
 -/
 structure Seq2SeqSpec (α : Type) [Numbers α] (srcVocabSize tgtVocabSize embedDim hiddenDim : Nat)
   where
-  /-- Source embedding table + dropout configuration. -/
-  src_embedding : Seq2SeqEmbeddingSpec α srcVocabSize embedDim
-  /-- Target embedding table + dropout configuration. -/
-  tgt_embedding : Seq2SeqEmbeddingSpec α tgtVocabSize embedDim
+  /-- Source embedding table. -/
+  sourceEmbedding : Seq2SeqEmbeddingSpec α srcVocabSize embedDim
+  /-- Target embedding table. -/
+  targetEmbedding : Seq2SeqEmbeddingSpec α tgtVocabSize embedDim
   /-- Encoder RNN parameters. -/
   encoder : Seq2SeqRNNEncoderSpec α embedDim hiddenDim
   /-- Decoder parameters (RNN + output projection + optional self-attention). -/
@@ -773,24 +554,16 @@ not assigned to the token ids themselves.
 def Seq2SeqSpec.forwardTraining {srcVocabSize tgtVocabSize embedDim hiddenDim srcSeqLen tgtSeqLen :
   Nat}
   (model : Seq2SeqSpec α srcVocabSize tgtVocabSize embedDim hiddenDim)
-  (src_tokens : Tensor Nat (.dim srcSeqLen .scalar))
-  (tgt_tokens : Tensor Nat (.dim tgtSeqLen .scalar))
-  (_h1 : srcVocabSize ≠ 0) (_h2 : tgtVocabSize ≠ 0) (_h3 : embedDim ≠ 0) (_h4 : hiddenDim ≠ 0)
-  (_h5 : srcSeqLen ≠ 0) (h6 : tgtSeqLen ≠ 0) :
+  (sourceTokens : Tensor (Fin srcVocabSize) (.dim srcSeqLen .scalar))
+  (targetTokens : Tensor (Fin tgtVocabSize) (.dim tgtSeqLen .scalar))
+  (hTarget : tgtSeqLen ≠ 0) :
   Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)) :=
-
-  -- Source embeddings
-  let src_embeds := Seq2SeqEmbeddingSpec.forward model.src_embedding src_tokens
-
-  -- Encode source sequence
-  let (_encoder_outputs, encoder_hidden) := Seq2SeqRNNEncoderSpec.forward model.encoder src_embeds
+  let sourceEmbeddings := Seq2SeqEmbeddingSpec.forward model.sourceEmbedding sourceTokens
+  let (_encoderOutputs, encoderHidden) :=
+    Seq2SeqRNNEncoderSpec.forward model.encoder sourceEmbeddings
     none
-
-  -- Target embeddings
-  let tgt_embeds := Seq2SeqEmbeddingSpec.forward model.tgt_embedding tgt_tokens
-
-  -- Decode with teacher forcing
-  Seq2SeqDecoderSpec.forwardTeacherForcing model.decoder tgt_embeds encoder_hidden h6
+  let targetEmbeddings := Seq2SeqEmbeddingSpec.forward model.targetEmbedding targetTokens
+  Seq2SeqDecoderSpec.forwardTeacherForcing model.decoder targetEmbeddings encoderHidden hTarget
 
 /--
 Seq2Seq forward pass for inference-time decoding using discrete token ids.
@@ -805,29 +578,15 @@ Returns:
 def Seq2SeqSpec.forwardInference {srcVocabSize tgtVocabSize embedDim hiddenDim srcSeqLen : Nat}
   (maxTgtLen : Nat)
   (model : Seq2SeqSpec α srcVocabSize tgtVocabSize embedDim hiddenDim)
-  (src_tokens : Tensor Nat (.dim srcSeqLen .scalar))
-  (start_token : Nat)
-  (_h1 : srcVocabSize ≠ 0) (h2 : tgtVocabSize ≠ 0) (_h3 : embedDim ≠ 0) (_h4 : hiddenDim ≠ 0)
-  (_h5 : srcSeqLen ≠ 0) (h6 : maxTgtLen ≠ 0) :
-  (Tensor α (.dim maxTgtLen (.dim tgtVocabSize .scalar)) × Tensor Nat (.dim maxTgtLen .scalar)) :=
-
-  -- Source embeddings
-  let src_embeds := Seq2SeqEmbeddingSpec.forward model.src_embedding src_tokens
-
-  -- Encode source sequence
-  let (_encoder_outputs, encoder_hidden) := Seq2SeqRNNEncoderSpec.forward model.encoder src_embeds
-    none
-
-  -- Start token embedding
-  let start_embed := if h : start_token < tgtVocabSize then
-    match get model.tgt_embedding.embedding ⟨start_token, h⟩ with
-    | Tensor.dim embed_vals => Tensor.dim embed_vals
-  else
-    Tensor.dim (fun _ => Tensor.scalar (0 : α))
-
-  -- Decode with inference
-  Seq2SeqDecoderSpec.forwardInference model.decoder encoder_hidden start_embed
-    model.tgt_embedding.embedding maxTgtLen h6 h2
+  (sourceTokens : Tensor (Fin srcVocabSize) (.dim srcSeqLen .scalar))
+  (startToken : Fin tgtVocabSize) :
+  (Tensor α (.dim maxTgtLen (.dim tgtVocabSize .scalar)) ×
+    Tensor (Fin tgtVocabSize) (.dim maxTgtLen .scalar)) :=
+  let sourceEmbeddings := Seq2SeqEmbeddingSpec.forward model.sourceEmbedding sourceTokens
+  let (_encoderOutputs, encoderHidden) :=
+    Seq2SeqRNNEncoderSpec.forward model.encoder sourceEmbeddings none
+  Seq2SeqDecoderSpec.forwardInference model.decoder encoderHidden model.targetEmbedding.embedding
+    startToken maxTgtLen
 
 /-!
 ### Differentiable training + backward (one-hot inputs)
@@ -847,11 +606,11 @@ def Seq2SeqSpec.forwardTrainingOneHot
   (model : Seq2SeqSpec α srcVocabSize tgtVocabSize embedDim hiddenDim)
   (srcOneHot : Tensor α (.dim srcSeqLen (.dim srcVocabSize .scalar)))
   (tgtOneHot : Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)))
-  (_hSrc : srcSeqLen ≠ 0) (hTgt : tgtSeqLen ≠ 0) :
+  (hTgt : tgtSeqLen ≠ 0) :
   Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)) :=
-  let src_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.src_embedding srcOneHot
+  let src_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.sourceEmbedding srcOneHot
   let (_encOut, encHidden) := Seq2SeqRNNEncoderSpec.forward model.encoder src_embeds none
-  let tgt_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.tgt_embedding tgtOneHot
+  let tgt_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.targetEmbedding tgtOneHot
   Seq2SeqDecoderSpec.forwardTeacherForcing model.decoder tgt_embeds encHidden hTgt
 
 /--
@@ -867,13 +626,14 @@ PyTorch analogue: `nn.CrossEntropyLoss` applied per timestep (with probabilities
 -/
 def Seq2SeqSpec.crossEntropyLossOneHot
   {srcVocabSize tgtVocabSize embedDim hiddenDim srcSeqLen tgtSeqLen : Nat}
+  [Shape.HasNonemptyAxis 1 (.dim tgtSeqLen (.dim tgtVocabSize .scalar))]
   (model : Seq2SeqSpec α srcVocabSize tgtVocabSize embedDim hiddenDim)
   (srcOneHot : Tensor α (.dim srcSeqLen (.dim srcVocabSize .scalar)))
   (tgtOneHot : Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)))
-  (hSrc : srcSeqLen ≠ 0) (hTgt : tgtSeqLen ≠ 0) : α :=
-  let logits := Seq2SeqSpec.forwardTrainingOneHot (α := α) model srcOneHot tgtOneHot hSrc hTgt
-  let probs := Activation.softmaxSpec logits
-  crossEntropySpec probs tgtOneHot
+  (hTgt : tgtSeqLen ≠ 0) : α :=
+  let logits := Seq2SeqSpec.forwardTrainingOneHot (α := α) model srcOneHot tgtOneHot hTgt
+  let probs := Activation.softmaxLastSpec logits
+  crossEntropySpec 1 probs tgtOneHot
 
 /--
 Compute `(loss, grads)` for the Seq2Seq baseline under per-timestep cross-entropy.
@@ -887,22 +647,23 @@ This returns gradients for:
 -/
 def Seq2SeqSpec.crossEntropyGradOneHot
   {srcVocabSize tgtVocabSize embedDim hiddenDim srcSeqLen tgtSeqLen : Nat}
+  [Shape.HasNonemptyAxis 1 (.dim tgtSeqLen (.dim tgtVocabSize .scalar))]
   (model : Seq2SeqSpec α srcVocabSize tgtVocabSize embedDim hiddenDim)
   (srcOneHot : Tensor α (.dim srcSeqLen (.dim srcVocabSize .scalar)))
   (tgtOneHot : Tensor α (.dim tgtSeqLen (.dim tgtVocabSize .scalar)))
-  (_hSrc : srcSeqLen ≠ 0) (hTgt : tgtSeqLen ≠ 0) :
+  (hTgt : tgtSeqLen ≠ 0) :
   (α × Seq2SeqGrads α srcVocabSize tgtVocabSize embedDim hiddenDim) :=
 
-  let src_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.src_embedding srcOneHot
+  let src_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.sourceEmbedding srcOneHot
   let (encHiddens, encHidden) := Seq2SeqRNNEncoderSpec.forward model.encoder src_embeds none
-  let tgt_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.tgt_embedding tgtOneHot
+  let tgt_embeds := Seq2SeqEmbeddingSpec.forwardOneHot model.targetEmbedding tgtOneHot
 
   let logits := Seq2SeqDecoderSpec.forwardTeacherForcing model.decoder tgt_embeds encHidden hTgt
-  let probs := Activation.softmaxSpec logits
-  let loss := crossEntropySpec probs tgtOneHot
+  let probs := Activation.softmaxLastSpec logits
+  let loss := crossEntropySpec 1 probs tgtOneHot
 
-  let dProbs := crossEntropyDerivSpec probs tgtOneHot
-  let dLogits := Activation.softmaxBackwardSpec logits dProbs
+  let dProbs := crossEntropyDerivSpec 1 probs tgtOneHot
+  let dLogits := Activation.softmaxLastBackwardSpec logits dProbs
 
   let (decRnnGrads, outProjGrads, attnGradsOpt, dTgtEmbeds, dEncHidden) :=
     Seq2SeqDecoderSpec.backwardTeacherForcing (α := α)
@@ -913,7 +674,7 @@ def Seq2SeqSpec.crossEntropyGradOneHot
   let (dTgtEmbTable, _dTgtOneHot) :=
     Seq2SeqEmbeddingSpec.backwardOneHot (α := α)
       (vocabSize := tgtVocabSize) (embedDim := embedDim) (seqLen := tgtSeqLen)
-      model.tgt_embedding tgtOneHot dTgtEmbeds
+      model.targetEmbedding tgtOneHot dTgtEmbeds
 
   -- Encoder only feeds the decoder through the final hidden state.
   let dEncHiddens :=
@@ -923,30 +684,24 @@ def Seq2SeqSpec.crossEntropyGradOneHot
       Tensor.dim (fun i =>
         if _ : i.val = srcSeqLen - 1 then dEncHidden else fill 0 (.dim hiddenDim .scalar))
 
-  let src_embeds_dropped :=
-    dropoutInferenceSpec (p := model.encoder.dropout_rate) src_embeds
-
-  let (dW_enc, db_enc, dSrcEmbeds0, _dH0_enc) :=
-    rnnSequenceBackwardSpec model.encoder.rnn src_embeds_dropped (fill 0 (.dim hiddenDim .scalar))
+  let (dW_enc, db_enc, dSrcEmbeds, _dH0_enc) :=
+    rnnSequenceBackwardSpec model.encoder.rnn src_embeds (fill 0 (.dim hiddenDim .scalar))
       encHiddens dEncHiddens
-
-  let dSrcEmbeds :=
-    dropoutInferenceBackwardSpec (p := model.encoder.dropout_rate) dSrcEmbeds0
-
-  let encGrads : Seq2SeqRNNGrads α embedDim hiddenDim := { dW := dW_enc, db := db_enc }
+  let encGrads : Seq2SeqRNNGrads α embedDim hiddenDim :=
+    { weight := dW_enc, bias := db_enc }
 
   let (dSrcEmbTable, _dSrcOneHot) :=
     Seq2SeqEmbeddingSpec.backwardOneHot (α := α)
       (vocabSize := srcVocabSize) (embedDim := embedDim) (seqLen := srcSeqLen)
-      model.src_embedding srcOneHot dSrcEmbeds
+      model.sourceEmbedding srcOneHot dSrcEmbeds
 
   let grads : Seq2SeqGrads α srcVocabSize tgtVocabSize embedDim hiddenDim :=
-    { d_src_embedding := dSrcEmbTable
-      d_tgt_embedding := dTgtEmbTable
-      d_encoder := encGrads
-      d_decoder_rnn := decRnnGrads
-      d_output_projection := outProjGrads
-      d_decoder_attention := attnGradsOpt }
+    { sourceEmbedding := dSrcEmbTable
+      targetEmbedding := dTgtEmbTable
+      encoder := encGrads
+      decoderRnn := decRnnGrads
+      outputProjection := outProjGrads
+      decoderAttention := attnGradsOpt }
 
   (loss, grads)
 
@@ -961,16 +716,16 @@ passes above do not integrate encoder-decoder cross-attention by default.
 -/
 structure AttentionSeq2SeqSpec (α : Type) [Numbers α] (srcVocabSize tgtVocabSize embedDim hiddenDim
   : Nat) where
-  /-- Source embedding table + dropout configuration. -/
-  src_embedding : Seq2SeqEmbeddingSpec α srcVocabSize embedDim
-  /-- Target embedding table + dropout configuration. -/
-  tgt_embedding : Seq2SeqEmbeddingSpec α tgtVocabSize embedDim
+  /-- Source embedding table. -/
+  sourceEmbedding : Seq2SeqEmbeddingSpec α srcVocabSize embedDim
+  /-- Target embedding table. -/
+  targetEmbedding : Seq2SeqEmbeddingSpec α tgtVocabSize embedDim
   /-- Encoder RNN parameters. -/
   encoder : Seq2SeqRNNEncoderSpec α embedDim hiddenDim
   /-- Decoder parameters (RNN + output projection + optional self-attention). -/
   decoder : Seq2SeqDecoderSpec α embedDim hiddenDim tgtVocabSize
   /-- Attention projection matrix used to score encoder outputs against the decoder hidden state. -/
-  attention_weights : Tensor α (.dim hiddenDim (.dim hiddenDim .scalar))
+  attentionWeights : Tensor α (.dim hiddenDim (.dim hiddenDim .scalar))
 
 /--
 Compute attention weights over encoder outputs for a single decoder hidden state.
@@ -984,24 +739,22 @@ It is inspired by classic encoder-decoder attention mechanisms (Bahdanau-style),
 the scoring rule compact.
 -/
 def computeAttentionWeightsSpec {α : Type} [Context α] {hiddenDim seqLen : Nat}
-  (attention_weights : Tensor α (.dim hiddenDim (.dim hiddenDim .scalar)))
-  (decoder_hidden : Tensor α (.dim hiddenDim .scalar))
-  (encoder_outputs : Tensor α (.dim seqLen (.dim hiddenDim .scalar)))
+  (attentionWeights : Tensor α (.dim hiddenDim (.dim hiddenDim .scalar)))
+  (decoderHidden : Tensor α (.dim hiddenDim .scalar))
+  (encoderOutputs : Tensor α (.dim seqLen (.dim hiddenDim .scalar)))
   (h1 : hiddenDim ≠ 0) (_h2 : seqLen ≠ 0) :
   Tensor α (.dim seqLen .scalar) :=
   -- Compute attention scores
-  let projected_hidden := matVecMulSpec attention_weights decoder_hidden
+  let projected_hidden := matVecMulSpec attentionWeights decoderHidden
   let scores := Tensor.dim (fun i =>
-    match get encoder_outputs i with
+    match get encoderOutputs i with
     | Tensor.dim encoder_hidden =>
       let encoder_vec := Tensor.dim encoder_hidden
       let mul_vec := mulSpec projected_hidden encoder_vec
-      have _inst : Shape.valid_axis_inst 0 (Shape.dim hiddenDim Shape.scalar) :=
-        Shape.validAxisInstZeroAlt h1
-      reduceSumAuto 0 mul_vec
+      reduceSum 0 mul_vec (Shape.hasNonemptyAxisZeroOfNe h1).proof
   )
   -- Apply softmax to get attention weights
-  Activation.softmaxSpec scores
+  Activation.softmaxLastSpec scores
 
 /--
 Apply attention weights to encoder outputs (weighted sum / context vector).
@@ -1010,20 +763,18 @@ Given attention weights `a : (seqLen)` and encoder outputs `H : (seqLen × hidde
 context vector `c = Σ_i a_i · H_i : (hiddenDim)`.
 -/
 def applyAttentionSpec {hiddenDim seqLen : Nat}
-  (attention_weights : Tensor α (.dim seqLen .scalar))
-  (encoder_outputs : Tensor α (.dim seqLen (.dim hiddenDim .scalar)))
+  (attentionWeights : Tensor α (.dim seqLen .scalar))
+  (encoderOutputs : Tensor α (.dim seqLen (.dim hiddenDim .scalar)))
   (h1 : seqLen ≠ 0) (_h2 : hiddenDim ≠ 0) :
   Tensor α (.dim hiddenDim .scalar) :=
   -- Weighted sum of encoder outputs
   let weighted_outputs := Tensor.dim (fun i =>
-    match get attention_weights i, get encoder_outputs i with
+    match get attentionWeights i, get encoderOutputs i with
     | Tensor.scalar weight, Tensor.dim encoder_hidden =>
       let encoder_vec := Tensor.dim encoder_hidden
       scaleSpec encoder_vec weight
   )
   -- Sum across sequence dimension
-  have _inst : Shape.valid_axis_inst 0 (Shape.dim seqLen (Shape.dim hiddenDim Shape.scalar)) :=
-    Shape.validAxisInstZeroAlt h1
-  reduceSumAuto 0 weighted_outputs
+  reduceSum 0 weighted_outputs (Shape.hasNonemptyAxisZeroOfNe h1).proof
 
 end Spec

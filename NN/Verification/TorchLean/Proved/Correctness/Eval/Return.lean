@@ -90,7 +90,7 @@ open NN.Verification.TorchLean
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
       (params : Runtime.Autograd.Torch.TList α paramShapes)
-      (vals : Array (DVal α)) :
+      (vals : Array (Spec.PackedTensor α)) :
       evalForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out := out)
         g params vals
         =
@@ -99,7 +99,7 @@ open NN.Verification.TorchLean
           evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out
             := out)
             g params vals
-        let v : DVal α ← getDVal? vals' ((outputIndex (α := α) (paramShapes := paramShapes)
+        let v : Spec.PackedTensor α ← getValue? vals' ((outputIndex (α := α) (paramShapes := paramShapes)
           (inShape := inShape) (ss := ss) (out := out) g).id)
         if h : v.shape = out then
           pure (h ▸ v.tensor)
@@ -132,7 +132,7 @@ open NN.Verification.TorchLean
                 exact hIH
             | ok valsNext =>
                 cases hGet :
-                    getDVal? valsNext
+                    getValue? valsNext
                       ((outputIndex (α := α) (paramShapes := paramShapes) (inShape := inShape)
                         (ss := ss₀ ++ [mid₀]) (out := out₀) gNext).id) with
                 | error e =>
@@ -156,7 +156,7 @@ open NN.Verification.TorchLean
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
       (params : Runtime.Autograd.Torch.TList α paramShapes)
-      (vals vals' : Array (DVal α))
+      (vals vals' : Array (Spec.PackedTensor α))
       (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss)
       (hOk :
         evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=

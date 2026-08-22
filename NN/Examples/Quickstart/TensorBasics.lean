@@ -17,7 +17,7 @@ It is just about building typed tensors in Lean with a convenient constructor la
 What it covers:
 - 1D and N-D constructors from literal lists (`Tensor.vector`, `Tensor.ofList`, `tensor!`),
 - the fact that the element type `α` selects the tensor's scalar semantics,
-- Float-literal constructors for native `Float32` and reference `IEEE32Exec`,
+- conversion of host `Float` literals to native `Float32` and reference `IEEE32Exec`,
 - why we generally do not try to `print` tensors over `ℝ` (noncomputable / too large).
 
 Run:
@@ -60,14 +60,17 @@ def main (args : List String) : IO Unit := do
   Tensor.print xI
 
   -- Native binary32 and the independent raw-bit reference have deliberately different names.
-  let x32 := Tensor.float32Vector [0.1, 0.2, 0.3, 0.4]
-  let x32Ref := Tensor.ieee32ExecVector [0.1, 0.2, 0.3, 0.4]
+  let x32 ← CLI.orThrowIO <|
+    Tensor.fromFloatList Float.toFloat32 [4] [0.1, 0.2, 0.3, 0.4]
+  let x32Ref ← CLI.orThrowIO <|
+    Tensor.fromFloatList TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat [4]
+      [0.1, 0.2, 0.3, 0.4]
   Tensor.print x32
   Tensor.print x32Ref
 
   -- N-D tensor using "nested brackets" (like nested Python lists in PyTorch).
   -- This is often the clearest way to see where each element goes.
-  let x3 : Tensor Float (Shape.ofDims [2, 2, 2]) :=
+  let x3 : Tensor Float (Shape.ofList [2, 2, 2]) :=
     tensor! [
       [ [1, 2], [3, 4] ],
       [ [5, 6], [7, 8] ]

@@ -220,28 +220,28 @@ counter together with the sampled action index.
 
 Implementation note: this uses the standard cumulative-sum / inverse-CDF sampler.
 -/
-def sampleCategorical {nActions : Nat} [Fact (0 < nActions)]
+def sampleCategorical {nActions : Nat} [NeZero nActions]
     (seed counter : Nat) (probs : Tensor α (.dim nActions .scalar)) :
     Nat × Fin nActions :=
   let key := _root_.Runtime.Autograd.TorchLean.Random.keyOf seed counter
   let u : α :=
-    Tensor.toScalar (_root_.Runtime.Autograd.TorchLean.Random.uniform (α := α) key (s := Shape.scalar))
+    Tensor.item (_root_.Runtime.Autograd.TorchLean.Random.uniform (α := α) key (s := Shape.scalar))
   let default : Fin nActions :=
-    ⟨nActions - 1, Nat.pred_lt (Nat.ne_of_gt (Fact.out : 0 < nActions))⟩
+    ⟨nActions - 1, Nat.pred_lt (NeZero.ne nActions)⟩
   Id.run do
     let idxs : Array (Fin nActions) := Array.ofFn (fun i => i)
     let mut cum : α := 0
     let mut chosen : Option (Fin nActions) := none
     for k in idxs do
       if chosen.isNone then
-        let pk : α := Tensor.toScalar (get probs k)
+        let pk : α := Tensor.item (get probs k)
         cum := cum + pk
         if Context.gtBool cum u then
           chosen := some k
     return (counter + 1, chosen.getD default)
 
 /-- Sample an action from logits by applying softmax then `sampleCategorical`. -/
-def sampleActionFromLogits {nActions : Nat} [Fact (0 < nActions)]
+def sampleActionFromLogits {nActions : Nat} [NeZero nActions]
     (seed counter : Nat) (logits : Tensor α (.dim nActions .scalar)) :
     Nat × Fin nActions :=
   sampleCategorical (α := α) (nActions := nActions) (seed := seed) (counter := counter)

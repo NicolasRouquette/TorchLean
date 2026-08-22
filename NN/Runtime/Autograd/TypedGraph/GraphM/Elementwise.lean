@@ -405,21 +405,41 @@ Softmax along the last axis (recursing over outer dimensions).
 
 PyTorch comparison: `torch.softmax(x, dim=-1)`.
 -/
-def softmax {α : Type} [Context α] [DecidableEq Shape]
+def softmaxLast {α : Type} [Context α] [DecidableEq Shape]
   {Δ : Type} {Γ : List Shape} {s : Shape} (x : Var s) : MWith α Δ Γ (Var s) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   let node : NodeData α Δ (Γ ++ ss) s :=
     { forward := fun ctx _d =>
-        Activation.softmaxSpec (α := α) (s := s) (getIdx (α := α) (xs := ctx) ix)
+        Activation.softmaxLastSpec (α := α) (s := s) (getIdx (α := α) (xs := ctx) ix)
       jvp := fun ctx dctx _d =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let dx := getIdx (α := α) (xs := dctx) ix
         -- Softmax Jacobian is symmetric, so we can reuse the same JVP/VJP implementation.
-        Activation.softmaxBackwardSpec (α := α) (s := s) xval dx
+        Activation.softmaxLastBackwardSpec (α := α) (s := s) xval dx
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
-        let dx := Activation.softmaxBackwardSpec (α := α) (s := s) xval δ
+        let dx := Activation.softmaxLastBackwardSpec (α := α) (s := s) xval δ
+        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
+  push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
+
+/-- Softmax along an explicitly selected tensor dimension. -/
+def softmax {α : Type} [Context α] [DecidableEq Shape]
+    {Δ : Type} {Γ : List Shape} {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (x : Var s) : MWith α Δ Γ (Var s) := do
+  let ⟨ss, g⟩ ← get
+  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let node : NodeData α Δ (Γ ++ ss) s :=
+    { forward := fun ctx _d =>
+        Activation.softmaxSpec (α := α) (s := s) axis
+          (getIdx (α := α) (xs := ctx) ix)
+      jvp := fun ctx dctx _d =>
+        let xval := getIdx (α := α) (xs := ctx) ix
+        let dx := getIdx (α := α) (xs := dctx) ix
+        Activation.softmaxBackwardSpec (α := α) (s := s) axis xval dx
+      vjp := fun ctx _d δ =>
+        let xval := getIdx (α := α) (xs := ctx) ix
+        let dx := Activation.softmaxBackwardSpec (α := α) (s := s) axis xval δ
         TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
@@ -429,22 +449,44 @@ Stable log-softmax along the last axis.
 This is a primitive in the typed graph, not the composition `log ∘ softmax`, so proof/IR
 execution and eager CUDA share the same PyTorch-style numerical contract.
 -/
-def logSoftmax {α : Type} [Context α] [DecidableEq Shape]
+def logSoftmaxLast {α : Type} [Context α] [DecidableEq Shape]
   {Δ : Type} {Γ : List Shape} {s : Shape} (x : Var s) : MWith α Δ Γ (Var s) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   let node : NodeData α Δ (Γ ++ ss) s :=
     { forward := fun ctx _d =>
-        Activation.logSoftmaxSpec (α := α) (s := s) (getIdx (α := α) (xs := ctx) ix)
+        Activation.logSoftmaxLastSpec (α := α) (s := s) (getIdx (α := α) (xs := ctx) ix)
       jvp := fun ctx dctx _d =>
         let xval := getIdx (α := α) (xs := ctx) ix
-        let yval := Activation.logSoftmaxSpec (α := α) (s := s) xval
+        let yval := Activation.logSoftmaxLastSpec (α := α) (s := s) xval
         let dx := getIdx (α := α) (xs := dctx) ix
-        Activation.logSoftmaxJvpSpec (α := α) (s := s) yval dx
+        Activation.logSoftmaxLastJvpSpec (α := α) (s := s) yval dx
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
-        let yval := Activation.logSoftmaxSpec (α := α) (s := s) xval
-        let dx := Activation.logSoftmaxBackwardSpec (α := α) (s := s) yval δ
+        let yval := Activation.logSoftmaxLastSpec (α := α) (s := s) xval
+        let dx := Activation.logSoftmaxLastBackwardSpec (α := α) (s := s) yval δ
+        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
+  push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
+
+/-- Stable log-softmax along an explicitly selected tensor dimension. -/
+def logSoftmax {α : Type} [Context α] [DecidableEq Shape]
+    {Δ : Type} {Γ : List Shape} {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (x : Var s) : MWith α Δ Γ (Var s) := do
+  let ⟨ss, g⟩ ← get
+  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let node : NodeData α Δ (Γ ++ ss) s :=
+    { forward := fun ctx _d =>
+        Activation.logSoftmaxSpec (α := α) (s := s) axis
+          (getIdx (α := α) (xs := ctx) ix)
+      jvp := fun ctx dctx _d =>
+        let xval := getIdx (α := α) (xs := ctx) ix
+        let yval := Activation.logSoftmaxSpec (α := α) (s := s) axis xval
+        let dx := getIdx (α := α) (xs := dctx) ix
+        Activation.logSoftmaxJvpSpec (α := α) (s := s) axis yval dx
+      vjp := fun ctx _d δ =>
+        let xval := getIdx (α := α) (xs := ctx) ix
+        let yval := Activation.logSoftmaxSpec (α := α) (s := s) axis xval
+        let dx := Activation.logSoftmaxBackwardSpec (α := α) (s := s) axis yval δ
         TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
@@ -612,7 +654,7 @@ def mseLoss {α : Type}
         let two : α := (1 : α) + 1
         let denom : Nat := if Spec.Shape.size s = 0 then 1 else Spec.Shape.size s
         let baseGrad : Tensor α s := scaleSpec (α := α) (s := s) diff (two / (denom : α))
-        let gscalar : α := Tensor.toScalar dLdy
+        let gscalar : α := Tensor.item dLdy
         let dYhat : Tensor α s := scaleSpec (α := α) (s := s) baseGrad gscalar
         let dTarget : Tensor α s := subSpec (fill (0 : α) s) dYhat
         TList.add (α := α) (ss := Γ ++ ss)
@@ -746,36 +788,6 @@ def mseLoss {α : Type}
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
 
 /--
-  Concatenate two vectors (dim-0 concat).
-
-  PyTorch comparison: `torch.cat([a, b], dim=0)` for 1D tensors.
-  -/
-  def concatVectors {α : Type} {Δ : Type} [Context α]
-    [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
-    {Γ : List Shape} {n m : Nat}
-    (a : Var (.dim n .scalar)) (b : Var (.dim m .scalar)) :
-    MWith α Δ Γ (Var (.dim (n + m) .scalar)) := do
-  let ⟨ss, g⟩ ← get
-  let ia ← liftM (mkIdx (_α := α) (Γ := Γ) ss a)
-  let ib ← liftM (mkIdx (_α := α) (Γ := Γ) ss b)
-  let node : NodeData α Δ (Γ ++ ss) (.dim (n + m) .scalar) :=
-      { forward := fun ctx _d =>
-          let av := getIdx (α := α) (xs := ctx) ia
-          let bv := getIdx (α := α) (xs := ctx) ib
-          Spec.Tensor.concatVectorsSpec av bv
-        jvp := fun _ctx dctx _d =>
-          let da := getIdx (α := α) (xs := dctx) ia
-          let db := getIdx (α := α) (xs := dctx) ib
-          Spec.Tensor.concatVectorsSpec da db
-        vjp := fun _ctx _d dLdy =>
-          let dA := Spec.Tensor.sliceVectorSpec dLdy 0 n (by simp)
-          let dB := Spec.Tensor.sliceVectorSpec dLdy n m (by exact Nat.le_refl _)
-          TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim n .scalar) ia dA)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim m .scalar) ib dB) }
-  push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := (.dim (n + m) .scalar)) g node
-
-/--
   Concatenate along the leading dimension (`dim=0`) for tensors of shape `.dim n s`.
 
   PyTorch comparison: `torch.cat([a, b], dim=0)`.
@@ -803,7 +815,7 @@ def mseLoss {α : Type}
         let dA := Spec.sliceRangeSpec (α := α) (n := n + m) (s := s) dLdy 0 n
           (by simp)
         let dB := Spec.sliceRangeSpec (α := α) (n := n + m) (s := s) dLdy n m
-          (by simp [Nat.add_comm])
+          (by simp)
         TList.add (α := α) (ss := Γ ++ ss)
           (TList.single (α := α) (Γ := Γ ++ ss) (s := aS) ia dA)
           (TList.single (α := α) (Γ := Γ ++ ss) (s := bS) ib dB) }
@@ -816,7 +828,7 @@ def mseLoss {α : Type}
   -/
   def sliceLeadingAxisRange {α : Type} {Δ : Type} [Zero α] [DecidableEq Shape]
     {Γ : List Shape} {n : Nat} {s : Shape}
-    (x : Var (.dim n s)) (start len : Nat) (h : len + start ≤ n) :
+    (x : Var (.dim n s)) (start len : Nat) (h : start + len ≤ n) :
     MWith α Δ Γ (Var (.dim len s)) := do
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)

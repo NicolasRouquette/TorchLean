@@ -82,18 +82,18 @@ theorem buildFrom_denoteAllFrom_layernorm
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := NN.IR.DVal.mk (α := α) inShape x)
+          (input := Spec.PackedTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := NN.IR.DVal.mk (α := α) inShape x)
+      (input := Spec.PackedTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (NN.IR.DVal α) :=
+  let vals0 : Array (Spec.PackedTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
   let ctx : TList α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : NN.IR.DVal α := NN.IR.DVal.mk (α := α) inShape x
+  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
 
   -- Unfold the lowering pass step and specialize to the `.layernorm axis` branch.
   unfold buildFrom at hBuild
@@ -110,24 +110,24 @@ theorem buildFrom_denoteAllFrom_layernorm
           exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
       | nil =>
           -- Compute the 2D view parameters used by the lowering pass and the IR evaluator.
-          cases hParams : OpContracts.layerNorm2DParams axis n.outShape with
+          cases hParams : OpContracts.layerNormMatrixDims axis n.outShape with
           | error msg =>
               exact False.elim <| throw_bind_ne_ok (by simpa [hp, hParams] using hBuild)
           | ok p =>
               rcases p with ⟨seqLen, embedDim⟩
-              let view2D : Shape := .dim seqLen (.dim embedDim .scalar)
+              let view2d : Shape := .dim seqLen (.dim embedDim .scalar)
 
-              by_cases hNumel : Spec.Shape.size n.outShape = Spec.Shape.size view2D
+              by_cases hNumel : Spec.Shape.size n.outShape = Spec.Shape.size view2d
               · by_cases hSeq : seqLen > 0
                 · by_cases hEmb : embedDim > 0
                   · cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId n.outShape with
                     | error msg =>
                         have hFalse : False := by
-                          simp [hp, hParams, view2D, hNumel, hSeq, hEmb, hIdx] at hBuild
+                          simp [hp, hParams, view2d, hNumel, hSeq, hEmb, hIdx] at hBuild
                         cases hFalse
                     | ok ip =>
                         -- Reduce `hBuild` to the recursive lowering call.
-                        simp [hp, hParams, view2D, hNumel, hSeq, hEmb, hIdx] at hBuild
+                        simp [hp, hParams, view2d, hNumel, hSeq, hEmb, hIdx] at hBuild
 
                         let gamma : Tensor α (.dim embedDim .scalar) :=
                           Spec.fill (α := α) 1 (.dim embedDim .scalar)
@@ -136,14 +136,14 @@ theorem buildFrom_denoteAllFrom_layernorm
                         let nodeData : ForwardNode α ([inShape] ++ ss) n.outShape :=
                           mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ := n.outShape) (fun ctx =>
                             let x : Tensor α n.outShape := getIdx (α := α) (xs := ctx) ip
-                            let x2D : Tensor α view2D :=
-                              Tensor.reshapeSpec (α := α) (s₁ := n.outShape) (s₂ := view2D) x
+                            let x2d : Tensor α view2d :=
+                              Tensor.reshapeSpec (α := α) (s₁ := n.outShape) (s₂ := view2d) x
                                 hNumel
-                            let y2D : Tensor α view2D :=
+                            let y2d : Tensor α view2d :=
                               Spec.layerNorm (α := α) (seqLen := seqLen) (embedDim := embedDim)
-                                (x := x2D) (gamma := gamma) (beta := beta)
+                                (x := x2d) (gamma := gamma) (beta := beta)
                                 (h_seq_pos := hSeq) (h_embed_pos := hEmb)
-                            Tensor.reshapeSpec (α := α) (s₁ := view2D) (s₂ := n.outShape) y2D
+                            Tensor.reshapeSpec (α := α) (s₁ := view2d) (s₂ := n.outShape) y2d
                               hNumel.symm)
                         let st1 : State α inShape :=
                           ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
@@ -154,59 +154,54 @@ theorem buildFrom_denoteAllFrom_layernorm
                           simpa [st1, nodeData, gamma, beta] using hBuild
 
                         have hGet :
-                            vals0[pId]! =
-                              NN.IR.DVal.mk (α := α) n.outShape
-                                (getIdx (α := α) (xs := ctx) ip) := by
+                            vals0[pId]? = some (Spec.PackedTensor.mk (α := α) n.outShape
+                                (getIdx (α := α) (xs := ctx) ip)) := by
                           simpa [vals0, ctx] using
-                            (denoteAllState_get_mkIdx (inShape := inShape) (ss := ss)
+                            (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
                               (gd := gd) (x := x) (pid := pId) (s := n.outShape) (idx := ip) hIdx)
 
-                        have hExp :
-                            NN.IR.Graph.expectShape (α := α) (expected := n.outShape) vals0[pId]! =
-                              .ok (getIdx (α := α) (xs := ctx) ip) := by
-                          simp [hGet, Graph.expectShape_sigma, NN.IR.DVal.mk]
-
                         have hLN :
-                            NN.IR.Graph.layernormPure (α := α) (seqLen := seqLen) (embedDim :=
+                            NN.IR.Graph.layerNormWithoutAffine (α := α) (seqLen := seqLen) (embedDim :=
                               embedDim)
-                                (Tensor.reshapeSpec (α := α) (s₁ := n.outShape) (s₂ := view2D)
+                                (Tensor.reshapeSpec (α := α) (s₁ := n.outShape) (s₂ := view2d)
                                   (getIdx (α := α) (xs := ctx) ip) hNumel) =
                               .ok
                                 (Spec.layerNorm (α := α) (seqLen := seqLen) (embedDim := embedDim)
                                   (x := Tensor.reshapeSpec (α := α) (s₁ := n.outShape) (s₂ :=
-                                    view2D)
+                                    view2d)
                                     (getIdx (α := α) (xs := ctx) ip) hNumel)
                                   (gamma := gamma) (beta := beta)
                                   (h_seq_pos := hSeq) (h_embed_pos := hEmb)) := by
-                          -- `layernormPure` is exactly `Spec.layerNorm` with `gamma=1` and
+                          -- This operation is exactly `Spec.layerNorm` with `gamma=1` and
                           -- `beta=0`.
-                          simp [NN.IR.Graph.layernormPure, hSeq, hEmb, gamma, beta]
+                          simp [NN.IR.Graph.layerNormWithoutAffine, hSeq, hEmb, gamma, beta]
                           rfl
 
                         have hEval :
                             NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                                 (input := input) (vals := vals0) (i := i) =
-                              .ok (NN.IR.DVal.mk (α := α) n.outShape (nodeData.eval ctx)) :=
+                              .ok (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) :=
                                 by
                           -- Focused simplification of the `.layernorm` branch of the evaluator.
                           simp (config := { failIfUnchanged := false })
-                            [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hExp, hParams, view2D, hNumel,
-                              NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk,
+                            [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                              NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet, hParams,
+                              view2d, hNumel,
                               throw_eq_error,
                               nodeData, mkForwardNode]
-                          simpa [NN.IR.DVal.mk] using
+                          simpa using
                             congrArg
                               (fun e =>
-                                (fun a : Tensor α view2D =>
-                                  NN.IR.DVal.mk (α := α) n.outShape
-                                    (Tensor.reshapeSpec (α := α) (s₁ := view2D) (s₂ := n.outShape)
+                                (fun a : Tensor α view2d =>
+                                  Spec.PackedTensor.mk (α := α) n.outShape
+                                    (Tensor.reshapeSpec (α := α) (s₁ := view2d) (s₂ := n.outShape)
                                       a hNumel.symm)) <$> e)
                               hLN
 
                         have hStep :
                             denoteAllState (α := α) inShape st1 x =
                               vals0.push
-                                (NN.IR.DVal.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+                                (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
                           simpa [vals0, st1, nodeData, ctx] using
                             (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss)
                               (τ := n.outShape) (gd := gd) (nodeData := nodeData) (x := x))
@@ -217,12 +212,12 @@ theorem buildFrom_denoteAllFrom_layernorm
                           (nodeData := nodeData) (st1 := st1) (st' := st')
                           (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval hStep
                   · exact False.elim <|
-                      throw_bind_ne_ok (by simpa [hp, hParams, view2D, hNumel, hSeq, hEmb] using
+                      throw_bind_ne_ok (by simpa [hp, hParams, view2d, hNumel, hSeq, hEmb] using
                         hBuild)
                 · exact False.elim <|
-                    throw_bind_ne_ok (by simpa [hp, hParams, view2D, hNumel, hSeq] using hBuild)
+                    throw_bind_ne_ok (by simpa [hp, hParams, view2d, hNumel, hSeq] using hBuild)
               · exact False.elim <|
-                  throw_bind_ne_ok (by simpa [hp, hParams, view2D, hNumel] using hBuild)
+                  throw_bind_ne_ok (by simpa [hp, hParams, view2d, hNumel] using hBuild)
 
 /-- Correctness lemma for eval-mode NCHW BatchNorm2d lowering. -/
 theorem buildFrom_denoteAllFrom_batchNorm2dNchwEval
@@ -240,19 +235,19 @@ theorem buildFrom_denoteAllFrom_batchNorm2dNchwEval
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := NN.IR.DVal.mk (α := α) inShape x)
+          (input := Spec.PackedTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := NN.IR.DVal.mk (α := α) inShape x)
+      (input := Spec.PackedTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape
         (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (NN.IR.DVal α) :=
+  let vals0 : Array (Spec.PackedTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
   let ctx : TList α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : NN.IR.DVal α := NN.IR.DVal.mk (α := α) inShape x
+  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
 
   unfold buildFrom at hBuild
   simp [hi, hN] at hBuild
@@ -298,37 +293,35 @@ theorem buildFrom_denoteAllFrom_batchNorm2dNchwEval
                           convert hBuild using 1
                           all_goals simp [st1, nodeData]
                         have hGet :
-                            vals0[pId]! = NN.IR.DVal.mk (α := α) expected
-                              (getIdx (α := α) (xs := ctx) ip) := by
+                            vals0[pId]? = some (Spec.PackedTensor.mk (α := α) expected
+                              (getIdx (α := α) (xs := ctx) ip)) := by
                           simpa [vals0, ctx, expected] using
-                            (denoteAllState_get_mkIdx (inShape := inShape) (ss := ss)
+                            (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
                               (gd := gd) (x := x) (pid := pId) (s := expected) (idx := ip) hIdx)
                         let normalized : Tensor α expected :=
                           NN.IR.Graph.batchNorm2dEvalTensor (α := α) cfg
                             (getIdx (α := α) (xs := ctx) ip)
                         have hBatch :
-                            NN.IR.Graph.evalBatchNorm2DNchwEval (α := α) (payload := payload)
-                                (id := n.id) (x := vals0[pId]!) =
-                              .ok (NN.IR.DVal.mk (α := α) expected normalized) := by
-                          have hCast :=
-                            dval_snd_cast_of_eq_mk (α := α) (v := vals0[pId]!)
-                              (s := expected) (t := getIdx (α := α) (xs := ctx) ip) hGet
-                          simp [NN.IR.Graph.evalBatchNorm2DNchwEval, hCfg, hGet, expected,
-                            normalized, NN.IR.Graph.expectShape, NN.IR.DVal.shape,
-                            NN.IR.DVal.tensor, NN.IR.DVal.mk, hCast]
+                            NN.IR.Graph.evalBatchNorm2dNchwEval (α := α) (payload := payload)
+                                (id := n.id)
+                                (x := Spec.PackedTensor.mk (α := α) expected
+                                  (getIdx (α := α) (xs := ctx) ip)) =
+                              .ok (Spec.PackedTensor.mk (α := α) expected normalized) := by
+                          simp [NN.IR.Graph.evalBatchNorm2dNchwEval, hCfg, expected,
+                            normalized, NN.IR.Graph.expectShape]
                           rfl
                         have hEval :
                             NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                                 (input := input) (vals := vals0) (i := i) =
-                              .ok (NN.IR.DVal.mk (α := α) n.outShape
+                              .ok (Spec.PackedTensor.mk (α := α) n.outShape
                                 (nodeData.eval ctx)) := by
-                          simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hBatch, expected, hOut,
-                            normalized, nodeData, getIRValue, shape_bne_refl, NN.IR.DVal.shape,
-                            NN.IR.DVal.tensor, NN.IR.DVal.mk]
+                          simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                            NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet, hBatch,
+                            expected, hOut, normalized, nodeData, getIRValue, shape_bne_refl]
                           congr 1
                         have hStep :
                             denoteAllState (α := α) inShape st1 x =
-                              vals0.push (NN.IR.DVal.mk (α := α) n.outShape
+                              vals0.push (Spec.PackedTensor.mk (α := α) n.outShape
                                 (nodeData.eval ctx)) := by
                           simpa [vals0, st1, nodeData, ctx] using
                             (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss)

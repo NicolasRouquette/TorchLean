@@ -88,7 +88,7 @@ namespace NN
 namespace GraphSpec
 namespace DAG
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 open NN.Tensor
 
@@ -450,21 +450,21 @@ The second block sees the original environment followed by every result of the f
 tuple-valued computation and is the basic operation needed to compose recurrent cells, residual
 branches, and encoder-decoder stages.
 -/
-def andThenAux {Γ Δ middle outputs : List Shape}
+def andThenWithRenaming {Γ Δ middle outputs : List Shape}
     (ρ : {s : Shape} → Var Γ s → Var Δ s)
     (first : Block Δ middle) (second : Block (Γ ++ middle) outputs) : Block Δ outputs :=
   match first with
   | .ret results =>
       second.instantiate (Args.append (Args.rename ρ (Args.vars Γ)) results)
   | .let1 value body =>
-      .let1 value <| andThenAux (fun v => Var.weakenRight (ρ v)) body second
+      .let1 value <| andThenWithRenaming (fun v => Var.weakenRight (ρ v)) body second
 termination_by sizeOf first
 decreasing_by simp_wf
 
 /-- Feed every output of `first` to `second`, preserving the original environment. -/
 def andThen {Γ middle outputs : List Shape}
     (first : Block Γ middle) (second : Block (Γ ++ middle) outputs) : Block Γ outputs :=
-  andThenAux (fun v => v) first second
+  andThenWithRenaming (fun v => v) first second
 
 end Block
 
@@ -1028,24 +1028,14 @@ decreasing_by simp [argsComplexity]
 
 /-! ### Lowering to TorchLean programs -/
 
-/--
-`RefT` is the runtime's reference type for tensors of a given shape.
-
-In the executable runtime, primitives operate on *references* (allocated tensors) inside a monad.
-This matches how typical deep-learning runtimes model device placement, mutation, and autograd.
- -/
-abbrev RefT (m : Type → Type) (α : Type 0) [Context α] [DecidableEq Shape]
-    [Runtime.Autograd.Torch.Ops (m := m) (α := α)] (s : Shape) : Type :=
-  Runtime.Autograd.Torch.Ops.Ref (m := m) (α := α) s
-
 mutual
   /-- Lower a typed argument list by lowering each component term under the same environment. -/
   def lowerArgs
       {Γ ins : List Shape}
       {α : Type 0} [Context α] [DecidableEq Shape]
       {m : Type → Type} [Monad m] [Runtime.Autograd.Torch.Ops (m := m) (α := α)]
-      (env : Runtime.Autograd.Torch.RefList (RefT (m := m) (α := α)) Γ) :
-      Args Γ ins → m (Runtime.Autograd.Torch.RefList (RefT (m := m) (α := α)) ins)
+      (env : Runtime.Autograd.Torch.RefList (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)) Γ) :
+      Args Γ ins → m (Runtime.Autograd.Torch.RefList (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)) ins)
     | .nil => pure .nil
     | .cons t ts => do
         let r ← lower (Γ := Γ) (α := α) (m := m) env t
@@ -1063,9 +1053,9 @@ mutual
       {Γ : List Shape} {τ : Shape}
       {α : Type 0} [Context α] [DecidableEq Shape]
       {m : Type → Type} [Monad m] [Runtime.Autograd.Torch.Ops (m := m) (α := α)]
-      (env : Runtime.Autograd.Torch.RefList (RefT (m := m) (α := α)) Γ) :
-      Term Γ τ → m (RefT (m := m) (α := α) τ)
-    | .var i => pure (Env.rget (Ref := RefT (m := m) (α := α)) env i)
+      (env : Runtime.Autograd.Torch.RefList (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)) Γ) :
+      Term Γ τ → m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) τ)
+    | .var i => pure (Env.rget (Ref := _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)) env i)
     | .cast t h =>
         match h with
         | rfl => lower (Γ := Γ) (α := α) (m := m) env t
@@ -1076,13 +1066,13 @@ mutual
     | .op (ins := ins) p args => do
         let rs ← lowerArgs (Γ := Γ) (ins := ins) (α := α) (m := m) env args
         Runtime.Autograd.Torch.CurriedRef.uncurry (ss := ins)
-          (Ref := RefT (m := m) (α := α))
+          (Ref := _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α))
           (p.program (α := α)) rs
     | .let1 (σ := σ) t body => do
         let v ← lower (Γ := Γ) (α := α) (m := m) env t
         let env' :=
           Runtime.Autograd.Torch.RefList.append
-            (Ref := RefT (m := m) (α := α))
+            (Ref := _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α))
             (ss₁ := Γ) (ss₂ := [σ]) env (.cons v .nil)
         lower (Γ := Γ ++ [σ]) (α := α) (m := m) env' body
 end
@@ -1147,16 +1137,16 @@ theorem eval_instantiate
   exact Term.eval_get env args termVar
 
 /-- Pure evaluation of block composition is ordinary typed environment extension. -/
-theorem eval_andThenAux
+theorem eval_andThenWithRenaming
     {Γ middle outputs : List Shape} {α : Type 0} [Context α]
     (envΓ : TList α Γ) (second : Block (Γ ++ middle) outputs) :
     ∀ {Δ : List Shape} (first : Block Δ middle) (envΔ : TList α Δ)
       (ρ : {s : Shape} → Var Γ s → Var Δ s),
       Env.RenamingSound envΓ envΔ ρ →
-      eval envΔ (andThenAux ρ first second) =
+      eval envΔ (andThenWithRenaming ρ first second) =
         eval (Proofs.Autograd.Algebra.TList.append envΓ (eval envΔ first)) second
   | _, .ret results, envΔ, ρ, hρ => by
-      simp only [andThenAux, eval_instantiate, Term.evalArgs_append]
+      simp only [andThenWithRenaming, eval_instantiate, Term.evalArgs_append]
       rw [Term.evalArgs_rename envΓ envΔ ρ hρ, Term.evalArgs_vars]
       rfl
   | _, .let1 value body, envΔ, ρ, hρ => by
@@ -1165,8 +1155,9 @@ theorem eval_andThenAux
       have hρ' : Env.RenamingSound envΓ envΔ' (fun v => Var.weakenRight (ρ v)) := by
         intro shape v
         exact (Env.tget_append_weakenRight envΔ result (ρ v)).trans (hρ v)
-      simpa only [andThenAux, eval, result, envΔ'] using
-        eval_andThenAux envΓ second body envΔ' (fun v => Var.weakenRight (ρ v)) hρ'
+      simpa only [andThenWithRenaming, eval, result, envΔ'] using
+        eval_andThenWithRenaming envΓ second body envΔ'
+          (fun v => Var.weakenRight (ρ v)) hρ'
 
 /-- Composing two blocks evaluates the first once and appends its typed outputs for the second. -/
 theorem eval_andThen {Γ middle outputs : List Shape} {α : Type 0} [Context α]
@@ -1174,20 +1165,20 @@ theorem eval_andThen {Γ middle outputs : List Shape} {α : Type 0} [Context α]
     eval env (first.andThen second) =
       eval (Proofs.Autograd.Algebra.TList.append env (eval env first)) second := by
   unfold andThen
-  apply eval_andThenAux env second first env (fun v => v)
+  apply eval_andThenWithRenaming env second first env (fun v => v)
   intro shape v
   rfl
 
 /-- Lower a multi-output block for an arbitrary TorchLean execution target. -/
 def lower {Γ outs : List Shape} {α : Type 0} [Context α] [DecidableEq Shape]
     {μ : Type → Type} [Monad μ] [Runtime.Autograd.Torch.Ops (m := μ) (α := α)]
-    (env : RefList (Term.RefT (m := μ) (α := α)) Γ) :
-    Block Γ outs → μ (RefList (Term.RefT (m := μ) (α := α)) outs)
+    (env : RefList (_root_.Runtime.Autograd.TorchLean.RefTy (m := μ) (α := α)) Γ) :
+    Block Γ outs → μ (RefList (_root_.Runtime.Autograd.TorchLean.RefTy (m := μ) (α := α)) outs)
   | .ret results => Term.lowerArgs (Γ := Γ) (α := α) (m := μ) env results
   | .let1 (σ := σ) value body => do
       let result ← Term.lower (Γ := Γ) (α := α) (m := μ) env value
       let env' := RefList.append
-        (Ref := Term.RefT (m := μ) (α := α))
+        (Ref := _root_.Runtime.Autograd.TorchLean.RefTy (m := μ) (α := α))
         (ss₁ := Γ) (ss₂ := [σ]) env (.cons result .nil)
       lower (Γ := Γ ++ [σ]) (α := α) (μ := μ) env' body
 
@@ -1258,9 +1249,9 @@ def toProgram {ps ins : List Shape} {τ : Shape} (m : Model ps ins τ)
     Runtime.Autograd.TorchLean.Program α (ps ++ ins) τ :=
   fun {μ} _ _ =>
     Runtime.Autograd.Torch.CurriedRef.curry
-      (Ref := Term.RefT (m := μ) (α := α))
+      (Ref := _root_.Runtime.Autograd.TorchLean.RefTy (m := μ) (α := α))
       (ss := ps ++ ins)
-      (β := μ (Term.RefT (m := μ) (α := α) τ))
+      (β := μ (_root_.Runtime.Autograd.TorchLean.RefTy (m := μ) (α := α) τ))
       (fun args => Term.lower (Γ := ps ++ ins) (α := α) (m := μ) args m.body)
 
 end Model
@@ -1314,17 +1305,17 @@ theorem eval_inline {Γ ps ins outs : List Shape} (model : MultiModel ps ins out
 abbrev MultiOutputProgram (α : Type 0) [Context α] [DecidableEq Shape]
     (ins outs : List Shape) : Type 1 :=
   ∀ {μ : Type → Type}, [Monad μ] → [Runtime.Autograd.Torch.Ops (m := μ) (α := α)] →
-    CurriedRef (fun s => Term.RefT (m := μ) (α := α) s) ins
-      (μ (RefList (Term.RefT (m := μ) (α := α)) outs))
+    CurriedRef (fun s => _root_.Runtime.Autograd.TorchLean.RefTy (m := μ) (α := α) s) ins
+      (μ (RefList (_root_.Runtime.Autograd.TorchLean.RefTy (m := μ) (α := α)) outs))
 
 /-- Lower every result of a multi-output model for the selected TorchLean execution target. -/
 def toProgram {ps ins outs : List Shape} (m : MultiModel ps ins outs)
     {α : Type 0} [Context α] [DecidableEq Shape] : MultiOutputProgram α (ps ++ ins) outs :=
   fun {μ} _ _ =>
     CurriedRef.curry
-      (Ref := Term.RefT (m := μ) (α := α))
+      (Ref := _root_.Runtime.Autograd.TorchLean.RefTy (m := μ) (α := α))
       (ss := ps ++ ins)
-      (β := μ (RefList (Term.RefT (m := μ) (α := α)) outs))
+      (β := μ (RefList (_root_.Runtime.Autograd.TorchLean.RefTy (m := μ) (α := α)) outs))
       (fun args => Block.lower (Γ := ps ++ ins) (α := α) (μ := μ) args m.body)
 
 end MultiModel

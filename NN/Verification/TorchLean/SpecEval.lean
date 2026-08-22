@@ -72,15 +72,15 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
   swapAdjacentAtDepth := fun {_s} depth x =>
     -- `swapAdjacentAtDepth` at depth 0 corresponds to swapping the first two axes; deeper swaps
     -- recurse through the outer dims.
-    pure (Tensor.swapAtDepthHelper (tensor := x) depth)
+    pure (Tensor.swapAdjacentAxes (tensor := x) depth)
 
   reduceSum := fun {s} axis _valid _wf x =>
-    let hAxis : Shape.valid_axis axis s := (inferInstance : Shape.valid_axis_inst axis s).proof
-    let hRed := Shape.proveReducibleAlong axis s hAxis
+    let hAxis : Shape.NonemptyAxis axis s := (inferInstance : Shape.HasNonemptyAxis axis s).proof
+    let hRed := hAxis
     pure (Tensor.reduceSum (α := α) (s := s) axis x hRed)
   reduceMean := fun {s} axis _valid _wf x =>
-    let hAxis : Shape.valid_axis axis s := (inferInstance : Shape.valid_axis_inst axis s).proof
-    let hRed := Shape.proveReducibleAlong axis s hAxis
+    let hAxis : Shape.NonemptyAxis axis s := (inferInstance : Shape.HasNonemptyAxis axis s).proof
+    let hRed := hAxis
     pure (Tensor.reduceMean (α := α) (s := s) axis x hRed)
 
   gatherScalar := fun {_n} x i =>
@@ -88,12 +88,12 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
   gatherRow := fun {_rows _cols} x i =>
     pure (getAtSpec x i)
 
-  gatherScalarNat := fun {_n} _x _i => throw
-    "TorchLeanSpecEval: gather_scalar_nat not supported in spec backend"
-  gatherVecNat := fun {_n _k} _x _idx => throw
-    "TorchLeanSpecEval: gather_vec_nat not supported in spec backend"
-  gatherRowsNat := fun {_rows _cols _k} _x _idx => throw
-    "TorchLeanSpecEval: gather_rows_nat not supported in spec backend"
+  gatherScalarNatOrZero := fun {_n} _x _i => throw
+    "TorchLeanSpecEval: gather_scalar_nat_or_zero not supported in spec backend"
+  gatherVecNatOrZero := fun {_n _k} _x _idx => throw
+    "TorchLeanSpecEval: gather_vec_nat_or_zero not supported in spec backend"
+  gatherRowsNatOrZero := fun {_rows _cols _k} _x _idx => throw
+    "TorchLeanSpecEval: gather_rows_nat_or_zero not supported in spec backend"
   scatterAddVec := fun {_n} _x _val _i => throw
     "TorchLeanSpecEval: scatter_add_vec not supported in spec backend"
   scatterAddRow := fun {_rows _cols} _x _row _i => throw
@@ -102,7 +102,6 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
   matmul := fun {_mDim _nDim _pDim} a b => pure (matMulSpec (α := α) a b)
   bmm := fun {_batch _mDim _nDim _pDim} a b => pure (Tensor.bmmSpec (α := α) a b)
 
-  concatVectors := fun {_nDim _mDim} a b => pure (Tensor.concatVectorsSpec (α := α) a b)
   concatLeadingAxis := fun {_nDim _mDim} {s} a b => pure (Tensor.concatLeadingAxisSpec (α := α) (s := s) a b)
 
   sliceLeadingAxisRange := fun {_nDim} {_s} _start _len _h _x =>
@@ -135,35 +134,35 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
 
   maxPool2d := fun {kH kW inH inW inC stride} {h1} {h2} x =>
     if hStride : stride ≠ 0 then
-      let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
+      let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
       pure (Spec.maxPool2dMultiSpec (α := α) (inC := inC) (inH := inH) (inW := inW) (layer :=
         layer) x)
     else
       throw "TorchLeanSpecEval: max_pool2d invalid stride (stride=0)"
   maxPool2dPad := fun {kH kW inH inW inC stride padding} {h1} {h2} x =>
     if hStride : stride ≠ 0 then
-      let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
+      let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
       pure (Spec.maxPool2dMultiSpecPad (α := α) (inC := inC) (inH := inH) (inW := inW)
         (stride := stride) (padding := padding) (layer := layer) x)
     else
       throw "TorchLeanSpecEval: max_pool2d_pad invalid stride (stride=0)"
   smoothMaxPool2d := fun {kH kW inH inW inC stride} {h1} {h2} x beta =>
     if hStride : stride ≠ 0 then
-      let layer : Spec.MaxPool2DSpec kH kW stride h1 h2 hStride := {}
+      let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
       pure (Spec.smoothMaxPool2dMultiSpec (α := α) (inC := inC) (inH := inH) (inW := inW) (layer
         := layer) (beta := beta) x)
     else
       throw "TorchLeanSpecEval: smooth_max_pool2d invalid stride (stride=0)"
   avgPool2d := fun {kH kW inH inW inC stride} h1 h2 x =>
     if hStride : stride ≠ 0 then
-      let layer : Spec.AvgPool2DSpec kH kW stride h1 h2 hStride := {}
+      let layer : Spec.AvgPool2dSpec kH kW stride h1 h2 hStride := {}
       pure (Spec.avgPool2dMultiSpec (α := α) (inC := inC) (inH := inH) (inW := inW) (h1 := h1)
         (h2 := h2) (layer := layer) x)
     else
       throw "TorchLeanSpecEval: avg_pool2d invalid stride (stride=0)"
   avgPool2dPad := fun {kH kW inH inW inC stride padding} h1 h2 x =>
     if hStride : stride ≠ 0 then
-      let layer : Spec.AvgPool2DSpec kH kW stride h1 h2 hStride := {}
+      let layer : Spec.AvgPool2dSpec kH kW stride h1 h2 hStride := {}
       pure (Spec.avgPool2dMultiSpecPad (α := α) (inC := inC) (inH := inH) (inW := inW)
         (stride := stride) (padding := padding) (h1 := h1) (h2 := h2) (layer := layer) x)
     else
@@ -173,8 +172,8 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
   sigmoid := fun {_s} x => pure (Activation.sigmoidSpec (α := α) x)
   tanh := fun {_s} x => pure (Activation.tanhSpec (α := α) x)
   gelu := fun {_s} x => pure (Activation.geluSpec (α := α) x)
-  softmax := fun {_s} x => pure (Activation.softmaxSpec (α := α) x)
-  logSoftmax := fun {_s} x => pure (Activation.logSoftmaxSpec (α := α) x)
+  softmaxLast := fun {_s} x => pure (Activation.softmaxLastSpec (α := α) x)
+  logSoftmaxLast := fun {_s} x => pure (Activation.logSoftmaxLastSpec (α := α) x)
   softplus := fun {_s} x => pure (Activation.softplusSpec (α := α) x)
   exp := fun {_s} x => pure (Tensor.expSpec (α := α) x)
   log := fun {_s} x => pure (Tensor.logSpec (α := α) x)
@@ -202,7 +201,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
   multiHeadAttention := fun {n numHeads dModel headDim} h1 wq wk wv wo x mask =>
     -- Package the weight matrices into the spec-layer structure.
     let mha : Spec.MultiHeadAttention α numHeads dModel headDim :=
-      { Wq := wq, Wk := wk, Wv := wv, Wo := wo }
+      { queryWeight := wq, keyWeight := wk, valueWeight := wv, outputWeight := wo }
     pure (Spec.MultiHeadAttention.forward (α := α) (numHeads := numHeads) (dModel := dModel)
       (headDim := headDim)
       (n := n) h1 mha x (mask := mask))
@@ -210,7 +209,7 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
   batchedMultiHeadAttention :=
     fun {_batch n numHeads dModel headDim} _hBatch h1 wq wk wv wo x mask =>
       let mha : Spec.MultiHeadAttention α numHeads dModel headDim :=
-        { Wq := wq, Wk := wk, Wv := wv, Wo := wo }
+        { queryWeight := wq, keyWeight := wk, valueWeight := wv, outputWeight := wo }
       match x with
       | .dim samples =>
           pure <| Tensor.dim (fun i =>
@@ -231,13 +230,13 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
       (layer := layer) (input := x))
 
   conv2d := fun {inC outC kH kW stride padding _inH _inW} {h1} {h2} {h3} kernel bias input =>
-    let layer : Spec.Conv2DSpec inC outC kH kW stride padding α h1 h2 h3 :=
+    let layer : Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
       { kernel := kernel, bias := bias }
     pure (Spec.conv2dSpec (α := α) (layer := layer) (input := input))
 
   convTranspose2d := fun {inC outC kH kW stride padding inH inW} {h1} {h2} {h3} kernel bias input =>
     let h1' : inC > 0 := Nat.pos_of_ne_zero h1
-    let layer : Spec.ConvTranspose2DSpec inC outC kH kW stride padding α h1' h2 h3 :=
+    let layer : Spec.ConvTranspose2dSpec inC outC kH kW stride padding α h1' h2 h3 :=
       { kernel := kernel, bias := bias }
     pure (Spec.convTranspose2dSpec (α := α) (inC := inC) (outC := outC) (kH := kH) (kW := kW)
       (stride := stride) (padding := padding) (inH := inH) (inW := inW) (layer := layer)

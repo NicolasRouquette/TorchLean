@@ -58,9 +58,6 @@ open Json
 def stdio : IO.Process.StdioConfig :=
   { stdin := .piped, stdout := .piped, stderr := .inherit }
 
-/-- Convenience alias for the subprocess type used by the Gymnasium client. -/
-abbrev Child : Type := IO.Process.Child stdio
-
 /--
 Typed handle to a running Gymnasium subprocess environment.
 
@@ -69,7 +66,7 @@ Lean side `Boundary.Contract` on all values received from the external process.
 -/
 structure Client (obsShape : Shape) (nActions : Nat) where
   /-- The Python subprocess. -/
-  child : Child
+  child : IO.Process.Child stdio
   /-- Lean side contract enforced on every transition. -/
   contract : Boundary.Contract obsShape nActions
 
@@ -83,8 +80,8 @@ Send a request object and return the response object map.
 The expected response shape is:
 `{"ok": true, ...}` or `{"ok": false, "error": "..."}`
 
-This stays in `Client.Internal`. Public callers should use `spawn`, `reset`,
-`stepRaw`, `close`, or the higher-level `Session` API, so JSON protocol details stay behind the
+This stays in `Client.Internal`. Public callers should use `spawn`, `reset`, `close`, or the
+higher-level `Session` API, so JSON protocol details stay behind the
 Gymnasium trust boundary and out of the curated API.
 -/
 def requestObj {obsShape : Shape} {nActions : Nat}
@@ -150,7 +147,7 @@ def spawn {obsShape : Shape} {nActions : Nat}
       #[]
     else
       #["--make-kwargs", Json.compress (Json.mkObj makeKwargs)]
-  let child : Child ← IO.Process.spawn
+  let child : IO.Process.Child stdio ← IO.Process.spawn
     { cmd := "python3"
       args := #["-u", serverScript, "--env-id", envId] ++ extraArgs
       stdin := .piped
@@ -211,14 +208,10 @@ def reset {obsShape : Shape} {nActions : Nat}
   | .ok () => pure obs
   | .error e => throw <| IO.userError e
 
-/--
-Step the environment with a raw action index.
+namespace Internal
 
-The action is “raw” because the Python bridge receives a `Nat`; the checked session layer normally
-passes `action.1` from a `Fin nActions`. The response is still parsed through the Lean side
-observation/reward/done contract before it is returned.
--/
-def stepRaw {obsShape : Shape} {nActions : Nat}
+/-- Send one action through the JSON protocol and parse the resulting transition fields. -/
+def step {obsShape : Shape} {nActions : Nat}
     (g : Client obsShape nActions) (action : Nat) :
     IO (Tensor Float obsShape × Float × Bool × Bool) := do
   let o ← Internal.requestObj g (Json.mkObj [("cmd", "step"), ("action", (action : Json))])
@@ -244,6 +237,8 @@ def stepRaw {obsShape : Shape} {nActions : Nat}
     | .ok b => pure b
     | .error e => throw <| IO.userError e
   pure (obs, reward, terminated, truncated)
+
+end Internal
 
 /-- Close the subprocess (best-effort). -/
 def close {obsShape : Shape} {nActions : Nat} (g : Client obsShape nActions) : IO Unit := do

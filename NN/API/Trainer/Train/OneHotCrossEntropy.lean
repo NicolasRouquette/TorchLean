@@ -33,7 +33,7 @@ def castStateBits {α : Type} [_root_.Context α] [Runtime.FromFloat α] :
     {ss : List Shape} → TensorPack Float ss → TensorPack α ss
   | [], .nil => .nil
   | _s :: ss, .cons x xs =>
-      .cons (Tensor.castFloat (Runtime.ofFloat (α := α)) x) (castStateBits (α := α) (ss := ss) xs)
+      .cons (Tensor.map (Runtime.ofFloat (α := α)) x) (castStateBits (α := α) (ss := ss) xs)
 
 /-- Convert runtime state back to the public Float checkpoint format. -/
 def stateToFloatIO {α : Type} [_root_.Context α]
@@ -164,7 +164,7 @@ def trainSelectedCore {σ τ : Shape} {β : Type} {α : Type}
   let predict :=
     fun (xFloat : Tensor Float σ) => do
       Manual.Runner.eval (task := trainer.task) runner
-      let x := Tensor.castFloat (Runtime.ofFloat (α := α)) xFloat
+      let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
       let yhat ← Manual.Runner.run (task := trainer.task) runner x
       Tensor.toFloatIO yhat
   let predictMany :=

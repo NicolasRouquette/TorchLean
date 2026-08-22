@@ -42,9 +42,8 @@ def transformerBlock
       (batch := batch) (n := n) (dModel := dModel) (numHeads := numHeads) (headDim := headDim)
       (h1 := h_n) (seedW := seedW),
     _root_.Runtime.Autograd.TorchLean.NN.layerNorm
-      (batch := batch) (seqLen := n) (embedDim := dModel)
-      (h_seq_pos := Nat.pos_of_ne_zero h_n)
-      (h_embed_pos := h_dModel)
+      (.dim batch (.dim n .scalar)) dModel
+      (hWidth := h_dModel)
       (seedGamma := seedGamma) (seedBeta := seedBeta)
   ]
 

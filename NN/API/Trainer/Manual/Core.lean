@@ -16,7 +16,7 @@ public import NN.Runtime.RL
 public import NN.Spec.RL.MDP
 public import NN.Spec.RL.MarkovMDP
 public import NN.Spec.RL.FiniteStochasticMDP
-public import NN.API.Module.Execution
+public import NN.API.Module.Command
 
 import Mathlib.Algebra.Order.Algebra
 import NN.Spec.Autograd.AutogradSpec
@@ -42,16 +42,18 @@ This is a lower-level layer than `TorchLean.Trainer`: it is designed around a
 -/
 
 /-- Built-in loss choices for `SeqTask`. -/
-inductive SeqLoss where
+inductive SeqLoss (outputShape : Spec.Shape) where
   | mse (reduction : _root_.TorchLean.Loss.Reduction := .mean)
-  | oneHotCrossEntropy (reduction : _root_.TorchLean.Loss.Reduction := .mean)
+  | oneHotCrossEntropy (axis : Nat)
+      [validAxis : Spec.Shape.AxisInBounds axis outputShape]
+      (reduction : _root_.TorchLean.Loss.Reduction := .mean)
 
 /-- A supervised task is just a model plus a choice of loss. -/
 structure SeqTask (σ τ : Spec.Shape) where
   /-- Model to run. -/
   model : _root_.Runtime.Autograd.TorchLean.NN.Seq σ τ
   /-- Loss function. -/
-  loss : SeqLoss
+  loss : SeqLoss τ
 
 /--
 Build the scalar objective for a task in an explicit train/eval mode.
@@ -66,9 +68,10 @@ def SeqTask.objectiveWithMode {σ τ : Spec.Shape} (task : SeqTask σ τ)
   | .mse reduction =>
       _root_.Runtime.Autograd.TorchLean.NN.Seq.Objective.mseWithMode mode
         (model := task.model) (reduction := reduction)
-  | .oneHotCrossEntropy reduction =>
+  | @SeqLoss.oneHotCrossEntropy _ axis validAxis reduction =>
+      letI := validAxis
       _root_.Runtime.Autograd.TorchLean.NN.Seq.Objective.oneHotCrossEntropyWithMode mode
-        (model := task.model) (reduction := reduction)
+        (model := task.model) axis (reduction := reduction)
 
 /-- Build the task's scalar objective in training mode. -/
 def SeqTask.objective {σ τ : Spec.Shape} (task : SeqTask σ τ) :
@@ -87,9 +90,10 @@ def mse {σ τ : Spec.Shape} (model : _root_.Runtime.Autograd.TorchLean.NN.Seq �
 /-- Constructor: one-hot classification task (cross-entropy loss). -/
 def oneHotCrossEntropy {σ τ : Spec.Shape}
     (model : _root_.Runtime.Autograd.TorchLean.NN.Seq σ τ)
+    (axis : Nat) [Spec.Shape.AxisInBounds axis τ]
     (reduction : _root_.TorchLean.Loss.Reduction := .mean) :
     SeqTask σ τ :=
-  { model := model, loss := .oneHotCrossEntropy reduction }
+  { model := model, loss := .oneHotCrossEntropy axis reduction }
 
 end SeqTask
 
@@ -245,7 +249,7 @@ structure LoaderTrainConfig where
   deriving Repr
 
 /-- Extract the base learning rate encoded in an optimizer configuration. -/
-def optimizerLR : OptimizerConfig → Float
+def optimizerLr : OptimizerConfig → Float
   | .sgd lr _ => lr
   | .adagrad lr _ => lr
   | .rmsprop lr _ _ => lr
@@ -257,13 +261,13 @@ def optimizerLR : OptimizerConfig → Float
 Resolve the learning rate to use at a given training step.
 
 If a scheduler is present, it takes precedence over the optimizer's baked-in base learning rate.
-Otherwise it returns `optimizerLR cfg`.
+Otherwise it returns `optimizerLr cfg`.
 -/
-def stepLR (scheduler : Option _root_.TorchLean.Trainer.Scheduler.Config) (cfg : OptimizerConfig)
+def stepLr (scheduler : Option _root_.TorchLean.Trainer.Scheduler.Config) (cfg : OptimizerConfig)
     (step : Nat) : Float :=
   match scheduler with
   | some sched => _root_.TorchLean.Trainer.Scheduler.lrAt sched step
-  | none => optimizerLR cfg
+  | none => optimizerLr cfg
 
 /-- Map a state update over every optimizer-state entry in a shape-indexed parameter list. -/
 def mapStateList {State : Type → Spec.Shape → Type} {α : Type} :
@@ -275,43 +279,43 @@ def mapStateList {State : Type → Spec.Shape → Type} {α : Type} :
   | _ :: ss, f, .cons st rest => .cons (f st) (mapStateList (ss := ss) f rest)
 
 /-- Set the learning rate field of every Adam optimizer state entry to `lr`. -/
-def adamStateWithLR {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
+def adamStateWithLr {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.Adam.State α paramShapes →
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.Adam.State α paramShapes :=
   mapStateList (ss := paramShapes) (fun st => { st with lr := lr })
 
 /-- Set the learning rate field of every plain-SGD optimizer state entry to `lr`. -/
-def sgdStateWithLR {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
+def sgdStateWithLr {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.SGD.State α paramShapes →
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.SGD.State α paramShapes :=
   mapStateList (ss := paramShapes) (fun st => { st with lr := lr })
 
 /-- Set the learning rate field of every momentum-SGD optimizer state entry to `lr`. -/
-def momentumSGDStateWithLR {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
+def momentumSgdStateWithLr {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.MomentumSGD.State α paramShapes →
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.MomentumSGD.State α paramShapes :=
   mapStateList (ss := paramShapes) (fun st => { st with lr := lr })
 
 /-- Set the learning rate field of every AdaGrad optimizer state entry to `lr`. -/
-def adagradStateWithLR {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
+def adagradStateWithLr {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.AdaGrad.State α paramShapes →
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.AdaGrad.State α paramShapes :=
   mapStateList (ss := paramShapes) (fun st => { st with lr := lr })
 
 /-- Set the learning rate field of every RMSProp optimizer state entry to `lr`. -/
-def rmspropStateWithLR {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
+def rmspropStateWithLr {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.RMSProp.State α paramShapes →
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.RMSProp.State α paramShapes :=
   mapStateList (ss := paramShapes) (fun st => { st with lr := lr })
 
 /-- Set the learning rate field of every AdamW optimizer state entry to `lr`. -/
-def adamwStateWithLR {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
+def adamwStateWithLr {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.AdamW.State α paramShapes →
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.AdamW.State α paramShapes :=
   mapStateList (ss := paramShapes) (fun st => { st with lr := lr })
 
 /-- Set the learning rate field of every Adadelta optimizer state entry to `lr`. -/
-def adadeltaStateWithLR {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
+def adadeltaStateWithLr {α : Type} (lr : α) {paramShapes : List Spec.Shape} :
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.Adadelta.State α paramShapes →
     _root_.Runtime.Autograd.TorchLean.Optim.StateList _root_.Optim.Adadelta.State α paramShapes :=
   mapStateList (ss := paramShapes) (fun st => { st with lr := lr })
@@ -380,7 +384,7 @@ def instantiateAs {σ τ : Spec.Shape} (task : SeqTask σ τ)
 /--
 Instantiate a runner over Lean's binary64 `Float` type.
 
-This explicit compatibility path is useful for numerical comparisons and low-level tests. Public
+This explicit binary64 path is useful for numerical comparisons and low-level tests. Public
 training defaults to native `Float32`. Storage-first initialization is used when the model provides
 a plan; other models retain their tensor initializer.
 -/
@@ -546,21 +550,14 @@ def runBatch {σ τ : Spec.Shape} {task : SeqTask σ τ}
     IO (List (Spec.Tensor α τ)) :=
   xs.mapM (run runner)
 
-/-- Run a classification head and return its largest logit index. -/
-def classify? {σ : Spec.Shape} {n : Nat} {task : SeqTask σ (.dim n .scalar)}
+/-- Compute `(correct, total)` along a class axis for a one-hot classification dataset. -/
+def accuracyOneHot {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
-    (runner : Runner α task) (x : Spec.Tensor α σ) :
-    IO (Option (Fin n)) := do
-  let logits ← run runner x
-  pure <| _root_.TorchLean.Metrics.argmax? (α := α) (n := n) logits
-
-/-- Compute `(correct, total)` for a one-hot classification dataset. -/
-def accuracyOneHot {σ : Spec.Shape} {n : Nat} {task : SeqTask σ (.dim n .scalar)}
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
-    (runner : Runner α task) (samples : List (_root_.Runtime.Autograd.Torch.TList α [σ, .dim n .scalar])) :
+    (runner : Runner α task) (axis : Nat) [Spec.Shape.AxisInBounds axis τ]
+    (samples : List (_root_.Runtime.Autograd.Torch.TList α [σ, τ])) :
     IO (Nat × Nat) := do
   let rec go (correct total : Nat) :
-      List (_root_.Runtime.Autograd.Torch.TList α [σ, .dim n .scalar]) → IO (Nat × Nat)
+      List (_root_.Runtime.Autograd.Torch.TList α [σ, τ]) → IO (Nat × Nat)
     | [] => pure (correct, total)
     | sample :: rest =>
         do
@@ -568,8 +565,9 @@ def accuracyOneHot {σ : Spec.Shape} {n : Nat} {task : SeqTask σ (.dim n .scala
             match sample with
             | .cons x (.cons y .nil) => (x, y)
           let logits ← run runner x
-          let ok := _root_.TorchLean.Metrics.correctOneHot? (α := α) (n := n) logits y
-          go (if ok = some true then correct + 1 else correct) (total + 1) rest
+          let (sampleCorrect, sampleTotal) :=
+            _root_.TorchLean.Metrics.accuracyOneHotAxis (α := α) axis logits y
+          go (correct + sampleCorrect) (total + sampleTotal) rest
   go 0 0 samples
 
 /-- Mean scalar loss over a list of supervised samples (uses the runner's active mode). -/
@@ -581,7 +579,7 @@ def meanLoss {σ τ : Spec.Shape} {task : SeqTask σ τ}
     if runner.module.opts.usesCuda then
       samples.mapM (fun sample => do
         let loss ← TorchLean.Module.loss runner.module sample .nil
-        pure (Spec.Tensor.toScalar loss))
+        pure (Spec.Tensor.item loss))
     else do
       let lossGraph :=
         match ← currentMode runner with
@@ -592,7 +590,7 @@ def meanLoss {σ τ : Spec.Shape} {task : SeqTask σ τ}
         let args : _root_.Runtime.Autograd.Torch.TList α (stateShapes task ++ [σ, τ]) :=
           _root_.Proofs.Autograd.Algebra.TList.append
             (α := α) (ss₁ := stateShapes task) (ss₂ := [σ, τ]) ps sample
-        pure (Spec.Tensor.toScalar <| _root_.Runtime.Autograd.Torch.TypedScalarGraph.forward lossGraph
+        pure (Spec.Tensor.item <| _root_.Runtime.Autograd.Torch.TypedScalarGraph.forward lossGraph
           args))
   match values with
   | [] => pure 0
@@ -611,7 +609,7 @@ def moduleLoss {σ τ : Spec.Shape} {task : SeqTask σ τ}
     {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
     (runner : Runner α task) (sample : _root_.Runtime.Autograd.Torch.TList α [σ, τ]) : IO α := do
   let loss ← TorchLean.Module.loss runner.module sample .nil
-  pure (Spec.Tensor.toScalar loss)
+  pure (Spec.Tensor.item loss)
 
 end Runner
 

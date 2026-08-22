@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Layers.PositionalEncoding
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 
 /-!
 # PositionalEncoding
@@ -24,22 +24,18 @@ the positional tensor itself as the parameter.
 @[expose] public section
 
 
-namespace Spec
+namespace Spec.Module
 
 open Tensor
-open ModSpec
 
 variable {α : Type} [Context α]
 
 /-- Learnable positional encoding wrapper (adds a `(seqLen,embedDim)` parameter tensor). -/
-def PositionalEncodingModuleSpec {seqLen embedDim : Nat}
+def positionalEncoding {seqLen embedDim : Nat}
   (pe : PositionalEncodingSpec seqLen embedDim α) :
-  NNModuleSpec α (.dim seqLen (.dim embedDim .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
+  Spec.Module α (.dim seqLen (.dim embedDim .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
 { forward := fun x => addPositionalEncodingSpec (α := α) pe x
   kind := "PositionalEncoding"
-  export_func := {
-    toPyTorch := s!"PositionalEncoding(seqLen={seqLen}, embedDim={embedDim})"
-    dimensions := (seqLen, embedDim)
-  } }
+  pythonExpr := s!"PositionalEncoding(seqLen={seqLen}, embedDim={embedDim})" }
 
-end Spec
+end Spec.Module

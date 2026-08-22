@@ -68,7 +68,7 @@ def certStepNode? (nodes : Array Node) (ps : ParamStore ℝ) (cert : Array (Opti
           match getBox? cert p1, getBox? cert p2 with
           | some B1, some B2 =>
               if _h : B1.dim = B2.dim then
-                some (box_add (α := ℝ) B1 B2)
+                some (boxAdd (α := ℝ) B1 B2)
               else
                 none
           | _, _ => none
@@ -79,7 +79,7 @@ def certStepNode? (nodes : Array Node) (ps : ParamStore ℝ) (cert : Array (Opti
           match getBox? cert p1, getBox? cert p2 with
           | some B1, some B2 =>
               if _h : B1.dim = B2.dim then
-                some (box_sub (α := ℝ) B1 B2)
+                some (boxSub (α := ℝ) B1 B2)
               else
                 none
           | _, _ => none
@@ -88,14 +88,14 @@ def certStepNode? (nodes : Array Node) (ps : ParamStore ℝ) (cert : Array (Opti
       match node.parents with
       | p1 :: p2 :: _ =>
           match getBox? cert p1, getBox? cert p2 with
-          | some B1, some B2 => box_mul_elem (α := ℝ) B1 B2
+          | some B1, some B2 => boxMulElem (α := ℝ) B1 B2
           | _, _ => none
       | _ => none
   | .relu =>
       match node.parents with
       | p1 :: _ =>
           match getBox? cert p1 with
-          | some B => some (box_relu (α := ℝ) B)
+          | some B => some (boxRelu (α := ℝ) B)
           | none => none
       | _ => none
   | .tanh =>
@@ -142,14 +142,14 @@ def certStepNode? (nodes : Array Node) (ps : ParamStore ℝ) (cert : Array (Opti
       match node.parents with
       | p1 :: _ =>
           match getBox? cert p1 with
-          | some Xin => ibp_linear (α := ℝ) id ps Xin
+          | some Xin => ibpLinear (α := ℝ) id ps Xin
           | none => none
       | _ => none
   | .matmul =>
       match node.parents with
       | p1 :: _ =>
           match getBox? cert p1 with
-          | some Xin => ibp_matmul (α := ℝ) id ps Xin
+          | some Xin => ibpMatmul (α := ℝ) id ps Xin
           | none => none
       | _ => none
   | _ =>

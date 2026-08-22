@@ -27,8 +27,8 @@ namespace MLPPyTorch
 
 open Spec
 open Tensor
-open ModSpec
-open SpecChain
+open Spec.Module
+open Spec.Module.Chain
 open Examples
 open Export.PyTorch
 
@@ -276,13 +276,13 @@ def generateMLPWithSoftmaxLines {inDim hidDim outDim : Nat} (className : String)
   ]
 
 /--
-Export metadata for an MLP described as a `SpecChain`.
+Export metadata for an MLP described as a `Spec.Module.Chain`.
 
-The chain is accepted to keep the API aligned with `SpecChain`, while this exporter produces
+The chain is accepted to keep the API aligned with `Spec.Module.Chain`, while this exporter produces
 metadata from the explicit dimensions supplied by the type parameters.
 -/
-def exportMLPFromSpecChain {α : Type} {inDim hidDim outDim : Nat}
-  (_chain : SpecChain α (.dim inDim .scalar) (.dim outDim .scalar))
+def exportMLPFromChain {α : Type} {inDim hidDim outDim : Nat}
+  (_chain : Spec.Module.Chain α (.dim inDim .scalar) (.dim outDim .scalar))
   (className : String := "ExportedMLP") : MLPExportMetadata α inDim hidDim outDim :=
   {
     modelName := className,
@@ -293,9 +293,9 @@ def exportMLPFromSpecChain {α : Type} {inDim hidDim outDim : Nat}
     weights := none
   }
 
-/-- Like `exportMLPFromSpecChain`, but include explicit weights in the metadata record. -/
+/-- Like `exportMLPFromChain`, but include explicit weights in the metadata record. -/
 def exportMLPWithWeights {α : Type} {inDim hidDim outDim : Nat}
-  (_chain : SpecChain α (.dim inDim .scalar) (.dim outDim .scalar))
+  (_chain : Spec.Module.Chain α (.dim inDim .scalar) (.dim outDim .scalar))
   (w1 : Tensor Float (.dim hidDim (.dim inDim .scalar)))
   (b1 : Tensor Float (.dim hidDim .scalar))
   (w2 : Tensor Float (.dim outDim (.dim hidDim .scalar)))

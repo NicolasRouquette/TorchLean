@@ -29,7 +29,7 @@ namespace CNNPyTorch
 
 open Spec
 open Tensor
-open ModSpec
+open Spec.Module
 open Models
 open Export.PyTorch
 
@@ -133,8 +133,8 @@ def generateCnnStackPyTorchClass (cfg : CnnStackConfig) : String :=
       indentTwo "",
       indentTwo "@property",
       indentTwo "def operation_types(self):",
-      indentFour ("return [\"Conv2D\", \"ReLU\", \"MaxPool2D\", \"Conv2D\", \"ReLU\", " ++
-        "\"MaxPool2D\", \"Flatten\", \"Linear\"]"),
+      indentFour ("return [\"Conv2d\", \"ReLU\", \"MaxPool2d\", \"Conv2d\", \"ReLU\", " ++
+        "\"MaxPool2d\", \"Flatten\", \"Linear\"]"),
       indentTwo ""
     ]
     ++ generateGetModelInfoMethodLines className

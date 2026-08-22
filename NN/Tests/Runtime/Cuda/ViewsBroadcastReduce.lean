@@ -135,7 +135,7 @@ def run : IO Unit := do
   let (t1, xId) := Tape.leaf (t := t0) x1 (name := some "x")
   let (t2, yId) ← Utils.okOrThrow (Tape.reshape (α := Float) (t := t1) (s₁ := s1) (s₂ := s2) xId hSize)
   let yCpu ← Utils.cpuValue (s := s2) t2 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) s2)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) s2)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := s1) gradsCpu xId
 
@@ -163,7 +163,7 @@ def run : IO Unit := do
   let (t1m, xMid) := Tape.leaf (t := t0m) xM (name := some "x")
   let (t2m, yMid) ← Utils.okOrThrow (Tape.transpose2d (α := Float) (t := t1m) (m := 2) (n := 3) xMid)
   let yCpuM ← Utils.cpuValue (s := shape![3, 2]) t2m yMid
-  let seedCpuM : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) (shape![3, 2]))
+  let seedCpuM : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) (shape![3, 2]))
   let gradsCpuM ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2m) yMid seedCpuM)
   let dxCpuM ← Utils.cpuGrad (s := sM) gradsCpuM xMid
 
@@ -210,7 +210,7 @@ def run : IO Unit := do
     (s := sSwap) 1 xSid)
   let yCpuSwap ← Utils.cpuValue (s := sSwapOut) t2s ySid
   let gradsCpuSwap ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2s) ySid
-    ({ s := sSwapOut, t := seedSwap } : Runtime.AnyTensor Float))
+    (Spec.PackedTensor.ofTensor seedSwap))
   let dxCpuSwap ← Utils.cpuGrad (s := sSwap) gradsCpuSwap xSid
 
   let t0sc : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
@@ -239,7 +239,7 @@ def run : IO Unit := do
   let (t1b, xBid) := Tape.leaf (t := t0b) xB (name := some "x")
   let (t2b, yBid) ← Utils.okOrThrow (Tape.broadcastTo (α := Float) (t := t1b) (s₁ := sB1) (s₂ := sB2) cb xBid)
   let yCpuB ← Utils.cpuValue (s := sB2) t2b yBid
-  let seedCpuB : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) sB2)
+  let seedCpuB : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) sB2)
   let gradsCpuB ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2b) yBid seedCpuB)
   let dxCpuB ← Utils.cpuGrad (s := sB1) gradsCpuB xBid
 
@@ -272,12 +272,12 @@ def run : IO Unit := do
   let (t3r, meanId) ← Utils.okOrThrow (Tape.reduceMean (α := Float) (t := t2r) (s := sR) axis xRid)
 
   let yCpuSum ← Utils.cpuValue (s := sOut) t3r sumId
-  let seedCpuSum : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) sOut)
+  let seedCpuSum : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) sOut)
   let gradsCpuSum ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t3r) sumId seedCpuSum)
   let dxCpuSum ← Utils.cpuGrad (s := sR) gradsCpuSum xRid
 
   let yCpuMean ← Utils.cpuValue (s := sOut) t3r meanId
-  let seedCpuMean : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) sOut)
+  let seedCpuMean : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) sOut)
   let gradsCpuMean ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t3r) meanId seedCpuMean)
   let dxCpuMean ← Utils.cpuGrad (s := sR) gradsCpuMean xRid
 

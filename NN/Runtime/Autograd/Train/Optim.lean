@@ -71,8 +71,8 @@ structure ParamEntry (α : Type) where
   id : Nat
   /-- Optional label, such as a module path; used only for reporting and debugging. -/
   name : Option String := none
-  /-- The parameter value, stored as an `AnyTensor` (shape erased). -/
-  value : Runtime.AnyTensor α
+  /-- The shape-erased parameter value. -/
+  value : Spec.PackedTensor α
 
 /-- A flat list of parameters used by the training loop. -/
 abbrev ParamTable (α : Type) := List (ParamEntry α)
@@ -89,7 +89,7 @@ This is mostly a convenience for assembling a `ParamTable` from known-shaped ten
 -/
 def ofTensor {α : Type} {s : Shape} (id : Nat) (t : Tensor α s) (name : Option String := none) :
   ParamEntry α :=
-  { id := id, name := name, value := AnyTensor.mk t }
+  { id := id, name := name, value := Spec.PackedTensor.ofTensor t }
 
 end ParamEntry
 
@@ -112,13 +112,13 @@ def getTensor {α : Type} [DecidableEq Shape] {s : Shape}
   | none =>
       exact .error (tagError tag s!"missing param id {id}")
   | some p =>
-      if h : p.value.s = s then
-        exact .ok (Tensor.castShape p.value.t h)
+      if h : p.value.shape = s then
+        exact .ok (Tensor.castShape p.value.tensor h)
       else
         exact .error (tagError tag s!"param shape mismatch for id {id}")
 
 /-- Replace a parameter entry value by id. -/
-def set (ps : ParamTable α) (id : Nat) (value : Runtime.AnyTensor α) : ParamTable α :=
+def set (ps : ParamTable α) (id : Nat) (value : Spec.PackedTensor α) : ParamTable α :=
   ps.map (fun p => if p.id = id then { p with value := value } else p)
 
 /--
@@ -229,7 +229,7 @@ structure ParamGroup (α : Type) [Context α] where
   /-- Base learning rate (possibly overridden by `scheduler` on each step). -/
   lr : α
   /-- $\ell_2$ regularization coefficient (behavior depends on the optimizer kind; see AdamW). -/
-  weight_decay : α := 0
+  weightDecay : α := 0
   /-- Momentum factor (SGD with momentum). -/
   momentum : α := 0
   /-- Dampening for momentum updates. -/
@@ -237,14 +237,14 @@ structure ParamGroup (α : Type) [Context α] where
   /-- Use Nesterov variant for momentum updates. -/
   nesterov : Bool := false
   /-- Adam beta1 parameter (exponential decay for the first moment). -/
-  beta1 : α := Numbers.one - Numbers.pointone
+  beta1 : α := Numbers.one - Numbers.oneTenth
   /-- Adam beta2 parameter (exponential decay for the second moment). -/
   beta2 : α :=
     Numbers.one - (Numbers.one / (Numbers.ten * Numbers.ten * Numbers.ten))
   /-- Numerical stability term used by adaptive optimizers. -/
   epsilon : α := Numbers.epsilon
   /-- "Rho" decay parameter for RMSProp/AdaDelta style optimizers. -/
-  rho : α := Numbers.one - Numbers.pointone
+  rho : α := Numbers.one - Numbers.oneTenth
   /-- Optional learning-rate scheduler for this group. -/
   scheduler : Option (LRScheduler α) := none
 
@@ -272,15 +272,15 @@ structure OptimizerState (α : Type) [Context α] where
   -/
   parameterSteps : Std.HashMap Nat Nat := {}
   /-- Momentum buffer (SGD with momentum / Nesterov), keyed by parameter id. -/
-  momentum_buf : Std.HashMap Nat (Runtime.AnyTensor α) := {}
+  momentumBuffer : Std.HashMap Nat (Spec.PackedTensor α) := {}
   /-- Adam first-moment estimate, keyed by parameter id. -/
-  m : Std.HashMap Nat (Runtime.AnyTensor α) := {}
+  m : Std.HashMap Nat (Spec.PackedTensor α) := {}
   /-- Adam second-moment estimate, keyed by parameter id. -/
-  v : Std.HashMap Nat (Runtime.AnyTensor α) := {}
+  v : Std.HashMap Nat (Spec.PackedTensor α) := {}
   /-- Accumulator buffer (AdaGrad/RMSProp/AdaDelta), keyed by parameter id. -/
-  acc : Std.HashMap Nat (Runtime.AnyTensor α) := {}
+  acc : Std.HashMap Nat (Spec.PackedTensor α) := {}
   /-- Second accumulator buffer (AdaDelta), keyed by parameter id. -/
-  acc2 : Std.HashMap Nat (Runtime.AnyTensor α) := {}
+  acc2 : Std.HashMap Nat (Spec.PackedTensor α) := {}
 
 /--
 A pure state snapshot for saving/restoring optimizer state.
@@ -298,15 +298,15 @@ structure OptimStateDict (α : Type) [Context α] where
   /-- Parameter groups, including scheduler state and hyperparameters. -/
   groups : List (ParamGroup α)
   /-- Momentum buffers keyed by parameter id. -/
-  momentum_buf : List (Nat × Runtime.AnyTensor α)
+  momentumBuffer : List (Nat × Spec.PackedTensor α)
   /-- Adam-family first-moment buffers keyed by parameter id. -/
-  m : List (Nat × Runtime.AnyTensor α)
+  m : List (Nat × Spec.PackedTensor α)
   /-- Adam-family second-moment buffers keyed by parameter id. -/
-  v : List (Nat × Runtime.AnyTensor α)
+  v : List (Nat × Spec.PackedTensor α)
   /-- AdaGrad/RMSProp/Adadelta accumulator buffers keyed by parameter id. -/
-  acc : List (Nat × Runtime.AnyTensor α)
+  acc : List (Nat × Spec.PackedTensor α)
   /-- Adadelta second accumulator buffers keyed by parameter id. -/
-  acc2 : List (Nat × Runtime.AnyTensor α)
+  acc2 : List (Nat × Spec.PackedTensor α)
 
 namespace OptimizerState
 
@@ -322,7 +322,7 @@ def toStateDict (opt : OptimizerState α) : OptimStateDict α :=
   , step := opt.step
   , parameterSteps := opt.parameterSteps.toList
   , groups := opt.groups
-  , momentum_buf := opt.momentum_buf.toList
+  , momentumBuffer := opt.momentumBuffer.toList
   , m := opt.m.toList
   , v := opt.v.toList
   , acc := opt.acc.toList
@@ -339,7 +339,7 @@ def ofStateDict (d : OptimStateDict α) : OptimizerState α :=
   , step := d.step
   , parameterSteps := Std.HashMap.ofList d.parameterSteps
   , groups := d.groups
-  , momentum_buf := Std.HashMap.ofList d.momentum_buf
+  , momentumBuffer := Std.HashMap.ofList d.momentumBuffer
   , m := Std.HashMap.ofList d.m
   , v := Std.HashMap.ofList d.v
   , acc := Std.HashMap.ofList d.acc
@@ -355,19 +355,15 @@ namespace Optim
 
 variable {α : Type} [Context α] [DecidableEq Shape] [DecidableRel ((· > ·) : α → α → Prop)]
 
-/-- Create a zero-filled buffer with the same shape as a parameter value. -/
-def zerosLike (p : Runtime.AnyTensor α) : Runtime.AnyTensor α :=
-  { s := p.s, t := Spec.fill (0 : α) p.s }
-
 /--
 Lookup a per-parameter state buffer, initializing it with zeros if absent.
 
 This is used for momentum/Adam accumulator initialization (PyTorch does this lazily on first step).
 -/
 def getOrInit
-  (m : Std.HashMap Nat (Runtime.AnyTensor α))
-  (id : Nat) (p : Runtime.AnyTensor α) : Runtime.AnyTensor α :=
-  m.getD id (zerosLike p)
+  (m : Std.HashMap Nat (Spec.PackedTensor α))
+  (id : Nat) (p : Spec.PackedTensor α) : Spec.PackedTensor α :=
+  m.getD id { shape := p.shape, tensor := Spec.fill (0 : α) p.shape }
 
 /--
 Shape-check and cast an optimizer state buffer to match the current parameter value.
@@ -376,9 +372,9 @@ This prevents silent shape mismatches when reloading a checkpoint into a model w
 parameter shapes.
 -/
 def castState
-  (tag : String) (id : Nat) (buf pval : Runtime.AnyTensor α) : Result (Tensor α pval.s) := do
-  if h : buf.s = pval.s then
-    pure (Tensor.castShape buf.t h)
+  (tag : String) (id : Nat) (buf pval : Spec.PackedTensor α) : Result (Tensor α pval.shape) := do
+  if h : buf.shape = pval.shape then
+    pure (Tensor.castShape buf.tensor h)
   else
     throw (tagError tag s!"state shape mismatch for id {id}")
 
@@ -390,8 +386,8 @@ Note: this is the *coupled* weight decay used by classic SGD-style updates.
 For AdamW the integration step delegates to the canonical optimizer's decoupled update.
 -/
 def addWeightDecay {s : Shape}
-  (param grad : Tensor α s) (weight_decay : α) : Tensor α s :=
-  addSpec grad (scaleSpec param weight_decay)
+  (param grad : Tensor α s) (weightDecay : α) : Tensor α s :=
+  addSpec grad (scaleSpec param weightDecay)
 
 /--
 Recover the previous Adam step for one parameter.
@@ -401,7 +397,7 @@ when loading a state dictionary created before per-parameter counters were store
 -/
 def previousAdamStep
     (parameterSteps : Std.HashMap Nat Nat)
-    (moment1 moment2 : Std.HashMap Nat (Runtime.AnyTensor α))
+    (moment1 moment2 : Std.HashMap Nat (Spec.PackedTensor α))
     (globalStep id : Nat) : Nat :=
   match parameterSteps.get? id with
   | some t => t
@@ -456,7 +452,7 @@ Behavior:
 def step
   (opt : OptimizerState α)
   (params : ParamTable α)
-  (grads : Std.HashMap Nat (Runtime.AnyTensor α)) : Result (OptimizerState α × ParamTable α) := do
+  (grads : Std.HashMap Nat (Spec.PackedTensor α)) : Result (OptimizerState α × ParamTable α) := do
   let parameterIds ← ParamTable.checkedIdSet params
   let groups' := updateGroupSchedulers opt.groups
   let gmap <- groupMap groups'
@@ -465,7 +461,7 @@ def step
       throw (tagError "optim" s!"param group references unknown id {id}")
   let tNext := opt.step + 1
   let mut parameterSteps := opt.parameterSteps
-  let mut momentum_buf := opt.momentum_buf
+  let mut momentumBuffer := opt.momentumBuffer
   let mut m := opt.m
   let mut v := opt.v
   let mut acc := opt.acc
@@ -483,30 +479,30 @@ def step
     match gradOpt with
     | none =>
         updated := { p with value := pval } :: updated
-    | some gAny =>
-        if h : gAny.s = pval.s then
-          let grad : Tensor α pval.s := Tensor.castShape gAny.t h
-          let param : Tensor α pval.s := pval.t
+    | some gradPacked =>
+        if h : gradPacked.shape = pval.shape then
+          let grad : Tensor α pval.shape := Tensor.castShape gradPacked.tensor h
+          let param : Tensor α pval.shape := pval.tensor
           match opt.kind with
           | .sgd =>
-              let gradWD := addWeightDecay param grad g.weight_decay
-              let state : _root_.Optim.SGD.State α pval.s := { lr := g.lr }
+              let gradWD := addWeightDecay param grad g.weightDecay
+              let state : _root_.Optim.SGD.State α pval.shape := { lr := g.lr }
               let param' := Tensor.materialize <|
-                _root_.Optim.SGD.update (α := α) (s := pval.s) state param gradWD
-              updated := { p with value := AnyTensor.mk param' } :: updated
+                _root_.Optim.SGD.update (α := α) (s := pval.shape) state param gradWD
+              updated := { p with value := Spec.PackedTensor.ofTensor param' } :: updated
           | .momentum =>
-              let firstUpdate := !momentum_buf.contains p.id
-              let v0 := getOrInit momentum_buf p.id pval
+              let firstUpdate := !momentumBuffer.contains p.id
+              let v0 := getOrInit momentumBuffer p.id pval
               let v0t ← castState "optim" p.id v0 pval
-              let gradWD := addWeightDecay param grad g.weight_decay
+              let gradWD := addWeightDecay param grad g.weightDecay
               -- PyTorch initializes a momentum buffer from the first raw gradient. Dampening is
               -- applied only once a buffer already exists.
               let gradForBuffer :=
                 if firstUpdate then gradWD else scaleSpec gradWD (1 - g.dampening)
-              let momentumState : _root_.Optim.MomentumSGD.State α pval.s :=
+              let momentumState : _root_.Optim.MomentumSGD.State α pval.shape :=
                 { lr := g.lr, momentum := g.momentum, buf := v0t }
               let (momentumState', paramClassic) :=
-                _root_.Optim.MomentumSGD.update (α := α) (s := pval.s)
+                _root_.Optim.MomentumSGD.update (α := α) (s := pval.shape)
                   momentumState param gradForBuffer
               let updateDir :=
                 if g.nesterov then
@@ -519,38 +515,38 @@ def step
                 else
                   paramClassic
               let v' := momentumState'.buf
-              momentum_buf := momentum_buf.insert p.id (AnyTensor.mk (Tensor.materialize v'))
-              updated := { p with value := AnyTensor.mk (Tensor.materialize param') } :: updated
+              momentumBuffer := momentumBuffer.insert p.id (Spec.PackedTensor.ofTensor (Tensor.materialize v'))
+              updated := { p with value := Spec.PackedTensor.ofTensor (Tensor.materialize param') } :: updated
           | .adagrad =>
               let acc0 := getOrInit acc p.id pval
               let acc0t ← castState "optim" p.id acc0 pval
-              let gradWD := addWeightDecay param grad g.weight_decay
-              let state : _root_.Optim.AdaGrad.State α pval.s :=
+              let gradWD := addWeightDecay param grad g.weightDecay
+              let state : _root_.Optim.AdaGrad.State α pval.shape :=
                 { lr := g.lr, epsilon := g.epsilon, accumulator := acc0t }
               let (state', param') :=
-                _root_.Optim.AdaGrad.update (α := α) (s := pval.s) state param gradWD
+                _root_.Optim.AdaGrad.update (α := α) (s := pval.shape) state param gradWD
               let acc' := state'.accumulator
-              acc := acc.insert p.id (AnyTensor.mk (Tensor.materialize acc'))
-              updated := { p with value := AnyTensor.mk (Tensor.materialize param') } :: updated
+              acc := acc.insert p.id (Spec.PackedTensor.ofTensor (Tensor.materialize acc'))
+              updated := { p with value := Spec.PackedTensor.ofTensor (Tensor.materialize param') } :: updated
           | .rmsprop =>
               let acc0 := getOrInit acc p.id pval
               let acc0t ← castState "optim" p.id acc0 pval
-              let gradWD := addWeightDecay param grad g.weight_decay
-              let state : _root_.Optim.RMSProp.State α pval.s :=
+              let gradWD := addWeightDecay param grad g.weightDecay
+              let state : _root_.Optim.RMSProp.State α pval.shape :=
                 { lr := g.lr, decay := g.rho, epsilon := g.epsilon, accumulator := acc0t }
               let (state', param') :=
-                _root_.Optim.RMSProp.update (α := α) (s := pval.s) state param gradWD
+                _root_.Optim.RMSProp.update (α := α) (s := pval.shape) state param gradWD
               let acc' := state'.accumulator
-              acc := acc.insert p.id (AnyTensor.mk (Tensor.materialize acc'))
-              updated := { p with value := AnyTensor.mk (Tensor.materialize param') } :: updated
+              acc := acc.insert p.id (Spec.PackedTensor.ofTensor (Tensor.materialize acc'))
+              updated := { p with value := Spec.PackedTensor.ofTensor (Tensor.materialize param') } :: updated
           | .adam =>
               let m0 := getOrInit m p.id pval
               let v0 := getOrInit v p.id pval
               let m0t ← castState "optim" p.id m0 pval
               let v0t ← castState "optim" p.id v0 pval
-              let gradWD := addWeightDecay param grad g.weight_decay
+              let gradWD := addWeightDecay param grad g.weightDecay
               let previousStep := previousAdamStep parameterSteps m v opt.step p.id
-              let state : _root_.Optim.Adam.State α pval.s :=
+              let state : _root_.Optim.Adam.State α pval.shape :=
                 { lr := g.lr
                   beta1 := g.beta1
                   beta2 := g.beta2
@@ -559,51 +555,51 @@ def step
                   v := v0t
                   t := previousStep }
               let (state', param') :=
-                _root_.Optim.Adam.update (α := α) (s := pval.s) state param gradWD
+                _root_.Optim.Adam.update (α := α) (s := pval.shape) state param gradWD
               let m' := state'.m
               let v' := state'.v
               parameterSteps := parameterSteps.insert p.id state'.t
-              m := m.insert p.id (AnyTensor.mk (Tensor.materialize m'))
-              v := v.insert p.id (AnyTensor.mk (Tensor.materialize v'))
-              updated := { p with value := AnyTensor.mk (Tensor.materialize param') } :: updated
+              m := m.insert p.id (Spec.PackedTensor.ofTensor (Tensor.materialize m'))
+              v := v.insert p.id (Spec.PackedTensor.ofTensor (Tensor.materialize v'))
+              updated := { p with value := Spec.PackedTensor.ofTensor (Tensor.materialize param') } :: updated
           | .adamw =>
               let m0 := getOrInit m p.id pval
               let v0 := getOrInit v p.id pval
               let m0t ← castState "optim" p.id m0 pval
               let v0t ← castState "optim" p.id v0 pval
               let previousStep := previousAdamStep parameterSteps m v opt.step p.id
-              let state : _root_.Optim.AdamW.State α pval.s :=
+              let state : _root_.Optim.AdamW.State α pval.shape :=
                 { lr := g.lr
                   beta1 := g.beta1
                   beta2 := g.beta2
                   epsilon := g.epsilon
-                  weight_decay := g.weight_decay
+                  weightDecay := g.weightDecay
                   m := m0t
                   v := v0t
                   t := previousStep }
               let (state', param') :=
-                _root_.Optim.AdamW.update (α := α) (s := pval.s) state param grad
+                _root_.Optim.AdamW.update (α := α) (s := pval.shape) state param grad
               let m' := state'.m
               let v' := state'.v
               parameterSteps := parameterSteps.insert p.id state'.t
-              m := m.insert p.id (AnyTensor.mk (Tensor.materialize m'))
-              v := v.insert p.id (AnyTensor.mk (Tensor.materialize v'))
-              updated := { p with value := AnyTensor.mk (Tensor.materialize param') } :: updated
+              m := m.insert p.id (Spec.PackedTensor.ofTensor (Tensor.materialize m'))
+              v := v.insert p.id (Spec.PackedTensor.ofTensor (Tensor.materialize v'))
+              updated := { p with value := Spec.PackedTensor.ofTensor (Tensor.materialize param') } :: updated
           | .adadelta =>
               let acc0 := getOrInit acc p.id pval
               let acc20 := getOrInit acc2 p.id pval
               let acc0t ← castState "optim" p.id acc0 pval
               let acc20t ← castState "optim" p.id acc20 pval
-              let gradWD := addWeightDecay param grad g.weight_decay
-              let state : _root_.Optim.Adadelta.State α pval.s :=
+              let gradWD := addWeightDecay param grad g.weightDecay
+              let state : _root_.Optim.Adadelta.State α pval.shape :=
                 { lr := g.lr, rho := g.rho, epsilon := g.epsilon, v := acc0t, u := acc20t }
               let (state', param') :=
-                _root_.Optim.Adadelta.update (α := α) (s := pval.s) state param gradWD
+                _root_.Optim.Adadelta.update (α := α) (s := pval.shape) state param gradWD
               let acc' := state'.v
               let acc2' := state'.u
-              acc := acc.insert p.id (AnyTensor.mk (Tensor.materialize acc'))
-              acc2 := acc2.insert p.id (AnyTensor.mk (Tensor.materialize acc2'))
-              updated := { p with value := AnyTensor.mk (Tensor.materialize param') } :: updated
+              acc := acc.insert p.id (Spec.PackedTensor.ofTensor (Tensor.materialize acc'))
+              acc2 := acc2.insert p.id (Spec.PackedTensor.ofTensor (Tensor.materialize acc2'))
+              updated := { p with value := Spec.PackedTensor.ofTensor (Tensor.materialize param') } :: updated
         else
           throw (tagError "optim" s!"gradient shape mismatch for id {p.id}")
 
@@ -612,7 +608,7 @@ def step
     , groups := groups'
     , step := tNext
     , parameterSteps := parameterSteps
-    , momentum_buf := momentum_buf
+    , momentumBuffer := momentumBuffer
     , m := m
     , v := v
     , acc := acc

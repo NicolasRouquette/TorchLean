@@ -54,22 +54,6 @@ def linearSpec {inDim outDim : Nat}
   addSpec (matVecMulSpec m.weights input) m.bias
 
 /--
-Batched forward pass (map the unbatched `linear_spec` over the batch axis).
-
-Input shape:  `[batch, inDim]`
-Output shape: `[batch, outDim]`
-
-PyTorch analogue: applying `nn.linear` to a batched tensor.
--/
-def linearBatchedSpec {batch inDim outDim : Nat}
-  (m : LinearSpec α inDim outDim)
-  (input : Tensor α (.dim batch (.dim inDim .scalar))) :
-  Tensor α (.dim batch (.dim outDim .scalar)) :=
-  match input with
-  | Tensor.dim batch_fn =>
-    Tensor.dim (fun i => linearSpec m (batch_fn i))
-
-/--
 Gradient w.r.t. weights: `∂L/∂W = (∂L/∂y) ⊗ x` (outer product).
 
 This is the standard linear-layer backward formula for `y = W x + b`.
@@ -125,7 +109,7 @@ def batchLinearDerivSpec {batch inDim outDim : Nat}
    Tensor α (.dim (batch + 1) (.dim inDim .scalar))) :=
 
   let d_weights := matMulSpec (matrixTransposeSpec grad_output) input
-  let d_bias := reduceSumAuto 0 grad_output
+  let d_bias := reduceSum 0 grad_output Shape.NonemptyAxis.zero
   let d_input := matMulSpec grad_output weights
   (d_weights, d_bias, d_input)
 

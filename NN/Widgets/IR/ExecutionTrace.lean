@@ -30,7 +30,7 @@ When debugging, it is often more helpful to see:
 - and the exact node id where evaluation stopped.
 
 Main commands:
-- `#ir_exec_trace_view g, input` where `input : Runtime.AnyTensor α` (payload defaults to empty)
+- `#ir_exec_trace_view g, input` where `input : Spec.PackedTensor α` (payload defaults to empty)
 - `#ir_exec_trace_view g, payload, input` where `payload : NN.IR.Payload α`
 
 ## Main definitions
@@ -74,15 +74,15 @@ private def checkBadge (name : String) (r : Except String Unit) : ProofWidgets.H
     msg}</span></span>
 
 private structure Trace (α : Type) [Context α] where
-  vals : Array (DVal α)
+  vals : Array (Spec.PackedTensor α)
   failedAt? : Option (Nat × String)
 
 /-- Execute a graph step-by-step, recording values until the first error. -/
 private def execTrace
     {α : Type} [Context α] [DecidableEq Shape]
-    (g : Graph) (payload : Payload α) (input : Runtime.AnyTensor α) : Trace α :=
-  let inputD : DVal α := DVal.mk (α := α) input.s input.t
-  let rec go (i : Nat) (vals : Array (DVal α)) : Trace α :=
+    (g : Graph) (payload : Payload α) (input : Spec.PackedTensor α) : Trace α :=
+  let inputD : Spec.PackedTensor α := input
+  let rec go (i : Nat) (vals : Array (Spec.PackedTensor α)) : Trace α :=
     if i < g.nodes.size then
       match Graph.evalAt (α := α) (g := g) (payload := payload) (input := inputD) (vals := vals) (i
         := i) with
@@ -93,11 +93,11 @@ private def execTrace
   go 0 #[]
 
 /-- Convert a semantic-domain value into a runtime shape-erased tensor wrapper. -/
-private def dvToAny {α : Type} [Context α] (v : DVal α) : Runtime.AnyTensor α :=
-  { s := v.1, t := v.2 }
+private def dvToAny {α : Type} [Context α] (v : Spec.PackedTensor α) : Spec.PackedTensor α :=
+  { shape := v.1, tensor := v.2 }
 
 private def nodeRowHtml {α : Type} [Context α] [ToString α]
-    (g : Graph) (i : Nat) (v? : Option (DVal α)) : ProofWidgets.Html :=
+    (g : Graph) (i : Nat) (v? : Option (Spec.PackedTensor α)) : ProofWidgets.Html :=
   let n? := g.nodes[i]?
   let op := match n? with | none => "<missing>" | some n => n.kind.tag
   let parents := match n? with | none => [] | some n => n.parents
@@ -121,18 +121,18 @@ private def nodeRowHtml {α : Type} [Context α] [ToString α]
           let any := dvToAny (α := α) v
           ;
           <div style={json% {"margin-top": "8px", "padding-left": "10px"}}>
-            {anyTensorHtml (α := α) any (maxRows := 10) (maxCols := 12) (maxElems := 64)}
+            {packedTensorHtml (α := α) any (maxRows := 10) (maxCols := 12) (maxElems := 64)}
           </div>}
   </details>
 
 /-- Render an "execute and show intermediates" panel for an IR graph and a single input. -/
 def irExecTraceHtml
     {α : Type} [Context α] [DecidableEq Shape] [ToString α]
-    (g : Graph) (payload : Payload α) (input : Runtime.AnyTensor α) : ProofWidgets.Html :=
+    (g : Graph) (payload : Payload α) (input : Spec.PackedTensor α) : ProofWidgets.Html :=
   let wf := g.checkWellFormed
   let sh := g.checkShapes
   let tr := execTrace (α := α) (g := g) (payload := payload) (input := input)
-  let values : Array (Option (DVal α)) :=
+  let values : Array (Option (Spec.PackedTensor α)) :=
     (Array.range g.nodes.size).map (fun i => tr.vals[i]?)
   ;
   <div style={json% {
@@ -145,7 +145,7 @@ def irExecTraceHtml
     <div style={json% {"display": "flex", "gap": "8px", "flex-wrap": "wrap", "margin-bottom":
       "10px"}}>
       {pill "IR exec trace"} {pill s!"nodes={g.nodes.size}"} {pill
-        s!"inputShape={Shape.pretty input.s}"}
+        s!"inputShape={Shape.pretty input.shape}"}
     </div>
     <div style={json% {"display": "grid", "grid-template-columns": "1fr", "gap": "6px",
       "margin-bottom": "10px"}}>

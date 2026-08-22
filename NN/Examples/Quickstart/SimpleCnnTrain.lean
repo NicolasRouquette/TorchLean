@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API
+public import NN.Examples.Data.Bands
 public import NN.Examples.Quickstart.Common
 
 /-!
@@ -46,9 +47,8 @@ def defaultLogJson : System.FilePath := ModelZoo.trainLogPath "quickstart_simple
 
 def mkModel {batch : Nat} :
     nn.Builder (nn.Sequential (.dim batch (.dim 1 (.dim 4 (.dim 4 .scalar)))) (.dim batch (.dim 2 .scalar))) :=
-  let cfg : nn.models.CNNConfig 2 :=
-    { batch := batch
-      inChannels := 1
+  let cfg : nn.models.CnnConfig 2 :=
+    { inChannels := 1
       spatial := #v[4, 4]
       outDim := 2
       conv :=
@@ -61,8 +61,9 @@ def mkModel {batch : Nat} :
           kernelNonzero := by intro i; fin_cases i <;> decide
           strideNonzero := by intro i; fin_cases i <;> decide } }
   by
-    simpa [cfg, nn.models.cnnInShape, nn.models.cnnOutShape, Spec.Shape.ofList] using
-      nn.models.cnn cfg (hInChannels := by simp [cfg])
+    simpa [cfg, nn.models.CnnConfig.inputShape, nn.models.CnnConfig.outputShape,
+      Spec.Shape.ofList, Spec.Shape.concat, Spec.Shape.appendDim] using
+      nn.models.cnn cfg (.dim batch .scalar) (hInChannels := by simp [cfg])
 
 /-- Command-line help for the simple CNN quickstart. -/
 def usage : String :=
@@ -95,7 +96,7 @@ def main (args : List String) : IO Unit := do
     _root_.NN.Examples.Quickstart.parseRuntimeTrain
       "SimpleCNNTrain" args defaultLogJson 1 (optim.adam { lr := 0.03 })
   let trainer := Trainer.new (mkModel (batch := batch)) <|
-    Trainer.Config.fromRunConfig parsed.run .oneHotCrossEntropy (seed := seed)
+    Trainer.Config.fromRunConfig parsed.run (.oneHotCrossEntropy 1) (seed := seed)
 
   let trainData :=
     Data.batchDataset batch Data.Bands.dataset
@@ -105,7 +106,7 @@ def main (args : List String) : IO Unit := do
   match Data.Bands.probeSamples with
   | [] => pure ()
   | (name, x, expected) :: _ =>
-      let xBatch := Tensor.repeatBatch batch x
+      let xBatch := Spec.Tensor.dim (fun _ : Fin batch => x)
       trained.printPrediction s!"{name} expected={expected}" xBatch
 
 end NN.Examples.Quickstart.SimpleCNNTrain

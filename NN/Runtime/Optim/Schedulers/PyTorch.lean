@@ -92,7 +92,7 @@ def StepLR.step (scheduler : StepLR α) : StepLR α :=
   { scheduler with currentStep := scheduler.currentStep + 1 }
 
 /-- Constructor for `StepLR` starting at `current_step = 0`. -/
-def stepLR (baseLr : α) (stepSize : Nat) (gamma : α) : StepLR α :=
+def stepLr (baseLr : α) (stepSize : Nat) (gamma : α) : StepLR α :=
   { baseLr := baseLr, stepSize := stepSize, gamma := gamma }
 
 /-! ### CosineAnnealingLR -/
@@ -192,8 +192,8 @@ def minLr (s : OneCycleLR α) : α :=
 /-- PyTorch-compatible anneal helper (no clamping). -/
 def anneal (s : OneCycleLR α) (startLR endLR pct : α) : α :=
   match s.annealStrategy with
-  | .cos => SchedulerUtils.cosineAnnealRaw startLR endLR pct
-  | .linear => SchedulerUtils.linearInterpolationRaw startLR endLR pct
+  | .cos => SchedulerUtils.cosineInterpolationUnclamped startLR endLR pct
+  | .linear => SchedulerUtils.linearInterpolationUnclamped startLR endLR pct
 
 end OneCycleLR
 

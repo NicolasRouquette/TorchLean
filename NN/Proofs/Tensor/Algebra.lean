@@ -94,42 +94,7 @@ def dot {α : Type} [Zero α] [Add α] [Mul α] :
   | .dim n s, Tensor.dim f, Tensor.dim g =>
       (List.finRange n).foldl (fun acc i => acc + dot (s := s) (f i) (g i)) 0
 
-/-! ## List-fold helpers -/
-
-/--
-Distribute a fold of `g1 x + g2 x` into the sum of two folds.
-
-This is a general “sum splits over addition” lemma used to prove bilinearity-like properties of
-`dot`.
--/
-lemma foldl_add_distrib2 {α β : Type} [AddCommMonoid α] (l : List β) (g1 g2 : β → α) :
-    ∀ a1 a2,
-      l.foldl (fun s x => s + (g1 x + g2 x)) (a1 + a2) =
-        l.foldl (fun s x => s + g1 x) a1 + l.foldl (fun s x => s + g2 x) a2 :=
-  List.foldl_add_distrib2 l g1 g2
-
 /-! ## From executable folds to proof-friendly sums -/
-
-/--
-Rewrite the spec-style fold over `List.finRange n` into a proof-friendly `Finset.univ.sum`.
-
-Many spec definitions use `List.foldl` (it is definitional and convenient for computation), while
-proofs often prefer `Finset.sum` so they can use standard big-operator lemmas.
--/
-lemma finRange_foldl_add_eq_finset_sum {α : Type} [AddCommMonoid α] {n : Nat} (f : Fin n → α) :
-    (List.finRange n).foldl (fun s i => s + f i) 0 = (Finset.univ : Finset (Fin n)).sum f := by
-  simpa using List.finRange_foldl_add_eq_finset_sum (n := n) (f := f)
-
-/--
-Accumulator form of `finRange_foldl_add_eq_finset_sum`.
-
-This is the tensor-proof namespace wrapper around the shared list lemma, so downstream proofs can
-stay on the `Spec.finRange_*` spelling exported by `NN.Proofs.Tensor.Basic.Core`.
--/
-lemma finRange_foldl_add_acc {α : Type} [AddCommMonoid α] {n : Nat} (f : Fin n → α) (acc : α) :
-    (List.finRange n).foldl (fun s i => s + f i) acc =
-      acc + (Finset.univ : Finset (Fin n)).sum f := by
-  simpa using List.finRange_foldl_add_acc (n := n) (f := f) (acc := acc)
 
 /--
 Push an accumulator into a `finRange` additive fold.
@@ -295,7 +260,7 @@ theorem dot_add_left {s : Shape} (a b c : Tensor α s) :
                 i)) 0 =
                 (List.finRange n).foldl (fun acc i => acc + dot (α := α) (fa i) (fc i)) 0 +
                   (List.finRange n).foldl (fun acc i => acc + dot (α := α) (fb i) (fc i)) 0 := by
-            -- First rewrite each term using `hterm`, then apply `foldl_add_distrib2`.
+            -- First rewrite each term using `hterm`, then apply `List.foldl_add_distrib2`.
             have hcongr :
                 (List.finRange n).foldl (fun acc i => acc + dot (α := α) (addSpec (fa i) (fb i))
                   (fc i)) 0 =
@@ -308,7 +273,7 @@ theorem dot_add_left {s : Shape} (a b c : Tensor α s) :
                 (a := (0 : α)) (h := hterm))
             -- Now split the fold into two folds.
             have hsplit :=
-              foldl_add_distrib2 (l := List.finRange n)
+              List.foldl_add_distrib2 (l := List.finRange n)
                 (g1 := fun i => dot (α := α) (fa i) (fc i))
                 (g2 := fun i => dot (α := α) (fb i) (fc i)) (a1 := (0 : α)) (a2 := (0 : α))
             simpa [hcongr, add_assoc, add_left_comm, add_comm] using hsplit
@@ -371,7 +336,7 @@ theorem dot_vec_eq_sum {n : Nat} (a b : Tensor α (.dim n .scalar)) :
       have hfold :
           (List.finRange n).foldl (fun s i => s + dot (α := α) (fa i) (fb i)) 0 =
             (∑ i : Fin n, dot (α := α) (fa i) (fb i)) :=
-        finRange_foldl_add_eq_finset_sum (f := fun i : Fin n => dot (α := α) (fa i) (fb i))
+        List.finRange_foldl_add_eq_finset_sum (f := fun i : Fin n => dot (α := α) (fa i) (fb i))
       have hterm :
           (∑ i : Fin n, dot (α := α) (fa i) (fb i)) =
             (∑ i : Fin n, (toVec (Tensor.dim fa) i) * (toVec (Tensor.dim fb) i)) := by
@@ -492,7 +457,7 @@ lemma toVec_mat_vec_mul_spec {m n : Nat}
             | scalar vk =>
               simp [f, hcol, hv]
         have hsum : (List.finRange n).foldl (fun s k => s + f k) 0 = ∑ k : Fin n, f k := by
-          simpa using finRange_foldl_add_eq_finset_sum (f := f)
+          simpa using List.finRange_foldl_add_eq_finset_sum (f := f)
         have hf :
             ∀ k : Fin n, f k = get2 (Tensor.dim rowsA) i k * toVec (Tensor.dim valuesV) k := by
           intro k
@@ -550,7 +515,7 @@ lemma toVec_vec_mat_mul_spec {m n : Nat}
             | scalar aij =>
               simp [f, hv, hrow, hcol]
       have hsum : (List.finRange m).foldl (fun s i => s + f i) 0 = ∑ i : Fin m, f i :=
-        finRange_foldl_add_eq_finset_sum (f := f)
+        List.finRange_foldl_add_eq_finset_sum (f := f)
       have hfoldFun :
           (List.finRange m).foldl
               (fun sum i =>

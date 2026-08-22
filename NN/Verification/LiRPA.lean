@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Verification.LiRPA.Common
+public import NN.Verification.LiRPA.ExampleInputs
 public import NN.Verification.LiRPA.Attention
 public import NN.Verification.LiRPA.Cnn
 public import NN.Verification.LiRPA.Gru

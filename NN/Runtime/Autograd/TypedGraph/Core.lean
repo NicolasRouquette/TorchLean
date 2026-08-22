@@ -97,9 +97,9 @@ that every stored VJP maps a zero cotangent to zero.
 def backwardDenseAllFrom {α : Type} [Add α] [Zero α] [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} {τ : Shape}
     (t : Runtime.Autograd.Tape α) (output : Idx (Γ ++ ss) τ) (seed : Tensor α τ) :
-    Runtime.Autograd.Result (Array (Runtime.AnyTensor α)) :=
+    Runtime.Autograd.Result (Array (Spec.PackedTensor α)) :=
   Runtime.Autograd.Tape.backwardDenseFrom (t := t)
-    (grads0 := Proofs.Autograd.Algebra.TList.toAnyArray
+    (grads0 := Proofs.Autograd.Algebra.TList.toPackedArray
       (Proofs.Autograd.Algebra.TList.single output seed))
 
 /--
@@ -112,9 +112,9 @@ value in the typed graph context `(Γ ++ ss)`, and we run the dense loop
 def backwardDenseFromSeedCtx {α : Type} [Add α] [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape}
     (t : Runtime.Autograd.Tape α) (seed : TList α (Γ ++ ss)) :
-    Runtime.Autograd.Result (Array (Runtime.AnyTensor α)) :=
+    Runtime.Autograd.Result (Array (Spec.PackedTensor α)) :=
   Runtime.Autograd.Tape.backwardDenseFrom (t := t)
-    (grads0 := Proofs.Autograd.Algebra.TList.toAnyArray (α := α) (ss := Γ ++ ss) seed)
+    (grads0 := Proofs.Autograd.Algebra.TList.toPackedArray (α := α) (ss := Γ ++ ss) seed)
 
 /--
 Lowering a typed graph to the runtime tape preserves reverse mode from any typed output reference.
@@ -130,7 +130,7 @@ theorem backwardDenseAllFrom_lowerToTape_eq_backpropAllCtx
     (seed : Tensor α τ) :
     backwardDenseAllFrom (lowerToTape g x).1 output seed =
       .ok
-        (Proofs.Autograd.Algebra.TList.toAnyArray
+        (Proofs.Autograd.Algebra.TList.toPackedArray
           (Proofs.Autograd.Algebra.GraphData.backpropAllCtx
             g x () (Proofs.Autograd.Algebra.TList.single output seed))) := by
   simpa [backwardDenseAllFrom, lowerToTape] using

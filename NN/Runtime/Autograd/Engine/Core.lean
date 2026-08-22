@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Engine.Core.Core
+public import NN.Runtime.Autograd.Engine.Core.Base
 public import NN.Runtime.Autograd.Engine.Core.Shape
 public import NN.Runtime.Autograd.Engine.Core.Indexing
 public import NN.Runtime.Autograd.Engine.Core.Elementwise

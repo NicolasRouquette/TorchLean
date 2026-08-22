@@ -66,13 +66,13 @@ def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
     [Runtime.FromFloat α] [BoundOps α] : IO Unit := do
   let cast : Float → α := Runtime.ofFloat
   let params : TensorPack α paramShapes :=
-    tensorpack.quad
+    TensorPack!
       (NN.Tensor.ofListOfLength (α := α) [3, 2]
-        [cast 0.1, cast 0.2, cast 0.3, cast 0.4, cast 0.5, cast 0.6] (by rfl))
+        [cast 0.1, cast 0.2, cast 0.3, cast 0.4, cast 0.5, cast 0.6] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [3]
-        [cast 0.1, cast 0.2, cast 0.3] (by rfl))
+        [cast 0.1, cast 0.2, cast 0.3] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [1, 3]
-        [cast 0.7, cast 0.8, cast 0.9] (by rfl))
+        [cast 0.7, cast 0.8, cast 0.9] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [1]
         [cast 0.4] (by rfl))
 

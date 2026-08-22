@@ -34,7 +34,7 @@ the checker mode being used.
 
 namespace NN.Verification.ODE
 
-open _root_.NN.Spec
+open _root_.Spec
 
 /--
 `Expr` is an AST for ODE right-hand sides $f(t,u)$.
@@ -187,12 +187,12 @@ We use a 1‑Lipschitz enclosure around the midpoint and clamp to `[-1, 1]`.
 @[inline] def sin {α : Type} [Context α] (x : α × α) : α × α :=
   -- 1‑Lipschitz enclosure around midpoint, clamped to [-1,1].
   let (l, u) := x
-  let m := (l + u) * Numbers.pointfive
-  let r := (u - l) * Numbers.pointfive
+  let m := (l + u) * Numbers.half
+  let r := (u - l) * Numbers.half
   let base := MathFunctions.sin m
   let lo0 := base - r
   let hi0 := base + r
-  let lo := max2 lo0 Numbers.neg_one
+  let lo := max2 lo0 Numbers.negOne
   let hi := min2 hi0 Numbers.one
   (lo, hi)
 
@@ -204,12 +204,12 @@ Same strategy as `sin`: 1‑Lipschitz around the midpoint, clamped to `[-1, 1]`.
 @[inline] def cos {α : Type} [Context α] (x : α × α) : α × α :=
   -- Same 1‑Lipschitz enclosure as `sin`, clamped to [-1,1].
   let (l, u) := x
-  let m := (l + u) * Numbers.pointfive
-  let r := (u - l) * Numbers.pointfive
+  let m := (l + u) * Numbers.half
+  let r := (u - l) * Numbers.half
   let base := MathFunctions.cos m
   let lo0 := base - r
   let hi0 := base + r
-  let lo := max2 lo0 Numbers.neg_one
+  let lo := max2 lo0 Numbers.negOne
   let hi := min2 hi0 Numbers.one
   (lo, hi)
 

@@ -94,10 +94,10 @@ noncomputable local instance : MathFunctions ℂ where
   sinh := fun _ => 0
 
 noncomputable local instance : Numbers ℂ where
-  neg_point_five := (-1 : ℂ) / 2
-  neg_one := (-1 : ℂ)
-  pointone := (1 : ℂ) / 10
-  pointfive := (1 : ℂ) / 2
+  negHalf := (-1 : ℂ) / 2
+  negOne := (-1 : ℂ)
+  oneTenth := (1 : ℂ) / 10
+  half := (1 : ℂ) / 2
   one := (1 : ℂ)
   zero := (0 : ℂ)
   two := (2 : ℂ)
@@ -105,8 +105,8 @@ noncomputable local instance : Numbers ℂ where
   four := (4 : ℂ)
   five := (5 : ℂ)
   ten := (10 : ℂ)
-  log10 := 0
-  log10000 := 0
+  lnTen := 0
+  lnTenThousand := 0
   epsilon := (1 : ℂ) / 1000000
 
 /- Local-only `Context ℂ`: the ordering is not mathematically meaningful for complex numbers.
@@ -114,7 +114,7 @@ It is present solely because the generic TorchLean runtime context class include
 operations used by other tensor code. The FFT bridge below never relies on that order.
 -/
 local instance : Context ℂ := {
-  decidable_gt := fun x y => inferInstanceAs (Decidable (x > y))
+  decidableGT := fun x y => inferInstanceAs (Decidable (x > y))
 }
 
 -- ---------------------------------------------------------------------------

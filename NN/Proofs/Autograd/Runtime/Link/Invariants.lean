@@ -33,7 +33,7 @@ reverse-mode loop on this lowered tape matches the proved `backpropAllCtx`.
 -/
 
 /--
-All nodes produced by `lowerGraphDataToTape` have `requires_grad = true`.
+All nodes produced by `lowerGraphDataToTape` have `requiresGrad = true`.
 
 This is a simplifying invariant: the lowered tape is meant for correctness proofs, so we mark
 every node as eligible for gradient accumulation (including leaves for inputs).
@@ -41,22 +41,22 @@ every node as eligible for gradient accumulation (including leaves for inputs).
 theorem lowerGraphDataToTape_all_requires_grad_true {α : Type} {Δ : Type} [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d : Δ) :
     ((lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1.nodes.all (fun n =>
-      n.requires_grad)) = true := by
-  -- Helper: if the current tape has `.all requires_grad = true`, `addLeaves` preserves it.
+      n.requiresGrad)) = true := by
+  -- Helper: if the current tape has `.all requiresGrad = true`, `addLeaves` preserves it.
   have addLeaves_all :
       ∀ (t : Tape α),
-        t.nodes.all (fun n => n.requires_grad) = true →
+        t.nodes.all (fun n => n.requiresGrad) = true →
           ∀ {Γ : List Shape} (xs : TList α Γ),
-            (addLeaves (α := α) (t := t) (Γ := Γ) xs).nodes.all (fun n => n.requires_grad) = true :=
+            (addLeaves (α := α) (t := t) (Γ := Γ) xs).nodes.all (fun n => n.requiresGrad) = true :=
               by
     intro t ht Γ xs
     induction xs generalizing t with
     | nil =>
         simpa [addLeaves] using ht
     | cons x xs ih =>
-        -- push one leaf (which has `requires_grad = true`) and recurse
+        -- push one leaf (which has `requiresGrad = true`) and recurse
         let t' : Tape α := (Runtime.Autograd.Tape.leaf (t := t) x).1
-        have ht' : t'.nodes.all (fun n => n.requires_grad) = true := by
+        have ht' : t'.nodes.all (fun n => n.requiresGrad) = true := by
           simpa [t', Runtime.Autograd.Tape.leaf, Runtime.Autograd.Tape.addNode, Array.all_push]
             using ht
         simpa [addLeaves, t', Runtime.Autograd.Tape.leaf, Runtime.Autograd.Tape.addNode] using ih (t
@@ -64,7 +64,7 @@ theorem lowerGraphDataToTape_all_requires_grad_true {α : Type} {Δ : Type} [Dec
 
   induction g with
   | nil =>
-      have h0 : (Runtime.Autograd.Tape.empty (α := α)).nodes.all (fun n => n.requires_grad) = true
+      have h0 : (Runtime.Autograd.Tape.empty (α := α)).nodes.all (fun n => n.requiresGrad) = true
         := by
         simp [Runtime.Autograd.Tape.empty]
       simpa [lowerGraphDataToTape] using addLeaves_all (t := Runtime.Autograd.Tape.empty (α := α)) h0 (Γ
@@ -74,7 +74,7 @@ theorem lowerGraphDataToTape_all_requires_grad_true {α : Type} {Δ : Type} [Dec
       simp [lowerGraphDataToTape, Runtime.Autograd.Tape.addNode, ih]
 
 /--
-Pointwise form of `lowerGraphDataToTape_all_requires_grad_true`: every node index is `requires_grad =
+Pointwise form of `lowerGraphDataToTape_all_requires_grad_true`: every node index is `requiresGrad =
   true`.
 
 This is often more convenient than the `.all` formulation when reasoning about array indexing.
@@ -82,10 +82,10 @@ This is often more convenient than the `.all` formulation when reasoning about a
 theorem lowerGraphDataToTape_requires_grad_true {α : Type} {Δ : Type} [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ) (d : Δ) :
     let t := (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d).1
-    ∀ i (hi : i < t.nodes.size), (t.nodes[i]'hi).requires_grad = true := by
+    ∀ i (hi : i < t.nodes.size), (t.nodes[i]'hi).requiresGrad = true := by
   intro t i hi
   have hall :
-      t.nodes.all (fun n => n.requires_grad) = true := by
+      t.nodes.all (fun n => n.requiresGrad) = true := by
     simpa [t] using lowerGraphDataToTape_all_requires_grad_true (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x
       d
   have := (Array.all_eq_true).1 hall i hi
@@ -103,28 +103,28 @@ theorem lowerGraphDataToTape_backward_pids_lt_id {α : Type} {Δ : Type} [Decida
     ∀ id (n : Runtime.Autograd.Node α),
       (Runtime.Autograd.Tape.getNode? (t := (lowerGraphDataToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g
         x d0).1) id = some n) →
-      ∀ (d : Runtime.AnyTensor α) (contribs : List (Nat × Runtime.AnyTensor α)),
+      ∀ (d : Spec.PackedTensor α) (contribs : List (Nat × Spec.PackedTensor α)),
         n.backward d = .ok contribs →
-          ∀ {pid : Nat} {pg : Runtime.AnyTensor α}, (pid, pg) ∈ contribs → pid < id := by
+          ∀ {pid : Nat} {pg : Spec.PackedTensor α}, (pid, pg) ∈ contribs → pid < id := by
   induction g with
   | nil =>
       intro id n hn d contribs hback pid pg hmem
       -- `lowerGraphDataToTape nil` produces only leaves with `backward = ok []`.
       have hn' :
-          ((TList.toAnyArray (α := α) (ss := Γ) x).map (leafNodeOfAny (α := α)))[id]? = some n := by
+          ((TList.toPackedArray (α := α) (ss := Γ) x).map (leafNodeOfPacked (α := α)))[id]? = some n := by
         simpa [lowerGraphDataToTape, Runtime.Autograd.Tape.getNode?, nodes_addLeaves,
           Runtime.Autograd.Tape.empty] using hn
-      cases hx : (TList.toAnyArray (α := α) (ss := Γ) x)[id]? with
+      cases hx : (TList.toPackedArray (α := α) (ss := Γ) x)[id]? with
       | none =>
           simp [Array.getElem?_map, hx] at hn'
       | some v =>
-          have hnEq : n = leafNodeOfAny (α := α) v := by
+          have hnEq : n = leafNodeOfPacked (α := α) v := by
             symm
             simpa [Array.getElem?_map, hx] using hn'
           subst hnEq
           have hcontribs : contribs = [] := by
             have := congrArg (fun r => match r with | .ok l => l | .error _ => []) hback
-            simpa [leafNodeOfAny] using this
+            simpa [leafNodeOfPacked] using this
           subst hcontribs
           cases hmem
   | snoc g node ih =>
@@ -136,14 +136,14 @@ theorem lowerGraphDataToTape_backward_pids_lt_id {α : Type} {Δ : Type} [Decida
       let y := node.forward ctxPrev d0
       let runtimeNode : Runtime.Autograd.Node α :=
         { name := some "typed-graph"
-          value := Runtime.Autograd.AnyTensor.mk y
-          requires_grad := true
+          value := Spec.PackedTensor.ofTensor y
+          requiresGrad := true
           parents := []
-          backward := fun dLdyAny => by
-            if h : dLdyAny.s = τ then
-              let dLdy : Tensor α τ := Tensor.castShape dLdyAny.t h
+          backward := fun dLdyPacked => by
+            if h : dLdyPacked.shape = τ then
+              let dLdy : Tensor α τ := dLdyPacked.cast h
               let contribs := node.vjp ctxPrev d0 dLdy
-              exact .ok (TList.toIndexedAnyList (α := α) (ss := Γ ++ ssPrev) contribs 0)
+              exact .ok (TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev) contribs 0)
             else
               exact .error "autograd: upstream gradient shape mismatch"
         }
@@ -157,25 +157,25 @@ theorem lowerGraphDataToTape_backward_pids_lt_id {α : Type} {Δ : Type} [Decida
           symm
           simpa [Array.getElem?_push] using hnNodes
         subst hnEq
-        have hd : d.s = τ := by
+        have hd : d.shape = τ := by
           by_contra hne
           have : runtimeNode.backward d = .error "autograd: upstream gradient shape mismatch" := by
-            have : d.s ≠ τ := hne
+            have : d.shape ≠ τ := hne
             simp [runtimeNode, this]
           simp [this]  at hback
         have hcontribs :
             contribs =
-              TList.toIndexedAnyList (α := α) (ss := Γ ++ ssPrev)
-                (node.vjp ctxPrev d0 (Tensor.castShape d.t hd)) 0 := by
+              TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev)
+                (node.vjp ctxPrev d0 (d.cast hd)) 0 := by
           let listExpr :=
-            TList.toIndexedAnyList (α := α) (ss := Γ ++ ssPrev)
-              (node.vjp ctxPrev d0 (Tensor.castShape d.t hd)) 0
+            TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev)
+              (node.vjp ctxPrev d0 (d.cast hd)) 0
           have hret : runtimeNode.backward d = .ok listExpr := by
             simp [runtimeNode, hd, listExpr]
           have hok :
-              (.ok listExpr : Result (List (Nat × Runtime.AnyTensor α))) = .ok contribs := by
+              (.ok listExpr : Result (List (Nat × Spec.PackedTensor α))) = .ok contribs := by
             calc
-              (.ok listExpr : Result (List (Nat × Runtime.AnyTensor α))) = runtimeNode.backward d :=
+              (.ok listExpr : Result (List (Nat × Spec.PackedTensor α))) = runtimeNode.backward d :=
                 by
                 simpa using hret.symm
               _ = .ok contribs := hback
@@ -183,8 +183,8 @@ theorem lowerGraphDataToTape_backward_pids_lt_id {α : Type} {Δ : Type} [Decida
           simpa [listExpr] using this.symm
         subst hcontribs
         have hpidlt :=
-          TList.mem_toIndexedAnyList_lt (α := α) (ss := Γ ++ ssPrev)
-            (node.vjp ctxPrev d0 (Tensor.castShape d.t hd)) 0 (pid := pid) (pg := pg) hmem
+          TList.mem_toIndexedPackedList_lt (α := α) (ss := Γ ++ ssPrev)
+            (node.vjp ctxPrev d0 (d.cast hd)) 0 (pid := pid) (pg := pg) hmem
         -- `0 + (Γ ++ ssPrev).length = tPrev.nodes.size`
         have htPrev :
             tPrev.nodes.size = (Γ ++ ssPrev).length := by
@@ -208,7 +208,7 @@ theorem lowerGraphDataToTape_backward_pids_lt_id {α : Type} {Δ : Type} [Decida
         exact ih id n (by simpa [prev, tPrev] using hnPrev) d contribs hback hmem
 
 /--
-All nodes produced by `lowerGraphToTape` have `requires_grad = true`.
+All nodes produced by `lowerGraphToTape` have `requiresGrad = true`.
 
 This mirrors `lowerGraphDataToTape_all_requires_grad_true` for the `Graph` interface.
 -/
@@ -216,23 +216,23 @@ theorem lowerGraphToTape_all_requires_grad_true {α : Type} {Δ : Type} [Decidab
   [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d0 : Δ) :
     ((lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1.nodes.all (fun n =>
-      n.requires_grad)) = true := by
-  -- Helper: if the current tape has `.all requires_grad = true`, `addLeaves` preserves it.
+      n.requiresGrad)) = true := by
+  -- Helper: if the current tape has `.all requiresGrad = true`, `addLeaves` preserves it.
   have addLeaves_all :
       ∀ (t : Tape α),
-        t.nodes.all (fun n => n.requires_grad) = true →
+        t.nodes.all (fun n => n.requiresGrad) = true →
           ∀ {Γ : List Shape} (xs : TList α Γ),
-            (addLeaves (α := α) (t := t) (Γ := Γ) xs).nodes.all (fun n => n.requires_grad) = true :=
+            (addLeaves (α := α) (t := t) (Γ := Γ) xs).nodes.all (fun n => n.requiresGrad) = true :=
               by
     intro t ht Γ xs
     induction xs generalizing t with
     | nil =>
         simpa [addLeaves] using ht
     | cons x xs ih =>
-        -- push one leaf (which has `requires_grad = true`) and recurse
+        -- push one leaf (which has `requiresGrad = true`) and recurse
         let t' : Tape α := (Runtime.Autograd.Tape.leaf (t := t) x).1
-        have ht' : t'.nodes.all (fun n => n.requires_grad) = true := by
-          -- `leaf` pushes a node with `requires_grad = true`, so `.all` is preserved
+        have ht' : t'.nodes.all (fun n => n.requiresGrad) = true := by
+          -- `leaf` pushes a node with `requiresGrad = true`, so `.all` is preserved
           simpa [t', Runtime.Autograd.Tape.leaf, Runtime.Autograd.Tape.addNode, Array.all_push]
             using ht
         simpa [addLeaves, t', Runtime.Autograd.Tape.leaf, Runtime.Autograd.Tape.addNode] using ih (t
@@ -241,14 +241,14 @@ theorem lowerGraphToTape_all_requires_grad_true {α : Type} {Δ : Type} [Decidab
   induction g with
   | nil =>
       -- Start from the empty tape where `.all _ = true`.
-      have h0 : (Runtime.Autograd.Tape.empty (α := α)).nodes.all (fun n => n.requires_grad) = true
+      have h0 : (Runtime.Autograd.Tape.empty (α := α)).nodes.all (fun n => n.requiresGrad) = true
         := by
         simp [Runtime.Autograd.Tape.empty]
       simpa [lowerGraphToTape] using addLeaves_all (t := Runtime.Autograd.Tape.empty (α := α)) h0 (Γ := Γ)
         x
   | snoc g node ih =>
       rename_i ssPrev τ
-      -- `lowerGraphToTape` appends a node with `requires_grad = true`.
+      -- `lowerGraphToTape` appends a node with `requiresGrad = true`.
       simp [lowerGraphToTape, Runtime.Autograd.Tape.addNode, ih]
 
 /-- Pointwise form of `lowerGraphToTape_all_requires_grad_true`. -/
@@ -256,10 +256,10 @@ theorem lowerGraphToTape_requires_grad_true {α : Type} {Δ : Type} [DecidableEq
   [CommSemiring α]
     {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d0 : Δ) :
     let t := (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1
-    ∀ i (hi : i < t.nodes.size), (t.nodes[i]'hi).requires_grad = true := by
+    ∀ i (hi : i < t.nodes.size), (t.nodes[i]'hi).requiresGrad = true := by
   intro t i hi
   have hall :
-      t.nodes.all (fun n => n.requires_grad) = true := by
+      t.nodes.all (fun n => n.requiresGrad) = true := by
     simpa [t] using lowerGraphToTape_all_requires_grad_true (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0
   -- `Array.all_eq_true` gives the pointwise result.
   have := (Array.all_eq_true).1 hall i hi
@@ -277,30 +277,30 @@ theorem lowerGraphToTape_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableE
     ∀ id (n : Runtime.Autograd.Node α),
       (Runtime.Autograd.Tape.getNode? (t := (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x
         d0).1) id = some n) →
-      ∀ (d : Runtime.AnyTensor α) (contribs : List (Nat × Runtime.AnyTensor α)),
+      ∀ (d : Spec.PackedTensor α) (contribs : List (Nat × Spec.PackedTensor α)),
         n.backward d = .ok contribs →
-          ∀ {pid : Nat} {pg : Runtime.AnyTensor α}, (pid, pg) ∈ contribs → pid < id := by
+          ∀ {pid : Nat} {pg : Spec.PackedTensor α}, (pid, pg) ∈ contribs → pid < id := by
   induction g with
   | nil =>
       intro id n hn d contribs hback pid pg hmem
       -- `lowerGraphToTape nil` produces only leaves with `backward = ok []`.
       have hn' :
-          ((TList.toAnyArray (α := α) (ss := Γ) x).map (leafNodeOfAny (α := α)))[id]? = some n := by
+          ((TList.toPackedArray (α := α) (ss := Γ) x).map (leafNodeOfPacked (α := α)))[id]? = some n := by
         simpa [lowerGraphToTape, Runtime.Autograd.Tape.getNode?, nodes_addLeaves,
           Runtime.Autograd.Tape.empty] using hn
-      cases hx : (TList.toAnyArray (α := α) (ss := Γ) x)[id]? with
+      cases hx : (TList.toPackedArray (α := α) (ss := Γ) x)[id]? with
       | none =>
           simp [Array.getElem?_map, hx] at hn'
       | some v =>
-          have hnEq : n = leafNodeOfAny (α := α) v := by
-            -- `getElem?_map` turns this into `some (leafNodeOfAny v) = some n`.
+          have hnEq : n = leafNodeOfPacked (α := α) v := by
+            -- `getElem?_map` turns this into `some (leafNodeOfPacked v) = some n`.
             symm
             simpa [Array.getElem?_map, hx] using hn'
           subst hnEq
-          -- `leafNodeOfAny.backward = ok []`, so `contribs = []`.
+          -- `leafNodeOfPacked.backward = ok []`, so `contribs = []`.
           have hcontribs : contribs = [] := by
             have := congrArg (fun r => match r with | .ok l => l | .error _ => []) hback
-            simpa [leafNodeOfAny] using this
+            simpa [leafNodeOfPacked] using this
           subst hcontribs
           cases hmem
   | snoc g node ih =>
@@ -312,14 +312,14 @@ theorem lowerGraphToTape_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableE
       let y := node.forward ctxPrev d0
       let runtimeNode : Runtime.Autograd.Node α :=
         { name := some "proof-carrying-graph"
-          value := Runtime.Autograd.AnyTensor.mk y
-          requires_grad := true
+          value := Spec.PackedTensor.ofTensor y
+          requiresGrad := true
           parents := []
-          backward := fun dLdyAny => by
-            if h : dLdyAny.s = τ then
-              let dLdy : Tensor α τ := Tensor.castShape dLdyAny.t h
+          backward := fun dLdyPacked => by
+            if h : dLdyPacked.shape = τ then
+              let dLdy : Tensor α τ := dLdyPacked.cast h
               let contribs := node.vjp ctxPrev d0 dLdy
-              exact .ok (TList.toIndexedAnyList (α := α) (ss := Γ ++ ssPrev) contribs 0)
+              exact .ok (TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev) contribs 0)
             else
               exact .error "autograd: upstream gradient shape mismatch"
         }
@@ -334,25 +334,25 @@ theorem lowerGraphToTape_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableE
           symm
           simpa [Array.getElem?_push] using hnNodes
         subst hnEq
-        have hd : d.s = τ := by
+        have hd : d.shape = τ := by
           by_contra hne
           have : runtimeNode.backward d = .error "autograd: upstream gradient shape mismatch" := by
-            have : d.s ≠ τ := hne
+            have : d.shape ≠ τ := hne
             simp [runtimeNode, this]
           simp [this]  at hback
         have hcontribs :
             contribs =
-              TList.toIndexedAnyList (α := α) (ss := Γ ++ ssPrev)
-                (node.vjp ctxPrev d0 (Tensor.castShape d.t hd)) 0 := by
+              TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev)
+                (node.vjp ctxPrev d0 (d.cast hd)) 0 := by
           let listExpr :=
-            TList.toIndexedAnyList (α := α) (ss := Γ ++ ssPrev)
-              (node.vjp ctxPrev d0 (Tensor.castShape d.t hd)) 0
+            TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev)
+              (node.vjp ctxPrev d0 (d.cast hd)) 0
           have hret : runtimeNode.backward d = .ok listExpr := by
             simp [runtimeNode, hd, listExpr]
           have hok :
-              (.ok listExpr : Result (List (Nat × Runtime.AnyTensor α))) = .ok contribs := by
+              (.ok listExpr : Result (List (Nat × Spec.PackedTensor α))) = .ok contribs := by
             calc
-              (.ok listExpr : Result (List (Nat × Runtime.AnyTensor α))) = runtimeNode.backward d :=
+              (.ok listExpr : Result (List (Nat × Spec.PackedTensor α))) = runtimeNode.backward d :=
                 by
                 simpa using hret.symm
               _ = .ok contribs := hback
@@ -360,8 +360,8 @@ theorem lowerGraphToTape_backward_pids_lt_id {α : Type} {Δ : Type} [DecidableE
           simpa [listExpr] using this.symm
         subst hcontribs
         have hpidlt :=
-          TList.mem_toIndexedAnyList_lt (α := α) (ss := Γ ++ ssPrev)
-            (node.vjp ctxPrev d0 (Tensor.castShape d.t hd)) 0 hmem
+          TList.mem_toIndexedPackedList_lt (α := α) (ss := Γ ++ ssPrev)
+            (node.vjp ctxPrev d0 (d.cast hd)) 0 hmem
         have hlen : (Γ ++ ssPrev).length = tPrev.nodes.size := by
           have : tPrev.nodes.size = Γ.length + ssPrev.length := by
             simpa [tPrev, prev] using

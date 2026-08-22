@@ -47,12 +47,12 @@ def singletonLinearPayload {α : Type} [Context α] (id : Nat) (p : LinearWB α)
   { linear? := singletonAt id p }
 
 /-- A payload containing one convolution layer at `id`. -/
-def singletonConv2DPayload {α : Type} [Context α] (id : Nat) (p : Conv2DParams α) : Payload α :=
+def singletonConv2dPayload {α : Type} [Context α] (id : Nat) (p : Conv2dParams α) : Payload α :=
   { conv2d? := singletonAt id p }
 
 /-- A payload containing one eval-mode NCHW BatchNorm layer at `id`. -/
-def singletonBatchNorm2DNchwEvalPayload {α : Type} [Context α]
-    (id : Nat) (p : BatchNorm2DNchwEvalParams α) : Payload α :=
+def singletonBatchNorm2dNchwEvalPayload {α : Type} [Context α]
+    (id : Nat) (p : BatchNorm2dNchwEvalParams α) : Payload α :=
   { batchNorm2dNchwEval? := singletonAt id p }
 
 /-- A graph containing a zero-parent `const` node. -/
@@ -78,11 +78,11 @@ theorem evalAt_const_eq_unflatten
     let c : ConstFlat α := { n := Spec.Shape.size s, v := v }
     Graph.evalAt (α := α) (g := constGraph s)
         (payload := singletonConstPayload (α := α) 0 c)
-        (input := DVal.mk (α := α) s (Tensor.default (α := α) (s := s)))
+        (input := Spec.PackedTensor.mk (α := α) s (Tensor.default (α := α) (s := s)))
         (vals := #[]) (i := 0)
       =
       Except.ok
-        (DVal.mk (α := α) s (Tensor.unflattenSpec (α := α) (s := s) v)) := by
+        (Spec.PackedTensor.mk (α := α) s (Tensor.unflattenSpec (α := α) (s := s) v)) := by
   simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, constGraph, Graph.getNode, Graph.getNode?, Graph.evalConst,
     singletonConstPayload, Graph.castDimScalar, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
@@ -106,11 +106,11 @@ theorem evalLinear_eq_affine
     (x : Tensor α (.dim inDim .scalar)) :
     let p : LinearWB α := { outDim := outDim, inDim := inDim, W := W, b := b }
     Graph.evalLinear (α := α) (payload := singletonLinearPayload (α := α) id p) (id := id)
-        (x := DVal.mk (α := α) (.dim inDim .scalar) x)
+        (x := Spec.PackedTensor.mk (α := α) (.dim inDim .scalar) x)
         (outShape := .dim outDim .scalar)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim outDim .scalar)
+        (Spec.PackedTensor.mk (α := α) (.dim outDim .scalar)
           (Tensor.addSpec (α := α)
             (Spec.matVecMulSpec (α := α) (m := outDim) (n := inDim) W x) b)) := by
   simp [Graph.evalLinear, singletonLinearPayload, Graph.expectShape, Bind.bind, Except.bind,
@@ -127,12 +127,12 @@ theorem evalAt_linear_eq_affine
     Graph.evalAt (α := α)
         (g := unaryGraphOut .linear (.dim inDim .scalar) (.dim outDim .scalar))
         (payload := singletonLinearPayload (α := α) 1 p)
-        (input := DVal.mk (α := α) (.dim inDim .scalar) x)
-        (vals := #[DVal.mk (α := α) (.dim inDim .scalar) x])
+        (input := Spec.PackedTensor.mk (α := α) (.dim inDim .scalar) x)
+        (vals := #[Spec.PackedTensor.mk (α := α) (.dim inDim .scalar) x])
         (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim outDim .scalar)
+        (Spec.PackedTensor.mk (α := α) (.dim outDim .scalar)
           (Tensor.addSpec (α := α)
             (Spec.matVecMulSpec (α := α) (m := outDim) (n := inDim) W x) b)) := by
   simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
@@ -144,7 +144,7 @@ theorem evalLinear_missing_payload
     {α : Type} [Context α] [DecidableEq Shape]
     (payload : Payload α) (id : Nat)
     (hMissing : payload.linear? id = none)
-    (x : DVal α) (outShape : Shape) :
+    (x : Spec.PackedTensor α) (outShape : Shape) :
     Graph.evalLinear (α := α) (payload := payload) (id := id) (x := x) (outShape := outShape)
       =
       Except.error s!"IR eval: missing linear payload for node {id}" := by
@@ -154,21 +154,21 @@ theorem evalLinear_missing_payload
 /--
 Local IR semantics for a payload-backed `conv2d` node.
 
-The window-fit hypotheses are the same runtime checks used by `Graph.evalConv2D`; keeping them in
+The window-fit hypotheses are the same runtime checks used by `Graph.evalConv2d`; keeping them in
 the statement makes the no-dilation shape contract explicit.
 -/
-theorem evalConv2D_eq_spec
+theorem evalConv2d_eq_spec
     {α : Type} [Context α] [DecidableEq Shape]
     (id : Nat)
-    (cfg : Conv2DParams α)
+    (cfg : Conv2dParams α)
     (x : Tensor α (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))))
     (hHeight : OpContracts.checkWindowFits "conv2d" "height" cfg.inH cfg.kH cfg.padding = .ok ())
     (hWidth : OpContracts.checkWindowFits "conv2d" "width" cfg.inW cfg.kW cfg.padding = .ok ()) :
-    Graph.evalConv2D (α := α) (payload := singletonConv2DPayload (α := α) id cfg) (id := id)
-        (x := DVal.mk (α := α) (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) x)
+    Graph.evalConv2d (α := α) (payload := singletonConv2dPayload (α := α) id cfg) (id := id)
+        (x := Spec.PackedTensor.mk (α := α) (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) x)
       =
       Except.ok
-        (DVal.mk (α := α)
+        (Spec.PackedTensor.mk (α := α)
           (.dim cfg.outC
             (.dim (Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding)
               (.dim (Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding) .scalar)))
@@ -184,13 +184,13 @@ theorem evalConv2D_eq_spec
       OpContracts.inferConvOutShape, Shape.toList, Shape.ofList, OpContracts.inferSlidingWindowDims, OpContracts.inferSlidingWindowDims.go, OpContracts.slideOutPad, cfg.hIn, cfg.hKH,
       cfg.hKW, cfg.hStride, hHeight, hWidth, Bind.bind, Except.bind, Pure.pure,
       Except.pure]
-  simp [Graph.evalConv2D, singletonConv2DPayload, Graph.expectShape, hInfer,
+  simp [Graph.evalConv2d, singletonConv2dPayload, Graph.expectShape, hInfer,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Local IR semantics for a payload-backed no-dilation `conv2d` node. -/
 theorem evalAt_conv2d_eq_spec
     {α : Type} [Context α] [DecidableEq Shape]
-    (cfg : Conv2DParams α)
+    (cfg : Conv2dParams α)
     (x : Tensor α (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))))
     (hHeight : OpContracts.checkWindowFits "conv2d" "height" cfg.inH cfg.kH cfg.padding = .ok ())
     (hWidth : OpContracts.checkWindowFits "conv2d" "width" cfg.inW cfg.kW cfg.padding = .ok ()) :
@@ -201,13 +201,13 @@ theorem evalAt_conv2d_eq_spec
     Graph.evalAt (α := α)
         (g := unaryGraphOut (.conv2d cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride cfg.padding)
           (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) outShape)
-        (payload := singletonConv2DPayload (α := α) 1 cfg)
-        (input := DVal.mk (α := α) (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) x)
-        (vals := #[DVal.mk (α := α) (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) x])
+        (payload := singletonConv2dPayload (α := α) 1 cfg)
+        (input := Spec.PackedTensor.mk (α := α) (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) x)
+        (vals := #[Spec.PackedTensor.mk (α := α) (.dim cfg.inC (.dim cfg.inH (.dim cfg.inW .scalar))) x])
         (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) outShape
+        (Spec.PackedTensor.mk (α := α) outShape
           (Spec.conv2dSpec (α := α) (layer := cfg.spec) (input := x))) := by
   have hInfer :
       OpContracts.inferConv2dOutShape cfg.inC cfg.outC cfg.kH cfg.kW cfg.stride
@@ -221,19 +221,19 @@ theorem evalAt_conv2d_eq_spec
       cfg.hKW, cfg.hStride, hHeight, hWidth, Bind.bind, Except.bind, Pure.pure,
       Except.pure]
   simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
-    Graph.evalConv2D, singletonConv2DPayload, Graph.expectShape, hInfer, shapeBNe_refl,
+    Graph.evalConv2d, singletonConv2dPayload, Graph.expectShape, hInfer, shapeBNe_refl,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Missing convolution payloads are rejected before convolution is evaluated. -/
-theorem evalConv2D_missing_payload
+theorem evalConv2d_missing_payload
     {α : Type} [Context α] [DecidableEq Shape]
     (payload : Payload α) (id : Nat)
     (hMissing : payload.conv2d? id = none)
-    (x : DVal α) :
-    Graph.evalConv2D (α := α) (payload := payload) (id := id) (x := x)
+    (x : Spec.PackedTensor α) :
+    Graph.evalConv2d (α := α) (payload := payload) (id := id) (x := x)
       =
       Except.error s!"IR eval: missing conv2d payload for node {id}" := by
-  simp [Graph.evalConv2D, hMissing]
+  simp [Graph.evalConv2d, hMissing]
   rfl
 
 end IRStep

@@ -7,7 +7,11 @@ Authors: TorchLean Team
 module
 
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.Main
-public import NN.Verification.TorchLean.Proved.Correctness.Eval.Coverage
+public import NN.Verification.TorchLean.Proved.Correctness.Eval.Concat
+public import NN.Verification.TorchLean.Proved.Correctness.Eval.MiscOps
+public import NN.Verification.TorchLean.Proved.Correctness.Eval.Reductions
+public import NN.Verification.TorchLean.Proved.Correctness.Eval.Softmax
+public import NN.Verification.TorchLean.Proved.Correctness.Eval.Transpose
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.LoweringPayload
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.PayloadBridge
 

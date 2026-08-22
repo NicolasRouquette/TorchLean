@@ -28,11 +28,11 @@ namespace Correctness
 open NN.Verification.TorchLean
 
   /-- Extract the list of shapes from an array of dynamic values. -/
-  def shapesOfVals {α : Type} [Context α] (vals : Array (DVal α)) : List Shape :=
+  def shapesOfVals {α : Type} [Context α] (vals : Array (Spec.PackedTensor α)) : List Shape :=
     vals.toList.map (fun v => v.1)
 
 /-- `shapesOfVals` commutes with pushing an element onto the value array. -/
-theorem shapesOfVals_push {α : Type} [Context α] (vals : Array (DVal α)) (v : DVal α) :
+theorem shapesOfVals_push {α : Type} [Context α] (vals : Array (Spec.PackedTensor α)) (v : Spec.PackedTensor α) :
     shapesOfVals (α := α) (vals.push v) = shapesOfVals (α := α) vals ++ [v.1] := by
   simp [shapesOfVals, Array.push, List.concat_eq_append]
 

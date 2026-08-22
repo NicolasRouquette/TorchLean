@@ -36,7 +36,7 @@ inductive RuntimeStatus where
   | nativeUnavailable
   deriving DecidableEq, Repr
 
-@[extern "torchlean_cuda_runtime_status"]
+@[never_extract, extern "torchlean_cuda_runtime_status"]
 opaque runtimeStatusRaw (token : UInt32) : UInt32
 
 /-- Query whether the linked CUDA symbols are native or the CPU parity stubs. -/
@@ -71,13 +71,13 @@ This flag is a *runtime* setting affecting only the CUDA/stub backends; it has n
 pure Lean Spec.
 -/
 
-@[extern "torchlean_cuda_set_deterministic_reductions"]
+@[never_extract, extern "torchlean_cuda_set_deterministic_reductions"]
 opaque setDeterministicReductionsRaw (on : UInt32) : Unit
 
-@[extern "torchlean_cuda_get_deterministic_reductions_u"]
+@[never_extract, extern "torchlean_cuda_get_deterministic_reductions_u"]
 opaque getDeterministicReductionsRaw (u : UInt32) : UInt32
 
-@[extern "torchlean_cuda_set_deterministic_reductions_checked"]
+@[never_extract, extern "torchlean_cuda_set_deterministic_reductions_checked"]
 opaque setDeterministicReductionsCheckedRaw (on : UInt32) : UInt32
 
 /--
@@ -102,40 +102,40 @@ def getDeterministicReductions : Bool :=
 
 /-! ### Allocator Telemetry -/
 
-@[extern "torchlean_cuda_allocator_live_bytes"]
+@[never_extract, extern "torchlean_cuda_allocator_live_bytes"]
 opaque allocatorLiveBytesRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_allocator_peak_bytes"]
+@[never_extract, extern "torchlean_cuda_allocator_peak_bytes"]
 opaque allocatorPeakBytesRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_allocator_alloc_count"]
+@[never_extract, extern "torchlean_cuda_allocator_alloc_count"]
 opaque allocatorAllocCountRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_allocator_free_count"]
+@[never_extract, extern "torchlean_cuda_allocator_free_count"]
 opaque allocatorFreeCountRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_wrapper_live_count"]
+@[never_extract, extern "torchlean_cuda_wrapper_live_count"]
 opaque wrapperLiveCountRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_wrapper_peak_count"]
+@[never_extract, extern "torchlean_cuda_wrapper_peak_count"]
 opaque wrapperPeakCountRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_wrapper_alloc_count"]
+@[never_extract, extern "torchlean_cuda_wrapper_alloc_count"]
 opaque wrapperAllocCountRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_wrapper_finalize_count"]
+@[never_extract, extern "torchlean_cuda_wrapper_finalize_count"]
 opaque wrapperFinalizeCountRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_allocator_device_free_bytes"]
+@[never_extract, extern "torchlean_cuda_allocator_device_free_bytes"]
 opaque allocatorDeviceFreeBytesRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_allocator_device_total_bytes"]
+@[never_extract, extern "torchlean_cuda_allocator_device_total_bytes"]
 opaque allocatorDeviceTotalBytesRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_allocator_cache_bytes"]
+@[never_extract, extern "torchlean_cuda_allocator_cache_bytes"]
 opaque allocatorCacheBytesRaw (u : UInt32) : UInt64
 
-@[extern "torchlean_cuda_allocator_cache_cap_bytes"]
+@[never_extract, extern "torchlean_cuda_allocator_cache_cap_bytes"]
 opaque allocatorCacheCapBytesRaw (u : UInt32) : UInt64
 
 /--
@@ -221,10 +221,10 @@ This primitive has a pure Lean type, but the native implementation allocates a f
 Runtime code that repeatedly uploads the same host value should prefer `ofFloatArrayIO`, which adds
 an IO token so two uploads cannot be collapsed into the same external object after one is released.
 -/
-@[extern "torchlean_cuda_buffer_of_float_array"]
+@[never_extract, extern "torchlean_cuda_buffer_of_float_array"]
 opaque ofFloatArray (a : @& FloatArray) : Buffer
 
-@[extern "torchlean_cuda_buffer_of_float_array_with_token"]
+@[never_extract, extern "torchlean_cuda_buffer_of_float_array_with_token"]
 opaque ofFloatArrayWithToken (a : @& FloatArray) (token : UInt32) : Buffer
 
 /--
@@ -239,10 +239,10 @@ def ofFloatArrayIO (a : @& FloatArray) : IO Buffer := do
   pure <| ofFloatArrayWithToken a (UInt32.ofNat t)
 
 /-- Copy a buffer back to a host `FloatArray` (casts float32 elements to `Float`). -/
-@[extern "torchlean_cuda_buffer_to_float_array"]
+@[never_extract, extern "torchlean_cuda_buffer_to_float_array"]
 opaque toFloatArray (b : @& Buffer) : FloatArray
 
-@[extern "torchlean_cuda_buffer_to_float_array_io"]
+@[never_extract, extern "torchlean_cuda_buffer_to_float_array_io"]
 opaque toFloatArrayIO (b : @& Buffer) : IO FloatArray
 
 /--
@@ -252,26 +252,26 @@ This is primarily used by streaming checkpoints. Unlike `toFloatArrayIO`, it doe
 element to Lean `Float`, so a large CUDA parameter can be written without constructing a second
 double-precision host array.
 -/
-@[extern "torchlean_cuda_buffer_to_float32_bytes_io"]
+@[never_extract, extern "torchlean_cuda_buffer_to_float32_bytes_io"]
 opaque toFloat32BytesIO (b : @& Buffer) : IO ByteArray
 
 /-- Upload a raw float32 byte payload to a fresh buffer. -/
-@[extern "torchlean_cuda_buffer_of_float32_bytes_io"]
+@[never_extract, extern "torchlean_cuda_buffer_of_float32_bytes_io"]
 opaque ofFloat32BytesIO (bytes : @& ByteArray) : IO Buffer
 
 /-- Encode a host `FloatArray` as raw float32 bytes. -/
-@[extern "torchlean_float_array_to_float32_bytes"]
+@[never_extract, extern "torchlean_float_array_to_float32_bytes"]
 opaque floatArrayToFloat32Bytes (values : @& FloatArray) : ByteArray
 
 /-- Decode raw float32 bytes into a host `FloatArray`. -/
-@[extern "torchlean_float32_bytes_to_float_array"]
+@[never_extract, extern "torchlean_float32_bytes_to_float_array"]
 opaque float32BytesToFloatArray (bytes : @& ByteArray) : FloatArray
 
 /-- Number of float32 elements in the buffer. -/
-@[extern "torchlean_cuda_buffer_size"]
+@[never_extract, extern "torchlean_cuda_buffer_size"]
 opaque size (b : @& Buffer) : UInt32
 
-@[extern "torchlean_cuda_buffer_size_with_token"]
+@[never_extract, extern "torchlean_cuda_buffer_size_with_token"]
 opaque sizeWithToken (b : @& Buffer) (token : UInt32) : UInt32
 
 /-- Read a buffer size at a specific point in an `IO` ownership sequence. -/
@@ -279,25 +279,16 @@ def sizeIO (b : @& Buffer) : IO UInt32 := do
   let token ← IO.monoNanosNow
   pure <| sizeWithToken b (UInt32.ofNat token)
 
-/--
-Release the device allocation held by a buffer, returning `1` when a live allocation was released.
-
-This is a runtime pressure valve for eager training loops that create many short-lived CUDA buffers.
-The C finalizer is still safe after an explicit release because the pointer is nulled out.
--/
-@[extern "torchlean_cuda_buffer_release"]
-opaque release (b : @& Buffer) : UInt32
-
-@[extern "torchlean_cuda_buffer_release_with_token"]
+@[never_extract, extern "torchlean_cuda_buffer_release_with_token"]
 opaque releaseWithToken (b : @& Buffer) (token : UInt32) : UInt32
 
 /--
 Effectfully release a device allocation owned by a completed runtime scope.
 
-The changing token makes the release depend on the surrounding `IO` sequence. Use this form at
-ownership boundaries; the pure `release` primitive is reserved for expressions that thread its
-result into another native buffer operation. Every alias becomes invalid, so callers must own the
-complete tape or workspace containing the buffer.
+The changing token makes the release depend on the surrounding `IO` sequence. Every alias becomes
+invalid, so callers must own the complete tape or workspace containing the buffer. Pure CUDA
+formulas that must retire an intermediate use `releaseThen`, which threads cleanup through the
+returned buffer.
 -/
 def releaseIO (b : @& Buffer) : IO UInt32 := do
   let token ← IO.monoNanosNow
@@ -309,7 +300,7 @@ Release `workspace` and return `keep`.
 This exists for pure CUDA tape code: because the returned buffer is used downstream, Lean cannot
 erase the native release call as dead code.
 -/
-@[extern "torchlean_cuda_buffer_release_then"]
+@[never_extract, extern "torchlean_cuda_buffer_release_then"]
 opaque releaseThen (workspace keep : @& Buffer) : Buffer
 
 /--
@@ -357,7 +348,7 @@ In the CUDA build, `force = true` also releases cached device blocks held by the
 That gives training code a way to trade reuse for returning memory to the CUDA driver at clear
 phase boundaries.
 -/
-@[extern "torchlean_runtime_collect_allocator"]
+@[never_extract, extern "torchlean_runtime_collect_allocator"]
 opaque collectAllocatorRaw (force : UInt32) : UInt32
 
 /-- Collect the native allocator's free pages. -/
@@ -365,14 +356,14 @@ def collectAllocator (force : Bool := true) : UInt32 :=
   collectAllocatorRaw (if force then 1 else 0)
 
 /-- Allocate a length-`n` buffer filled with zeros. -/
-@[extern "torchlean_cuda_buffer_zeros"]
+@[never_extract, extern "torchlean_cuda_buffer_zeros"]
 opaque zeros (n : UInt32) : Buffer
 
 /-- Allocate a length-`n` buffer filled with `v` (host `Float`, cast to float32). -/
-@[extern "torchlean_cuda_buffer_full"]
+@[never_extract, extern "torchlean_cuda_buffer_full"]
 opaque full (n : UInt32) (v : Float) : Buffer
 
-@[extern "torchlean_cuda_buffer_full_with_token"]
+@[never_extract, extern "torchlean_cuda_buffer_full_with_token"]
 opaque fullWithToken (n : UInt32) (v : Float) (token : UInt32) : Buffer
 
 /-- Allocate a fresh filled buffer inside a repeated runtime loop. -/
@@ -391,26 +382,26 @@ deterministic given `(seed, counter)` and a row-major linear index.
 -/
 
 /-- Deterministic `U[0,1)` generator: returns a length-`n` buffer (float32) keyed by `key`. -/
-@[extern "torchlean_cuda_buffer_rand_uniform"]
+@[never_extract, extern "torchlean_cuda_buffer_rand_uniform"]
 opaque randUniform (n : UInt32) (key : UInt64) : Buffer
 
 /-- Deterministic normal generator using Box-Muller on the device. -/
-@[extern "torchlean_cuda_buffer_rand_normal"]
+@[never_extract, extern "torchlean_cuda_buffer_rand_normal"]
 opaque randNormal (n : UInt32) (mean std : Float) (key : UInt64) : Buffer
 
 /-- Deterministic `{0,1}` mask generator: returns a length-`n` buffer keyed by `key`. -/
-@[extern "torchlean_cuda_buffer_bernoulli_mask"]
+@[never_extract, extern "torchlean_cuda_buffer_bernoulli_mask"]
 opaque bernoulliMask (n : UInt32) (keepProb : Float) (key : UInt64) : Buffer
 
 /-- Absolute value applied pointwise to a CUDA buffer. -/
-@[extern "torchlean_cuda_buffer_abs"]
+@[never_extract, extern "torchlean_cuda_buffer_abs"]
 opaque abs (b : @& Buffer) : Buffer
 
 /-- Backward for `abs`: `dx = sign(x) * dLdy` (with `sign(0)=0`). -/
-@[extern "torchlean_cuda_buffer_abs_bwd"]
+@[never_extract, extern "torchlean_cuda_buffer_abs_bwd"]
 opaque absBwd (x dLdy : @& Buffer) : Buffer
 
-@[extern "torchlean_cuda_buffer_sqrt"]
+@[never_extract, extern "torchlean_cuda_buffer_sqrt"]
 opaque sqrt (b : @& Buffer) : Buffer
 
 /--
@@ -418,21 +409,21 @@ Backward for `sqrt`.
 
 Uses the TorchLean convention: `dx = dLdy * (1 / (2*sqrt(x)))` for `x > 0`, else `0`.
 -/
-@[extern "torchlean_cuda_buffer_sqrt_bwd"]
+@[never_extract, extern "torchlean_cuda_buffer_sqrt_bwd"]
 opaque sqrtBwd (x dLdy : @& Buffer) : Buffer
 
-@[extern "torchlean_cuda_buffer_exp"]
+@[never_extract, extern "torchlean_cuda_buffer_exp"]
 opaque exp (b : @& Buffer) : Buffer
 
-@[extern "torchlean_cuda_buffer_log"]
+@[never_extract, extern "torchlean_cuda_buffer_log"]
 opaque log (b : @& Buffer) : Buffer
 
 /-- Reciprocal: `1/x`. -/
-@[extern "torchlean_cuda_buffer_inv"]
+@[never_extract, extern "torchlean_cuda_buffer_inv"]
 opaque inv (b : @& Buffer) : Buffer
 
 /-- Clamp each element to `[lo, hi]` (bounds are host `Float`s). -/
-@[extern "torchlean_cuda_buffer_clamp"]
+@[never_extract, extern "torchlean_cuda_buffer_clamp"]
 opaque clamp (b : @& Buffer) (lo hi : Float) : Buffer
 
 /--
@@ -440,11 +431,11 @@ Backward for `clamp`.
 
 Uses the TorchLean convention: derivative is `1` strictly inside `(lo, hi)`, else `0`.
 -/
-@[extern "torchlean_cuda_buffer_clamp_bwd"]
+@[never_extract, extern "torchlean_cuda_buffer_clamp_bwd"]
 opaque clampBwd (x dLdy : @& Buffer) (lo hi : Float) : Buffer
 
 /-- Pointwise maximum of two equal-length CUDA buffers. -/
-@[extern "torchlean_cuda_buffer_max"]
+@[never_extract, extern "torchlean_cuda_buffer_max"]
 opaque max (a b : @& Buffer) : Buffer
 
 /--
@@ -452,10 +443,10 @@ Backward for `max`, returning `(dA, dB)`.
 
 Tie-breaking follows the spec: when `a = b`, split upstream gradient evenly (`0.5`) between both.
 -/
-@[extern "torchlean_cuda_buffer_max_bwd"]
+@[never_extract, extern "torchlean_cuda_buffer_max_bwd"]
 opaque maxBwd (a b dLdy : @& Buffer) : Buffer × Buffer
 
-@[extern "torchlean_cuda_buffer_min"]
+@[never_extract, extern "torchlean_cuda_buffer_min"]
 opaque min (a b : @& Buffer) : Buffer
 
 /--
@@ -463,39 +454,39 @@ Backward for `min`, returning `(dA, dB)`.
 
 Tie-breaking follows the spec: when `a = b`, split upstream gradient evenly (`0.5`) between both.
 -/
-@[extern "torchlean_cuda_buffer_min_bwd"]
+@[never_extract, extern "torchlean_cuda_buffer_min_bwd"]
 opaque minBwd (a b dLdy : @& Buffer) : Buffer × Buffer
 
 /-- Pointwise division of two equal-length CUDA buffers. -/
-@[extern "torchlean_cuda_buffer_div"]
+@[never_extract, extern "torchlean_cuda_buffer_div"]
 opaque div (a b : @& Buffer) : Buffer
 
 /-- Pointwise ReLU activation on a CUDA buffer. -/
-@[extern "torchlean_cuda_buffer_relu"]
+@[never_extract, extern "torchlean_cuda_buffer_relu"]
 opaque relu (b : @& Buffer) : Buffer
 
 /-- Backward for `relu`: `dx = dLdy` where `x > 0`, else `0`. -/
-@[extern "torchlean_cuda_buffer_relu_bwd"]
+@[never_extract, extern "torchlean_cuda_buffer_relu_bwd"]
 opaque reluBwd (x dLdy : @& Buffer) : Buffer
 
 /-- Tanh-approximate GELU evaluated by one pointwise CUDA kernel. -/
-@[extern "torchlean_cuda_buffer_gelu"]
+@[never_extract, extern "torchlean_cuda_buffer_gelu"]
 opaque gelu (x : @& Buffer) : Buffer
 
 /-- Backward for tanh-approximate GELU using `Activation.geluDerivSpec`. -/
-@[extern "torchlean_cuda_buffer_gelu_bwd"]
+@[never_extract, extern "torchlean_cuda_buffer_gelu_bwd"]
 opaque geluBwd (x dLdy : @& Buffer) : Buffer
 
 /-- Elementwise addition (sizes must match). -/
-@[extern "torchlean_cuda_buffer_add"]
+@[never_extract, extern "torchlean_cuda_buffer_add"]
 opaque add (a b : @& Buffer) : Buffer
 
 /-- Elementwise subtraction (sizes must match). -/
-@[extern "torchlean_cuda_buffer_sub"]
+@[never_extract, extern "torchlean_cuda_buffer_sub"]
 opaque sub (a b : @& Buffer) : Buffer
 
 /-- Elementwise multiplication (sizes must match). -/
-@[extern "torchlean_cuda_buffer_mul"]
+@[never_extract, extern "torchlean_cuda_buffer_mul"]
 opaque mul (a b : @& Buffer) : Buffer
 
 /--
@@ -503,7 +494,7 @@ Multiply each element by a scalar `c` (host `Float`, cast to float32).
 
 This is a primitive building block for many ops (e.g. scaling gradients).
 -/
-@[extern "torchlean_cuda_buffer_scale"]
+@[never_extract, extern "torchlean_cuda_buffer_scale"]
 opaque scale (b : @& Buffer) (c : Float) : Buffer
 
 /-- Device-to-device copy, implemented as a scale-by-one kernel. -/
@@ -516,7 +507,7 @@ Copy a buffer and release the source after the copy has been produced.
 The native operation creates the destination before it retires the source, so the compiler cannot
 reorder the two lifetime events. Use this at ownership-transfer boundaries in the sparse CUDA tape.
 -/
-@[extern "torchlean_cuda_buffer_copy_and_release"]
+@[never_extract, extern "torchlean_cuda_buffer_copy_and_release"]
 opaque copyAndRelease (b : @& Buffer) : Buffer
 
 /--
@@ -524,7 +515,7 @@ Fused multiply-add: `a + c * b` (sizes must match; `c` is a host `Float`, cast t
 
 This is the classic BLAS-style `axpy` primitive and is useful for optimizers and bias-like updates.
 -/
-@[extern "torchlean_cuda_buffer_axpy"]
+@[never_extract, extern "torchlean_cuda_buffer_axpy"]
 opaque axpy (a b : @& Buffer) (c : Float) : Buffer
 
 /--
@@ -539,7 +530,7 @@ This primitive changes only the execution plan. TorchLean's optimizer definition
 semantic reference, while this native boundary avoids materializing every intermediate tensor in
 the pointwise update.
 -/
-@[extern "torchlean_cuda_buffer_adam_step"]
+@[never_extract, extern "torchlean_cuda_buffer_adam_step"]
 opaque adamStep
     (parameters gradient firstMoment secondMoment : @& Buffer)
     (beta1 oneMinusBeta1 beta2 oneMinusBeta2 : Float)
@@ -548,10 +539,10 @@ opaque adamStep
     Buffer × Buffer × Buffer
 
 /-- Reductions (return a length-1 buffer). -/
-@[extern "torchlean_cuda_buffer_reduce_sum"]
+@[never_extract, extern "torchlean_cuda_buffer_reduce_sum"]
 opaque reduceSum (b : @& Buffer) : Buffer
 
-@[extern "torchlean_cuda_buffer_reduce_mean"]
+@[never_extract, extern "torchlean_cuda_buffer_reduce_mean"]
 opaque reduceMean (b : @& Buffer) : Buffer
 
 end Buffer

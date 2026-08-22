@@ -60,7 +60,7 @@ def runMatmul : IO Unit := do
   let (t3, yId) ← Utils.okOrThrow
     (Tape.matmul (α := Float) (t := t2) (m := m) (n := n) (p := p) aId bId)
   let yCpu ← Utils.cpuValue (s := sY) t3 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) sY)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) sY)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t3) yId seedCpu)
   let dACpu ← Utils.cpuGrad (s := sA) gradsCpu aId
   let dBCpu ← Utils.cpuGrad (s := sB) gradsCpu bId
@@ -118,7 +118,7 @@ def runBmm : IO Unit := do
   let (t3, yId) ← Utils.okOrThrow
     (Tape.bmm (α := Float) (t := t2) (batch := batch) (m := m) (n := n) (p := p) aId bId)
   let yCpu ← Utils.cpuValue (s := sY) t3 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) sY)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) sY)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t3) yId seedCpu)
   let dACpu ← Utils.cpuGrad (s := sA) gradsCpu aId
   let dBCpu ← Utils.cpuGrad (s := sB) gradsCpu bId
@@ -165,9 +165,9 @@ def runFastMatmulPrecision : IO Unit := do
       -0.20, 0.10
     ]
 
-  let yCpu := FastKernels.matmulForward (α := Float) (m := m) (n := n) (p := p) a b
-  let yFp32 := FastKernels.Cuda.matmulForwardcuBLASWith .fp32 (m := m) (n := n) (p := p) a b
-  let yFp64 := FastKernels.Cuda.matmulForwardcuBLASWith .fp64 (m := m) (n := n) (p := p) a b
+  let yCpu := FastKernels.matmulReference (α := Float) (m := m) (n := n) (p := p) a b
+  let yFp32 := FastKernels.Cuda.matmulCublas .fp32 (m := m) (n := n) (p := p) a b
+  let yFp64 := FastKernels.Cuda.matmulCublas .fp64 (m := m) (n := n) (p := p) a b
 
   Utils.assertTensorApprox (s := sY) "fast matmul fp32" yFp32 yCpu (tol := 5e-3)
   Utils.assertTensorApprox (s := sY) "fast matmul fp64" yFp64 yCpu (tol := 1e-9)

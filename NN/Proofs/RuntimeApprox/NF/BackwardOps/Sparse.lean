@@ -26,12 +26,13 @@ namespace RuntimeApprox
 open Spec
 open Tensor
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 
 noncomputable section
 
 /-! ## Sparse Contexts For Local VJPs -/
 
-namespace TList
+namespace SparseContext
 
 /-- A `TList` filled with zeros (shape-wise), used to build sparse contexts for local VJPs. -/
 def zeros {α : Type} [Zero α] : {ss : List Shape} → TList α ss
@@ -77,7 +78,7 @@ def set2Idx {α : Type} [Zero α] [Add α] :
           ⟨⟨i, Nat.lt_of_succ_lt_succ hi⟩, by simpa using h₁⟩ t₁
           ⟨⟨j, Nat.lt_of_succ_lt_succ hj⟩, by simpa using h₂⟩ t₂)
 
-end TList
+end SparseContext
 
 namespace EList
 
@@ -111,7 +112,7 @@ def set2Idx : {Γ : List Shape} → {s₁ s₂ : Shape} →
 
 end EList
 
-namespace TList
+namespace SparseContext
 
 /-- Set three indices when the positions are pairwise distinct.
 
@@ -137,7 +138,7 @@ def set3IdxNe {α : Type} [Zero α] [Add α] :
         Spec.tensorCast (α := α) (s := s₁) (t := s0) (by simpa using h₁.symm) t₁
       let bTail : Idx Γ s₂ := ⟨⟨j, Nat.lt_of_succ_lt_succ hj⟩, by simpa using h₂⟩
       let cTail : Idx Γ s₃ := ⟨⟨k, Nat.lt_of_succ_lt_succ hk⟩, by simpa using h₃⟩
-      .cons t₁0 (TList.set2Idx (α := α) (Γ := Γ) (s₁ := s₂) (s₂ := s₃) bTail t₂ cTail t₃)
+      .cons t₁0 (set2Idx (α := α) (Γ := Γ) (s₁ := s₂) (s₂ := s₃) bTail t₂ cTail t₃)
   | s0 :: Γ, s₁, s₂, s₃, ⟨⟨Nat.succ i, hi⟩, h₁⟩, t₁, ⟨⟨0, _⟩, h₂⟩, t₂, ⟨⟨0, _⟩, _h₃⟩, _t₃,
       _hab, _hac, hbc =>
       False.elim (hbc rfl)
@@ -148,7 +149,7 @@ def set3IdxNe {α : Type} [Zero α] [Add α] :
         Spec.tensorCast (α := α) (s := s₂) (t := s0) (by simpa using h₂.symm) t₂
       let aTail : Idx Γ s₁ := ⟨⟨i, Nat.lt_of_succ_lt_succ hi⟩, by simpa using h₁⟩
       let cTail : Idx Γ s₃ := ⟨⟨k, Nat.lt_of_succ_lt_succ hk⟩, by simpa using h₃⟩
-      .cons t₂0 (TList.set2Idx (α := α) (Γ := Γ) (s₁ := s₁) (s₂ := s₃) aTail t₁ cTail t₃)
+      .cons t₂0 (set2Idx (α := α) (Γ := Γ) (s₁ := s₁) (s₂ := s₃) aTail t₁ cTail t₃)
   | s0 :: Γ, s₁, s₂, s₃, ⟨⟨Nat.succ i, hi⟩, h₁⟩, t₁, ⟨⟨Nat.succ j, hj⟩, h₂⟩, t₂, ⟨⟨0, _⟩, h₃⟩, t₃,
       hab, _hac, _hbc =>
       let t₃0 : Tensor α s0 :=
@@ -160,7 +161,7 @@ def set3IdxNe {α : Type} [Zero α] [Add α] :
         apply hab
         apply Fin.ext
         simpa using congrArg Fin.val h
-      .cons t₃0 (TList.set2Idx (α := α) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) aTail t₁ bTail t₂)
+      .cons t₃0 (set2Idx (α := α) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) aTail t₁ bTail t₂)
   | s0 :: Γ, s₁, s₂, s₃,
       ⟨⟨Nat.succ i, hi⟩, h₁⟩, t₁,
       ⟨⟨Nat.succ j, hj⟩, h₂⟩, t₂,
@@ -187,11 +188,11 @@ def set3IdxNe {α : Type} [Zero α] [Add α] :
             apply Fin.ext
             simpa using congrArg Fin.val h))
 
-end TList
+end SparseContext
 
 namespace EList
 
-/-- Error list for `TList.set3Idx_ne`: set the three designated positions, `0` elsewhere. -/
+/-- Error list matching `SparseContext.set3IdxNe`: set three positions and use `0` elsewhere. -/
 def set3IdxNe :
     {Γ : List Shape} → {s₁ s₂ s₃ : Shape} →
       (a : Idx Γ s₁) → ℝ → (b : Idx Γ s₂) → ℝ → (c : Idx Γ s₃) → ℝ →

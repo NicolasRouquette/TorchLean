@@ -61,10 +61,10 @@ theorem evalAt_transposeOperation_eq
     Graph.evalAt (α := α)
         (g := unaryGraphOut operation.toOpKind inputShape outputShape)
         (payload := {})
-        (input := DVal.mk (α := α) inputShape input)
-        (vals := #[DVal.mk (α := α) inputShape input]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) inputShape input)
+        (vals := #[Spec.PackedTensor.mk (α := α) inputShape input]) (i := 1)
       =
-      Except.ok (DVal.mk (α := α) outputShape (operation.denote input)) := by
+      Except.ok (Spec.PackedTensor.mk (α := α) outputShape (operation.denote input)) := by
   cases operation <;>
     simp [TransposeOperation.toOpKind, TransposeOperation.denote, Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput,
       unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?, Graph.expectShape,
@@ -80,11 +80,11 @@ theorem evalAt_swap_first_two_eq
           (.dim m (.dim n rest))
           (.dim n (.dim m rest)))
         (payload := {})
-        (input := DVal.mk (α := α) (.dim m (.dim n rest)) x)
-        (vals := #[DVal.mk (α := α) (.dim m (.dim n rest)) x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) (.dim m (.dim n rest)) x)
+        (vals := #[Spec.PackedTensor.mk (α := α) (.dim m (.dim n rest)) x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim n (.dim m rest))
+        (Spec.PackedTensor.mk (α := α) (.dim n (.dim m rest))
           (Tensor.swapFirstTwoSpec (α := α) (m := m) (n := n) (s := rest) x)) := by
   exact evalAt_transposeOperation_eq (.firstTwo m n rest) x
 
@@ -98,11 +98,11 @@ theorem evalAt_transpose3dLastTwo_eq
           (.dim a (.dim b (.dim c .scalar)))
           (.dim a (.dim c (.dim b .scalar))))
         (payload := {})
-        (input := DVal.mk (α := α) (.dim a (.dim b (.dim c .scalar))) x)
-        (vals := #[DVal.mk (α := α) (.dim a (.dim b (.dim c .scalar))) x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) (.dim a (.dim b (.dim c .scalar))) x)
+        (vals := #[Spec.PackedTensor.mk (α := α) (.dim a (.dim b (.dim c .scalar))) x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim a (.dim c (.dim b .scalar)))
+        (Spec.PackedTensor.mk (α := α) (.dim a (.dim c (.dim b .scalar)))
           (Tensor.transpose3DLastTwoSpec (α := α) (a := a) (b := b) (c := c) x)) := by
   exact evalAt_transposeOperation_eq (.lastTwo3D a b c) x
 

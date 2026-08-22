@@ -216,7 +216,7 @@ For dimensions that are themselves known only at runtime:
 
 ```
 def loadDynamic (dims : List Nat) (xs : List Float) :=
-  NN.Tensor.dynamicOfList dims xs
+  NN.Tensor.someTensorOfList dims xs
 ```
 
 the result packages an existential shape together with the corresponding tensor. A caller may
@@ -361,7 +361,7 @@ def matrixArray : TensorArray.Tensor Float [2, 3] :=
     [2, 3]
     (by simp)
 
-def matrixSpec : Spec.Tensor Float (listToShape [2, 3]) :=
+def matrixSpec : Spec.Tensor Float (Spec.Shape.ofList [2, 3]) :=
   toTensor matrixArray
 ```
 
@@ -438,7 +438,7 @@ These are the names I reach for most often when reading or writing a small examp
   * `Tensor.ofList`
   * check runtime data against a requested static shape
 *
-  * `NN.Tensor.dynamicOfList`
+  * `NN.Tensor.someTensorOfList`
   * retain an existential shape when dimensions are known only at runtime
 *
   * `Spec.Tensor.castShape`

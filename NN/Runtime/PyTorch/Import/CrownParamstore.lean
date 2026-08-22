@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Graph
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 
 /-!
 # CrownParamstore

@@ -51,29 +51,29 @@ def batchNorm2dNchwEvalTensor {α : Type} [Context α]
     { c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps } x
 
 /--
-Coordinate-level semantics for `Graph.evalBatchNorm2DNchwEval`.
+Coordinate-level semantics for `Graph.evalBatchNorm2dNchwEval`.
 
 This is the proof layer version of the BatchNorm parity test: the payload-backed IR evaluator is
 definitionally the channel-wise eval-mode BatchNorm equation over NCHW tensors.
 -/
-theorem evalBatchNorm2DNchwEval_eq_nchw_formula
+theorem evalBatchNorm2dNchwEval_eq_nchw_formula
     {α : Type} [Context α] [DecidableEq Shape]
     (id n c h w : Nat)
     (gamma beta mean var : Tensor α (.dim c .scalar))
     (eps : α)
     (x : Tensor α (.dim n (.dim c (.dim h (.dim w .scalar))))) :
-    let cfg : BatchNorm2DNchwEvalParams α :=
+    let cfg : BatchNorm2dNchwEvalParams α :=
       { c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps }
     let payload : Payload α :=
-      singletonBatchNorm2DNchwEvalPayload (α := α) id cfg
-    Graph.evalBatchNorm2DNchwEval (α := α) (payload := payload) (id := id)
-        (x := DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x
+      singletonBatchNorm2dNchwEvalPayload (α := α) id cfg
+    Graph.evalBatchNorm2dNchwEval (α := α) (payload := payload) (id := id)
+        (x := Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x
       )
       =
       Except.ok
-        (DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
+        (Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
           (batchNorm2dNchwEvalTensor (α := α) gamma beta mean var eps x)) := by
-  simp [Graph.evalBatchNorm2DNchwEval, singletonBatchNorm2DNchwEvalPayload, Graph.expectShape,
+  simp [Graph.evalBatchNorm2dNchwEval, singletonBatchNorm2dNchwEvalPayload, Graph.expectShape,
     batchNorm2dNchwEvalTensor, Bind.bind, Except.bind, Pure.pure,
     Except.pure]
 
@@ -84,35 +84,35 @@ theorem evalAt_batchNorm2dNchwEval_eq
     (gamma beta mean var : Tensor α (.dim c .scalar))
     (eps : α)
     (x : Tensor α (.dim n (.dim c (.dim h (.dim w .scalar))))) :
-    let cfg : BatchNorm2DNchwEvalParams α :=
+    let cfg : BatchNorm2dNchwEvalParams α :=
       { c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps }
     Graph.evalAt (α := α)
         (g := unaryGraphOut (.batchNorm2dNchwEval c)
           (.dim n (.dim c (.dim h (.dim w .scalar))))
           (.dim n (.dim c (.dim h (.dim w .scalar)))))
-        (payload := singletonBatchNorm2DNchwEvalPayload (α := α) 1 cfg)
-        (input := DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x)
-        (vals := #[DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x])
+        (payload := singletonBatchNorm2dNchwEvalPayload (α := α) 1 cfg)
+        (input := Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x)
+        (vals := #[Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x])
         (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
+        (Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
           (batchNorm2dNchwEvalTensor (α := α) gamma beta mean var eps x)) := by
   simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
-    Graph.evalBatchNorm2DNchwEval, singletonBatchNorm2DNchwEvalPayload, Graph.expectShape,
+    Graph.evalBatchNorm2dNchwEval, singletonBatchNorm2dNchwEvalPayload, Graph.expectShape,
     batchNorm2dNchwEvalTensor, shapeBNe_refl,
     Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- Missing BatchNorm payloads are rejected before any tensor computation happens. -/
-theorem evalBatchNorm2DNchwEval_missing_payload
+theorem evalBatchNorm2dNchwEval_missing_payload
     {α : Type} [Context α] [DecidableEq Shape]
     (payload : Payload α) (id : Nat)
     (hMissing : payload.batchNorm2dNchwEval? id = none)
-    (x : DVal α) :
-    Graph.evalBatchNorm2DNchwEval (α := α) (payload := payload) (id := id) (x := x)
+    (x : Spec.PackedTensor α) :
+    Graph.evalBatchNorm2dNchwEval (α := α) (payload := payload) (id := id) (x := x)
       =
       Except.error s!"IR eval: missing batch_norm2d_nchw_eval payload for node {id}" := by
-  simp [Graph.evalBatchNorm2DNchwEval, hMissing]
+  simp [Graph.evalBatchNorm2dNchwEval, hMissing]
   rfl
 
 /--

@@ -69,7 +69,7 @@ def linearRegressionWeightsDerivSpec {inDim : Nat}
   (input : Tensor α (.dim inDim .scalar))
   (grad_output : Tensor α .scalar) :
   Tensor α (.dim inDim .scalar) :=
-  scaleSpec input (Tensor.toScalar grad_output)
+  scaleSpec input (Tensor.item grad_output)
 
 /-- VJP contribution for `bias`: `dL/db = dL/dy`. -/
 def linearRegressionBiasDerivSpec {inDim : Nat}
@@ -83,7 +83,7 @@ def linearRegressionInputDerivSpec {inDim : Nat}
   (weights : Tensor α (.dim inDim .scalar))
   (grad_output : Tensor α .scalar) :
   Tensor α (.dim inDim .scalar) :=
-  scaleSpec weights (Tensor.toScalar grad_output)
+  scaleSpec weights (Tensor.item grad_output)
 
 /-- Full backward pass returning `(dW, db, dX)` in that order. -/
 def linearRegressionBackwardSpec {inDim : Nat}
@@ -107,17 +107,14 @@ def linearRegressionBatchedBackwardSpec {batch inDim : Nat}
   (grad_output : Tensor α (.dim batch .scalar)) (h : batch ≠ 0) :
   (Tensor α (.dim inDim .scalar) × Tensor α .scalar × Tensor α (.dim batch (.dim inDim .scalar))) :=
   -- Gradient w.r.t. weights: sum over batch dimension
-  let dW := reduceSumVec 0
-    (map2SequenceVecScalarSpec (.dim inDim .scalar)
-      (fun x gy => scaleSpec x (Tensor.toScalar gy))
-      input grad_output) (by rfl)
+  let dW := Tensor.sumLeadingAxis
+    (Tensor.zipWithLeading (.dim batch .scalar) (.dim inDim .scalar)
+      (fun x gy => scaleSpec x (Tensor.item gy)) input grad_output) h
   -- Gradient w.r.t. bias: sum over batch dimension
-  let _ : Shape.valid_axis_inst 0 (Shape.dim batch Shape.scalar) :=
-    Shape.validAxisInstZeroAlt h
-  let db := reduceSumAuto 0 grad_output
+  let db := Tensor.sumLeadingAxis grad_output h
   -- Gradient w.r.t. input: broadcast weights to each batch element
-  let dX := mapSequenceVecScalarSpec
-    (fun gy => scaleSpec model.weights (Tensor.toScalar gy))
+  let dX := Tensor.mapLeading (.dim batch .scalar)
+    (fun gy => scaleSpec model.weights (Tensor.item gy))
     grad_output
 
   (dW, db, dX)
@@ -136,9 +133,7 @@ def mseLossSpec {batch inDim : Nat}
   let predictions := linearRegressionBatchedForwardSpec model input
   let errors := subSpec predictions target
   let squared_errors := squareSpec errors
-  have _ : Shape.valid_axis_inst 0 (Shape.dim batch Shape.scalar) :=
-              Shape.validAxisInstZeroAlt h
-  let mse := reduceSumAuto 0 squared_errors
+  let mse := reduceSum 0 squared_errors (Shape.hasNonemptyAxisZeroOfNe h).proof
   scaleSpec mse (1 / (batch : α))
 
 /-- Gradient of MSE w.r.t. predictions: `d/dy (mean (y - t)^2) = (2/batch) * (y - t)`.
@@ -200,12 +195,12 @@ def rSquaredSpec {batch inDim : Nat}
   (target : Tensor α (.dim batch .scalar)) (h : batch ≠ 0) :
   Tensor α .scalar :=
   let predictions := linearRegressionBatchedForwardSpec model input
-  let leadingAxis : Shape.valid_axis_inst 0 (Shape.dim batch Shape.scalar) :=
-    Shape.validAxisInstZeroAlt h
-  let target_mean := reduceMeanAuto 0 leadingAxis target
+  let leadingAxis : Shape.HasNonemptyAxis 0 (Shape.dim batch Shape.scalar) :=
+    Shape.hasNonemptyAxisZeroOfNe h
+  let target_mean := reduceMean 0 target leadingAxis.proof
   let target_mean_broadcast := broadcastLike target target_mean
-  let ss_res := reduceSumAuto 0 (squareSpec (subSpec predictions target))
-  let ss_tot := reduceSumAuto 0 (squareSpec (subSpec target target_mean_broadcast))
+  let ss_res := reduceSum 0 (squareSpec (subSpec predictions target)) leadingAxis.proof
+  let ss_tot := reduceSum 0 (squareSpec (subSpec target target_mean_broadcast)) leadingAxis.proof
   subSpec (Tensor.scalar 1) (divSpec ss_res ss_tot)
 
 /-- Ridge regression forward pass.
@@ -245,13 +240,9 @@ def ridgeWeightsDerivSpec {batch inDim : Nat}
   (grad_output : Tensor α (.dim batch .scalar))
   (lambda : α) (h : batch ≠ 0) :
   Tensor α (.dim inDim .scalar) :=
-  let mse_grad :=
-    reduceSumVec 0
-      (map2SequenceVecScalarSpec (.dim inDim .scalar)
-        (fun x gy => scaleSpec x (Tensor.toScalar gy))
-        input grad_output) (by rfl)
-  let _ : Shape.valid_axis_inst 0 (Shape.dim batch Shape.scalar) :=
-    Shape.validAxisInstZeroAlt h
+  let mse_grad := Tensor.sumLeadingAxis
+    (Tensor.zipWithLeading (.dim batch .scalar) (.dim inDim .scalar)
+      (fun x gy => scaleSpec x (Tensor.item gy)) input grad_output) h
   let l2_grad := scaleSpec model.weights (Numbers.two * lambda)
   addSpec mse_grad l2_grad
 
@@ -322,19 +313,16 @@ This expansion does not include a constant feature (the model bias already plays
 def polynomialFeaturesSpec {inDim : Nat} (degree : Nat)
   (input : Tensor α (.dim inDim .scalar)) :
   Tensor α (.dim (inDim * degree) .scalar) :=
-  match input with
-  | Tensor.dim values =>
-    let rec expand (remaining : Nat) (acc : List α) : List α :=
-      match remaining with
-      | 0 => acc
-      | Nat.succ d' =>
-        let current_degree := degree - d'
-        let new_features := (List.finRange inDim).map (fun i =>
-          match values i with
-          | Tensor.scalar x => x ^ (current_degree : α))
-        expand d' (acc ++ new_features)
-    let features := expand degree []
-    Tensor.dim (fun i => Tensor.scalar (features.getD i.val 0))
+  Tensor.dim fun i =>
+    have hProduct : 0 < inDim * degree := lt_of_le_of_lt (Nat.zero_le i.val) i.isLt
+    have hInDimNe : inDim ≠ 0 := by
+      intro h
+      simp [h] at hProduct
+    have hInDim : 0 < inDim := Nat.pos_of_ne_zero hInDimNe
+    let coordinate : Fin inDim := ⟨i.val % inDim, Nat.mod_lt _ hInDim⟩
+    let power := i.val / inDim + 1
+    match get input coordinate with
+    | Tensor.scalar x => Tensor.scalar (x ^ (power : α))
 
 /-- Forward pass for polynomial regression: expand features, then run linear regression. -/
 def polynomialRegressionForwardSpec {inDim degree : Nat}

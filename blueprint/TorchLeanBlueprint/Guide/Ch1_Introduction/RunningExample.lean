@@ -94,17 +94,18 @@ def target (x1 x2 : Float) : Float :=
     (0.4 * relu (x2 - x1)) + 0.2
 ```
 
-`Data.regressionGrid (-1.0) 1.0 5 target` samples five positions on each input axis, giving 25
-examples. Each input has shape `[2]` and each target has shape `[1]`:
+The example samples five positions on each input axis, giving 25 examples. `Tensor.mapLeading`
+applies the target function to each row without fixing the operation to vectors or regression:
 
 ```
-def dataset : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
-  Data.regressionGrid (-1.0) 1.0 5 target
+let inputs := Data.Synthetic.squareGrid (-1.0) 1.0 5
+let targets := Tensor.mapLeading targetTensor inputs
+Data.tensorDataset inputs targets
 ```
 
-The tensor types settle the dimensional question: every row fits the model. Whether 25 points are
-enough to learn the target is a different question, and this small run gives us a concrete place to
-start asking it.
+Each input has shape `[2]` and each target has shape `[1]`. The tensor types settle the dimensional
+question: every row fits the model. Whether 25 points are enough to learn the target is a different
+question.
 
 # Training It
 

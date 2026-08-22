@@ -76,18 +76,18 @@ Full selective Mamba prefix causality for the internal runner.
 The internal runner carries a newest-first causal convolution history.  Even with that extra state,
 future input tokens only affect future outputs.
 -/
-theorem selectiveMamba_runListAux_append_outputs_prefix
+theorem selectiveMamba_runListWithHistory_append_outputs_prefix
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
     (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar)))
     (history : List (Tensor α (.dim innerDim .scalar)))
     (xs ys : List (Tensor α (.dim inputDim .scalar))) :
-    (m.runListAux h0 history (xs ++ ys)).2.take xs.length =
-      (m.runListAux h0 history xs).2 := by
+    (m.runListWithHistory h0 history (xs ++ ys)).2.take xs.length =
+      (m.runListWithHistory h0 history xs).2 := by
   induction xs generalizing h0 history with
   | nil =>
       simp
   | cons x rest ih =>
-      simp [Models.SelectiveMambaBlockSpec.runListAux, ih]
+      simp [Models.SelectiveMambaBlockSpec.runListWithHistory, ih]
 
 /--
 Full selective Mamba prefix causality for the public runner.
@@ -101,6 +101,6 @@ theorem selectiveMamba_runList_append_outputs_prefix
     (xs ys : List (Tensor α (.dim inputDim .scalar))) :
     (m.runList h0 (xs ++ ys)).2.take xs.length = (m.runList h0 xs).2 := by
   simpa [Models.SelectiveMambaBlockSpec.runList] using
-    selectiveMamba_runListAux_append_outputs_prefix (m := m) h0 [] xs ys
+    selectiveMamba_runListWithHistory_append_outputs_prefix (m := m) h0 [] xs ys
 
 end NN.MLTheory.StateSpace

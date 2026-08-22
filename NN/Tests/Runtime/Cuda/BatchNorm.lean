@@ -65,7 +65,7 @@ def run : IO Unit := do
     (Tape.batchNormChannelFirst (α := Float) (t := t3) (channels := channels) (height := height)
       (width := width) (h_c := hC) (h_h := hH) (h_w := hW) xId gId bId)
   let yCpu ← Utils.cpuValue (s := outShape) t4 yId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (fill (1.0 : Float) outShape)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) outShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t4) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := outShape) gradsCpu xId
   let dGammaCpu ← Utils.cpuGrad (s := shape![channels]) gradsCpu gId

@@ -99,7 +99,7 @@ def tensorOfFlatListExact {α : Type} (tag : String) (s : Shape) (xs : List α) 
     let dims := Shape.toList s
     have hProduct : xs.length = TensorArray.shapeProd dims := by
       simpa [dims, shapeProd_toList] using hLength
-    have hShape : TensorBridge.listToShape dims = s := by
+    have hShape : Shape.ofList dims = s := by
       change Shape.ofList (Shape.toList s) = s
       exact Shape.ofList_toList s
     pure <| hShape ▸ TensorBridge.unflatten dims xs hProduct

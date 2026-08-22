@@ -182,7 +182,7 @@ theorem native_add_pointwise_abs_error_of_bits
     _root_.abs
         (IEEE32Exec.toReal (fromNativeBits (bits i)) -
           (IEEE32Exec.toReal (x i) + IEEE32Exec.toReal (y i))) ≤
-      eps₃₂ (IEEE32Exec.toReal (x i) + IEEE32Exec.toReal (y i)) := by
+      eps32 (IEEE32Exec.toReal (x i) + IEEE32Exec.toReal (y i)) := by
   have hx : fromNativeBits (bits i) = IEEE32Exec.add (x i) (y i) := by
     apply ref_ext
     simp [hbits i]
@@ -200,7 +200,7 @@ theorem native_mul_pointwise_abs_error_of_bits
     _root_.abs
         (IEEE32Exec.toReal (fromNativeBits (bits i)) -
           (IEEE32Exec.toReal (x i) * IEEE32Exec.toReal (y i))) ≤
-      eps₃₂ (IEEE32Exec.toReal (x i) * IEEE32Exec.toReal (y i)) := by
+      eps32 (IEEE32Exec.toReal (x i) * IEEE32Exec.toReal (y i)) := by
   have hx : fromNativeBits (bits i) = IEEE32Exec.mul (x i) (y i) := by
     apply ref_ext
     simp [hbits i]
@@ -218,7 +218,7 @@ theorem native_div_pointwise_abs_error_of_bits
     _root_.abs
         (IEEE32Exec.toReal (fromNativeBits (bits i)) -
           (IEEE32Exec.toReal (x i) / IEEE32Exec.toReal (y i))) ≤
-      eps₃₂ (IEEE32Exec.toReal (x i) / IEEE32Exec.toReal (y i)) := by
+      eps32 (IEEE32Exec.toReal (x i) / IEEE32Exec.toReal (y i)) := by
   have hx : fromNativeBits (bits i) = IEEE32Exec.div (x i) (y i) := by
     apply ref_ext
     simp [hbits i]
@@ -236,7 +236,7 @@ theorem native_sqrt_pointwise_abs_error_of_bits
     _root_.abs
         (IEEE32Exec.toReal (fromNativeBits (bits i)) -
           _root_.Real.sqrt (IEEE32Exec.toReal (x i))) ≤
-      eps₃₂ (_root_.Real.sqrt (IEEE32Exec.toReal (x i))) := by
+      eps32 (_root_.Real.sqrt (IEEE32Exec.toReal (x i))) := by
   have hx : fromNativeBits (bits i) = IEEE32Exec.sqrt (x i) := by
     apply ref_ext
     simp [hbits i]

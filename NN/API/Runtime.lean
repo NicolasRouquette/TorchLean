@@ -8,7 +8,9 @@ module
 
 public import NN.Backend.Report
 public import NN.API.Scalar
-public import NN.API.Module.Command
+public import NN.Runtime.Autograd.Torch.Core.Functional
+public import NN.Runtime.Autograd.Torch.Core.Types
+public import NN.Runtime.Autograd.TorchLean.Program
 
 /-!
 # Runtime Selection
@@ -33,6 +35,13 @@ abbrev ExecutionMode := _root_.Runtime.Autograd.Torch.ExecutionMode
 namespace ExecutionMode
 
 export _root_.Runtime.Autograd.Torch.ExecutionMode (eager typedGraph)
+
+/-- Parse the stable command-line spelling of an execution mode. -/
+def parse (value : String) : Except String ExecutionMode :=
+  match value with
+  | "eager" => pure .eager
+  | "typed-graph" => pure .typedGraph
+  | _ => throw s!"unknown execution mode `{value}` (supported: eager | typed-graph)"
 
 end ExecutionMode
 

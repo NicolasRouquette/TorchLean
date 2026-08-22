@@ -51,7 +51,7 @@ This is the compact theorem behind many JSON/CLI/data-loader paths: parse dimens
 then recover the precise `Shape` used by the typed tensor API.
 -/
 theorem matrix_shape_roundtrip :
-    Shape.ofDims (Shape.toList (shape![2, 3])) = shape![2, 3] := by
+    Shape.ofList (Shape.toList (shape![2, 3])) = shape![2, 3] := by
   simp
 
 /-- ReLU fixes every nonnegative real number. -/

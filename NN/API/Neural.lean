@@ -9,14 +9,11 @@ module
 -- shake: keep-all
 
 public import NN.API.Seeded
-public import NN.API.Autograd
-public import NN.API.Models
 public import NN.API.Neural.Execution
 public import NN.API.Neural.Summary
 
 /-!
 # Neural Networks
 
-Shape-typed layers, model builders, parameter packs, summaries, typed graph execution, and automatic
-differentiation.
+Shape-typed layers, model builders, parameter packs, summaries, and typed graph execution.
 -/

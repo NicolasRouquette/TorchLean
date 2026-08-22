@@ -40,38 +40,6 @@ namespace Envs
 open Tensor
 
 /-!
-## State and Action Types
-
-We use a **coordinate** state `(row, col)` rather than a flattened index. The environment definition
-matches the textbook picture, and “stays in bounds” properties can be stated directly.
-
-The `FiniteMDP` / `FiniteStochastic.MDP` views flatten `(row, col)` to `Fin (height * width)` using
-mathlib’s canonical equivalence `Fin height × Fin width ≃ Fin (height * width)`.
--/
-
-/-- A grid position `(row, col)` in a `height × width` grid. -/
-abbrev GridPos (width height : Nat) : Type := Fin height × Fin width
-
-/-- Discrete actions for a 4-neighborhood grid: `0=up`, `1=down`, `2=left`, `3=right`. -/
-abbrev GridAction : Type := Fin 4
-
-namespace GridAction
-
-/-- Grid action that decreases the row coordinate. -/
-def up : GridAction := ⟨0, by decide⟩
-
-/-- Grid action that increases the row coordinate. -/
-def down : GridAction := ⟨1, by decide⟩
-
-/-- Grid action that decreases the column coordinate. -/
-def left : GridAction := ⟨2, by decide⟩
-
-/-- Grid action that increases the column coordinate. -/
-def right : GridAction := ⟨3, by decide⟩
-
-end GridAction
-
-/-!
 ## Environment Dynamics
 
 Dynamics are deterministic and border-clamped:
@@ -88,9 +56,9 @@ Reward / termination scheme:
 /-- A small deterministic GridWorld with a start cell, goal cell, and discount factor. -/
 structure GridWorld (width height : Nat) where
   /-- Initial state returned by `reset`. -/
-  start : GridPos width height
+  start : Fin height × Fin width
   /-- Terminal goal cell. -/
-  goal : GridPos width height
+  goal : Fin height × Fin width
   /-- Discount factor $\gamma$ used by induced MDP views. -/
   discount : ℝ
 
@@ -98,11 +66,27 @@ namespace GridWorld
 
 variable {width height : Nat}
 
-/-- GridWorld latent state type (row/col coordinate). -/
-abbrev State (width height : Nat) : Type := GridPos width height
+/-- A GridWorld state, represented by its row and column. -/
+abbrev State (width height : Nat) : Type := Fin height × Fin width
 
-/-- GridWorld action type (4-neighborhood moves). -/
-abbrev Action : Type := GridAction
+/-- A four-neighborhood GridWorld action. -/
+abbrev Action : Type := Fin 4
+
+namespace Action
+
+/-- Move one row upward. -/
+def up : Action := ⟨0, by decide⟩
+
+/-- Move one row downward. -/
+def down : Action := ⟨1, by decide⟩
+
+/-- Move one column to the left. -/
+def left : Action := ⟨2, by decide⟩
+
+/-- Move one column to the right. -/
+def right : Action := ⟨3, by decide⟩
+
+end Action
 
 /-- The next row when moving one step up (saturating at `0`). -/
 def rowUp (row : Fin height) : Fin height :=
@@ -128,11 +112,11 @@ def colRight (col : Fin width) : Fin width :=
 
 /-- Deterministic successor state (border-clamped). -/
 def nextState (state : State width height) (action : Action) : State width height :=
-  if action = GridAction.up then
+  if action = Action.up then
     (rowUp (height := height) state.1, state.2)
-  else if action = GridAction.down then
+  else if action = Action.down then
     (rowDown (height := height) state.1, state.2)
-  else if action = GridAction.left then
+  else if action = Action.left then
     (state.1, colLeft (width := width) state.2)
   else
     (state.1, colRight (width := width) state.2)

@@ -154,7 +154,7 @@ def γ {d : Nat} (B : Box d) : Set (Fin d → F) := fun x => ∀ i, x i ∈ B i
 
 /-- A box is in `[-1,1]^d` (paper: “abstract boxes in `[-1,1]^d`”). -/
 def InCube {d : Nat} (B : Box d) : Prop :=
-  ∀ i, (Numbers.neg_one : F) ∈ B i ∧ (Numbers.one : F) ∈ B i
+  ∀ i, (Numbers.negOne : F) ∈ B i ∧ (Numbers.one : F) ∈ B i
 
 @[simp] theorem mem_top (x : F) : x ∈ (top : I) := by
   -- `γ(top) = univ`.
@@ -492,9 +492,9 @@ def sumSharp {n : Nat} (ts : Fin n → I) : I :=
 /-!
 `OpsExact` implements the finite interval semantics used for exact interval-image statements.
 
-Proving its soundness for `IEEE32Exec` (+/*/ReLU) is substantial work. This file isolates
-that work behind an explicit interface, so higher-level semantic proofs can be completed
-once op-level soundness lemmas are available.
+The `Sound` class isolates the operation-level obligations used by higher-level semantic proofs.
+The addition, multiplication, and ReLU obligations are proved below, followed by the canonical
+`IEEE32Exec` instance.
 -/
 
 class Sound : Prop where

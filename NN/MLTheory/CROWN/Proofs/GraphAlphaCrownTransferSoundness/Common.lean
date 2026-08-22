@@ -40,15 +40,7 @@ namespace AlphaCrownTransferSoundness
 noncomputable section
 
 open CrownCertSoundness
-
-/-- Alias for the semantic value record used by the generic graph soundness development. -/
-abbrev Val := CertSoundness.Val
-/-- Alias for the partial node evaluator used in `CertSoundness`. -/
-abbrev evalNode? := CertSoundness.evalNode?
-/-- Alias for the local semantic side-condition used in checker soundness statements. -/
-abbrev SemLocalOK := CertSoundness.SemLocalOK
-/-- Alias for the topological-sorting predicate used by the generic soundness theorems. -/
-abbrev TopoSorted := CertSoundness.TopoSorted
+open CertSoundness
 
 -- The graph dialect’s `FlatBox` is a dependent record (the tensor shapes depend on `dim`),
 -- so Lean does not automatically register a usable extensionality lemma for the `ext` tactic.

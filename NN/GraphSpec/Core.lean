@@ -80,7 +80,7 @@ For skip connections, shared intermediates, residual adds, or other multi-input 
 namespace NN
 namespace GraphSpec
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 open NN.Tensor
 
@@ -254,36 +254,36 @@ def relu (s : Shape) : Primitive [] s s :=
   }
 
 /--
-Last-axis softmax (parameter-free).
+Softmax along `axis` (parameter-free).
 
-Softmax turns “logits” into a probability distribution along the *last* axis:
+Softmax turns logits into a probability distribution along the selected tensor dimension:
 
 $$
 \operatorname{softmax}(x)_i
 =\frac{\exp(x_i)}{\sum_j\exp(x_j)}.
 $$
 
-In TorchLean’s spec layer, this is implemented as a genuine last-axis tensor softmax (recursing
-over outer dimensions), analogous to `torch.softmax(x, dim=-1)` in PyTorch.
+This is analogous to `torch.softmax(x, dim=axis)` in PyTorch. The chosen dimension may be outer,
+interior, or final.
 
 Notes:
 - Softmax is *not* elementwise; it normalizes across an axis, so it is a canonical example of a
   non-pointwise activation.
 - For numerical stability, practical implementations often rewrite softmax using `logsumexp`.
-  The spec semantics here follows the dedicated `Activation.softmax_spec`.
+  The spec semantics here follows the dedicated `Activation.softmaxSpec`.
 
 References:
-- Spec definition: `Activation.softmax_spec` in `NN.Spec.Layers.Activation`.
-- PyTorch API analogy: `torch.softmax(x, dim=-1)`.
+- Spec definition: `Activation.softmaxSpec` in `NN.Spec.Layers.Activation`.
+- PyTorch API analogy: `torch.softmax(x, dim=axis)`.
 -/
-def softmaxLast (s : Shape) : Primitive [] s s :=
+def softmax (s : Shape) (axis : Nat) [Spec.Shape.AxisInBounds axis s] : Primitive [] s s :=
   { name := "softmax"
-    specFwd := fun {α} _ctx _params x => Activation.softmaxSpec (α := α) (s := s) x
+    specFwd := fun {α} _ctx _params x => Activation.softmaxSpec (α := α) axis x
     program := fun {α} _ctx _deq =>
       fun {m} _ _ =>
-        fun x => Runtime.Autograd.TorchLean.softmax (m := m) (α := α) (s := s) x
+        fun x => Runtime.Autograd.TorchLean.F.softmax (m := m) (α := α) axis x
     toLayerM? := some (fun _i =>
-      ⟨Runtime.Autograd.TorchLean.NN.softmaxLast (s := s), by rfl⟩)
+      ⟨Runtime.Autograd.TorchLean.NN.softmax (s := s) axis, by rfl⟩)
     countsAsLayer := false
   }
 
@@ -301,9 +301,9 @@ def linear (inDim outDim : Nat) :
 def relu (s : Shape) : Chain [] s s :=
   .prim (Primitive.relu s)
 
-/-- Chain constructor for `Primitive.softmaxLast`. -/
-def softmaxLast (s : Shape) : Chain [] s s :=
-  .prim (Primitive.softmaxLast s)
+/-- Chain constructor for `Primitive.softmax`. -/
+def softmax (s : Shape) (axis : Nat) [Spec.Shape.AxisInBounds axis s] : Chain [] s s :=
+  .prim (Primitive.softmax s axis)
 
 end Chain
 
@@ -713,7 +713,7 @@ occurrence index”.
 This matches `ToSequential.toSeq`’s notion of “occurrence”: only primitives with
 `countsAsLayer = true` advance the counter.
 -/
-def Chain.detInitParamsAux
+def Chain.detInitParamsFrom
     {ps : List Shape} {σ τ : Shape}
     (g : Chain ps σ τ) (i : Nat) :
     Except String (Runtime.Autograd.Torch.TList Float ps × Nat) :=
@@ -731,10 +731,10 @@ def Chain.detInitParamsAux
           match hps with
           | rfl => .ok (l.initState, i')
   | .seq (ps₁ := ps₁) (ps₂ := ps₂) (σ := σ) g₁ g₂ =>
-      match Chain.detInitParamsAux (ps := ps₁) (σ := σ) g₁ i with
+      match Chain.detInitParamsFrom (ps := ps₁) (σ := σ) g₁ i with
       | .error e => .error e
       | .ok (xs, i') =>
-          match Chain.detInitParamsAux (ps := ps₂) (σ := _) g₂ i' with
+          match Chain.detInitParamsFrom (ps := ps₂) (σ := _) g₂ i' with
           | .error e => .error e
           | .ok (ys, i'') =>
               .ok
@@ -747,7 +747,7 @@ def Chain.detInitParams?
     {ps : List Shape} {σ τ : Shape}
     (g : Chain ps σ τ) :
     Except String (Runtime.Autograd.Torch.TList Float ps) :=
-  match Chain.detInitParamsAux (ps := ps) (σ := σ) (τ := τ) g 0 with
+  match Chain.detInitParamsFrom (ps := ps) (σ := σ) (τ := τ) g 0 with
   | .error e => .error e
   | .ok (xs, _i) => .ok xs
 

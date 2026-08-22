@@ -211,8 +211,10 @@ def graphFDerivCorrectAtOfCorrect {Γ : List Shape} {ss : List Shape} {g : Graph
       rcases hg with ⟨hgPrefix, hn⟩
       exact ⟨ih hgPrefix, NodeFDerivCorrect.at hn (Graph.evalVec (Γ := Γ) (ss := ss) g xV)⟩
 
-/-- Recursive implementation for `append`, stated over an explicit graph and proof. -/
-def appendCore {Γ : List Shape} {ss₁ ss₂ : List Shape}
+namespace Internal
+
+/-- Recursive implementation for `DGraph.append`, stated over an explicit graph and proof. -/
+def append {Γ : List Shape} {ss₁ ss₂ : List Shape}
     (dg₁ : DGraph Γ ss₁)
     (g₂ : Graph (Γ ++ ss₁) ss₂) (hg₂ : GraphFDerivCorrect (Γ := Γ ++ ss₁) g₂) :
     DGraph Γ (ss₁ ++ ss₂) := by
@@ -230,6 +232,8 @@ def appendCore {Γ : List Shape} {ss₁ ss₂ : List Shape}
         simp [List.append_assoc]
       exact htarget ▸ DGraph.snoc (dg := dgPrefix) (node := node') (hn := hn')
 
+end Internal
+
 /--
 Append a proof-carrying graph after another proof-carrying graph.
 
@@ -244,10 +248,12 @@ while reusing the existing node-level correctness proofs.
 def append {Γ : List Shape} {ss₁ ss₂ : List Shape}
     (dg₁ : DGraph Γ ss₁) (dg₂ : DGraph (Γ ++ ss₁) ss₂) :
     DGraph Γ (ss₁ ++ ss₂) :=
-  appendCore (Γ := Γ) (ss₁ := ss₁) (ss₂ := ss₂) dg₁ dg₂.g dg₂.hg
+  Internal.append (Γ := Γ) (ss₁ := ss₁) (ss₂ := ss₂) dg₁ dg₂.g dg₂.hg
 
-/-- Recursive implementation for `weakenContext`, stated over an explicit graph and proof. -/
-def weakenContextCore {Γ ss : List Shape} (extra : List Shape)
+namespace Internal
+
+/-- Recursive implementation for `DGraph.weakenContext`, stated over an explicit graph and proof. -/
+def weakenContext {Γ ss : List Shape} (extra : List Shape)
     (g : Graph Γ ss) (hg : GraphFDerivCorrect (Γ := Γ) g) :
     DGraph (Γ ++ extra) ss := by
   induction g with
@@ -262,6 +268,8 @@ def weakenContextCore {Γ ss : List Shape} (extra : List Shape)
         (node := weakenNodeMiddle (Γ := Γ) (extra := extra) (ss := ssPrefix) node)
         (hn := weakenNodeMiddleFDerivCorrect (Γ := Γ) (extra := extra) (ss := ssPrefix) hn)
 
+end Internal
+
 /--
 Run a proof-carrying graph while carrying extra unused inputs.
 
@@ -273,7 +281,7 @@ not read them.
 -/
 def weakenContext {Γ ss : List Shape} (dg : DGraph Γ ss) (extra : List Shape) :
     DGraph (Γ ++ extra) ss :=
-  weakenContextCore (Γ := Γ) (ss := ss) extra dg.g dg.hg
+  Internal.weakenContext (Γ := Γ) (ss := ss) extra dg.g dg.hg
 
 /--
 VJP theorem for context-weakened proof graphs.

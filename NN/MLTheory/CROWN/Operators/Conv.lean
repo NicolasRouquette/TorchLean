@@ -10,13 +10,13 @@ public import NN.MLTheory.CROWN.Runtime.Ops
 public import NN.Spec.Layers.Conv
 
 /-!
-# Conv2D
+# Conv2d
 
-Conv2D CROWN-IBP bounds in TorchLean.
+Conv2d CROWN-IBP bounds in TorchLean.
 
 We provide:
-- Interval Bound Propagation (IBP) for Conv2D pre-activations
-- The exact flattened affine map for Conv2D
+- Interval Bound Propagation (IBP) for Conv2d pre-activations
+- The exact flattened affine map for Conv2d
 
 Design notes:
 - We flatten the 3D input and convolution output when constructing the exact affine map. This
@@ -40,14 +40,14 @@ def flattenBox {s : Shape} (B : Box α s) : Box α (.dim (Spec.Shape.size s) .sc
   { lo := Tensor.flattenSpec B.lo, hi := Tensor.flattenSpec B.hi }
 
 /--
-Interval Bound Propagation (IBP) for Conv2D pre-activations `y = conv(x, K) + b`.
+Interval Bound Propagation (IBP) for Conv2d pre-activations `y = conv(x, K) + b`.
 
 This computes per-output-position min/max bounds by taking min/max of each product term.
 -/
 def ibpConv2d
   {inC outC kH kW stride padding inH inW : ℕ}
   {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-  (layer : Spec.Conv2DSpec inC outC kH kW stride padding α h1 h2 h3)
+  (layer : Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3)
   (xB : Box α (.dim inC (.dim inH (.dim inW .scalar)))) :
   Box α (.dim outC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))) :=
   -- Compute lo/hi per output position independently
@@ -117,7 +117,7 @@ def ibpConv2d
   { lo := loT, hi := hiT }
 
 /--
-Build the explicit Conv2D linear operator matrix `Wconv` mapping flat input to flat output.
+Build the explicit Conv2d linear operator matrix `Wconv` mapping flat input to flat output.
 
 Shapes:
 - Input: `inC × inH × inW` (flat size `inC*inH*inW`)
@@ -128,7 +128,7 @@ Entry `Wconv[r,c]` is the contribution of input coordinate `c` to output coordin
 def conv2dLinearMatrix
   {inC outC kH kW stride padding inH inW : ℕ}
   {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-  (layer : Spec.Conv2DSpec inC outC kH kW stride padding α h1 h2 h3) :
+  (layer : Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3) :
   let outH := Spec.Shape.slidingWindowOutDim inH kH stride padding
   let outW := Spec.Shape.slidingWindowOutDim inW kW stride padding
   let inShape  := Shape.dim inC (Shape.dim inH (Shape.dim inW Shape.scalar))

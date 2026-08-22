@@ -7,7 +7,6 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Core.TensorReductionShape
-public import NN.Spec.Layers.Utils
 
 /-!
 # Normalization layers (spec layer)
@@ -78,7 +77,7 @@ def normalizeCore
 -/
 /-- LayerNorm over the last dimension of a `(seqLen, embedDim)` tensor.
 
-Uses `epsilon` (default `Numbers.epsilon`) for numerical stability in the denominator.
+Uses `epsilon` (default `Numbers.normalizationEpsilon`) for numerical stability in the denominator.
 -/
 def layerNorm {seqLen embedDim : Nat}
   (x : Tensor α (.dim seqLen (.dim embedDim .scalar)))
@@ -86,7 +85,7 @@ def layerNorm {seqLen embedDim : Nat}
   (beta : Tensor α (.dim embedDim .scalar))
   (h_seq_pos : seqLen > 0 := by norm_num)
   (h_embed_pos : embedDim > 0 := by norm_num)
-  (epsilon : α := Numbers.epsilon) :
+  (epsilon : α := Numbers.normalizationEpsilon) :
   Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
 
   -- Compute mean along last dimension (dim = 1)
@@ -95,40 +94,35 @@ def layerNorm {seqLen embedDim : Nat}
 
   let s := Shape.dim seqLen (Shape.dim embedDim Shape.scalar)
   let h_rank : Spec.Shape.rank s > 0 := by simp [s, Spec.Shape.rank]
-  let h_valid : Shape.valid_axis_inst (Spec.Shape.rank s - 1) s := Shape.validAxisLastAuto h_rank
+  let h_valid : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s := Shape.inferNonemptyLastAxis h_rank
 
-  let mean := reduceMeanLastGeneralWf x h_rank h_valid
+  let mean := reduceMeanLast x h_valid
 
   have h₁ : (Shape.dim seqLen (Shape.dim embedDim Shape.scalar)).rank = 2 := by
     simp [Spec.Shape.rank]
 
-  have h4 : Shape.CanBroadcastTo (.dim seqLen .scalar) (.dim seqLen (.dim embedDim .scalar)) := by
-    apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.expand_dims
-    exact Shape.CanBroadcastTo.scalar_to_any .scalar
-
-  let mean_broadcast := broadcastTo h4 mean
+  let mean_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) mean
   let centered := subSpec x mean_broadcast
 
-  have inst : Shape.valid_axis_inst (Spec.Shape.rank (.dim seqLen (.dim embedDim .scalar)) - 1) (.dim
+  have inst : Shape.HasNonemptyAxis (Spec.Shape.rank (.dim seqLen (.dim embedDim .scalar)) - 1) (.dim
     seqLen (.dim embedDim .scalar)) := by
-    apply Shape.validAxisLastAuto
+    apply Shape.inferNonemptyLastAxis
     simp [h₁]
 
-  let varianceRaw := reduceVarLastGeneral centered inst
+  let varianceRaw := reduceVarLast centered inst
   -- Clamp variance to be nonnegative so `std` is always defined/bounded away from 0 even for
   -- approximate numeric contexts (Float/NF) where small negative variance can occur.
   let variance := maxSpec varianceRaw (fill 0 (.dim seqLen .scalar))
 
   let std := sqrtSpec (addSpec variance (fill epsilon (.dim seqLen .scalar)))
 
-  let std_broadcast := broadcastTo h4 std
+  let std_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) std
   let normalized := divSpec centered std_broadcast
 
   have h5 : Shape.CanBroadcastTo (.dim embedDim .scalar) (.dim seqLen (.dim embedDim .scalar)) := by
     apply Shape.CanBroadcastTo.expand_dims
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
+    exact Shape.CanBroadcastTo.scalar
 
   let gamma_broadcast := broadcastTo h5 gamma
   let beta_broadcast := broadcastTo h5 beta
@@ -142,7 +136,7 @@ def layerNormBackward
   (gamma : Tensor α (.dim embedDim .scalar))
   (_beta : Tensor α (.dim embedDim .scalar))
   (grad_output : Tensor α (.dim seqLen (.dim embedDim .scalar)))
-  (epsilon : α := Numbers.epsilon) :
+  (epsilon : α := Numbers.normalizationEpsilon) :
   (Tensor α (.dim seqLen (.dim embedDim .scalar)) ×  -- ∂L/∂x
    Tensor α (.dim embedDim .scalar) ×                 -- ∂L/∂gamma
    Tensor α (.dim embedDim .scalar)) :=               -- ∂L/∂beta := sum of grad_output
@@ -153,9 +147,9 @@ def layerNormBackward
 
   let s := Shape.dim seqLen (Shape.dim embedDim Shape.scalar)
   let h_rank : Spec.Shape.rank s > 0 := by simp [s, Spec.Shape.rank]
-  let h_valid : Shape.valid_axis_inst (Spec.Shape.rank s - 1) s := Shape.validAxisLastAuto h_rank
+  let h_valid : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s := Shape.inferNonemptyLastAxis h_rank
 
-  let mean := reduceMeanLastGeneralWf x h_rank h_valid
+  let mean := reduceMeanLast x h_valid
 
   have h₁ : (Shape.dim seqLen (Shape.dim embedDim Shape.scalar)).rank = 2 := by
     simp [Spec.Shape.rank]
@@ -170,40 +164,33 @@ def layerNormBackward
     rw [h₁]
     rw [h₂]
 
-  have h4 : Shape.CanBroadcastTo (.dim seqLen .scalar) (.dim seqLen (.dim embedDim .scalar)) := by
-    apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.expand_dims
-    exact Shape.CanBroadcastTo.scalar_to_any .scalar
-
-  let mean_broadcast := broadcastTo h4 mean
+  let mean_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) mean
   let centered := subSpec x mean_broadcast
 
-  have inst : Shape.valid_axis_inst (Spec.Shape.rank (.dim seqLen (.dim embedDim .scalar)) - 1) (.dim
+  have inst : Shape.HasNonemptyAxis (Spec.Shape.rank (.dim seqLen (.dim embedDim .scalar)) - 1) (.dim
     seqLen (.dim embedDim .scalar)) := by
-    apply Shape.validAxisLastAuto
+    apply Shape.inferNonemptyLastAxis
     simp [h₁]
 
-  let varianceRaw := reduceVarLastGeneral centered inst
+  let varianceRaw := reduceVarLast centered inst
   let variance := maxSpec varianceRaw (fill 0 (.dim seqLen .scalar))
   let std := sqrtSpec (addSpec variance (fill epsilon (.dim seqLen .scalar)))
   let inv_std := divSpec (fill 1 (.dim seqLen .scalar)) std
 
-  let std_broadcast := broadcastTo h4 std
+  let std_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) std
   let norm := divSpec centered std_broadcast
 
   have h5 : Shape.CanBroadcastTo (.dim embedDim .scalar) (.dim seqLen (.dim embedDim .scalar)) := by
     apply Shape.CanBroadcastTo.expand_dims
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
+    exact Shape.CanBroadcastTo.scalar
 
   -- `gamma` and `beta` have shape `[embedDim]` and are shared across all `seqLen` positions, so
   -- their
   -- gradients sum over the sequence dimension (axis 0).
-  letI : Shape.valid_axis_inst 0 (Shape.dim seqLen (Shape.dim embedDim Shape.scalar)) :=
-    Shape.validAxisInstZeroAlt2 h_seq_pos
-
-  let grad_beta := reduceSumAuto 0 grad_output
-  let grad_gamma := reduceSumAuto 0 (mulSpec grad_output norm)
+  let hSequenceAxis := Shape.hasNonemptyAxisZeroOfPos h_seq_pos
+  let grad_beta := reduceSum 0 grad_output hSequenceAxis.proof
+  let grad_gamma := reduceSum 0 (mulSpec grad_output norm) hSequenceAxis.proof
 
   -- ∂L/∂x: standard LayerNorm VJP, using per-position statistics over the feature dimension.
   --
@@ -216,10 +203,10 @@ def layerNormBackward
   --
   -- where the `mean` is taken over the last dimension (features) for each sequence position.
   let gamma_broadcast := broadcastTo h5 gamma
-  let inv_std_broadcast := broadcastTo h4 inv_std
+  let inv_std_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) inv_std
   let dy_gamma := mulSpec grad_output gamma_broadcast
 
-  let sum_dy_gamma := reduceSumLastGeneral dy_gamma
+  let sum_dy_gamma := reduceSumLast dy_gamma
   -- We interpret `embedDim` as the feature-count `N` in the closed-form LayerNorm VJP.
   --
   -- Note: this relies on the `Context`'s `Coe Nat α` behaving sensibly (in particular, that
@@ -229,11 +216,13 @@ def layerNormBackward
   let N : α := (embedDim : α)
   let mean_dy_gamma := divSpec sum_dy_gamma (fill N (.dim seqLen .scalar))
 
-  let sum_dy_gamma_xhat := reduceSumLastGeneral (mulSpec dy_gamma norm)
+  let sum_dy_gamma_xhat := reduceSumLast (mulSpec dy_gamma norm)
   let mean_dy_gamma_xhat := divSpec sum_dy_gamma_xhat (fill N (.dim seqLen .scalar))
 
-  let mean_dy_gamma_broadcast := broadcastTo h4 mean_dy_gamma
-  let mean_dy_gamma_xhat_broadcast := broadcastTo h4 mean_dy_gamma_xhat
+  let mean_dy_gamma_broadcast :=
+    broadcastAfterSum s (Spec.Shape.rank s - 1) mean_dy_gamma
+  let mean_dy_gamma_xhat_broadcast :=
+    broadcastAfterSum s (Spec.Shape.rank s - 1) mean_dy_gamma_xhat
 
   let grad_x :=
     mulSpec inv_std_broadcast
@@ -259,7 +248,7 @@ def layerNormJvp
   {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : embedDim > 0)
   (x tangent : Tensor α (.dim seqLen (.dim embedDim .scalar)))
   (gamma dgamma _beta dbeta : Tensor α (.dim embedDim .scalar))
-  (epsilon : α := Numbers.epsilon) :
+  (epsilon : α := Numbers.normalizationEpsilon) :
   Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
 
   let _ : Shape.WellFormed (.dim seqLen (.dim embedDim .scalar)) :=
@@ -267,42 +256,38 @@ def layerNormJvp
 
   let s := Shape.dim seqLen (Shape.dim embedDim Shape.scalar)
   let h_rank : Spec.Shape.rank s > 0 := by simp [s, Spec.Shape.rank]
-  let h_valid : Shape.valid_axis_inst (Spec.Shape.rank s - 1) s := Shape.validAxisLastAuto h_rank
+  let h_valid : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s := Shape.inferNonemptyLastAxis h_rank
 
-  let mean := reduceMeanLastGeneralWf x h_rank h_valid
+  let mean := reduceMeanLast x h_valid
 
   have h₁ : (Shape.dim seqLen (Shape.dim embedDim Shape.scalar)).rank = 2 := by
     simp [Spec.Shape.rank]
 
-  have h4 : Shape.CanBroadcastTo (.dim seqLen .scalar) (.dim seqLen (.dim embedDim .scalar)) := by
-    apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.expand_dims
-    exact Shape.CanBroadcastTo.scalar_to_any .scalar
-
-  let mean_broadcast := broadcastTo h4 mean
+  let mean_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) mean
   let centered := subSpec x mean_broadcast
 
-  have inst : Shape.valid_axis_inst (Spec.Shape.rank (.dim seqLen (.dim embedDim .scalar)) - 1) (.dim
+  have inst : Shape.HasNonemptyAxis (Spec.Shape.rank (.dim seqLen (.dim embedDim .scalar)) - 1) (.dim
     seqLen (.dim embedDim .scalar)) := by
-    apply Shape.validAxisLastAuto
+    apply Shape.inferNonemptyLastAxis
     simp [h₁]
 
-  let varianceRaw := reduceVarLastGeneral centered inst
+  let varianceRaw := reduceVarLast centered inst
   let variance := maxSpec varianceRaw (fill 0 (.dim seqLen .scalar))
   let std := sqrtSpec (addSpec variance (fill epsilon (.dim seqLen .scalar)))
   let inv_std := divSpec (fill 1 (.dim seqLen .scalar)) std
-  let inv_std_broadcast := broadcastTo h4 inv_std
+  let inv_std_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) inv_std
   let norm := mulSpec centered inv_std_broadcast
 
-  let sum_tangent := reduceSumLastGeneral tangent
+  let sum_tangent := reduceSumLast tangent
   let N : α := (embedDim : α)
   let mean_tangent := divSpec sum_tangent (fill N (.dim seqLen .scalar))
 
-  let sum_tangent_norm := reduceSumLastGeneral (mulSpec tangent norm)
+  let sum_tangent_norm := reduceSumLast (mulSpec tangent norm)
   let mean_tangent_norm := divSpec sum_tangent_norm (fill N (.dim seqLen .scalar))
 
-  let mean_tangent_broadcast := broadcastTo h4 mean_tangent
-  let mean_tangent_norm_broadcast := broadcastTo h4 mean_tangent_norm
+  let mean_tangent_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) mean_tangent
+  let mean_tangent_norm_broadcast :=
+    broadcastAfterSum s (Spec.Shape.rank s - 1) mean_tangent_norm
 
   let dnorm :=
     mulSpec inv_std_broadcast
@@ -312,7 +297,7 @@ def layerNormJvp
   have h5 : Shape.CanBroadcastTo (.dim embedDim .scalar) (.dim seqLen (.dim embedDim .scalar)) := by
     apply Shape.CanBroadcastTo.expand_dims
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
+    exact Shape.CanBroadcastTo.scalar
 
   let gamma_broadcast := broadcastTo h5 gamma
   let dgamma_broadcast := broadcastTo h5 dgamma
@@ -345,7 +330,7 @@ def groupNorm
   (h_g : groups > 0 := by norm_num)
   (h_ge : channels ≥ groups)
   (h_div : channels % groups = 0)
-  (epsilon : α := Numbers.epsilon) :
+  (epsilon : α := Numbers.normalizationEpsilon) :
   Tensor α (.dim batchSize (.dim height (.dim width (.dim channels .scalar)))) :=
   let channelsPerGroup := channels / groups
   let hw : Nat := height * width
@@ -362,28 +347,32 @@ def groupNorm
     unfold channelsPerGroup
     simp
 
-  -- Reshape to `[batch, groups, channelsPerGroup, height*width]` so:
-  -- - statistics are per `(batch, group)`,
-  -- - `gamma`/`beta` stay aligned to the channel axis.
+  -- Flatten the spatial axes, move channels before space, and only then split channels into groups.
+  -- A direct NHWC-to-group reshape would mix spatial positions with channels in row-major order.
   let s_orig := Shape.dim batchSize (.dim height (.dim width (.dim channels .scalar)))
+  let s_spatial := Shape.dim batchSize (.dim hw (.dim channels .scalar))
+  let s_channel := Shape.dim batchSize (.dim channels (.dim hw .scalar))
   let s_reshaped := Shape.dim batchSize (.dim groups (.dim channelsPerGroup (.dim hw .scalar)))
 
   have _wf : Shape.WellFormed s_orig := ⟨⟨h_b, ⟨h_h, ⟨h_w, ⟨h_c, trivial⟩⟩⟩⟩⟩
   have wf_r : Shape.WellFormed s_reshaped := ⟨⟨h_b, ⟨h_g, ⟨h_cpg_pos, ⟨h_hw, trivial⟩⟩⟩⟩⟩
 
-  have h_reshape : Spec.Shape.size s_orig = Spec.Shape.size s_reshaped := by
-    -- batch * height * width * channels = batch * groups * channelsPerGroup * (height*width)
-    -- and `channels = groups * channelsPerGroup`.
-    simp [s_orig, s_reshaped, Spec.Shape.size, hw, h_ch, Nat.mul_left_comm, Nat.mul_comm]
+  have h_flatten_spatial : Spec.Shape.size s_orig = Spec.Shape.size s_spatial := by
+    simp [s_orig, s_spatial, Spec.Shape.size, hw, Nat.mul_assoc]
+  have h_group : Spec.Shape.size s_channel = Spec.Shape.size s_reshaped := by
+    simp [s_channel, s_reshaped, Spec.Shape.size, h_ch, Nat.mul_comm,
+      Nat.mul_left_comm]
 
-  let x4 := reshapeSpec x h_reshape
+  let xSpatial : Tensor α s_spatial := reshapeSpec x h_flatten_spatial
+  let xChannel : Tensor α s_channel := swapAdjacentAxesWithinLeading xSpatial 0
+  let x4 := reshapeSpec xChannel h_group
 
   -- Mean over spatial axis, then mean over channels within the group.
   letI : Shape.WellFormed s_reshaped := wf_r
   let rank_x4 : Spec.Shape.rank s_reshaped > 0 := by simp [s_reshaped, Spec.Shape.rank]
-  let ax_last_x4 : Shape.valid_axis_inst (Spec.Shape.rank s_reshaped - 1) s_reshaped :=
-    Shape.validAxisLastAuto rank_x4
-  let mean_hw := reduceMeanLastGeneralWf x4 rank_x4 ax_last_x4
+  let ax_last_x4 : Shape.HasNonemptyAxis (Spec.Shape.rank s_reshaped - 1) s_reshaped :=
+    Shape.inferNonemptyLastAxis rank_x4
+  let mean_hw := reduceMeanLast x4 ax_last_x4
 
   let s_mean_hw := Shape.dim batchSize (.dim groups (.dim channelsPerGroup .scalar))
   letI : Shape.WellFormed s_mean_hw := ⟨⟨h_b, ⟨h_g, ⟨h_cpg_pos, trivial⟩⟩⟩⟩
@@ -399,28 +388,23 @@ def groupNorm
   letI : Shape.WellFormed (shapeAfterSum s_reshaped (Spec.Shape.rank s_reshaped - 1)) := wf_after_sum
 
   let rank_mean_hw : Spec.Shape.rank s_mean_hw > 0 := by simp [s_mean_hw, Spec.Shape.rank]
-  let ax_last_mean_hw : Shape.valid_axis_inst (Spec.Shape.rank s_mean_hw - 1) s_mean_hw :=
-    Shape.validAxisLastAuto rank_mean_hw
-  let mean := reduceMeanLastGeneralWf mean_hw rank_mean_hw ax_last_mean_hw
+  let ax_last_mean_hw : Shape.HasNonemptyAxis (Spec.Shape.rank s_mean_hw - 1) s_mean_hw :=
+    Shape.inferNonemptyLastAxis rank_mean_hw
+  let mean := reduceMeanLast mean_hw ax_last_mean_hw
 
-  have cb_mean : Shape.CanBroadcastTo (Shape.dim batchSize (.dim groups .scalar)) s_reshaped := by
-    apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.expand_dims
-    apply Shape.CanBroadcastTo.expand_dims
-    exact Shape.CanBroadcastTo.scalar_to_any .scalar
-
-  let mean_b := broadcastTo cb_mean mean
+  let mean_gc := broadcastAfterSum s_mean_hw (Spec.Shape.rank s_mean_hw - 1) mean
+  let mean_b := broadcastAfterSum s_reshaped (Spec.Shape.rank s_reshaped - 1) mean_gc
   let centered := subSpec x4 mean_b
 
   -- Variance: mean of squared centered values across both axes.
   let centered_sq := mulSpec centered centered
-  let var_hw := reduceMeanLastGeneralWf centered_sq rank_x4 ax_last_x4
-  let variance := reduceMeanLastGeneralWf var_hw rank_mean_hw ax_last_mean_hw
+  let var_hw := reduceMeanLast centered_sq ax_last_x4
+  let variance := reduceMeanLast var_hw ax_last_mean_hw
   let variance := maxSpec variance (fill 0 (Shape.dim batchSize (.dim groups .scalar)))
   let std := sqrtSpec (addSpec variance (fill epsilon (Shape.dim batchSize (.dim groups
     .scalar))))
-  let std_b := broadcastTo cb_mean std
+  let std_gc := broadcastAfterSum s_mean_hw (Spec.Shape.rank s_mean_hw - 1) std
+  let std_b := broadcastAfterSum s_reshaped (Spec.Shape.rank s_reshaped - 1) std_gc
 
   let normalized := divSpec centered std_b
 
@@ -432,19 +416,24 @@ def groupNorm
   let gamma2 := reshapeSpec gamma h_param_reshape
   let beta2 := reshapeSpec beta h_param_reshape
 
-  have cb_params : Shape.CanBroadcastTo (Shape.dim groups (.dim channelsPerGroup .scalar))
-    s_reshaped := by
-    apply Shape.CanBroadcastTo.expand_dims
+  let s_params := Shape.dim 1 (.dim groups (.dim channelsPerGroup (.dim 1 .scalar)))
+  have h_param_keep : Spec.Shape.size (Shape.dim groups (.dim channelsPerGroup .scalar)) =
+      Spec.Shape.size s_params := by simp [s_params, Spec.Shape.size]
+  let gamma4 := reshapeSpec gamma2 h_param_keep
+  let beta4 := reshapeSpec beta2 h_param_keep
+  have cb_params : Shape.CanBroadcastTo s_params s_reshaped := by
+    apply Shape.CanBroadcastTo.dim_1_to_n
     apply Shape.CanBroadcastTo.dim_eq
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.expand_dims
-    exact Shape.CanBroadcastTo.scalar_to_any .scalar
-
-  let gamma_b := broadcastTo cb_params gamma2
-  let beta_b := broadcastTo cb_params beta2
+    apply Shape.CanBroadcastTo.dim_1_to_n
+    exact Shape.CanBroadcastTo.scalar
+  let gamma_b := broadcastTo cb_params gamma4
+  let beta_b := broadcastTo cb_params beta4
 
   let y4 := addSpec (mulSpec normalized gamma_b) beta_b
-  reshapeSpec y4 h_reshape.symm
+  let yChannel : Tensor α s_channel := reshapeSpec y4 h_group.symm
+  let ySpatial : Tensor α s_spatial := swapAdjacentAxesWithinLeading yChannel 0
+  reshapeSpec ySpatial h_flatten_spatial.symm
 
 /-
   Normalize along a specific dimension
@@ -463,26 +452,23 @@ def normalizeAlongDim
   (gamma : Tensor α s)
   (beta : Tensor α s)
   (dim : Nat)
-  (h_valid : Shape.valid_axis_inst dim s)
-  (h_wf : Shape.WellFormed s)
-  (epsilon : α := Numbers.epsilon)
+  (h_valid : Shape.HasNonemptyAxis dim s)
+  (_h_wf : Shape.WellFormed s)
+  (epsilon : α := Numbers.normalizationEpsilon)
   : Tensor α s :=
 
   -- mean shape: shape_after_sum s dimension
-  let mean := reduceMeanAuto dim h_valid x
+  let mean := reduceMean dim x h_valid.proof
 
-  have h_can_broadcast : Shape.CanBroadcastTo (shapeAfterSum s dim) s :=
-    shapeAfterSumBroadcastBack dim h_valid h_wf
-
-  let mean_broadcast := broadcastTo h_can_broadcast mean
+  let mean_broadcast := broadcastAfterSum s dim mean
   -- center x by subtracting mean (broadcasted)
   let centered := subSpec x mean_broadcast
 
   -- variance shape: shape_after_sum s dimension (same shape as mean)
-  let variance := reduceVarAuto dim h_valid centered
+  let variance := reduceVar dim centered h_valid.proof
 
   -- broadcast variance to s for addition of epsilon and sqrt
-  let variance_broadcast := broadcastTo h_can_broadcast variance
+  let variance_broadcast := broadcastAfterSum s dim variance
 
   -- compute std = sqrt(variance + epsilon)
   let std := sqrtSpec (addSpec variance_broadcast (fill epsilon s))
@@ -510,7 +496,7 @@ def rmsNorm {seqLen embedDim : Nat}
   (gamma : Tensor α (.dim embedDim .scalar))
   (h_seq_pos : seqLen > 0 := by norm_num)
   (h_embed_pos : embedDim > 0 := by norm_num)
-  (epsilon : α := Numbers.epsilon) :
+  (epsilon : α := Numbers.normalizationEpsilon) :
   Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
   -- Compute RMS along last dimension
   let squared := squareSpec x
@@ -520,28 +506,22 @@ def rmsNorm {seqLen embedDim : Nat}
   ⟨⟨h_seq_pos, ⟨h_embed_pos, trivial⟩⟩⟩
   let s := Shape.dim seqLen (Shape.dim embedDim Shape.scalar)
   let h_rank : Spec.Shape.rank s > 0 := by simp [s, Spec.Shape.rank]
-  let h_valid : Shape.valid_axis_inst (Spec.Shape.rank s - 1) s := Shape.validAxisLastAuto h_rank
+  let h_valid : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s := Shape.inferNonemptyLastAxis h_rank
 
   -- Compute mean along last dimension (dim = 1)
-  let mean_squared := reduceMeanLastGeneralWf squared h_rank h_valid
+  let mean_squared := reduceMeanLast squared h_valid
   let rms := sqrtSpec (addSpec mean_squared (fill epsilon (.dim seqLen .scalar)))
   -- shape: [seqLen]
 
-  have h_can_broadcast : Shape.CanBroadcastTo (Shape.dim seqLen Shape.scalar) (Shape.dim seqLen
-    (.dim embedDim .scalar)) := by
-    apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.expand_dims
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
-
   -- Normalize by RMS
-  let rms_broadcast := broadcastTo h_can_broadcast rms
+  let rms_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) rms
   let normalized := divSpec x rms_broadcast
 
   have h_gamma_broadcast : Shape.CanBroadcastTo (Shape.dim embedDim Shape.scalar) (Shape.dim seqLen
     (.dim embedDim .scalar)) := by
     apply Shape.CanBroadcastTo.expand_dims
     apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
+    exact Shape.CanBroadcastTo.scalar
 
   -- Scale
   let gamma_broadcast := broadcastTo h_gamma_broadcast gamma
@@ -568,7 +548,7 @@ def weightNorm {inDim outDim : Nat}
   (gamma : Tensor α (.dim outDim .scalar))
   (h_out_pos : outDim > 0 := by norm_num)
   (h_in_pos : inDim > 0 := by norm_num)
-  (epsilon : α := Numbers.epsilon) :
+  (epsilon : α := Numbers.normalizationEpsilon) :
   Tensor α (.dim outDim (.dim inDim .scalar)) :=
 
   -- Compute L2 norm of each row
@@ -579,26 +559,21 @@ def weightNorm {inDim outDim : Nat}
   let s := Shape.dim outDim (Shape.dim inDim Shape.scalar)
   let _ : Shape.WellFormed s := ⟨⟨h_out_pos, ⟨h_in_pos, trivial⟩⟩⟩
 
-  -- `reduce_sum_last_general` infers axis validity via `valid_axis_inst`.
+  -- The selected innermost axis is statically known to be nonempty.
   let h_rank : Spec.Shape.rank s > 0 := by simp [s, Spec.Shape.rank]
-  letI : Shape.valid_axis_inst (Spec.Shape.rank s - 1) s := Shape.validAxisLastAuto h_rank
+  letI : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s := Shape.inferNonemptyLastAxis h_rank
 
-  -- Use reduce_sum_last to compute sum along the last dimension (inDim) for each row
-  let rowSums := reduceSumLastGeneral squared
+  -- Sum each row along its `inDim` axis.
+  let rowSums := reduceSumLast squared
   let rowNorms := sqrtSpec (addSpec rowSums (fill epsilon (.dim outDim .scalar)))
   -- shape: [outDim]
 
-  have h_can_broadcast : Shape.CanBroadcastTo (Shape.dim outDim Shape.scalar) s := by
-    apply Shape.CanBroadcastTo.dim_eq
-    apply Shape.CanBroadcastTo.expand_dims
-    apply Shape.CanBroadcastTo.scalar_to_any .scalar
-
   -- Normalize weights
-  let rowNorms_broadcast := broadcastTo h_can_broadcast rowNorms
+  let rowNorms_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) rowNorms
   let normalized := divSpec weight rowNorms_broadcast
 
   -- Scale
-  let gamma_broadcast := broadcastTo h_can_broadcast gamma
+  let gamma_broadcast := broadcastAfterSum s (Spec.Shape.rank s - 1) gamma
   let result := mulSpec normalized gamma_broadcast
   result
 

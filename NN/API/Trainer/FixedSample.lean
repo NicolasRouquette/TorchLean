@@ -70,7 +70,7 @@ def steps
     let modDef := mkModuleDef model
     let m ← TorchLean.Module.instantiateAs (α := α) modDef cast opts
     let initialLossTensor ← TorchLean.Module.loss (α := α) m sample .nil
-    let beforeLoss := _root_.Spec.Tensor.toScalar initialLossTensor
+    let beforeLoss := _root_.Spec.Tensor.item initialLossTensor
     let opt := mkOptim cast (TorchLean.nn.stateShapes model)
     let bound ← _root_.Runtime.Autograd.TorchLean.Module.bindOptimizer (α := α) m opt
     let watchEvery := TorchLean.Trainer.Manual.CUDAMemory.cadence opts steps cudaMemWatch
@@ -81,11 +81,11 @@ def steps
         TorchLean.Trainer.Manual.CUDAMemory.sample
           opts watchEvery steps (step + 1) memWatch?
     let finalLossTensor ← TorchLean.Module.loss (α := α) m sample .nil
-    let afterLoss := _root_.Spec.Tensor.toScalar finalLossTensor
+    let afterLoss := _root_.Spec.Tensor.item finalLossTensor
     pure { beforeLoss := beforeLoss, afterLoss := afterLoss }
 
-/-- Fixed-sample run over Lean's binary64 `Float`, returning a full per-step curve. -/
-def curveFloat64
+/-- Fixed-sample run over Lean's `Float`, returning a full per-step loss curve. -/
+def curve
     {σ τ : Spec.Shape}
     (mkModel : TorchLean.nn.Builder (TorchLean.nn.Sequential σ τ))
     (mkModuleDef :
@@ -102,7 +102,7 @@ def curveFloat64
     let modDef := mkModuleDef model
     let m ← TorchLean.Module.instantiateAs (α := Float) modDef id opts
     let initialLossTensor ← TorchLean.Module.loss (α := Float) m sample .nil
-    let initialLoss := _root_.Spec.Tensor.toScalar initialLossTensor
+    let initialLoss := _root_.Spec.Tensor.item initialLossTensor
     let opt := mkOptim (TorchLean.nn.stateShapes model)
     let bound ← _root_.Runtime.Autograd.TorchLean.Module.bindOptimizer (α := Float) m opt
     let mut curve : _root_.Runtime.Training.Curve := {}
@@ -116,7 +116,7 @@ def curveFloat64
         TorchLean.Trainer.Manual.CUDAMemory.sample
           opts watchEvery steps (step + 1) memWatch?
       let loss ← TorchLean.Module.loss (α := Float) m sample .nil
-      last := _root_.Spec.Tensor.toScalar loss
+      last := _root_.Spec.Tensor.item loss
       curve := curve.push (step + 1) last
     pure curve
 

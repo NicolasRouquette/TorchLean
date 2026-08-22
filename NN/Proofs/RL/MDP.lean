@@ -300,7 +300,7 @@ theorem bellmanOptimality_abs_sub_le
           (Finset.univ : Finset (Fin nActions)).sup' Finset.univ_nonempty g|
         ≤ bound :=
     abs_sub_le_iff.mpr ⟨sub_le_iff_le_add'.mpr hs1, sub_le_iff_le_add'.mpr hs2⟩
-  simpa [bellmanOptimality, valueAt, Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.toScalar,
+  simpa [bellmanOptimality, valueAt, Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.item,
     f, g, bound] using habs
 
 /-- Bellman optimality is a `γ`-contraction in the finite sup metric. -/

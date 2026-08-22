@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Proofs.GraphAlphaCrownTransferSoundness.Alpha
+public import NN.MLTheory.CROWN.Proofs.GraphCrownCertSoundness
 
 /-!
 # α/β-CROWN Graph Transfer Soundness
@@ -31,6 +32,7 @@ namespace AlphaCrownTransferSoundness
 noncomputable section
 
 open CrownCertSoundness
+open CertSoundness
 
 /--
 Pointwise soundness of the graph-dialect α/β-CROWN transfer rule.
@@ -587,6 +589,45 @@ theorem alphaBetaCrown_transfer_sound
         simpa [hsAlpha, hv] using hA
 
   end
+
+open CrownCertSoundness
+open CertSoundness
+
+/--
+A locally replayed α/β-CROWN certificate encloses every corresponding graph value.
+
+This is the user-facing composition of `alphaBetaCrown_transfer_sound` with the generic graph
+certificate checker. The certificate producer remains untrusted: `hcert` requires its entries to
+agree node-by-node with TorchLean's α/β transfer function.
+-/
+theorem alphaBetaCrown_cert_encloses_semantics
+    (g : Graph) (ps : ParamStore ℝ)
+    (ibp : Array (Option (FlatBox ℝ)))
+    (alpha : Array (Option (FlatVec ℝ)))
+    (beta : Array (Option (Array Int)))
+    (cert : Array (Option (FlatAffineBounds ℝ)))
+    (inputs : Std.HashMap Nat Val)
+    (vals : Array (Option Val))
+    (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputDim .scalar))
+    (htopo : TopoSorted g)
+    (hsem : SemLocalOK (g := g) (ps := ps) (inputs := inputs) vals)
+    (hinputs : InputsMatch (inputs := inputs) (ctx := ctx) x)
+    (hibp : IBPEnclosesVals (ibp := ibp) (vals := vals))
+    (halpha : AlphaOK (alpha := alpha))
+    (hcert : CrownCertLocalOK (g := g) (step := stepAlphaBeta g ps ibp alpha beta ctx) cert) :
+    ∀ id : Nat, id < g.nodes.size →
+      ∀ (b : FlatAffineBounds ℝ) (v : Val),
+        cert[id]! = some b →
+        vals[id]! = some v →
+        EnclosesAtInput (α := ℝ) ctx x b v := by
+  apply crown_checker_encloses_semantics
+    (g := g) (ps := ps) (step := stepAlphaBeta g ps ibp alpha beta ctx)
+    (cert := cert) (inputs := inputs) (vals := vals) (ctx := ctx) (x := x)
+    htopo hsem hcert
+  exact alphaBetaCrown_transfer_sound
+    (g := g) (ps := ps) (ibp := ibp) (alpha := alpha) (beta := beta) (cert := cert)
+    (inputs := inputs) (vals := vals) (ctx := ctx) (x := x)
+    htopo hsem hinputs hibp halpha
 
 end AlphaCrownTransferSoundness
 

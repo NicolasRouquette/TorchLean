@@ -7,14 +7,14 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Layers.Attention
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 
 /-!
 # Attention module wrappers
 
-This file wraps a few attention blocks as `NNModuleSpec`s so we can:
+This file wraps a few attention blocks as `Spec.Module`s so we can:
 
-- compose them with `SpecChain` (shape-safe pipelines), and
+- compose them with `Spec.Module.Chain` (shape-safe pipelines), and
 - attach simple export/pretty-print metadata for examples.
 
 The wrapper below builds a self-attention context with `Q=K=V=x` and no mask, which matches the
@@ -31,18 +31,17 @@ This wrapper stays focused: it is self-attention only (`Q=K=V=x`) with no causal
 @[expose] public section
 
 
-namespace Spec
+namespace Spec.Module
 
 open Tensor
-open ModSpec
 open Shape
 
 variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
 
-/-- Self-attention block (`Q=K=V=x`, no mask) as an `NNModuleSpec`. -/
-def ScaledDotProductAttentionModuleSpec
+/-- Self-attention block (`Q=K=V=x`, no mask) as an `Spec.Module`. -/
+def scaledDotProductSelfAttention
   (n dModel : Nat) (h1 : n ≠ 0) :
-  NNModuleSpec α (.dim n (.dim dModel .scalar)) (.dim n (.dim dModel .scalar)) :=
+  Spec.Module α (.dim n (.dim dModel .scalar)) (.dim n (.dim dModel .scalar)) :=
 { forward := fun x =>
     let ctx : AttentionContext α n n dModel h1 h1 :=
       { Q := x
@@ -51,9 +50,6 @@ def ScaledDotProductAttentionModuleSpec
         mask := none }
     scaledDotProductAttention (α := α) ctx,
   kind := "ScaledDotProductSelfAttention",
-  export_func := {
-    toPyTorch := s!"ScaledDotProductSelfAttention(d_model={dModel})",
-    dimensions := (n, dModel)
-  } }
+  pythonExpr := s!"ScaledDotProductSelfAttention(d_model={dModel})" }
 
-end Spec
+end Spec.Module

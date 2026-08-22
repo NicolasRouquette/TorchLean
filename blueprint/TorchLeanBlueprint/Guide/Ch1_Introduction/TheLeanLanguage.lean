@@ -173,7 +173,7 @@ def point : Tensor Float (shape![2]) :=
 The output is:
 
 ```
-point : Tensor Float (NN.Tensor.shapeOfDims [2])
+point : Tensor Float (Spec.Shape.ofList [2])
 "[0.250000, -0.750000]"
 ```
 

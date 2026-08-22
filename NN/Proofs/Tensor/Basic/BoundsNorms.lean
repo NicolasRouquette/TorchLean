@@ -335,7 +335,7 @@ noncomputable def tensorNormSquared {s : Shape} (t : Tensor ℝ s) : ℝ :=
 
 /-- `tensor_norm_squared t` is nonnegative, since it is a sum of squares. -/
 theorem tensor_norm_squared_nonneg {s : Shape} (t : Tensor ℝ s) :
-  tensorNormSquared t ≥ 0 := by
+  0 ≤ tensorNormSquared t := by
   -- `tensor_norm_squared t = dot t t = sum_spec (mul_spec t t)` is a sum of squares.
   -- We prove non-negativity by structural induction on the shape.
   -- (The recursion follows the definition of `tensor_foldl_spec` used by `sum_spec`.)
@@ -403,16 +403,6 @@ theorem tensor_norm_squared_nonneg {s : Shape} (t : Tensor ℝ s) :
       simpa [tensorNormSquared, dot, sumSpec, mulSpec, map2Spec, tensorFoldlSpec, valuesSq]
         using
         (go_nonneg (k := 0) (acc := (0 : ℝ)) (by exact Nat.zero_le n) (by simp))
-
-/--
-Convenience orientation of `tensor_norm_squared_nonneg`.
-
-Keep this untagged as a simp lemma: the canonical theorem above uses the existing `>=` spelling,
-while downstream analysis proofs often need the `0 ≤ ...` spelling for `Real.sq_sqrt`.
--/
-theorem tensor_norm_squared_nonneg2 {s : Shape} (t : Tensor ℝ s) :
-  0 <= tensorNormSquared t := by
-  simpa [ge_iff_le] using tensor_norm_squared_nonneg (t := t)
 
 /-- `tensor_norm_squared t = 0` iff `t` is the all-zero tensor. -/
 theorem tensor_norm_squared_zero_iff {s : Shape} (t : Tensor ℝ s) :

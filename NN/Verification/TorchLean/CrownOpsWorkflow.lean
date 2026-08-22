@@ -54,11 +54,15 @@ def softmaxXShape : Spec.Shape := .dim softmaxInDim .scalar
 def softmaxYShape : Spec.Shape := .dim softmaxOutDim .scalar
 
 /-- TorchLean model: `Linear -> Softmax`. -/
-def softmaxModel : nn.Sequential softmaxXShape softmaxYShape :=
+def softmaxModel : nn.Sequential softmaxXShape softmaxYShape := by
+  letI : Spec.Shape.AxisInBounds 0 softmaxYShape := by
+    unfold softmaxYShape softmaxOutDim
+    infer_instance
+  exact
   nn.build 0 <|
     nn.Sequential![
       nn.linear softmaxInDim softmaxOutDim,
-      nn.softmaxLast
+      nn.softmax 0
     ]
 
 /-- Parameter shapes for `softmaxModel`. -/
@@ -83,12 +87,12 @@ def runSoftmax {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToStrin
   let cast : Float → α := Runtime.ofFloat
 
   let params : TensorPack α softmaxParamShapes :=
-    tensorpack.pair
+    TensorPack!
       (NN.Tensor.ofListOfLength (α := α) [3, 2]
         [ cast 1.0, cast (-0.5)
         , cast 0.2, cast 0.7
         , cast (-0.3), cast 0.1
-        ] (by rfl))
+        ] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [3] [cast 0.1, cast (-0.2), cast 0.0] (by rfl))
 
   let lowered ←
@@ -191,10 +195,10 @@ def runMSE {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α
   let cast : Float → α := Runtime.ofFloat
 
   let params : TensorPack α mseParamShapes :=
-    tensorpack.triple
+    TensorPack!
       (NN.Tensor.ofListOfLength (α := α) [2, 2]
-        [cast 0.4, cast (-0.3), cast 1.2, cast 0.1] (by rfl))
-      (NN.Tensor.ofListOfLength (α := α) [2] [cast 0.05, cast (-0.02)] (by rfl))
+        [cast 0.4, cast (-0.3), cast 1.2, cast 0.1] (by rfl)),
+      (NN.Tensor.ofListOfLength (α := α) [2] [cast 0.05, cast (-0.02)] (by rfl)),
       (NN.Tensor.ofListOfLength (α := α) [2] [cast 0.0, cast 1.0] (by rfl))
 
   let lowered ←

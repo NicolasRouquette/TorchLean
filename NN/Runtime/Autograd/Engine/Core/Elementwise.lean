@@ -34,12 +34,12 @@ def add {α : Type} [Add α] [DecidableEq Shape] {s : Shape}
   let y := addSpec a b
   let node : Node α :=
     { name := some "add"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        pure [(aId, AnyTensor.mk dLdy), (bId, AnyTensor.mk dLdy)]
+        pure [(aId, Spec.PackedTensor.ofTensor dLdy), (bId, Spec.PackedTensor.ofTensor dLdy)]
     }
   pure (t.addNode node)
 
@@ -51,13 +51,13 @@ def sub {α : Type} [Sub α] [Zero α] [DecidableEq Shape] {s : Shape}
   let y := subSpec a b
   let node : Node α :=
     { name := some "sub"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
         let neg_dLdy : Tensor α s := subSpec (fill (0 : α) s) dLdy
-        pure [(aId, AnyTensor.mk dLdy), (bId, AnyTensor.mk neg_dLdy)]
+        pure [(aId, Spec.PackedTensor.ofTensor dLdy), (bId, Spec.PackedTensor.ofTensor neg_dLdy)]
     }
   pure (t.addNode node)
 
@@ -69,14 +69,14 @@ def mul {α : Type} [Mul α] [DecidableEq Shape] {s : Shape}
   let y := mulSpec a b
   let node : Node α :=
     { name := some "mul"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
         let da : Tensor α s := mulSpec dLdy b
         let db : Tensor α s := mulSpec dLdy a
-        pure [(aId, AnyTensor.mk da), (bId, AnyTensor.mk db)]
+        pure [(aId, Spec.PackedTensor.ofTensor da), (bId, Spec.PackedTensor.ofTensor db)]
     }
   pure (t.addNode node)
 
@@ -97,15 +97,15 @@ def div {α : Type} [Context α] [DecidableEq Shape] {s : Shape}
   let y := divSpec a b
   let node : Node α :=
     { name := some "div"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
         let da : Tensor α s := divSpec dLdy b
         let dLdyA : Tensor α s := mulSpec dLdy (divSpec a (mulSpec b b))
         let db : Tensor α s := subSpec (fill (0 : α) s) dLdyA
-        pure [(aId, AnyTensor.mk da), (bId, AnyTensor.mk db)]
+        pure [(aId, Spec.PackedTensor.ofTensor da), (bId, Spec.PackedTensor.ofTensor db)]
     }
   pure (t.addNode node)
 
@@ -116,12 +116,12 @@ def scale {α : Type} [Mul α] [DecidableEq Shape] {s : Shape}
   let y := scaleSpec x c
   let node : Node α :=
     { name := some "scale"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        pure [(xId, AnyTensor.mk (scaleSpec dLdy c))]
+        pure [(xId, Spec.PackedTensor.ofTensor (scaleSpec dLdy c))]
     }
   pure (t.addNode node)
 
@@ -190,8 +190,8 @@ def max {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   let y := maxSpec (α := α) (s := s) a b
   let node : Node α :=
     { name := some "max"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
@@ -203,8 +203,8 @@ def max {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
           map2Spec (α := α) (β := α) (γ := α) (s := s) (fun x y =>
             if y > x then (1 : α) else if x > y then (0 : α) else half) a b
         pure [
-          (aId, AnyTensor.mk (mulSpec maskA dLdy)),
-          (bId, AnyTensor.mk (mulSpec maskB dLdy))
+          (aId, Spec.PackedTensor.ofTensor (mulSpec maskA dLdy)),
+          (bId, Spec.PackedTensor.ofTensor (mulSpec maskB dLdy))
         ]
     }
   pure (t.addNode node)
@@ -222,8 +222,8 @@ def min {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   let y := minSpec (α := α) (s := s) a b
   let node : Node α :=
     { name := some "min"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
@@ -235,8 +235,8 @@ def min {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
           map2Spec (α := α) (β := α) (γ := α) (s := s) (fun x y =>
             if x > y then (1 : α) else if y > x then (0 : α) else half) a b
         pure [
-          (aId, AnyTensor.mk (mulSpec maskA dLdy)),
-          (bId, AnyTensor.mk (mulSpec maskB dLdy))
+          (aId, Spec.PackedTensor.ofTensor (mulSpec maskA dLdy)),
+          (bId, Spec.PackedTensor.ofTensor (mulSpec maskB dLdy))
         ]
     }
   pure (t.addNode node)
@@ -254,12 +254,12 @@ def relu {α : Type}
   let y := Activation.reluSpec (α:=α) x
   let node : Node α :=
     { name := some "relu"
-      value := AnyTensor.mk y
-      requires_grad := true
+      value := Spec.PackedTensor.ofTensor y
+      requiresGrad := true
       parents := [xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
         let drelu := Activation.reluDerivSpec (α:=α) x
-        pure [(xId, AnyTensor.mk (mulSpec drelu dLdy))]
+        pure [(xId, Spec.PackedTensor.ofTensor (mulSpec drelu dLdy))]
     }
   pure (t.addNode node)

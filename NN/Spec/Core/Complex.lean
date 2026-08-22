@@ -108,10 +108,10 @@ instance [Context α] : Coe Nat (Complex α) where
   coe n := ofReal (n : α)
 
 instance [Numbers α] [Zero α] : Numbers (Complex α) where
-  neg_point_five := ofReal Numbers.neg_point_five
-  neg_one := ofReal Numbers.neg_one
-  pointone := ofReal Numbers.pointone
-  pointfive := ofReal Numbers.pointfive
+  negHalf := ofReal Numbers.negHalf
+  negOne := ofReal Numbers.negOne
+  oneTenth := ofReal Numbers.oneTenth
+  half := ofReal Numbers.half
   one := ofReal Numbers.one
   zero := ofReal Numbers.zero
   two := ofReal Numbers.two
@@ -119,8 +119,8 @@ instance [Numbers α] [Zero α] : Numbers (Complex α) where
   four := ofReal Numbers.four
   five := ofReal Numbers.five
   ten := ofReal Numbers.ten
-  log10 := ofReal Numbers.log10
-  log10000 := ofReal Numbers.log10000
+  lnTen := ofReal Numbers.lnTen
+  lnTenThousand := ofReal Numbers.lnTenThousand
   epsilon := ofReal Numbers.epsilon
 
 /-! ## Transcendentals -/
@@ -195,7 +195,7 @@ instance [Context α] : Pow (Complex α) (Complex α) where
 
 /-- Lift a scalar `Context` to TorchLean complex scalars. -/
 instance [Context α] : Context (Complex α) where
-  decidable_gt := fun x y => (Context.decidable_gt) x.re y.re
+  decidableGT := fun x y => (Context.decidableGT) x.re y.re
 
 end Complex
 

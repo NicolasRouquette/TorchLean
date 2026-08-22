@@ -16,7 +16,7 @@ that structure visible: an edge family first expands every scalar input into bas
 KAN layer learns one coefficient per `(output, input, basis)` edge.
 
 The first built-in family uses triangular piecewise-linear hats. Users can add another family by
-constructing `KANEdgeFamily`: provide a basis dimension and a TorchLean model that maps
+constructing `KanEdgeFamily`: provide a basis dimension and a TorchLean model that maps
 `Vec inDim` to `Vec (inDim * basisDim)`.
 
 References:
@@ -43,7 +43,7 @@ a learned linear map to all expanded features. The basis is a TorchLean model fr
 arbitrary Lean callback, so the resulting KAN can run in eager, typed graph, CPU, and CUDA training
 paths supported by the underlying operations.
 -/
-structure KANEdgeFamily where
+structure KanEdgeFamily where
   /-- Short label shown in model summaries and training metadata. -/
   name : String
   /-- Number of basis features produced per scalar input coordinate. -/
@@ -59,7 +59,7 @@ The basis functions are hats centered at the integer knots $0,\ldots,\mathrm{gri
 multiplied by `inputScale` before the hats are evaluated. For normalized data in $[0,1]$, setting
 $\mathrm{inputScale}=\mathrm{gridSize}-1$ spreads the grid across the full interval.
 -/
-structure KANPiecewiseLinear where
+structure KanPiecewiseLinear where
   /-- Number of knots, hence the number of basis functions per scalar coordinate. -/
   gridSize : Nat
   /-- Scale applied before basis evaluation; use $\mathrm{gridSize}-1$ for normalized $[0,1]$
@@ -67,7 +67,7 @@ structure KANPiecewiseLinear where
   inputScale : Nat := 1
 deriving Repr
 
-namespace KANPiecewiseLinear
+namespace KanPiecewiseLinear
 
 /--
 Expand `x : Vec inDim` to all triangular basis features.
@@ -80,7 +80,7 @@ Each basis value is
 $\operatorname{ReLU}(1-|\mathrm{inputScale}\,x_i-k|)$, expressed directly in the ordinary
 TorchLean op language rather than through an opaque spline evaluator.
 -/
-def basisLayer (cfg : KANPiecewiseLinear) (inDim : Nat) :
+def basisLayer (cfg : KanPiecewiseLinear) (inDim : Nat) :
     nn.Sequential (.dim inDim .scalar) (.dim (inDim * cfg.gridSize) .scalar) :=
   nn.of
     { kind := s!"KANPiecewiseLinear(grid={cfg.gridSize},scale={cfg.inputScale})"
@@ -126,17 +126,15 @@ def basisLayer (cfg : KANPiecewiseLinear) (inDim : Nat) :
     }
 
 /-- Turn piecewise-linear triangular bases into a general KAN edge family. -/
-def edgeFamily (cfg : KANPiecewiseLinear) : KANEdgeFamily :=
+def edgeFamily (cfg : KanPiecewiseLinear) : KanEdgeFamily :=
   { name := s!"piecewise-linear(grid={cfg.gridSize},scale={cfg.inputScale})"
     basisDim := cfg.gridSize
     basis := basisLayer cfg }
 
-end KANPiecewiseLinear
+end KanPiecewiseLinear
 
-/-- Configuration for a KAN over batched row vectors. -/
-structure KANConfig where
-  /-- Leading minibatch dimension. -/
-  batch : Nat
+/-- Architecture of a Kolmogorov-Arnold network over feature vectors. -/
+structure KanConfig where
   /-- Number of scalar input coordinates. -/
   inDim : Nat
   /-- Hidden KAN widths. Each entry creates one KAN layer followed by `tanh`. -/
@@ -144,49 +142,57 @@ structure KANConfig where
   /-- Number of output coordinates/classes. -/
   outDim : Nat
   /-- Edge basis family. The default is a compact triangular piecewise-linear basis. -/
-  edge : KANEdgeFamily := KANPiecewiseLinear.edgeFamily { gridSize := 8 }
+  edge : KanEdgeFamily := KanPiecewiseLinear.edgeFamily { gridSize := 8 }
 
-/-- Input shape `(batch × inDim)` for a KAN config. -/
-abbrev kanInShape (cfg : KANConfig) : Spec.Shape :=
-  .dim cfg.batch (.dim cfg.inDim .scalar)
+namespace KanConfig
 
-/-- Output shape `(batch × outDim)` for a KAN config. -/
-abbrev kanOutShape (cfg : KANConfig) : Spec.Shape :=
-  .dim cfg.batch (.dim cfg.outDim .scalar)
+/-- Input shape with arbitrary leading dimensions. -/
+abbrev inputShape (cfg : KanConfig) (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.concat (.dim cfg.inDim .scalar)
+
+/-- Output shape with the same leading dimensions as the input. -/
+abbrev outputShape (cfg : KanConfig) (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.concat (.dim cfg.outDim .scalar)
+
+end KanConfig
 
 /--
-One unbatched KAN layer.
+One KAN layer over a feature vector.
 
 The layer first applies the selected edge basis to every input coordinate, then learns coefficients
 with an ordinary linear map from the expanded features to `outDim`.
 -/
-def kanLayer (inDim outDim : Nat) (edge : KANEdgeFamily) :
+def kanLayer (inDim outDim : Nat) (edge : KanEdgeFamily) :
     nn.Builder (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
   nn.Sequential![
     nn.lift (edge.basis inDim),
     nn.linear (inDim * edge.basisDim) outDim
   ]
 
-/-- Recursive unbatched KAN stack. Hidden layers use `tanh`; the final layer is linear in bases. -/
-def kanGo (edge : KANEdgeFamily) :
+namespace Internal
+
+/-- Recursive KAN stack over one feature vector. Hidden layers use `tanh`. -/
+def kanStack (edge : KanEdgeFamily) :
     (inDim : Nat) → (hidden : List Nat) → (outDim : Nat) →
       nn.Builder (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar))
   | inDim, [], outDim => kanLayer inDim outDim edge
   | inDim, h :: hs, outDim =>
-      nn.Sequential![kanLayer inDim h edge, nn.tanh, kanGo edge h hs outDim]
+      nn.Sequential![kanLayer inDim h edge, nn.tanh, kanStack edge h hs outDim]
+
+end Internal
 
 /--
-Build a batched KAN model.
+Build a KAN over arbitrary leading dimensions.
 
 Task semantics are deliberately not baked into the model name: use `Trainer.new` with
-`task := .regression`, `.oneHotCrossEntropy`, or `.custom ...` with the same KAN
+`task := .regression`, `.oneHotCrossEntropy axis`, or `.custom ...` with the same KAN
 constructor.
 -/
-def kan (cfg : KANConfig) :
-    nn.Builder (nn.Sequential (kanInShape cfg) (kanOutShape cfg)) :=
+def kan (cfg : KanConfig) (leading : Spec.Shape := .scalar) :
+    nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
   do
-    let sample ← kanGo cfg.edge cfg.inDim cfg.hidden cfg.outDim
-    nn.mapLeading (.dim cfg.batch .scalar) sample
+    let sample ← Internal.kanStack cfg.edge cfg.inDim cfg.hidden cfg.outDim
+    nn.mapLeading leading sample
 
 end models
 end nn

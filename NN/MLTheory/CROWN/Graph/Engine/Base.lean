@@ -70,14 +70,6 @@ structure MatParams (α : Type) [Context α] where
   /-- Weight matrix `W` (shape `m × n`). -/
   w : Tensor α (.dim m (.dim n .scalar))
 
-/-- Conv2D parameters with cached spatial dimensions for graph propagation. -/
-abbrev Conv2DParams (α : Type) [Context α] : Type :=
-  NN.IR.Conv2DParams α
-
-/-- Eval-mode BatchNorm2d parameters for an `N×C×H×W` node. -/
-abbrev BatchNorm2DNchwEvalParams (α : Type) [Context α] : Type :=
-  NN.IR.BatchNorm2DNchwEvalParams α
-
 /-- Channel index for a flattened `N×C×H×W` tensor in row-major order. -/
 def nchwChannelOfFlat (c h w idx : Nat) : Nat :=
   if h * w = 0 then
@@ -86,13 +78,13 @@ def nchwChannelOfFlat (c h w idx : Nat) : Nat :=
     (idx / (h * w)) % c
 
 /-- Eval BatchNorm scale for one channel. -/
-def batchNorm2dNchwEvalScale (cfg : BatchNorm2DNchwEvalParams α) (ci : Fin cfg.c) : α :=
+def batchNorm2dNchwEvalScale (cfg : NN.IR.BatchNorm2dNchwEvalParams α) (ci : Fin cfg.c) : α :=
   match getAtSpec cfg.gamma ci, getAtSpec cfg.var ci with
   | .scalar gamma, .scalar var =>
       gamma / MathFunctions.sqrt (max var Numbers.zero + cfg.eps)
 
 /-- Eval BatchNorm bias for one channel after folding running statistics into an affine map. -/
-def batchNorm2dNchwEvalBias (cfg : BatchNorm2DNchwEvalParams α) (ci : Fin cfg.c) : α :=
+def batchNorm2dNchwEvalBias (cfg : NN.IR.BatchNorm2dNchwEvalParams α) (ci : Fin cfg.c) : α :=
   match getAtSpec cfg.beta ci, getAtSpec cfg.mean ci with
   | .scalar beta, .scalar mean =>
       beta - mean * batchNorm2dNchwEvalScale (α := α) cfg ci
@@ -104,7 +96,7 @@ The IR stores the channel parameters in the node payload. The spatial dimensions
 checked parent shape, so malformed shapes produce no verifier transfer rule.
 -/
 def batchNorm2dNchwEvalLinear? (parentShape : Shape)
-    (cfg : BatchNorm2DNchwEvalParams α) : Option (LinParams α) :=
+    (cfg : NN.IR.BatchNorm2dNchwEvalParams α) : Option (LinParams α) :=
   match parentShape with
   | .dim _n (.dim c (.dim h (.dim w .scalar))) =>
       if hcfg : cfg.c = 0 then
@@ -143,9 +135,9 @@ structure ParamStore (α : Type) [Context α] where
   /-- Matmul params (`id -> W`) for bias-free multiplication. -/
   matmulW    : Std.HashMap Nat (MatParams α) := Std.HashMap.emptyWithCapacity
   /-- Conv2d specs (`id -> conv configuration`). -/
-  conv2dCfg  : Std.HashMap Nat (Conv2DParams α) := Std.HashMap.emptyWithCapacity
+  conv2dCfg  : Std.HashMap Nat (NN.IR.Conv2dParams α) := Std.HashMap.emptyWithCapacity
   /-- Eval-mode BatchNorm2d parameters (`id -> gamma/beta/running stats`). -/
-  batchNorm2dNchwEval : Std.HashMap Nat (BatchNorm2DNchwEvalParams α) :=
+  batchNorm2dNchwEval : Std.HashMap Nat (NN.IR.BatchNorm2dNchwEvalParams α) :=
     Std.HashMap.emptyWithCapacity
 
 namespace ParamStore
@@ -176,7 +168,7 @@ instance : Inhabited (FlatBox α) where
     .scalar) }
 
 /-- Elementwise product of two FlatBoxes (interval product per component). Requires equal dims. -/
-@[expose] public def box_mul_elem (B1 B2 : FlatBox α) : Option (FlatBox α) :=
+@[expose] public def boxMulElem (B1 B2 : FlatBox α) : Option (FlatBox α) :=
   match B1, B2 with
   | ⟨n1, l1, u1⟩, ⟨n2, l2, u2⟩ =>
     if h : n1 = n2 then
@@ -209,7 +201,7 @@ instance : Inhabited (FlatBox α) where
 
 /-- Chain-rule multiplication for derivative intervals. Returns `none` on dimension mismatch. -/
 def chainMul (dZ dF : FlatBox α) : Option (FlatBox α) :=
-  box_mul_elem (α:=α) dZ dF
+  boxMulElem (α:=α) dZ dF
 
 /-- Convert a dependent `Box` of shape `.dim n .scalar` into a `FlatBox` with `dim := n`. -/
 @[expose]
@@ -223,7 +215,7 @@ public def ofFlatBox (B : FlatBox α) : Box α (.dim B.dim .scalar) :=
 
 /-- Add two flat interval boxes coordinatewise; dimension mismatches preserve the left box. -/
 @[expose]
-public def box_add (B1 B2 : FlatBox α) : FlatBox α :=
+public def boxAdd (B1 B2 : FlatBox α) : FlatBox α :=
   match B1 with
   | ⟨n1, lo1, hi1⟩ =>
     match B2 with
@@ -240,7 +232,7 @@ public def box_add (B1 B2 : FlatBox α) : FlatBox α :=
 
 /-- Interval subtraction on `FlatBox` endpoints (sound enclosure). -/
 @[expose]
-public def box_sub (B1 B2 : FlatBox α) : FlatBox α :=
+public def boxSub (B1 B2 : FlatBox α) : FlatBox α :=
   match B1 with
   | ⟨n1, lo1, hi1⟩ =>
     match B2 with
@@ -290,7 +282,7 @@ def boxMean? [NonlinearBoundOps α] (B : FlatBox α) : Option (FlatBox α) := do
 
 /-- Apply ReLU to both endpoints of a `FlatBox` (monotone activation, so endpoints suffice). -/
 @[expose]
-public def box_relu (B : FlatBox α) : FlatBox α :=
+public def boxRelu (B : FlatBox α) : FlatBox α :=
   { dim := B.dim
     lo := Tensor.mapSpec (fun x => Activation.Math.reluSpec (α := α) x) B.lo
     hi := Tensor.mapSpec (fun x => Activation.Math.reluSpec (α := α) x) B.hi }
@@ -468,19 +460,6 @@ def boxNeg (B : FlatBox α) : FlatBox α :=
     lo := Tensor.mapSpec (fun x => -x) B.hi
     hi := Tensor.mapSpec (fun x => -x) B.lo }
 
-/-- Dynamic tensor value used while reshaping and permuting flattened boxes. -/
-abbrev FlatDVal (α : Type) [Context α] : Type :=
-  Spec.PackedTensor α
-
-/-- Shape projection for `FlatDVal`. -/
-def flatDValShape {α : Type} [Context α] (v : FlatDVal α) : Shape :=
-  Spec.PackedTensor.shape v
-
-/-- Tensor projection for `FlatDVal`, preserving the dependent shape stored beside it. -/
-def flatDValTensor {α : Type} [Context α] (v : FlatDVal α) :
-    Tensor α (flatDValShape (α := α) v) :=
-  Spec.PackedTensor.tensor v
-
 /-- Decompose an axis permutation into adjacent swaps, rejecting invalid permutations. -/
 def swapDepthsForPerm? (perm : List Nat) (r : Nat) : Option (List Nat) :=
   let rec bubbleLeft (cur : List Nat) (swapsRev : List Nat) (i j : Nat) : List Nat × List Nat :=
@@ -503,10 +482,10 @@ def swapDepthsForPerm? (perm : List Nat) (r : Nat) : Option (List Nat) :=
   else
     none
 
-/-- Apply a full axis permutation to a dynamic tensor value when the permutation is valid. -/
-def permuteDVal? {α : Type} [Context α] (v : FlatDVal α) (perm : List Nat) :
-    Option (FlatDVal α) :=
-  let sIn := flatDValShape (α := α) v
+/-- Apply a full axis permutation to a shape-tagged tensor when the permutation is valid. -/
+def permutePackedTensor? {α : Type} [Context α]
+    (v : Spec.PackedTensor α) (perm : List Nat) : Option (Spec.PackedTensor α) :=
+  let sIn := v.shape
   match Spec.Shape.permute? sIn perm with
   | none => none
   | some _ =>
@@ -600,18 +579,22 @@ def lastDimLen : Shape → Nat
 /-- Runtime witness that one shape can broadcast to another. -/
 def mkCanBroadcastTo? : (s₁ s₂ : Shape) → Option (Shape.CanBroadcastTo s₁ s₂)
   | s₁, s₂ =>
-    if Spec.Shape.rank s₁ < Spec.Shape.rank s₂ then
+    if hlt : Spec.Shape.rank s₁ < Spec.Shape.rank s₂ then
       match s₂ with
       | .scalar => none
       | .dim n₂ t₂ =>
         (mkCanBroadcastTo? s₁ t₂).map (fun tail =>
           Shape.CanBroadcastTo.expand_dims (n := n₂) (s₁ := s₁) (s₂ := t₂) tail)
-    else if Spec.Shape.rank s₂ < Spec.Shape.rank s₁ then
+    else if hgt : Spec.Shape.rank s₂ < Spec.Shape.rank s₁ then
       none
     else
       match s₁, s₂ with
-      | .scalar, s₂ => some (.scalar_to_any s₂)
+      | .scalar, .scalar => some .scalar
       | .dim n₁ t₁, .dim n₂ t₂ =>
+          letI : Shape.SameRank t₁ t₂ := ⟨by
+            apply Nat.le_antisymm
+            · exact Nat.le_of_not_gt (by simpa [Spec.Shape.rank] using hgt)
+            · exact Nat.le_of_not_gt (by simpa [Spec.Shape.rank] using hlt)⟩
           if hEq : n₁ = n₂ then
             (mkCanBroadcastTo? t₁ t₂).map (fun tail =>
               hEq ▸ Shape.CanBroadcastTo.dim_eq (n := n₁) (s₁ := t₁) (s₂ := t₂) tail)
@@ -649,10 +632,10 @@ def ibpBroadcastTo (s₁ s₂ : Shape) (Xin : FlatBox α) : Option (FlatBox α) 
 /-- IBP rule for reducing a shaped box by summing along one axis. -/
 def ibpReduceSumAxis (axis : Nat) (Xin : FlatBox α) (s : Shape) : Option (FlatBox α) :=
   if h : Xin.dim = Spec.Shape.size s then
-    match Spec.Shape.validAxis? (axis := axis) s with
+    match Spec.Shape.nonemptyAxis? (axis := axis) s with
     | none => none
     | some hAxis =>
-        let hRed := Shape.proveReducibleAlong axis s hAxis.down
+        let hRed := hAxis.down
         let xLo : Tensor α s := ibpUnflatten (α := α) (s := s) Xin.dim Xin.lo h
         let xHi : Tensor α s := ibpUnflatten (α := α) (s := s) Xin.dim Xin.hi h
         let yLo := Tensor.reduceSum (α := α) (s := s) axis xLo hRed
@@ -667,10 +650,10 @@ def ibpReduceSumAxis (axis : Nat) (Xin : FlatBox α) (s : Shape) : Option (FlatB
 /-- IBP rule for reducing a shaped box by averaging along one axis. -/
 def ibpReduceMeanAxis (axis : Nat) (Xin : FlatBox α) (s : Shape) : Option (FlatBox α) :=
   if h : Xin.dim = Spec.Shape.size s then
-    match Spec.Shape.validAxis? (axis := axis) s with
+    match Spec.Shape.nonemptyAxis? (axis := axis) s with
     | none => none
     | some hAxis =>
-        let hRed := Shape.proveReducibleAlong axis s hAxis.down
+        let hRed := hAxis.down
         let xLo : Tensor α s := ibpUnflatten (α := α) (s := s) Xin.dim Xin.lo h
         let xHi : Tensor α s := ibpUnflatten (α := α) (s := s) Xin.dim Xin.hi h
         let yLo := Tensor.reduceMean (α := α) (s := s) axis xLo hRed
@@ -978,14 +961,14 @@ public def ibpLinearParams (p : LinParams α) (Xin : FlatBox α) : Option (FlatB
 
 /-- IBP propagation for a `.linear` node using `ParamStore.linearWB`. -/
 @[expose]
-public def ibp_linear (id : Nat) (ps : ParamStore α) (Xin : FlatBox α) : Option (FlatBox α) :=
+public def ibpLinear (id : Nat) (ps : ParamStore α) (Xin : FlatBox α) : Option (FlatBox α) :=
   match ps.linearWB[id]? with
   | none => none
   | some p => ibpLinearParams (α := α) p Xin
 
 /-- IBP propagation for a `.matmul` node (bias-free) using `ParamStore.matmulW`. -/
 @[expose]
-public def ibp_matmul (id : Nat) (ps : ParamStore α) (Xin : FlatBox α) : Option (FlatBox α) :=
+public def ibpMatmul (id : Nat) (ps : ParamStore α) (Xin : FlatBox α) : Option (FlatBox α) :=
   match ps.matmulW[id]? with
   | none => none
   | some p =>

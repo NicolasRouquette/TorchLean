@@ -7,7 +7,6 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Context
-public import NN.Runtime.Scalar
 
 public import NN.Spec.Autograd.AutogradSpec
 public import NN.Spec.Autograd.Ops
@@ -19,7 +18,6 @@ public import NN.Runtime.Autograd.Engine
 public import NN.Runtime.Autograd.Torch
 public import NN.Runtime.Autograd.TorchLean
 public import NN.Runtime.Autograd.Train
-public import NN.Runtime.Autograd.Utils
 
 public import NN.Runtime.External
 public import NN.Runtime.PyTorch

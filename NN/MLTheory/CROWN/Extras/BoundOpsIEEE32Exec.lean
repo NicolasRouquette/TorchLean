@@ -65,9 +65,9 @@ instance (priority := 1000) : NonlinearBoundOps IEEE32Exec where
       let lo' := if lo > Numbers.zero then lo else Numbers.zero
       some (IEEE32Exec.sqrtDown lo', IEEE32Exec.sqrtUp hi)
   sigmoidBounds := fun _ _ => some (Numbers.zero, Numbers.one)
-  tanhBounds := fun _ _ => some (Numbers.neg_one, Numbers.one)
-  sinBounds := fun _ _ => some (Numbers.neg_one, Numbers.one)
-  cosBounds := fun _ _ => some (Numbers.neg_one, Numbers.one)
+  tanhBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
+  sinBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
+  cosBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
   layerNormAbsBound := fun _ => none
   supportsIdealCoupledDerivatives := false
 

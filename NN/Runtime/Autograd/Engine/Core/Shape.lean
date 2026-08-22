@@ -7,7 +7,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Engine.Core.Core
+public import NN.Runtime.Autograd.Engine.Core.Base
 
 /-!
 Shape-changing eager-engine operations.
@@ -104,9 +104,9 @@ def swapAdjacentAtDepth {α : Type} [DecidableEq Shape] {s : Shape}
   (t : Tape α) (depth : Nat) (xId : Nat) : Result (Tape α × Nat) :=
   unary (α := α) (t := t) (σ := s) (τ := s.swapAdjacentAtDepth depth)
     "swapAdjacentAtDepth" xId
-    (forward := fun x => Spec.Tensor.swapAtDepthHelper (tensor := x) depth)
+    (forward := fun x => Spec.Tensor.swapAdjacentAxes (tensor := x) depth)
     (backward := fun _x dLdz =>
-      let dx' := Spec.Tensor.swapAtDepthHelper (tensor := dLdz) depth
+      let dx' := Spec.Tensor.swapAdjacentAxes (tensor := dLdz) depth
       Tensor.castShape dx' (by simpa using (Spec.Shape.swapAdjacentAtDepth_involutive s depth)))
 
 /--
@@ -128,14 +128,13 @@ Sum-reduce along `axis`.
 PyTorch comparison: `torch.sum(x, dim=axis)`.
 -/
 def reduceSum {α : Type} [Add α] [Zero α] [Inhabited α] [DecidableEq Shape]
-  {s : Shape} (axis : Nat) [valid : Shape.valid_axis_inst axis s] [wf : Shape.WellFormed s]
+  {s : Shape} (axis : Nat) [_valid : Shape.HasNonemptyAxis axis s]
+  [_wf : Shape.WellFormed s]
   (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
   unary (α := α) (t := t) (σ := s) (τ := shapeAfterSum s axis)
     s!"reduce_sum(axis={axis})" xId
-    (forward := fun x => reduceSumAuto (α := α) (s := s) axis x)
-    (backward := fun _x dLdz =>
-      let cb := shapeAfterSumBroadcastBack (s := s) axis valid wf
-      Spec.Tensor.broadcastTo (α := α) cb dLdz)
+    (forward := fun x => Spec.Tensor.reduceSum (α := α) (s := s) axis x _valid.proof)
+    (backward := fun _x dLdz => Spec.Tensor.broadcastAfterSum s axis dLdz)
 
 /--
 Mean-reduce along `axis`.
@@ -144,18 +143,15 @@ Backward rule: broadcast the upstream cotangent back to `s` and divide by the re
 PyTorch comparison: `torch.mean(x, dim=axis)`.
 -/
 def reduceMean {α : Type} [Context α] [DecidableEq Shape]
-  {s : Shape} (axis : Nat) [valid : Shape.valid_axis_inst axis s] [wf : Shape.WellFormed s]
+  {s : Shape} (axis : Nat) [valid : Shape.HasNonemptyAxis axis s] [_wf : Shape.WellFormed s]
   (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
   unary (α := α) (t := t) (σ := s) (τ := shapeAfterSum s axis)
     s!"reduce_mean(axis={axis})" xId
     (forward := fun x =>
-      let h := Shape.proveReducibleAlong axis s valid.proof
+      let h := valid.proof
       Spec.Tensor.reduceMean (α := α) (s := s) axis x h)
     (backward := fun _x dLdz =>
-      let cb := shapeAfterSumBroadcastBack (s := s) axis valid wf
-      let dLdx := Spec.Tensor.broadcastTo (α := α) cb dLdz
-      let denomNat :=
-        match getDimSize s axis with
-        | some n => n
-        | none => 1
+      let dLdx := Spec.Tensor.broadcastAfterSum s axis dLdz
+      letI : Shape.AxisInBounds axis s := valid.proof.toAxisInBounds
+      let denomNat := Shape.axisSize s axis
       Spec.Tensor.scaleSpec (α := α) (s := s) dLdx (1 / (denomNat : α)))

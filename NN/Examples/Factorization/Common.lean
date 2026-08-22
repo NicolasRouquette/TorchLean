@@ -26,7 +26,7 @@ namespace NN.Examples.Factorization
 
 /-- Build an `m × n` `Float` matrix tensor from a row-major nested list. Missing entries are `0`. -/
 def mkMat {m n : Nat} (rows : List (List Float)) : Spec.Tensor Float (.dim m (.dim n .scalar)) :=
-  Spec.ofMatFn (fun i j => (rows.getD i.val []).getD j.val 0.0)
+  Spec.Tensor.matrix (fun i j => (rows.getD i.val []).getD j.val 0.0)
 
 /-- Maximum entrywise absolute difference between two `m × n` matrices. -/
 def maxMatErr {m n : Nat} (A B : Spec.Tensor Float (.dim m (.dim n .scalar))) : Float :=
@@ -46,7 +46,7 @@ def tr {m n : Nat} (A : Spec.Tensor Float (.dim m (.dim n .scalar))) :
 
 /-- Read a vector tensor back out as a `List Float` (for display). -/
 def vecToList {n : Nat} (v : Spec.Tensor Float (.dim n .scalar)) : List Float :=
-  (List.finRange n).map (fun i => Spec.Tensor.toScalar (Spec.get v i))
+  (List.finRange n).map (fun i => Spec.Tensor.item (Spec.get v i))
 
 /-- Squared Frobenius distance
 $\sum_{i,j}(A_{ij}-B_{ij})^2$ between two `m × n` matrices. -/

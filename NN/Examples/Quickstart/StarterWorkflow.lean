@@ -46,10 +46,10 @@ def model :=
 /-- Checks that KAN constructors are available from `NN.API`. -/
 def kanModel : nn.Builder (nn.Sequential (.dim 4 (.dim 2 .scalar)) (.dim 4 (.dim 1 .scalar))) :=
   nn.models.kan
-    { batch := 4
-      inDim := 2
+    { inDim := 2
       hidden := [8]
       outDim := 1 }
+    (.dim 4 .scalar)
 
 def target (x1 x2 : Float) : Float :=
   let relu (x : Float) := if x < 0.0 then 0.0 else x
@@ -70,8 +70,10 @@ def data : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
   Data.tensorDataset xs ys
 
 def probes : List (Trainer.Probe (.dim 2 .scalar)) :=
-  [ Trainer.Probe.point "origin" 0.0 0.0 (some (toString (target 0.0 0.0)))
-  , Trainer.Probe.point "heldout" 0.5 (-0.25) (some (toString (target 0.5 (-0.25)))) ]
+  [ Trainer.Probe.ofFloatTensor "origin" (Tensor.vector (α := Float) [0.0, 0.0])
+      "x=(0.0,0.0)" (some (toString (target 0.0 0.0)))
+  , Trainer.Probe.ofFloatTensor "heldout" (Tensor.vector (α := Float) [0.5, -0.25])
+      "x=(0.5,-0.25)" (some (toString (target 0.5 (-0.25)))) ]
 
 /-- Select an optimizer through the public API. -/
 def optimizerChoiceExample : Except String (String × optim.Optimizer) := do

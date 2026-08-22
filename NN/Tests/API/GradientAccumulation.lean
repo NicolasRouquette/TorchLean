@@ -41,8 +41,8 @@ def readLinearParams
     Float × Float :=
   match ps with
   | .cons weight (.cons bias .nil) =>
-      ( Spec.Tensor.toScalar (Spec.Tensor.get (Spec.Tensor.get weight 0) 0)
-      , Spec.Tensor.toScalar (Spec.Tensor.get bias 0) )
+      ( Spec.Tensor.item (Spec.Tensor.get (Spec.Tensor.get weight 0) 0)
+      , Spec.Tensor.item (Spec.Tensor.get bias 0) )
 
 def close (x y : Float) : Bool :=
   Float.abs (x - y) ≤ 1e-5
@@ -75,8 +75,8 @@ def readBatchNormBuffers
     Float × Float :=
   match ps with
   | .cons _gamma (.cons _beta (.cons mean (.cons variance (.cons _momentum .nil)))) =>
-      ( Spec.Tensor.toScalar (Spec.Tensor.get mean 0)
-      , Spec.Tensor.toScalar (Spec.Tensor.get variance 0) )
+      ( Spec.Tensor.item (Spec.Tensor.get mean 0)
+      , Spec.Tensor.item (Spec.Tensor.get variance 0) )
 
 def noOpOptimizer (shapes : List Spec.Shape) :
     _root_.Runtime.Autograd.TorchLean.Optim.Optimizer Float shapes where

@@ -17,7 +17,7 @@ public import NN.Spec.Core.TensorBridge
 public import NN.Spec.Core.TensorGrad
 public import NN.Spec.Core.TensorOps
 public import NN.Spec.Core.TensorReductionShape
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 
 /-!
 # Spec core

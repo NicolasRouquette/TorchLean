@@ -76,19 +76,19 @@ Detect whether a flattened `(seqLen × embedDim)` tensor is a broadcast of a sin
 If so, return that row. This is used to compress large broadcasted constants into a smaller
 learnable vector parameter in the emitted PyTorch code.
 -/
-def broadcastRow2D? (seqLen embedDim : Nat) (flat : List Float) : Option (List Float) :=
+def broadcastRow2d? (seqLen embedDim : Nat) (flat : List Float) : Option (Vector Float embedDim) :=
   if _h0 : seqLen = 0 then
     none
   else
     let row0 := flat.take embedDim
-    if row0.length != embedDim then
-      none
-    else
+    if hRow : row0.length = embedDim then
       let ok := (List.range seqLen).all fun i =>
         let start := i * embedDim
         let row := (flat.drop start).take embedDim
         row == row0
-      if ok then some row0 else none
+      if ok then some ⟨row0.toArray, by simpa using hRow⟩ else none
+    else
+      none
 
 /--
 Options controlling IR-to-PyTorch emission.
@@ -114,13 +114,13 @@ How an IR `const` node is represented in the emitted PyTorch module.
 
 - `bufferFull`: a non-learnable `register_buffer(...)` tensor
 - `paramFull`: a learnable `nn.Parameter` with the full tensor shape
-- `paramBroadcast2D`: a learnable vector `nn.Parameter` that is expanded at runtime to a
+- `paramBroadcast2d`: a learnable vector `nn.Parameter` that is expanded at runtime to a
   `(seqLen × embedDim)` tensor (compression for broadcasted 2D constants).
 -/
 inductive ConstBinding where
   | bufferFull (attr : String)
   | paramFull (attr : String)
-  | paramBroadcast2D (attr : String) (seqLen embedDim : Nat)
+  | paramBroadcast2d (attr : String) (seqLen embedDim : Nat)
   deriving Repr
 
 /-- Map from IR node id to how its constant should be referenced in the PyTorch module. -/
@@ -130,7 +130,7 @@ abbrev ConstBindings := HashMap Nat ConstBinding
 def ConstBinding.attr : ConstBinding → String
   | .bufferFull a => a
   | .paramFull a => a
-  | .paramBroadcast2D a _ _ => a
+  | .paramBroadcast2d a _ _ => a
 
 /-- Default attribute name for a const node: `self.const_<id>`. -/
 def constAttr (id : Nat) : String := s!"const_{id}"
@@ -314,16 +314,16 @@ private def collectBindings (g : NN.IR.Graph) (ps : ParamStore Float) (opts : Op
             if shouldLearn && opts.compressBroadcastParams then
               match s with
               | .dim seqLen (.dim embedDim .scalar) =>
-                  match broadcastRow2D? seqLen embedDim flatVals with
+                  match broadcastRow2d? seqLen embedDim flatVals with
                   | some row =>
                       let attr := s!"{constAttr n.id}_vec"
                       let rowT : Tensor Float (.dim embedDim .scalar) :=
-                        Tensor.dim fun i => Tensor.scalar (row.getD i.val 0.0)
+                        Tensor.dim fun i => Tensor.scalar (row.get i)
                       let rowFlat := tensorToPyFlat (s := .dim embedDim .scalar) rowT
                       let rowParam := pyTensorFromFlat rowFlat (.dim embedDim .scalar)
                       initLines := initLines ++
                         [ indentFour s!"self.{attr} = nn.Parameter({rowParam})" ]
-                      bindings := bindings.insert n.id (.paramBroadcast2D attr seqLen embedDim)
+                      bindings := bindings.insert n.id (.paramBroadcast2d attr seqLen embedDim)
                   | none =>
                       let attr := constAttr n.id
                       initLines := initLines ++
@@ -352,7 +352,7 @@ private def constExpr (bindings : ConstBindings) (id : Nat) : Except String Stri
       match b with
       | .bufferFull a => pure s!"self.{a}"
       | .paramFull a => pure s!"self.{a}"
-      | .paramBroadcast2D a seqLen _embedDim =>
+      | .paramBroadcast2d a seqLen _embedDim =>
           pure s!"self.{a}.unsqueeze(0).expand({seqLen}, -1)"
 
 /--
@@ -580,7 +580,7 @@ private def emitForwardBody (g : NN.IR.Graph) (ps : ParamStore Float) (bindings 
           ]
     | .layernorm axis =>
         let p ← expectUnary id n.parents
-        let dims := shapeDims n.outShape
+        let dims := Shape.toList n.outShape
         let normalized := dims.drop axis
         let normalizedShape :=
           match normalized with

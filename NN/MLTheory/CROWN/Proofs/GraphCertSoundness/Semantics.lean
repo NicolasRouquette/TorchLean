@@ -144,7 +144,7 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
                       let xCHW : Tensor ℝ sIn := Tensor.reshapeSpec (α := ℝ) (s₁ := sFlat) (s₂ :=
                         sIn) x.v hsize
                       let outShape : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
-                      let layer : Spec.MaxPool2DSpec kH kW stride hkH hkW hStride := {}
+                      let layer : Spec.MaxPool2dSpec kH kW stride hkH hkW hStride := {}
                       let y : Tensor ℝ outShape :=
                         Spec.maxPool2dMultiSpec (α := ℝ) (kH := kH) (kW := kW)
                           (inH := inH) (inW := inW) (inC := inC) (stride := stride)
@@ -179,7 +179,7 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
                         sIn) x.v hsize
                       let outShape : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW
                         stride padding
-                      let layer : Spec.MaxPool2DSpec kH kW stride hkH hkW hStride := {}
+                      let layer : Spec.MaxPool2dSpec kH kW stride hkH hkW hStride := {}
                       let y : Tensor ℝ outShape :=
                         Spec.maxPool2dMultiSpecPad (α := ℝ) (kH := kH) (kW := kW)
                           (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
@@ -214,7 +214,7 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
                       let xCHW : Tensor ℝ sIn := Tensor.reshapeSpec (α := ℝ) (s₁ := sFlat) (s₂ :=
                         sIn) x.v hsize
                       let outShape : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
-                      let layer : Spec.AvgPool2DSpec kH kW stride hkH hkW hStride := {}
+                      let layer : Spec.AvgPool2dSpec kH kW stride hkH hkW hStride := {}
                       let y : Tensor ℝ outShape :=
                         Spec.avgPool2dMultiSpec (α := ℝ) (kH := kH) (kW := kW)
                           (inH := inH) (inW := inW) (inC := inC) (stride := stride)
@@ -249,7 +249,7 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
                         sIn) x.v hsize
                       let outShape : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW
                         stride padding
-                      let layer : Spec.AvgPool2DSpec kH kW stride hkH hkW hStride := {}
+                      let layer : Spec.AvgPool2dSpec kH kW stride hkH hkW hStride := {}
                       let y : Tensor ℝ outShape :=
                         Spec.avgPool2dMultiSpecPad (α := ℝ) (kH := kH) (kW := kW)
                           (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=

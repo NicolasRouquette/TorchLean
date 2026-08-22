@@ -38,42 +38,42 @@ def tagError (tag msg : String) : String :=
 /-!
 ## Typed extraction helpers
 
-The autograd engine stores values and gradients as `Runtime.AnyTensor` (shape tag + tensor).
+The autograd engine stores values and gradients as `Spec.PackedTensor` (shape tag + tensor).
 These helpers check shapes and give you back a typed tensor or a scalar value.
 -/
 
 /--
 Read a typed gradient tensor `Tensor a s` from a gradient map keyed by node id.
 
-The eager tape engine stores gradients in a shape-erased form (`Runtime.AnyTensor a`), so this
+The eager tape engine stores gradients in a shape-erased form (`Spec.PackedTensor a`), so this
 helper performs the dynamic shape check and returns a typed tensor on success.
 -/
 def requireGradTensor {a : Type} [DecidableEq Shape] {s : Shape}
-  (tag : String) (grads : Std.HashMap Nat (Runtime.AnyTensor a)) (id : Nat) :
+  (tag : String) (grads : Std.HashMap Nat (Spec.PackedTensor a)) (id : Nat) :
   Result (Tensor a s) := by
   match grads.get? id with
   | none =>
       exact .error (tagError tag s!"missing gradient for node id {id}")
-  | some any =>
-      if h : any.s = s then
-        exact .ok (Tensor.castShape any.t h)
+  | some packed =>
+      if h : packed.shape = s then
+        exact .ok (packed.cast h)
       else
         exact .error (tagError tag s!"gradient shape mismatch for node id {id}")
 
 /--
 Read a typed forward value `Tensor a s` from a tape node id.
 
-This is the value-side analogue of `requireGradTensor`: it performs a dynamic shape check on the
-shape tag stored in `AnyTensor`.
+This is the value-side analogue of `requireGradTensor`: it checks the shape stored in the packed
+tensor before recovering a statically shaped value.
 -/
 def requireValueTensor {a : Type} [DecidableEq Shape] {s : Shape}
   (tag : String) (t : Tape a) (id : Nat) : Result (Tensor a s) := by
   match t.getValue? id with
   | none =>
       exact .error (tagError tag s!"missing value for node id {id}")
-  | some any =>
-      if h : any.s = s then
-        exact .ok (Tensor.castShape any.t h)
+  | some packed =>
+      if h : packed.shape = s then
+        exact .ok (packed.cast h)
       else
         exact .error (tagError tag s!"value shape mismatch for node id {id}")
 
@@ -86,7 +86,7 @@ def requireScalarValue {a : Type} [DecidableEq Shape]
   (tag : String) (t : Tape a) (id : Nat) : Result a := do
   let tScalar : Tensor a Shape.scalar ←
     requireValueTensor (tag := tag) (s := Shape.scalar) t id
-  pure (Tensor.toScalar tScalar)
+  pure (Tensor.item tScalar)
 
 /-!
 ## SGD update helper

@@ -20,7 +20,7 @@ namespace NN
 namespace GraphSpec
 namespace DAG
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 open NN.Tensor
 
@@ -66,4 +66,3 @@ end Term
 end DAG
 end GraphSpec
 end NN
-

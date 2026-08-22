@@ -56,10 +56,10 @@ def detachedMSELoss : autograd.model.OutputLoss YShape YShape :=
   -- Same forward value as `mseLoss`, but all gradients are zero (stop-gradient / detach).
   autograd.model.OutputLoss.detach mseLoss
 
-def squareFn : autograd.func.Fn XShape XShape :=
+def squareFn : autograd.func.TensorFunction XShape XShape :=
   fun x => nn.functional.square x
 
-def sumsqFn : autograd.func.Fn XShape Shape.scalar :=
+def sumsqFn : autograd.func.TensorFunction XShape Shape.scalar :=
   fun x => do
     let y ← nn.functional.square x
     -- `mean` is a convenient scalar reduction, like `torch.mean`.
@@ -106,8 +106,9 @@ def paramDirection {α : Type} (payload : DemoPayload α) :
 
 /-- Unpack this tutorial's single Linear-layer parameter pack. -/
 def unpackLinearParams {α : Type} (params : autograd.model.State model α) :
-    Tensor α WShape × Tensor α BShape := by
-  simpa [autograd.model.State, model, BShape] using tensorpack.unpackPair params
+    Tensor α WShape × Tensor α BShape :=
+  match params with
+  | .cons weight (.cons bias .nil) => (weight, bias)
 
 /-- Run the Float autograd walkthrough. -/
 def runDemo : IO Unit := do

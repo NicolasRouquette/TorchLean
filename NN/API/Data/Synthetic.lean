@@ -6,25 +6,15 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Macros
 public import NN.API.Tensor
-public import NN.API.TensorPack
-public import NN.API.Runtime
 
 import Mathlib.Algebra.Order.Algebra
 
 /-!
 # Synthetic Data
 
-This module provides deterministic data generators used by examples and tests:
-- 2D tabular grids (`cartesianGrid`, `linspace`)
-- simple regression/classification sample builders
-
-These helpers are in-memory. They keep example code focused on models and verification rather than
-data-loading infrastructure.
-
-Domain-specific datasets belong in their own modules. The band-classification example, for
-instance, lives in `TorchLean.Data.Bands`; this file contains only shape-independent generators.
+This module provides deterministic tabular grids used by examples and tests. Domain-specific
+datasets and sample packing belong in their respective data modules.
 -/
 
 @[expose] public section
@@ -35,27 +25,10 @@ namespace Synthetic
 
 open Spec
 
-/-! ## Tabular 2D -/
-
-/-- Affine function `w₁x₁ + w₂x₂ + b` for synthetic regression data. -/
-def affinePlane (w₁ w₂ b x₁ x₂ : Float) : Float :=
-  w₁ * x₁ + w₂ * x₂ + b
-
-/-- A length-1 float vector tensor. -/
-def singletonVectorFloat (y : Float) : Spec.Tensor Float (.dim 1 .scalar) :=
-  Spec.Tensor.dim (fun _ => Spec.Tensor.scalar y)
-
-/-- A length-2 float vector tensor. -/
-def pointVectorFloat (x y : Float) : Spec.Tensor Float (.dim 2 .scalar) :=
-  Spec.Tensor.dim (fun i =>
-    Spec.Tensor.scalar <|
-      match i.val with
-      | 0 => x
-      | 1 => y
-      | _ => 0.0)
+/-! ## Tabular grids -/
 
 /--
-Cartesian product of two float vectors (batched tensor of points).
+Cartesian product of two vectors (batched tensor of points).
 
 `cartesianGrid xs ys` produces a tensor `X : (m*n, 2)` containing all pairs `(x, y)` with:
 - `x` taken from `xs : (m,)`
@@ -65,15 +38,20 @@ Ordering is row-major: for each `x` in `xs` (outer loop), we sweep all `y` in `y
 
 PyTorch analogue: `torch.cartesian_prod(xs, ys)` (up to shape).
 -/
-def cartesianGrid {m n : Nat}
-    (xs : Spec.Tensor Float (.dim m .scalar)) (ys : Spec.Tensor Float (.dim n .scalar)) :
-    Spec.Tensor Float (.dim (m * n) (.dim 2 .scalar)) :=
+def cartesianGrid {α : Type} [Zero α] {m n : Nat}
+    (xs : Spec.Tensor α (.dim m .scalar)) (ys : Spec.Tensor α (.dim n .scalar)) :
+    Spec.Tensor α (.dim (m * n) (.dim 2 .scalar)) :=
   Spec.Tensor.dim (fun ij =>
     let i : Fin m := ij.divNat (m := m) (n := n)
     let j : Fin n := ij.modNat (m := m) (n := n)
-    let x : Float := _root_.Spec.Tensor.toScalar (_root_.Spec.get xs i)
-    let y : Float := _root_.Spec.Tensor.toScalar (_root_.Spec.get ys j)
-    pointVectorFloat x y)
+    let x : α := _root_.Spec.Tensor.item (_root_.Spec.get xs i)
+    let y : α := _root_.Spec.Tensor.item (_root_.Spec.get ys j)
+    Spec.Tensor.dim (fun k =>
+      Spec.Tensor.scalar <|
+        match k.val with
+        | 0 => x
+        | 1 => y
+        | _ => 0))
 
 /--
 Linearly spaced points including endpoints.
@@ -85,88 +63,26 @@ Linearly spaced points including endpoints.
 
 PyTorch analogue: `torch.linspace`.
 -/
-def linspace (lo hi : Float) (count : Nat) : Spec.Tensor Float (.dim count .scalar) :=
+def linspace {α : Type} [Context α] (lo hi : α) (count : Nat) :
+    Spec.Tensor α (.dim count .scalar) :=
   match count with
   | 0 => Spec.Tensor.dim (fun i => nomatch i)
   | 1 => Spec.Tensor.dim (fun _ => Spec.Tensor.scalar lo)
   | n + 2 =>
-      let denom := Float.ofNat (n + 1)
+      let denom : α := (n + 1 : Nat)
       Spec.Tensor.dim (fun i =>
-        let t := (Float.ofNat i.1) / denom
+        let t : α := (i.1 : Nat) / denom
         Spec.Tensor.scalar (lo + t * (hi - lo)))
 
 /-- Rectangular grid over `[xLo, xHi] x [yLo, yHi]`. -/
-def rectangularGrid (xLo xHi yLo yHi : Float) (xCount yCount : Nat) :
-    Spec.Tensor Float (.dim (xCount * yCount) (.dim 2 .scalar)) :=
+def rectangularGrid {α : Type} [Context α] (xLo xHi yLo yHi : α) (xCount yCount : Nat) :
+    Spec.Tensor α (.dim (xCount * yCount) (.dim 2 .scalar)) :=
   cartesianGrid (linspace xLo xHi xCount) (linspace yLo yHi yCount)
 
 /-- Square grid over `[lo, hi] x [lo, hi]`. -/
-def squareGrid (lo hi : Float) (count : Nat) :
-    Spec.Tensor Float (.dim (count * count) (.dim 2 .scalar)) :=
+def squareGrid {α : Type} [Context α] (lo hi : α) (count : Nat) :
+    Spec.Tensor α (.dim (count * count) (.dim 2 .scalar)) :=
   rectangularGrid lo hi lo hi count count
-
-/--
-Compute 2D→1D regression targets for a batched grid.
-
-Input `X` has shape `(n,2)` and the output `Y` has shape `(n,1)`.
--/
-def regressionTargetsFloat {n : Nat} (X : Spec.Tensor Float (.dim n (.dim 2 .scalar)))
-    (f : Float → Float → Float) : Spec.Tensor Float (.dim n (.dim 1 .scalar)) :=
-  Spec.Tensor.dim (fun i =>
-    let x : Spec.Tensor Float (.dim 2 .scalar) := Spec.get X i
-    let firstCoord : Float := _root_.Spec.Tensor.toScalar (_root_.Spec.get x ⟨0, by decide⟩)
-    let secondCoord : Float := _root_.Spec.Tensor.toScalar (_root_.Spec.get x ⟨1, by decide⟩)
-    singletonVectorFloat (f firstCoord secondCoord))
-
-/-- Casted version of `singletonVectorFloat` under an arbitrary scalar semantics `α`. -/
-def singletonVector {α : Type} [Context α] (cast : Float → α) (y : Float) : Spec.Tensor α (.dim 1 .scalar) :=
-  TorchLean.Tensor.castFloat cast (singletonVectorFloat y)
-
-/-- Casted version of `pointVectorFloat` under an arbitrary scalar semantics `α`. -/
-def pointVector {α : Type} [Context α] (cast : Float → α) (x y : Float) : Spec.Tensor α (.dim 2 .scalar)
-  :=
-  TorchLean.Tensor.castFloat cast (pointVectorFloat x y)
-
-/-! ## Labels and Packing -/
-
-/-- One-hot encode a label as a `Float` vector of shape `Vec classes`. -/
-def oneHotFloat (classes : Nat) (label : Fin classes) :
-    Spec.Tensor Float (.dim classes .scalar) :=
-  NN.Tensor.oneHot (α := Float) classes label
-
-/-- Casted version of `oneHotFloat`. -/
-def oneHot {α : Type} [Context α] (cast : Float → α) (classes : Nat) (label : Fin classes) :
-    Spec.Tensor α (.dim classes .scalar) :=
-  TorchLean.Tensor.castFloat cast (oneHotFloat classes label)
-
-/--
-Convert `(x, label)` pairs into `(x, oneHot(label))` pairs.
-
-This is a pure preprocessing step that keeps the data in-memory.
--/
-def classification {α : Type} [Context α] {σ : Spec.Shape}
-    (cast : Float → α) (classes : Nat) (xs : List (Spec.Tensor Float σ × Fin classes)) :
-    List (Spec.Tensor α σ × Spec.Tensor α (.dim classes .scalar)) :=
-  xs.map (fun (xF, label) =>
-    (TorchLean.Tensor.castFloat cast xF, oneHot cast classes label))
-
-/--
-Pack `(x, y)` tensor pairs into TorchLean supervised tensor-pack samples.
-
-This is the common sample representation used by the training helpers.
--/
-def supervised {α : Type} [Context α] {σ τ : Spec.Shape}
-    (cast : Float → α) (xs : List (Spec.Tensor Float σ × Spec.Tensor Float τ)) :
-    List (_root_.TorchLean.TensorPack α [σ, τ]) :=
-  xs.map (fun (xF, yF) =>
-    tensorpack! (TorchLean.Tensor.castFloat cast xF), (TorchLean.Tensor.castFloat cast yF))
-
-/-- Convert `(x, label)` pairs into TorchLean tensor-pack samples with one-hot targets. -/
-def labeled {α : Type} [Context α] {σ : Spec.Shape}
-    (cast : Float → α) (classes : Nat) (xs : List (Spec.Tensor Float σ × Fin classes)) :
-    List (_root_.TorchLean.TensorPack α [σ, .dim classes .scalar]) :=
-  (classification (α := α) (σ := σ) cast classes xs).map (fun (x, y) =>
-    tensorpack! x, y)
 
 end Synthetic
 end TorchLean.Data

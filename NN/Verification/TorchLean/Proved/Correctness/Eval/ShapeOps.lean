@@ -65,10 +65,10 @@ theorem evalAt_shapeOperation_eq
     (x : Tensor α inShape) :
     Graph.evalAt (α := α) (g := unaryGraphOut op.toOpKind inShape outShape)
         (payload := {})
-        (input := DVal.mk (α := α) inShape x)
-        (vals := #[DVal.mk (α := α) inShape x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) inShape x)
+        (vals := #[Spec.PackedTensor.mk (α := α) inShape x]) (i := 1)
       =
-      Except.ok (DVal.mk (α := α) outShape (op.denote x)) := by
+      Except.ok (Spec.PackedTensor.mk (α := α) outShape (op.denote x)) := by
   cases op <;>
     simp_all [ShapeOperation.toOpKind, ShapeOperation.denote, Graph.evalAt, Graph.evalNode, unaryGraphOut,
       unaryNodeOut, Graph.getNode, Graph.getNode?, Graph.expectShape, Bind.bind, Except.bind,
@@ -81,11 +81,11 @@ theorem evalAt_reshape_eq
     (hsize : Spec.Shape.size inShape = Spec.Shape.size outShape) :
     Graph.evalAt (α := α) (g := unaryGraphOut (.reshape inShape outShape) inShape outShape)
         (payload := {})
-        (input := DVal.mk (α := α) inShape x)
-        (vals := #[DVal.mk (α := α) inShape x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) inShape x)
+        (vals := #[Spec.PackedTensor.mk (α := α) inShape x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) outShape
+        (Spec.PackedTensor.mk (α := α) outShape
           (Tensor.reshapeSpec (α := α) (s₁ := inShape) (s₂ := outShape) x hsize)) := by
   exact evalAt_shapeOperation_eq (.reshape inShape outShape hsize) x
 
@@ -95,11 +95,11 @@ theorem evalAt_flatten_eq
     {s : Shape} (x : Tensor α s) :
     Graph.evalAt (α := α) (g := unaryGraphOut (.flatten s) s (.dim (Spec.Shape.size s) .scalar))
         (payload := {})
-        (input := DVal.mk (α := α) s x)
-        (vals := #[DVal.mk (α := α) s x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) s x)
+        (vals := #[Spec.PackedTensor.mk (α := α) s x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) (.dim (Spec.Shape.size s) .scalar)
+        (Spec.PackedTensor.mk (α := α) (.dim (Spec.Shape.size s) .scalar)
           (Tensor.flattenSpec (α := α) (s := s) x)) := by
   exact evalAt_shapeOperation_eq (.flatten s) x
 
@@ -110,11 +110,11 @@ theorem evalAt_broadcastTo_eq
     (hcb : OpContracts.mkCanBroadcastTo? s₁ s₂ = some cb) :
     Graph.evalAt (α := α) (g := unaryGraphOut (.broadcastTo s₁ s₂) s₁ s₂)
         (payload := {})
-        (input := DVal.mk (α := α) s₁ x)
-        (vals := #[DVal.mk (α := α) s₁ x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) s₁ x)
+        (vals := #[Spec.PackedTensor.mk (α := α) s₁ x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) s₂
+        (Spec.PackedTensor.mk (α := α) s₂
           (Tensor.broadcastTo (α := α) (s₁ := s₁) (s₂ := s₂) cb x)) := by
   exact evalAt_shapeOperation_eq (.broadcastTo s₁ s₂ cb hcb) x
 
@@ -124,11 +124,11 @@ theorem evalAt_sum_eq
     {s : Shape} (x : Tensor α s) :
     Graph.evalAt (α := α) (g := unaryGraphOut .sum s .scalar)
         (payload := {})
-        (input := DVal.mk (α := α) s x)
-        (vals := #[DVal.mk (α := α) s x]) (i := 1)
+        (input := Spec.PackedTensor.mk (α := α) s x)
+        (vals := #[Spec.PackedTensor.mk (α := α) s x]) (i := 1)
       =
       Except.ok
-        (DVal.mk (α := α) .scalar (Tensor.scalar (Tensor.sumSpec (α := α) x))) := by
+        (Spec.PackedTensor.mk (α := α) .scalar (Tensor.scalar (Tensor.sumSpec (α := α) x))) := by
   exact evalAt_shapeOperation_eq (.sum s) x
 
 end IRStep

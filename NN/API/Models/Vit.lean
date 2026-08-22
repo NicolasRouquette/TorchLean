@@ -24,9 +24,7 @@ namespace nn
 namespace models
 
 /-- Configuration for a Transformer over patches from a `d`-dimensional spatial domain. -/
-structure ViTConfig (d : Nat) where
-  /-- Number of independent samples processed together. -/
-  batch : Nat
+structure VitConfig (d : Nat) where
   /-- Number of channels in each input sample. -/
   inChannels : Nat
   /-- Extent of each spatial axis. -/
@@ -43,36 +41,40 @@ structure ViTConfig (d : Nat) where
   ffnHidden : Nat
 
 /-- Spatial extent of the patch embedding. -/
-def ViTConfig.patchSpatial {d : Nat} (cfg : ViTConfig d) : Vector Nat d :=
+def VitConfig.patchSpatial {d : Nat} (cfg : VitConfig d) : Vector Nat d :=
   Spec.convOutSpatial cfg.spatial cfg.patch.kernel cfg.patch.stride cfg.patch.padding
 
 /-- Number of patch tokens. -/
-def ViTConfig.seqLen {d : Nat} (cfg : ViTConfig d) : Nat :=
+def VitConfig.seqLen {d : Nat} (cfg : VitConfig d) : Nat :=
   Spec.Shape.size (Spec.Shape.ofList cfg.patchSpatial.toList)
 
 /-- Number of flattened features passed to the classifier. -/
-def ViTConfig.flatDim {d : Nat} (cfg : ViTConfig d) : Nat :=
+def VitConfig.flatDim {d : Nat} (cfg : VitConfig d) : Nat :=
   Spec.Shape.size (.dim cfg.seqLen (.dim cfg.patch.outChannels .scalar))
 
-/-- Input shape `(batch, inChannels, spatial...)`. -/
-def vitInShape {d : Nat} (cfg : ViTConfig d) : Spec.Shape :=
-  .dim cfg.batch (Spec.Shape.ofList (cfg.inChannels :: cfg.spatial.toList))
+/-- Input shape after prepending the axes mapped independently by the model. -/
+abbrev VitConfig.inputShape {d : Nat} (cfg : VitConfig d)
+    (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.concat (Spec.Shape.ofList (cfg.inChannels :: cfg.spatial.toList))
 
 /-- Shape produced by patch embedding. -/
-def vitConvOutShape {d : Nat} (cfg : ViTConfig d) : Spec.Shape :=
-  .dim cfg.batch (Spec.Shape.ofList (cfg.patch.outChannels :: cfg.patchSpatial.toList))
+abbrev VitConfig.patchShape {d : Nat} (cfg : VitConfig d)
+    (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.concat (Spec.Shape.ofList (cfg.patch.outChannels :: cfg.patchSpatial.toList))
 
-/-- Token shape `(batch, sequence, embedding)`. -/
-def vitTokensShape {d : Nat} (cfg : ViTConfig d) : Spec.Shape :=
-  .dim cfg.batch (.dim cfg.seqLen (.dim cfg.patch.outChannels .scalar))
+/-- Token shape obtained by flattening the patch grid and moving channels to the final axis. -/
+abbrev VitConfig.tokenShape {d : Nat} (cfg : VitConfig d)
+    (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.concat (.dim cfg.seqLen (.dim cfg.patch.outChannels .scalar))
 
-/-- Classifier output shape `(batch, outDim)`. -/
-def vitOutShape {d : Nat} (cfg : ViTConfig d) : Spec.Shape :=
-  .dim cfg.batch (.dim cfg.outDim .scalar)
+/-- Classifier output shape after preserving every leading axis. -/
+abbrev VitConfig.outputShape {d : Nat} (cfg : VitConfig d)
+    (leading : Spec.Shape := .scalar) : Spec.Shape :=
+  leading.appendDim cfg.outDim
 
-/-- flatten the patch grid into a sequence and move channels to the final axis. -/
-def spatialToTokens {d : Nat} (cfg : ViTConfig d) :
-    Layer (vitConvOutShape cfg) (vitTokensShape cfg) :=
+/-- Flatten the patch grid into a sequence and move channels to the final axis. -/
+def spatialToTokens {d : Nat} (cfg : VitConfig d) (leading : Spec.Shape := .scalar) :
+    Layer (cfg.patchShape leading) (cfg.tokenShape leading) :=
   { kind := "SpatialToTokens"
     stateShapes := []
     initState := .nil
@@ -80,44 +82,62 @@ def spatialToTokens {d : Nat} (cfg : ViTConfig d) :
     forward := fun _ {α} _ _ =>
       fun {m} _ _ =>
         fun x => (show m (_root_.Runtime.Autograd.TorchLean.RefTy
-            (m := m) (α := α) (vitTokensShape cfg)) from do
+            (m := m) (α := α) (cfg.tokenShape leading)) from do
           let middle : Spec.Shape :=
-            .dim cfg.batch (.dim cfg.patch.outChannels (.dim cfg.seqLen .scalar))
+            leading.concat (.dim cfg.patch.outChannels (.dim cfg.seqLen .scalar))
           let flattened ←
             _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-              (s₁ := vitConvOutShape cfg) (s₂ := middle) x (by
+              (s₁ := cfg.patchShape leading) (s₂ := middle) x (by
                 have hInner :
                     Spec.Shape.size
                         (Spec.Shape.ofList (cfg.patch.outChannels :: cfg.patchSpatial.toList)) =
                       cfg.patch.outChannels * cfg.seqLen := by
-                  simp [ViTConfig.seqLen, Spec.Shape.ofList, Spec.Shape.size]
-                simp [vitConvOutShape, middle, Spec.Shape.size, hInner])
-          _root_.Runtime.Autograd.Torch.swapAdjacentAtDepth
-            (m := m) (α := α) (s := middle) 1 flattened) }
+                  simp [VitConfig.seqLen, Spec.Shape.ofList, Spec.Shape.size]
+                simp [VitConfig.patchShape, middle, Spec.Shape.size_concat,
+                  Spec.Shape.size, hInner])
+          let tokens ← _root_.Runtime.Autograd.Torch.swapAdjacentAtDepth
+            (m := m) (α := α) (s := middle) leading.rank flattened
+          return (by simpa [middle, VitConfig.tokenShape] using tokens)) }
 
-/-- Build patch embedding, one Transformer encoder block, and a linear classifier. -/
-def vit {d : Nat} (cfg : ViTConfig d)
+/--
+Build the patch and Transformer portion of a vision transformer.
+
+The result retains one token per patch. Classification, reconstruction, and other tasks can attach
+their own heads without rebuilding the patch pipeline.
+-/
+def vitEncoder {d : Nat} (cfg : VitConfig d) (leading : Spec.Shape := .scalar)
     (hInChannels : cfg.inChannels ≠ 0 := by decide)
     (hSeqLen : cfg.seqLen ≠ 0 := by decide)
     (hModel : cfg.patch.outChannels ≠ 0 := by decide) :
-    Builder (Sequential (vitInShape cfg) (vitOutShape cfg)) :=
+    Builder (Sequential (cfg.inputShape leading) (cfg.tokenShape leading)) :=
   letI : NeZero cfg.inChannels := ⟨hInChannels⟩
   letI : NeZero cfg.seqLen := ⟨hSeqLen⟩
   letI : NeZero cfg.patch.outChannels := ⟨hModel⟩
-  let patchEmbedding :=
-    conv (leading := .dim cfg.batch .scalar) cfg.spatial cfg.patch
-  nn.Sequential![
-    patchEmbedding,
-    lift (of (spatialToTokens cfg)),
-    transformerEncoderBlock
+  do
+    let patchEmbedding ←
+      conv (leading := leading) (inChannels := cfg.inChannels) cfg.spatial cfg.patch
+    let encoderRaw ← transformerEncoderBlock leading
       { numHeads := cfg.numHeads
         headDim := cfg.headDim
         ffnHidden := cfg.ffnHidden
         activation := .gelu
-        dropout? := none },
-    flattenLeading (.dim cfg.batch .scalar),
-    linear cfg.flatDim cfg.outDim (pfx := .dim cfg.batch .scalar)
-  ]
+        dropout? := none }
+    let encoder : Sequential (cfg.tokenShape leading) (cfg.tokenShape leading) := by
+      simpa only [VitConfig.tokenShape, Spec.Shape.concat_appendDim, Spec.Shape.appendDim] using
+        encoderRaw
+    pure <| patchEmbedding >>> of (spatialToTokens cfg leading) >>> encoder
+
+/-- Build a vision Transformer encoder followed by a linear classifier. -/
+def vit {d : Nat} (cfg : VitConfig d) (leading : Spec.Shape := .scalar)
+    (hInChannels : cfg.inChannels ≠ 0 := by decide)
+    (hSeqLen : cfg.seqLen ≠ 0 := by decide)
+    (hModel : cfg.patch.outChannels ≠ 0 := by decide) :
+    Builder (Sequential (cfg.inputShape leading) (cfg.outputShape leading)) := do
+  let encoder ← vitEncoder cfg leading hInChannels hSeqLen hModel
+  let flatten ← flattenLeading leading
+    (s := .dim cfg.seqLen (.dim cfg.patch.outChannels .scalar))
+  let classifier ← linear cfg.flatDim cfg.outDim (leading := leading)
+  pure <| encoder >>> flatten >>> classifier
 
 end models
 end nn

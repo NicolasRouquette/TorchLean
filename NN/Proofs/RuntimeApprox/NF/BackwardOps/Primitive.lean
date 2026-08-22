@@ -23,6 +23,7 @@ namespace RuntimeApprox
 open Spec
 open Tensor
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 
 noncomputable section
 
@@ -53,14 +54,14 @@ by
     { toFwdNode := addNode (β := β) (fexp := fexp) (rnd := rnd) a b
       vjpSpec := fun _ctx δ =>
         if h : a.i = b.i then
-          TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (addSpec δ δ)
+          SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (addSpec δ δ)
         else
-          TList.set2Idx (α := SpecScalar) (Γ := Γ) (s₁ := s) (s₂ := s) a δ b δ
+          SparseContext.set2Idx (α := SpecScalar) (Γ := Γ) (s₁ := s) (s₂ := s) a δ b δ
       vjpRuntime := fun _ctx δ =>
         if h : a.i = b.i then
-          TList.setIdx (α := R) (Γ := Γ) (s := s) a (addSpec δ δ)
+          SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (addSpec δ δ)
         else
-          TList.set2Idx (α := R) (Γ := Γ) (s₁ := s) (s₂ := s) a δ b δ
+          SparseContext.set2Idx (α := R) (Γ := Γ) (s₁ := s) (s₂ := s) a δ b δ
       vjpBound := fun _epsCtx _ctxR epsδ δR =>
         if h : a.i = b.i then
           let epsBoth :=
@@ -74,12 +75,12 @@ by
   classical
   by_cases hEq : a.i = b.i
   · have hsum :
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (addSpec δS δS) (addSpec δR δR)
           (linfNorm (addBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) epsδ epsδ δR
             δR)) := by
       simpa using
-        (approxT_add_spec (β := β) (fexp := fexp) (rnd := rnd)
+        (approxTensor_add_spec (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (xS := δS) (yS := δS) (xR := δR) (yR := δR)
           (epsx := epsδ) (epsy := epsδ) hδ hδ)
     have hctx' :=
@@ -110,14 +111,14 @@ by
     { toFwdNode := subNode (β := β) (fexp := fexp) (rnd := rnd) a b
       vjpSpec := fun _ctx δ =>
         if h : a.i = b.i then
-          TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (Spec.fill (0 : SpecScalar) s)
+          SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (Spec.fill (0 : SpecScalar) s)
         else
-          TList.set2Idx (α := SpecScalar) (Γ := Γ) (s₁ := s) (s₂ := s) a δ b (negSpec δ)
+          SparseContext.set2Idx (α := SpecScalar) (Γ := Γ) (s₁ := s) (s₂ := s) a δ b (negSpec δ)
       vjpRuntime := fun _ctx δ =>
         if h : a.i = b.i then
-          TList.setIdx (α := R) (Γ := Γ) (s := s) a (Spec.fill (0 : R) s)
+          SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (Spec.fill (0 : R) s)
         else
-          TList.set2Idx (α := R) (Γ := Γ) (s₁ := s) (s₂ := s) a δ b (negSpec δ)
+          SparseContext.set2Idx (α := R) (Γ := Γ) (s₁ := s) (s₂ := s) a δ b (negSpec δ)
       vjpBound := fun _epsCtx _ctxR epsδ δR =>
         if h : a.i = b.i then
           EList.setIdx (Γ := Γ) (s := s) a 0
@@ -133,14 +134,14 @@ by
       approxCtx_setIdx (β := β) (fexp := fexp) (rnd := rnd)
         (Γ := Γ) (s := s) a
         (tS := Spec.fill (0 : SpecScalar) s) (tR := Spec.fill (0 : R) s)
-        (eps := 0) (approxT_fill_zero (β := β) (fexp := fexp) (rnd := rnd) (s := s))
+        (eps := 0) (approxTensor_fill_zero (β := β) (fexp := fexp) (rnd := rnd) (s := s))
     simpa [hEq] using h0
   · have hneg :
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (negSpec δS) (negSpec δR)
           (linfNorm (negBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) epsδ δR)) := by
       simpa using
-        (approxT_neg_spec (β := β) (fexp := fexp) (rnd := rnd)
+        (approxTensor_neg_spec (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (xS := δS) (xR := δR) (eps := epsδ) hδ)
     have hctx' :=
       approxCtx_set2Idx_ne (β := β) (fexp := fexp) (rnd := rnd)
@@ -166,21 +167,21 @@ by
         if h : a.i = b.i then
           let x := getIdx (α := SpecScalar) ctx a
           let u := mulSpec δ x
-          TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (addSpec u u)
+          SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (addSpec u u)
         else
           let xa := getIdx (α := SpecScalar) ctx a
           let xb := getIdx (α := SpecScalar) ctx b
-          TList.set2Idx (α := SpecScalar) (Γ := Γ) (s₁ := s) (s₂ := s) a (mulSpec δ xb) b (mulSpec
+          SparseContext.set2Idx (α := SpecScalar) (Γ := Γ) (s₁ := s) (s₂ := s) a (mulSpec δ xb) b (mulSpec
             δ xa)
       vjpRuntime := fun ctx δ =>
         if h : a.i = b.i then
           let x := getIdx (α := R) ctx a
           let u := mulSpec δ x
-          TList.setIdx (α := R) (Γ := Γ) (s := s) a (addSpec u u)
+          SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (addSpec u u)
         else
           let xa := getIdx (α := R) ctx a
           let xb := getIdx (α := R) ctx b
-          TList.set2Idx (α := R) (Γ := Γ) (s₁ := s) (s₂ := s) a (mulSpec δ xb) b (mulSpec δ xa)
+          SparseContext.set2Idx (α := R) (Γ := Γ) (s₁ := s) (s₂ := s) a (mulSpec δ xb) b (mulSpec δ xa)
       vjpBound := fun epsCtx ctxR epsδ δR =>
         if h : a.i = b.i then
           let xR := getIdx (α := R) ctxR a
@@ -212,18 +213,18 @@ by
   by_cases hEq : a.i = b.i
   · -- x*x case: contributions add
     have hu :
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mulSpec δS (getIdx (α := SpecScalar) ctxS a))
           (mulSpec δR (getIdx (α := R) ctxR a))
           (linfNorm (mulBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
             (s := s) epsδ (getIdxEps (Γ := Γ) (s := s) epsCtx a) δR (getIdx (α := R) ctxR a))) := by
       simpa using
-        (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+        (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (xS := δS) (yS := getIdx (α := SpecScalar) ctxS a)
           (xR := δR) (yR := getIdx (α := R) ctxR a)
           (epsx := epsδ) (epsy := getIdxEps (Γ := Γ) (s := s) epsCtx a) hδ ha)
     have hsum :
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (addSpec (mulSpec δS (getIdx (α := SpecScalar) ctxS a)) (mulSpec δS (getIdx (α :=
             SpecScalar) ctxS a)))
           (addSpec (mulSpec δR (getIdx (α := R) ctxR a)) (mulSpec δR (getIdx (α := R) ctxR a)))
@@ -234,7 +235,7 @@ by
               (s := s) epsδ (getIdxEps (Γ := Γ) (s := s) epsCtx a) δR (getIdx (α := R) ctxR a)))
             (mulSpec δR (getIdx (α := R) ctxR a)) (mulSpec δR (getIdx (α := R) ctxR a)))) := by
       simpa using
-        (approxT_add_spec (β := β) (fexp := fexp) (rnd := rnd)
+        (approxTensor_add_spec (β := β) (fexp := fexp) (rnd := rnd)
           (s := s)
           (xS := mulSpec δS (getIdx (α := SpecScalar) ctxS a))
           (yS := mulSpec δS (getIdx (α := SpecScalar) ctxS a))
@@ -260,24 +261,24 @@ by
           (mulSpec δR (getIdx (α := R) ctxR a)) (mulSpec δR (getIdx (α := R) ctxR a)))) hsum
     simpa [hEq] using hctx'
   · have hA :
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mulSpec δS (getIdx (α := SpecScalar) ctxS b))
           (mulSpec δR (getIdx (α := R) ctxR b))
           (linfNorm (mulBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
             (s := s) epsδ (getIdxEps (Γ := Γ) (s := s) epsCtx b) δR (getIdx (α := R) ctxR b))) := by
       simpa using
-        (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+        (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (xS := δS) (yS := getIdx (α := SpecScalar) ctxS b)
           (xR := δR) (yR := getIdx (α := R) ctxR b)
           (epsx := epsδ) (epsy := getIdxEps (Γ := Γ) (s := s) epsCtx b) hδ hb)
     have hB :
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (mulSpec δS (getIdx (α := SpecScalar) ctxS a))
           (mulSpec δR (getIdx (α := R) ctxR a))
           (linfNorm (mulBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
             (s := s) epsδ (getIdxEps (Γ := Γ) (s := s) epsCtx a) δR (getIdx (α := R) ctxR a))) := by
       simpa using
-        (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+        (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (xS := δS) (yS := getIdx (α := SpecScalar) ctxS a)
           (xR := δR) (yR := getIdx (α := R) ctxR a)
           (epsx := epsδ) (epsy := getIdxEps (Γ := Γ) (s := s) epsCtx a) hδ ha)
@@ -305,23 +306,23 @@ by
   refine
     { toFwdNode := scaleNode (β := β) (fexp := fexp) (rnd := rnd) a c
       vjpSpec := fun _ctx δ =>
-        TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a
+        SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a
           (scaleSpec (α := SpecScalar) (s := s) δ (toSpec (β := β) (fexp := fexp) (rnd := rnd) c))
       vjpRuntime := fun _ctx δ =>
-        TList.setIdx (α := R) (Γ := Γ) (s := s) a (scaleSpec (α := R) (s := s) δ c)
+        SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (scaleSpec (α := R) (s := s) δ c)
       vjpBound := fun _epsCtx _ctxR epsδ δR =>
         EList.setIdx (Γ := Γ) (s := s) a
           (linfNorm (scaleBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) epsδ c δR))
       vjpSound := ?_ }
   intro _ctxS _ctxR _epsCtx δS δR epsδ _hctx hδ
   have hscale :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (scaleSpec (α := SpecScalar) (s := s) δS (toSpec (β := β) (fexp := fexp) (rnd := rnd) c))
         (scaleSpec (α := R) (s := s) δR c)
         (linfNorm (scaleBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) epsδ c δR)) :=
           by
     simpa using
-      (approxT_scale_spec (β := β) (fexp := fexp) (rnd := rnd) (c := c)
+      (approxTensor_scale_spec (β := β) (fexp := fexp) (rnd := rnd) (c := c)
         (s := s) (xS := δS) (xR := δR) (eps := epsδ) hδ)
   have hctx' :=
     approxCtx_setIdx (β := β) (fexp := fexp) (rnd := rnd)
@@ -343,20 +344,20 @@ by
   refine
     { toFwdNode := negNode (β := β) (fexp := fexp) (rnd := rnd) a
       vjpSpec := fun _ctx δ =>
-        TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (negSpec δ)
+        SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (negSpec δ)
       vjpRuntime := fun _ctx δ =>
-        TList.setIdx (α := R) (Γ := Γ) (s := s) a (negSpec δ)
+        SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (negSpec δ)
       vjpBound := fun _epsCtx _ctxR epsδ δR =>
         EList.setIdx (Γ := Γ) (s := s) a (linfNorm (negBoundTensor (β := β) (fexp := fexp) (rnd
           := rnd) (s := s) epsδ δR))
       vjpSound := ?_ }
   intro _ctxS _ctxR _epsCtx δS δR epsδ _hctx hδ
   have hneg :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (negSpec δS) (negSpec δR)
         (linfNorm (negBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) epsδ δR)) := by
     simpa using
-      (approxT_neg_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_neg_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s) (xS := δS) (xR := δR) (eps := epsδ) hδ)
   have hctx' :=
     approxCtx_setIdx (β := β) (fexp := fexp) (rnd := rnd)
@@ -377,11 +378,11 @@ by
       vjpSpec := fun ctx δ =>
         let x := getIdx (α := SpecScalar) ctx a
         let ex := mapSpec (s := s) MathFunctions.exp x
-        TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec ex δ)
+        SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec ex δ)
       vjpRuntime := fun ctx δ =>
         let x := getIdx (α := R) ctx a
         let ex := mapSpec (s := s) MathFunctions.exp x
-        TList.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec ex δ)
+        SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec ex δ)
       vjpBound := fun epsCtx ctxR epsδ δR =>
         let xR := getIdx (α := R) ctxR a
         let exR := mapSpec (s := s) MathFunctions.exp xR
@@ -397,19 +398,19 @@ by
   have hx :=
     approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx a
   have hex :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mapSpec (s := s) MathFunctions.exp (getIdx (α := SpecScalar) ctxS a))
         (mapSpec (s := s) MathFunctions.exp (getIdx (α := R) ctxR a))
         (linfNorm (expBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (getIdxEps (Γ := Γ) (s := s) epsCtx a) (getIdx (α := R) ctxR a))) := by
     simpa [Spec.Tensor.expSpec] using
-      (approxT_exp_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_exp_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := getIdx (α := SpecScalar) ctxS a)
         (xR := getIdx (α := R) ctxR a)
         (eps := getIdxEps (Γ := Γ) (s := s) epsCtx a) hx)
   have hout :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mulSpec (mapSpec (s := s) MathFunctions.exp (getIdx (α := SpecScalar) ctxS a)) δS)
         (mulSpec (mapSpec (s := s) MathFunctions.exp (getIdx (α := R) ctxR a)) δR)
         (linfNorm (mulBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
@@ -420,7 +421,7 @@ by
           (mapSpec (s := s) MathFunctions.exp (getIdx (α := R) ctxR a))
           δR)) := by
     simpa using
-      (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := mapSpec (s := s) MathFunctions.exp (getIdx (α := SpecScalar) ctxS a))
         (yS := δS)
@@ -457,12 +458,12 @@ by
         let x := getIdx (α := SpecScalar) ctx a
         let t := mapSpec (s := s) MathFunctions.tanh x
         let df := subSpec (Spec.fill (1 : ℝ) s) (mulSpec t t)
-        TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec df δ)
+        SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec df δ)
       vjpRuntime := fun ctx δ =>
         let x := getIdx (α := R) ctx a
         let t := mapSpec (s := s) MathFunctions.tanh x
         let df := subSpec (Spec.fill (1 : R) s) (mulSpec t t)
-        TList.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec df δ)
+        SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec df δ)
       vjpBound := fun epsCtx ctxR epsδ δR =>
         let xR := getIdx (α := R) ctxR a
         let tR := mapSpec (s := s) MathFunctions.tanh xR
@@ -487,19 +488,19 @@ by
   have hx :=
     approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx a
   have ht :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mapSpec (s := s) MathFunctions.tanh (getIdx (α := SpecScalar) ctxS a))
         (mapSpec (s := s) MathFunctions.tanh (getIdx (α := R) ctxR a))
         (linfNorm (tanhBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (getIdxEps (Γ := Γ) (s := s) epsCtx a) (getIdx (α := R) ctxR a))) := by
     simpa using
-      (approxT_tanh_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_tanh_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := getIdx (α := SpecScalar) ctxS a)
         (xR := getIdx (α := R) ctxR a)
         (eps := getIdxEps (Γ := Γ) (s := s) epsCtx a) hx)
   have hsq :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mulSpec (mapSpec (s := s) MathFunctions.tanh (getIdx (α := SpecScalar) ctxS a))
           (mapSpec (s := s) MathFunctions.tanh (getIdx (α := SpecScalar) ctxS a)))
         (mulSpec (mapSpec (s := s) MathFunctions.tanh (getIdx (α := R) ctxR a))
@@ -513,7 +514,7 @@ by
           (mapSpec (s := s) MathFunctions.tanh (getIdx (α := R) ctxR a))
           (mapSpec (s := s) MathFunctions.tanh (getIdx (α := R) ctxR a)))) := by
     simpa using
-      (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := mapSpec (s := s) MathFunctions.tanh (getIdx (α := SpecScalar) ctxS a))
         (yS := mapSpec (s := s) MathFunctions.tanh (getIdx (α := SpecScalar) ctxS a))
@@ -525,12 +526,12 @@ by
           (s := s) (getIdxEps (Γ := Γ) (s := s) epsCtx a) (getIdx (α := R) ctxR a)))
         ht ht)
   have hones :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.fill (1 : ℝ) s) (Spec.fill (1 : R) s)
         (neuralUlp β fexp (1 : ℝ) / 2) :=
-    approxT_fill_one (β := β) (fexp := fexp) (rnd := rnd) (s := s)
+    approxTensor_fill_one (β := β) (fexp := fexp) (rnd := rnd) (s := s)
   have hdf :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (subSpec (Spec.fill (1 : ℝ) s)
           (mulSpec (mapSpec (s := s) MathFunctions.tanh (getIdx (α := SpecScalar) ctxS a))
             (mapSpec (s := s) MathFunctions.tanh (getIdx (α := SpecScalar) ctxS a))))
@@ -552,7 +553,7 @@ by
           (mulSpec (mapSpec (s := s) MathFunctions.tanh (getIdx (α := R) ctxR a))
             (mapSpec (s := s) MathFunctions.tanh (getIdx (α := R) ctxR a))))) := by
     simpa using
-      (approxT_sub_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_sub_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := Spec.fill (1 : ℝ) s)
         (yS := mulSpec (mapSpec (s := s) MathFunctions.tanh (getIdx (α := SpecScalar) ctxS a))
@@ -571,7 +572,7 @@ by
           (mapSpec (s := s) MathFunctions.tanh (getIdx (α := R) ctxR a))))
         hones hsq)
   have hout :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mulSpec
           (subSpec (Spec.fill (1 : ℝ) s)
             (mulSpec (mapSpec (s := s) MathFunctions.tanh (getIdx (α := SpecScalar) ctxS a))
@@ -604,7 +605,7 @@ by
               (mapSpec (s := s) MathFunctions.tanh (getIdx (α := R) ctxR a))))
           δR)) := by
     simpa using
-      (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := subSpec (Spec.fill (1 : ℝ) s)
           (mulSpec (mapSpec (s := s) MathFunctions.tanh (getIdx (α := SpecScalar) ctxS a))
@@ -679,12 +680,12 @@ by
         let x := getIdx (α := SpecScalar) ctx a
         let sS := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) x
         let df := mulSpec sS (subSpec (Spec.fill (1 : ℝ) s) sS)
-        TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec df δ)
+        SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec df δ)
       vjpRuntime := fun ctx δ =>
         let x := getIdx (α := R) ctx a
         let sR := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) x
         let df := mulSpec sR (subSpec (Spec.fill (1 : R) s) sR)
-        TList.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec df δ)
+        SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec df δ)
       vjpBound := fun epsCtx ctxR epsδ δR =>
         let xR := getIdx (α := R) ctxR a
         let sR := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) xR
@@ -709,25 +710,25 @@ by
   have hx :=
     approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx a
   have hs :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
           a))
         (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (getIdx (α := R) ctxR a))
         (linfNorm (sigmoidBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (getIdxEps (Γ := Γ) (s := s) epsCtx a) (getIdx (α := R) ctxR a))) := by
     simpa using
-      (approxT_sigmoid_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_sigmoid_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := getIdx (α := SpecScalar) ctxS a)
         (xR := getIdx (α := R) ctxR a)
         (eps := getIdxEps (Γ := Γ) (s := s) epsCtx a) hx)
   have hones :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.fill (1 : ℝ) s) (Spec.fill (1 : R) s)
         (neuralUlp β fexp (1 : ℝ) / 2) :=
-    approxT_fill_one (β := β) (fexp := fexp) (rnd := rnd) (s := s)
+    approxTensor_fill_one (β := β) (fexp := fexp) (rnd := rnd) (s := s)
   have honeMinus :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (subSpec (Spec.fill (1 : ℝ) s)
           (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
             a)))
@@ -742,7 +743,7 @@ by
           (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (getIdx (α := R) ctxR a)))) :=
             by
     simpa using
-      (approxT_sub_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_sub_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := Spec.fill (1 : ℝ) s)
         (yS := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar)
@@ -754,7 +755,7 @@ by
           (s := s) (getIdxEps (Γ := Γ) (s := s) epsCtx a) (getIdx (α := R) ctxR a)))
         hones hs)
   have hdf :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mulSpec
           (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
             a))
@@ -781,7 +782,7 @@ by
             (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (getIdx (α := R) ctxR a)))))
               := by
     simpa using
-      (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar)
           ctxS a))
@@ -802,7 +803,7 @@ by
           (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (getIdx (α := R) ctxR a))))
         hs honeMinus)
   have hout :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mulSpec
           (mulSpec
             (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar)
@@ -841,7 +842,7 @@ by
               (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (getIdx (α := R) ctxR a))))
           δR)) := by
     simpa using
-      (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := mulSpec
           (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
@@ -924,11 +925,11 @@ by
       vjpSpec := fun ctx δ =>
         let x := getIdx (α := SpecScalar) ctx a
         let sig := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) x
-        TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec sig δ)
+        SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec sig δ)
       vjpRuntime := fun ctx δ =>
         let x := getIdx (α := R) ctx a
         let sig := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) x
-        TList.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec sig δ)
+        SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec sig δ)
       vjpBound := fun epsCtx ctxR epsδ δR =>
         let xR := getIdx (α := R) ctxR a
         let sigR := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) xR
@@ -944,20 +945,20 @@ by
   have hx :=
     approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx a
   have hsig :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
           a))
         (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (getIdx (α := R) ctxR a))
         (linfNorm (sigmoidBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (getIdxEps (Γ := Γ) (s := s) epsCtx a) (getIdx (α := R) ctxR a))) := by
     simpa using
-      (approxT_sigmoid_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_sigmoid_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := getIdx (α := SpecScalar) ctxS a)
         (xR := getIdx (α := R) ctxR a)
         (eps := getIdxEps (Γ := Γ) (s := s) epsCtx a) hx)
   have hout :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mulSpec (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α :=
           SpecScalar) ctxS a)) δS)
         (mulSpec (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (getIdx (α := R) ctxR
@@ -970,7 +971,7 @@ by
           (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (getIdx (α := R) ctxR a))
           δR)) := by
     simpa using
-      (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar)
           ctxS a))
@@ -1017,14 +1018,14 @@ by
         let sp := mapSpec (s := s) (Activation.Math.softplusSpec (α := ℝ)) x
         let denom := addSpec sp (Spec.fill ε s)
         let df := map2Spec (s := s) (safeDiv (ε := ε)) num denom
-        TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec df δ)
+        SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec df δ)
       vjpRuntime := fun ctx δ =>
         let xR := getIdx (α := R) ctx a
         let numR := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) xR
         let spR := mapSpec (s := s) (softplusR (β := β) (fexp := fexp) (rnd := rnd)) xR
         let denomR := addSpec spR (Spec.fill epsR s)
         let dfR := map2Spec (s := s) (safeDivR (β := β) (fexp := fexp) (rnd := rnd) ε) numR denomR
-        TList.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec dfR δ)
+        SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec dfR δ)
       vjpBound := fun epsCtx ctxR epsδ δR =>
         let xR := getIdx (α := R) ctxR a
         let numR := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) xR
@@ -1053,21 +1054,21 @@ by
     approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx a
 
   have hnum :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
           a))
         (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := R)) (getIdx (α := R) ctxR a))
         (linfNorm (sigmoidBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (getIdxEps (Γ := Γ) (s := s) epsCtx a) (getIdx (α := R) ctxR a))) := by
     simpa using
-      (approxT_sigmoid_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_sigmoid_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := getIdx (α := SpecScalar) ctxS a)
         (xR := getIdx (α := R) ctxR a)
         (eps := getIdxEps (Γ := Γ) (s := s) epsCtx a) hx)
 
   have hsp :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mapSpec (s := s) (Activation.Math.softplusSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
           a))
         (mapSpec (s := s) (softplusR (β := β) (fexp := fexp) (rnd := rnd)) (getIdx (α := R) ctxR
@@ -1075,7 +1076,7 @@ by
         (linfNorm (softplusBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (getIdxEps (Γ := Γ) (s := s) epsCtx a) (getIdx (α := R) ctxR a))) := by
     simpa using
-      (approxT_softplus_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_softplus_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := getIdx (α := SpecScalar) ctxS a)
         (xR := getIdx (α := R) ctxR a)
@@ -1087,14 +1088,14 @@ by
       TorchLean.Floats.NF.roundR, Proofs.RuntimeRoundingApprox.roundR] using
         (Proofs.RuntimeRoundingApprox.roundR_abs_error (β := β) (fexp := fexp) (rnd := rnd) ε)
   have heps :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.fill ε s) (Spec.fill epsR s) epsErr := by
     simpa [epsErr] using
-      (approxT_fill_const (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_fill_const (β := β) (fexp := fexp) (rnd := rnd)
         (cS := ε) (cR := epsR) (eps := epsErr) heps_val (s := s))
 
   have hden :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (addSpec
           (mapSpec (s := s) (Activation.Math.softplusSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
             a))
@@ -1112,7 +1113,7 @@ by
             a))
           (Spec.fill epsR s))) := by
     simpa using
-      (approxT_add_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_add_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := mapSpec (s := s) (Activation.Math.softplusSpec (α := ℝ)) (getIdx (α := SpecScalar)
           ctxS a))
@@ -1126,7 +1127,7 @@ by
         hsp heps)
 
   have hdf :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (map2Spec (s := s) (safeDiv (ε := ε))
           (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
             a))
@@ -1158,7 +1159,7 @@ by
               ctxR a))
             (Spec.fill epsR s)))) := by
     simpa using
-      (approxT_safeDiv_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s) (ε := ε) hε
+      (approxTensor_safeDiv_spec (β := β) (fexp := fexp) (rnd := rnd) (s := s) (ε := ε) hε
         (xS := mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar)
           ctxS a))
         (yS := addSpec
@@ -1183,7 +1184,7 @@ by
         hnum hden)
 
   have hout :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mulSpec
           (map2Spec (s := s) (safeDiv (ε := ε))
             (mapSpec (s := s) (Activation.Math.sigmoidSpec (α := ℝ)) (getIdx (α := SpecScalar)
@@ -1229,7 +1230,7 @@ by
               (Spec.fill epsR s)))
           δR)) := by
     simpa using
-      (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS :=
           map2Spec (s := s) (safeDiv (ε := ε))
@@ -1329,12 +1330,12 @@ by
         let x := getIdx (α := SpecScalar) ctx a
         let sS := mapSpec (s := s) (Activation.Math.logisticSpec (α := ℝ)) x
         let df := mulSpec sS (subSpec (Spec.fill (1 : ℝ) s) sS)
-        TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec df δ)
+        SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (mulSpec df δ)
       vjpRuntime := fun ctx δ =>
         let x := getIdx (α := R) ctx a
         let sR := mapSpec (s := s) (Activation.Math.logisticSpec (α := R)) x
         let df := mulSpec sR (subSpec (Spec.fill (1 : R) s) sR)
-        TList.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec df δ)
+        SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (mulSpec df δ)
       vjpBound := fun epsCtx ctxR epsδ δR =>
         let xR := getIdx (α := R) ctxR a
         let sR := mapSpec (s := s) (Activation.Math.logisticSpec (α := R)) xR
@@ -1359,25 +1360,25 @@ by
   have hx :=
     approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx a
   have hs :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mapSpec (s := s) (Activation.Math.logisticSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
           a))
         (mapSpec (s := s) (Activation.Math.logisticSpec (α := R)) (getIdx (α := R) ctxR a))
         (linfNorm (softmaxBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
           (s := s) (getIdxEps (Γ := Γ) (s := s) epsCtx a) (getIdx (α := R) ctxR a))) := by
     simpa using
-      (approxT_softmax_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_softmax_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := getIdx (α := SpecScalar) ctxS a)
         (xR := getIdx (α := R) ctxR a)
         (eps := getIdxEps (Γ := Γ) (s := s) epsCtx a) hx)
   have hones :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.fill (1 : ℝ) s) (Spec.fill (1 : R) s)
         (neuralUlp β fexp (1 : ℝ) / 2) :=
-    approxT_fill_one (β := β) (fexp := fexp) (rnd := rnd) (s := s)
+    approxTensor_fill_one (β := β) (fexp := fexp) (rnd := rnd) (s := s)
   have honeMinus :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (subSpec (Spec.fill (1 : ℝ) s)
           (mapSpec (s := s) (Activation.Math.logisticSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
             a)))
@@ -1392,7 +1393,7 @@ by
           (mapSpec (s := s) (Activation.Math.logisticSpec (α := R)) (getIdx (α := R) ctxR a)))) :=
             by
     simpa using
-      (approxT_sub_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_sub_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := Spec.fill (1 : ℝ) s)
         (yS := mapSpec (s := s) (Activation.Math.logisticSpec (α := ℝ)) (getIdx (α := SpecScalar)
@@ -1404,7 +1405,7 @@ by
           (s := s) (getIdxEps (Γ := Γ) (s := s) epsCtx a) (getIdx (α := R) ctxR a)))
         hones hs)
   have hdf :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mulSpec
           (mapSpec (s := s) (Activation.Math.logisticSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
             a))
@@ -1431,7 +1432,7 @@ by
             (mapSpec (s := s) (Activation.Math.logisticSpec (α := R)) (getIdx (α := R) ctxR a)))))
               := by
     simpa using
-      (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := mapSpec (s := s) (Activation.Math.logisticSpec (α := ℝ)) (getIdx (α := SpecScalar)
           ctxS a))
@@ -1452,7 +1453,7 @@ by
           (mapSpec (s := s) (Activation.Math.logisticSpec (α := R)) (getIdx (α := R) ctxR a))))
         hs honeMinus)
   have hout :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (mulSpec
           (mulSpec
             (mapSpec (s := s) (Activation.Math.logisticSpec (α := ℝ)) (getIdx (α := SpecScalar)
@@ -1491,7 +1492,7 @@ by
               (mapSpec (s := s) (Activation.Math.logisticSpec (α := R)) (getIdx (α := R) ctxR a))))
           δR)) := by
     simpa using
-      (approxT_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_mul_spec (β := β) (fexp := fexp) (rnd := rnd)
         (s := s)
         (xS := mulSpec
           (mapSpec (s := s) (Activation.Math.logisticSpec (α := ℝ)) (getIdx (α := SpecScalar) ctxS
@@ -1574,11 +1575,11 @@ by
       vjpSpec := fun ctx δ =>
         let x := getIdx (α := SpecScalar) ctx a
         let gated := map2Spec (fun d x => if x > 0 then d else 0) δ x
-        TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a gated
+        SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a gated
       vjpRuntime := fun ctx δ =>
         let x := getIdx (α := R) ctx a
         let gated := map2Spec (fun d x => if x > 0 then d else 0) δ x
-        TList.setIdx (α := R) (Γ := Γ) (s := s) a gated
+        SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a gated
       vjpBound := fun _epsCtx ctxR epsδ δR =>
         let xR := getIdx (α := R) ctxR a
         let bndT : SpecTensor s :=
@@ -1591,7 +1592,7 @@ by
   have hx :=
     approxCtx_getIdx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) hctx a
   have hgate :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (map2Spec (fun d x => if x > 0 then d else 0) δS (getIdx (α := SpecScalar) ctxS a))
         (map2Spec (fun d x => if x > 0 then d else 0) δR (getIdx (α := R) ctxR a))
         (linfNorm
@@ -1601,7 +1602,7 @@ by
               (α := R) ctxR a)))) := by
     -- Use the generic `map2` lifting lemma with a conservative scalar bound.
     simpa using
-      (approxT_map2_spec_of_scalar_bound (α := R)
+      (approxTensor_map2_spec_of_scalar_bound (α := R)
         (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) (s := s)
         (fS := fun d x => if x > 0 then d else 0)
         (fR := fun d x => if x > 0 then d else 0)
@@ -1685,11 +1686,11 @@ by
       vjpSpec := fun _ctx δ =>
         match δ with
         | Tensor.scalar d =>
-            TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (Spec.fill d s)
+            SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) a (Spec.fill d s)
       vjpRuntime := fun _ctx δ =>
         match δ with
         | Tensor.scalar d =>
-            TList.setIdx (α := R) (Γ := Γ) (s := s) a (Spec.fill d s)
+            SparseContext.setIdx (α := R) (Γ := Γ) (s := s) a (Spec.fill d s)
       vjpBound := fun _epsCtx _ctxR epsδ _δR =>
         EList.setIdx (Γ := Γ) (s := s) a epsδ
       vjpSound := ?_ }
@@ -1701,13 +1702,13 @@ by
           have hd :
               abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) dR - dS) ≤ epsδ := by
             simpa using
-              (approxT_scalar_iff (α := R)
+              (approxTensor_scalar_iff (α := R)
                 (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                 (x := dS) (xR := dR) (eps := epsδ)).1 hδ
           have hfill :
-              approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+              approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                 (Spec.fill dS s) (Spec.fill dR s) epsδ :=
-            approxT_fill_const (β := β) (fexp := fexp) (rnd := rnd) (cS := dS) (cR := dR) (eps :=
+            approxTensor_fill_const (β := β) (fexp := fexp) (rnd := rnd) (cS := dS) (cR := dR) (eps :=
               epsδ) hd
               (s := s)
           have hctx' :=

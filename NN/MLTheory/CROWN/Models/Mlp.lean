@@ -656,7 +656,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                             -- Helper: interpret the Tensor-fold as a numeric fold.
                             have toScalar_fold_lower :
                                 ∀ (l : List (Fin n)) (acc : ℝ),
-                                  Tensor.toScalar
+                                  Tensor.item
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
@@ -682,13 +682,13 @@ theorem ibp_linear_sound_real {m n : Nat}
                                   | scalar xlo_j =>
                                     cases hxhi : xhi j with
                                     | scalar xhi_j =>
-                                      simp [Tensor.toScalar, List.foldl, lower, hcol, hxlo, hxhi]
-                                      simpa [Tensor.toScalar, lower, hcol, hxlo, hxhi, instBO,
+                                      simp [Tensor.item, List.foldl, lower, hcol, hxlo, hxhi]
+                                      simpa [Tensor.item, lower, hcol, hxlo, hxhi, instBO,
                                         BoundOps.addDown, BoundOps.mulDown] using
                                         ih (acc + BoundOps.min2 (aij * xlo_j) (aij * xhi_j))
                             have toScalar_fold_upper :
                                 ∀ (l : List (Fin n)) (acc : ℝ),
-                                  Tensor.toScalar
+                                  Tensor.item
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
@@ -714,13 +714,13 @@ theorem ibp_linear_sound_real {m n : Nat}
                                   | scalar xlo_j =>
                                     cases hxhi : xhi j with
                                     | scalar xhi_j =>
-                                      simp [Tensor.toScalar, List.foldl, upper, hcol, hxlo, hxhi]
-                                      simpa [Tensor.toScalar, upper, hcol, hxlo, hxhi, instBO,
+                                      simp [Tensor.item, List.foldl, upper, hcol, hxlo, hxhi]
+                                      simpa [Tensor.item, upper, hcol, hxlo, hxhi, instBO,
                                         BoundOps.addUp, BoundOps.mulUp] using
                                         ih (acc + BoundOps.max2 (aij * xlo_j) (aij * xhi_j))
                             have toScalar_fold_mid :
                                 ∀ (l : List (Fin n)) (acc : ℝ),
-                                  Tensor.toScalar
+                                  Tensor.item
                                       (List.foldl
                                         (fun accT k =>
                                           Spec.matVecMulSpec.match_1 (α:=ℝ)
@@ -741,14 +741,14 @@ theorem ibp_linear_sound_real {m n : Nat}
                                 | scalar aij =>
                                   cases hxv : xv j with
                                   | scalar xj =>
-                                    simp [Tensor.toScalar, List.foldl, mid, hcol, hxv]
-                                    simpa [Tensor.toScalar, mid, hcol, hxv] using ih (acc + aij * xj)
+                                    simp [Tensor.item, List.foldl, mid, hcol, hxv]
+                                    simpa [Tensor.item, mid, hcol, hxv] using ih (acc + aij * xj)
 
                             -- Identify sumL/sumU/sumM with the corresponding numeric folds.
                             have sumL_def :
                                 (List.finRange n).foldl (fun acc j => acc + lower j) 0 = sumL := by
                               have hto :
-                                  Tensor.toScalar
+                                  Tensor.item
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
@@ -763,7 +763,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                                     (List.finRange n).foldl (fun acc j => acc + lower j) 0 := by
                                 simpa using toScalar_fold_lower (List.finRange n) 0
                               have hscalar :
-                                  Tensor.toScalar
+                                  Tensor.item
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
@@ -776,12 +776,12 @@ theorem ibp_linear_sound_real {m n : Nat}
                                                     (BoundOps.mulDown aij xhi)))))
                                         (Tensor.scalar 0) (List.finRange n)) =
                                     sumL := by
-                                simpa using (congrArg Tensor.toScalar hFoldL)
+                                simpa using (congrArg Tensor.item hFoldL)
                               exact hto.symm.trans hscalar
                             have sumU_def :
                                 (List.finRange n).foldl (fun acc j => acc + upper j) 0 = sumU := by
                               have hto :
-                                  Tensor.toScalar
+                                  Tensor.item
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
@@ -796,7 +796,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                                     (List.finRange n).foldl (fun acc j => acc + upper j) 0 := by
                                 simpa using toScalar_fold_upper (List.finRange n) 0
                               have hscalar :
-                                  Tensor.toScalar
+                                  Tensor.item
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
@@ -809,7 +809,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                                                     (BoundOps.mulUp aij xhi)))))
                                         (Tensor.scalar 0) (List.finRange n)) =
                                     sumU := by
-                                simpa using (congrArg Tensor.toScalar hFoldU)
+                                simpa using (congrArg Tensor.item hFoldU)
                               exact hto.symm.trans hscalar
                             have hFoldM' :
                                 (List.foldl
@@ -824,7 +824,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                             have sumM_def :
                                 (List.finRange n).foldl (fun acc j => acc + mid j) 0 = sumM := by
                               have hto :
-                                  Tensor.toScalar
+                                  Tensor.item
                                       (List.foldl
                                         (fun accT k =>
                                           Spec.matVecMulSpec.match_1 (α:=ℝ)
@@ -836,7 +836,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                                     (List.finRange n).foldl (fun acc j => acc + mid j) 0 := by
                                 simpa using toScalar_fold_mid (List.finRange n) 0
                               have hscalar :
-                                  Tensor.toScalar
+                                  Tensor.item
                                       (List.foldl
                                         (fun accT k =>
                                           Spec.matVecMulSpec.match_1 (α:=ℝ)
@@ -846,7 +846,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                                               ak * vk)))
                                         (Tensor.scalar 0) (List.finRange n)) =
                                     sumM := by
-                                simpa using (congrArg Tensor.toScalar hFoldM')
+                                simpa using (congrArg Tensor.item hFoldM')
                               exact hto.symm.trans hscalar
 
                             have hsumL : sumL ≤ sumM := by
@@ -862,20 +862,20 @@ theorem ibp_linear_sound_real {m n : Nat}
                             -- Rewrite the goal into the scalar conjunction and finish with
                             -- `h1`/`h2`.
                             simp (config := { iota := true }) [hrow, hblo, hbhi, hbv]
-                            -- Finish the scalar containment goal via `Tensor.toScalar`.
+                            -- Finish the scalar containment goal via `Tensor.item`.
                             have hcontains_scalar_iff (loT hiT yT : Tensor ℝ Shape.scalar) :
                                 Box.contains (α:=ℝ) { lo := loT, hi := hiT } yT ↔
-                                  (Tensor.toScalar loT ≤ Tensor.toScalar yT ∧
-                                    Tensor.toScalar yT ≤ Tensor.toScalar hiT) := by
-                              cases loT; cases hiT; cases yT; simp [Box.contains, Tensor.toScalar]
+                                  (Tensor.item loT ≤ Tensor.item yT ∧
+                                    Tensor.item yT ≤ Tensor.item hiT) := by
+                              cases loT; cases hiT; cases yT; simp [Box.contains, Tensor.item]
                             apply (hcontains_scalar_iff _ _ _).2
                             constructor
                             · -- lower bound
                               rw [hFoldL, hFoldM']
-                              simpa [Tensor.map2Spec, Tensor.toScalar] using h1
+                              simpa [Tensor.map2Spec, Tensor.item] using h1
                             · -- upper bound
                               rw [hFoldM', hFoldU]
-                              simpa [Tensor.map2Spec, Tensor.toScalar] using h2
+                              simpa [Tensor.map2Spec, Tensor.item] using h2
 
 /- Helper: soundness of IBP.relu over ℝ -/
 private theorem ibp_relu_sound_real {n : Nat}
@@ -1056,24 +1056,6 @@ def certifiedMargin {n : Nat} (B : Box α (.dim n .scalar)) (c : Fin n) : α :=
 /-- Decide whether class `c` is certified by a positive margin. -/
 def isCertifiedClass {n : Nat} (B : Box α (.dim n .scalar)) (c : Fin n) : Bool :=
   decide (certifiedMargin (α:=α) B c > 0)
-
-/--
-Return the argmax index of a concrete output vector (when `n > 0`), otherwise `none`.
-
-This is a utility for pairing certified bounds with a predicted class.
--/
-def argmax? {n : Nat} (y : Tensor α (.dim n .scalar)) : Option (Fin n) :=
-  match y with
-  | Tensor.dim f =>
-    if h0 : 0 < n then
-      let init : Fin n := ⟨0, h0⟩
-      let (bestIdx, _) := (List.finRange n).foldl (fun (acc : Fin n × α) k =>
-        let (_, bestVal) := acc
-        let vk := match f k with | Tensor.scalar v => v
-        if vk > bestVal then (k, vk) else acc
-      ) (init, match f init with | Tensor.scalar v => v)
-      some bestIdx
-    else none
 
 end Classify
 

@@ -96,8 +96,9 @@ L(\theta;x,y)
 \left(F_\theta(x)_i-y_i\right)^2.
 `
 
-Changing `.regression` to `.oneHotCrossEntropy` changes the objective and target convention without
-changing the architecture. A custom task supplies a checked scalar loss program.
+Changing `.regression` to `.oneHotCrossEntropy axis` changes the objective and target convention
+without changing the architecture. The zero-based `axis` may name any output dimension; Lean
+rejects an axis outside the output shape. A custom task supplies a checked scalar loss program.
 
 # Build The Dataset
 
@@ -388,8 +389,8 @@ provider.
 
 # A Checkpoint Is A Particular Slice Of State
 
-Native `Float32` modules use an exact binary32 checkpoint on CPU and CUDA. The compatibility
-binary64 `Float` path retains its exact-bit JSON format on CPU. Neither representation passes
+Native `Float32` modules use an exact binary32 checkpoint on CPU and CUDA. The binary64 `Float`
+path retains its exact-bit JSON format on CPU. Neither representation passes
 through decimal text. The expected state shapes come from the model, and every tensor must have the
 right shape and scalar count before the checkpoint is accepted:
 
@@ -482,11 +483,11 @@ Lean prints:
 [0.100000, 0.100000, 0.100000, 0.050000, 0.050000, 0.050000, 0.025000, 0.025000, 0.025000, 0.012500]
 ```
 
-Attach the same schedule to a manual step configuration with `Trainer.stepLR`:
+Attach the same schedule to a manual step configuration with `Trainer.stepLr`:
 
 ```
 def scheduledManualRun :=
-  Trainer.stepLR
+  Trainer.stepLr
     (Trainer.steps 10 (optim.sgd { lr := 0.1 }))
     0.1 3 0.5
 ```

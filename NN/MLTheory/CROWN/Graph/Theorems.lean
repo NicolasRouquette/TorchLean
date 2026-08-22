@@ -48,62 +48,62 @@ lemma ibp_linear_output_dim
   (h : Xin.dim = p.n)
   (ps : ParamStore α) (id : Nat)
   (hstore : ps.linearWB[id]? = some p)
-  : ((ibp_linear (α:=α) id ps Xin).map (·.dim) = some p.m) := by
-  -- From the definition of `ibp_linear`, the result is `some (toFlatBox p.m yB)`.
+  : ((ibpLinear (α:=α) id ps Xin).map (·.dim) = some p.m) := by
+  -- From the definition of `ibpLinear`, the result is `some (toFlatBox p.m yB)`.
   -- Mapping `(·.dim)` over that gives `some p.m` by `toFlatBox_dim`.
-  simp [ibp_linear, ibpLinearParams, h, hstore, toFlatBox_dim]
+  simp [ibpLinear, ibpLinearParams, h, hstore, toFlatBox_dim]
 
 /-- Simple shape-preservation facts for FlatBox combinators used by IBP. -/
-lemma box_add_dim (B1 B2 : FlatBox α) : (box_add (α:=α) B1 B2).dim = B1.dim := by
+lemma box_add_dim (B1 B2 : FlatBox α) : (boxAdd (α:=α) B1 B2).dim = B1.dim := by
   cases B1 with
   | mk n1 lo1 hi1 =>
     cases B2 with
     | mk n2 lo2 hi2 =>
       by_cases h : n1 = n2
-      · cases h; simp [box_add]
-      · simp [box_add, h]
+      · cases h; simp [boxAdd]
+      · simp [boxAdd, h]
 
-/-- `box_sub` preserves the left operand’s `dim` (even when the right operand has a mismatched dim).
+/-- `boxSub` preserves the left operand’s `dim` (even when the right operand has a mismatched dim).
   -/
-lemma box_sub_dim (B1 B2 : FlatBox α) : (box_sub (α:=α) B1 B2).dim = B1.dim := by
+lemma box_sub_dim (B1 B2 : FlatBox α) : (boxSub (α:=α) B1 B2).dim = B1.dim := by
   cases B1 with
   | mk n1 lo1 hi1 =>
     cases B2 with
     | mk n2 lo2 hi2 =>
       by_cases h : n1 = n2
-      · cases h; simp [box_sub]
-      · simp [box_sub, h]
+      · cases h; simp [boxSub]
+      · simp [boxSub, h]
 
 omit [BoundOps α] in
-/-- `box_relu` preserves `dim`. -/
-lemma box_relu_dim (B : FlatBox α) : (box_relu (α:=α) B).dim = B.dim := by
-  simp [box_relu]
+/-- `boxRelu` preserves `dim`. -/
+lemma box_relu_dim (B : FlatBox α) : (boxRelu (α:=α) B).dim = B.dim := by
+  simp [boxRelu]
 
 omit [BoundOps α] in
 /-- `box_square` preserves `dim`. -/
 lemma box_square_dim (B : FlatBox α) : (boxSquare (α:=α) B).dim = B.dim := by
   cases B; simp [boxSquare]
 
-/-! Canonical forms for box_add/box_sub when dimensions match -/
+/-! Canonical forms for boxAdd/boxSub when dimensions match -/
 
 lemma box_add_on_eq (n : Nat)
   (lo1 hi1 lo2 hi2 : Tensor α (.dim n .scalar)) :
-  box_add (α:=α) { dim := n, lo := lo1, hi := hi1 } { dim := n, lo := lo2, hi := hi2 }
+  boxAdd (α:=α) { dim := n, lo := lo1, hi := hi1 } { dim := n, lo := lo2, hi := hi2 }
     =
       { dim := n
         lo := Tensor.map2Spec BoundOps.addDown lo1 lo2
         hi := Tensor.map2Spec BoundOps.addUp hi1 hi2 } := by
-  simp [box_add]
+  simp [boxAdd]
 
-/-- Canonical form for `box_sub` when both boxes have the same dimension. -/
+/-- Canonical form for `boxSub` when both boxes have the same dimension. -/
 lemma box_sub_on_eq (n : Nat)
   (lo1 hi1 lo2 hi2 : Tensor α (.dim n .scalar)) :
-  box_sub (α:=α) { dim := n, lo := lo1, hi := hi1 } { dim := n, lo := lo2, hi := hi2 }
+  boxSub (α:=α) { dim := n, lo := lo1, hi := hi1 } { dim := n, lo := lo2, hi := hi2 }
     =
       { dim := n
         lo := Tensor.map2Spec BoundOps.subDown lo1 hi2
         hi := Tensor.map2Spec BoundOps.subUp hi1 lo2 } := by
-  simp [box_sub]
+  simp [boxSub]
 
 /-! Declarative enclosure predicates used by downstream graph-soundness statements. -/
 
@@ -118,7 +118,7 @@ namespace Semantics
     match flo i, fhi i, fx i with
     | .scalar l, .scalar u, .scalar v => l ≤ v ∧ v ≤ u
 
-/- Enclosure for `box_add`: if x ∈ B1 and y ∈ B2, then x + y ∈ box_add B1 B2. -/
+/- Enclosure for `boxAdd`: if x ∈ B1 and y ∈ B2, then x + y ∈ boxAdd B1 B2. -/
 
 omit [BoundOps α] in
 /-- If `x` is enclosed in `[lo1,hi1]` and `y` is enclosed in `[lo2,hi2]`, then `x+y` is enclosed in
@@ -224,7 +224,7 @@ theorem box_sub_sound (n : Nat)
                           simpa [Tensor.map2Spec, hL1, hU1, hX, hL2, hU2, hY] using And.intro hlo hhi
 
 omit [BoundOps α] in
-/-- Enclosure for `box_relu`: if $x\in B$, then $\operatorname{ReLU}(x)$ belongs to the resulting
+/-- Enclosure for `boxRelu`: if $x\in B$, then $\operatorname{ReLU}(x)$ belongs to the resulting
 box. -/
 theorem box_relu_sound (n : Nat)
   (lo hi : Tensor α (.dim n .scalar))
@@ -232,10 +232,10 @@ theorem box_relu_sound (n : Nat)
     Activation.Math.reluSpec (α:=α) a ≤ Activation.Math.reluSpec (α:=α) b)
   (x : Tensor α (.dim n .scalar))
   (hx : encloses (α:=α) { dim := n, lo := lo, hi := hi } x)
-  : encloses (α:=α) (box_relu (α:=α) { dim := n, lo := lo, hi := hi })
+  : encloses (α:=α) (boxRelu (α:=α) { dim := n, lo := lo, hi := hi })
       (castDimScalar (α:=α)
         (by
-          have hdim : (box_relu (α:=α) { dim := n, lo := lo, hi := hi }).dim = n := by
+          have hdim : (boxRelu (α:=α) { dim := n, lo := lo, hi := hi }).dim = n := by
             simpa using (Theorems.box_relu_dim (α:=α) { dim := n, lo := lo, hi := hi })
           exact hdim.symm)
         (Activation.reluSpec (α:=α) x)) := by
@@ -245,7 +245,7 @@ theorem box_relu_sound (n : Nat)
     | dim fhi =>
       cases x with
       | dim fx =>
-        simp [castDimScalar, box_relu, Activation.reluSpec, Tensor.mapSpec,
+        simp [castDimScalar, boxRelu, Activation.reluSpec, Tensor.mapSpec,
           encloses, getDimScalarFn] at hx ⊢
         intro i
         have hx_i := hx i

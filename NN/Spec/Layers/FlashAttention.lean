@@ -129,7 +129,7 @@ def scaledAttentionScores
 
 /-- The row-wise softmax weights produced by the online softmax summary.
 
-`Activation.softmaxSpec` already uses the stabilized form `exp(x - rowMax) / Σ exp(x - rowMax)`.
+`Activation.softmaxLastSpec` already uses the stabilized form `exp(x - rowMax) / Σ exp(x - rowMax)`.
 This definition is the **denotation** that a FlashAttention implementation must refine. It is not a
 formal model of Dao-style tile loops or SRAM/HBM traffic.
 -/
@@ -143,7 +143,7 @@ def onlineSoftmaxWeights
   let _blockK := cfg.blockK
   let scores := scaledAttentionScores (α := α) ctx
   match ctx.mask with
-  | none => Activation.softmaxSpec (α := α) scores
+  | none => Activation.softmaxLastSpec (α := α) scores
   | some m => hardMaskedSoftmaxSpec scores m
 
 /-- Proof-facing FlashAttention forward algorithm.

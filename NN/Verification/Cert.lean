@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Verification.Cert.Common
+public import NN.Verification.Cert.NodeReplay
 public import NN.Verification.Cert.IBPCert
 public import NN.Verification.Cert.IBPNodeCert
 public import NN.Verification.Cert.CROWNNodeCert

@@ -116,7 +116,7 @@ variable {α : Type} [Context α]
 /-- A regression random forest: an ensemble of regression trees averaged at inference time. -/
 structure RegressionForestSpec (α : Type) (nTrees maxDepth nFeatures : Nat) where
   /-- trees. -/
-  trees : Tensor (Spec.DecisionTreeSpec α maxDepth) (.dim nTrees .scalar)
+  trees : Tensor (Spec.DecisionTreeSpec α nFeatures maxDepth) (.dim nTrees .scalar)
 
 /-- Forward pass: average tree predictions.
 
@@ -134,7 +134,7 @@ def regressionForestForwardSpec {nTrees maxDepth nFeatures : Nat}
         | Tensor.dim trees =>
           match trees ⟨i, h⟩ with
           | Tensor.scalar t =>
-            let yi := Spec.decisionTreeForwardSpecN (α := α) (maxDepth := maxDepth) (nFeatures :=
+            let yi := Spec.decisionTreeForwardSpec (α := α) (maxDepth := maxDepth) (nFeatures :=
               nFeatures) t x
             go (i + 1) (acc + yi)
       else
@@ -168,7 +168,7 @@ def regressionForestFitRegressionMseSpec {batch nTrees maxDepth nFeatures : Nat}
         ⟨(i.val + k.val) % batch, by
           exact Nat.mod_lt _ (Nat.pos_of_ne_zero hBatch)⟩
       get y j)
-  let trees : Tensor (Spec.DecisionTreeSpec α maxDepth) (.dim nTrees .scalar) :=
+  let trees : Tensor (Spec.DecisionTreeSpec α nFeatures maxDepth) (.dim nTrees .scalar) :=
     Tensor.dim (fun k => Tensor.scalar (Spec.decisionTreeFitRegressionMseSpec (α := α)
       (batch := batch) (maxDepth := maxDepth) (nFeatures := nFeatures)
       (makeBootstrapX k) (makeBootstrapY k)))
@@ -203,7 +203,7 @@ private def majorityLabel {β : Type} [DecidableEq β] [Inhabited β] (ys : List
 /-- A classification random forest: an ensemble of classifier trees (majority vote). -/
 structure ClassificationForestSpec (α β : Type) (nTrees maxDepth nFeatures : Nat) where
   /-- trees. -/
-  trees : Tensor (Spec.DecisionTreeClassifierSpec α β maxDepth) (.dim nTrees .scalar)
+  trees : Tensor (Spec.DecisionTreeClassifierSpec α β nFeatures maxDepth) (.dim nTrees .scalar)
 
 /-- Predict by majority vote across trees. -/
 def classificationForestPredictSpec {β : Type} [DecidableEq β] [Inhabited β]
@@ -226,7 +226,7 @@ def classificationForestPredictSpec {β : Type} [DecidableEq β] [Inhabited β]
 def classificationForestFitClassificationGiniSpec {β : Type} [DecidableEq β] [Inhabited β]
   {batch nTrees maxDepth nFeatures : Nat}
   (x : Tensor α (.dim batch (.dim nFeatures .scalar)))
-  (y : List β)
+  (y : Vector β batch)
   (hBatch : batch ≠ 0) :
   ClassificationForestSpec α β nTrees maxDepth nFeatures :=
   let makeBootstrapX (k : Fin nTrees) : Tensor α (.dim batch (.dim nFeatures .scalar)) :=
@@ -235,11 +235,11 @@ def classificationForestFitClassificationGiniSpec {β : Type} [DecidableEq β] [
         ⟨(i.val + k.val) % batch, by
           exact Nat.mod_lt _ (Nat.pos_of_ne_zero hBatch)⟩
       get x j)
-  let makeBootstrapY (k : Fin nTrees) : List β :=
-    (List.finRange batch).map (fun i =>
-      y.getD ((i.val + k.val) % batch) default)
-  let trees : Tensor (Spec.DecisionTreeClassifierSpec α β maxDepth) (.dim nTrees .scalar) :=
-    Tensor.dim (fun k => Tensor.scalar (Spec.decisionTreeFitClassificationGiniListSpec (α :=
+  let makeBootstrapY (k : Fin nTrees) : Vector β batch :=
+    Vector.ofFn fun i =>
+      y.get ⟨(i.val + k.val) % batch, Nat.mod_lt _ (Nat.pos_of_ne_zero hBatch)⟩
+  let trees : Tensor (Spec.DecisionTreeClassifierSpec α β nFeatures maxDepth) (.dim nTrees .scalar) :=
+    Tensor.dim (fun k => Tensor.scalar (Spec.decisionTreeFitClassificationGiniSpec (α :=
       α) (β := β)
       (batch := batch) (maxDepth := maxDepth) (nFeatures := nFeatures)
       (makeBootstrapX k) (makeBootstrapY k)))

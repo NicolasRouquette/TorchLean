@@ -321,7 +321,7 @@ theorem mul_spec_one_right {s : Shape} : ∀ (t : Tensor ℝ s),
 theorem foldl_add_scalar {ι : Type} (values : ι → Tensor ℝ .scalar) (items : List ι)
     (initial : ℝ) :
     items.foldl (fun total item => total + values item) (Tensor.scalar initial) =
-      Tensor.scalar (items.foldl (fun total item => total + (values item).toScalar) initial) := by
+      Tensor.scalar (items.foldl (fun total item => total + (values item).item) initial) := by
   induction items generalizing initial with
   | nil => rfl
   | cons item rest ih =>

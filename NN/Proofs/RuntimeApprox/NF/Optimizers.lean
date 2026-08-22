@@ -87,35 +87,35 @@ def sgdContract : NumericalStepContract R (toSpec (β := β) (fexp := fexp) (rnd
   updateSound := by
     intro s stateS stateR lrError paramsS paramsR paramsError gradsS gradsR gradsError
       _stepData hlr hparams hgrads _hvalid
-    have hscaled := approxT_scale_spec_of_approx
+    have hscaled := approxTensor_scale_spec_of_approx
       (β := β) (fexp := fexp) (rnd := rnd) stateS.lr stateR.lr hgrads hlr
-    have hnext := approxT_sub_spec
+    have hnext := approxTensor_sub_spec
       (β := β) (fexp := fexp) (rnd := rnd) hparams hscaled
     constructor
     · exact hlr
     · simpa [sgdStepBound, _root_.Optim.SGD.update] using hnext
 
 /-- One actual TorchLean SGD parameter update refines its exact-real counterpart. -/
-theorem approxT_sgd_update {s : Shape}
+theorem approxTensor_sgd_update {s : Shape}
     {stateS : _root_.Optim.SGD.State ℝ s} {stateR : _root_.Optim.SGD.State R s}
     {lrError : ℝ} {paramsS : Tensor ℝ s} {paramsR : Tensor R s} {paramsError : ℝ}
     {gradsS : Tensor ℝ s} {gradsR : Tensor R s} {gradsError : ℝ}
     (hstate : sgdStateApprox (β := β) (fexp := fexp) (rnd := rnd)
       stateS stateR lrError)
-    (hparams : approxT (α := R)
+    (hparams : approxTensor (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       paramsS paramsR paramsError)
-    (hgrads : approxT (α := R)
+    (hgrads : approxTensor (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       gradsS gradsR gradsError) :
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (_root_.Optim.SGD.update stateS paramsS gradsS)
       (_root_.Optim.SGD.update stateR paramsR gradsR)
       (sgdStepBound (β := β) (fexp := fexp) (rnd := rnd)
         lrError paramsError gradsError stateR paramsR gradsR).params := by
-  have hscaled := approxT_scale_spec_of_approx
+  have hscaled := approxTensor_scale_spec_of_approx
     (β := β) (fexp := fexp) (rnd := rnd) stateS.lr stateR.lr hgrads hstate
-  have hnext := approxT_sub_spec
+  have hnext := approxTensor_sub_spec
     (β := β) (fexp := fexp) (rnd := rnd) hparams hscaled
   simpa [sgdStepBound, _root_.Optim.SGD.update] using hnext
 
@@ -136,7 +136,7 @@ def momentumSGDStateApprox {s : Shape} (stateS : _root_.Optim.MomentumSGD.State 
   abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) stateR.lr - stateS.lr) ≤ error.lr ∧
   abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) stateR.momentum - stateS.momentum) ≤
     error.momentum ∧
-  approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+  approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
     stateS.buf stateR.buf error.buf
 
 /-- State and parameter bounds for one momentum-SGD update. -/
@@ -182,15 +182,15 @@ def momentumSGDContract :
     intro s stateS stateR stateError paramsS paramsR paramsError gradsS gradsR gradsError
       _stepData hstate hparams hgrads _hvalid
     rcases hstate with ⟨hlr, hmomentum, hbuf⟩
-    have hscaledBuf := approxT_scale_spec_of_approx
+    have hscaledBuf := approxTensor_scale_spec_of_approx
       (β := β) (fexp := fexp) (rnd := rnd)
       stateS.momentum stateR.momentum hbuf hmomentum
-    have hnewBuf := approxT_add_spec
+    have hnewBuf := approxTensor_add_spec
       (β := β) (fexp := fexp) (rnd := rnd) hscaledBuf hgrads
-    have hscaledUpdate := approxT_scale_spec_of_approx
+    have hscaledUpdate := approxTensor_scale_spec_of_approx
       (β := β) (fexp := fexp) (rnd := rnd)
       stateS.lr stateR.lr hnewBuf hlr
-    have hnextParams := approxT_sub_spec
+    have hnextParams := approxTensor_sub_spec
       (β := β) (fexp := fexp) (rnd := rnd) hparams hscaledUpdate
     constructor
     · exact ⟨hlr, hmomentum, by
@@ -204,7 +204,7 @@ def momentumSGDContract :
 This named corollary exposes the useful one-step statement without duplicating its proof; the
 generic `momentumSGDContract.updateSound` field remains the source used for finite runs and
 graph-level composition. -/
-theorem approxT_momentumSGD_update {s : Shape}
+theorem approxTensor_momentumSGD_update {s : Shape}
     {stateS : _root_.Optim.MomentumSGD.State ℝ s}
     {stateR : _root_.Optim.MomentumSGD.State R s}
     {stateError : MomentumSGDStateBound s}
@@ -212,10 +212,10 @@ theorem approxT_momentumSGD_update {s : Shape}
     {gradsS : Tensor ℝ s} {gradsR : Tensor R s} {gradsError : ℝ}
     (hstate : momentumSGDStateApprox (β := β) (fexp := fexp) (rnd := rnd)
       stateS stateR stateError)
-    (hparams : approxT (α := R)
+    (hparams : approxTensor (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       paramsS paramsR paramsError)
-    (hgrads : approxT (α := R)
+    (hgrads : approxTensor (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       gradsS gradsR gradsError) :
     let nextBound := momentumSGDStepBound (β := β) (fexp := fexp) (rnd := rnd)
@@ -223,7 +223,7 @@ theorem approxT_momentumSGD_update {s : Shape}
     momentumSGDStateApprox (β := β) (fexp := fexp) (rnd := rnd)
         (_root_.Optim.MomentumSGD.update stateS paramsS gradsS).1
         (_root_.Optim.MomentumSGD.update stateR paramsR gradsR).1 nextBound.state ∧
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (_root_.Optim.MomentumSGD.update stateS paramsS gradsS).2
         (_root_.Optim.MomentumSGD.update stateR paramsR gradsR).2 nextBound.params := by
   exact momentumSGDContract.updateSound
@@ -257,11 +257,11 @@ def adamWStateApprox {s : Shape} (stateS : _root_.Optim.AdamW.State ℝ s)
   abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) stateR.beta2 - stateS.beta2) ≤ error.beta2 ∧
   abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) stateR.epsilon - stateS.epsilon) ≤
     error.epsilon ∧
-  abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) stateR.weight_decay -
-    stateS.weight_decay) ≤ error.weightDecay ∧
-  approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+  abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) stateR.weightDecay -
+    stateS.weightDecay) ≤ error.weightDecay ∧
+  approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
     stateS.m stateR.m error.moment1 ∧
-  approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+  approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
     stateS.v stateR.v error.moment2 ∧
   stateS.t = stateR.t
 
@@ -371,7 +371,7 @@ def adamWStepErrorTrace {s : Shape} (stateError : AdamWStateBound s)
   let adamUpdateError := linfNorm
     (mulBoundTensor (β := β) (fexp := fexp)
       adaptiveLRError moment1HatError adaptiveLRR moment1HatR)
-  let decayScaleR := stateR.lr * stateR.weight_decay
+  let decayScaleR := stateR.lr * stateR.weightDecay
   let decayUpdateR := scaleSpec paramsR decayScaleR
   let decayUpdateError := linfNorm
     (scaleApproxBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
@@ -402,16 +402,16 @@ The hypotheses for the derived scalar expressions expose rounding in `1-β`, bia
 the decoupled decay coefficient. `η` keeps `sqrt(vHat)` away from its singular derivative at zero;
 the two margin hypotheses ensure the rounded second moment and final denominator remain positive.
 -/
-theorem approxT_adamW_update {s : Shape}
+theorem approxTensor_adamW_update {s : Shape}
     {stateS : _root_.Optim.AdamW.State ℝ s} {stateR : _root_.Optim.AdamW.State R s}
     {stateError : AdamWStateBound s} {derived : AdamWDerivedErrors}
     {paramsS : Tensor ℝ s} {paramsR : Tensor R s} {paramsError : ℝ}
     {gradsS : Tensor ℝ s} {gradsR : Tensor R s} {gradsError η : ℝ}
     (hstate : adamWStateApprox (β := β) (fexp := fexp) (rnd := rnd)
       stateS stateR stateError)
-    (hparams : approxT (α := R)
+    (hparams : approxTensor (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) paramsS paramsR paramsError)
-    (hgrads : approxT (α := R)
+    (hgrads : approxTensor (α := R)
       (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) gradsS gradsR gradsError)
     (honeMinus1 : abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) (1 - stateR.beta1) -
       (1 - stateS.beta1)) ≤ derived.oneMinusBeta1)
@@ -424,7 +424,7 @@ theorem approxT_adamW_update {s : Shape}
       (1 / (1 - _root_.Optim.scalarPowNat stateR.beta2 (stateR.t + 1))) -
       (1 / (1 - _root_.Optim.scalarPowNat stateS.beta2 (stateS.t + 1)))) ≤ derived.biasInv2)
     (hdecay : abs (toSpec (β := β) (fexp := fexp) (rnd := rnd)
-      (stateR.lr * stateR.weight_decay) - stateS.lr * stateS.weight_decay) ≤ derived.decayScale)
+      (stateR.lr * stateR.weightDecay) - stateS.lr * stateS.weightDecay) ≤ derived.decayScale)
     (hη : 0 < η)
     (hEpsilon : 0 ≤ stateS.epsilon)
     (hMoment2Hat :
@@ -445,7 +445,7 @@ theorem approxT_adamW_update {s : Shape}
         (_root_.Optim.AdamW.update stateS paramsS gradsS).1
         (_root_.Optim.AdamW.update stateR paramsR gradsR).1
         { stateError with moment1 := trace.moment1, moment2 := trace.moment2 } ∧
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (_root_.Optim.AdamW.update stateS paramsS gradsS).2
         (_root_.Optim.AdamW.update stateR paramsR gradsR).2 trace.params := by
   dsimp only
@@ -468,32 +468,32 @@ theorem approxT_adamW_update {s : Shape}
   let vHatR := scaleSpec vR bias2R
   let trace := adamWStepErrorTrace (β := β) (fexp := fexp) (rnd := rnd)
     stateError derived paramsError gradsError η stateR paramsR gradsR
-  have hmLeft := approxT_scale_spec_of_approx
+  have hmLeft := approxTensor_scale_spec_of_approx
     (β := β) (fexp := fexp) (rnd := rnd) stateS.beta1 stateR.beta1 hm hbeta1
-  have hmRight := approxT_scale_spec_of_approx
+  have hmRight := approxTensor_scale_spec_of_approx
     (β := β) (fexp := fexp) (rnd := rnd)
     (1 - stateS.beta1) (1 - stateR.beta1) hgrads honeMinus1
-  have hm' := approxT_add_spec (β := β) (fexp := fexp) (rnd := rnd) hmLeft hmRight
-  have hsq := approxT_square_spec (β := β) (fexp := fexp) (rnd := rnd) hgrads
-  have hvLeft := approxT_scale_spec_of_approx
+  have hm' := approxTensor_add_spec (β := β) (fexp := fexp) (rnd := rnd) hmLeft hmRight
+  have hsq := approxTensor_square_spec (β := β) (fexp := fexp) (rnd := rnd) hgrads
+  have hvLeft := approxTensor_scale_spec_of_approx
     (β := β) (fexp := fexp) (rnd := rnd) stateS.beta2 stateR.beta2 hv hbeta2
-  have hvRight := approxT_scale_spec_of_approx
+  have hvRight := approxTensor_scale_spec_of_approx
     (β := β) (fexp := fexp) (rnd := rnd)
     (1 - stateS.beta2) (1 - stateR.beta2) hsq honeMinus2
-  have hv' := approxT_add_spec (β := β) (fexp := fexp) (rnd := rnd) hvLeft hvRight
-  have hmHat := approxT_scale_spec_of_approx
+  have hv' := approxTensor_add_spec (β := β) (fexp := fexp) (rnd := rnd) hvLeft hvRight
+  have hmHat := approxTensor_scale_spec_of_approx
     (β := β) (fexp := fexp) (rnd := rnd) bias1S bias1R hm'
       (by simpa [bias1S, bias1R] using hbias1)
-  have hvHat := approxT_scale_spec_of_approx
+  have hvHat := approxTensor_scale_spec_of_approx
     (β := β) (fexp := fexp) (rnd := rnd) bias2S bias2R hv'
       (by simpa [bias2S, bias2R] using hbias2)
-  have hsqrt := approxT_sqrt_spec_of_pos_lb
+  have hsqrt := approxTensor_sqrt_spec_of_pos_lb
     (β := β) (fexp := fexp) (rnd := rnd) η hη hvHat
       (by simpa [vHatS, vS, bias2S] using hMoment2Hat)
       hMoment2Margin
-  have hepsilonFill := approxT_fill_const
+  have hepsilonFill := approxTensor_fill_const
     (β := β) (fexp := fexp) (rnd := rnd) hepsilon (s := s)
-  have hdenominator := approxT_add_spec
+  have hdenominator := approxTensor_add_spec
     (β := β) (fexp := fexp) (rnd := rnd) hsqrt hepsilonFill
   have hstdLower : Tensor.Forall (fun z : ℝ => Real.sqrt η ≤ z) (sqrtSpec vHatS) := by
     apply Tensor.forall_mapSpec (by simpa [vHatS, vS, bias2S] using hMoment2Hat)
@@ -507,19 +507,19 @@ theorem approxT_adamW_update {s : Shape}
     apply Tensor.forall_map2Spec hstdLower hepsilonLower
     intro a b ha hb
     linarith
-  have hlrFill := approxT_fill_const
+  have hlrFill := approxTensor_fill_const
     (β := β) (fexp := fexp) (rnd := rnd) hlr (s := s)
-  have hadaptive := approxT_div_spec_of_pos_lb
+  have hadaptive := approxTensor_div_spec_of_pos_lb
     (β := β) (fexp := fexp) (rnd := rnd) (Real.sqrt η)
     hlrFill hdenominator hdenominatorLower hDenominatorMargin
-  have hadamUpdate := approxT_mul_spec
+  have hadamUpdate := approxTensor_mul_spec
     (β := β) (fexp := fexp) (rnd := rnd) hadaptive hmHat
-  have hdecayUpdate := approxT_scale_spec_of_approx
+  have hdecayUpdate := approxTensor_scale_spec_of_approx
     (β := β) (fexp := fexp) (rnd := rnd)
-    (stateS.lr * stateS.weight_decay) (stateR.lr * stateR.weight_decay) hparams hdecay
-  have hdecayed := approxT_sub_spec
+    (stateS.lr * stateS.weightDecay) (stateR.lr * stateR.weightDecay) hparams hdecay
+  have hdecayed := approxTensor_sub_spec
     (β := β) (fexp := fexp) (rnd := rnd) hparams hdecayUpdate
-  have hnext := approxT_sub_spec
+  have hnext := approxTensor_sub_spec
     (β := β) (fexp := fexp) (rnd := rnd) hdecayed hadamUpdate
   constructor
   · refine ⟨hlr, hbeta1, hbeta2, hepsilon, hweightDecay, ?_, ?_, ?_⟩
@@ -559,7 +559,7 @@ def adamWStepDataValid {s : Shape}
       (1 / (1 - _root_.Optim.scalarPowNat stateS.beta2 (stateS.t + 1)))) ≤
     data.derived.biasInv2 ∧
   abs (toSpec (β := β) (fexp := fexp) (rnd := rnd)
-      (stateR.lr * stateR.weight_decay) - stateS.lr * stateS.weight_decay) ≤
+      (stateR.lr * stateR.weightDecay) - stateS.lr * stateS.weightDecay) ≤
     data.derived.decayScale ∧
   0 < data.eta ∧
   0 ≤ stateS.epsilon ∧
@@ -621,7 +621,7 @@ def adamWContract : NumericalStepContract R
       ⟨honeMinus1, honeMinus2, hbias1, hbias2, hdecay, hEta, hEpsilon,
         hMoment2Hat, hMoment2Margin, hDenominatorMargin⟩
     simpa [adamWStepBound] using
-      (approxT_adamW_update (β := β) (fexp := fexp) (rnd := rnd)
+      (approxTensor_adamW_update (β := β) (fexp := fexp) (rnd := rnd)
         hstate hparams hgrads honeMinus1 honeMinus2 hbias1 hbias2 hdecay hEta hEpsilon
         hMoment2Hat hMoment2Margin hDenominatorMargin)
 

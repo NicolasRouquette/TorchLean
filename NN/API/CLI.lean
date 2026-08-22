@@ -97,12 +97,6 @@ def flagValue? (args : List String) (key : String) : Except String (Option Strin
   let (value?, _) ← takeFlagValueOnce args key
   pure value?
 
-/-- Require a string-valued flag, accepting both `--key value` and `--key=value`. -/
-def requireFlagValue (args : List String) (key : String) : Except String String := do
-  match ← flagValue? args key with
-  | some value => pure value
-  | none => throw s!"missing --{key}=<value>"
-
 /--
 Parse an optional string-valued flag, fall back to a provided default spelling when absent, and
 decode the selected spelling with a caller-supplied parser.
@@ -149,7 +143,7 @@ def stripFlagValues (args : List String) (keys : List String) : List String :=
   go args
 
 /-- Remove a no-value boolean flag once, returning whether it appeared. -/
-partial def takeBoolFlagOnce (args : List String) (key : String) :
+def takeBoolFlagOnce (args : List String) (key : String) :
     Except String (Bool × List String) := do
   let keyTok := s!"--{key}"
   let rec go : List String → Bool → List String → Except String (Bool × List String)
@@ -393,7 +387,7 @@ Accepted forms:
 When `--key` is followed by a non-boolean token, the flag is treated as a bare switch and the next
 token is left for the caller. Duplicate occurrences are rejected.
 -/
-partial def takeSwitchOnce (args : List String) (key : String) :
+def takeSwitchOnce (args : List String) (key : String) :
     Except String (Option Bool × List String) := do
   let keyTok := s!"--{key}"
   let eqPrefix := s!"--{key}="
@@ -406,7 +400,7 @@ partial def takeSwitchOnce (args : List String) (key : String) :
           if seen.isSome then
             throw s!"{keyTok}: duplicate flag"
           else
-            match rest with
+            match _hRest : rest with
             | v :: rest' =>
                 match parseBoolLit v with
                 | some b => go rest' (some b) acc
@@ -422,6 +416,12 @@ partial def takeSwitchOnce (args : List String) (key : String) :
             | none => throw s!"{keyTok}: expected true, false, 1, or 0; got `{raw}`"
         else
           go rest seen (a :: acc)
+    termination_by args.length
+    decreasing_by
+      all_goals
+        try subst rest
+        simp
+      exact Nat.lt_succ_of_lt (Nat.lt_succ_self _)
   go args none []
 
 /-- Parse a bare-or-valued boolean flag and fall back to the provided default. -/
@@ -493,8 +493,8 @@ def takeRequiredPathFlag
   match path? with
   | some path => pure (path, rest)
   | none => do
-      let pfx := if exeName.isEmpty then "" else s!"{exeName}: "
-      throw s!"{pfx}missing required --{key} <path>"
+      let messagePrefix := if exeName.isEmpty then "" else s!"{exeName}: "
+      throw s!"{messagePrefix}missing required --{key} <path>"
 
 /--
 Parse two optional path flags that must appear together if either one is present.
@@ -572,20 +572,6 @@ def seed (exeName : String) (args : List String) (default : Nat := 0) :
     IO (Nat × List String) :=
   orThrow exeName <| takeSeed args default
 
-/-- Parse an optional natural-number flag such as `--steps 200`. -/
-def natFlag? (exeName : String) (args : List String) (name : String) :
-    IO (Option Nat × List String) :=
-  orThrow exeName <| takeNatFlagOnce args name
-
-/-- Parse an optional natural-number flag, using `default` when it is absent. -/
-def natFlagDefault
-    (exeName : String)
-    (args : List String)
-    (name : String)
-    (default : Nat) :
-    IO (Nat × List String) :=
-  orThrow exeName <| takeNatFlagDefault args name default
-
 /-- Parse a positive natural-number flag, using `default` when it is absent. -/
 def positiveNatFlag
     (exeName : String)
@@ -594,34 +580,6 @@ def positiveNatFlag
     (default : Nat) :
     IO (Nat × List String) :=
   orThrow exeName <| takePositiveNatFlag args exeName name default
-
-/-- Parse an optional filesystem path. -/
-def pathFlag? (exeName : String) (args : List String) (name : String) :
-    IO (Option System.FilePath × List String) :=
-  orThrow exeName <| takePathFlagOnce args name
-
-/-- Parse a floating-point flag, using `default` when it is absent. -/
-def floatFlagDefault
-    (exeName : String)
-    (args : List String)
-    (name : String)
-    (default : Float) :
-    IO (Float × List String) :=
-  orThrow exeName <| takeFloatFlagDefault args name default
-
-/-- Parse a filesystem path, using `default` when the flag is absent. -/
-def pathFlagDefault
-    (exeName : String)
-    (args : List String)
-    (name : String)
-    (default : System.FilePath) :
-    IO (System.FilePath × List String) :=
-  orThrow exeName <| takePathFlagDefault args name default
-
-/-- Parse the `--epochs E --batch N` pair used by epoch-based commands. -/
-def epochBatch (exeName : String) (args : List String) (defaultEpochs defaultBatch : Nat) :
-    IO (EpochBatch × List String) :=
-  orThrow exeName <| takeEpochBatch args defaultEpochs defaultBatch
 
 /-- Fail when command-specific arguments remain after parsing. -/
 def requireNoArgs (exeName : String) (args : List String) : IO Unit :=

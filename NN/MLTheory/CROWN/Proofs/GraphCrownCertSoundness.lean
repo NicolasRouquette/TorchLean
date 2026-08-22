@@ -62,6 +62,8 @@ namespace CrownCertSoundness
 
 noncomputable section
 
+open CertSoundness
+
 /-!
 ## Pointwise interpretation of affine bounds
 
@@ -120,15 +122,6 @@ semantic interpretation `vals` (provided the graph is topologically sorted).
 For IEEE32Exec, a separate evaluator can be plugged in later; the theorem below is stated for any
 `vals` satisfying `SemLocalOK`.
 -/
-
-/-- Alias for the semantic value record used by `CertSoundness`. -/
-abbrev Val := CertSoundness.Val
-/-- Alias for the partial node evaluator used by `CertSoundness`. -/
-abbrev evalNode? := CertSoundness.evalNode?
-/-- Alias for the local semantic consistency predicate used by `CertSoundness`. -/
-abbrev SemLocalOK := CertSoundness.SemLocalOK
-/-- Alias for the topological-sorting predicate used by `CertSoundness`. -/
-abbrev TopoSorted := CertSoundness.TopoSorted
 
 /-!
 ## A CROWN certificate "step function" (checker interface)

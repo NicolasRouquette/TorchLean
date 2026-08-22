@@ -253,7 +253,7 @@ choose an executable scalar and record the provider boundary.
 
 ```
 Data.tensorDataset
-Data.regressionGrid
+Data.samples
 Data.supervisedNpyDataset
 Data.tabularCsvDataset
 Data.batchDataset
@@ -301,7 +301,7 @@ Use `nn.functional` when constructing a differentiable tensor program:
 
 ```
 def energy :
-    autograd.func.Fn (shape![4]) Shape.scalar :=
+    autograd.func.TensorFunction (shape![4]) Shape.scalar :=
   fun x => do
     let x2 ← nn.functional.square x
     nn.functional.mean x2

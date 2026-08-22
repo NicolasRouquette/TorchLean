@@ -62,19 +62,19 @@ def run : IO Unit := do
   -- CPU tape
   let t0 : Tape Float := Tape.empty
   let (t1, xId) := Tape.leaf (t := t0) x (name := some "x")
-  let (t2, peId) := Tape.leaf (t := t1) pe (name := some "pe") (requires_grad := false)
+  let (t2, peId) := Tape.leaf (t := t1) pe (name := some "pe") (requiresGrad := false)
   let (t3, peBId) ← Utils.okOrThrow (Tape.broadcastTo (α := Float) (t := t2) (s₁ := sPE) (s₂ := sX) cbPE peId)
   let (t4, yId) ← Utils.okOrThrow (Tape.add (α := Float) (t := t3) (s := sX) xId peBId)
   let (t5, outId) ← Utils.okOrThrow (Tape.sum (α := Float) (t := t4) (s := sX) yId)
   let outCpu ← Utils.cpuValue (s := Shape.scalar) t5 outId
-  let seedCpu : Runtime.AnyTensor Float := AnyTensor.mk (Tensor.scalar 1.0)
+  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (Tensor.scalar 1.0)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t5) outId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := sX) gradsCpu xId
 
   -- CUDA tape
   let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
   let (t1c, xIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x) (name := some "x")
-  let (t2c, peIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer pe) (name := some "pe") (requires_grad := false)
+  let (t2c, peIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer pe) (name := some "pe") (requiresGrad := false)
   let (t3c, peBIdc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.broadcastTo (t := t2c) (s₁ := sPE) (s₂ := sX) cbPE peIdc)
   let (t4c, yIdc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.add (t := t3c) (s := sX) xIdc peBIdc)
   let (t5c, outIdc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.sum (t := t4c) (s := sX) yIdc)
@@ -150,9 +150,9 @@ def run : IO Unit := do
   -- CPU tape
   let t0r : Tape Float := Tape.empty
   let (t1r, xIdr) := Tape.leaf (t := t0r) xR (name := some "x")
-  let (t2r, cosIdr) := Tape.leaf (t := t1r) cosT (name := some "cos") (requires_grad := false)
-  let (t3r, sinIdr) := Tape.leaf (t := t2r) sinT (name := some "sin") (requires_grad := false)
-  let (t4r, signIdr) := Tape.leaf (t := t3r) signRow (name := some "sign") (requires_grad := false)
+  let (t2r, cosIdr) := Tape.leaf (t := t1r) cosT (name := some "cos") (requiresGrad := false)
+  let (t3r, sinIdr) := Tape.leaf (t := t2r) sinT (name := some "sin") (requiresGrad := false)
+  let (t4r, signIdr) := Tape.leaf (t := t3r) signRow (name := some "sign") (requiresGrad := false)
 
   let (t5r, cos4Idr) ← Utils.okOrThrow (Tape.reshape (α := Float) (t := t4r) (s₁ := sCS) (s₂ := sCS4) cosIdr (by simp [sCS, sCS4, Spec.Shape.size]))
   let (t6r, sin4Idr) ← Utils.okOrThrow (Tape.reshape (α := Float) (t := t5r) (s₁ := sCS) (s₂ := sCS4) sinIdr (by simp [sCS, sCS4, Spec.Shape.size]))
@@ -160,11 +160,11 @@ def run : IO Unit := do
   let (t8r, sinBIdr) ← Utils.okOrThrow (Tape.broadcastTo (α := Float) (t := t7r) (s₁ := sCS4) (s₂ := sR) cbCS4 sin4Idr)
   let (t9r, xCosIdr) ← Utils.okOrThrow (Tape.mul (α := Float) (t := t8r) (s := sR) xIdr cosBIdr)
 
-  -- rotatePairs(x): reshape -> transpose -> gather_rows_nat -> transpose -> mul(sign) -> reshape
+  -- rotatePairs(x): reshape -> transpose -> gather_rows_nat_or_zero -> transpose -> mul(sign) -> reshape
   let (t10r, x2dIdr) ← Utils.okOrThrow (Tape.reshape (α := Float) (t := t9r) (s₁ := sR) (s₂ := sFlat) xIdr
     (by simp [sR, sFlat, rowsFold, Spec.Shape.size, Nat.mul_assoc]))
   let (t11r, xTIdr) ← Utils.okOrThrow (Tape.transpose2d (α := Float) (t := t10r) (m := rowsFold) (n := headDim) x2dIdr)
-  let (t12r, xPermIdr) ← Utils.okOrThrow (Tape.gatherRowsNat (α := Float) (t := t11r) (rows := headDim) (cols := rowsFold) (k := headDim) xTIdr permIdx)
+  let (t12r, xPermIdr) ← Utils.okOrThrow (Tape.gatherRowsNatOrZero (α := Float) (t := t11r) (rows := headDim) (cols := rowsFold) (k := headDim) xTIdr permIdx)
   let (t13r, xBackIdr) ← Utils.okOrThrow (Tape.transpose2d (α := Float) (t := t12r) (m := headDim) (n := rowsFold) xPermIdr)
   let (t14r, signBIdr) ← Utils.okOrThrow (Tape.broadcastTo (α := Float) (t := t13r) (s₁ := shape![1, headDim]) (s₂ := sFlat) cbSign signIdr)
   let (t15r, xRot2dIdr) ← Utils.okOrThrow (Tape.mul (α := Float) (t := t14r) (s := sFlat) xBackIdr signBIdr)
@@ -176,16 +176,16 @@ def run : IO Unit := do
   let (t19r, outRIdr) ← Utils.okOrThrow (Tape.sum (α := Float) (t := t18r) (s := sR) yRIdr)
 
   let outRCpu ← Utils.cpuValue (s := Shape.scalar) t19r outRIdr
-  let seedRCpu : Runtime.AnyTensor Float := AnyTensor.mk (Tensor.scalar 1.0)
+  let seedRCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (Tensor.scalar 1.0)
   let gradsRCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t19r) outRIdr seedRCpu)
   let dxRCpu ← Utils.cpuGrad (s := sR) gradsRCpu xIdr
 
   -- CUDA tape
   let t0rc : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
   let (t1rc, xIdrc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0rc) (Utils.tensorToAnyBuffer xR) (name := some "x")
-  let (t2rc, cosIdrc) := Runtime.Autograd.Cuda.Tape.leaf (t := t1rc) (Utils.tensorToAnyBuffer cosT) (name := some "cos") (requires_grad := false)
-  let (t3rc, sinIdrc) := Runtime.Autograd.Cuda.Tape.leaf (t := t2rc) (Utils.tensorToAnyBuffer sinT) (name := some "sin") (requires_grad := false)
-  let (t4rc, signIdrc) := Runtime.Autograd.Cuda.Tape.leaf (t := t3rc) (Utils.tensorToAnyBuffer signRow) (name := some "sign") (requires_grad := false)
+  let (t2rc, cosIdrc) := Runtime.Autograd.Cuda.Tape.leaf (t := t1rc) (Utils.tensorToAnyBuffer cosT) (name := some "cos") (requiresGrad := false)
+  let (t3rc, sinIdrc) := Runtime.Autograd.Cuda.Tape.leaf (t := t2rc) (Utils.tensorToAnyBuffer sinT) (name := some "sin") (requiresGrad := false)
+  let (t4rc, signIdrc) := Runtime.Autograd.Cuda.Tape.leaf (t := t3rc) (Utils.tensorToAnyBuffer signRow) (name := some "sign") (requiresGrad := false)
 
   let (t5rc, cos4Idrc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.reshape (t := t4rc) (s₁ := sCS) (s₂ := sCS4) cosIdrc (by simp [sCS, sCS4, Spec.Shape.size]))
   let (t6rc, sin4Idrc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.reshape (t := t5rc) (s₁ := sCS) (s₂ := sCS4) sinIdrc (by simp [sCS, sCS4, Spec.Shape.size]))
@@ -196,7 +196,7 @@ def run : IO Unit := do
   let (t10rc, x2dIdrc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.reshape (t := t9rc) (s₁ := sR) (s₂ := sFlat) xIdrc
     (by simp [sR, sFlat, rowsFold, Spec.Shape.size, Nat.mul_assoc]))
   let (t11rc, xTIdrc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.transpose2d (t := t10rc) (m := rowsFold) (n := headDim) x2dIdrc)
-  let (t12rc, xPermIdrc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.gatherRowsNat (t := t11rc) (rows := headDim) (cols := rowsFold) (k := headDim) xTIdrc permIdx)
+  let (t12rc, xPermIdrc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.gatherRowsNatOrZero (t := t11rc) (rows := headDim) (cols := rowsFold) (k := headDim) xTIdrc permIdx)
   let (t13rc, xBackIdrc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.transpose2d (t := t12rc) (m := headDim) (n := rowsFold) xPermIdrc)
   let (t14rc, signBIdrc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.broadcastTo (t := t13rc) (s₁ := shape![1, headDim]) (s₂ := sFlat) cbSign signIdrc)
   let (t15rc, xRot2dIdrc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.mul (t := t14rc) (s := sFlat) xBackIdrc signBIdrc)

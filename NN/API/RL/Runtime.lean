@@ -70,7 +70,7 @@ def castRollout {α : Type} [Runtime.FromFloat α]
   xs.map (castTransition (α := α) (obsShape := obsShape) (nActions := nActions))
 
 /-- Load a rollout JSON file, validate it with the boundary contract, then cast to scalar `α`. -/
-def loadRolloutCast {α : Type} [Runtime.FromFloat α]
+def loadRolloutAs {α : Type} [Runtime.FromFloat α]
     {obsShape : _root_.Spec.Shape} {nActions : Nat}
     (path : String)
     (c : _root_.Runtime.RL.Boundary.Contract obsShape nActions) :
@@ -128,7 +128,7 @@ export _root_.Runtime.RL.PPO.Rollout (toActorCriticSample)
 /-- Instantiate the standard PPO actor-critic runtime module. -/
 def instantiateActorCritic
     {stateShape : _root_.Spec.Shape} {batch nActions : Nat} {α : Type}
-    [Fact (0 < batch)] [Fact (0 < nActions)]
+    [NeZero batch] [NeZero nActions]
     [_root_.Context α] [DecidableEq _root_.Spec.Shape] [_root_.TorchLean.Runtime.FromFloat α]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (opts : _root_.Runtime.Autograd.Torch.Options)

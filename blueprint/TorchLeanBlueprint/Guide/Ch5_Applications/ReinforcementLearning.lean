@@ -85,7 +85,7 @@ The GridWorld command does not hide its actor and critic inside the training loo
 small reusable configuration:
 
 ```
-def modelCfg : nn.models.PPOActorCriticConfig :=
+def modelCfg : nn.models.PPO.Config :=
   { obsDim := 16, hiddenDim := 32, nActions := 4 }
 ```
 

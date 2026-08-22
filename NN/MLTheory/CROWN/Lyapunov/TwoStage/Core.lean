@@ -131,7 +131,7 @@ def lyapunovValueAndGradient
   let w2Row ← TorchLean.gatherRow (m := m) (α := β) (rows := 1) (cols := width) w2 fin0!
   let h1Sq ← TorchLean.mul (m := m) (α := β) (s := .dim width .scalar) h1 h1
   let oneW ← TorchLean.broadcastTo (m := m) (α := β) (s₁ := Shape.scalar)
-    (s₂ := .dim width .scalar) (Shape.CanBroadcastTo.scalar_to_any (.dim width .scalar)) oneS
+    (s₂ := .dim width .scalar) (Shape.CanBroadcastTo.scalarTo (.dim width .scalar)) oneS
   let dh ← TorchLean.sub (m := m) (α := β) (s := .dim width .scalar) oneW h1Sq
   let gHidden ← TorchLean.mul (m := m) (α := β) (s := .dim width .scalar) w2Row dh
   let gHiddenM ← TorchLean.reshape (m := m) (α := β)
@@ -145,7 +145,7 @@ def lyapunovValueAndGradient
       simp [xShape, _root_.Spec.Shape.size])
   let k ← TorchLean.scale (m := m) (α := β) (s := Shape.scalar) s0 (c := two)
   let kV ← TorchLean.broadcastTo (m := m) (α := β) (s₁ := Shape.scalar) (s₂ := xShape)
-    (Shape.CanBroadcastTo.scalar_to_any xShape) k
+    (Shape.CanBroadcastTo.scalarTo xShape) k
   let gradV ← TorchLean.mul (m := m) (α := β) (s := xShape) kV ds
   pure (V, gradV)
 
@@ -170,7 +170,8 @@ def closedLoopDynamics
     (s₂ := .dim 1 .scalar) x2 (by simp [_root_.Spec.Shape.size])
   let dx2V ← TorchLean.reshape (m := m) (α := β) (s₁ := Shape.scalar)
     (s₂ := .dim 1 .scalar) dx2 (by simp [_root_.Spec.Shape.size])
-  TorchLean.concatVectors (m := m) (α := β) (nDim := 1) (mDim := 1) x2V dx2V
+  TorchLean.concatLeadingAxis (m := m) (α := β) (s := .scalar)
+    (nDim := 1) (mDim := 1) x2V dx2V
 
 /-- Form the positivity and decrease penalties from `V`, `∇V`, and the closed-loop dynamics. -/
 @[noinline, nospecialize]

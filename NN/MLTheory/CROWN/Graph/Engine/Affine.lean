@@ -85,7 +85,7 @@ here lets convolution share the same affine machinery as linear and matmul nodes
 
 Precondition: `cfg.stride ≠ 0`. Engine call sites check this before calling the converter.
 -/
-def affOfConv2d (cfg : Conv2DParams α) :
+def affOfConv2d (cfg : NN.IR.Conv2dParams α) :
   let outH := Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding
   let outW := Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding
   AffineVec α (cfg.inC * cfg.inH * cfg.inW) (cfg.outC * outH * outW) :=
@@ -285,8 +285,8 @@ def propagateAffineNode
                       | .dim colsX, .dim colsY,
                         .scalar lx, .scalar ux,
                         .scalar ly, .scalar uy =>
-                        let cx := (lx + ux) * Numbers.pointfive
-                        let cy := (ly + uy) * Numbers.pointfive
+                        let cx := (lx + ux) * Numbers.half
+                        let cy := (ly + uy) * Numbers.half
                         let u1_center := ux * cy + ly * cx - ux * ly
                         let u2_center := lx * cy + uy * cx - lx * uy
                         let sX := if u1_center < u2_center then ly else uy
@@ -302,8 +302,8 @@ def propagateAffineNode
                       | .scalar cxi, .scalar cyi,
                         .scalar lx, .scalar ux,
                         .scalar ly, .scalar uy =>
-                        let cx := (lx + ux) * Numbers.pointfive
-                        let cy := (ly + uy) * Numbers.pointfive
+                        let cx := (lx + ux) * Numbers.half
+                        let cy := (ly + uy) * Numbers.half
                         let u1_center := ux * cy + ly * cx - ux * ly
                         let u2_center := lx * cy + uy * cx - lx * uy
                         let sX := if u1_center < u2_center then ly else uy

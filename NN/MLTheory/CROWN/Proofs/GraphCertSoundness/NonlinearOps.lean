@@ -198,8 +198,8 @@ lemma ibp_sin_sound_real {n : Nat} (xB : Box ℝ (.dim n .scalar)) (x : Tensor �
                   dsimp [m, r] at hmidHi
                   exact hmidHi
                 simp [NN.MLTheory.CROWN.Box.contains,
-                  MathFunctions.sin, Numbers.neg_one, Numbers.one, Numbers.two,
-                  Context.neg_one, Context.two, One.one,
+                  MathFunctions.sin, Numbers.negOne, Numbers.one, Numbers.two,
+                  Context.negOne, Context.two, One.one,
                   hL, hU, hX]
                 exact ⟨⟨hsinRange.1, hmidLo'⟩,
                   ⟨by
@@ -263,8 +263,8 @@ lemma ibp_cos_sound_real {n : Nat} (xB : Box ℝ (.dim n .scalar)) (x : Tensor �
                   dsimp [m, r] at hmidHi
                   exact hmidHi
                 simp [NN.MLTheory.CROWN.Box.contains,
-                  MathFunctions.cos, Numbers.neg_one, Numbers.one, Numbers.two,
-                  Context.neg_one, Context.two, One.one,
+                  MathFunctions.cos, Numbers.negOne, Numbers.one, Numbers.two,
+                  Context.negOne, Context.two, One.one,
                   hL, hU, hX]
                 exact ⟨⟨hcosRange.1, hmidLo'⟩,
                   ⟨by

@@ -7,46 +7,41 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Models.Autoencoder
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 
 /-!
-# Autoencoder as an `NNModuleSpec`
+# Autoencoder as an `Spec.Module`
 
 The autoencoder spec model defines the forward pass and its VJP pieces.
-This file adds the `NNModuleSpec` wrapper so it can be composed with other modules and exported.
+This file adds the `Spec.Module` wrapper so it can be composed with other modules and exported.
 -/
 
 @[expose] public section
 
 
-namespace Spec
+namespace Spec.Module
 
 open Tensor
-open ModSpec
 
 variable {α : Type} [Context α]
 
-/-- Small helper used by exporters to render a PyTorch-style activation string. -/
-def autoencoderActivationToPyTorch (activation_type : String) : String :=
-  match activation_type with
-  | "relu" => "nn.ReLU()"
-  | "sigmoid" => "nn.Sigmoid()"
-  | "tanh" => "nn.Tanh()"
-  | _ => "nn.Identity()"
-
-/-- Autoencoder module specification following `NNModuleSpec`. -/
-def AutoencoderModuleSpec {inputDim hiddenDim : Nat} (m : AutoencoderSpec α inputDim hiddenDim) :
-  NNModuleSpec α (.dim inputDim .scalar) (.dim inputDim .scalar) :=
+/-- Autoencoder module specification following `Spec.Module`. -/
+def autoencoder {inputDim hiddenDim : Nat} (m : AutoencoderSpec α inputDim hiddenDim) :
+  Spec.Module α (.dim inputDim .scalar) (.dim inputDim .scalar) :=
 {
   forward := autoencoderForwardSpec m,
   kind := "Autoencoder",
-  export_func := {
-    toPyTorch :=
-      (s!"nn.Sequential(nn.Linear({inputDim}, {hiddenDim}), " ++
-        s!"{autoencoderActivationToPyTorch m.activation_type}, " ++
-        s!"nn.Linear({hiddenDim}, {inputDim}))"),
-    dimensions := (inputDim, inputDim)
-  }
+  pythonExpr :=
+    let activation :=
+      match m.activation with
+      | .relu => "nn.ReLU()"
+      | .gelu => "nn.GELU()"
+      | .silu => "nn.SiLU()"
+      | .tanh => "nn.Tanh()"
+      | .sigmoid => "nn.Sigmoid()"
+    (s!"nn.Sequential(nn.Linear({inputDim}, {hiddenDim}), " ++
+        s!"{activation}, " ++
+        s!"nn.Linear({hiddenDim}, {inputDim}))")
 }
 
-end Spec
+end Spec.Module

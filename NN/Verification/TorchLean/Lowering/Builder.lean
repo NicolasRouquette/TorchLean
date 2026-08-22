@@ -210,9 +210,9 @@ def emitMultiHeadAttention {α : Type} [Context α]
     emitMatmul (α := α) (a := Qh) (b := Kt) (sOut := sScores) (outShape := sScores)
 
   let invScale : α := Numbers.one / Spec.attentionScaleDenom (α := α) headDim
-  let scaleT : Tensor α sScores := Spec.fill (α := α) invScale sScores
+  let scaleTensor : Tensor α sScores := Spec.fill (α := α) invScale sScores
   let scaledScores ←
-    emitBinary (α := α) (kind := .mul_elem) (a := scores) (b := .const scaleT)
+    emitBinary (α := α) (kind := .mul_elem) (a := scores) (b := .const scaleTensor)
 
   -- A blocked mask entry has exactly zero numerator. No finite sentinel is introduced here.
   let attn : Ref α sScores ←
@@ -239,7 +239,7 @@ def emitMultiHeadAttention {α : Type} [Context α]
 
 /-- Exact leading-axis slice expressed through the verifier's affine matrix fragment. -/
 def emitLeadingSlice {α : Type} [Context α]
-    {n len : Nat} {s : Shape} (start : Nat) (_h : len + start ≤ n)
+    {n len : Nat} {s : Shape} (start : Nat) (_h : start + len ≤ n)
     (x : Ref α (.dim n s)) : BuildM α (Ref α (.dim len s)) := do
   let block : Nat := Spec.Shape.size s
   let xMat : Ref α (.dim n (.dim block .scalar)) ←
@@ -306,7 +306,8 @@ def emitBatchedMultiHeadAttention {α : Type} [Context α]
             (.dim 1 (.dim n (.dim dModel .scalar))))
           (x := yHead) (t := .dim 1 (.dim n (.dim dModel .scalar)))
           (outShape := .dim 1 (.dim n (.dim dModel .scalar)))
-      let tail ← emitLeadingSlice (α := α) (n := batch + 1) (len := batch) 1 (by simp) x
+      let tail ← emitLeadingSlice (α := α) (n := batch + 1) (len := batch) 1
+        (by simp [Nat.add_comm]) x
       let yTail ← emitBatchedMultiHeadAttention (α := α) wq wk wv wo tail mask
       let y ← emitLeadingConcat (α := α)
         (n := 1) (m := batch) (s := .dim n (.dim dModel .scalar)) yHead1 yTail
@@ -453,11 +454,11 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
       (kind := .reshape (.dim 1 (.dim cols .scalar)) (.dim cols .scalar))
       (x := y1c) (t := .dim cols .scalar) (outShape := .dim cols .scalar)
 
-  gatherScalarNat := fun {_n} _x _i =>
+  gatherScalarNatOrZero := fun {_n} _x _i =>
     fail (α := α) "TorchLean→IR: gather is outside the verifier IR fragment"
-  gatherVecNat := fun {_n _k} _x _idx =>
+  gatherVecNatOrZero := fun {_n _k} _x _idx =>
     fail (α := α) "TorchLean→IR: gather is outside the verifier IR fragment"
-  gatherRowsNat := fun {_rows _cols _k} _x _idx =>
+  gatherRowsNatOrZero := fun {_rows _cols _k} _x _idx =>
     fail (α := α) "TorchLean→IR: gather is outside the verifier IR fragment"
   scatterAddVec := fun {_n} _x _val _i =>
     fail (α := α) "TorchLean→IR: scatter is outside the verifier IR fragment"
@@ -472,14 +473,6 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
     let out : Shape := .dim batch (.dim mDim (.dim pDim .scalar))
     emitMatmul (α := α) (a := a) (b := b) (sOut := out) (outShape := out)
 
-  concatVectors := fun {nDim mDim} a b => do
-    let pa ← ensureNode (α := α) a
-    let pb ← ensureNode (α := α) b
-    let id ← freshId (α := α)
-    let out : Shape := .dim (nDim + mDim) .scalar
-    let node : Node := { id := id, parents := [pa, pb], kind := .concat 0, outShape := out }
-    pushNode (α := α) node
-    pure (.node id)
   concatLeadingAxis := fun {_nDim _mDim} {_s} a b =>
     emitLeadingConcat (α := α) a b
 
@@ -665,15 +658,15 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
     let ones : Tensor α s := Spec.fill Numbers.one s
     let onePlus ← emitBinary (α := α) (kind := .add) (a := tanhOut) (b := .const ones)
     let mid ← emitBinary (α := α) (kind := .mul_elem) (a := x) (b := onePlus)
-    let halves : Tensor α s := Spec.fill Numbers.pointfive s
+    let halves : Tensor α s := Spec.fill Numbers.half s
     emitBinary (α := α) (kind := .mul_elem) (a := mid) (b := .const halves)
-  softmax := fun {s} x => do
+  softmaxLast := fun {s} x => do
     let axis :=
       match Spec.Shape.rank s with
       | 0 => 0
       | Nat.succ r => r
     emitUnary (α := α) (kind := .softmax axis) (x := x) (t := s) (outShape := s)
-  logSoftmax := fun {s} x => do
+  logSoftmaxLast := fun {s} x => do
     -- The verifier IR represents `log_softmax` by lowering it through
     -- `softmax` followed by `log` so the semantic graph remains expressible; eager/typed graph
     -- training still uses the stable primitive from the autograd runtime.
@@ -813,9 +806,9 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
               have hkW : kW ≠ 0 := by
                 subst d
                 exact hKernel ⟨1, by decide⟩
-              let spec : Spec.Conv2DSpec inC outC kH kW sH pH α hInC hkH hkW :=
+              let spec : Spec.Conv2dSpec inC outC kH kW sH pH α hInC hkH hkW :=
                 { kernel := kT, bias := bT }
-              let cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α :=
+              let cfg : NN.IR.Conv2dParams α :=
                 { inC := inC, outC := outC, kH := kH, kW := kW
                   stride := sH, padding := pH
                   inH := inH, inW := inW
@@ -855,9 +848,9 @@ instance {α : Type} [Context α] [DecidableEq Shape] :
           parents := [xId]
           kind := .conv2d inC outC kH kW stride padding
           outShape := outShape }
-      let spec : Spec.Conv2DSpec inC outC kH kW stride padding α h1 h2 h3 :=
+      let spec : Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
         { kernel := kT, bias := bT }
-      let cfg : NN.MLTheory.CROWN.Graph.Conv2DParams α :=
+      let cfg : NN.IR.Conv2dParams α :=
         { inC := inC, outC := outC, kH := kH, kW := kW
           stride := stride, padding := padding
           inH := inH, inW := inW

@@ -30,7 +30,7 @@ def classifier (leading : Spec.Shape := .scalar) {s : Spec.Shape}
     Sequential (leading.concat s) (leading.appendDim classes) :=
   seq!
     flattenLeading leading (s := s),
-    linear (Spec.Shape.size s) classes (seedW := seedW) (seedB := seedB) (pfx :=
+    linear (Spec.Shape.size s) classes (seedW := seedW) (seedB := seedB) (leading :=
       leading)
 
 /-- Regression head that preserves any supplied leading dimensions. -/
@@ -39,7 +39,7 @@ def regressor (leading : Spec.Shape := .scalar) {s : Spec.Shape}
     Sequential (leading.concat s) (leading.appendDim outDim) :=
   seq!
     flattenLeading leading (s := s),
-    linear (Spec.Shape.size s) outDim (seedW := seedW) (seedB := seedB) (pfx :=
+    linear (Spec.Shape.size s) outDim (seedW := seedW) (seedB := seedB) (leading :=
       leading)
 
 end heads

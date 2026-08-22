@@ -24,6 +24,7 @@ namespace RuntimeApprox
 open Spec
 open Tensor
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 
 noncomputable section
 
@@ -57,10 +58,10 @@ def tensorCastOfIdxEq {α : Type} {Γ : List Shape} {s₁ s₂ : Shape} (a : Idx
     h).symm
 
 omit [NeuralValidExp fexp] [NeuralValidRndToNearest rnd] in
-lemma approxT_tensor_cast {s t : Shape} (h : s = t)
+lemma approxTensor_tensor_cast {s t : Shape} (h : s = t)
     {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ}
-    (hx : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.tensorCast (α := SpecScalar) (s := s) (t := t) h xS)
       (Spec.tensorCast (α := R) (s := s) (t := t) h xR)
       eps := by
@@ -69,23 +70,23 @@ lemma approxT_tensor_cast {s t : Shape} (h : s = t)
 
 lemma approxCtx_zeros {Γ : List Shape} :
     approxCtx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
-      (TList.zeros (α := SpecScalar) (ss := Γ))
-      (TList.zeros (α := R) (ss := Γ))
+      (SparseContext.zeros (α := SpecScalar) (ss := Γ))
+      (SparseContext.zeros (α := R) (ss := Γ))
       (EList.zeros (ss := Γ)) := by
   induction Γ with
   | nil =>
-      simp [TList.zeros, EList.zeros, approxCtx]
+      simp [SparseContext.zeros, EList.zeros, approxCtx]
   | cons s Γ ih =>
       refine And.intro ?_ ih
-      simpa [TList.zeros, EList.zeros] using (approxT_fill_zero (β := β) (fexp := fexp) (rnd := rnd)
+      simpa [SparseContext.zeros, EList.zeros] using (approxTensor_fill_zero (β := β) (fexp := fexp) (rnd := rnd)
         (s := s))
 
 lemma approxCtx_setIdx {Γ : List Shape} {s : Shape} (idx : Idx Γ s)
     {tS : SpecTensor s} {tR : Tensor R s} {eps : ℝ}
-    (ht : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) tS tR eps) :
+    (ht : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) tS tR eps) :
     approxCtx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
-      (TList.setIdx (α := SpecScalar) (Γ := Γ) (s := s) idx tS)
-      (TList.setIdx (α := R) (Γ := Γ) (s := s) idx tR)
+      (SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := s) idx tS)
+      (SparseContext.setIdx (α := R) (Γ := Γ) (s := s) idx tR)
       (EList.setIdx (Γ := Γ) (s := s) idx eps) := by
   classical
   cases idx with
@@ -103,27 +104,27 @@ lemma approxCtx_setIdx {Γ : List Shape} {s : Shape} (idx : Idx Γ s)
                   -- head is the distinguished index
                   cases hshape
                   refine And.intro ?_ ?_
-                  · simpa [TList.setIdx, EList.setIdx] using ht
-                  · simpa [TList.setIdx, EList.setIdx] using
+                  · simpa [SparseContext.setIdx, EList.setIdx] using ht
+                  · simpa [SparseContext.setIdx, EList.setIdx] using
                       (approxCtx_zeros (β := β) (fexp := fexp) (rnd := rnd) (Γ := Γ))
               | succ j =>
                   have hshape' : Γ.get ⟨j, Nat.lt_of_succ_lt_succ hiVal⟩ = s := by
                     simpa using hshape
                   have iht := ih (i := ⟨j, Nat.lt_of_succ_lt_succ hiVal⟩) (hshape := hshape')
                   refine And.intro ?_ ?_
-                  · simpa [TList.setIdx, EList.setIdx] using
-                      (approxT_fill_zero (β := β) (fexp := fexp) (rnd := rnd) (s := s0))
-                  · simpa [TList.setIdx, EList.setIdx] using iht
+                  · simpa [SparseContext.setIdx, EList.setIdx] using
+                      (approxTensor_fill_zero (β := β) (fexp := fexp) (rnd := rnd) (s := s0))
+                  · simpa [SparseContext.setIdx, EList.setIdx] using iht
 
 lemma approxCtx_set2Idx_ne {Γ : List Shape} {s₁ s₂ : Shape} (a : Idx Γ s₁) (b : Idx Γ s₂)
     {t₁S : SpecTensor s₁} {t₁R : Tensor R s₁} {eps₁ : ℝ}
     {t₂S : SpecTensor s₂} {t₂R : Tensor R s₂} {eps₂ : ℝ}
-    (h₁ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) t₁S t₁R eps₁)
-    (h₂ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) t₂S t₂R eps₂)
+    (h₁ : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) t₁S t₁R eps₁)
+    (h₂ : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) t₂S t₂R eps₂)
     (hne : a.i ≠ b.i) :
     approxCtx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
-      (TList.set2Idx (α := SpecScalar) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) a t₁S b t₂S)
-      (TList.set2Idx (α := R) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) a t₁R b t₂R)
+      (SparseContext.set2Idx (α := SpecScalar) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) a t₁S b t₂S)
+      (SparseContext.set2Idx (α := R) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) a t₁R b t₂R)
       (EList.set2Idx (Γ := Γ) (s₁ := s₁) (s₂ := s₂) a eps₁ b eps₂ 0) := by
   classical
   induction Γ with
@@ -150,25 +151,25 @@ lemma approxCtx_set2Idx_ne {Γ : List Shape} {s₁ s₂ : Shape} (a : Idx Γ s�
                           | succ j =>
                               cases haShape
                               refine And.intro ?_ ?_
-                              · simpa [TList.set2Idx, EList.set2Idx] using h₁
+                              · simpa [SparseContext.set2Idx, EList.set2Idx] using h₁
                               ·
                                 let bTail : Idx Γ s₂ :=
                                   ⟨⟨j, Nat.lt_of_succ_lt_succ ibLt⟩, by simpa using hbShape⟩
                                 have := approxCtx_setIdx (β := β) (fexp := fexp) (rnd := rnd)
                                   (Γ := Γ) (s := s₂) bTail (tS := t₂S) (tR := t₂R) (eps := eps₂) h₂
-                                simpa [TList.set2Idx, EList.set2Idx, bTail] using this
+                                simpa [SparseContext.set2Idx, EList.set2Idx, bTail] using this
                       | succ i =>
                           cases ibVal with
                           | zero =>
                               cases hbShape
                               refine And.intro ?_ ?_
-                              · simpa [TList.set2Idx, EList.set2Idx] using h₂
+                              · simpa [SparseContext.set2Idx, EList.set2Idx] using h₂
                               ·
                                 let aTail : Idx Γ s₁ :=
                                   ⟨⟨i, Nat.lt_of_succ_lt_succ iaLt⟩, by simpa using haShape⟩
                                 have := approxCtx_setIdx (β := β) (fexp := fexp) (rnd := rnd)
                                   (Γ := Γ) (s := s₁) aTail (tS := t₁S) (tR := t₁R) (eps := eps₁) h₁
-                                simpa [TList.set2Idx, EList.set2Idx, aTail] using this
+                                simpa [SparseContext.set2Idx, EList.set2Idx, aTail] using this
                           | succ j =>
                               let aTail : Idx Γ s₁ :=
                                 ⟨⟨i, Nat.lt_of_succ_lt_succ iaLt⟩, by simpa using haShape⟩
@@ -182,25 +183,25 @@ lemma approxCtx_set2Idx_ne {Γ : List Shape} {s₁ s₂ : Shape} (a : Idx Γ s�
                                   simpa [aTail, bTail] using congrArg Fin.val hij
                                 simp [this]
                               refine And.intro ?_ ?_
-                              · simpa [TList.set2Idx, EList.set2Idx] using
-                                  (approxT_fill_zero (β := β) (fexp := fexp) (rnd := rnd) (s := s0))
+                              · simpa [SparseContext.set2Idx, EList.set2Idx] using
+                                  (approxTensor_fill_zero (β := β) (fexp := fexp) (rnd := rnd) (s := s0))
                               ·
                                 have := ih (a := aTail) (b := bTail) hneTail
-                                simpa [TList.set2Idx, EList.set2Idx, aTail, bTail] using this
+                                simpa [SparseContext.set2Idx, EList.set2Idx, aTail, bTail] using this
 
 lemma approxCtx_set3Idx_ne {Γ : List Shape} {s₁ s₂ s₃ : Shape} (a : Idx Γ s₁) (b : Idx Γ s₂) (c :
   Idx Γ s₃)
     {t₁S : SpecTensor s₁} {t₁R : Tensor R s₁} {eps₁ : ℝ}
     {t₂S : SpecTensor s₂} {t₂R : Tensor R s₂} {eps₂ : ℝ}
     {t₃S : SpecTensor s₃} {t₃R : Tensor R s₃} {eps₃ : ℝ}
-    (h₁ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) t₁S t₁R eps₁)
-    (h₂ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) t₂S t₂R eps₂)
-    (h₃ : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) t₃S t₃R eps₃)
+    (h₁ : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) t₁S t₁R eps₁)
+    (h₂ : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) t₂S t₂R eps₂)
+    (h₃ : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) t₃S t₃R eps₃)
     (hab : a.i ≠ b.i) (hac : a.i ≠ c.i) (hbc : b.i ≠ c.i) :
     approxCtx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
-      (TList.set3IdxNe (α := SpecScalar) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) (s₃ := s₃) a t₁S b t₂S c
+      (SparseContext.set3IdxNe (α := SpecScalar) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) (s₃ := s₃) a t₁S b t₂S c
         t₃S hab hac hbc)
-      (TList.set3IdxNe (α := R) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) (s₃ := s₃) a t₁R b t₂R c t₃R hab hac
+      (SparseContext.set3IdxNe (α := R) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) (s₃ := s₃) a t₁R b t₂R c t₃R hab hac
         hbc)
       (EList.set3IdxNe (Γ := Γ) (s₁ := s₁) (s₂ := s₂) (s₃ := s₃) a eps₁ b eps₂ c eps₃ hab hac hbc)
         := by
@@ -237,7 +238,7 @@ lemma approxCtx_set3Idx_ne {Γ : List Shape} {s₁ s₂ s₃ : Shape} (a : Idx �
                                       | succ k =>
                                           cases haShape
                                           refine And.intro ?_ ?_
-                                          · simpa [TList.set3IdxNe, EList.set3IdxNe] using h₁
+                                          · simpa [SparseContext.set3IdxNe, EList.set3IdxNe] using h₁
                                           ·
                                             let bTail : Idx Γ s₂ := ⟨⟨j, Nat.lt_of_succ_lt_succ
                                               ibLt⟩, by simpa using hbShape⟩
@@ -257,7 +258,7 @@ lemma approxCtx_set3Idx_ne {Γ : List Shape} {s₁ s₂ s₃ : Shape} (a : Idx �
                                                 (t₁S := t₂S) (t₁R := t₂R) (eps₁ := eps₂)
                                                 (t₂S := t₃S) (t₂R := t₃R) (eps₂ := eps₃)
                                                 h₂ h₃ hbcTail
-                                            simpa [TList.set3IdxNe, EList.set3IdxNe, bTail, cTail]
+                                            simpa [SparseContext.set3IdxNe, EList.set3IdxNe, bTail, cTail]
                                               using this
                               | succ i =>
                                   cases ibVal with
@@ -268,7 +269,7 @@ lemma approxCtx_set3Idx_ne {Γ : List Shape} {s₁ s₂ s₃ : Shape} (a : Idx �
                                       | succ k =>
                                           cases hbShape
                                           refine And.intro ?_ ?_
-                                          · simpa [TList.set3IdxNe, EList.set3IdxNe] using h₂
+                                          · simpa [SparseContext.set3IdxNe, EList.set3IdxNe] using h₂
                                           ·
                                             let aTail : Idx Γ s₁ := ⟨⟨i, Nat.lt_of_succ_lt_succ
                                               iaLt⟩, by simpa using haShape⟩
@@ -288,14 +289,14 @@ lemma approxCtx_set3Idx_ne {Γ : List Shape} {s₁ s₂ s₃ : Shape} (a : Idx �
                                                 (t₁S := t₁S) (t₁R := t₁R) (eps₁ := eps₁)
                                                 (t₂S := t₃S) (t₂R := t₃R) (eps₂ := eps₃)
                                                 h₁ h₃ hacTail
-                                            simpa [TList.set3IdxNe, EList.set3IdxNe, aTail, cTail]
+                                            simpa [SparseContext.set3IdxNe, EList.set3IdxNe, aTail, cTail]
                                               using this
                                   | succ j =>
                                       cases icVal with
                                       | zero =>
                                           cases hcShape
                                           refine And.intro ?_ ?_
-                                          · simpa [TList.set3IdxNe, EList.set3IdxNe] using h₃
+                                          · simpa [SparseContext.set3IdxNe, EList.set3IdxNe] using h₃
                                           ·
                                             let aTail : Idx Γ s₁ := ⟨⟨i, Nat.lt_of_succ_lt_succ
                                               iaLt⟩, by simpa using haShape⟩
@@ -315,7 +316,7 @@ lemma approxCtx_set3Idx_ne {Γ : List Shape} {s₁ s₂ s₃ : Shape} (a : Idx �
                                                 (t₁S := t₁S) (t₁R := t₁R) (eps₁ := eps₁)
                                                 (t₂S := t₂S) (t₂R := t₂R) (eps₂ := eps₂)
                                                 h₁ h₂ habTail
-                                            simpa [TList.set3IdxNe, EList.set3IdxNe, aTail, bTail]
+                                            simpa [SparseContext.set3IdxNe, EList.set3IdxNe, aTail, bTail]
                                               using this
                                       | succ k =>
                                           let aTail : Idx Γ s₁ := ⟨⟨i, Nat.lt_of_succ_lt_succ iaLt⟩,
@@ -348,10 +349,10 @@ lemma approxCtx_set3Idx_ne {Γ : List Shape} {s₁ s₂ s₃ : Shape} (a : Idx �
                                           have iht := ih (a := aTail) (b := bTail) (c := cTail)
                                             habTail hacTail hbcTail
                                           refine And.intro ?_ ?_
-                                          · simpa [TList.set3IdxNe, EList.set3IdxNe] using
-                                              (approxT_fill_zero (β := β) (fexp := fexp) (rnd :=
+                                          · simpa [SparseContext.set3IdxNe, EList.set3IdxNe] using
+                                              (approxTensor_fill_zero (β := β) (fexp := fexp) (rnd :=
                                                 rnd) (s := s0))
-                                          · simpa [TList.set3IdxNe, EList.set3IdxNe, aTail, bTail,
+                                          · simpa [SparseContext.set3IdxNe, EList.set3IdxNe, aTail, bTail,
                                             cTail] using iht
 
 -- ---------------------------------------------------------------------------
@@ -408,15 +409,15 @@ theorem approxCtx_add {Δ : List Shape} :
                           cases epsy with
                           | cons ey eys =>
                               refine And.intro ?_ ?_
-                              · -- head uses `approxT_add_spec`
-                                have hx0 : approxT (α := R) (toSpec := toSpec (β := β) (fexp :=
+                              · -- head uses `approxTensor_add_spec`
+                                have hx0 : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp :=
                                   fexp) (rnd := rnd)) xSh xRh ex :=
                                   hx.1
-                                have hy0 : approxT (α := R) (toSpec := toSpec (β := β) (fexp :=
+                                have hy0 : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp :=
                                   fexp) (rnd := rnd)) ySh yRh ey :=
                                   hy.1
                                 simpa [TList.add, ctxAddBound] using
-                                  (approxT_add_spec (β := β) (fexp := fexp) (rnd := rnd)
+                                  (approxTensor_add_spec (β := β) (fexp := fexp) (rnd := rnd)
                                     (s := s) (xS := xSh) (yS := ySh) (xR := xRh) (yR := yRh)
                                     (epsx := ex) (epsy := ey) hx0 hy0)
                               · -- tail by IH

@@ -108,7 +108,7 @@ implemented as:
 `exp(log(10000) * (2*i / d))`
 -/
 def posencFreqDenomSpec (i d : Nat) : α :=
-  MathFunctions.exp (Numbers.log10000 * ((Numbers.two * (i : α)) / (d : α)))
+  MathFunctions.exp (Numbers.lnTenThousand * ((Numbers.two * (i : α)) / (d : α)))
 
 /--
 Common angle used by sinusoidal PE and RoPE:
@@ -140,7 +140,7 @@ def sinusoidalPositionalEncodingSpec (seqLen embedDim : Nat) (startPos : Nat := 
       let iNat : Nat := j.val / 2
       let θ : α := posencAngleSpec (α := α) posNat iNat embedDim
       let v : α := if j.val % 2 = 0 then MathFunctions.sin θ else MathFunctions.cos θ
-      Tensor.ofScalar v))
+      Tensor.scalar v))
 
 /--
 Add sinusoidal positional encodings: `y = x + sinusoidal(startPos, seqLen, embedDim)`.
@@ -188,28 +188,28 @@ def ropeRotatePairsLastdimSpec {headDim : Nat}
     let idx := j.val
     if idx % 2 = 0 then
       if hNext : idx + 1 < headDim then
-        Tensor.ofScalar (-Tensor.vecGet x ⟨idx + 1, hNext⟩)
+        Tensor.scalar (-Tensor.vecGet x ⟨idx + 1, hNext⟩)
       else
         -- Unpaired last entry (only possible when `headDim` is odd).
-        Tensor.ofScalar (Tensor.vecGet x j)
+        Tensor.scalar (Tensor.vecGet x j)
     else
       have hPrev : idx - 1 < headDim :=
         Nat.lt_of_le_of_lt (Nat.sub_le idx 1) j.isLt
-      Tensor.ofScalar (Tensor.vecGet x ⟨idx - 1, hPrev⟩))
+      Tensor.scalar (Tensor.vecGet x ⟨idx - 1, hPrev⟩))
 
 /-- Broadcast RoPE `cos(θ)` factors to a full `(headDim)` vector for one position. -/
 def ropeCosLastdimSpec (pos headDim : Nat) : Tensor α (.dim headDim .scalar) :=
   Tensor.dim (fun (j : Fin headDim) =>
     let iNat : Nat := j.val / 2
     let θ : α := posencAngleSpec (α := α) pos iNat headDim
-    Tensor.ofScalar (MathFunctions.cos θ))
+    Tensor.scalar (MathFunctions.cos θ))
 
 /-- Broadcast RoPE `sin(θ)` factors to a full `(headDim)` vector for one position. -/
 def ropeSinLastdimSpec (pos headDim : Nat) : Tensor α (.dim headDim .scalar) :=
   Tensor.dim (fun (j : Fin headDim) =>
     let iNat : Nat := j.val / 2
     let θ : α := posencAngleSpec (α := α) pos iNat headDim
-    Tensor.ofScalar (MathFunctions.sin θ))
+    Tensor.scalar (MathFunctions.sin θ))
 
 /--
 Apply RoPE to a single head matrix `x : (seqLen, headDim)`.

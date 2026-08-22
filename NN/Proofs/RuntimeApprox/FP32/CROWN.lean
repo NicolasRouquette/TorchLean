@@ -16,7 +16,7 @@ The CROWN/IBP development (`NN/MLTheory/CROWN/*`) proves *real-valued* enclosure
 form “the network output lies in this box”.
 
 This module combines those real enclosures with float32 forward-error bounds (expressed using
-`approxT`) to obtain a **float32-sound** enclosure:
+`approxTensor`) to obtain a **float32-sound** enclosure:
 we inflate the real box by the explicit forward error budget.
 
 This is the key separation of concerns:
@@ -115,7 +115,7 @@ widened box.
 theorem box_contains_inflateUniform_of_approx {s : Shape}
     {B : Box ℝ s} {yS : Tensor ℝ s} {yR : Tensor R s} {eps : ℝ}
     (hy : Box.contains (α := ℝ) B yS)
-    (happrox : approxT (α := R) (toSpec := toSpec) yS yR eps) :
+    (happrox : approxTensor (α := R) (toSpec := toSpec) yS yR eps) :
     Box.contains (α := ℝ) (inflateBoxUniform (B := B) eps)
       (tensorToSpec (α := R) (toSpec := toSpec) yR) := by
   induction s with
@@ -131,7 +131,7 @@ theorem box_contains_inflateUniform_of_approx {s : Shape}
                       cases yR with
                       | scalar yR =>
                           have habs : abs (toSpec yR - y) ≤ eps :=
-                            (approxT_scalar_iff (α := R) (toSpec := toSpec)
+                            (approxTensor_scalar_iff (α := R) (toSpec := toSpec)
                               (x := y) (xR := yR) (eps := eps)).1 happrox
                           have hinterval := interval_contains_inflate_of_abs_error (hy := hy) habs
                           simpa [inflateBoxUniform, Box.contains, tensorToSpec, Spec.mapTensor,
@@ -152,9 +152,9 @@ theorem box_contains_inflateUniform_of_approx {s : Shape}
                           have hy_i : Box.contains (α := ℝ) { lo := loF i, hi := hiF i } (ySf i) :=
                             hy i
                           have happrox_i :
-                              approxT (α := R) (toSpec := toSpec) (ySf i) (yRf i) eps := by
+                              approxTensor (α := R) (toSpec := toSpec) (ySf i) (yRf i) eps := by
                             simpa using
-                              (approxT_dim_get (α := R) (toSpec := toSpec)
+                              (approxTensor_dim_get (α := R) (toSpec := toSpec)
                                 (xS := Tensor.dim ySf) (xR := Tensor.dim yRf) (eps := eps) happrox
                                   i)
                           have hrec :=
@@ -178,7 +178,7 @@ def ibpReluTwoLayerErrorBudget {inDim hidDim outDim : Nat}
 Float32-sound IBP for a 2-layer ReLU MLP, via uniform output-box inflation:
 
 1. Use the real-spec IBP theorem `NN.MLTheory.CROWN.Theorems.bound_ibp_sound`.
-2. Use `approxT` to bound FP32 forward error (`approxT_reluTwoLayerMlp_float32`).
+2. Use `approxTensor` to bound FP32 forward error (`approxTensor_reluTwoLayerMlp_float32`).
 3. Inflate the real IBP box by that error bound.
 
 The result is a real-valued interval that is guaranteed to contain the `FP32` execution result.
@@ -190,11 +190,11 @@ theorem ibpBound_contains_reluTwoLayerMlp_float32 {inDim hidDim outDim : Nat}
     (xS : Tensor ℝ (.dim inDim .scalar))
     (xR : Tensor R (.dim inDim .scalar))
     {eW1 eb1 eW2 eb2 ex : ℝ}
-    (hW1 : approxT (α := R) (toSpec := toSpec) netS.hiddenWeight netR.hiddenWeight eW1)
-    (hb1 : approxT (α := R) (toSpec := toSpec) netS.hiddenBias netR.hiddenBias eb1)
-    (hW2 : approxT (α := R) (toSpec := toSpec) netS.outputWeight netR.outputWeight eW2)
-    (hb2 : approxT (α := R) (toSpec := toSpec) netS.outputBias netR.outputBias eb2)
-    (hx : approxT (α := R) (toSpec := toSpec) xS xR ex)
+    (hW1 : approxTensor (α := R) (toSpec := toSpec) netS.hiddenWeight netR.hiddenWeight eW1)
+    (hb1 : approxTensor (α := R) (toSpec := toSpec) netS.hiddenBias netR.hiddenBias eb1)
+    (hW2 : approxTensor (α := R) (toSpec := toSpec) netS.outputWeight netR.outputWeight eW2)
+    (hb2 : approxTensor (α := R) (toSpec := toSpec) netS.outputBias netR.outputBias eb2)
+    (hx : approxTensor (α := R) (toSpec := toSpec) xS xR ex)
     (hxB : NN.MLTheory.CROWN.Box.contains (α := ℝ) xB xS) :
     NN.MLTheory.CROWN.Box.contains (α := ℝ)
       (inflateBoxUniform (B := NN.MLTheory.CROWN.boundIbp (α := ℝ) netS xB)
@@ -221,7 +221,7 @@ theorem ibpBound_contains_reluTwoLayerMlp_float32 {inDim hidDim outDim : Nat}
   let l2R : Spec.LinearSpec R hidDim outDim := { weights := netR.outputWeight, bias := netR.outputBias }
 
   let epsOut := ibpReluTwoLayerErrorBudget netR xR eW1 eb1 eW2 eb2 ex
-  have hOut := approxT_reluTwoLayerMlp_float32
+  have hOut := approxTensor_reluTwoLayerMlp_float32
     (L0S := l1S) (L1S := l2S) (L0R := l1R) (L1R := l2R)
     (xS := xS) (xR := xR)
     (e0W := eW1) (e0b := eb1) (e1W := eW2) (e1b := eb2) (ex := ex)
@@ -236,7 +236,7 @@ theorem ibpBound_contains_reluTwoLayerMlp_float32 {inDim hidDim outDim : Nat}
        Spec.linearSpec (α := R) l2R a1R))
     (eps := epsOut) hyS ?_
   -- Match the MLP approximation conclusion to the `CROWN.forward`/`reluR` expressions.
-  change approxT (α := R) (toSpec := toSpec)
+  change approxTensor (α := R) (toSpec := toSpec)
     (Spec.linearSpec (α := ℝ) l2S
       (mapSpec (fun x => max x 0) (Spec.linearSpec (α := ℝ) l1S xS)))
     (Spec.linearSpec (α := R) l2R

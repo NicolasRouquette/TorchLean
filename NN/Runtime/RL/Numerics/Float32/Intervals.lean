@@ -123,7 +123,7 @@ def discountedReturnsIntervals {n : Nat}
     (bootstrap : Float32Exec := (0 : Float32Exec)) :
     Tensor Interval32 (.dim n .scalar) :=
   let rArr : Array Float32Exec :=
-    Array.ofFn (fun i : Fin n => Tensor.toScalar (get rewards i))
+    Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
   let out : Array Interval32 :=
     Id.run do
       let mut out : Array Interval32 :=
@@ -156,13 +156,13 @@ def generalizedAdvantageEstimationIntervals {n : Nat}
     (dones : Tensor Bool (.dim n .scalar)) :
     Tensor Interval32 (.dim n .scalar) :=
   let rArr : Array Float32Exec :=
-    Array.ofFn (fun i : Fin n => Tensor.toScalar (get rewards i))
+    Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
   let vArr : Array Float32Exec :=
-    Array.ofFn (fun i : Fin n => Tensor.toScalar (get values i))
+    Array.ofFn (fun i : Fin n => Tensor.item (get values i))
   let nvArr : Array Float32Exec :=
-    Array.ofFn (fun i : Fin n => Tensor.toScalar (get nextValues i))
+    Array.ofFn (fun i : Fin n => Tensor.item (get nextValues i))
   let dArr : Array Bool :=
-    Array.ofFn (fun i : Fin n => Tensor.toScalar (get dones i))
+    Array.ofFn (fun i : Fin n => Tensor.item (get dones i))
 
   let out : Array Interval32 :=
     Id.run do
@@ -207,8 +207,8 @@ def returnsWithinIntervals {n : Nat}
     (intervals : Tensor Interval32 (.dim n .scalar)) : Bool :=
   let idxs : Array (Fin n) := Array.ofFn (fun i => i)
   idxs.all fun i =>
-    let x : Float32Exec := Tensor.toScalar (get returns i)
-    let I : Interval32 := Tensor.toScalar (get intervals i)
+    let x : Float32Exec := Tensor.item (get returns i)
+    let I : Interval32 := Tensor.item (get intervals i)
     TorchLean.Floats.IEEE754.IEEE32Exec.Interval32.leB I.lo x &&
       TorchLean.Floats.IEEE754.IEEE32Exec.Interval32.leB x I.hi
 

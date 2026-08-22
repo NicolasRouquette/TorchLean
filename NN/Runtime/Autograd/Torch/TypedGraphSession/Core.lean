@@ -49,14 +49,6 @@ open Tensor
 
 namespace Internal
 
-/--
-Convenience: turn a `Result α` into `IO α` by throwing `IO.userError` on `.error`.
-
-This mirrors the common pattern in the eager runtime front-end (`Torch.Core`).
--/
-abbrev okOrThrow {α : Type} : Runtime.Autograd.Result α → IO α :=
-  Runtime.Autograd.okOrThrow
-
 /-- Non-differentiable external environment for the graph: a small array of `Nat` inputs. -/
 abbrev NatEnv : Type := Array Nat
 

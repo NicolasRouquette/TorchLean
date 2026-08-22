@@ -30,14 +30,14 @@ causal language modeling. Missing tokens are padded with `padId`, matching
 `Data.CausalLM.oneHotPair`.
 -/
 def tokenWindow (t : Tokenizer) (n : Nat) (input : String) (offset : Nat := 0)
-    (padId : Nat := 0) : List Nat :=
+    (padId : Nat := 0) : Vector Nat n :=
   let toks := t.encode input
-  (List.range n).map (fun i => toks.getD (offset + i) padId)
+  Vector.ofFn (fun i => toks.getD (offset + i.val) padId)
 
 /-- Decode a fixed token window extracted by `tokenWindow`. -/
 def decodeWindow (t : Tokenizer) (n : Nat) (input : String) (offset : Nat := 0)
     (padId : Nat := 0) : String :=
-  t.decode (tokenWindow t n input (offset := offset) (padId := padId))
+  t.decode (tokenWindow t n input (offset := offset) (padId := padId)).toList
 
 /--
 Escape a short text fragment for one-line terminal output.
@@ -230,7 +230,7 @@ def parse
 end FinetuneOptions
 
 /-- Optional GPT-2 BPE tokenizer bundle plus an optional bounded-text cap. -/
-structure BPECorpusOptions where
+structure BpeCorpusOptions where
   /-- Optional GPT-2 `vocab.json` path. Must be paired with `bpeMerges?`. -/
   bpeVocab? : Option System.FilePath
   /-- Optional GPT-2 `merges.txt` path. Must be paired with `bpeVocab?`. -/
@@ -239,7 +239,7 @@ structure BPECorpusOptions where
   maxChars? : Option Nat
 deriving Repr
 
-namespace BPECorpusOptions
+namespace BpeCorpusOptions
 
 /--
 Parse the optional GPT-2 BPE tokenizer bundle.
@@ -248,7 +248,7 @@ Parse the optional GPT-2 BPE tokenizer bundle.
 -/
 def parse
     (args : List String) :
-    Except String (BPECorpusOptions × List String) := do
+    Except String (BpeCorpusOptions × List String) := do
   let ((bpeVocab?, bpeMerges?), args) ←
     TorchLean.CLI.takePairedPathFlags args "bpe-vocab" "bpe-merges"
   let (maxCharsRaw?, args) ← TorchLean.CLI.takeNatFlagOnce args "max-chars"
@@ -256,7 +256,7 @@ def parse
           bpeMerges? := bpeMerges?
           maxChars? := maxCharsRaw? }, args)
 
-end BPECorpusOptions
+end BpeCorpusOptions
 
 /-- Shared terminal-REPL toggle used by interactive text examples. -/
 structure InteractiveOptions where

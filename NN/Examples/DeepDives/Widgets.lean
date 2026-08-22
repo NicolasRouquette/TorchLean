@@ -57,7 +57,7 @@ def pos : GridWorld.State 4 4 :=
 
 /-- Constant policy for the policy-visualization demo. -/
 def goRightPolicy : GridWorld.State 4 4 → GridWorld.Action :=
-  fun _ => GridAction.right
+  fun _ => GridWorld.Action.right
 
 /-- Example rollout path rendered by the GridWorld trace widget. -/
 def samplePath : Array (GridWorld.State 4 4) :=
@@ -261,14 +261,14 @@ def sampleMatrix : Tensor Int (shape![2, 4]) :=
     Tensor.dim (fun j =>
       Tensor.scalar (Int.ofNat (i.1 * 10 + j.1))))
 
-def anyMat : Runtime.AnyTensor Int :=
-  { s := (shape![2, 4]), t := sampleMatrix }
+def anyMat : Spec.PackedTensor Int :=
+  Spec.PackedTensor.ofTensor sampleMatrix
 
-def anyF (x : Float) : Runtime.AnyTensor Float :=
-  { s := .scalar, t := Tensor.scalar x }
+def anyF (x : Float) : Spec.PackedTensor Float :=
+  Spec.PackedTensor.ofTensor (Tensor.scalar x)
 
 def sampleRuntimeContext : Runtime.RuntimeContext Float :=
-  { var_registry := [
+  { bindings := [
       ("w", anyF 3.0)
     , ("x", anyF 2.0)
     ]
@@ -276,7 +276,7 @@ def sampleRuntimeContext : Runtime.RuntimeContext Float :=
       ("w", anyF 0.1)
     , ("x", anyF 0.0)
     ]
-    next_id := 2 }
+    nextId := 2 }
 
 def sampleGraph : NN.IR.Graph :=
   { nodes := #[
@@ -306,9 +306,8 @@ def pairTensor (x y : Float) : Tensor Float (shape![2]) :=
     | ⟨0, _⟩ => Tensor.scalar x
     | ⟨_, _⟩ => Tensor.scalar y)
 
-def sampleInput : Runtime.AnyTensor Float :=
-  { s := (shape![2])
-    t := pairTensor 0.60 (-0.20) }
+def sampleInput : Spec.PackedTensor Float :=
+  Spec.PackedTensor.ofTensor (pairTensor 0.60 (-0.20))
 
 def samplePayload : NN.IR.Payload Float :=
   { const? := fun id =>
@@ -373,7 +372,7 @@ array-backed `TensorArray.Tensor` (common at IO boundaries), you can convert it 
 meta def taMat23 : TensorArray.Tensor Float [2, 3] :=
   TensorArray.ofArray #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0] [2, 3] (by simp)
 
-meta def taMat23_spec : Tensor Float (listToShape [2, 3]) :=
+meta def taMat23_spec : Tensor Float (Shape.ofList [2, 3]) :=
   toTensor taMat23
 
 -- Try hovering/cursoring on these commands in the editor.

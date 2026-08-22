@@ -209,7 +209,7 @@ first logit is larger in this run, so the probe's predicted class is the expecte
 That is a useful sanity check, not an accuracy theorem.
 
 The reusable definitions in
-[`NN.API.Data.Bands`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Data/Bands.lean)
+[`NN.Examples.Data.Bands`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Data/Bands.lean)
 separate rendering from training. `renderBand` constructs one image from an axis, offset, and
 thickness; `dataset` combines any list of class descriptions and offsets; `train` and `probes` cast
 the concrete `Float` images into a supported scalar context. The quickstart uses the canonical

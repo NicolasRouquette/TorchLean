@@ -103,15 +103,6 @@ def comp {σ τ υ : Shape} : Seq σ τ → Seq τ υ → Seq σ υ
 infixr:80 " >>> " => comp
 
 /--
-Backend reference type used while evaluating a sequential model.
-
-This is the `Torch.Ops.Ref` type provided by the chosen runtime backend.
--/
-abbrev RefT (m : Type → Type) (α : Type) [Context α] [DecidableEq Shape]
-    [Torch.Ops (m := m) (α := α)] (s : Shape) : Type :=
-  Torch.Ops.Ref (m := m) (α := α) s
-
-/--
 Internal evaluator that splits the flat model state as it walks the model.
 
 This is the reference-level forward pass used to implement `forward`.
@@ -119,13 +110,13 @@ This is the reference-level forward pass used to implement `forward`.
 def forwardState {σ τ : Shape} (model : Seq σ τ) {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Torch.Ops (m := m) (α := α)]
     (mode : Mode)
-    (ps : Torch.RefList (RefT (m := m) (α := α)) (stateShapes model))
-    (x : RefT (m := m) (α := α) σ) : m (RefT (m := m) (α := α) τ) :=
+    (ps : Torch.RefList (RefTy (m := m) (α := α)) (stateShapes model))
+    (x : RefTy (m := m) (α := α) σ) : m (RefTy (m := m) (α := α) τ) :=
   match model with
   | .id _ => pure x
   | .cons l rest =>
       let (psL, psR) :=
-        Torch.RefList.split (Ref := RefT (m := m) (α := α))
+        Torch.RefList.split (Ref := RefTy (m := m) (α := α))
           (ss₁ := l.stateShapes) (ss₂ := stateShapes rest) ps
       do
         let y ← l.forwardRef (α := α) (m := m) mode psL x
@@ -142,9 +133,9 @@ def forward {σ τ : Shape} (model : Seq σ τ) (mode : Mode := .eval)
     {α : Type} [Context α] [DecidableEq Shape] :
     TorchLean.Program α (stateShapes model ++ [σ]) τ :=
   fun {m} _ _ =>
-    Torch.CurriedRef.curry (Ref := RefT (m := m) (α := α))
-      (ss := stateShapes model ++ [σ]) (β := m (RefT (m := m) (α := α) τ)) (fun args => do
-        let (ps, x) := Torch.RefList.splitLast (Ref := RefT (m := m) (α := α)) (ss := stateShapes
+    Torch.CurriedRef.curry (Ref := RefTy (m := m) (α := α))
+      (ss := stateShapes model ++ [σ]) (β := m (RefTy (m := m) (α := α) τ)) (fun args => do
+        let (ps, x) := Torch.RefList.splitLast (Ref := RefTy (m := m) (α := α)) (ss := stateShapes
           model) (τ := σ) args
         forwardState (model := model) (α := α) (m := m) mode ps x)
 
@@ -289,15 +280,15 @@ def createWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
     loss := fun {α} => by
       intro _ _; exact
         (fun {m} _ _ =>
-          Torch.CurriedRef.curry (Ref := RefT (m := m) (α := α))
+          Torch.CurriedRef.curry (Ref := RefTy (m := m) (α := α))
             (ss := stateShapes model ++ [σ, τ])
-            (β := m (RefT (m := m) (α := α) Shape.scalar)) (fun args => do
+            (β := m (RefTy (m := m) (α := α) Shape.scalar)) (fun args => do
               let (ps, xy) :=
-                Torch.RefList.split (Ref := RefT (m := m) (α := α))
+                Torch.RefList.split (Ref := RefTy (m := m) (α := α))
                   (ss₁ := stateShapes model) (ss₂ := [σ, τ]) args
               let .cons x (.cons y .nil) := xy
               let yhat ← forwardState (model := model) (α := α) (m := m) mode ps x
-              Torch.CurriedRef.uncurry (Ref := RefT (m := m) (α := α)) (ss := [τ, τ])
+              Torch.CurriedRef.uncurry (Ref := RefTy (m := m) (α := α)) (ss := [τ, τ])
                 (loss (α := α) (m := m)) (.cons yhat (.cons y .nil))
           ))
   }
@@ -325,19 +316,22 @@ def mse {σ τ : Shape} (model : Seq σ τ) (reduction : TorchLean.Loss.Reductio
 
 /-- Pair a model with one-hot cross entropy in an explicit layer mode. -/
 def oneHotCrossEntropyWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
+    (axis : Nat) [Shape.AxisInBounds axis τ]
     (reduction : TorchLean.Loss.Reduction := .mean) :
     TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
   createWithMode mode (model := model) (loss := fun {α} _ _ =>
     fun {m} _ _ =>
       fun logits targetOneHot =>
-        TorchLean.Loss.oneHotCrossEntropy (m := m) (α := α) (s := τ) logits targetOneHot
+        TorchLean.Loss.oneHotCrossEntropy (m := m) (α := α) (s := τ) axis
+          logits targetOneHot
           (reduction := reduction))
 
 /-- Pair a model with one-hot cross entropy in training mode. -/
 def oneHotCrossEntropy {σ τ : Shape} (model : Seq σ τ)
+    (axis : Nat) [Shape.AxisInBounds axis τ]
     (reduction : TorchLean.Loss.Reduction := .mean) :
     TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
-  oneHotCrossEntropyWithMode .train model reduction
+  oneHotCrossEntropyWithMode .train model axis reduction
 
 end Objective
 

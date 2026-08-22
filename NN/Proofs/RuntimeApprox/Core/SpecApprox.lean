@@ -12,7 +12,7 @@ public import NN.Proofs.RuntimeApprox.Core.Tolerance
 public import NN.Spec.Core.Scalar
 public import NN.Spec.Core.Shape
 public import NN.Spec.Core.Tensor
-public import NN.Spec.Core.Utils
+public import NN.Spec.Core.Tensor.API
 
 /-!
 # SpecApprox
@@ -32,7 +32,7 @@ Trust boundary:
   rounding error bounds are explicit and can be composed.
 
 ## PyTorch correspondence / citations
-Conceptually, `approxWith` / `approxTTol` are theorem-level versions of “runtime tensor is close to spec
+Conceptually, `approxWith` / `approxTensorWithTol` are theorem-level versions of “runtime tensor is close to spec
 tensor under a chosen norm”, similar to how PyTorch uses norms and `rtol`/`atol` style checks in
 testing/validation.
 https://pytorch.org/docs/stable/generated/torch.linalg.vector_norm.html
@@ -81,7 +81,7 @@ def approxWithTol {α : Type} {s : Shape}
     approxBound tol (norm spec) (norm runtimeS)
 
 /-- Default abs+rel tensor approximation (uses `linf_norm`). -/
-def approxTTol {α : Type} {s : Shape}
+def approxTensorWithTol {α : Type} {s : Shape}
     (toSpec : α → SpecScalar)
     (spec : SpecTensor s)
     (runtime : Tensor α s)
@@ -101,12 +101,12 @@ lemma approx_with_to_approx_with_tol_absOnly {α : Type} {s : Shape}
     exact le_trans (by simpa [approxWith, runtimeS] using h) (Real.le_coe_toNNReal eps)
   simpa [approxBound_absOnly] using this
 
-lemma approxT_to_approxTTol_absOnly {α : Type} {s : Shape}
+lemma approxTensor_to_approxTensorWithTol_absOnly {α : Type} {s : Shape}
     {toSpec : α → SpecScalar}
     {spec : SpecTensor s} {runtime : Tensor α s} (eps : ℝ)
     (h : approxWith (toSpec := toSpec) (norm := linfNorm) spec runtime eps) :
-    approxTTol (toSpec := toSpec) spec runtime (ApproxTol.absOnly eps) := by
-  simpa [approxTTol] using
+    approxTensorWithTol (toSpec := toSpec) spec runtime (ApproxTol.absOnly eps) := by
+  simpa [approxTensorWithTol] using
     (approx_with_to_approx_with_tol_absOnly (toSpec := toSpec) (norm := linfNorm)
       (spec := spec) (runtime := runtime) eps h)
 
@@ -156,11 +156,11 @@ lemma approx_with_tol_absOnly_iff {α : Type} {s : Shape}
 
 Use `open scoped ApproxTol` to enable:
 
-`spec ≈ᵀ[toSpec, tol] runtime` meaning: `approxTTol toSpec spec runtime tol`.
+`spec ≈ᵀ[toSpec, tol] runtime` meaning: `approxTensorWithTol toSpec spec runtime tol`.
 -/
 
 scoped[ApproxTol] notation:50 spec " ≈ᵀ[" toSpec ", " tol "] " runtime =>
-  Proofs.RuntimeApprox.approxTTol (toSpec := toSpec) spec runtime tol
+  Proofs.RuntimeApprox.approxTensorWithTol (toSpec := toSpec) spec runtime tol
 
 /-- Packaged approximation witness (defaults to Linf on spec tensors). -/
 structure Witness (α : Type) (s : Shape) where

@@ -42,8 +42,8 @@ ordinary static-dataset training, plus a curve of evaluation loss on `evalSample
 def trainStreamWithRun {σ τ : Shape}
     (trainer : Regression σ τ)
     (runtimeOpts : Options)
-    (sampleAt : Nat → SupervisedSample Float σ τ)
-    (evalSample : SupervisedSample Float σ τ)
+    (sampleAt : Nat → Sample.Supervised Float σ τ)
+    (evalSample : Sample.Supervised Float σ τ)
     (run : RunConfig := trainer.runConfig)
     (trainOpts : TrainOptions := {})
     (curveEvery : Nat := 0)
@@ -53,20 +53,20 @@ def trainStreamWithRun {σ τ : Shape}
     IO (StreamTrainResult σ τ) := do
   let run := run.withRuntimeOptions runtimeOpts
   Regression.Internal.withRunner trainer run fun {α} _ _ _ _ _ _ runner => do
-    let castSample (sample : SupervisedSample Float σ τ) : SupervisedSample α σ τ :=
+    let castSample (sample : Sample.Supervised Float σ τ) : Sample.Supervised α σ τ :=
       Sample.mk
-        (Tensor.castFloat (Runtime.ofFloat (α := α)) (Sample.x sample))
-        (Tensor.castFloat (Runtime.ofFloat (α := α)) (Sample.y sample))
+        (Tensor.map (Runtime.ofFloat (α := α)) (Sample.x sample))
+        (Tensor.map (Runtime.ofFloat (α := α)) (Sample.y sample))
     let scalarToFloat (value : α) : IO Float := do
       let valueFloat ← Tensor.toFloatIO (Spec.Tensor.scalar value)
-      pure (Spec.Tensor.toScalar valueFloat)
+      pure (Spec.Tensor.item valueFloat)
     let cfg := trainOpts.toTrainConfig run.optimizer
     let stepper ← TorchLean.Trainer.Manual.stepper
       (task := trainer.task) runner cfg.optimizer cfg.scheduler
     let predict :=
       fun (xFloat : Tensor Float σ) => do
         Manual.Runner.eval (task := trainer.task) runner
-        let x := Tensor.castFloat (Runtime.ofFloat (α := α)) xFloat
+        let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
         let yhat ← Manual.Runner.run (task := trainer.task) runner x
         Tensor.toFloatIO yhat
     let evalLoss := do
@@ -116,8 +116,8 @@ generated or resampled workloads should use this entrypoint so they do not hand-
 def trainStream {σ τ : Shape}
     (trainer : Regression σ τ)
     (runtimeOpts : Options)
-    (sampleAt : Nat → SupervisedSample Float σ τ)
-    (evalSample : SupervisedSample Float σ τ)
+    (sampleAt : Nat → Sample.Supervised Float σ τ)
+    (evalSample : Sample.Supervised Float σ τ)
     (trainOpts : TrainOptions := {})
     (curveEvery : Nat := 0)
     (cudaMemWatch : Nat := 0)
@@ -151,8 +151,8 @@ def trainPairStreams {σ₁ τ₁ σ₂ τ₂ : Shape}
     (first : Regression σ₁ τ₁)
     (second : Regression σ₂ τ₂)
     (runtimeOpts : Options)
-    (firstSampleAt : Nat → SupervisedSample Float σ₁ τ₁)
-    (secondSamplesAt : Nat → List (SupervisedSample Float σ₂ τ₂))
+    (firstSampleAt : Nat → Sample.Supervised Float σ₁ τ₁)
+    (secondSamplesAt : Nat → List (Sample.Supervised Float σ₂ τ₂))
     (evalTotal :
       (Tensor Float σ₁ → IO (Tensor Float τ₁)) →
       (Tensor Float σ₂ → IO (Tensor Float τ₂)) →
@@ -167,14 +167,14 @@ def trainPairStreams {σ₁ τ₁ σ₂ τ₂ : Shape}
     throw <| IO.userError
       "Trainer.trainPairStreams: both trainers must use the same scalar semantics"
   Regression.Internal.withRunner first firstRun fun {α} _ _ _ _ _ _ firstRunner => do
-    let castFirst (sample : SupervisedSample Float σ₁ τ₁) : SupervisedSample α σ₁ τ₁ :=
+    let castFirst (sample : Sample.Supervised Float σ₁ τ₁) : Sample.Supervised α σ₁ τ₁ :=
       Sample.mk
-        (Tensor.castFloat (Runtime.ofFloat (α := α)) (Sample.x sample))
-        (Tensor.castFloat (Runtime.ofFloat (α := α)) (Sample.y sample))
-    let castSecond (sample : SupervisedSample Float σ₂ τ₂) : SupervisedSample α σ₂ τ₂ :=
+        (Tensor.map (Runtime.ofFloat (α := α)) (Sample.x sample))
+        (Tensor.map (Runtime.ofFloat (α := α)) (Sample.y sample))
+    let castSecond (sample : Sample.Supervised Float σ₂ τ₂) : Sample.Supervised α σ₂ τ₂ :=
       Sample.mk
-        (Tensor.castFloat (Runtime.ofFloat (α := α)) (Sample.x sample))
-        (Tensor.castFloat (Runtime.ofFloat (α := α)) (Sample.y sample))
+        (Tensor.map (Runtime.ofFloat (α := α)) (Sample.x sample))
+        (Tensor.map (Runtime.ofFloat (α := α)) (Sample.y sample))
     let secondRunner ←
       TorchLean.Trainer.Manual.Runner.instantiate
         (task := second.task) (α := α) (opts := secondRun.toRuntimeOptions)
@@ -187,13 +187,13 @@ def trainPairStreams {σ₁ τ₁ σ₂ τ₂ : Shape}
     let predictFirst :=
       fun (xFloat : Tensor Float σ₁) => do
         Manual.Runner.eval (task := first.task) firstRunner
-        let x := Tensor.castFloat (Runtime.ofFloat (α := α)) xFloat
+        let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
         let yhat ← Manual.Runner.run (task := first.task) firstRunner x
         Tensor.toFloatIO yhat
     let predictSecond :=
       fun (xFloat : Tensor Float σ₂) => do
         Manual.Runner.eval (task := second.task) secondRunner
-        let x := Tensor.castFloat (Runtime.ofFloat (α := α)) xFloat
+        let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
         let yhat ← Manual.Runner.run (task := second.task) secondRunner x
         Tensor.toFloatIO yhat
     let beforeLoss ← evalTotal predictFirst predictSecond

@@ -145,8 +145,8 @@ theorem smul {n : Nat} {D : Set (ReLUMlpBridge.TensorVec n)}
   rcases hf (ε / |c|) hε' with ⟨m, l1, l2, hf'⟩
   -- Scale only the output layer weights/bias by `c`.
   let l2' : LinearSpec ℝ m 1 :=
-    { weights := matrixMN 1 m (fun _ j => c * mat1Get l2.weights j)
-      bias := vectorN 1 (fun _ => c * extractScalarOutput l2.bias) }
+    { weights := Tensor.matrix (m := 1) (n := m) (fun _ j => c * mat1Get l2.weights j)
+      bias := Tensor.vector (n := 1) (fun _ => c * extractScalarOutput l2.bias) }
   refine ⟨m, l1, l2', ?_⟩
   intro x hx
   have hf'' : |f x - mlpEvalNd (n := n) (hidDim := m) l1 l2 x| < ε / |c| := hf' x hx
@@ -160,7 +160,7 @@ theorem smul {n : Nat} {D : Set (ReLUMlpBridge.TensorVec n)}
     rw [mlp_eval_nd_eq_bias_sum (l1 := l1) (l2 := l2') (x := x)]
     rw [mlp_eval_nd_eq_bias_sum (l1 := l1) (l2 := l2) (x := x)]
     -- Compute the scaled bias and weights.
-    simp [l2', singleRowMatrix_get_matrixMN, extractScalarOutput, vectorN, Tensor.toScalar,
+    simp [l2', singleRowMatrix_get_matrix, extractScalarOutput, Tensor.vector, Tensor.item,
       mul_add, Finset.mul_sum, mul_left_comm, mul_comm]
   -- Bound `|c*f - c*mlp|` by factoring out the output-layer scale.
   have :
@@ -277,8 +277,8 @@ theorem smul {n : Nat} {K : Set (ReLUMlpBridge.TensorVec n)}
     rcases hf (ε / |c|) hε' with ⟨m, l1, l2, hf'⟩
     -- Scale only the output layer weights/bias by `c`.
     let l2' : LinearSpec ℝ m 1 :=
-      { weights := matrixMN 1 m (fun _ j => c * mat1Get l2.weights j)
-        bias := vectorN 1 (fun _ => c * extractScalarOutput l2.bias) }
+      { weights := Tensor.matrix (m := 1) (n := m) (fun _ j => c * mat1Get l2.weights j)
+        bias := Tensor.vector (n := 1) (fun _ => c * extractScalarOutput l2.bias) }
     refine ⟨m, l1, l2', ?_⟩
     intro x
     have hscale :
@@ -289,7 +289,7 @@ theorem smul {n : Nat} {K : Set (ReLUMlpBridge.TensorVec n)}
       classical
       rw [mlp_eval_nd_eq_bias_sum (l1 := l1) (l2 := l2') (x := x.1)]
       rw [mlp_eval_nd_eq_bias_sum (l1 := l1) (l2 := l2) (x := x.1)]
-      simp [l2', singleRowMatrix_get_matrixMN, extractScalarOutput, vectorN, Tensor.toScalar,
+      simp [l2', singleRowMatrix_get_matrix, extractScalarOutput, Tensor.vector, Tensor.item,
         mul_add, Finset.mul_sum, mul_left_comm, mul_comm]
     have habs :
         |c * f x - mlpEvalNd (n := n) (hidDim := m) l1 l2' x.1|

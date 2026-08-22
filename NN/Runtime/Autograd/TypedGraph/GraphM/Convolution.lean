@@ -192,7 +192,7 @@ def conv2d {α : Type} {Δ : Type} [Context α]
         let bv := getIdx (α := α) (xs := ctx) ib
         let inp := getIdx (α := α) (xs := ctx) ix
         let layer :
-            Spec.Conv2DSpec inC outC kH kW stride padding α h1 h2 h3 :=
+            Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
           { kernel := kern
             bias := bv }
         Spec.conv2dSpec (layer := layer) inp
@@ -204,11 +204,11 @@ def conv2d {α : Type} {Δ : Type} [Context α]
         let dInput := getIdx (α := α) (xs := dctx) ix
         let zeroBias : Tensor α (.dim outC .scalar) := fill (0 : α) (.dim outC .scalar)
         let layerX :
-            Spec.Conv2DSpec inC outC kH kW stride padding α h1 h2 h3 :=
+            Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
           { kernel := kern
             bias := zeroBias }
         let layerParams :
-            Spec.Conv2DSpec inC outC kH kW stride padding α h1 h2 h3 :=
+            Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
           { kernel := dKernel
             bias := dBias }
         addSpec (Spec.conv2dSpec (layer := layerX) dInput)
@@ -218,7 +218,7 @@ def conv2d {α : Type} {Δ : Type} [Context α]
         let bv := getIdx (α := α) (xs := ctx) ib
         let inp := getIdx (α := α) (xs := ctx) ix
         let layer :
-            Spec.Conv2DSpec inC outC kH kW stride padding α h1 h2 h3 :=
+            Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
           { kernel := kern
             bias := bv }
         let (dKernel, dBias, dInput) := Spec.conv2dBackwardSpec (layer := layer) inp dLdy
@@ -263,7 +263,7 @@ def convTranspose2d {α : Type} {Δ : Type} [Context α]
         let bv := getIdx (α := α) (xs := ctx) ib
         let inp := getIdx (α := α) (xs := ctx) ix
         let layer :
-            Spec.ConvTranspose2DSpec inC outC kH kW stride padding α h1' h2 h3 :=
+            Spec.ConvTranspose2dSpec inC outC kH kW stride padding α h1' h2 h3 :=
           { kernel := kern
             bias := bv }
         Spec.convTranspose2dSpec (layer := layer) inp
@@ -275,11 +275,11 @@ def convTranspose2d {α : Type} {Δ : Type} [Context α]
         let dInput := getIdx (α := α) (xs := dctx) ix
         let zeroBias : Tensor α (.dim outC .scalar) := fill (0 : α) (.dim outC .scalar)
         let layerX :
-            Spec.ConvTranspose2DSpec inC outC kH kW stride padding α h1' h2 h3 :=
+            Spec.ConvTranspose2dSpec inC outC kH kW stride padding α h1' h2 h3 :=
           { kernel := kern
             bias := zeroBias }
         let layerParams :
-            Spec.ConvTranspose2DSpec inC outC kH kW stride padding α h1' h2 h3 :=
+            Spec.ConvTranspose2dSpec inC outC kH kW stride padding α h1' h2 h3 :=
           { kernel := dKernel
             bias := dBias }
         addSpec (Spec.convTranspose2dSpec (layer := layerX) dInput)
@@ -289,7 +289,7 @@ def convTranspose2d {α : Type} {Δ : Type} [Context α]
         let bv := getIdx (α := α) (xs := ctx) ib
         let inp := getIdx (α := α) (xs := ctx) ix
         let layer :
-            Spec.ConvTranspose2DSpec inC outC kH kW stride padding α h1' h2 h3 :=
+            Spec.ConvTranspose2dSpec inC outC kH kW stride padding α h1' h2 h3 :=
           { kernel := kern
             bias := bv }
         let (dKernel, dBias, dInput) := Spec.convTranspose2dBackwardSpec (layer := layer) inp dLdy

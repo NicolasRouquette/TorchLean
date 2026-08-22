@@ -7,7 +7,8 @@ Authors: TorchLean Team
 module
 
 public import NN.Proofs.RuntimeApprox.NF.Ops
-public import NN.Proofs.RuntimeApprox.NF.Utils
+public import NN.Proofs.RuntimeApprox.NF.FoldLemmas
+public import NN.Proofs.RuntimeApprox.NF.Ops
 public import NN.Spec.Core.TensorReductionShape
 
 /-!
@@ -16,7 +17,7 @@ public import NN.Spec.Core.TensorReductionShape
 NF (rounded) backend: approximation lemmas for reduction operators used by LayerNorm/attention.
 
 These lemmas are specialized to 2D tensors and avoid typeclass inference by using explicit
-`Shape.reducibleAlong` proofs derived from `m>0`/`n>0`.
+`Shape.NonemptyAxis` proofs derived from `m>0`/`n>0`.
 
 ## PyTorch correspondence / citations
 This file targets reduction patterns used by normalization/attention (sums, means, maxes along an
@@ -58,7 +59,7 @@ local notation "R" => TorchLean.Floats.NF β fexp rnd
 private lemma reduce_sum_by_row_get
     {α : Type} [Add α] [Zero α]
     {m n : Nat} (x : Tensor α (.dim m (.dim n .scalar)))
-    (hRed : Shape.reducibleAlong 1 (.dim m (.dim n .scalar))) (i : Fin m) :
+    (hRed : Shape.NonemptyAxis 1 (.dim m (.dim n .scalar))) (i : Fin m) :
     (match Spec.Tensor.reduceSum (α := α) (s := .dim m (.dim n .scalar)) 1 x hRed with
       | Tensor.dim f => f i) =
       Tensor.scalar (sumSpec (α := α) (s := .dim n .scalar) (getAtSpec x i)) := by
@@ -72,7 +73,7 @@ private lemma reduce_sum_by_row_get
 private lemma reduce_mean_by_row_get
     {α : Type} [Context α]
     {m n : Nat} (x : Tensor α (.dim m (.dim n .scalar)))
-    (hRed : Shape.reducibleAlong 1 (.dim m (.dim n .scalar))) (i : Fin m) :
+    (hRed : Shape.NonemptyAxis 1 (.dim m (.dim n .scalar))) (i : Fin m) :
     (match Spec.Tensor.reduceMean (α := α) (s := .dim m (.dim n .scalar)) 1 x hRed with
       | Tensor.dim f => f i) =
       Tensor.scalar (sumSpec (α := α) (s := .dim n .scalar) (getAtSpec x i) / (n : α)) := by
@@ -87,7 +88,7 @@ private lemma reduce_mean_by_row_get
 private lemma reduce_sum_by_column_get
     {α : Type} [Add α] [Zero α]
     {m n : Nat} (x : Tensor α (.dim m (.dim n .scalar)))
-    (hRed : Shape.reducibleAlong 0 (.dim m (.dim n .scalar))) (j : Fin n) :
+    (hRed : Shape.NonemptyAxis 0 (.dim m (.dim n .scalar))) (j : Fin n) :
     (match Spec.Tensor.reduceSum (α := α) (s := .dim m (.dim n .scalar)) 0 x hRed with
       | Tensor.dim f => f j) =
       Tensor.scalar (sumSpec (α := α) (s := .dim m .scalar)
@@ -100,18 +101,18 @@ private lemma reduce_sum_by_column_get
 -- Row-wise sum (axis=1) on a 2D tensor
 -- ---------------------------------------------------------------------------
 
-theorem approxT_reduce_sum_by_row_2d
+theorem approxTensor_reduce_sum_by_row_2d
     {m n : Nat} (hm : 0 < m) (hn : 0 < n)
     {xS : SpecTensor (.dim m (.dim n .scalar))}
     {xR : Tensor R (.dim m (.dim n .scalar))}
     {eps : ℝ}
-    (hx : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
+    (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
     let s : Shape := .dim m (.dim n .scalar)
-    have hm' : m ≠ 0 := Nat.ne_of_gt hm
+    have _hm' : m ≠ 0 := Nat.ne_of_gt hm
     have hn' : n ≠ 0 := Nat.ne_of_gt hn
-    have hAxis : Shape.valid_axis 1 s := (Shape.validAxisInstOne (h₁ := hm') (h₂ := hn')).proof
-    let hRed : Shape.reducibleAlong 1 s := Shape.proveReducibleAlong 1 s hAxis
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    have hAxis : Shape.NonemptyAxis 1 s := (Shape.hasNonemptyAxisOne (h₂ := hn')).proof
+    let hRed : Shape.NonemptyAxis 1 s := hAxis
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.Tensor.reduceSum (α := ℝ) (s := s) 1 xS hRed)
       (Spec.Tensor.reduceSum (α := R) (s := s) 1 xR hRed)
       (let boundVec : SpecTensor (.dim m .scalar) :=
@@ -120,9 +121,9 @@ theorem approxT_reduce_sum_by_row_2d
             Tensor.scalar (sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar) eps
               (xRf i)))
       linfNorm boundVec) := by
-  intro s hm' hn' hAxis hRed
+  intro s _hm' hn' hAxis hRed
   classical
-  have hε : 0 ≤ eps := approxT_eps_nonneg (s := s) hx
+  have hε : 0 ≤ eps := approxTensor_eps_nonneg (s := s) hx
   cases xS with
   | dim xSf =>
       cases xR with
@@ -134,10 +135,10 @@ theorem approxT_reduce_sum_by_row_2d
           have hBoundNonneg : 0 ≤ linfNorm boundVec := linf_norm_nonneg (t := boundVec)
           -- Use an explicit shape argument so later `rw` matches syntactically (Lean’s `rw`
           -- does not match definitional equal implicit args).
-          have hRed' : Shape.reducibleAlong 1 (.dim m (.dim n .scalar)) := by
+          have hRed' : Shape.NonemptyAxis 1 (.dim m (.dim n .scalar)) := by
             simpa [s] using hRed
 
-          refine approxT_dim_of_forall
+          refine approxTensor_dim_of_forall
             (n := m) (s := .scalar)
             (xS := Spec.Tensor.reduceSum (α := ℝ) (s := .dim m (.dim n .scalar)) 1 (Tensor.dim xSf)
               hRed')
@@ -146,13 +147,13 @@ theorem approxT_reduce_sum_by_row_2d
             (eps := linfNorm boundVec) hBoundNonneg ?_
           intro i
           have hxRow :=
-            approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+            approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
               (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := eps) hx i
           have hSum :=
-            approxT_sum_spec (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar)
+            approxTensor_sum_spec (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar)
               (xS := xSf i) (xR := xRf i) (eps := eps) hxRow
           have hSumScalar :=
-            (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).1
+            (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).1
               hSum
           have hle : sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar) eps (xRf
             i) ≤ linfNorm boundVec := by
@@ -169,11 +170,11 @@ theorem approxT_reduce_sum_by_row_2d
                 sumSpec (α := ℝ) (s := .dim n .scalar) (xSf i))
               ≤ linfNorm boundVec := le_trans hSumScalar hle
           have hScalarApprox :
-              approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+              approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                 (Tensor.scalar (sumSpec (α := ℝ) (s := .dim n .scalar) (xSf i)))
                 (Tensor.scalar (sumSpec (α := R) (s := .dim n .scalar) (xRf i)))
                 (linfNorm boundVec) :=
-            (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).2
+            (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).2
               (by
               simpa [abs_sub_comm] using this)
           have hEqS := reduce_sum_by_row_get (x := Tensor.dim xSf) hRed' i
@@ -187,18 +188,18 @@ theorem approxT_reduce_sum_by_row_2d
 -- Row-wise mean (axis=1) on a 2D tensor
 -- ---------------------------------------------------------------------------
 
-theorem approxT_reduce_mean_by_row_2d
+theorem approxTensor_reduce_mean_by_row_2d
     {m n : Nat} (hm : 0 < m) (hn : 0 < n)
     {xS : SpecTensor (.dim m (.dim n .scalar))}
     {xR : Tensor R (.dim m (.dim n .scalar))}
     {eps : ℝ}
-    (hx : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
+    (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
     let s : Shape := .dim m (.dim n .scalar)
-    have hm' : m ≠ 0 := Nat.ne_of_gt hm
+    have _hm' : m ≠ 0 := Nat.ne_of_gt hm
     have hn' : n ≠ 0 := Nat.ne_of_gt hn
-    have hAxis : Shape.valid_axis 1 s := (Shape.validAxisInstOne (h₁ := hm') (h₂ := hn')).proof
-    let hRed : Shape.reducibleAlong 1 s := Shape.proveReducibleAlong 1 s hAxis
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    have hAxis : Shape.NonemptyAxis 1 s := (Shape.hasNonemptyAxisOne (h₂ := hn')).proof
+    let hRed : Shape.NonemptyAxis 1 s := hAxis
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.Tensor.reduceMean (α := ℝ) (s := s) 1 xS hRed)
       (Spec.Tensor.reduceMean (α := R) (s := s) 1 xR hRed)
       (let boundVec : SpecTensor (.dim m .scalar) :=
@@ -216,9 +217,9 @@ theorem approxT_reduce_mean_by_row_2d
                 + abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) sumR)
                 + epsSum))
       linfNorm boundVec) := by
-  intro s hm' hn' hAxis hRed
+  intro s _hm' hn' hAxis hRed
   classical
-  have hε : 0 ≤ eps := approxT_eps_nonneg (s := s) hx
+  have hε : 0 ≤ eps := approxTensor_eps_nonneg (s := s) hx
   have hn1 : (1 : ℝ) ≤ (n : ℝ) := by
     exact_mod_cast (Nat.succ_le_iff.2 hn : (1 : Nat) ≤ n)
   cases xS with
@@ -239,10 +240,10 @@ theorem approxT_reduce_mean_by_row_2d
                   + abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) sumR)
                   + epsSum))
           have hBoundNonneg : 0 ≤ linfNorm boundVec := linf_norm_nonneg (t := boundVec)
-          have hRed' : Shape.reducibleAlong 1 (.dim m (.dim n .scalar)) := by
+          have hRed' : Shape.NonemptyAxis 1 (.dim m (.dim n .scalar)) := by
             simpa [s] using hRed
 
-          refine approxT_dim_of_forall
+          refine approxTensor_dim_of_forall
             (n := m) (s := .scalar)
             (xS := Spec.Tensor.reduceMean (α := ℝ) (s := .dim m (.dim n .scalar)) 1 (Tensor.dim
               xSf) hRed')
@@ -251,13 +252,13 @@ theorem approxT_reduce_mean_by_row_2d
             (eps := linfNorm boundVec) hBoundNonneg ?_
           intro i
           have hxRow :=
-            approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+            approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
               (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := eps) hx i
           have hSum :=
-            approxT_sum_spec (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar)
+            approxTensor_sum_spec (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar)
               (xS := xSf i) (xR := xRf i) (eps := eps) hxRow
           have hSumScalar :=
-            (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).1
+            (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).1
               hSum
           -- Apply scalar division bound and weaken to the global max.
           have hMeanScalar :=
@@ -269,9 +270,9 @@ theorem approxT_reduce_mean_by_row_2d
               (epsx := sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar) eps (xRf
                 i))
               hn1 hSumScalar
-          have hle : (match boundVec with | .dim f => f i).toScalar ≤ linfNorm boundVec := by
+          have hle : (match boundVec with | .dim f => f i).item ≤ linfNorm boundVec := by
             have := linf_norm_le_get_dim (t := boundVec) i
-            have habs : abs ((match boundVec with | .dim f => f i).toScalar) ≤ linfNorm boundVec :=
+            have habs : abs ((match boundVec with | .dim f => f i).item) ≤ linfNorm boundVec :=
               by
               simpa [boundVec, linfNorm, RuntimeApprox.linfNorm, tensorLinfNorm,
                 MathFunctions.abs] using this
@@ -281,7 +282,7 @@ theorem approxT_reduce_mean_by_row_2d
                   (toSpec (β := β) (fexp := fexp) (rnd := rnd)
                         (sumSpec (α := R) (s := .dim n .scalar) (xRf i) / (n : R)) -
                     (sumSpec (α := ℝ) (s := .dim n .scalar) (xSf i) / (n : ℝ)))
-                ≤ (match boundVec with | .dim f => f i).toScalar := by
+                ≤ (match boundVec with | .dim f => f i).item := by
             simpa [boundVec] using hMeanScalar
           have : abs
               (toSpec (β := β) (fexp := fexp) (rnd := rnd)
@@ -289,11 +290,11 @@ theorem approxT_reduce_mean_by_row_2d
                   (sumSpec (α := ℝ) (s := .dim n .scalar) (xSf i) / (n : ℝ)))
               ≤ linfNorm boundVec := le_trans hb hle
           have hScalarApprox :
-              approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+              approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                 (Tensor.scalar (sumSpec (α := ℝ) (s := .dim n .scalar) (xSf i) / (n : ℝ)))
                 (Tensor.scalar (sumSpec (α := R) (s := .dim n .scalar) (xRf i) / (n : R)))
                 (linfNorm boundVec) :=
-            (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).2
+            (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).2
               (by
               simpa [abs_sub_comm] using this)
           have hEqS :
@@ -323,17 +324,17 @@ def colS {m n : Nat} (xSf : Fin m → SpecTensor (.dim n .scalar)) (j : Fin n) :
   .scalar) :=
   Tensor.dim (fun i => sliceSpec (xSf i) j)
 
-theorem approxT_reduce_sum_by_column_2d
+theorem approxTensor_reduce_sum_by_column_2d
     {m n : Nat} (hm : 0 < m) (_hn : 0 < n)
     {xS : SpecTensor (.dim m (.dim n .scalar))}
     {xR : Tensor R (.dim m (.dim n .scalar))}
     {eps : ℝ}
-    (hx : approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
+    (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
     let s : Shape := .dim m (.dim n .scalar)
-    have hAxis : Shape.valid_axis 0 s := (Shape.validAxisInstZeroAlt2 (n := m) (s := .dim n
+    have hAxis : Shape.NonemptyAxis 0 s := (Shape.hasNonemptyAxisZeroOfPos (n := m) (s := .dim n
       .scalar) hm).proof
-    let hRed : Shape.reducibleAlong 0 s := Shape.proveReducibleAlong 0 s hAxis
-    approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    let hRed : Shape.NonemptyAxis 0 s := hAxis
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.Tensor.reduceSum (α := ℝ) (s := s) 0 xS hRed)
       (Spec.Tensor.reduceSum (α := R) (s := s) 0 xR hRed)
       (let boundVec : SpecTensor (.dim n .scalar) :=
@@ -344,7 +345,7 @@ theorem approxT_reduce_sum_by_column_2d
       linfNorm boundVec) := by
   intro s hAxis hRed
   classical
-  have hε : 0 ≤ eps := approxT_eps_nonneg (s := s) hx
+  have hε : 0 ≤ eps := approxTensor_eps_nonneg (s := s) hx
   cases xS with
   | dim xSf =>
       cases xR with
@@ -355,7 +356,7 @@ theorem approxT_reduce_sum_by_column_2d
                 eps (colR (m := m) (n := n) xRf j)))
           have hBoundNonneg : 0 ≤ linfNorm boundVec := linf_norm_nonneg (t := boundVec)
 
-          refine approxT_dim_of_forall
+          refine approxTensor_dim_of_forall
             (n := n) (s := .scalar)
             (xS := Spec.Tensor.reduceSum (α := ℝ) (s := s) 0 (Tensor.dim xSf) hRed)
             (xR := Spec.Tensor.reduceSum (α := R) (s := s) 0 (Tensor.dim xRf) hRed)
@@ -363,33 +364,33 @@ theorem approxT_reduce_sum_by_column_2d
           intro j
           -- Approx for column tensor.
           have hcol :
-              approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+              approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                 (colS (m := m) (n := n) xSf j) (colR (m := m) (n := n) xRf j) eps := by
-            refine approxT_dim_of_forall
+            refine approxTensor_dim_of_forall
               (n := m) (s := .scalar) (xS := colS (m := m) (n := n) xSf j) (xR := colR (m := m) (n
                 := n) xRf j)
               (eps := eps) hε ?_
             intro i
             have hrow :=
-              approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+              approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                 (xS := Tensor.dim xSf) (xR := Tensor.dim xRf) (eps := eps) hx i
             cases hs : xSf i with
             | dim colsS =>
                 cases hr : xRf i with
                 | dim colsR =>
                     have hij :=
-                      approxT_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
+                      approxTensor_dim_get (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd :=
                         rnd))
                         (xS := Tensor.dim colsS) (xR := Tensor.dim colsR) (eps := eps) (by simpa
                           [hs, hr] using hrow) j
                     simpa [colS, colR, hs, hr, sliceSpec] using hij
 
           have hSum :=
-            approxT_sum_spec (β := β) (fexp := fexp) (rnd := rnd) (s := .dim m .scalar)
+            approxTensor_sum_spec (β := β) (fexp := fexp) (rnd := rnd) (s := .dim m .scalar)
               (xS := colS (m := m) (n := n) xSf j) (xR := colR (m := m) (n := n) xRf j) (eps := eps)
                 hcol
           have hSumScalar :=
-            (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).1
+            (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).1
               hSum
           have hle : sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := .dim m .scalar) eps (colR
             (m := m) (n := n) xRf j) ≤
@@ -407,13 +408,13 @@ theorem approxT_reduce_sum_by_column_2d
                   sumSpec (α := ℝ) (s := .dim m .scalar) (colS (m := m) (n := n) xSf j))
               ≤ linfNorm boundVec := le_trans hSumScalar hle
           have hScalarApprox :
-              approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+              approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
                 (Tensor.scalar (sumSpec (α := ℝ) (s := .dim m .scalar) (colS (m := m) (n := n) xSf
                   j)))
                 (Tensor.scalar (sumSpec (α := R) (s := .dim m .scalar) (colR (m := m) (n := n) xRf
                   j)))
                 (linfNorm boundVec) :=
-            (approxT_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).2
+            (approxTensor_scalar_iff (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))).2
               (by
               simpa [abs_sub_comm] using this)
           have hEqS :=

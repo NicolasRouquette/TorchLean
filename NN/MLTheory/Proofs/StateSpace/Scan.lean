@@ -101,15 +101,15 @@ variable {α : Type}
                   cases hfb : fb i with
                   | scalar bi =>
                   change
-                    _root_.Spec.Tensor.toScalar
+                    _root_.Spec.Tensor.item
                       (_root_.Spec.get
                         (_root_.Spec.Tensor.addSpec
                           (_root_.Spec.Tensor.mulSpec (Tensor.dim fa) (Tensor.dim fh))
                           (Tensor.dim fb)) i) =
-                    (fa i).toScalar * (fh i).toScalar + (fb i).toScalar
+                    (fa i).item * (fh i).item + (fb i).item
                   simp [_root_.Spec.get, _root_.Spec.getAtSpec,
                     _root_.Spec.Tensor.addSpec, _root_.Spec.Tensor.mulSpec,
-                    _root_.Spec.Tensor.map2Spec, _root_.Spec.Tensor.toScalar,
+                    _root_.Spec.Tensor.map2Spec, _root_.Spec.Tensor.item,
                     hfa, hfh, hfb]
 
 /--
@@ -148,7 +148,7 @@ kernel: each flattened state lane is an independent affine scan.
                               cases hfh : fh i with
                               | scalar hi =>
                               change
-                                _root_.Spec.Tensor.toScalar
+                                _root_.Spec.Tensor.item
                                   (_root_.Spec.get
                                     (_root_.Spec.Tensor.addSpec
                                       (_root_.Spec.Tensor.mulSpec
@@ -159,7 +159,7 @@ kernel: each flattened state lane is an independent affine scan.
                                         (_root_.Spec.Tensor.mulSpec
                                           (Tensor.dim fa₂) (Tensor.dim fb₁))
                                         (Tensor.dim fb₂))) i) =
-                                _root_.Spec.Tensor.toScalar
+                                _root_.Spec.Tensor.item
                                   (_root_.Spec.get
                                     (_root_.Spec.Tensor.addSpec
                                       (_root_.Spec.Tensor.mulSpec
@@ -172,7 +172,7 @@ kernel: each flattened state lane is an independent affine scan.
                               simp [_root_.Spec.get, _root_.Spec.getAtSpec,
                                 _root_.Spec.Tensor.addSpec, _root_.Spec.Tensor.mulSpec,
                                 _root_.Spec.Tensor.map2Spec,
-                                _root_.Spec.Tensor.toScalar,
+                                _root_.Spec.Tensor.item,
                                 hfa₁, hfb₁, hfa₂, hfb₂, hfh,
                                 mul_add, mul_assoc, add_assoc]
 

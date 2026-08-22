@@ -34,8 +34,8 @@ This is the explicit dense-array version of calling backward and then reading ev
 def backwardDenseAll {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
   {sh : Shape} (out : _root_.Runtime.Autograd.Torch.TensorRef α sh) (seed : Tensor α sh) :
-  IO (Array (_root_.Runtime.AnyTensor α)) := do
-  match s.impl with
+  IO (Array (_root_.Spec.PackedTensor α)) := do
+  match s.state with
   | .eager sess =>
       EagerSession.backwardDenseAll (α := α) sess (sh := sh) out seed
   | .typedGraph sess =>
@@ -51,19 +51,19 @@ Invariant: the hook must preserve each gradient tensor's shape; we check this an
 changes.
 -/
 def applyGradHook {α : Type}
-    (grads : Array (_root_.Runtime.AnyTensor α))
-    (hook : Nat → _root_.Runtime.AnyTensor α → IO (_root_.Runtime.AnyTensor α)) :
-    IO (Array (_root_.Runtime.AnyTensor α)) := do
-  let mut out : Array (_root_.Runtime.AnyTensor α) := #[]
+    (grads : Array (_root_.Spec.PackedTensor α))
+    (hook : Nat → _root_.Spec.PackedTensor α → IO (_root_.Spec.PackedTensor α)) :
+    IO (Array (_root_.Spec.PackedTensor α)) := do
+  let mut out : Array (_root_.Spec.PackedTensor α) := #[]
   for i in List.finRange grads.size do
     let g := grads[i]
     let g' ← hook i.1 g
-    if h : g'.s = g.s then
-      out := out.push { g' with s := g.s, t := Tensor.castShape g'.t h }
+    if h : g'.shape = g.shape then
+      out := out.push ⟨g.shape, g'.cast h⟩
     else
       throw <| IO.userError <|
-        s!"torchlean: grad hook changed shape at id={i.1} (expected {Shape.pretty g.s}, got "
-          ++ s!"{Shape.pretty g'.s})"
+        s!"torchlean: grad hook changed shape at id={i.1} (expected {Shape.pretty g.shape}, got "
+          ++ s!"{Shape.pretty g'.shape})"
   pure out
 
 end Internal
@@ -76,8 +76,8 @@ This is a runtime utility (similar in spirit to PyTorch hooks), not part of the 
 def backwardDenseAllWithHook {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     {sh : Shape} (out : _root_.Runtime.Autograd.Torch.TensorRef α sh) (seed : Tensor α sh)
-    (hook : Nat → _root_.Runtime.AnyTensor α → IO (_root_.Runtime.AnyTensor α)) :
-    IO (Array (_root_.Runtime.AnyTensor α)) := do
+    (hook : Nat → _root_.Spec.PackedTensor α → IO (_root_.Spec.PackedTensor α)) :
+    IO (Array (_root_.Spec.PackedTensor α)) := do
   Internal.applyGradHook (α := α) (grads := (← backwardDenseAll (α := α) s (sh := sh) out seed))
     hook
 
@@ -85,8 +85,8 @@ def backwardDenseAllWithHook {α : Type} (s : Session α) [Add α] [Zero α] [De
 def backwardScalarDenseAll {α : Type} (s : Session α) [Add α] [Zero α] [One α] [DecidableEq Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
   (loss : _root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) :
-  IO (Array (_root_.Runtime.AnyTensor α)) := do
-  match s.impl with
+  IO (Array (_root_.Spec.PackedTensor α)) := do
+  match s.state with
   | .eager sess => EagerSession.backwardScalarDenseAll (α := α) sess loss
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.backwardScalarDenseAll (α := α) sess loss
@@ -96,8 +96,8 @@ def backwardScalarDenseAllWithHook {α : Type} (s : Session α) [Add α] [Zero �
   Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
     (loss : _root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar)
-    (hook : Nat → _root_.Runtime.AnyTensor α → IO (_root_.Runtime.AnyTensor α)) :
-    IO (Array (_root_.Runtime.AnyTensor α)) := do
+    (hook : Nat → _root_.Spec.PackedTensor α → IO (_root_.Spec.PackedTensor α)) :
+    IO (Array (_root_.Spec.PackedTensor α)) := do
   Internal.applyGradHook (α := α) (grads := (← backwardScalarDenseAll (α := α) s loss)) hook
 
 /--
@@ -106,16 +106,16 @@ Extract the gradient for a particular tensor ref from a dense gradient array.
 This is the non-mutating counterpart of reading `x.grad`.
 -/
 def grad {α : Type} {sh : Shape} [DecidableEq Shape]
-  (grads : Array (_root_.Runtime.AnyTensor α)) (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
+  (grads : Array (_root_.Spec.PackedTensor α)) (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (Tensor α sh) := do
   let gAny ← match grads[x.id]? with
     | some g => pure g
     | none => throw <| IO.userError "torchlean: gradient array out of bounds"
-  if h : gAny.s = sh then
-    pure (Tensor.castShape gAny.t h)
+  if h : gAny.shape = sh then
+    pure (gAny.cast h)
   else
     throw <| IO.userError
-      s!"torchlean: grad shape mismatch (expected {Shape.pretty sh}, got {Shape.pretty gAny.s})"
+      s!"torchlean: grad shape mismatch (expected {Shape.pretty sh}, got {Shape.pretty gAny.shape})"
 
 /-- Vector-Jacobian product: `vjp(out, seed)[x]`. -/
 def vjp {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
@@ -151,7 +151,7 @@ def jvpLeaf {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
     (x : _root_.Runtime.Autograd.Torch.TensorRef α shX)
     (dx : Tensor α shX) :
     IO (Tensor α shOut) := do
-  match s.impl with
+  match s.state with
   | .eager _ =>
       throw <| IO.userError "torchlean: jvpLeaf is only supported for typed graph sessions"
   | .typedGraph sess =>
@@ -163,7 +163,7 @@ def jvpScalarLeaf {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
     (loss : _root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar)
     {shX : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α shX) (dx : Tensor α shX) :
     IO α := do
-  match s.impl with
+  match s.state with
   | .eager _ =>
       throw <| IO.userError "torchlean: jvpScalarLeaf is only supported for typed graph sessions"
   | .typedGraph sess =>
@@ -179,9 +179,9 @@ Jacobian-vector product with explicit tangents for all *leaf* tensors.
 def jvpDenseAll {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
     {shOut : Shape}
     (out : _root_.Runtime.Autograd.Torch.TensorRef α shOut)
-    (dxs : Array (_root_.Runtime.AnyTensor α)) :
+    (dxs : Array (_root_.Spec.PackedTensor α)) :
     IO (Tensor α shOut) := do
-  match s.impl with
+  match s.state with
   | .eager _ =>
       throw <| IO.userError "torchlean: jvpDenseAll is only supported for typed graph sessions"
   | .typedGraph sess =>
@@ -197,8 +197,8 @@ This is an optimizer helper used by examples; for a higher-level API see
 def sgdStepAll {α : Type} (s : Session α)
   [Sub α] [Mul α] [Add α] [Zero α] [DecidableEq Shape]
   [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-  (lr : α) (grads : Array (_root_.Runtime.AnyTensor α)) : IO Unit := do
-  match s.impl with
+  (lr : α) (grads : Array (_root_.Spec.PackedTensor α)) : IO Unit := do
+  match s.state with
   | .eager sess => EagerSession.sgdStepAll (α := α) sess lr grads
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.sgdStepAll (α := α) sess lr grads
@@ -226,7 +226,7 @@ def sgdStepScalarGraph {α : Type} (s : Session α)
     let lossTensor ← getValue (α := α) s (sh := Shape.scalar) loss
     let grads ← backwardScalarDenseAll (α := α) s loss
     sgdStepAll (α := α) s lr grads
-    pure (Tensor.toScalar lossTensor)
+    pure (Tensor.item lossTensor)
 
 /--
 Apply a dense SGD step to all parameters after transforming gradients with a user hook.
@@ -241,8 +241,8 @@ PyTorch analogy:
 def sgdStepAllWithHook {α : Type} (s : Session α)
     [Sub α] [Mul α] [Add α] [Zero α] [DecidableEq Shape]
     [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (lr : α) (grads : Array (_root_.Runtime.AnyTensor α))
-    (hook : Nat → _root_.Runtime.AnyTensor α → IO (_root_.Runtime.AnyTensor α)) : IO Unit := do
+    (lr : α) (grads : Array (_root_.Spec.PackedTensor α))
+    (hook : Nat → _root_.Spec.PackedTensor α → IO (_root_.Spec.PackedTensor α)) : IO Unit := do
   sgdStepAll (α := α) s lr (← Internal.applyGradHook (α := α) grads hook)
 
 end Session

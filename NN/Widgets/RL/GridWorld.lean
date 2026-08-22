@@ -61,7 +61,7 @@ public meta section
 
 open scoped ProofWidgets.Jsx
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.RL
 open Spec.RL.Envs
 open UI
@@ -183,7 +183,7 @@ The widget layer converts them back to a total Lean function `State → Action` 
 -/
 /-- Decode action ids from saved artifacts, defaulting to `up` when malformed. -/
 private def actionOfNat (n : Nat) : GridWorld.Action :=
-  if h : n < 4 then ⟨n, h⟩ else GridAction.up
+  if h : n < 4 then ⟨n, h⟩ else GridWorld.Action.up
 
 private def policyOfActionArray {width height : Nat}
     (actions : Array Nat) : GridWorld.State width height → GridWorld.Action :=
@@ -192,7 +192,7 @@ private def policyOfActionArray {width height : Nat}
     if h : idx < actions.size then
       actionOfNat (actions[idx]'h)
     else
-      GridAction.up
+      GridWorld.Action.up
 
 private def mkPos? {width height : Nat} (row col : Nat) : Option (GridWorld.State width height) :=
   if hRow : row < height then

@@ -38,6 +38,7 @@ namespace RuntimeApprox
 
 open Spec
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 open scoped NNReal
 
 noncomputable section
@@ -108,7 +109,7 @@ def scaleWith {α : Type} {s : Shape}
   norm spec ≤ B ∧ norm runtimeS ≤ B
 
 /-- Default scale predicate on tensors (uses `linf_norm`). -/
-def scaleT {α : Type} {s : Shape}
+def scaleTensor {α : Type} {s : Shape}
     (toSpec : α → SpecScalar)
     (spec : SpecTensor s)
     (runtime : Tensor α s)
@@ -120,7 +121,7 @@ def scaleCtx {α : Type} (toSpec : α → SpecScalar) : {ss : List Shape} →
     TList SpecScalar ss → TList α ss → BList ss → Prop
   | [], .nil, .nil, .nil => True
   | _ :: ss, .cons x xs, .cons y ys, .cons b bs =>
-      scaleT (α := α) (toSpec := toSpec) x y b ∧ scaleCtx (ss := ss) toSpec xs ys bs
+      scaleTensor (α := α) (toSpec := toSpec) x y b ∧ scaleCtx (ss := ss) toSpec xs ys bs
 
 lemma scaleCtx_cast {α : Type} {toSpec : α → SpecScalar} {ss₁ ss₂ : List Shape} (h : ss₁ = ss₂)
     {xS : TList SpecScalar ss₁} {xR : TList α ss₁} {bs : BList ss₁} :
@@ -136,7 +137,7 @@ lemma scaleCtx_snoc {α : Type} {toSpec : α → SpecScalar} {ss : List Shape} {
     {xS : TList SpecScalar ss} {xR : TList α ss} {bs : BList ss}
     (hx : scaleCtx (α := α) toSpec xS xR bs)
     {yS : SpecTensor τ} {yR : Tensor α τ} {b : ℝ≥0}
-    (hy : scaleT (α := α) (toSpec := toSpec) yS yR b) :
+    (hy : scaleTensor (α := α) (toSpec := toSpec) yS yR b) :
     scaleCtx (α := α) toSpec
       (TList.snoc (α := SpecScalar) (ss := ss) xS yS)
       (TList.snoc (α := α) (ss := ss) xR yR)
@@ -166,7 +167,7 @@ lemma scaleCtx_unsnoc {α : Type} {toSpec : α → SpecScalar} {ss : List Shape}
           (TList.unsnoc (α := α) (ss := ss) (τ := τ) xR).1
           (BList.unsnoc (ss := ss) (τ := τ) bs).1
         ∧
-      scaleT (α := α) (toSpec := toSpec)
+      scaleTensor (α := α) (toSpec := toSpec)
           (TList.unsnoc (α := SpecScalar) (ss := ss) (τ := τ) xS).2
           (TList.unsnoc (α := α) (ss := ss) (τ := τ) xR).2
           (BList.unsnoc (ss := ss) (τ := τ) bs).2 := by
@@ -187,7 +188,7 @@ lemma scaleCtx_unsnoc {α : Type} {toSpec : α → SpecScalar} {ss : List Shape}
                           | nil =>
                               refine And.intro ?_ ?_
                               · simp [TList.unsnoc, BList.unsnoc, scaleCtx]
-                              · simpa [TList.unsnoc, BList.unsnoc, scaleCtx, scaleT, scaleWith]
+                              · simpa [TList.unsnoc, BList.unsnoc, scaleCtx, scaleTensor, scaleWith]
                                 using h.1
   | cons s ss ih =>
       cases xS with
@@ -204,7 +205,7 @@ lemma scaleCtx_unsnoc {α : Type} {toSpec : α → SpecScalar} {ss : List Shape}
 lemma scaleCtx_get {α : Type} {toSpec : α → SpecScalar} {Γ : List Shape}
     {xS : TList SpecScalar Γ} {xR : TList α Γ} {bs : BList Γ}
     (h : scaleCtx (α := α) toSpec xS xR bs) (i : Fin Γ.length) :
-    scaleT (α := α) (toSpec := toSpec)
+    scaleTensor (α := α) (toSpec := toSpec)
       (TList.get (α := SpecScalar) xS i)
       (TList.get (α := α) xR i)
       (BList.get bs i) := by
@@ -224,7 +225,7 @@ lemma scaleCtx_get {α : Type} {toSpec : α → SpecScalar} {Γ : List Shape}
                   | mk iVal hiVal =>
                       cases iVal with
                       | zero =>
-                          change scaleT (α := α) (toSpec := toSpec) xSh xRh bh
+                          change scaleTensor (α := α) (toSpec := toSpec) xSh xRh bh
                           exact h.1
                       | succ j =>
                           have := ih (xS := xSt) (xR := xRt) (bs := bt) h.2
@@ -256,36 +257,36 @@ lemma absOnly_le_tolFromEpsScale (eps : ℝ) (B : ℝ≥0) :
     simp [ApproxTol.absOnly, tolFromEpsScale, ApproxTol.ofReal]
   · simp [ApproxTol.absOnly, tolFromEpsScale, ApproxTol.ofReal]
 
-lemma approxTTol_from_scale {α : Type} {s : Shape} {toSpec : α → SpecScalar}
+lemma approxTensorWithTol_from_scale {α : Type} {s : Shape} {toSpec : α → SpecScalar}
     {spec : SpecTensor s} {runtime : Tensor α s} (eps : ℝ) (B : ℝ≥0)
-    (h : approxT (α := α) (toSpec := toSpec) spec runtime eps) :
-    approxTTol (α := α) (toSpec := toSpec) spec runtime (tolFromEpsScale eps B) := by
-  -- `approxT` -> `absOnly eps`, then enlarge tolerance (abs+rel) via monotonicity.
-  have habsOnly : approxTTol (α := α) (toSpec := toSpec) spec runtime (ApproxTol.absOnly eps) := by
+    (h : approxTensor (α := α) (toSpec := toSpec) spec runtime eps) :
+    approxTensorWithTol (α := α) (toSpec := toSpec) spec runtime (tolFromEpsScale eps B) := by
+  -- `approxTensor` -> `absOnly eps`, then enlarge tolerance (abs+rel) via monotonicity.
+  have habsOnly : approxTensorWithTol (α := α) (toSpec := toSpec) spec runtime (ApproxTol.absOnly eps) := by
     -- use eps->absOnly lift lemma for `approx_with`
     have : approxWith (α := α) (toSpec := toSpec) (norm := linfNorm) spec runtime eps := by
-      simpa [approxT] using h
-    simpa [approxTTol] using
+      simpa [approxTensor] using h
+    simpa [approxTensorWithTol] using
       (approx_with_to_approx_with_tol_absOnly (toSpec := toSpec) (norm := linfNorm)
         (spec := spec) (runtime := runtime) eps this)
   rcases absOnly_le_tolFromEpsScale eps B with ⟨habs, hrel, hslack⟩
-  exact approxTTol_mono (α := α) (toSpec := toSpec) (spec := spec) (runtime := runtime)
+  exact approxTensorWithTol_mono (α := α) (toSpec := toSpec) (spec := spec) (runtime := runtime)
     (tol₁ := ApproxTol.absOnly eps) (tol₂ := tolFromEpsScale eps B) habs hrel hslack habsOnly
 
 lemma approxCtx_get_tolFromEpsScale {α : Type} {toSpec : α → SpecScalar} {Γ : List Shape}
     {xS : TList SpecScalar Γ} {xR : TList α Γ} {eps : EList Γ} {bs : BList Γ}
     (hε : approxCtx (α := α) toSpec xS xR eps) (_hB : scaleCtx (α := α) toSpec xS xR bs)
     (i : Fin Γ.length) :
-    approxTTol (α := α) (toSpec := toSpec)
+    approxTensorWithTol (α := α) (toSpec := toSpec)
       (TList.get (α := SpecScalar) xS i)
       (TList.get (α := α) xR i)
       (tolFromEpsScale (EList.get eps i) (BList.get bs i)) := by
-  have hi : approxT (α := α) (toSpec := toSpec)
+  have hi : approxTensor (α := α) (toSpec := toSpec)
       (TList.get (α := SpecScalar) xS i)
       (TList.get (α := α) xR i)
       (EList.get eps i) :=
     approxCtx_get (α := α) (toSpec := toSpec) (xS := xS) (xR := xR) (eps := eps) hε i
-  exact approxTTol_from_scale (α := α) (toSpec := toSpec)
+  exact approxTensorWithTol_from_scale (α := α) (toSpec := toSpec)
     (spec := TList.get (α := SpecScalar) xS i)
     (runtime := TList.get (α := α) xR i)
     (eps := EList.get eps i) (B := BList.get bs i) hi

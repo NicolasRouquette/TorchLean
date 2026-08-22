@@ -18,10 +18,10 @@ TorchLean uses a proof-oriented float32 model (`FP32`) defined by:
 - the canonical IEEE-754 binary32 exponent function (`fexp32`), and
 - round-to-nearest, ties-to-even (`rnd32`).
 
-This file provides small, ergonomic aliases for the corresponding real-level operators:
+This file names the corresponding real-level operators:
 
-- `round₃₂ x` (or ASCII `round32 x`): round $x\in\mathbb{R}$ to the binary32 grid.
-- `ulp₃₂ x` and `eps₃₂ x`: the ULP scale (and half-ULP) associated with $x$.
+- `round32 x`: round $x\in\mathbb{R}$ to the binary32 grid.
+- `ulp32 x` and `eps32 x`: the ULP scale (and half-ULP) associated with $x$.
 
 We keep these under `TorchLean.Floats` so they are available where float semantics are in focus,
 without polluting unrelated namespaces.
@@ -52,31 +52,6 @@ noncomputable abbrev eps32 (x : ℝ) : ℝ := ulp32 x / 2
 /-- Binary32 has a smallest grid step, so its ULP at zero is $2^{-149}$. -/
 @[simp] theorem ulp32_zero : ulp32 0 = neuralBpow binaryRadix (-149) := by
   exact neuralUlp_zero_FLT (-149) 24 (by norm_num)
-
-/-- Unicode alias for `round32` (useful in error-bound statements). -/
-noncomputable abbrev round₃₂ (x : ℝ) : ℝ :=
-  round32 x
-
-/-- Unicode alias for `ulp32` (useful in error-bound statements). -/
-noncomputable abbrev ulp₃₂ (x : ℝ) : ℝ := ulp32 x
-
-/-- Unicode alias for `eps32` (half-ULP). -/
-noncomputable abbrev eps₃₂ (x : ℝ) : ℝ := eps32 x
-
-/-
-`round₃₂`/`ulp₃₂`/`eps₃₂` are purely ergonomic unicode aliases.
-
-We keep the simp lemmas one-way (unicode → ASCII) to avoid accidental simp loops.
--/
-
-/-- `round₃₂` is definitionally equal to `round32` (unicode → ASCII simp). -/
-@[simp] lemma round₃₂_eq_round32 (x : ℝ) : round₃₂ x = round32 x := rfl
-
-/-- `ulp₃₂` is definitionally equal to `ulp32` (unicode → ASCII simp). -/
-@[simp] lemma ulp₃₂_eq_ulp32 (x : ℝ) : ulp₃₂ x = ulp32 x := rfl
-
-/-- `eps₃₂` is definitionally equal to `eps32` (unicode → ASCII simp). -/
-@[simp] lemma eps₃₂_eq_eps32 (x : ℝ) : eps₃₂ x = eps32 x := rfl
 
 end
 

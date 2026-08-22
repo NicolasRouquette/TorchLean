@@ -60,7 +60,7 @@ transcendental functions (exp/tanh/log/sqrt) used by activations and losses.
 - Many spec definitions assume `[Context α]` so they can be re‑used at multiple dtypes.
 - For "paper theorems", the spec layer fixes `Spec.SpecScalar := ℝ` (see
   `NN/Spec/Core/Scalar.lean`).
-- `Context.decidable_gt` is included so executable code can decide comparisons (e.g. ReLU / argmax).
+- `Context.decidableGT` is included so executable code can decide comparisons (e.g. ReLU / argmax).
 - For executable examples, `Context.gtBool` converts `x > y` into a printable `Bool`.
 - For interval arithmetic, we override some order/comparison behavior (see `namespace Interval`
   below).
@@ -76,20 +76,20 @@ class Context (α : Type) extends
   MathFunctions α, Numbers α,
   Coe Nat α where -- For converting natural numbers to the type
   /-- Decision procedure for the scalar type's strict order. -/
-  decidable_gt : DecidableRel (· > · : α → α → Prop)
+  decidableGT : DecidableRel (· > · : α → α → Prop)
 
 namespace Context
 
-/-- Decide `x > y` as a `Bool` using the `Context`'s `decidable_gt`. -/
+/-- Decide `x > y` as a `Bool` using the `Context`'s `decidableGT`. -/
 def gtBool {α : Type} [Context α] (x y : α) : Bool :=
-  let _ : Decidable (x > y) := (Context.decidable_gt) x y
+  let _ : Decidable (x > y) := (Context.decidableGT) x y
   decide (x > y)
 
 end Context
 
 /-- A `Context` includes a decidable `>` relation; expose it as a standard typeclass. -/
 instance {α : Type} [Context α] : DecidableRel ((· > ·) : α → α → Prop) :=
-  Context.decidable_gt
+  Context.decidableGT
 
 /-!
 ## Rational Backend
@@ -151,14 +151,14 @@ scoped instance instMathFunctionsRat : MathFunctions ℚ where
 /--
 `Numbers ℚ` dictionary for the rational backend.
 
-The transcendentals (`log10`, etc.) are defined as `0` in this scoped backend; the basic rational
+The transcendentals (`lnTen`, etc.) are defined as `0` in this scoped backend; the basic rational
 literals are exact.
 -/
 scoped instance instNumbersRat : Numbers ℚ where
-  neg_point_five := -1/2
-  neg_one := -1
-  pointone := 1/10
-  pointfive := 1/2
+  negHalf := -1/2
+  negOne := -1
+  oneTenth := 1/10
+  half := 1/2
   zero := 0
   one := 1
   two := 2
@@ -166,19 +166,19 @@ scoped instance instNumbersRat : Numbers ℚ where
   four := 4
   five := 5
   ten := 10
-  log10 := 0
-  log10000 := 0
+  lnTen := 0
+  lnTenThousand := 0
   epsilon := 1/1000000
 
 /-- Full opt-in `Context` dictionary for exact rational algebraic fragments. -/
 scoped instance instContextRat : Context ℚ where
-  decidable_gt := inferInstance
+  decidableGT := inferInstance
 
 end NN.Spec.RationalAlgebraic
 
 /-- Full `Context` instance for `Float` (runtime backend). -/
-instance : Context Float := { decidable_gt := inferInstance }
+instance : Context Float := { decidableGT := inferInstance }
 /-- Full `Context` instance for native binary32 execution. -/
-instance : Context Float32 := { decidable_gt := inferInstance }
+instance : Context Float32 := { decidableGT := inferInstance }
 /-- Full `Context` instance for `ℝ` (proof backend, noncomputable). -/
-noncomputable instance : Context ℝ := { decidable_gt := Classical.decRel _ }
+noncomputable instance : Context ℝ := { decidableGT := Classical.decRel _ }

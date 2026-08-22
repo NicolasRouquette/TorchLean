@@ -7,38 +7,33 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Models.GradientBoostedTrees
-public import NN.Spec.Module.SpecModule
+public import NN.Spec.Module.Core
 
 /-!
-# Gradient boosted trees as an `NNModuleSpec`
+# Gradient boosted trees as an `Spec.Module`
 
-The model spec defines the ensemble prediction function. This file adds the `NNModuleSpec` wrapper
+The model spec defines the ensemble prediction function. This file adds the `Spec.Module` wrapper
 for composition and export.
 -/
 
 @[expose] public section
 
 
-namespace Spec
+namespace Spec.Module
 
 open Tensor
-open ModSpec
 
 variable {α : Type} [Context α]
 
-/-- Gradient boosted trees as an `NNModuleSpec`. -/
-def GradientBoostedTreesModuleSpec {nTrees maxDepth nFeatures : Nat}
-  (model : GradientBoostedTreesSpec α nTrees maxDepth) :
-  NNModuleSpec α (.dim nFeatures .scalar) .scalar :=
+/-- Gradient boosted trees as an `Spec.Module`. -/
+def gradientBoostedTrees {nTrees maxDepth nFeatures : Nat}
+  (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth) :
+  Spec.Module α (.dim nFeatures .scalar) .scalar :=
 {
   forward := fun x => gradientBoostedTreesForwardSpec model x,
   kind := "GradientBoostedTrees",
-  export_func := {
-    toPyTorch :=
-      "UnsupportedLayer(\"GradientBoostedTrees\", "
-        ++ "\"sklearn.ensemble.GradientBoostingRegressor\")",
-    dimensions := (nFeatures, 1)
-  }
+  pythonExpr := "UnsupportedLayer(\"GradientBoostedTrees\", "
+        ++ "\"sklearn.ensemble.GradientBoostingRegressor\")"
 }
 
-end Spec
+end Spec.Module

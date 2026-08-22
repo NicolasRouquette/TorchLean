@@ -216,8 +216,8 @@ def sampleGraphSub : Graph :=
 
 -- 3) Evaluation trace: run the IR semantics step by step.
 -- For `.const` nodes, a small external payload is supplied.
-def sampleInput : Runtime.AnyTensor Float :=
-  { s := (shape![2]), t := pairTensor 0.60 (-0.20) }
+def sampleInput : Spec.PackedTensor Float :=
+  { shape := (shape![2]), tensor := pairTensor 0.60 (-0.20) }
 
 def samplePayload : NN.IR.Payload Float :=
   { const? := fun id =>
@@ -423,20 +423,20 @@ but "which values and gradients are registered now?"
 The runtime-context widget answers that question directly.
 
 ```
-def anyScalar (x : Float) : Runtime.AnyTensor Float :=
-  { s := .scalar, t := Tensor.scalar x }
+def packedScalar (x : Float) : Spec.PackedTensor Float :=
+  { shape := .scalar, tensor := Tensor.scalar x }
 
 def sampleCtx : Runtime.RuntimeContext Float :=
-  { var_registry := [
-      ("w", anyScalar 3.0)
-    , ("x", anyScalar 2.0)
-    , ("wx", anyScalar 6.0)
+  { variables := [
+      ("w", packedScalar 3.0)
+    , ("x", packedScalar 2.0)
+    , ("wx", packedScalar 6.0)
     ]
     gradients := [
-      ("w", anyScalar 2.0)
-    , ("x", anyScalar 3.0)
+      ("w", packedScalar 2.0)
+    , ("x", packedScalar 3.0)
     ]
-    next_id := 3 }
+    nextId := 3 }
 
 #runtime_ctx_view sampleCtx
 ```

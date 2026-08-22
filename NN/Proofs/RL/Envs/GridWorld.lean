@@ -112,13 +112,13 @@ theorem toFiniteStochasticMDP_valid
     -- Entries are `0` or `1` by construction.
     by_cases hx : nextState = (gw.toFiniteMDP.step state action).state
     · simp [Spec.RL.Envs.GridWorld.toFiniteStochasticMDP, Spec.RL.Envs.GridWorld.oneHot,
-        Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.toScalar, hx]
+        Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.item, hx]
     · simp [Spec.RL.Envs.GridWorld.toFiniteStochasticMDP, Spec.RL.Envs.GridWorld.oneHot,
-        Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.toScalar, hx]
+        Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.item, hx]
   · intro state action
     -- A one-hot row sums to `1`.
     simp [Spec.RL.Envs.GridWorld.toFiniteStochasticMDP, Spec.RL.Envs.GridWorld.oneHot,
-      Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.toScalar,
+      Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.item,
       Finset.sum_ite_eq', Finset.mem_univ]
 
 /-!
@@ -149,7 +149,7 @@ theorem toFiniteStochasticMDP_expectedNextValue_eq_toFiniteMDP_successor
   simp [Spec.RL.FiniteStochastic.expectedNextValue,
     Spec.RL.Envs.GridWorld.toFiniteStochasticMDP,
     Spec.RL.Envs.GridWorld.oneHot,
-    Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.toScalar,
+    Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.item,
     Finset.sum_ite_eq', Finset.mem_univ]
 
 /--

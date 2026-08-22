@@ -13,28 +13,28 @@ public meta import ProofWidgets.Component.HtmlDisplay
 public meta import ProofWidgets.Demos.Macro
 
 /-!
-# RuntimeCtx
+# Runtime Context
 
-Runtime context viewer widget (variables + gradients).
+Runtime context viewer widget for named tensor bindings and gradients.
 
 When stepping through a training loop, the most common debugging questions are:
-- Which parameters exist and what shapes do they have?
-- Which variables have gradients, and do their shapes match the corresponding values?
+- Which bindings exist and what shapes do they have?
+- Which bindings have gradients, and do their shapes match the corresponding values?
 
 This widget renders `Runtime.RuntimeContext` as two tables:
-- `var_registry` (values),
+- `bindings` (values),
 - `gradients` (accumulated gradients).
 
 ## Main definitions
 
 - `runtimeCtxHtml`: top-level context renderer.
 - `sectionHtml`: reusable expandable section builder.
-- `kvRow`: per-variable row with tensor preview.
+- `kvRow`: per-binding row with tensor preview.
 - `#runtime_ctx_view`: command entry point.
 
 ## Implementation notes
 
-- We split variables and gradients into separate sections because that mirrors how people debug
+- We split bindings and gradients into separate sections because that mirrors how people debug
   training state ("what exists?" vs "what got grad?").
 - Expanded rows show tensor previews directly, which helps identify shape
   issues without leaving the infoview.
@@ -47,7 +47,7 @@ This widget renders `Runtime.RuntimeContext` as two tables:
 
 ## Tags
 
-runtime-context, gradients, variables, debugging, proofwidgets
+runtime-context, gradients, bindings, debugging, proofwidgets
 -/
 
 public meta section
@@ -59,21 +59,22 @@ namespace NN.Widgets
 open Runtime
 open UI
 
-/-- Render one named runtime tensor entry with shape metadata and preview. -/
-private def kvRow {α : Type} [ToString α] (name : String) (v : AnyTensor α) : ProofWidgets.Html :=
+/-- Render one named runtime tensor binding with shape metadata and preview. -/
+private def kvRow {α : Type} [ToString α] (name : String) (v : Spec.PackedTensor α) :
+    ProofWidgets.Html :=
   <details style={json% {"margin": "6px 0"}}>
     <summary>
-      {monospace name} {pill s!"shape={Spec.Shape.pretty v.s}"} {pill
-        s!"size={Spec.Shape.size v.s}"}
+      {monospace name} {pill s!"shape={Spec.Shape.pretty v.shape}"} {pill
+        s!"size={Spec.Shape.size v.shape}"}
     </summary>
     <div style={json% {"margin-top": "8px", "padding-left": "10px"}}>
-      {anyTensorHtml (α := α) v (maxRows := 10) (maxCols := 12) (maxElems := 64)}
+      {packedTensorHtml (α := α) v (maxRows := 10) (maxCols := 12) (maxElems := 64)}
     </div>
   </details>
 
 /-- Render a titled expandable section for named tensor lists. -/
-private def sectionHtml {α : Type} [ToString α] (title : String) (xs : List (String × AnyTensor α))
-  : ProofWidgets.Html :=
+private def sectionHtml {α : Type} [ToString α] (title : String)
+    (xs : List (String × Spec.PackedTensor α)) : ProofWidgets.Html :=
   <details «open»={false}>
     <summary>
       {pill title} {pill s!"count={xs.length}"}
@@ -94,10 +95,10 @@ def runtimeCtxHtml {α : Type} [ToString α] (ctx : RuntimeContext α) : ProofWi
   }}>
     <div style={json% {"display": "flex", "gap": "8px", "flex-wrap": "wrap", "margin-bottom":
       "10px"}}>
-      {pill "RuntimeContext"} {pill s!"vars={ctx.var_registry.length}"} {pill
-        s!"grads={ctx.gradients.length}"} {pill s!"next_id={ctx.next_id}"}
+      {pill "RuntimeContext"} {pill s!"bindings={ctx.bindings.length}"} {pill
+        s!"grads={ctx.gradients.length}"} {pill s!"nextId={ctx.nextId}"}
     </div>
-    {sectionHtml (α := α) "var_registry" ctx.var_registry}
+    {sectionHtml (α := α) "bindings" ctx.bindings}
     <div style={json% {"height": "8px"}}></div>
     {sectionHtml (α := α) "gradients" ctx.gradients}
   </div>

@@ -14,13 +14,13 @@ public import NN.Runtime.Autograd.IRExec
 Internal helper lemmas for `NN.Runtime.Autograd.IRExec.Correctness`.
 
 These lemmas relate the typed runtime context (`TList`) to the untyped IR value table (`Array
-  DVal`),
+  Spec.PackedTensor`),
 and provide small “building block” correctness steps that are reused across the per-op proofs.
 
 The lemmas are grouped as follows:
 
-* `dValsOfCtx*` lemmas: relate the typed context produced by `ForwardData.eval` to an untyped
-  `Array (NN.IR.DVal α)` (this is what the IR evaluator uses).
+* `packedTensorsOfContext*` lemmas: relate the typed context produced by `ForwardData.eval` to an untyped
+  `Array (Spec.PackedTensor α)` (this is what the IR evaluator uses).
 * `denoteAllState*` lemmas: package the IR forward evaluator (`ForwardGraph.denoteAll`) in the form
   expected by IR-style semantic equivalence proofs.
 
@@ -34,7 +34,7 @@ These lemmas are infrastructure: they should not encode op-specific logic. Per-o
 - `NoRawLog`: side condition for theorem statements that do not yet carry the positivity
   precondition required by raw real `log`.
 - `NoConcat`: side condition for the concat branch not yet connected to end-to-end preservation.
-- `dValsOfCtx_*`: typed-context to IR-array bridge lemmas.
+- `packedTensorsOfContext_*`: typed-context to IR-array bridge lemmas.
 - `denoteAllState_*` helpers: semantic equivalence bridges between lowered state and IR denotation tables.
 
 ## Implementation notes
@@ -46,7 +46,7 @@ These lemmas are infrastructure: they should not encode op-specific logic. Per-o
 - Collecting these utilities in one place gives op-specific correctness modules shared rewrite and
   indexing lemmas instead of repeated local proof scripts.
 - These files can build slowly because they connect two representations at once: typed `TList`
-  contexts on the forward-graph side and dynamically shaped `DVal` arrays on the IR side. Most of the
+  contexts on the forward-graph side and dynamically shaped `Spec.PackedTensor` arrays on the IR side. Most of the
   cost is not arithmetic; it is Lean checking that shape casts, array indices, and proof-irrelevant
   casts line up exactly.
 - When the same proof pattern appears in multiple operator files, prefer a named lemma with a clear
@@ -179,149 +179,78 @@ theorem array_getElem_proof_irrel {β : Type}
   exact congrArg (fun j : Fin xs.size => xs[j]) hFin
 
 /--
-Relate `xs[i]!` (defaulting lookup) and `xs[i]'h` (bounded lookup) when the index is in-bounds.
-
-This is a small bridge lemma used throughout the IR/runtime context comparison proofs.
--/
-theorem array_getElem!_eq_getElem {β : Type} [Inhabited β]
-    (xs : Array β) (i : Nat) (h : i < xs.size) : xs[i]! = xs[i]'h := by
-  have h1 : xs[i]! = xs.getD i default := by
-    simp [Array.getElem!_eq_getD]
-  have h2 : xs[i]'h = xs.getD i default := by
-    simpa using (Array.getElem_eq_getD (xs := xs) (i := i) (h := h) (fallback := (default : β)))
-  simpa [h2] using h1
-
-/--
-`dValsOfCtx` ignores type-level casts of the underlying `TList`.
+`packedTensorsOfContext` ignores type-level casts of the underlying `TList`.
 
 `ForwardData.eval` introduces a definitional cast when extending contexts; this lemma lets us erase it
-before reasoning about the corresponding `Array` of `DVal`s.
+before reasoning about the corresponding `Array` of `Spec.PackedTensor`s.
 -/
 @[simp]
-theorem dValsOfCtx_cast {α : Type} [Context α] {ss₁ ss₂ : List Shape}
+theorem packedTensorsOfContext_cast {α : Type} {ss₁ ss₂ : List Shape}
     (h : ss₁ = ss₂) (ctx : Proofs.Autograd.Algebra.TList α ss₁) :
-    dValsOfCtx (α := α) (ss := ss₂) (Proofs.Autograd.Algebra.TList.cast (α := α) h ctx) =
-      dValsOfCtx (α := α) (ss := ss₁) ctx := by
+    packedTensorsOfContext (α := α) (ss := ss₂) (Proofs.Autograd.Algebra.TList.cast (α := α) h ctx) =
+      packedTensorsOfContext (α := α) (ss := ss₁) ctx := by
   cases h
-  simp [dValsOfCtx]
+  simp [packedTensorsOfContext]
 
-/-- `dValsOfCtx` for a snoc’d context corresponds to `Array.push` of the appended tensor. -/
+/-- `packedTensorsOfContext` for a snoc’d context corresponds to `Array.push` of the appended tensor. -/
 @[simp]
-theorem dValsOfCtx_snoc {α : Type} [Context α] {ss : List Shape} {τ : Shape}
+theorem packedTensorsOfContext_snoc {α : Type} {ss : List Shape} {τ : Shape}
     (ctx : Proofs.Autograd.Algebra.TList α ss) (t : Tensor α τ) :
-    dValsOfCtx (α := α) (ss := ss ++ [τ])
+    packedTensorsOfContext (α := α) (ss := ss ++ [τ])
         (Proofs.Autograd.Algebra.TList.snoc (α := α) (ss := ss) (τ := τ) ctx t) =
-      (dValsOfCtx (α := α) (ss := ss) ctx).push (NN.IR.DVal.mk (α := α) τ t) := by
-  simp [dValsOfCtx, dValOfAny, NN.IR.DVal.mk, AnyTensor.mk]
+      (packedTensorsOfContext (α := α) (ss := ss) ctx).push
+        (Spec.PackedTensor.ofTensor t) := by
+  simp [packedTensorsOfContext, Spec.PackedTensor.ofTensor]
 
 /--
-Indexing `dValsOfCtx` agrees with indexing the underlying `TList` context.
+Optional lookup in `packedTensorsOfContext` agrees with indexing the underlying typed context.
 
 This is the main bridge between the typed runtime context and the untyped IR value table.
 -/
-theorem dValsOfCtx_getElem!
-    {α : Type} [Context α] {ss : List Shape}
+theorem packedTensorsOfContext_getElem?
+    {α : Type} {ss : List Shape}
     (ctx : Proofs.Autograd.Algebra.TList α ss) (i : Fin ss.length) :
-    (dValsOfCtx (α := α) (ss := ss) ctx)[i.1]! =
-      NN.IR.DVal.mk (α := α) (ss.get i)
-        (Proofs.Autograd.Algebra.TList.get (α := α) (ss := ss) ctx i) := by
-  let vals := dValsOfCtx (α := α) (ss := ss) ctx
-  have hSize : vals.size = ss.length := by
-    simp [vals, dValsOfCtx, Proofs.Autograd.Algebra.TList.size_toAnyArray]
-  have hi : i.1 < vals.size := Nat.lt_of_lt_of_eq i.2 hSize.symm
-  have hGet : vals[i.1]! = vals[i.1]'hi := by
-    simpa [vals] using (array_getElem!_eq_getElem (xs := vals) (i := i.1) (h := hi))
-  -- Reduce to a bounded lookup through the mapped `toAnyArray`.
-  -- Then use the existing `get_toAnyArray` bridge lemma.
-  let arr := Proofs.Autograd.Algebra.TList.toAnyArray (α := α) (ss := ss) ctx
-  have hArr : i.1 < arr.size := by
-    -- `arr.size = ss.length` by `size_toAnyArray`.
-    have : arr.size = ss.length := by
-      simp [arr, Proofs.Autograd.Algebra.TList.size_toAnyArray]
-    exact Nat.lt_of_lt_of_eq i.2 this.symm
-  have hMapped :
-      vals[i.1]'hi =
-        dValOfAny (α := α)
-          (arr[i.1]'hArr) := by
-    -- `vals = arr.map dValOfAny`, so this is `Array.getElem_map` plus proof irrelevance.
-    have hiArr : i.1 < arr.size := Nat.lt_of_lt_of_eq hi (by
-      simp [vals, dValsOfCtx, arr])
-    have : vals[i.1]'hi = dValOfAny (α := α) (arr[i.1]'hiArr) := by
-      simp [vals, dValsOfCtx, arr]
-    -- Normalize the inner proof to `hArr`.
-    simpa [array_getElem_proof_irrel (xs := arr) (i := i.1) (h₁ := hiArr) (h₂ := hArr)] using this
-  -- Rewrite `arr[i]` via `get_toAnyArray`, then finish by `simp`.
-  have hToAny :
-      arr[i.1]'hArr =
-        Runtime.Autograd.AnyTensor.mk
-          (Proofs.Autograd.Algebra.TList.get (α := α) (ss := ss) ctx i) := by
-    -- `get_toAnyArray` uses a particular bound proof; adjust it by proof irrelevance.
-    have hStd :
-        arr[i.1]'(by
-          -- the proof used by `get_toAnyArray`
-          dsimp [arr]
-          exact Nat.lt_of_lt_of_eq i.2
-            (Proofs.Autograd.Algebra.TList.size_toAnyArray (α := α) (ss := ss) ctx).symm) =
-          Runtime.Autograd.AnyTensor.mk
-            (Proofs.Autograd.Algebra.TList.get (α := α) (ss := ss) ctx i) := by
-      simpa [arr] using
-        (Proofs.Autograd.Algebra.TList.get_toAnyArray (α := α) (ss := ss) ctx i)
-    -- Normalize the proof.
-    simpa [array_getElem_proof_irrel (xs := arr) (i := i.1)
-        (h₁ := hArr)
-        (h₂ := (by
-          dsimp [arr]
-          exact Nat.lt_of_lt_of_eq i.2
-            (Proofs.Autograd.Algebra.TList.size_toAnyArray (α := α) (ss := ss) ctx).symm))] using
-              hStd
-  -- Assemble.
-  calc
-    vals[i.1]! = vals[i.1]'hi := by
-      simpa [vals] using hGet
-    _ = dValOfAny (α := α) (arr[i.1]'hArr) := by
-      simp [hMapped]
-    _ = dValOfAny (α := α)
-        (Runtime.Autograd.AnyTensor.mk
-          (Proofs.Autograd.Algebra.TList.get (α := α) (ss := ss) ctx i)) := by
-      simp [hToAny]
-    _ = NN.IR.DVal.mk (α := α) (ss.get i)
-        (Proofs.Autograd.Algebra.TList.get (α := α) (ss := ss) ctx i) := by
-      rfl
+    (packedTensorsOfContext (α := α) (ss := ss) ctx)[i.1]? =
+      some (Spec.PackedTensor.ofTensor
+        (Proofs.Autograd.Algebra.TList.get (α := α) (ss := ss) ctx i)) := by
+  let arr := Proofs.Autograd.Algebra.TList.toPackedArray (α := α) (ss := ss) ctx
+  have hi : i.1 < arr.size := by
+    exact Nat.lt_of_lt_of_eq i.2
+      (Proofs.Autograd.Algebra.TList.size_toPackedArray (α := α) (ss := ss) ctx).symm
+  rw [show (packedTensorsOfContext (α := α) (ss := ss) ctx)[i.1]? = some arr[i.1] by
+    simp [arr, packedTensorsOfContext]]
+  congr 1
+  simpa [arr] using
+    (Proofs.Autograd.Algebra.TList.get_toPackedArray (α := α) (ss := ss) ctx i)
 
 /--
-Indexing `dValsOfCtx` by a typed `Idx` agrees with `getIdx` on the underlying `TList`.
+Optional lookup in `packedTensorsOfContext` by a typed `Idx` agrees with `getIdx` on the
+underlying `TList`.
 
-This packages `dValsOfCtx_getElem!` into the repository’s `Idx` wrapper.
+This packages `packedTensorsOfContext_getElem?` into the repository’s `Idx` wrapper.
 -/
-theorem dValsOfCtx_getIdx
-    {α : Type} [Context α] {ss : List Shape} {s : Shape}
+theorem packedTensorsOfContext_getIdx?
+    {α : Type} {ss : List Shape} {s : Shape}
     (ctx : Proofs.Autograd.Algebra.TList α ss) (idx : Idx ss s) :
-    (dValsOfCtx (α := α) (ss := ss) ctx)[idx.i.1]! =
-      NN.IR.DVal.mk (α := α) s (getIdx (α := α) (xs := ctx) idx) := by
+    (packedTensorsOfContext (α := α) (ss := ss) ctx)[idx.i.1]? =
+      some (Spec.PackedTensor.ofTensor (getIdx (α := α) (xs := ctx) idx)) := by
   cases idx with
   | mk i h =>
       -- Reduce to the `Fin`-indexed lemma and then specialize with the stored shape equality.
       cases h
-      simpa [getIdx, Tensor.castShape, NN.IR.DVal.mk] using
-        (dValsOfCtx_getElem! (α := α) (ss := ss) ctx i)
+      simpa [getIdx, Tensor.castShape] using
+        (packedTensorsOfContext_getElem? (α := α) (ss := ss) ctx i)
 
-/-- `Graph.expectShape` succeeds on a `DVal` built with the same shape. -/
+/-- `Graph.expectShape` succeeds on a `Spec.PackedTensor` built with the same shape. -/
 @[simp] theorem Graph.expectShape_mk {α : Type} [Context α] [DecidableEq Shape] {s : Shape}
     (t : Tensor α s) :
-    NN.IR.Graph.expectShape (α := α) (expected := s) (NN.IR.DVal.mk (α := α) s t) = .ok t := by
-  simp [NN.IR.Graph.expectShape, NN.IR.DVal.shape, NN.IR.DVal.tensor, NN.IR.DVal.mk]
+    NN.IR.Graph.expectShape (α := α) (expected := s) (Spec.PackedTensor.mk (α := α) s t) = .ok t := by
+  simp [NN.IR.Graph.expectShape]
   rfl
 
-/-- Same as `Graph.expectShape_mk`, but for the sigma-style constructor `⟨s, t⟩`. -/
-@[simp] theorem Graph.expectShape_sigma {α : Type} [Context α] [DecidableEq Shape] {s : Shape}
-    (t : Tensor α s) :
-    NN.IR.Graph.expectShape (α := α) (expected := s) (⟨s, t⟩ : NN.IR.DVal α) = .ok t := by
-  simp [NN.IR.Graph.expectShape, NN.IR.DVal.shape, NN.IR.DVal.tensor]
-  rfl
-
-attribute [grind =] dValsOfCtx_cast dValsOfCtx_snoc Graph.expectShape_mk Graph.expectShape_sigma
-  throw_eq_error array_getElem_proof_irrel array_getElem!_eq_getElem
-  dValsOfCtx_getElem! dValsOfCtx_getIdx
+attribute [grind =] packedTensorsOfContext_cast packedTensorsOfContext_snoc Graph.expectShape_mk
+  throw_eq_error array_getElem_proof_irrel
+  packedTensorsOfContext_getElem? packedTensorsOfContext_getIdx?
 
 /-- Well-typed operands for either matrix-matrix or batched matrix multiplication. -/
 inductive MatmulOperands (α : Type) [Context α] where
@@ -337,24 +266,24 @@ inductive MatmulOperands (α : Type) [Context α] where
 namespace MatmulOperands
 
 /-- Package the left typed operand as a dynamic IR value. -/
-def leftDVal {α : Type} [Context α] : MatmulOperands α → NN.IR.DVal α
-  | .matrices left _ => NN.IR.DVal.mk _ left
-  | .batches left _ => NN.IR.DVal.mk _ left
+def leftValue {α : Type} [Context α] : MatmulOperands α → Spec.PackedTensor α
+  | .matrices left _ => Spec.PackedTensor.mk _ left
+  | .batches left _ => Spec.PackedTensor.mk _ left
 
 /-- Package the right typed operand as a dynamic IR value. -/
-def rightDVal {α : Type} [Context α] : MatmulOperands α → NN.IR.DVal α
-  | .matrices _ right => NN.IR.DVal.mk _ right
-  | .batches _ right => NN.IR.DVal.mk _ right
+def rightValue {α : Type} [Context α] : MatmulOperands α → Spec.PackedTensor α
+  | .matrices _ right => Spec.PackedTensor.mk _ right
+  | .batches _ right => Spec.PackedTensor.mk _ right
 
 /-- Evaluate a well-typed operand pair with the matching tensor specification. -/
-def resultDVal {α : Type} [Context α] : MatmulOperands α → NN.IR.DVal α
-  | .matrices left right => NN.IR.DVal.mk _ (Spec.matMulSpec left right)
-  | .batches left right => NN.IR.DVal.mk _ (Tensor.bmmSpec left right)
+def resultValue {α : Type} [Context α] : MatmulOperands α → Spec.PackedTensor α
+  | .matrices left right => Spec.PackedTensor.mk _ (Spec.matMulSpec left right)
+  | .batches left right => Spec.PackedTensor.mk _ (Tensor.bmmSpec left right)
 
 /-- Retag the typed multiplication result with an equal graph-declared output shape. -/
 def resultAtShape {α : Type} [Context α] (operands : MatmulOperands α)
-    (outShape : Shape) (shapeEq : operands.resultDVal.shape = outShape) : NN.IR.DVal α :=
-  NN.IR.DVal.mk outShape (shapeEq ▸ operands.resultDVal.tensor)
+    (outShape : Shape) (shapeEq : operands.resultValue.shape = outShape) : Spec.PackedTensor α :=
+  Spec.PackedTensor.mk outShape (shapeEq ▸ operands.resultValue.tensor)
 
 end MatmulOperands
 
@@ -365,22 +294,20 @@ once instead of duplicating its graph and parent-value reasoning for `mm` and `b
 -/
 theorem evalAt_matmul_ok
     {α : Type} [Context α] [DecidableEq Shape]
-    (g : NN.IR.Graph) (payload : Payload α) (input : NN.IR.DVal α) (vals : Array (NN.IR.DVal α))
+    (g : NN.IR.Graph) (payload : Payload α) (input : Spec.PackedTensor α) (vals : Array (Spec.PackedTensor α))
     (i : Nat) (n : NN.IR.Node) (aId bId : Nat) (operands : MatmulOperands α)
     (hN : g.getNode i = .ok n) (hk : n.kind = .matmul) (hp : n.parents = [aId, bId])
-    (hGetA : vals[aId]! = operands.leftDVal)
-    (hGetB : vals[bId]! = operands.rightDVal)
-    (hOut : operands.resultDVal.shape = n.outShape) :
+    (hGetA : vals[aId]? = some operands.leftValue)
+    (hGetB : vals[bId]? = some operands.rightValue)
+    (hOut : operands.resultValue.shape = n.outShape) :
     NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload) (input := input)
         (vals := vals) (i := i) =
       .ok (operands.resultAtShape n.outShape hOut) := by
   cases operands <;>
-    simp only [MatmulOperands.leftDVal, MatmulOperands.rightDVal,
-      MatmulOperands.resultDVal, MatmulOperands.resultAtShape,
-      NN.IR.DVal.mk, NN.IR.DVal.shape, NN.IR.DVal.tensor] at hGetA hGetB hOut ⊢ <;>
+    simp only [MatmulOperands.leftValue, MatmulOperands.rightValue,
+      MatmulOperands.resultValue, MatmulOperands.resultAtShape] at hGetA hGetB hOut ⊢ <;>
     simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput,
-      hN, hk, hp, hGetA, hGetB, hOut, throw_eq_error,
-      NN.IR.DVal.mk, NN.IR.DVal.shape, NN.IR.DVal.tensor]
+      hN, hk, hp, hGetA, hGetB, hOut, throw_eq_error]
 
 /--
 `NN.IR.Graph.evalAt` for a `.matmul` node specialized to 2D matrix multiply.
@@ -390,21 +317,21 @@ in the well-typed success case.
 -/
 theorem evalAt_matmul_mm_ok
     {α : Type} [Context α] [DecidableEq Shape]
-    (g : NN.IR.Graph) (payload : Payload α) (input : NN.IR.DVal α) (vals : Array (NN.IR.DVal α))
+    (g : NN.IR.Graph) (payload : Payload α) (input : Spec.PackedTensor α) (vals : Array (Spec.PackedTensor α))
     (i : Nat) (n : NN.IR.Node) (aId bId : Nat) (m nDim p : Nat)
     (aT : Tensor α (.dim m (.dim nDim .scalar)))
     (bT : Tensor α (.dim nDim (.dim p .scalar)))
     (hN : g.getNode i = .ok n) (hk : n.kind = .matmul) (hp : n.parents = [aId, bId])
-    (hGetA : vals[aId]! = NN.IR.DVal.mk (α := α) (.dim m (.dim nDim .scalar)) aT)
-    (hGetB : vals[bId]! = NN.IR.DVal.mk (α := α) (.dim nDim (.dim p .scalar)) bT)
+    (hGetA : vals[aId]? = some (Spec.PackedTensor.mk (α := α) (.dim m (.dim nDim .scalar)) aT))
+    (hGetB : vals[bId]? = some (Spec.PackedTensor.mk (α := α) (.dim nDim (.dim p .scalar)) bT))
     (hOut : (.dim m (.dim p .scalar)) = n.outShape) :
     NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload) (input := input) (vals := vals) (i :=
       i) =
-      .ok (NN.IR.DVal.mk (α := α) n.outShape
+      .ok (Spec.PackedTensor.mk (α := α) n.outShape
         (hOut ▸ Spec.matMulSpec (α := α) (m := m) (n := nDim) (p := p) aT bT)) := by
-  simpa [MatmulOperands.leftDVal, MatmulOperands.rightDVal,
-    MatmulOperands.resultDVal, MatmulOperands.resultAtShape, NN.IR.DVal.shape,
-    NN.IR.DVal.tensor] using
+  simpa [MatmulOperands.leftValue, MatmulOperands.rightValue,
+    MatmulOperands.resultValue, MatmulOperands.resultAtShape, Spec.PackedTensor.shape,
+    Spec.PackedTensor.tensor] using
     (evalAt_matmul_ok (α := α) g payload input vals i n aId bId
       (.matrices aT bT) hN hk hp hGetA hGetB hOut)
 
@@ -416,26 +343,24 @@ Like `evalAt_matmul_mm_ok`, this is used to relate the IR evaluator’s result t
 -/
 theorem evalAt_matmul_bmm_ok
     {α : Type} [Context α] [DecidableEq Shape]
-    (g : NN.IR.Graph) (payload : Payload α) (input : NN.IR.DVal α) (vals : Array (NN.IR.DVal α))
+    (g : NN.IR.Graph) (payload : Payload α) (input : Spec.PackedTensor α) (vals : Array (Spec.PackedTensor α))
     (i : Nat) (n : NN.IR.Node) (aId bId : Nat) (batch m nDim p : Nat)
     (aT : Tensor α (.dim batch (.dim m (.dim nDim .scalar))))
     (bT : Tensor α (.dim batch (.dim nDim (.dim p .scalar))))
     (hN : g.getNode i = .ok n) (hk : n.kind = .matmul) (hp : n.parents = [aId, bId])
-    (hGetA : vals[aId]! =
-      NN.IR.DVal.mk (α := α) (.dim batch (.dim m (.dim nDim .scalar)))
-        aT)
-    (hGetB : vals[bId]! =
-      NN.IR.DVal.mk (α := α) (.dim batch (.dim nDim (.dim p .scalar)))
-        bT)
+    (hGetA : vals[aId]? = some
+      (Spec.PackedTensor.mk (α := α) (.dim batch (.dim m (.dim nDim .scalar))) aT))
+    (hGetB : vals[bId]? = some
+      (Spec.PackedTensor.mk (α := α) (.dim batch (.dim nDim (.dim p .scalar))) bT))
     (hOut : (.dim batch (.dim m (.dim p .scalar))) = n.outShape) :
     NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload) (input := input) (vals := vals) (i :=
       i) =
-      .ok (NN.IR.DVal.mk (α := α) n.outShape
+      .ok (Spec.PackedTensor.mk (α := α) n.outShape
         (hOut ▸ Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := nDim) (p := p) aT bT)) :=
           by
-    simpa [MatmulOperands.leftDVal, MatmulOperands.rightDVal,
-      MatmulOperands.resultDVal, MatmulOperands.resultAtShape, NN.IR.DVal.shape,
-      NN.IR.DVal.tensor] using
+    simpa [MatmulOperands.leftValue, MatmulOperands.rightValue,
+      MatmulOperands.resultValue, MatmulOperands.resultAtShape, Spec.PackedTensor.shape,
+      Spec.PackedTensor.tensor] using
       (evalAt_matmul_ok (α := α) g payload input vals i n aId bId
         (.batches aT bT) hN hk hp hGetA hGetB hOut)
 
@@ -454,12 +379,12 @@ def AxisReductionKind.toOpKind (operation : AxisReductionKind) (axis : Nat) : NN
 def AxisReductionKind.denote
     {β : Type} [Context β] {shape : Shape}
     (operation : AxisReductionKind) (axis : Nat) (tensor : Tensor β shape)
-    (axisValid : Shape.valid_axis axis shape) : Tensor β (Tensor.shapeAfterSum shape axis) :=
+    (axisValid : Shape.NonemptyAxis axis shape) : Tensor β (Tensor.shapeAfterSum shape axis) :=
   match operation with
   | .sum => Tensor.reduceSum (α := β) (s := shape) axis tensor
-      (Shape.proveReducibleAlong axis shape axisValid)
+      (axisValid)
   | .mean => Tensor.reduceMean (α := β) (s := shape) axis tensor
-      (Shape.proveReducibleAlong axis shape axisValid)
+      (axisValid)
 
 /--
 `NN.IR.Graph.evalAt` for either axis-reduction node in a well-typed success case.
@@ -474,45 +399,38 @@ The final cast to `n.outShape` comes from the `evalAt` "shape-tag normalization"
 theorem evalAt_axisReduction_ok
     {α : Type} [Context α] [DecidableEq Shape]
     (operation : AxisReductionKind)
-    (g : NN.IR.Graph) (payload : Payload α) (input : NN.IR.DVal α) (vals : Array (NN.IR.DVal α))
+    (g : NN.IR.Graph) (payload : Payload α) (input : Spec.PackedTensor α) (vals : Array (Spec.PackedTensor α))
     (i : Nat) (n : NN.IR.Node) (pId : Nat) (axis : Nat)
-    (s : Shape) (pT : Tensor α s) (hAxisPf : PLift (Shape.valid_axis axis s))
+    (s : Shape) (pT : Tensor α s) (hAxisPf : PLift (Shape.NonemptyAxis axis s))
     (hN : g.getNode i = .ok n) (hk : n.kind = operation.toOpKind axis)
     (hp : n.parents = [pId])
-    (hGet : vals[pId]! = NN.IR.DVal.mk (α := α) s pT)
-    (hAxis : Spec.Shape.validAxis? (axis := axis) s = some hAxisPf)
+    (hGet : vals[pId]? = some (Spec.PackedTensor.mk (α := α) s pT))
+    (hAxis : Spec.Shape.nonemptyAxis? (axis := axis) s = some hAxisPf)
     (hOut : Spec.Tensor.shapeAfterSum s axis = n.outShape) :
     NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload) (input := input) (vals := vals) (i :=
       i) =
-      .ok (NN.IR.DVal.mk (α := α) n.outShape
+      .ok (Spec.PackedTensor.mk (α := α) n.outShape
         (hOut ▸ operation.denote axis pT hAxisPf.down)) := by
-  have hShape : vals[pId]!.fst = s := by
-    simpa [NN.IR.DVal.mk] using congrArg Sigma.fst hGet
-  have hTensorHeq : HEq vals[pId]!.snd pT := by
-    rw [hGet]
-    simp [NN.IR.DVal.mk]
-  cases hShape
-  have hTensor : vals[pId]!.snd = pT := eq_of_heq hTensorHeq
   cases operation <;>
     simp [AxisReductionKind.toOpKind, AxisReductionKind.denote, NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput,
       NN.IR.Graph.evalNode, NN.IR.Graph.normalizeNodeOutput,
-      hN, hk, hp, throw_eq_error, hAxis, hOut, hTensor, Pure.pure, Except.pure]
+      hN, hk, hp, hGet, throw_eq_error, hAxis, hOut, Pure.pure, Except.pure]
 
 /-- `evalAt_axisReduction_ok` specialized to summation. -/
 theorem evalAt_reduceSum_ok
     {α : Type} [Context α] [DecidableEq Shape]
-    (g : NN.IR.Graph) (payload : Payload α) (input : NN.IR.DVal α) (vals : Array (NN.IR.DVal α))
+    (g : NN.IR.Graph) (payload : Payload α) (input : Spec.PackedTensor α) (vals : Array (Spec.PackedTensor α))
     (i : Nat) (n : NN.IR.Node) (pId : Nat) (axis : Nat)
-    (s : Shape) (pT : Tensor α s) (hAxisPf : PLift (Shape.valid_axis axis s))
+    (s : Shape) (pT : Tensor α s) (hAxisPf : PLift (Shape.NonemptyAxis axis s))
     (hN : g.getNode i = .ok n) (hk : n.kind = .reduceSum axis) (hp : n.parents = [pId])
-    (hGet : vals[pId]! = NN.IR.DVal.mk (α := α) s pT)
-    (hAxis : Spec.Shape.validAxis? (axis := axis) s = some hAxisPf)
+    (hGet : vals[pId]? = some (Spec.PackedTensor.mk (α := α) s pT))
+    (hAxis : Spec.Shape.nonemptyAxis? (axis := axis) s = some hAxisPf)
     (hOut : Spec.Tensor.shapeAfterSum s axis = n.outShape) :
     NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload) (input := input) (vals := vals) (i :=
       i) =
-      .ok (NN.IR.DVal.mk (α := α) n.outShape
+      .ok (Spec.PackedTensor.mk (α := α) n.outShape
         (hOut ▸ Tensor.reduceSum (α := α) (s := s) axis pT
-          (Shape.proveReducibleAlong axis s hAxisPf.down))) := by
+          (hAxisPf.down))) := by
   exact evalAt_axisReduction_ok .sum g payload input vals i n pId axis s pT hAxisPf
     hN hk hp hGet hAxis hOut
 
@@ -523,18 +441,18 @@ This is the mean analogue of `evalAt_reduceSum_ok`.
 -/
 theorem evalAt_reduceMean_ok
     {α : Type} [Context α] [DecidableEq Shape]
-    (g : NN.IR.Graph) (payload : Payload α) (input : NN.IR.DVal α) (vals : Array (NN.IR.DVal α))
+    (g : NN.IR.Graph) (payload : Payload α) (input : Spec.PackedTensor α) (vals : Array (Spec.PackedTensor α))
     (i : Nat) (n : NN.IR.Node) (pId : Nat) (axis : Nat)
-    (s : Shape) (pT : Tensor α s) (hAxisPf : PLift (Shape.valid_axis axis s))
+    (s : Shape) (pT : Tensor α s) (hAxisPf : PLift (Shape.NonemptyAxis axis s))
     (hN : g.getNode i = .ok n) (hk : n.kind = .reduceMean axis) (hp : n.parents = [pId])
-    (hGet : vals[pId]! = NN.IR.DVal.mk (α := α) s pT)
-    (hAxis : Spec.Shape.validAxis? (axis := axis) s = some hAxisPf)
+    (hGet : vals[pId]? = some (Spec.PackedTensor.mk (α := α) s pT))
+    (hAxis : Spec.Shape.nonemptyAxis? (axis := axis) s = some hAxisPf)
     (hOut : Spec.Tensor.shapeAfterSum s axis = n.outShape) :
     NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload) (input := input) (vals := vals) (i :=
       i) =
-      .ok (NN.IR.DVal.mk (α := α) n.outShape
+      .ok (Spec.PackedTensor.mk (α := α) n.outShape
         (hOut ▸ Tensor.reduceMean (α := α) (s := s) axis pT
-          (Shape.proveReducibleAlong axis s hAxisPf.down))) := by
+          (hAxisPf.down))) := by
   exact evalAt_axisReduction_ok .mean g payload input vals i n pId axis s pT hAxisPf
     hN hk hp hGet hAxis hOut
 
@@ -545,7 +463,7 @@ def execOfState {α : Type} (inShape : Shape) (st : State α inShape) : ForwardG
 /-- Evaluate the lowered prefix state and convert its typed runtime context into an IR-style table.
   -/
 def denoteAllState {α : Type} [Context α] (inShape : Shape) (st : State α inShape)
-    (x : Tensor α inShape) : Array (NN.IR.DVal α) :=
+    (x : Tensor α inShape) : Array (Spec.PackedTensor α) :=
   ForwardGraph.denoteAll (α := α) (e := execOfState (α := α) inShape st) x
 
 /--
@@ -563,11 +481,11 @@ theorem denoteAllState_snoc {α : Type} [Context α]
     let st' : State α inShape := ⟨ss ++ [τ], .snoc (ss := ss) gd nodeData⟩
     denoteAllState (α := α) inShape st' x =
       (denoteAllState (α := α) inShape st x).push
-        (NN.IR.DVal.mk (α := α) τ
+        (Spec.PackedTensor.mk (α := α) τ
           (nodeData.eval (ForwardData.eval (ss := ss) gd (.cons x .nil)))) := by
   -- Expand `st`/`st'`.
   simp only
-  -- Reduce both sides to `dValsOfCtx` of `ForwardData.eval`.
+  -- Reduce both sides to `packedTensorsOfContext` of `ForwardData.eval`.
   simp [denoteAllState, execOfState, ForwardGraph.denoteAll, ForwardGraph.eval]
   -- Now unfold `ForwardData.eval` for the snoc graph.
   simp [ForwardData.eval]
@@ -601,32 +519,32 @@ theorem mkIdx_ok_i_eq
   · simp [hBound] at h
 
 /--
-Lookup lemma: `denoteAllState[..][pid]!` agrees with `getIdx` when `mkIdx pid s` succeeds.
+Lookup in `denoteAllState` agrees with `getIdx` when `mkIdx pid s` succeeds.
 
 This is used when proving correctness of the per-node lowering pass step: we translate parent ids in the
 IR into typed indices into the forward-graph context.
 -/
-  theorem denoteAllState_get_mkIdx
+theorem denoteAllState_get_mkIdx?
     {α : Type} [Context α] [DecidableEq Shape] {inShape : Shape} {ss : List Shape}
     (gd : ForwardData α [inShape] ss) (x : Tensor α inShape)
     {pid : Nat} {s : Shape} {idx : Idx ([inShape] ++ ss) s}
     (hIdx : mkIdx (inShape := inShape) (ss := ss) pid s = .ok idx) :
-    (denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x)[pid]! =
-      NN.IR.DVal.mk (α := α) s
+    (denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x)[pid]? =
+      some (Spec.PackedTensor.mk (α := α) s
         (getIdx (α := α)
-          (xs := ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)) idx) := by
-  -- Unfold `denoteAllState` to `dValsOfCtx (ForwardData.eval ...)`, then use `dValsOfCtx_getIdx`.
+          (xs := ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)) idx)) := by
+  -- Unfold `denoteAllState` to the packed context and use the checked lookup theorem.
   have hPid : pid = idx.i.1 :=
     (mkIdx_ok_i_eq (inShape := inShape) (ss := ss) (id := pid) (s := s) (idx := idx) hIdx).symm
   rw [hPid]
   change
-    (dValsOfCtx (α := α) (ss := [inShape] ++ ss)
-      (ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)))[idx.i.1]! =
-      NN.IR.DVal.mk (α := α) s
+    (packedTensorsOfContext (α := α) (ss := [inShape] ++ ss)
+      (ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)))[idx.i.1]? =
+      some (Spec.PackedTensor.mk (α := α) s
         (getIdx (α := α)
           (xs := ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd
-            (.cons x .nil)) idx)
-  exact dValsOfCtx_getIdx (α := α)
+            (.cons x .nil)) idx))
+  exact packedTensorsOfContext_getIdx? (α := α)
     (ctx := ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil))
       idx
 
@@ -647,8 +565,8 @@ theorem buildFrom_denoteAllFrom_finish
     (τ : Shape) (nodeData : ForwardNode α ([inShape] ++ ss) τ)
     (st1 st' : State α inShape)
     (ctx : TList α ([inShape] ++ ss))
-    (vals0 : Array (NN.IR.DVal α))
-    (input : NN.IR.DVal α)
+    (vals0 : Array (Spec.PackedTensor α))
+    (input : Spec.PackedTensor α)
     (hTail :
       NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
           (input := input) (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
@@ -656,10 +574,10 @@ theorem buildFrom_denoteAllFrom_finish
     (hEval :
       NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
           (input := input) (vals := vals0) (i := i) =
-        .ok (NN.IR.DVal.mk (α := α) τ (nodeData.eval ctx)))
+        .ok (Spec.PackedTensor.mk (α := α) τ (nodeData.eval ctx)))
     (hStep :
       denoteAllState (α := α) inShape st1 x =
-        vals0.push (NN.IR.DVal.mk (α := α) τ (nodeData.eval ctx))) :
+        vals0.push (Spec.PackedTensor.mk (α := α) τ (nodeData.eval ctx))) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
         (input := input) (i := i) (vals := vals0) =
       .ok (denoteAllState (α := α) inShape st' x) := by

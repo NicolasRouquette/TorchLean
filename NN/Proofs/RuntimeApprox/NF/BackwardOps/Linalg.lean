@@ -21,6 +21,7 @@ namespace RuntimeApprox
 open Spec
 open Tensor
 open NN.MLTheory.Robustness.Spec
+open Proofs.Autograd.Algebra
 
 noncomputable section
 
@@ -63,7 +64,7 @@ by
             (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := m) (n := n) (getIdx (α :=
               SpecScalar) ctx A))
             δ
-        TList.set2Idx (α := SpecScalar) (Γ := Γ) (s₁ := (.dim m (.dim n .scalar))) (s₂ := (.dim n
+        SparseContext.set2Idx (α := SpecScalar) (Γ := Γ) (s₁ := (.dim m (.dim n .scalar))) (s₂ := (.dim n
           .scalar)) A dA v dV
       vjpRuntime := fun ctx δ =>
         let vR := getIdx (α := R) ctx v
@@ -76,7 +77,7 @@ by
           Spec.matVecMulSpec (α := R)
             (Spec.Tensor.matrixTransposeSpec (α := R) (m := m) (n := n) (getIdx (α := R) ctx A))
             δ
-        TList.set2Idx (α := R) (Γ := Γ) (s₁ := (.dim m (.dim n .scalar))) (s₂ := (.dim n .scalar)) A
+        SparseContext.set2Idx (α := R) (Γ := Γ) (s₁ := (.dim m (.dim n .scalar))) (s₂ := (.dim n .scalar)) A
           dA v dV
       vjpBound := fun epsCtx ctxR epsδ δR =>
         let vR := getIdx (α := R) ctxR v
@@ -109,27 +110,27 @@ by
 
   -- `dA = mat_mul (expand δ) (transpose (expand v))`.
   have hδcol :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.Tensor.expandToColSpec (α := SpecScalar) (n := m) (s := Shape.scalar) δS)
         (Spec.Tensor.expandToColSpec (α := R) (n := m) (s := Shape.scalar) δR)
         epsδ :=
-    approxT_expand_to_col_spec (β := β) (fexp := fexp) (rnd := rnd) (n := m) (s := Shape.scalar) (xS
+    approxTensor_expand_to_col_spec (β := β) (fexp := fexp) (rnd := rnd) (n := m) (s := Shape.scalar) (xS
       := δS)
       (xR := δR) (eps := epsδ) hδ
 
   have hvcol :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.Tensor.expandToColSpec (α := SpecScalar) (n := n) (s := Shape.scalar) (getIdx (α :=
           SpecScalar) ctxS v))
         (Spec.Tensor.expandToColSpec (α := R) (n := n) (s := Shape.scalar) (getIdx (α := R) ctxR
           v))
         (getIdxEps (Γ := Γ) (s := .dim n .scalar) epsCtx v) :=
-    approxT_expand_to_col_spec (β := β) (fexp := fexp) (rnd := rnd) (n := n) (s := Shape.scalar)
+    approxTensor_expand_to_col_spec (β := β) (fexp := fexp) (rnd := rnd) (n := n) (s := Shape.scalar)
       (xS := getIdx (α := SpecScalar) ctxS v) (xR := getIdx (α := R) ctxR v)
       (eps := getIdxEps (Γ := Γ) (s := .dim n .scalar) epsCtx v) hv
 
   have hvrow :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := n) (n := 1)
           (Spec.Tensor.expandToColSpec (α := SpecScalar) (n := n) (s := Shape.scalar) (getIdx (α
             := SpecScalar) ctxS v)))
@@ -137,11 +138,11 @@ by
           (Spec.Tensor.expandToColSpec (α := R) (n := n) (s := Shape.scalar) (getIdx (α := R)
             ctxR v)))
         (getIdxEps (Γ := Γ) (s := .dim n .scalar) epsCtx v) :=
-    approxT_matrix_transpose_spec (β := β) (fexp := fexp) (rnd := rnd) (m := n) (n := 1) (xS := _)
+    approxTensor_matrix_transpose_spec (β := β) (fexp := fexp) (rnd := rnd) (m := n) (n := 1) (xS := _)
       (xR := _) (eps := getIdxEps (Γ := Γ) (s := .dim n .scalar) epsCtx v) hvcol
 
   have hdA :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.matMulSpec (α := SpecScalar)
           (Spec.Tensor.expandToColSpec (α := SpecScalar) (n := m) (s := Shape.scalar) δS)
           (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := n) (n := 1)
@@ -161,7 +162,7 @@ by
               (Spec.Tensor.expandToColSpec (α := R) (n := n) (s := Shape.scalar) (getIdx (α := R)
                 ctxR v))))) := by
     simpa using
-      (approxT_mat_mul_spec (β := β) (fexp := fexp) (rnd := rnd) (m := m) (n := 1) (p := n)
+      (approxTensor_mat_mul_spec (β := β) (fexp := fexp) (rnd := rnd) (m := m) (n := 1) (p := n)
         (AS := Spec.Tensor.expandToColSpec (α := SpecScalar) (n := m) (s := Shape.scalar) δS)
         (BS := Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := n) (n := 1)
           (Spec.Tensor.expandToColSpec (α := SpecScalar) (n := n) (s := Shape.scalar) (getIdx (α
@@ -174,16 +175,16 @@ by
 
   -- `dV = mat_vec_mul (transpose A) δ`.
   have hAT :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := m) (n := n) (getIdx (α :=
           SpecScalar) ctxS A))
         (Spec.Tensor.matrixTransposeSpec (α := R) (m := m) (n := n) (getIdx (α := R) ctxR A))
         (getIdxEps (Γ := Γ) (s := .dim m (.dim n .scalar)) epsCtx A) :=
-    approxT_matrix_transpose_spec (β := β) (fexp := fexp) (rnd := rnd) (m := m) (n := n) (xS := _)
+    approxTensor_matrix_transpose_spec (β := β) (fexp := fexp) (rnd := rnd) (m := m) (n := n) (xS := _)
       (xR := _) (eps := getIdxEps (Γ := Γ) (s := .dim m (.dim n .scalar)) epsCtx A) hA
 
   have hdV :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.matVecMulSpec (α := SpecScalar)
           (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := m) (n := n) (getIdx (α :=
             SpecScalar) ctxS A)) δS)
@@ -197,7 +198,7 @@ by
             (Spec.Tensor.matrixTransposeSpec (α := R) (m := m) (n := n) (getIdx (α := R) ctxR A))
               δR)) := by
     simpa using
-      (approxT_mat_vec_mul_spec (β := β) (fexp := fexp) (rnd := rnd) (m := n) (n := m)
+      (approxTensor_mat_vec_mul_spec (β := β) (fexp := fexp) (rnd := rnd) (m := n) (n := m)
         (AS := Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := m) (n := n) (getIdx (α :=
           SpecScalar) ctxS A))
         (vS := δS)
@@ -288,14 +289,14 @@ by
           let δB := Spec.matMulSpec (α := SpecScalar) (Spec.Tensor.matrixTransposeSpec (α :=
             SpecScalar) (m := m) (n := n) A0) δ
           let δB' := tensorCastOfIdxEq (α := SpecScalar) (Γ := Γ) (a := A) (b := B) h δB
-          TList.setIdx (α := SpecScalar) (Γ := Γ) (s := (.dim m (.dim n .scalar))) A (addSpec δA
+          SparseContext.setIdx (α := SpecScalar) (Γ := Γ) (s := (.dim m (.dim n .scalar))) A (addSpec δA
             δB')
         else
           let δA := Spec.matMulSpec (α := SpecScalar) δ (Spec.Tensor.matrixTransposeSpec (α :=
             SpecScalar) (m := n) (n := p) (getIdx (α := SpecScalar) ctx B))
           let δB := Spec.matMulSpec (α := SpecScalar) (Spec.Tensor.matrixTransposeSpec (α :=
             SpecScalar) (m := m) (n := n) (getIdx (α := SpecScalar) ctx A)) δ
-          TList.set2Idx (α := SpecScalar) (Γ := Γ)
+          SparseContext.set2Idx (α := SpecScalar) (Γ := Γ)
             (s₁ := (.dim m (.dim n .scalar))) (s₂ := (.dim n (.dim p .scalar))) A δA B δB
       vjpRuntime := fun ctx δ =>
         if h : A.i = B.i then
@@ -305,13 +306,13 @@ by
           let δB := Spec.matMulSpec (α := R) (Spec.Tensor.matrixTransposeSpec (α := R) (m := m)
             (n := n) A0) δ
           let δB' := tensorCastOfIdxEq (α := R) (Γ := Γ) (a := A) (b := B) h δB
-          TList.setIdx (α := R) (Γ := Γ) (s := (.dim m (.dim n .scalar))) A (addSpec δA δB')
+          SparseContext.setIdx (α := R) (Γ := Γ) (s := (.dim m (.dim n .scalar))) A (addSpec δA δB')
         else
           let δA := Spec.matMulSpec (α := R) δ (Spec.Tensor.matrixTransposeSpec (α := R) (m :=
             n) (n := p) (getIdx (α := R) ctx B))
           let δB := Spec.matMulSpec (α := R) (Spec.Tensor.matrixTransposeSpec (α := R) (m := m)
             (n := n) (getIdx (α := R) ctx A)) δ
-          TList.set2Idx (α := R) (Γ := Γ)
+          SparseContext.set2Idx (α := R) (Γ := Γ)
             (s₁ := (.dim m (.dim n .scalar))) (s₂ := (.dim n (.dim p .scalar))) A δA B δB
       vjpBound := fun epsCtx ctxR epsδ δR =>
         let epsA := getIdxEps (Γ := Γ) (s := (.dim m (.dim n .scalar))) epsCtx A
@@ -351,25 +352,25 @@ by
     B
 
   have hBT :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := n) (n := p) (getIdx (α :=
           SpecScalar) ctxS B))
         (Spec.Tensor.matrixTransposeSpec (α := R) (m := n) (n := p) (getIdx (α := R) ctxR B))
         (getIdxEps (Γ := Γ) (s := (.dim n (.dim p .scalar))) epsCtx B) :=
-    approxT_matrix_transpose_spec (β := β) (fexp := fexp) (rnd := rnd) (m := n) (n := p) (xS := _)
+    approxTensor_matrix_transpose_spec (β := β) (fexp := fexp) (rnd := rnd) (m := n) (n := p) (xS := _)
       (xR := _) (eps := getIdxEps (Γ := Γ) (s := (.dim n (.dim p .scalar))) epsCtx B) hB
 
   have hAT :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := m) (n := n) (getIdx (α :=
           SpecScalar) ctxS A))
         (Spec.Tensor.matrixTransposeSpec (α := R) (m := m) (n := n) (getIdx (α := R) ctxR A))
         (getIdxEps (Γ := Γ) (s := (.dim m (.dim n .scalar))) epsCtx A) :=
-    approxT_matrix_transpose_spec (β := β) (fexp := fexp) (rnd := rnd) (m := m) (n := n) (xS := _)
+    approxTensor_matrix_transpose_spec (β := β) (fexp := fexp) (rnd := rnd) (m := m) (n := n) (xS := _)
       (xR := _) (eps := getIdxEps (Γ := Γ) (s := (.dim m (.dim n .scalar))) epsCtx A) hA
 
   have hdA :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.matMulSpec (α := SpecScalar) δS
           (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := n) (n := p) (getIdx (α :=
             SpecScalar) ctxS B)))
@@ -382,7 +383,7 @@ by
             (Spec.Tensor.matrixTransposeSpec (α := R) (m := n) (n := p) (getIdx (α := R) ctxR
               B)))) := by
     simpa using
-      (approxT_mat_mul_spec (β := β) (fexp := fexp) (rnd := rnd) (m := m) (n := p) (p := n)
+      (approxTensor_mat_mul_spec (β := β) (fexp := fexp) (rnd := rnd) (m := m) (n := p) (p := n)
         (AS := δS)
         (BS := Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := n) (n := p) (getIdx (α :=
           SpecScalar) ctxS B))
@@ -393,7 +394,7 @@ by
           hBT)
 
   have hdB :
-      approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
         (Spec.matMulSpec (α := SpecScalar)
           (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := m) (n := n) (getIdx (α :=
             SpecScalar) ctxS A)) δS)
@@ -407,7 +408,7 @@ by
             (Spec.Tensor.matrixTransposeSpec (α := R) (m := m) (n := n) (getIdx (α := R) ctxR A))
               δR)) := by
     simpa using
-      (approxT_mat_mul_spec (β := β) (fexp := fexp) (rnd := rnd) (m := n) (n := m) (p := p)
+      (approxTensor_mat_mul_spec (β := β) (fexp := fexp) (rnd := rnd) (m := n) (n := m) (p := p)
         (AS := Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := m) (n := n) (getIdx (α :=
           SpecScalar) ctxS A))
         (BS := δS)
@@ -420,7 +421,7 @@ by
   by_cases hEq : A.i = B.i
   · -- contributions add in one slot
     have hdB' :
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (tensorCastOfIdxEq (α := SpecScalar) (Γ := Γ) (a := A) (b := B) hEq
             (Spec.matMulSpec (α := SpecScalar)
               (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := m) (n := n) (getIdx (α :=
@@ -436,7 +437,7 @@ by
               (Spec.Tensor.matrixTransposeSpec (α := R) (m := m) (n := n) (getIdx (α := R) ctxR
                 A)) δR)) := by
       simpa [tensorCastOfIdxEq, idx_shape_eq_of_i_eq] using
-        (approxT_tensor_cast (β := β) (fexp := fexp) (rnd := rnd)
+        (approxTensor_tensor_cast (β := β) (fexp := fexp) (rnd := rnd)
           (h := (idx_shape_eq_of_i_eq (Γ := Γ) (a := A) (b := B) hEq).symm)
           (xS :=
             Spec.matMulSpec (α := SpecScalar)
@@ -456,7 +457,7 @@ by
           hdB)
 
     have hsum :
-        approxT (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+        approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
           (addSpec
             (Spec.matMulSpec (α := SpecScalar) δS
               (Spec.Tensor.matrixTransposeSpec (α := SpecScalar) (m := n) (n := p) (getIdx (α :=
@@ -496,7 +497,7 @@ by
                   (Spec.Tensor.matrixTransposeSpec (α := R) (m := m) (n := n) (getIdx (α := R)
                     ctxR A)) δR)))) := by
       simpa using
-        (approxT_add_spec (β := β) (fexp := fexp) (rnd := rnd)
+        (approxTensor_add_spec (β := β) (fexp := fexp) (rnd := rnd)
           (s := (.dim m (.dim n .scalar)))
           (xS :=
             Spec.matMulSpec (α := SpecScalar) δS

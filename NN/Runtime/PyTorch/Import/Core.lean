@@ -59,16 +59,6 @@ open Json
 abbrev StateDict := Std.TreeMap.Raw String Json
 
 /--
-`defaultTensor s` is a zero-filled sentinel used while parsing tensor JSON.
-
-It is only used in code paths that are unreachable once we have validated the JSON shape
-(e.g. after checking an array has exactly the expected length).
--/
-def defaultTensor : (s : Shape) → Tensor Float s
-  | .scalar => Tensor.scalar 0.0
-  | .dim _n s => Tensor.dim (fun _ => defaultTensor s)
-
-/--
 Parse a JSON value into a `Tensor Float s`.
 
 The JSON encoding follows the tensor shape:
@@ -121,14 +111,47 @@ def loadStateDict? : Json → Option StateDict
 If the object contains a `"params"` field that is itself an object, unwrap it.
 
 We also merge any *other* top-level fields (e.g. `"meta"`) into the returned dictionary so model
-importers can still read them.
+importers can still read them. Parameter entries take precedence: wrapper metadata must never
+replace a tensor with the same key.
 -/
 def unwrapParams (o : StateDict) : StateDict :=
   match o.get? "params" with
   | some (.obj p) =>
-      o.foldl (init := p) (fun acc k v =>
+      let withWrapperFields := o.foldl (init := p) (fun acc k v =>
         if k = "params" then acc else acc.insert k v)
+      p.foldl (init := withWrapperFields) (fun acc k v => acc.insert k v)
   | _ => o
+
+/-- Whether a JSON string names the float32 format accepted by this importer. -/
+def supportedDType : Json → Bool
+  | .str "float32" => true
+  | .str "torch.float32" => true
+  | _ => false
+
+/--
+Whether optional state-dict metadata describes the numeric format supported by this importer.
+
+The general adapter records one metadata object per parameter. Older checked-in examples use one
+model-level `"dtype": "float32"` entry instead. Both formats are accepted, but an explicit bf16,
+float64, or integer dtype is rejected rather than silently reinterpreted as `Tensor Float`.
+-/
+def supportedWrapperDTypes (o : StateDict) : Bool :=
+  match o.get? "params", o.get? "meta" with
+  | some (.obj _), some (.obj metadata) =>
+      match metadata.get? "dtype" with
+      | some dtype => supportedDType dtype
+      | none =>
+          metadata.foldl (init := true) (fun ok _ entry =>
+            ok &&
+              match entry with
+              | .obj fields =>
+                  match fields.get? "dtype" with
+                  | some dtype => supportedDType dtype
+                  | none => false
+              | _ => false)
+  | some (.obj _), none => true
+  | some (.obj _), some _ => false
+  | _, _ => true
 
 /--
 Load weights from JSON, accepting either:
@@ -138,6 +161,7 @@ Load weights from JSON, accepting either:
 -/
 def loadWeights? (j : Json) : Option StateDict := do
   let o ← loadStateDict? j
+  guard (supportedWrapperDTypes o)
   pure (unwrapParams o)
 
 /-- Look up a JSON field by key in a `StateDict`. -/
@@ -200,16 +224,6 @@ def getTensorE (o : StateDict) (k : String) (s : Shape) : Except String (Tensor 
       | some _ =>
           .error s!"PyTorch import: key `{k}` is present, but did not match the expected shape."
 
-/-- Convenience: parse a length-`n` vector tensor. -/
-abbrev parseVecTensor (n : Nat) (j : Json) :
-    Option (Tensor Float (.dim n .scalar)) :=
-  parseTensor (.dim n .scalar) j
-
-/-- Convenience: parse a `rows × cols` matrix tensor. -/
-abbrev parseMatTensor (rows cols : Nat) (j : Json) :
-    Option (Tensor Float (.dim rows (.dim cols .scalar))) :=
-  parseTensor (.dim rows (.dim cols .scalar)) j
-
 /-!
 ## Small parsing helpers used by shape-inferring importers
 
@@ -266,12 +280,12 @@ parsing logic outside this core module.
 
 /-- Parse a JSON array into a `Fin n → Float` function. -/
 def parseFloatVec (n : Nat) (j : Json) : Option (Fin n → Float) := do
-  let t ← parseVecTensor n j
+  let t ← parseTensor (.dim n .scalar) j
   pure (fun i => Tensor.vecGet t i)
 
 /-- Parse a JSON matrix into a `Fin rows → Fin cols → Float` function. -/
 def parseFloatMatrix (rows cols : Nat) (j : Json) : Option (Fin rows → Fin cols → Float) := do
-  let t ← parseMatTensor rows cols j
+  let t ← parseTensor (.dim rows (.dim cols .scalar)) j
   pure (fun i j => Spec.get2 t i j)
 
 end PyTorch

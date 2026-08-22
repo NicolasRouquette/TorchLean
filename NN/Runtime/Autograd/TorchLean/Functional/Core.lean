@@ -97,7 +97,7 @@ def shift {α : Type} [Context α] [DecidableEq Shape]
   let cs ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) (s := Shape.scalar)
     (Tensor.scalar c)
   let cb ← _root_.Runtime.Autograd.Torch.broadcastTo (m := m) (α := α)
-    (s₁ := Shape.scalar) (s₂ := s) (Shape.CanBroadcastTo.scalar_to_any s) cs
+    (s₁ := Shape.scalar) (s₂ := s) (Shape.CanBroadcastTo.scalarTo s) cs
   _root_.Runtime.Autograd.Torch.add (m := m) (α := α) (s := s) x cb
 
 /-- Scalar affine map $x\mapsto cx+k$.
@@ -199,40 +199,41 @@ def embedding {α : Type} [Context α] [DecidableEq Shape]
   gatherRow (m := m) (α := α) (rows := vocab) (cols := dim) w idx
 
 /--
-Embedding lookup for a vector of token ids.
+Embedding lookup for a vector of token ids, returning zero for an out-of-range id.
 
 This is the indexed version of the public one-hot embedding layer: instead of multiplying a
 `k × vocab` one-hot matrix by the embedding table, gather the `k` rows directly from
 `w : vocab × dim`.
 -/
-def embeddingRowsNat {α : Type} [Context α] [DecidableEq Shape]
+def embeddingRowsNatOrZero {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {vocab dim k : Nat}
     (w : RefTy (m := m) (α := α) (.dim vocab (.dim dim .scalar)))
     (idx : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) (.dim k .scalar)) :
     m (RefTy (m := m) (α := α) (.dim k (.dim dim .scalar))) :=
-  gatherRowsNat (m := m) (α := α) (rows := vocab) (cols := dim) (k := k) w idx
+  gatherRowsNatOrZero (m := m) (α := α) (rows := vocab) (cols := dim) (k := k) w idx
 
 /--
-Embedding lookup for a flattened `(batch × seqLen)` token-id tensor.
+Embedding lookup for a tensor of token ids, returning zero for an out-of-range id.
 
-The index tensor is kept flat because that is how datasets and CUDA gather kernels naturally store
-token ids.  The result is reshaped back to `(batch, seqLen, dim)` after the row gather.
+The gather kernel operates on a flat vector of indices. This wrapper flattens any input shape,
+gathers the corresponding rows, and restores the original axes with the embedding dimension
+appended.
 -/
-def embeddingBatchSeqNat {α : Type} [Context α] [DecidableEq Shape]
+def embeddingNatOrZero {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {vocab dim batch seqLen : Nat}
+    {vocab dim : Nat} {s : Shape}
     (w : RefTy (m := m) (α := α) (.dim vocab (.dim dim .scalar)))
-    (idx : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
-      (.dim (batch * seqLen) .scalar)) :
-    m (RefTy (m := m) (α := α) (.dim batch (.dim seqLen (.dim dim .scalar)))) := do
-  let gathered ← embeddingRowsNat (m := m) (α := α)
-    (vocab := vocab) (dim := dim) (k := batch * seqLen) w idx
+    (idx : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) s) :
+    m (RefTy (m := m) (α := α) (s.appendDim dim)) := do
+  let flatIds := _root_.Runtime.Autograd.Torch.mapNatTensor (m := m) (α := α)
+    (fun x => Spec.Tensor.reshapeSpec
+      (s₁ := s) (s₂ := .dim s.size .scalar) x (by simp [Shape.size])) idx
+  let gathered ← embeddingRowsNatOrZero (m := m) (α := α)
+    (vocab := vocab) (dim := dim) (k := s.size) w flatIds
   reshape (m := m) (α := α)
-    (s₁ := .dim (batch * seqLen) (.dim dim .scalar))
-    (s₂ := .dim batch (.dim seqLen (.dim dim .scalar)))
-    gathered (by
-      simp [Spec.Shape.size, Nat.mul_assoc])
+    (s₁ := .dim s.size (.dim dim .scalar))
+    (s₂ := s.appendDim dim) gathered (by simp [Shape.size_appendDim, Shape.size])
 
 /-! ## Reductions -/
 
@@ -284,7 +285,7 @@ def dropoutSeeded {α : Type} [Context α] [DecidableEq Shape]
     let invKp ← inv (m := m) (α := α) (s := Shape.scalar) kpRef
     let invKpB ←
       broadcastTo (m := m) (α := α) (s₁ := Shape.scalar) (s₂ := s)
-        (Shape.CanBroadcastTo.scalar_to_any s) invKp
+        (Shape.CanBroadcastTo.scalarTo s) invKp
     mul (m := m) (α := α) (s := s) masked invKpB
 
 /--
@@ -310,7 +311,7 @@ def dropoutRefSeeded {α : Type} [Context α] [DecidableEq Shape]
     let invKp ← inv (m := m) (α := α) (s := Shape.scalar) keepProb
     let invKpB ←
       broadcastTo (m := m) (α := α) (s₁ := Shape.scalar) (s₂ := s)
-        (Shape.CanBroadcastTo.scalar_to_any s) invKp
+        (Shape.CanBroadcastTo.scalarTo s) invKp
     mul (m := m) (α := α) (s := s) masked invKpB
 end F
 end TorchLean

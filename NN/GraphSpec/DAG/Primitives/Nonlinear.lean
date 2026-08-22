@@ -21,7 +21,7 @@ namespace NN
 namespace GraphSpec
 namespace DAG
 
-open _root_.NN.Spec
+open _root_.Spec
 open Spec.Tensor
 open NN.Tensor
 
@@ -95,7 +95,7 @@ def multiHeadAttention (batch n numHeads dModel headDim : Nat) (hN : 0 < n) :
       match xs with
       | .cons wq (.cons wk (.cons wv (.cons wo (.cons (.dim inputs) .nil)))) =>
           let attention : _root_.Spec.MultiHeadAttention α numHeads dModel headDim :=
-            { Wq := wq, Wk := wk, Wv := wv, Wo := wo }
+            { queryWeight := wq, keyWeight := wk, valueWeight := wv, outputWeight := wo }
           .dim fun i => attention.forward n (Nat.ne_of_gt hN) (inputs i) none
     program := fun {α} _ _ =>
       fun {m} _ _ => fun wq wk wv wo input =>
@@ -114,7 +114,7 @@ def multiHeadAttention (batch n numHeads dModel headDim : Nat) (hN : 0 < n) :
     (multiHeadAttention batch n numHeads dModel headDim hN).specFwd
         (.cons wq (.cons wk (.cons wv (.cons wo (.cons input .nil))))) =
       .dim fun i =>
-        ({ Wq := wq, Wk := wk, Wv := wv, Wo := wo } :
+        ({ queryWeight := wq, keyWeight := wk, valueWeight := wv, outputWeight := wo } :
           _root_.Spec.MultiHeadAttention α numHeads dModel headDim).forward
           n (Nat.ne_of_gt hN) (_root_.Spec.get input i) none := by
   cases input
@@ -158,15 +158,15 @@ def tanh (s : Shape) : PrimOp [s] s :=
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.tanh (m := m) (α := α) input }
 
-/-- Stable softmax along the final axis. -/
-def softmax (s : Shape) : PrimOp [s] s :=
+/-- Stable softmax along any in-bounds tensor dimension. -/
+def softmax (s : Shape) (axis : Nat) [Spec.Shape.AxisInBounds axis s] : PrimOp [s] s :=
   { name := "softmax"
     specFwd := fun {α} _ xs =>
       match xs with
-      | .cons input .nil => _root_.Activation.softmaxSpec (α := α) input
+      | .cons input .nil => _root_.Activation.softmaxSpec (α := α) axis input
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
-        Runtime.Autograd.TorchLean.softmax (m := m) (α := α) input }
+        Runtime.Autograd.TorchLean.F.softmax (m := m) (α := α) axis input }
 
 
 end PrimOp

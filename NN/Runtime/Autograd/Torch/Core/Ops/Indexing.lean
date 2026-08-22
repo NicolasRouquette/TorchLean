@@ -67,29 +67,29 @@ def gatherRow {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
   dispatchCudaOpt (α := α) s .gather cpu cuda
 
 /-- Gather a scalar from a 1D vector with a raw `Nat` index (totalized by the tape op). -/
-def gatherScalarNat {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
+def gatherScalarNatOrZero {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
   {n : Nat} (x : TensorRef α (.dim n .scalar)) (i : Nat) : IO (TensorRef α Shape.scalar) := do
   let cpu := do
     let t0 ← s.tape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.gatherScalarNat (t := t0) (n := n) x.id i)
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.gatherScalarNatOrZero (t := t0) (n := n) x.id i)
     s.tape.set t1
     pure { id := id }
   let cuda := do
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
-      Runtime.Autograd.Cuda.Tape.gatherScalarNat (t := t0) (n := n) x.id i
+      Runtime.Autograd.Cuda.Tape.gatherScalarNatOrZero (t := t0) (n := n) x.id i
     s.cudaTape.set t1
     pure (some { id := id })
   dispatchCudaOpt (α := α) s .gather cpu cuda
 
-/-- Dynamic gather scalar using an index stored in `NatRef`. -/
-def gatherScalarRef {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
+/-- Gather by an index stored in `NatRef`, returning zero out of bounds. -/
+def gatherScalarRefOrZero {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
   {n : Nat} (x : TensorRef α (.dim n .scalar)) (i : NatRef) : IO (TensorRef α Shape.scalar) := do
   let idx ← getNat (α := α) s i
-  gatherScalarNat (α := α) s (n := n) x idx
+  gatherScalarNatOrZero (α := α) s (n := n) x idx
 
-/-- Dynamic gather row using an index stored in `NatRef` (out-of-range gives a zero row). -/
-def gatherRowRef {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Zero α] [DecidableEq Shape]
+/-- Gather a row by an index stored in `NatRef`, returning a zero row out of bounds. -/
+def gatherRowRefOrZero {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Zero α] [DecidableEq Shape]
   {rows cols : Nat} (x : TensorRef α (.dim rows (.dim cols .scalar))) (i : NatRef) :
   IO (TensorRef α (.dim cols .scalar)) := do
   let idx ← getNat (α := α) s i
@@ -101,55 +101,55 @@ def gatherRowRef {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Z
 
 /-- Gather `k` scalars using an explicit index tensor. PyTorch analogue: `gather` / advanced
   indexing. -/
-def gatherVecNat {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
+def gatherVecNatOrZero {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
   {n k : Nat} (x : TensorRef α (.dim n .scalar)) (idx : Tensor Nat (.dim k .scalar)) :
   IO (TensorRef α (.dim k .scalar)) := do
   let cpu := do
     let t0 ← s.tape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.gatherVecNat (t := t0) (n := n) (k := k) x.id
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.gatherVecNatOrZero (t := t0) (n := n) (k := k) x.id
       idx)
     s.tape.set t1
     pure { id := id }
   let cuda := do
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
-      Runtime.Autograd.Cuda.Tape.gatherVecNat (t := t0) (n := n) (k := k) x.id idx
+      Runtime.Autograd.Cuda.Tape.gatherVecNatOrZero (t := t0) (n := n) (k := k) x.id idx
     s.cudaTape.set t1
     pure (some { id := id })
   dispatchCudaOpt (α := α) s .gather cpu cuda
 
 /-- Gather `k` rows using an explicit index tensor. PyTorch: `index_select(dim=0, index=...)`. -/
-def gatherRowsNat {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
+def gatherRowsNatOrZero {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
   {rows cols k : Nat} (x : TensorRef α (.dim rows (.dim cols .scalar))) (idx : Tensor Nat (.dim k
     .scalar)) :
   IO (TensorRef α (.dim k (.dim cols .scalar))) := do
   let cpu := do
     let t0 ← s.tape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.gatherRowsNat (t := t0) (rows := rows) (cols :=
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.gatherRowsNatOrZero (t := t0) (rows := rows) (cols :=
       cols) (k := k) x.id idx)
     s.tape.set t1
     pure { id := id }
   let cuda := do
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
-      Runtime.Autograd.Cuda.Tape.gatherRowsNat (t := t0) (rows := rows) (cols := cols) (k := k) x.id idx
+      Runtime.Autograd.Cuda.Tape.gatherRowsNatOrZero (t := t0) (rows := rows) (cols := cols) (k := k) x.id idx
     s.cudaTape.set t1
     pure (some { id := id })
   dispatchCudaOpt (α := α) s .gather cpu cuda
 
-/-- Gather `k` scalars using indices stored in the nat-environment (`NatVecRef`). -/
-def gatherVecRef {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
+/-- Gather using `NatVecRef` indices, returning zero at every out-of-bounds position. -/
+def gatherVecRefOrZero {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
   {n k : Nat} (x : TensorRef α (.dim n .scalar)) (idx : NatVecRef k) :
   IO (TensorRef α (.dim k .scalar)) := do
   let it ← getNatVec (α := α) (k := k) s idx
-  gatherVecNat (α := α) s (n := n) (k := k) x it
+  gatherVecNatOrZero (α := α) s (n := n) (k := k) x it
 
-/-- Gather `k` rows using indices stored in the nat-environment (`NatVecRef`). -/
-def gatherRowsRef {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
+/-- Gather rows using `NatVecRef` indices, returning a zero row out of bounds. -/
+def gatherRowsRefOrZero {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]
   {rows cols k : Nat} (x : TensorRef α (.dim rows (.dim cols .scalar))) (idx : NatVecRef k) :
   IO (TensorRef α (.dim k (.dim cols .scalar))) := do
   let it ← getNatVec (α := α) (k := k) s idx
-  gatherRowsNat (α := α) s (rows := rows) (cols := cols) (k := k) x it
+  gatherRowsNatOrZero (α := α) s (rows := rows) (cols := cols) (k := k) x it
 
 /-- Scatter-add into a vector: return a copy of `x` with `x[i] += v`. -/
 def scatterAddVec {α : Type} (s : EagerSession α) [Add α] [Zero α] [DecidableEq Shape]

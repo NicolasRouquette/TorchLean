@@ -147,7 +147,7 @@ theorem valid_ofFlatBox_real (B : FlatBox ℝ) (hB : B.Valid) :
 
 /-- Validity is preserved by interval addition on `FlatBox` (over `ℝ`). -/
 theorem valid_box_add_real (B1 B2 : FlatBox ℝ) (h1 : B1.Valid) (h2 : B2.Valid) :
-    (box_add (α := ℝ) B1 B2).Valid := by
+    (boxAdd (α := ℝ) B1 B2).Valid := by
   let : BoundOps ℝ := instBoundOpsReal
   cases B1 with
   | mk n1 lo1 hi1 =>
@@ -157,7 +157,7 @@ theorem valid_box_add_real (B1 B2 : FlatBox ℝ) (h1 : B1.Valid) (h2 : B2.Valid)
       · subst h
         -- use the canonical form lemma for the equal-dimension case
         have hEq :
-            box_add (α := ℝ)
+            boxAdd (α := ℝ)
                 { dim := n1, lo := lo1, hi := hi1 }
                 { dim := n1, lo := lo2, hi := hi2 } =
               { dim := n1
@@ -199,16 +199,16 @@ theorem valid_box_add_real (B1 B2 : FlatBox ℝ) (h1 : B1.Valid) (h2 : B2.Valid)
                           using add_le_add h1i h2i
       · -- mismatch branch: returns B1 unchanged
         have hEq :
-            box_add (α := ℝ)
+            boxAdd (α := ℝ)
                 { dim := n1, lo := lo1, hi := hi1 }
                 { dim := n2, lo := lo2, hi := hi2 } =
               { dim := n1, lo := lo1, hi := hi1 } := by
-          simp [box_add, h]
+          simp [boxAdd, h]
         simpa [hEq] using h1
 
 /-- Validity is preserved by interval subtraction on `FlatBox` (over `ℝ`). -/
 theorem valid_box_sub_real (B1 B2 : FlatBox ℝ) (h1 : B1.Valid) (h2 : B2.Valid) :
-    (box_sub (α := ℝ) B1 B2).Valid := by
+    (boxSub (α := ℝ) B1 B2).Valid := by
   let : BoundOps ℝ := instBoundOpsReal
   cases B1 with
   | mk n1 lo1 hi1 =>
@@ -217,7 +217,7 @@ theorem valid_box_sub_real (B1 B2 : FlatBox ℝ) (h1 : B1.Valid) (h2 : B2.Valid)
       by_cases h : n1 = n2
       · subst h
         have hEq :
-            box_sub (α := ℝ)
+            boxSub (α := ℝ)
                 { dim := n1, lo := lo1, hi := hi1 }
                 { dim := n1, lo := lo2, hi := hi2 } =
               { dim := n1
@@ -260,16 +260,16 @@ theorem valid_box_sub_real (B1 B2 : FlatBox ℝ) (h1 : B1.Valid) (h2 : B2.Valid)
                           using hadd
       ·
         have hEq :
-            box_sub (α := ℝ)
+            boxSub (α := ℝ)
                 { dim := n1, lo := lo1, hi := hi1 }
                 { dim := n2, lo := lo2, hi := hi2 } =
               { dim := n1, lo := lo1, hi := hi1 } := by
-          simp [box_sub, h]
+          simp [boxSub, h]
         simpa [hEq] using h1
 
 /-- Validity is preserved by ReLU-IBP on `FlatBox` (over `ℝ`). -/
 theorem valid_box_relu_real (B : FlatBox ℝ) (hB : B.Valid) :
-    (box_relu (α := ℝ) B).Valid := by
+    (boxRelu (α := ℝ) B).Valid := by
   intro i
   cases B with
   | mk n lo hi =>
@@ -287,7 +287,7 @@ theorem valid_box_relu_real (B : FlatBox ℝ) (hB : B.Valid) :
                 using hi
             have hrelu : max l 0 ≤ max u 0 := max_le_max hlu (le_rfl)
             -- unfold the output scalars after `Tensor.map_spec`
-            simpa [box_relu, NN.MLTheory.CROWN.FlatBox.Valid, NN.MLTheory.CROWN.FlatBox.getScalar,
+            simpa [boxRelu, NN.MLTheory.CROWN.FlatBox.Valid, NN.MLTheory.CROWN.FlatBox.getScalar,
               Tensor.mapSpec, Activation.Math.reluSpec, hL, hU]
               using hrelu
 
@@ -316,11 +316,11 @@ theorem ibp_linear_valid_real {m n : Nat}
 /-- Validity of the graph-level `linear` IBP rule (over `ℝ`), if the parameters are present. -/
 theorem graph_ibp_linear_valid_real (id : Nat) (ps : ParamStore ℝ) (Xin : FlatBox ℝ)
   (hXin : FlatBox.Valid (α := ℝ) Xin) :
-  match ibp_linear (α := ℝ) id ps Xin with
+  match ibpLinear (α := ℝ) id ps Xin with
   | none => True
   | some Bout => FlatBox.Valid (α := ℝ) Bout := by
   classical
-  unfold ibp_linear
+  unfold ibpLinear
   cases hlin : ps.linearWB[id]? with
   | none => simp
   | some p =>
@@ -352,11 +352,11 @@ theorem graph_ibp_linear_valid_real (id : Nat) (ps : ParamStore ℝ) (Xin : Flat
 /-- Validity of the graph-level `matmul` IBP rule (over `ℝ`), if the parameters are present. -/
 theorem graph_ibp_matmul_valid_real (id : Nat) (ps : ParamStore ℝ) (Xin : FlatBox ℝ)
   (hXin : FlatBox.Valid (α := ℝ) Xin) :
-  match ibp_matmul (α := ℝ) id ps Xin with
+  match ibpMatmul (α := ℝ) id ps Xin with
   | none => True
   | some Bout => FlatBox.Valid (α := ℝ) Bout := by
   classical
-  unfold ibp_matmul
+  unfold ibpMatmul
   cases hmat : ps.matmulW[id]? with
   | none => simp
   | some p =>

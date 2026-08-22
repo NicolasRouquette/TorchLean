@@ -20,7 +20,7 @@ This module provides a total function producing `axisMap` from a `Shape.CanBroad
 
 module
 
-public import NN.Spec.Core.Shape
+public import NN.Spec.Core.TensorReductionShape.Reductions
 
 @[expose] public section
 
@@ -32,33 +32,33 @@ open Spec
 
 namespace Broadcast
 
-/-!
-### `axisMap` generation
-
-The recursion follows the structure of `Shape.CanBroadcastTo`:
-- `expand_dims` inserts a new *outer* axis in the output, so we prepend `0`.
-- `dim_eq` / `dim_1_to_n` align an output axis with an input axis, so we prepend `1` (maps to input
-  axis 0) and shift all tail mappings by `+1` (because tail input axes are one level deeper).
--/
+/-! ### `axisMap` generation -/
 
 def shiftInputAxes (m : Array Nat) : Array Nat :=
   m.map (fun v => if v == 0 then 0 else v + 1)
 
-/-- Generate the CUDA `axisMap` array from a `Shape.CanBroadcastTo` proof. -/
-def axisMap : {s₁ s₂ : Shape} → Shape.CanBroadcastTo s₁ s₂ → Array Nat
-  | _, _, .scalar_to_any s₂ =>
-      Array.replicate (Spec.Shape.rank s₂) 0
-  | _, _, .dim_eq tail =>
-      #[1] ++ shiftInputAxes (axisMap tail)
-  | _, _, .dim_1_to_n tail =>
-      #[1] ++ shiftInputAxes (axisMap tail)
-  | _, _, .expand_dims tail =>
-      #[0] ++ axisMap tail
+/-- Generate the CUDA `axisMap` for right-aligned broadcasting.
+
+The proof establishes compatibility, but the map itself is determined solely by the two ranks:
+missing leading axes map to zero, and every remaining output axis maps to its aligned input axis. -/
+def axisMap {s₁ s₂ : Shape} (_cb : Shape.CanBroadcastTo s₁ s₂) : Array Nat :=
+  Array.replicate (Shape.rank s₂ - Shape.rank s₁) 0 ++
+    (Array.range (Shape.rank s₁)).map (fun i => i + 1)
 
 /-- Convenience bundle for CUDA broadcast kernels: `(inDims, outDims, axisMap)`. -/
 def broadcastArgs {s₁ s₂ : Shape} (cb : Shape.CanBroadcastTo s₁ s₂) :
     Array Nat × Array Nat × Array Nat :=
   (Shape.toArray s₁, Shape.toArray s₂, axisMap cb)
+
+/-- CUDA axis map that restores the axis removed by `shapeAfterSum`. -/
+def afterSumAxisMap : (s : Shape) → (axis : Nat) → Array Nat
+  | .scalar, _ => #[]
+  | .dim _ inner, 0 => #[0] ++ (Array.range (Shape.rank inner)).map (fun i => i + 1)
+  | .dim _ inner, Nat.succ axis => #[1] ++ shiftInputAxes (afterSumAxisMap inner axis)
+
+/-- CUDA metadata for `Spec.Tensor.broadcastAfterSum`. -/
+def afterSumArgs (s : Shape) (axis : Nat) : Array Nat × Array Nat × Array Nat :=
+  (Shape.toArray (Spec.Tensor.shapeAfterSum s axis), Shape.toArray s, afterSumAxisMap s axis)
 
 end Broadcast
 

@@ -22,7 +22,7 @@ separate files once proved.
 
 namespace NN.MLTheory.Proofs.Hopfield
 
-open _root_.NN.Spec
+open _root_.Spec
 
 open Spec.Hopfield
 

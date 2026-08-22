@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Utils
+public import NN.Runtime.Autograd.Train
 public import NN.Spec.Models.Mlp
 public import NN.Tensor
 
@@ -104,7 +104,7 @@ def checkMlpGrads :
     let yId ← TapeM.linear (inDim:=hidDim) (outDim:=outDim) outputWeightId outputBiasId a1Id
 
     let t ← TapeM.getTape
-    let grads ← liftM (Tape.backward (t:=t) yId (Runtime.Autograd.AnyTensor.mk dLdy))
+    let grads ← liftM (Tape.backward (t:=t) yId (Spec.PackedTensor.ofTensor dLdy))
 
     let ids : ParamIds := { hiddenWeightId := hiddenWeightId, hiddenBiasId := hiddenBiasId, outputWeightId := outputWeightId, outputBiasId := outputBiasId }
     pure (ids, grads)

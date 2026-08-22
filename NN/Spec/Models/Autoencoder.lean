@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Layers.Activation
+public import NN.Spec.Core.Sequence
 
 /-!
 # Autoencoder (spec model)
@@ -24,11 +25,8 @@ This is spec-level/reference code. It is written for auditability and differenti
 intended to be instantiated over multiple scalar backends (`Float`, intervals, proof-level reals,
 ...).
 
-Note on `activation_type`:
-
-We keep a small string switch for examples and exporters. Most TorchLean code prefers choosing the
-activation by composition (at the module level), but having the switch here makes the "one-file
-model" convenient for examples.
+The activation is represented by `Activation.Kind`, so a misspelled configuration cannot silently
+change the model into an identity activation.
 -/
 
 @[expose] public section
@@ -47,47 +45,27 @@ We store the encoder and decoder weights explicitly.
 
 Shapes:
 
-- `encoder_weights : (hiddenDim × inputDim)`
-- `decoder_weights : (inputDim × hiddenDim)`
-- `encoder_bias    : (hiddenDim)`
-- `decoder_bias    : (inputDim)`
+- `encoderWeight : (hiddenDim × inputDim)`
+- `decoderWeight : (inputDim × hiddenDim)`
+- `encoderBias   : (hiddenDim)`
+- `decoderBias   : (inputDim)`
 -/
 /-- Parameters for a 1-hidden-layer fully-connected autoencoder. -/
 structure AutoencoderSpec (α : Type) (inputDim hiddenDim : Nat) where
   /-- Encoder weights with shape `(hiddenDim × inputDim)`. -/
-  encoder_weights : Tensor α (.dim hiddenDim (.dim inputDim .scalar))
+  encoderWeight : Tensor α (.dim hiddenDim (.dim inputDim .scalar))
   /-- Encoder bias with shape `(hiddenDim)`. -/
-  encoder_bias : Tensor α (.dim hiddenDim .scalar)
+  encoderBias : Tensor α (.dim hiddenDim .scalar)
   /-- Decoder weights with shape `(inputDim × hiddenDim)`. -/
-  decoder_weights : Tensor α (.dim inputDim (.dim hiddenDim .scalar))
+  decoderWeight : Tensor α (.dim inputDim (.dim hiddenDim .scalar))
   /-- Decoder bias with shape `(inputDim)`. -/
-  decoder_bias : Tensor α (.dim inputDim .scalar)
-  /-- Activation choice used by `autoencoder_activation_spec` (defaults to `"relu"`). -/
-  activation_type : String := "relu"
+  decoderBias : Tensor α (.dim inputDim .scalar)
+  /-- Pointwise activation between the encoder and decoder. -/
+  activation : Activation.Kind := .relu
 
 /-!
 ## Forward
 -/
-
-/-- Apply the chosen activation using the corresponding `Activation.*_spec` operation. -/
-def autoencoderActivationSpec {n : Nat}
-  (activation_type : String)
-  (t : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
-  match activation_type with
-  | "relu" => Activation.reluSpec t
-  | "sigmoid" => Activation.sigmoidSpec t
-  | "tanh" => Activation.tanhSpec t
-  | _ => t
-
-/-- Pointwise derivative of the chosen activation (used for the manual backward below). -/
-def autoencoderActivationDerivSpec {n : Nat}
-  (activation_type : String)
-  (t : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
-  match activation_type with
-  | "relu" => Activation.reluDerivSpec t
-  | "sigmoid" => Activation.sigmoidDerivSpec t
-  | "tanh" => Activation.tanhDerivSpec t
-  | _ => fill 1 (.dim n .scalar)
 
 /-- Encode a vector into a hidden representation:
 
@@ -99,8 +77,8 @@ def autoencoderEncodeSpec {inputDim hiddenDim : Nat}
   (m : AutoencoderSpec α inputDim hiddenDim)
   (input : Tensor α (.dim inputDim .scalar)) :
   Tensor α (.dim hiddenDim .scalar) :=
-  let linear_out := addSpec (matVecMulSpec m.encoder_weights input) m.encoder_bias
-  autoencoderActivationSpec (α := α) (n := hiddenDim) m.activation_type linear_out
+  let linearOut := addSpec (matVecMulSpec m.encoderWeight input) m.encoderBias
+  m.activation.applySpec linearOut
 
 /-- Decode a hidden representation back to input space:
 
@@ -112,7 +90,7 @@ def autoencoderDecodeSpec {inputDim hiddenDim : Nat}
   (m : AutoencoderSpec α inputDim hiddenDim)
   (hidden : Tensor α (.dim hiddenDim .scalar)) :
   Tensor α (.dim inputDim .scalar) :=
-  addSpec (matVecMulSpec m.decoder_weights hidden) m.decoder_bias
+  addSpec (matVecMulSpec m.decoderWeight hidden) m.decoderBias
 
 /-- Full autoencoder forward pass: `decode(encode(x))`. -/
 def autoencoderForwardSpec {inputDim hiddenDim : Nat}
@@ -122,14 +100,12 @@ def autoencoderForwardSpec {inputDim hiddenDim : Nat}
   let hidden := autoencoderEncodeSpec m input
   autoencoderDecodeSpec m hidden
 
-/-- Batched forward pass (maps the single-example forward over the outer batch axis). -/
-def autoencoderBatchedForwardSpec {batch inputDim hiddenDim : Nat}
+/-- Apply an autoencoder independently at every index of a leading shape. -/
+def autoencoderForwardLeadingSpec (leading : Shape) {inputDim hiddenDim : Nat}
   (m : AutoencoderSpec α inputDim hiddenDim)
-  (input : Tensor α (.dim batch (.dim inputDim .scalar))) :
-  Tensor α (.dim batch (.dim inputDim .scalar)) :=
-  match input with
-  | Tensor.dim batch_fn =>
-    Tensor.dim (fun i => autoencoderForwardSpec m (batch_fn i))
+  (input : Tensor α (leading.concat (.dim inputDim .scalar))) :
+  Tensor α (leading.concat (.dim inputDim .scalar)) :=
+  Tensor.mapLeading leading (autoencoderForwardSpec m) input
 
 /-!
 ## Backward (manual VJP)
@@ -151,11 +127,10 @@ def autoencoderEncoderWeightsDerivSpec {inputDim hiddenDim : Nat}
   Tensor α (.dim hiddenDim (.dim inputDim .scalar)) :=
   -- `dH = W_decᵀ dOut`.
   let grad_hidden :=
-    matVecMulSpec (matrixTransposeSpec m.decoder_weights) grad_output
-  let linear_out := addSpec (matVecMulSpec m.encoder_weights input) m.encoder_bias
-  let grad_linear := mulSpec grad_hidden (autoencoderActivationDerivSpec (α := α) (n :=
-    hiddenDim) m.activation_type linear_out)
-  outerProductSpec grad_linear input
+    matVecMulSpec (matrixTransposeSpec m.decoderWeight) grad_output
+  let linearOut := addSpec (matVecMulSpec m.encoderWeight input) m.encoderBias
+  let gradLinear := mulSpec grad_hidden (m.activation.derivSpec linearOut)
+  outerProductSpec gradLinear input
 
 /-- Gradient w.r.t. encoder bias: `db_enc = dZ`. -/
 def autoencoderEncoderBiasDerivSpec {inputDim hiddenDim : Nat}
@@ -164,10 +139,9 @@ def autoencoderEncoderBiasDerivSpec {inputDim hiddenDim : Nat}
   (grad_output : Tensor α (.dim inputDim .scalar)) :
   Tensor α (.dim hiddenDim .scalar) :=
   let grad_hidden :=
-    matVecMulSpec (matrixTransposeSpec m.decoder_weights) grad_output
-  let linear_out := addSpec (matVecMulSpec m.encoder_weights input) m.encoder_bias
-  mulSpec grad_hidden (autoencoderActivationDerivSpec (α := α) (n := hiddenDim)
-    m.activation_type linear_out)
+    matVecMulSpec (matrixTransposeSpec m.decoderWeight) grad_output
+  let linearOut := addSpec (matVecMulSpec m.encoderWeight input) m.encoderBias
+  mulSpec grad_hidden (m.activation.derivSpec linearOut)
 
 /-- Gradient w.r.t. decoder weights: `dW_dec = dOut ⊗ h`. -/
 def autoencoderDecoderWeightsDerivSpec {inputDim hiddenDim : Nat}
@@ -192,11 +166,10 @@ def autoencoderInputDerivSpec {inputDim hiddenDim : Nat}
   (grad_output : Tensor α (.dim inputDim .scalar)) :
   Tensor α (.dim inputDim .scalar) :=
   let grad_hidden :=
-    matVecMulSpec (matrixTransposeSpec m.decoder_weights) grad_output
-  let linear_out := addSpec (matVecMulSpec m.encoder_weights input) m.encoder_bias
-  let grad_linear := mulSpec grad_hidden (autoencoderActivationDerivSpec (α := α) (n :=
-    hiddenDim) m.activation_type linear_out)
-  matVecMulSpec (matrixTransposeSpec m.encoder_weights) grad_linear
+    matVecMulSpec (matrixTransposeSpec m.decoderWeight) grad_output
+  let linearOut := addSpec (matVecMulSpec m.encoderWeight input) m.encoderBias
+  let gradLinear := mulSpec grad_hidden (m.activation.derivSpec linearOut)
+  matVecMulSpec (matrixTransposeSpec m.encoderWeight) gradLinear
 
 /-- Complete backward pass: returns
 
@@ -211,12 +184,12 @@ def autoencoderBackwardSpec {inputDim hiddenDim : Nat}
    Tensor α (.dim inputDim (.dim hiddenDim .scalar)) ×
    Tensor α (.dim inputDim .scalar) ×
    Tensor α (.dim inputDim .scalar)) :=
-  let d_encoder_weights := autoencoderEncoderWeightsDerivSpec m input grad_output
-  let d_encoder_bias := autoencoderEncoderBiasDerivSpec m input grad_output
-  let d_decoder_weights := autoencoderDecoderWeightsDerivSpec m input grad_output
-  let d_decoder_bias := autoencoderDecoderBiasDerivSpec m grad_output
-  let d_input := autoencoderInputDerivSpec m input grad_output
-  (d_encoder_weights, d_encoder_bias, d_decoder_weights, d_decoder_bias, d_input)
+  let encoderWeight := autoencoderEncoderWeightsDerivSpec m input grad_output
+  let encoderBias := autoencoderEncoderBiasDerivSpec m input grad_output
+  let decoderWeight := autoencoderDecoderWeightsDerivSpec m input grad_output
+  let decoderBias := autoencoderDecoderBiasDerivSpec m grad_output
+  let inputGradient := autoencoderInputDerivSpec m input grad_output
+  (encoderWeight, encoderBias, decoderWeight, decoderBias, inputGradient)
 
 /-- Mean-squared reconstruction error (single example).
 
@@ -229,9 +202,9 @@ def autoencoderReconstructionErrorSpec {inputDim hiddenDim : Nat}
   let reconstructed := autoencoderForwardSpec m input
   let error := subSpec input reconstructed
   let squared_error := squareSpec error
-  have inst : Shape.valid_axis_inst 0 (Shape.dim inputDim Shape.scalar) := by
-    apply Shape.validAxisInstZeroAlt h
-  toScalar (reduceSumAuto 0 squared_error) / inputDim
+  have inst : Shape.HasNonemptyAxis 0 (Shape.dim inputDim Shape.scalar) := by
+    apply Shape.hasNonemptyAxisZeroOfNe h
+  item (reduceSum 0 squared_error inst.proof) / inputDim
 
 /-- A compact helper used by examples: compression ratio as a `Float`.
 

@@ -29,6 +29,7 @@ These scripts are used by the build, documentation, and local verification paths
 - `checks/TorchLeanLint.lean`
 - `checks/dependency_audit.py`
 - `docs/build_site.sh`
+- `docs/check_site_links.py`
 - `docs/polish_docgen.py`
 - `docs/polish_verso_guide.py`
 - `setup/resolve_libtorch.sh`
@@ -150,6 +151,8 @@ python3 scripts/checks/dependency_audit.py --markdown /tmp/torchlean_dependency_
 
 - `docs/build_site.sh`: rebuilds the DocGen declaration pages, the Verso Blueprint guide and
   formalization map, dependency graph JSON, and homepage bundle.
+- `docs/check_site_links.py`: checks every generated local link, asset reference, and fragment
+  identifier after the site is assembled.
 - `docs/polish_docgen.py`: post-processes DocGen HTML with the TorchLean landing page,
   navigation links, declaration legends, dependency-link rewrites, and site styling.
 - `docs/polish_verso_guide.py`: post-processes the Verso guide with responsive figures and tables,

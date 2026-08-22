@@ -9,7 +9,7 @@ module
 public import NN.Proofs.Autograd.Tape.Ops.Conv.BackwardDot.Common
 
 /-!
-# Conv2D kernel-gradient adjointness
+# Conv2d kernel-gradient adjointness
 
 This file proves the inner-product identity for the convolution kernel cotangent.  The result is the
 algebraic heart of the kernel-gradient backward rule:
@@ -26,7 +26,7 @@ three conv adjointness obligations easier to audit.
 
 namespace Proofs
 namespace Autograd
-namespace Conv2D
+namespace Conv2d
 
 open Spec
 open Tensor
@@ -37,20 +37,20 @@ noncomputable section
 
 
 /--
-Adjointness of the Conv2D forward map with respect to kernel perturbations.
+Adjointness of the Conv2d forward map with respect to kernel perturbations.
 
 The left side applies a no-bias convolution whose kernel is `dKernel`, then pairs the output with the
 cotangent `δ`.  The right side pairs `dKernel` with the specification-level kernel derivative.  This
-is the theorem used by the tape proof to justify the kernel part of Conv2D backpropagation.
+is the theorem used by the tape proof to justify the kernel part of Conv2d backpropagation.
 -/
 lemma dot_conv2d_kernel
     {inC outC kH kW stride padding inH inW : Nat}
     {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3)
+    (layer : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3)
     (input : Spec.Tensor ℝ (.dim inC (.dim inH (.dim inW .scalar))))
     (dKernel : Tensor ℝ (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))))
     (δ : Spec.Tensor ℝ (.dim outC (.dim (outH inH kH stride padding) (.dim (outW inW kW stride padding) .scalar)))) :
-    let layerK : Spec.Conv2DSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
+    let layerK : Spec.Conv2dSpec inC outC kH kW stride padding ℝ h1 h2 h3 :=
       { kernel := dKernel, bias := fill (0 : ℝ) (.dim outC .scalar) }
     dot (Spec.conv2dSpec (α := ℝ) (layer := layerK) input) δ
       =
@@ -446,6 +446,6 @@ lemma dot_conv2d_kernel
 
 end
 
-end Conv2D
+end Conv2d
 end Autograd
 end Proofs

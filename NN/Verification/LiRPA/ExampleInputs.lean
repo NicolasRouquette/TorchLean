@@ -9,15 +9,14 @@ module
 public import NN.Verification.Cert.IBPCert
 
 /-!
-# Shared LiRPA Certificate Helpers
+# LiRPA Example Inputs
 
-Small utilities used by the LiRPA certificate examples.  The model graphs stay in their own modules;
-this file only contains the repeated artifact-checking and input-box plumbing.
+Deterministic centers and input boxes shared by the LiRPA examples.
 -/
 
 @[expose] public section
 
-namespace NN.Verification.LiRPA
+namespace NN.Verification.LiRPA.ExampleInputs
 
 open NN.MLTheory.CROWN
 open NN.MLTheory.CROWN.Graph
@@ -39,9 +38,4 @@ def seedNaturalInputBox (inputId dim : Nat) (eps : Float)
     (ps : ParamStore Float) : ParamStore Float :=
   seedVectorInputBox inputId dim (naturalCenter dim) eps ps
 
-/-- Recompute Lean IBP bounds and compare them against a JSON certificate. -/
-def checkIBPCert (g : Graph) (ps : ParamStore Float) (outId : Nat)
-    (path : String) : IO Unit :=
-  NN.Verification.IBPCert.checkOrThrow g ps outId path
-
-end NN.Verification.LiRPA
+end NN.Verification.LiRPA.ExampleInputs

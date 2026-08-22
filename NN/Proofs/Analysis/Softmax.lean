@@ -86,27 +86,27 @@ private abbrev scalarVal (t : Tensor ℝ .scalar) : ℝ :=
 /-- Every coordinate is bounded above by the exact maximum used by softmax and log-softmax. -/
 theorem toVec_le_maxVecSpec {n : Nat}
     (t : Tensor ℝ (.dim (Nat.succ n) .scalar)) (i : Fin (Nat.succ n)) :
-    Spec.toVec t i <= Tensor.toScalar (Activation.maxVecSpec t) := by
+    Spec.toVec t i <= Tensor.item (Activation.maxVecSpec t) := by
   cases t with
   | dim values =>
-      change Tensor.toScalar (values i) <= _
-      change Tensor.toScalar (values i) <=
+      change Tensor.item (values i) <= _
+      change Tensor.item (values i) <=
         (List.finRange (Nat.succ n)).foldl
-          (fun acc j => max acc (Tensor.toScalar (values j)))
-          (Tensor.toScalar (values ⟨0, Nat.succ_pos n⟩))
+          (fun acc j => max acc (Tensor.item (values j)))
+          (Tensor.item (values ⟨0, Nat.succ_pos n⟩))
       exact List.le_foldl_max_of_mem (List.finRange (Nat.succ n))
-        (fun j => Tensor.toScalar (values j))
-        (acc := Tensor.toScalar (values ⟨0, Nat.succ_pos n⟩)) (i := i)
+        (fun j => Tensor.item (values j))
+        (acc := Tensor.item (values ⟨0, Nat.succ_pos n⟩)) (i := i)
         (List.mem_finRange i)
 
 /-- The maximum used by stable softmax is attained by an input coordinate. -/
 theorem exists_toVec_eq_maxVecSpec {n : Nat}
     (t : Tensor ℝ (.dim (Nat.succ n) .scalar)) :
-    ∃ i, Spec.toVec t i = Tensor.toScalar (Activation.maxVecSpec t) := by
+    ∃ i, Spec.toVec t i = Tensor.item (Activation.maxVecSpec t) := by
   cases t with
   | dim values =>
       let firstIndex : Fin (Nat.succ n) := ⟨0, Nat.succ_pos n⟩
-      let value : Fin (Nat.succ n) -> ℝ := fun i => Tensor.toScalar (values i)
+      let value : Fin (Nat.succ n) -> ℝ := fun i => Tensor.item (values i)
       change ∃ i, value i =
         (List.finRange (Nat.succ n)).foldl (fun acc j => max acc (value j))
           (value firstIndex)
@@ -349,13 +349,13 @@ theorem softmax_vec_spec_mem_unitInterval {n : Nat}
 
 /-- The concrete stable softmax backward is tangent to the probability simplex.
 
-`Activation.softmaxBackwardSpec` is the VJP used by the spec and tape layers. Its coordinate sum is
+`Activation.softmaxLastBackwardSpec` is the VJP used by the spec and tape layers. Its coordinate sum is
 zero because the stable forward weights sum to one. This statement is about the actual tensor
 definition, not the separate analytic `EuclideanSpace` presentation of the same derivative. -/
 theorem sum_spec_softmax_backward_spec {n : Nat}
     (x dY : Tensor ℝ (.dim (Nat.succ n) .scalar)) :
     Spec.Tensor.sumSpec
-      (Activation.softmaxBackwardSpec (α := ℝ) (s := .dim (Nat.succ n) .scalar) x dY) = 0 := by
+      (Activation.softmaxLastBackwardSpec (α := ℝ) (s := .dim (Nat.succ n) .scalar) x dY) = 0 := by
   classical
   let y := Activation.softmaxVecSpec (α := ℝ) (n := Nat.succ n) x
   let s : ℝ := Spec.Tensor.sumSpec (Spec.Tensor.mulSpec dY y)
@@ -378,10 +378,10 @@ theorem sum_spec_softmax_backward_spec {n : Nat}
         cases hvalue : values i with
         | scalar value =>
             simp [Spec.toVec, Spec.Tensor.subSpec, Spec.Tensor.map2Spec, Spec.replicate, hvalue]
-  rw [show Activation.softmaxBackwardSpec (α := ℝ) (s := .dim (Nat.succ n) .scalar) x dY =
+  rw [show Activation.softmaxLastBackwardSpec (α := ℝ) (s := .dim (Nat.succ n) .scalar) x dY =
       Spec.Tensor.mulSpec y
         (Spec.Tensor.subSpec dY (Spec.replicate (Tensor.scalar s))) by
-          simp [Activation.softmaxBackwardSpec, y, s]]
+          simp [Activation.softmaxLastBackwardSpec, y, s]]
   rw [Spec.sum_spec_vec]
   simp_rw [Spec.toVec_mul_spec, hsub]
   calc
@@ -408,7 +408,7 @@ theorem abs_toVec_softmax_backward_spec_le_two_mul {n : Nat}
     (x dY : Tensor ℝ (.dim (Nat.succ n) .scalar)) (G : ℝ)
     (hdY : ∀ i, |Spec.toVec dY i| <= G) (i : Fin (Nat.succ n)) :
     |Spec.toVec
-      (Activation.softmaxBackwardSpec (α := ℝ) (s := .dim (Nat.succ n) .scalar) x dY) i| <=
+      (Activation.softmaxLastBackwardSpec (α := ℝ) (s := .dim (Nat.succ n) .scalar) x dY) i| <=
         2 * G := by
   classical
   let y := Activation.softmaxVecSpec (α := ℝ) (n := Nat.succ n) x
@@ -454,10 +454,10 @@ theorem abs_toVec_softmax_backward_spec_le_two_mul {n : Nat}
         | scalar value =>
             simp [Spec.toVec, Spec.Tensor.subSpec, Spec.Tensor.map2Spec, Spec.replicate, hvalue]
   have hbackward :
-      Activation.softmaxBackwardSpec (α := ℝ) (s := .dim (Nat.succ n) .scalar) x dY =
+      Activation.softmaxLastBackwardSpec (α := ℝ) (s := .dim (Nat.succ n) .scalar) x dY =
         Spec.Tensor.mulSpec y
           (Spec.Tensor.subSpec dY (Spec.replicate (Tensor.scalar s))) := by
-    simp [Activation.softmaxBackwardSpec, y, s]
+    simp [Activation.softmaxLastBackwardSpec, y, s]
   have hdiff : |Spec.toVec dY i - s| <= 2 * G := by
     calc
       |Spec.toVec dY i - s| <= |Spec.toVec dY i| + |s| := abs_sub _ _
@@ -472,7 +472,7 @@ theorem abs_toVec_softmax_backward_spec_le_two_mul {n : Nat}
     _ = 2 * G := one_mul _
 
 /-!
-`softmaxSpec` on matrices is rowwise, so each row sums to `1`.
+`softmaxLastSpec` on matrices is rowwise, so each row sums to `1`.
 
 This is the attention-shaped theorem: for score matrices, the key axis is the last/vector axis, and
 softmax is applied independently to every query row.
@@ -480,13 +480,13 @@ softmax is applied independently to every query row.
 theorem sum_spec_softmax_spec_row {nQ nK : Nat}
     (maskedScores : Tensor ℝ (.dim nQ (.dim (Nat.succ nK) .scalar))) (i : Fin nQ) :
     Spec.Tensor.sumSpec
-        (Spec.get (Activation.softmaxSpec (α := ℝ)
+        (Spec.get (Activation.softmaxLastSpec (α := ℝ)
           (s := .dim nQ (.dim (Nat.succ nK) .scalar)) maskedScores) i)
       = 1 := by
   cases maskedScores with
   | dim rows =>
-      -- `softmax_spec` on a matrix is rowwise, and `get` picks a row.
-      simpa [Activation.softmaxSpec, Spec.Tensor.get, Spec.Tensor.getAtSpec] using
+      -- `softmaxLastSpec` on a matrix is rowwise, and `get` picks a row.
+      simpa [Activation.softmaxLastSpec, Spec.Tensor.get, Spec.Tensor.getAtSpec] using
         (sum_spec_softmax_vec_spec (t := rows i))
 
 /-!
@@ -499,7 +499,7 @@ into the `Nat.succ _` shape required by `sum_spec_softmax_spec_row`.
 theorem sum_spec_softmax_spec_row_of_ne_zero {nQ nK : Nat} (hK : nK ≠ 0)
     (scores : Tensor ℝ (.dim nQ (.dim nK .scalar))) (i : Fin nQ) :
     Spec.Tensor.sumSpec
-        (Spec.get (Activation.softmaxSpec (α := ℝ) (s := .dim nQ (.dim nK .scalar)) scores) i)
+        (Spec.get (Activation.softmaxLastSpec (α := ℝ) (s := .dim nQ (.dim nK .scalar)) scores) i)
       = 1 := by
   cases nK with
   | zero =>

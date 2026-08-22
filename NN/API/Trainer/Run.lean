@@ -29,7 +29,7 @@ structure DataSource (σ τ : Shape) where
     {α : Type} →
     [_root_.Context α] →
     [Runtime.FromFloat α] →
-    IO (Training.Dataset (SupervisedSample α σ τ))
+    IO (Training.Dataset (Sample.Supervised α σ τ))
 
 /-- A small input probe printed before and after training. -/
 structure Probe (σ : Shape) where
@@ -44,22 +44,13 @@ structure Probe (σ : Shape) where
 
 namespace Probe
 
-/-- Two-coordinate vector probe for small tabular regression examples. -/
-def point (name : String) (x y : Float) (expected : Option String := none) :
-    Probe (.dim 2 .scalar) :=
-  { name := name
-    inputText := s!"x=({x},{y})"
-    input := fun {α} _ _ =>
-      TorchLean.Data.Synthetic.pointVector (α := α) _root_.TorchLean.Runtime.ofFloat x y
-    expected := expected }
-
 /-- Probe built from a concrete `Float` tensor. -/
 def ofFloatTensor {σ : Shape} (name : String) (x : Tensor Float σ)
     (inputText : String := "") (expected : Option String := none) :
     Probe σ :=
   { name := name
     inputText := inputText
-    input := fun {α} _ _ => TorchLean.Tensor.castFloat (_root_.TorchLean.Runtime.ofFloat (α := α)) x
+    input := fun {α} _ _ => TorchLean.Tensor.map (_root_.TorchLean.Runtime.ofFloat (α := α)) x
     expected := expected }
 
 end Probe
@@ -355,27 +346,6 @@ def toTrainConfig (opts : TrainOptions) (optimizer : optim.Optimizer) :
     cudaMemWatch := opts.cudaMemWatch }
 
 end TrainOptions
-
-/-- A named classification input used for before/after prediction reporting. -/
-structure ClassProbe (σ : Shape) where
-  /-- Human-facing probe name. -/
-  name : String
-  /-- Runtime-polymorphic input tensor. -/
-  input : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → Tensor α σ
-  /-- Expected class index, printed beside the prediction. -/
-  expected : Nat
-
-namespace ClassProbe
-
-/-- Convert a single-example class probe into the batched tensor probe used by `trainer.train`. -/
-def toBatchedProbe {σ : Shape} (batch : Nat) (probe : ClassProbe σ) :
-    Probe (.dim batch σ) :=
-  { name := probe.name
-    inputText := s!"expected={probe.expected}"
-    input := fun {α} _ _ => Tensor.repeatBatch batch (probe.input (α := α))
-    expected := some (toString probe.expected) }
-
-end ClassProbe
 
 end Trainer
 

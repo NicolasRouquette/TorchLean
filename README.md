@@ -115,9 +115,9 @@ lake build
 
 Use `import NN.API` for model, data, and training code. It provides `TorchLean.nn`,
 `TorchLean.Data`, `TorchLean.Trainer`, and `TorchLean.optim`, together with the mathematical model
-definitions in `Spec`. Use `import NN` when the same file also needs verification, proofs, or
-backend infrastructure; focused imports such as `NN.GraphSpec`, `NN.Runtime`, or `NN.Proofs` are
-available for subsystem work.
+definitions in `Spec`. Direct verifier lowering has the focused import `NN.API.Verification`. Use
+`import NN` when the same file also needs proofs or backend infrastructure; focused imports such
+as `NN.GraphSpec`, `NN.Runtime`, or `NN.Proofs` are available for subsystem work.
 
 Downstream model and training files should start from:
 
